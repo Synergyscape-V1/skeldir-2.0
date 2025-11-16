@@ -84,11 +84,11 @@ paths:
                     expires_in: 3600
                     token_type: "Bearer"
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+          $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
         '429':
-          $ref: '../_common/components.yaml#/components/responses/TooManyRequests'
+          $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
         '500':
-          $ref: '../_common/components.yaml#/components/responses/InternalServerError'
+          $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
   
   /api/auth/refresh:
     post:
@@ -160,11 +160,11 @@ paths:
                     expires_in: 3600
                     token_type: "Bearer"
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+          $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
         '429':
-          $ref: '../_common/components.yaml#/components/responses/TooManyRequests'
+          $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
         '500':
-          $ref: '../_common/components.yaml#/components/responses/InternalServerError'
+          $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
   
   /api/auth/logout:
     post:
@@ -214,12 +214,12 @@ paths:
                   value:
                     message: "Logout successful"
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+          $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
         '429':
-          $ref: '../_common/components.yaml#/components/responses/TooManyRequests'
+          $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
         '500':
-          $ref: '../_common/components.yaml#/components/responses/InternalServerError'
+          $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
 components:
   securitySchemes:
     BearerAuth:
-      $ref: '../_common/components.yaml#/components/securitySchemes/BearerAuth'
+      $ref: '../../_common/v1/components.yaml#/components/securitySchemes/BearerAuth'

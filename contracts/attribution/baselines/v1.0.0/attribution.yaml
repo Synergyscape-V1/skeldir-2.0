@@ -71,12 +71,12 @@ paths:
                     data_freshness_seconds: 45
                     tenant_id: "550e8400-e29b-41d4-a716-446655440000"
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+          $ref: '../../../_common/v1/components.yaml#/components/responses/Unauthorized'
         '429':
-          $ref: '../_common/components.yaml#/components/responses/TooManyRequests'
+          $ref: '../../../_common/v1/components.yaml#/components/responses/TooManyRequests'
         '500':
-          $ref: '../_common/components.yaml#/components/responses/InternalServerError'
+          $ref: '../../../_common/v1/components.yaml#/components/responses/InternalServerError'
 components:
   securitySchemes:
     BearerAuth:
-      $ref: '../_common/components.yaml#/components/securitySchemes/BearerAuth'
+      $ref: '../../../_common/v1/components.yaml#/components/securitySchemes/BearerAuth'

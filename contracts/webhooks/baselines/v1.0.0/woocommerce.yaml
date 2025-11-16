@@ -1,25 +1,25 @@
 openapi: 3.1.0
 info:
-  title: Skeldir Shopify Webhook API
+  title: Skeldir WooCommerce Webhook API
   version: 1.0.0
-  description: Shopify webhook ingestion endpoints for Skeldir Attribution Intelligence platform
+  description: WooCommerce webhook ingestion endpoints for Skeldir Attribution Intelligence platform
 servers:
   - url: https://api.skeldir.com
     description: Production server
-  - url: http://localhost:4015
+  - url: http://localhost:4016
     description: Prism mock server for frontend development
 paths:
-  /webhooks/shopify/orders/create:
+  /webhooks/woocommerce/order/created:
     post:
-      operationId: shopifyOrderCreate
+      operationId: woocommerceOrderCreated
       tags:
         - Webhooks
-        - Shopify
-      summary: Shopify order creation webhook
+        - WooCommerce
+      summary: WooCommerce order creation webhook
       description: |
-        Receives Shopify order creation webhooks for revenue attribution.
+        Receives WooCommerce order creation webhooks for revenue attribution.
         
-        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-Shopify-Hmac-Sha256 header.
+        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-WC-Webhook-Signature header.
         The webhook secret must be configured in the tenant settings.
         
         **Privacy**: All PII (emails, names, addresses, phone numbers) is stripped from the payload before persistence.
@@ -27,18 +27,18 @@ paths:
         Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
       security: []
       parameters:
-        - name: X-Shopify-Hmac-Sha256
+        - name: X-WC-Webhook-Signature
           in: header
           required: true
           schema:
             type: string
           description: HMAC-SHA256 signature for webhook verification
-        - name: X-Shopify-Shop-Domain
+        - name: X-WC-Webhook-Source
           in: header
           required: true
           schema:
             type: string
-          description: Shopify shop domain
+          description: WooCommerce webhook source URL
         - name: X-Correlation-ID
           in: header
           required: false
@@ -53,19 +53,19 @@ paths:
             schema:
               type: object
               description: |
-                Shopify order webhook payload. Note: PII fields (email, billing_address, shipping_address, customer details)
-                are stripped before persistence. Only transaction ID, order total, currency, and timestamp are retained.
+                WooCommerce order webhook payload. Note: PII fields (billing_email, billing_address, shipping_address, customer details)
+                are stripped before persistence. Only order ID, total, currency, and date_created are retained.
               properties:
                 id:
                   type: integer
-                  description: Shopify order ID (used for idempotency)
-                total_price:
+                  description: WooCommerce order ID (used for idempotency)
+                total:
                   type: string
                   description: Order total as string (will be converted to cents)
                 currency:
                   type: string
                   description: Order currency code
-                created_at:
+                date_created:
                   type: string
                   format: date-time
                   description: Order creation timestamp
@@ -108,7 +108,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
+                $ref: '../../../_common/v1/components.yaml#/components/schemas/Problem'
               examples:
                 invalid_signature:
                   summary: Invalid HMAC signature
@@ -117,9 +117,9 @@ paths:
                     title: "Invalid Webhook Signature"
                     status: 400
                     detail: "HMAC signature validation failed"
-                    instance: "/webhooks/shopify/orders/create"
+                    instance: "/webhooks/woocommerce/order/created"
                     error_id: "550e8400-e29b-41d4-a716-446655440000"
                     correlation_id: "550e8400-e29b-41d4-a716-446655440000"
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+          $ref: '../../../_common/v1/components.yaml#/components/responses/Unauthorized'
 components: {}

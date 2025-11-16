@@ -36,8 +36,8 @@ paths:
               - json
             default: json
           description: Export format (CSV or JSON)
-        - $ref: '../_common/pagination.yaml#/components/parameters/limit'
-        - $ref: '../_common/pagination.yaml#/components/parameters/cursor'
+        - $ref: '../../../_common/v1/pagination.yaml#/components/parameters/limit'
+        - $ref: '../../../_common/v1/pagination.yaml#/components/parameters/cursor'
         - name: start_date
           in: query
           required: false
@@ -105,12 +105,12 @@ paths:
                   summary: CSV export
                   value: "date,revenue,channel\n2025-01-01,1000.50,google_search\n2025-01-02,1500.75,facebook_ads"
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+          $ref: '../../../_common/v1/components.yaml#/components/responses/Unauthorized'
         '429':
-          $ref: '../_common/components.yaml#/components/responses/TooManyRequests'
+          $ref: '../../../_common/v1/components.yaml#/components/responses/TooManyRequests'
         '500':
-          $ref: '../_common/components.yaml#/components/responses/InternalServerError'
+          $ref: '../../../_common/v1/components.yaml#/components/responses/InternalServerError'
 components:
   securitySchemes:
     BearerAuth:
-      $ref: '../_common/components.yaml#/components/securitySchemes/BearerAuth'
+      $ref: '../../../_common/v1/components.yaml#/components/securitySchemes/BearerAuth'

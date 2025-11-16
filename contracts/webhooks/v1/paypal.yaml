@@ -119,7 +119,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
+                $ref: '../../_common/v1/components.yaml#/components/schemas/Problem'
               examples:
                 invalid_signature:
                   summary: Invalid PayPal signature
@@ -132,5 +132,5 @@ paths:
                     error_id: "550e8400-e29b-41d4-a716-446655440000"
                     correlation_id: "550e8400-e29b-41d4-a716-446655440000"
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+          $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
 components: {}
