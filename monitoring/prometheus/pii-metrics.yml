@@ -1,0 +1,118 @@
+# PII Metrics Configuration for Prometheus
+# Purpose: Define PII defense-in-depth metrics for monitoring and alerting
+
+# ============================================================================
+# Metric Definitions
+# ============================================================================
+
+# Layer 2: PII Guardrail Rejections
+# Counter: Number of PII guardrail rejections per table and PII key
+pii_guardrail_reject_count:
+  type: counter
+  description: "Count of PII guardrail rejections (Layer 2) per table and detected key"
+  labels:
+    - table_name  # attribution_events, dead_events, revenue_ledger
+    - detected_key  # email, phone, ssn, etc.
+  query: |
+    # Requires application-level logging of trigger rejections
+    # Parse PostgreSQL logs for: "PII key detected in {table}.{column}"
+    # Aggregate by table_name and detected_key
+  example: |
+    pii_guardrail_reject_count{table_name="attribution_events", detected_key="email"} 42
+
+# Layer 3: PII Audit Findings
+# Gauge: Current count of PII contamination findings
+pii_audit_findings_count:
+  type: gauge
+  description: "Current count of PII contamination findings from Layer 3 audit scan"
+  labels:
+    - time_window  # current_run, last_1h, last_24h
+  query: |
+    SELECT COUNT(*) FROM pii_audit_findings 
+    WHERE detected_at > NOW() - INTERVAL '1 hour';
+  example: |
+    pii_audit_findings_count{time_window="current_run"} 0
+
+# Layer 3: Distinct Contaminated Records
+# Gauge: Count of distinct contaminated records
+pii_audit_distinct_records:
+  type: gauge
+  description: "Count of distinct contaminated records detected"
+  labels:
+    - time_window  # last_1h, last_24h, last_7d
+  query: |
+    SELECT COUNT(DISTINCT record_id) FROM pii_audit_findings 
+    WHERE detected_at > NOW() - INTERVAL '24 hours';
+  example: |
+    pii_audit_distinct_records{time_window="last_24h"} 0
+
+# Layer 3: Findings by PII Key Category
+# Counter: Breakdown of findings by PII type
+pii_audit_findings_by_key:
+  type: counter
+  description: "Count of PII findings by detected key category"
+  labels:
+    - detected_key  # email, phone, ssn, etc.
+    - table_name  # attribution_events, dead_events, revenue_ledger
+  query: |
+    SELECT detected_key, table_name, COUNT(*) as count
+    FROM pii_audit_findings
+    WHERE detected_at >= CURRENT_DATE
+    GROUP BY detected_key, table_name;
+  example: |
+    pii_audit_findings_by_key{detected_key="email", table_name="attribution_events"} 5
+
+# Layer 3: Audit Scan Duration
+# Histogram: Execution time of audit scan function
+pii_audit_scan_duration_ms:
+  type: histogram
+  description: "Duration of PII audit scan execution in milliseconds"
+  buckets: [100, 500, 1000, 5000, 10000, 30000, 60000]
+  query: |
+    # Measure execution time of: SELECT fn_scan_pii_contamination();
+    # Application-level measurement required
+  example: |
+    pii_audit_scan_duration_ms_bucket{le="1000"} 10
+    pii_audit_scan_duration_ms_bucket{le="5000"} 15
+
+# ============================================================================
+# Collection Implementation
+# ============================================================================
+
+# Option 1: Database Exporter (PostgreSQL Exporter)
+# Use postgres_exporter with custom queries
+postgres_exporter_queries:
+  - name: pii_audit_findings_count
+    query: |
+      SELECT COUNT(*) as count FROM pii_audit_findings 
+      WHERE detected_at > NOW() - INTERVAL '1 hour';
+    metrics:
+      - count:
+          usage: GAUGE
+          description: "PII audit findings count (last 1 hour)"
+
+  - name: pii_audit_findings_by_key
+    query: |
+      SELECT detected_key, table_name, COUNT(*) as count
+      FROM pii_audit_findings
+      WHERE detected_at >= CURRENT_DATE
+      GROUP BY detected_key, table_name;
+    metrics:
+      - count:
+          usage: COUNTER
+          description: "PII findings by key and table"
+
+# Option 2: Application-Level Metrics (Prometheus Client)
+# Emit metrics from application code when trigger rejections occur
+# See: docs/database/pii-controls.md for implementation details
+
+# ============================================================================
+# Metric Collection Schedule
+# ============================================================================
+
+# Scrape interval: 15s (standard Prometheus default)
+# Scrape timeout: 10s
+
+# PII audit scan metrics: Collected after each audit scan execution
+# PII guardrail metrics: Collected in real-time (application-level)
+

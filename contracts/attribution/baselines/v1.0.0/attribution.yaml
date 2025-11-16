@@ -1,0 +1,82 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Attribution API
+  version: 1.0.0
+  description: Attribution and revenue verification endpoints for Skeldir Attribution Intelligence platform
+servers:
+  - url: https://api.skeldir.com
+    description: Production server
+  - url: http://localhost:4011
+    description: Prism mock server for frontend development
+paths:
+  /api/attribution/revenue/realtime:
+    get:
+      operationId: getRealtimeRevenue
+      tags:
+        - Attribution
+      summary: Get realtime revenue attribution data
+      description: Retrieve realtime revenue attribution data with verification status and data freshness
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Distributed tracing correlation ID
+      responses:
+        '200':
+          description: Realtime revenue data retrieved successfully
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - total_revenue
+                  - verified
+                  - data_freshness_seconds
+                  - tenant_id
+                properties:
+                  total_revenue:
+                    type: number
+                    format: float
+                    description: Total revenue in dollars
+                    example: 125000.50
+                  verified:
+                    type: boolean
+                    description: Whether the revenue data has been verified through reconciliation pipeline
+                    example: true
+                  data_freshness_seconds:
+                    type: integer
+                    description: Number of seconds since data was last updated
+                    example: 45
+                  tenant_id:
+                    type: string
+                    format: uuid
+                    description: Tenant identifier
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+              examples:
+                success:
+                  summary: Successful revenue retrieval
+                  value:
+                    total_revenue: 125000.50
+                    verified: true
+                    data_freshness_seconds: 45
+                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '../../../_common/v1/components.yaml#/components/responses/Unauthorized'
+        '429':
+          $ref: '../../../_common/v1/components.yaml#/components/responses/TooManyRequests'
+        '500':
+          $ref: '../../../_common/v1/components.yaml#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    BearerAuth:
+      $ref: '../../../_common/v1/components.yaml#/components/securitySchemes/BearerAuth'

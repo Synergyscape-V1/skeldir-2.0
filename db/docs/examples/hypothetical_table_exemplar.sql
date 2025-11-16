@@ -173,3 +173,7 @@ GRANT SELECT ON TABLE revenue_events TO app_ro;
 -- ✅ Lint compliance: No data/misc columns, all objects commented, NOT NULL for required, tenant_id present, RLS policy present, INTEGER for revenue
 -- ============================================================================
 
+
+
+
+

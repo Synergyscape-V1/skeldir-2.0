@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Stripe Webhook API
+  version: 1.0.0
+  description: Stripe webhook ingestion endpoints for Skeldir Attribution Intelligence platform
+servers:
+  - url: https://api.skeldir.com
+    description: Production server
+  - url: http://localhost:4017
+    description: Prism mock server for frontend development
+paths:
+  /webhooks/stripe/charge/succeeded:
+    post:
+      operationId: stripeChargeSucceeded
+      tags:
+        - Webhooks
+        - Stripe
+      summary: Stripe charge succeeded webhook
+      description: |
+        Receives Stripe charge succeeded webhooks for revenue attribution.
+        
+        **Security**: This endpoint validates Stripe webhook signatures using the Stripe-Signature header.
+        The webhook secret must be configured in the tenant settings. Stripe uses HMAC-SHA256 with timestamp and event ID.
+        
+        **Privacy**: All PII (customer email, billing details, payment method details) is stripped from the payload before persistence.
+        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
+        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
+      security: []
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Stripe webhook signature for verification (includes timestamp and signatures)
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Distributed tracing correlation ID (generated if not provided)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: |
+                Stripe charge webhook payload. Note: PII fields (customer email, billing details, payment method details)
+                are stripped before persistence. Only charge ID, amount, currency, and created timestamp are retained.
+              properties:
+                id:
+                  type: string
+                  description: Stripe charge ID (used for idempotency)
+                amount:
+                  type: integer
+                  description: Charge amount in cents
+                currency:
+                  type: string
+                  description: Charge currency code (lowercase)
+                created:
+                  type: integer
+                  description: Unix timestamp of charge creation
+      responses:
+        '200':
+          description: Webhook processed successfully
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - acknowledged
+                  - event_id
+                properties:
+                  acknowledged:
+                    type: boolean
+                    example: true
+                  event_id:
+                    type: string
+                    description: Internal event ID for tracking
+                    example: "evt_550e8400e29b41d4a716446655440000"
+              examples:
+                success:
+                  summary: Webhook acknowledged
+                  value:
+                    acknowledged: true
+                    event_id: "evt_550e8400e29b41d4a716446655440000"
+        '400':
+          description: Invalid webhook payload or signature
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '../../../_common/v1/components.yaml#/components/schemas/Problem'
+              examples:
+                invalid_signature:
+                  summary: Invalid Stripe signature
+                  value:
+                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
+                    title: "Invalid Webhook Signature"
+                    status: 400
+                    detail: "Stripe webhook signature validation failed"
+                    instance: "/webhooks/stripe/charge/succeeded"
+                    error_id: "550e8400-e29b-41d4-a716-446655440000"
+                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '../../../_common/v1/components.yaml#/components/responses/Unauthorized'
+components: {}

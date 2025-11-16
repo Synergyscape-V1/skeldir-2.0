@@ -1,0 +1,75 @@
+groups:
+  - name: pii_defense
+    interval: 5m
+    rules:
+      # CRITICAL: Mass contamination detected
+      - alert: PII_Audit_Mass_Contamination
+        expr: pii_audit_findings_count{time_window="current_run"} > 10
+        for: 0m
+        labels:
+          severity: critical
+          component: pii_defense
+          layer: layer_3_audit
+          team: security
+        annotations:
+          summary: "Mass PII contamination detected ({{ $value }} findings)"
+          description: "Layer 3 audit detected {{ $value }} PII contamination findings. This indicates Layer 1 (B0.4) or Layer 2 (trigger) failure. Immediate investigation required."
+          runbook_url: "https://wiki.internal/runbooks/pii-contamination-response"
+          action: "Query pii_audit_findings table, identify affected records, initiate incident response"
+      
+      # HIGH: Any contamination in production
+      - alert: PII_Audit_Contamination_Detected
+        expr: pii_audit_findings_count{time_window="last_1h"} > 0 and on() environment == "production"
+        for: 5m
+        labels:
+          severity: high
+          component: pii_defense
+          layer: layer_3_audit
+          team: security
+        annotations:
+          summary: "PII contamination detected in production ({{ $value }} findings)"
+          description: "Layer 3 audit detected PII in database. Review pii_audit_findings table for affected records. Reference: docs/operations/incident-response.md"
+          action: "Execute incident response playbook for PII detection"
+      
+      # MEDIUM: High guardrail rejection rate
+      - alert: PII_Guardrail_High_Reject_Rate
+        expr: rate(pii_guardrail_reject_count[1h]) > 100
+        for: 5m
+        labels:
+          severity: medium
+          component: pii_defense
+          layer: layer_2_guardrail
+          team: backend
+        annotations:
+          summary: "High PII guardrail rejection rate ({{ $value }}/hour)"
+          description: "Layer 2 guardrail is rejecting many writes. Indicates upstream (B0.4) PII stripping may be failing. Check application logs for PII stripping errors."
+          action: "Review application logs, verify B0.4 PII stripping logic"
+      
+      # MEDIUM: Audit scan failed or slow
+      - alert: PII_Audit_Scan_Failed
+        expr: pii_audit_scan_duration_ms > 300000 or pii_audit_scan_duration_ms == 0
+        for: 5m
+        labels:
+          severity: medium
+          component: pii_defense
+          layer: layer_3_audit
+          team: backend
+        annotations:
+          summary: "PII audit scan failed or exceeded 5 minutes"
+          description: "PII audit scan function failed or took longer than 5 minutes. Check database performance and audit function execution."
+          action: "Check database logs, verify fn_scan_pii_contamination() function"
+      
+      # LOW: Audit scan overdue
+      - alert: PII_Audit_Scan_Overdue
+        expr: time() - pii_audit_scan_duration_ms/1000 > 172800
+        for: 0m
+        labels:
+          severity: low
+          component: pii_defense
+          layer: layer_3_audit
+          team: backend
+        annotations:
+          summary: "PII audit scan overdue (no scan in last 48 hours)"
+          description: "PII audit scan has not executed in the last 48 hours. Verify audit scan scheduler is running."
+          action: "Check audit scan scheduler configuration, verify cron job or scheduled task"
+

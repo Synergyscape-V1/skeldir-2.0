@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Reconciliation API
+  version: 1.0.0
+  description: Reconciliation and verification pipeline status endpoints for Skeldir Attribution Intelligence platform
+servers:
+  - url: https://api.skeldir.com
+    description: Production server
+  - url: http://localhost:4012
+    description: Prism mock server for frontend development
+paths:
+  /api/reconciliation/status:
+    get:
+      operationId: getReconciliationStatus
+      tags:
+        - Reconciliation
+      summary: Get reconciliation pipeline status
+      description: Retrieve the current status of the revenue verification and reconciliation pipeline
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Distributed tracing correlation ID
+      responses:
+        '200':
+          description: Reconciliation status retrieved successfully
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - state
+                  - last_run_at
+                  - tenant_id
+                properties:
+                  state:
+                    type: string
+                    enum:
+                      - idle
+                      - running
+                      - failed
+                      - completed
+                    description: Current state of the reconciliation pipeline
+                    example: "completed"
+                  last_run_at:
+                    type: string
+                    format: date-time
+                    description: Timestamp of the last reconciliation run
+                    example: "2025-11-10T14:30:00Z"
+                  tenant_id:
+                    type: string
+                    format: uuid
+                    description: Tenant identifier
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+              examples:
+                idle:
+                  summary: Pipeline idle
+                  value:
+                    state: "idle"
+                    last_run_at: "2025-11-10T14:30:00Z"
+                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+                running:
+                  summary: Pipeline running
+                  value:
+                    state: "running"
+                    last_run_at: "2025-11-10T14:30:00Z"
+                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+                completed:
+                  summary: Pipeline completed
+                  value:
+                    state: "completed"
+                    last_run_at: "2025-11-10T14:30:00Z"
+                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+                failed:
+                  summary: Pipeline failed
+                  value:
+                    state: "failed"
+                    last_run_at: "2025-11-10T14:30:00Z"
+                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '../../../_common/v1/components.yaml#/components/responses/Unauthorized'
+        '429':
+          $ref: '../../../_common/v1/components.yaml#/components/responses/TooManyRequests'
+        '500':
+          $ref: '../../../_common/v1/components.yaml#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    BearerAuth:
+      $ref: '../../../_common/v1/components.yaml#/components/securitySchemes/BearerAuth'

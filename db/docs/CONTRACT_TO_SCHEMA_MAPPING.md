@@ -196,8 +196,82 @@ updated_at timestamptz NOT NULL DEFAULT now()
 
 **Rationale**: Clear timestamp semantics prevent confusion and enable correct temporal queries.
 
+## Events Immutability Policy
+
+### Append-Only Semantics
+
+**Policy**: `attribution_events` table is append-only. Events cannot be updated or deleted by application roles.
+
+**Contract Impact**:
+- **No UPDATE endpoints**: OpenAPI contracts must not define UPDATE operations for events
+- **No DELETE endpoints**: OpenAPI contracts must not define DELETE operations for events
+- **Correction model**: Corrections must be represented as new events (linked via `correlation_id` or correction flag)
+
+**Schema Impact**:
+- **GRANT Policy**: `app_rw` role has `SELECT`, `INSERT` only (no `UPDATE` or `DELETE`)
+- **Guard Trigger**: `trg_events_prevent_mutation` prevents UPDATE/DELETE operations (defense-in-depth)
+- **Table COMMENT**: Must explicitly state append-only semantics
+
+**Mapping Rule**: When mapping contract operations to database operations:
+- `POST /api/events` → `INSERT INTO attribution_events` ✅ Allowed
+- `GET /api/events/{id}` → `SELECT FROM attribution_events` ✅ Allowed
+- `PUT /api/events/{id}` → ❌ **Not allowed** (no UPDATE operations)
+- `DELETE /api/events/{id}` → ❌ **Not allowed** (no DELETE operations)
+- `POST /api/events/corrections` → `INSERT INTO attribution_events` (with correction flag) ✅ Allowed
+
+**Cross-Reference**: See `db/docs/EVENTS_IMMUTABILITY_POLICY.md` for complete policy statement.
+
+## Ledger Immutability Policy
+
+### Write-Once Semantics
+
+**Policy**: `revenue_ledger` table is write-once. Ledger entries cannot be updated or deleted by application roles.
+
+**Contract Impact**:
+- **No UPDATE endpoints**: OpenAPI contracts must not define UPDATE operations for ledger entries
+- **No DELETE endpoints**: OpenAPI contracts must not define DELETE operations for ledger entries
+- **Correction model**: Corrections must be represented as new ledger entries (additive corrections)
+
+**Schema Impact**:
+- **GRANT Policy**: `app_rw` role has `SELECT`, `INSERT` only (no `UPDATE` or `DELETE`)
+- **Guard Trigger**: `trg_ledger_prevent_mutation` prevents UPDATE/DELETE operations (defense-in-depth)
+- **Table COMMENT**: Must explicitly state write-once semantics
+
+**Mapping Rule**: When mapping contract operations to database operations:
+- `POST /api/ledger/entries` → `INSERT INTO revenue_ledger` ✅ Allowed
+- `GET /api/ledger/entries/{id}` → `SELECT FROM revenue_ledger` ✅ Allowed
+- `PUT /api/ledger/entries/{id}` → ❌ **Not allowed** (no UPDATE operations)
+- `DELETE /api/ledger/entries/{id}` → ❌ **Not allowed** (no DELETE operations)
+- `POST /api/ledger/corrections` → `INSERT INTO revenue_ledger` (with negative revenue_cents) ✅ Allowed
+
+**Cross-Reference**: See `db/docs/IMMUTABILITY_POLICY.md` for complete policy statement.
+
+## Channel Taxonomy Governance
+
+### Canonical Channel Source
+
+**Policy**: `channel_taxonomy` table is **the only** allowed place to define canonical channels.
+
+**Enforcement**:
+- All channel codes must be defined in `channel_taxonomy` table
+- `attribution_allocations.channel_code` (or `channel`) must FK to `channel_taxonomy.code`
+- No hard-coded channel strings in allocations or read models
+- No CHECK constraints on channel values (replaced by FK)
+
+**New Channel Process**:
+1. Add channel to `channel_taxonomy` table
+2. Update `channel_mapping.yaml` if vendor mapping needed
+3. Update OpenAPI contracts if exposing channel fields
+4. All changes must go through PR review
+
+**Governance Rule**: Reviewers can reject PRs that sneak in new channels outside taxonomy.
+
+**Cross-Reference**: See `B0.3_IMPLEMENTATION_COMPLETE.md` (Phase 3) for complete channel taxonomy specification.
+
 ## Cross-References
 
 - **Style Guide**: See `SCHEMA_STYLE_GUIDE.md` for naming conventions
 - **RLS Template**: See `db/migrations/templates/rls_policy.py.template` for tenant isolation patterns
+- **Events Immutability Policy**: See `db/docs/EVENTS_IMMUTABILITY_POLICY.md` for append-only semantics
+
 

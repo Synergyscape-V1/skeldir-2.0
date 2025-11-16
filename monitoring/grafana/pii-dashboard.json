@@ -1,0 +1,182 @@
+{
+  "dashboard": {
+    "title": "PII Defense-in-Depth Dashboard",
+    "tags": ["pii", "security", "compliance"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Layer 2: Guardrail Rejections (Last 24 Hours)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(pii_guardrail_reject_count[1h])) by (table_name, detected_key)",
+            "legendFormat": "{{table_name}} - {{detected_key}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Rejections per hour",
+            "format": "short"
+          }
+        ],
+        "alert": {
+          "name": "High PII Guardrail Rejection Rate",
+          "message": "PII guardrail rejection rate exceeds 100/hour",
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [100],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "frequency": "10s",
+          "noDataState": "no_data",
+          "executionErrorState": "alerting"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Layer 3: Audit Findings (Current)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "pii_audit_findings_count{time_window=\"current_run\"}",
+            "legendFormat": "Findings"
+          }
+        ],
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "color": "green",
+              "value": 0
+            },
+            {
+              "color": "red",
+              "value": 1
+            }
+          ]
+        },
+        "valueMappings": [
+          {
+            "type": "value",
+            "options": {
+              "0": {
+                "text": "Clean",
+                "color": "green"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Layer 3: Findings by PII Key (Last 24 Hours)",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(pii_audit_findings_by_key) by (detected_key)",
+            "legendFormat": "{{detected_key}}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Layer 3: Audit Scan Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(pii_audit_scan_duration_ms_bucket[5m]))",
+            "legendFormat": "P95 Duration (ms)"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(pii_audit_scan_duration_ms_bucket[5m]))",
+            "legendFormat": "P50 Duration (ms)"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Duration (ms)",
+            "format": "ms"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Layer 3: Findings Over Time (Last 7 Days)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "pii_audit_findings_count{time_window=\"last_24h\"}",
+            "legendFormat": "Findings (24h)"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Findings",
+            "format": "short"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Layer 2: Rejections by Table",
+        "type": "bargraph",
+        "targets": [
+          {
+            "expr": "sum(rate(pii_guardrail_reject_count[1h])) by (table_name)",
+            "legendFormat": "{{table_name}}"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Rejections per hour",
+            "format": "short"
+          }
+        ]
+      }
+    ],
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+    },
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    },
+    "links": [
+      {
+        "title": "PII Controls Documentation",
+        "url": "/docs/database/pii-controls.md",
+        "type": "link"
+      },
+      {
+        "title": "Incident Response Playbook",
+        "url": "/docs/operations/incident-response.md",
+        "type": "link"
+      }
+    ]
+  }
+}
+

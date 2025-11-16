@@ -173,3 +173,7 @@ COMMENT ON TABLE revenue_ledger IS
 - **Database Objects**: `revenue_ledger` table, `mv_realtime_revenue` materialized view
 - **Mapping Rationale**: All type conversions, nullability decisions, and index requirements documented above
 
+
+
+
+

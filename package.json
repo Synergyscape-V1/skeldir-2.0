@@ -4,7 +4,7 @@
   "description": "SKELDIR 2.0 Attribution Intelligence Platform - Monorepo",
   "private": true,
   "scripts": {
-    "contracts:validate": "openapi-generator-cli validate -i contracts/openapi/v1/**/*.yaml",
+    "contracts:validate": "for file in contracts/*/v1/*.yaml contracts/_common/v1/*.yaml; do openapi-generator-cli validate -i \"$file\" || exit 1; done",
     "models:generate": "bash scripts/generate-models.sh",
     "mocks:start": "bash scripts/start-mocks.sh",
     "mocks:stop": "bash scripts/stop-mocks.sh",

@@ -147,3 +147,7 @@ sqldef diff schema_20251112_130200.sql schema_from_migrations.sql
 
 **Rationale**: Blessed snapshots provide authoritative baseline for drift detection.
 
+
+
+
+

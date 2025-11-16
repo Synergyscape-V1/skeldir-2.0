@@ -1,0 +1,222 @@
+# Channel Governance CI Workflow
+# 
+# Validates channel governance enforcement at multiple levels:
+# 1. Schema validation (FK constraints exist)
+# 2. Normalization golden tests (normalize_channel() contract)
+# 3. Data integrity checks (zero non-canonical values)
+#
+# This workflow ensures the channel governance model cannot regress.
+# Related: db/docs/channel_contract.md, B0.3-P_CHANNEL_GOVERNANCE_REMEDIATION.md
+
+name: Channel Governance CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/app/ingestion/channel_normalization.py'
+      - 'db/channel_mapping.yaml'
+      - 'alembic/versions/*channel*.py'
+      - 'backend/tests/test_channel_normalization.py'
+      - 'scripts/validate_channel_*.py'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/app/ingestion/channel_normalization.py'
+      - 'db/channel_mapping.yaml'
+      - 'alembic/versions/*channel*.py'
+      - 'backend/tests/test_channel_normalization.py'
+      - 'scripts/validate_channel_*.py'
+
+jobs:
+  normalization_tests:
+    name: Channel Normalization Golden Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pyyaml
+      
+      - name: Run normalization golden tests
+        run: |
+          cd backend
+          pytest tests/test_channel_normalization.py -v --tb=short --cov=app/ingestion/channel_normalization --cov-report=term-missing
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+      
+      - name: Verify test coverage
+        run: |
+          cd backend
+          pytest tests/test_channel_normalization.py --cov=app/ingestion/channel_normalization --cov-fail-under=80
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+  
+  schema_validation:
+    name: Channel FK Schema Validation
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: skeldir_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install alembic psycopg2-binary sqlalchemy
+      
+      - name: Run Alembic migrations
+        run: |
+          alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+      
+      - name: Validate channel FK constraints
+        run: |
+          python scripts/validate_channel_fks.py
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+  
+  data_integrity_validation:
+    name: Channel Data Integrity Validation
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: skeldir_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install alembic psycopg2-binary sqlalchemy
+      
+      - name: Run Alembic migrations
+        run: |
+          alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+      
+      - name: Run data flow test
+        run: |
+          psql -f db/tests/test_unmapped_channel_flow.sql
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: skeldir_test
+          PGUSER: postgres
+          PGPASSWORD: postgres
+      
+      - name: Validate data integrity
+        run: |
+          python scripts/validate_channel_integrity.py
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+  
+  mapping_consistency:
+    name: Channel Mapping Consistency Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml pytest
+      
+      - name: Validate mapping YAML structure
+        run: |
+          python -c "
+          import yaml
+          import sys
+          
+          # Load channel_mapping.yaml
+          with open('db/channel_mapping.yaml', 'r') as f:
+              mapping = yaml.safe_load(f)
+          
+          # Validate structure
+          assert 'sources' in mapping, 'Missing sources key'
+          sources = mapping['sources']
+          assert isinstance(sources, dict), 'sources must be dict'
+          
+          # Get canonical codes from normalization module
+          sys.path.insert(0, 'backend')
+          from app.ingestion.channel_normalization import get_valid_taxonomy_codes
+          valid_codes = get_valid_taxonomy_codes()
+          
+          # Validate all mapped codes exist in taxonomy
+          invalid_mappings = []
+          for vendor, vendor_mappings in sources.items():
+              for vendor_key, canonical_code in vendor_mappings.items():
+                  if canonical_code not in valid_codes:
+                      invalid_mappings.append((vendor, vendor_key, canonical_code))
+          
+          if invalid_mappings:
+              print(f'ERROR: Found {len(invalid_mappings)} invalid mappings:')
+              for vendor, key, code in invalid_mappings:
+                  print(f'  - {vendor}/{key} -> {code} (not in taxonomy)')
+              sys.exit(1)
+          
+          print('✓ All channel mappings are valid')
+          print(f'✓ Validated {len(sources)} vendors')
+          "
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+
+
+

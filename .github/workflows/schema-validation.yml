@@ -1,0 +1,99 @@
+name: Schema Validation
+
+on:
+  pull_request:
+    paths:
+      - 'alembic/versions/**'
+      - 'db/schema/**'
+      - 'scripts/validate-schema-compliance.py'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alembic/versions/**'
+      - 'db/schema/**'
+
+jobs:
+  validate-schema:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: skeldir_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install alembic sqlalchemy psycopg2-binary pyyaml
+      
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
+        run: |
+          echo "Applying Alembic migrations..."
+          alembic upgrade head
+          echo "Migrations applied successfully"
+      
+      - name: Run schema validator
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
+        run: |
+          echo "Running schema compliance validator..."
+          python scripts/validate-schema-compliance.py \
+            --output validation_results.json \
+            --verbose || true
+          
+          echo ""
+          echo "=== Validation Report ==="
+          cat validation_results.json | python -m json.tool
+      
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: validation-report
+          path: validation_results.json
+          retention-days: 7
+      
+      - name: Fail on BLOCKING divergences
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
+        run: |
+          python scripts/validate-schema-compliance.py --output /tmp/validation.json
+          EXIT_CODE=$(python -c "import json; print(json.load(open('/tmp/validation.json'))['exit_code'])")
+          
+          if [ "$EXIT_CODE" -eq 1 ]; then
+            echo "❌ FAIL: BLOCKING schema divergences detected"
+            echo "Review validation_results.json artifact for details"
+            exit 1
+          elif [ "$EXIT_CODE" -eq 2 ]; then
+            echo "⚠️  WARN: HIGH severity divergences detected (non-blocking)"
+            echo "Review validation_results.json artifact for details"
+            exit 0
+          else
+            echo "✅ PASS: Schema is compliant with canonical specification"
+            exit 0
+          fi
+
+
+

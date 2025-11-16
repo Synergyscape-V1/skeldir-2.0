@@ -16,7 +16,7 @@ All components are versioned atomically via single commit hashes.
 
 SKELDIR follows a **contract-first** approach:
 
-1. **Define Contract**: Create/update OpenAPI spec in `contracts/openapi/v1/`
+1. **Define Contract**: Create/update OpenAPI spec in `contracts/{domain}/v1/` (e.g., `contracts/attribution/v1/attribution.yaml`)
 2. **Validate Contract**: Run `make contracts-validate`
 3. **Generate Models**: Run `make models-generate` to create Pydantic models
 4. **Implement Backend**: Implement endpoints in `backend/app/`
@@ -56,7 +56,7 @@ npm install
 
 ### Contract Changes
 
-1. Edit OpenAPI spec in `contracts/openapi/v1/`
+1. Edit OpenAPI spec in `contracts/{domain}/v1/` (e.g., `contracts/attribution/v1/attribution.yaml`)
 2. Validate: `make contracts-validate`
 3. Check for breaking changes: CI will run `oasdiff breaking`
 4. Update baseline if major version bump

@@ -1,0 +1,123 @@
+version: '3.8'
+
+# Component-Level Development Docker Compose
+# Purpose: Enable component-level development with inter-service communication
+# Usage: docker-compose -f docker-compose.component-dev.yml up
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: skeldir-postgres-dev
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skeldir}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skeldir_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-skeldir_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skeldir}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ingestion Service
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: backend/app/ingestion/Dockerfile
+    container_name: skeldir-ingestion-dev
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skeldir}:${POSTGRES_PASSWORD:-skeldir_dev}@postgres:5432/${POSTGRES_DB:-skeldir_dev}
+      SERVICE_NAME: ingestion
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Attribution Service
+  attribution-service:
+    build:
+      context: .
+      dockerfile: backend/app/attribution/Dockerfile
+    container_name: skeldir-attribution-dev
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skeldir}:${POSTGRES_PASSWORD:-skeldir_dev}@postgres:5432/${POSTGRES_DB:-skeldir_dev}
+      SERVICE_NAME: attribution
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Auth Service
+  auth-service:
+    build:
+      context: .
+      dockerfile: backend/app/auth/Dockerfile
+    container_name: skeldir-auth-dev
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skeldir}:${POSTGRES_PASSWORD:-skeldir_dev}@postgres:5432/${POSTGRES_DB:-skeldir_dev}
+      SERVICE_NAME: auth
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_in_production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Webhooks Service
+  webhooks-service:
+    build:
+      context: .
+      dockerfile: backend/app/webhooks/Dockerfile
+    container_name: skeldir-webhooks-dev
+    ports:
+      - "8004:8004"
+    environment:
+      SERVICE_NAME: webhooks
+      INGESTION_SERVICE_URL: http://ingestion-service:8001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Webhook secrets (HMAC validation)
+      SHOPIFY_WEBHOOK_SECRET: ${SHOPIFY_WEBHOOK_SECRET:-dev_secret}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-dev_secret}
+      PAYPAL_WEBHOOK_SECRET: ${PAYPAL_WEBHOOK_SECRET:-dev_secret}
+      WOOCOMMERCE_WEBHOOK_SECRET: ${WOOCOMMERCE_WEBHOOK_SECRET:-dev_secret}
+    depends_on:
+      ingestion-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  postgres_data:
+

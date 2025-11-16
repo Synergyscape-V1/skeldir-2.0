@@ -1,0 +1,60 @@
+# Vendor → Canonical Channel Mapping
+# Source of Truth for ingestion service normalization
+#
+# Purpose: Map vendor-specific channel indicators to canonical channel codes
+# Usage: B0.4 ingestion service reads this file and maps incoming channel indicators
+#        to channel_taxonomy.code before inserting into attribution_allocations
+#
+# Structure:
+#   sources:
+#     <vendor_name>:
+#       "<vendor_channel_indicator>": <canonical_channel_code>
+#
+# Example:
+#   sources:
+#     facebook_ads:
+#       "FB_ADS": facebook_paid
+#       "FB_BRAND": facebook_brand
+
+sources:
+  facebook_ads:
+    "FB_ADS": facebook_paid
+    "FB_BRAND": facebook_brand
+    "FACEBOOK_ADS": facebook_paid
+  
+  google_ads:
+    "SEARCH": google_search_paid
+    "DISPLAY": google_display_paid
+    "GOOGLE_SEARCH": google_search_paid
+    "GOOGLE_DISPLAY": google_display_paid
+  
+  tiktok_ads:
+    "IN_FEED": tiktok_paid
+    "TIKTOK_ADS": tiktok_paid
+  
+  shopify:
+    "DIRECT": direct
+    "ORGANIC": organic
+    "REFERRAL": referral
+  
+  stripe:
+    "DIRECT": direct
+    "EMAIL": email
+  
+  paypal:
+    "DIRECT": direct
+    "REFERRAL": referral
+  
+  woocommerce:
+    "DIRECT": direct
+    "ORGANIC": organic
+    "EMAIL": email
+
+# Notes:
+# - All canonical channel codes must exist in channel_taxonomy.code
+# - Vendor channel indicators are case-sensitive (as provided by vendor APIs)
+# - Multiple vendor indicators can map to the same canonical code
+# - New vendors/channels require update to both this file and channel_taxonomy table
+
+
+

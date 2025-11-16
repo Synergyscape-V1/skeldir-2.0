@@ -60,7 +60,7 @@ Each component is developed with decoupled boundaries and clear API contracts, e
 
 ## Contract-First Development
 
-All API endpoints are defined in `contracts/openapi/v1/` before implementation. Pydantic models are auto-generated from contracts:
+All API endpoints are defined in `contracts/{domain}/v1/` before implementation. Pydantic models are auto-generated from contracts:
 
 ```bash
 # Generate models from contracts

@@ -11,10 +11,10 @@ services:
     ports:
       - "4010:4010"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/auth.yaml -p 4010 -h 0.0.0.0
+    command: prism mock /contracts/auth/v1/auth.yaml -p 4010 -h 0.0.0.0
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f -X POST http://localhost:4010/api/auth/login -H 'Content-Type: application/json' -H 'X-Correlation-ID: test' -d '{\"email\":\"test@example.com\",\"password\":\"test\"}' || exit 1"]
       interval: 30s
@@ -28,10 +28,10 @@ services:
     ports:
       - "4011:4011"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/attribution.yaml -p 4011 -h 0.0.0.0
+    command: prism mock /contracts/attribution/v1/attribution.yaml -p 4011 -h 0.0.0.0
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f http://localhost:4011/api/attribution/revenue/realtime -H 'Authorization: Bearer mock' -H 'X-Correlation-ID: test' || exit 1"]
       interval: 30s
@@ -45,10 +45,10 @@ services:
     ports:
       - "4012:4012"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/reconciliation.yaml -p 4012 -h 0.0.0.0
+    command: prism mock /contracts/reconciliation/v1/reconciliation.yaml -p 4012 -h 0.0.0.0
 
   export:
     image: stoplight/prism:latest
@@ -56,10 +56,10 @@ services:
     ports:
       - "4013:4013"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/export.yaml -p 4013 -h 0.0.0.0
+    command: prism mock /contracts/export/v1/export.yaml -p 4013 -h 0.0.0.0
 
   health:
     image: stoplight/prism:latest
@@ -67,10 +67,10 @@ services:
     ports:
       - "4014:4014"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/health.yaml -p 4014 -h 0.0.0.0
+    command: prism mock /contracts/health/v1/health.yaml -p 4014 -h 0.0.0.0
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f http://localhost:4014/api/health || exit 1"]
       interval: 10s
@@ -84,10 +84,10 @@ services:
     ports:
       - "4015:4015"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/webhooks/shopify.yaml -p 4015 -h 0.0.0.0
+    command: prism mock /contracts/webhooks/v1/shopify.yaml -p 4015 -h 0.0.0.0
 
   webhooks-woocommerce:
     image: stoplight/prism:latest
@@ -95,10 +95,10 @@ services:
     ports:
       - "4016:4016"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/webhooks/woocommerce.yaml -p 4016 -h 0.0.0.0
+    command: prism mock /contracts/webhooks/v1/woocommerce.yaml -p 4016 -h 0.0.0.0
 
   webhooks-stripe:
     image: stoplight/prism:latest
@@ -106,10 +106,10 @@ services:
     ports:
       - "4017:4017"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/webhooks/stripe.yaml -p 4017 -h 0.0.0.0
+    command: prism mock /contracts/webhooks/v1/stripe.yaml -p 4017 -h 0.0.0.0
 
   webhooks-paypal:
     image: stoplight/prism:latest
@@ -117,8 +117,8 @@ services:
     ports:
       - "4018:4018"
     volumes:
-      - ./contracts/openapi/v1:/contracts:ro
+      - ./contracts:/contracts:ro
     environment:
       - PRISM_ERRORS=true
-    command: prism mock /contracts/webhooks/paypal.yaml -p 4018 -h 0.0.0.0
+    command: prism mock /contracts/webhooks/v1/paypal.yaml -p 4018 -h 0.0.0.0
 

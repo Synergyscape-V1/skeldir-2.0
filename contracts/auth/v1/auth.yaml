@@ -1,0 +1,225 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Authentication API
+  version: 1.0.0
+  description: Authentication and authorization endpoints for Skeldir Attribution Intelligence platform
+servers:
+  - url: https://api.skeldir.com
+    description: Production server
+  - url: http://localhost:4010
+    description: Prism mock server for frontend development
+paths:
+  /api/auth/login:
+    post:
+      operationId: login
+      tags:
+        - Authentication
+      summary: Authenticate user and obtain JWT tokens
+      description: Authenticate with email and password to receive access and refresh tokens
+      security: []
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Distributed tracing correlation ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "securePassword123"
+      responses:
+        '200':
+          description: Authentication successful
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - access_token
+                  - refresh_token
+                  - expires_in
+                  - token_type
+                properties:
+                  access_token:
+                    type: string
+                    description: JWT access token
+                  refresh_token:
+                    type: string
+                    description: JWT refresh token
+                  expires_in:
+                    type: integer
+                    description: Token expiration time in seconds
+                    example: 3600
+                  token_type:
+                    type: string
+                    description: Token type
+                    example: "Bearer"
+              examples:
+                success:
+                  summary: Successful login
+                  value:
+                    access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+                    refresh_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+                    expires_in: 3600
+                    token_type: "Bearer"
+        '401':
+          $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
+        '429':
+          $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
+        '500':
+          $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
+  
+  /api/auth/refresh:
+    post:
+      operationId: refreshToken
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Use refresh token to obtain a new access token
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Distributed tracing correlation ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  description: JWT refresh token
+      responses:
+        '200':
+          description: Token refresh successful
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - access_token
+                  - refresh_token
+                  - expires_in
+                  - token_type
+                properties:
+                  access_token:
+                    type: string
+                    description: New JWT access token
+                  refresh_token:
+                    type: string
+                    description: New JWT refresh token
+                  expires_in:
+                    type: integer
+                    description: Token expiration time in seconds
+                    example: 3600
+                  token_type:
+                    type: string
+                    description: Token type
+                    example: "Bearer"
+              examples:
+                success:
+                  summary: Successful token refresh
+                  value:
+                    access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+                    refresh_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+                    expires_in: 3600
+                    token_type: "Bearer"
+        '401':
+          $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
+        '429':
+          $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
+        '500':
+          $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
+  
+  /api/auth/logout:
+    post:
+      operationId: logout
+      tags:
+        - Authentication
+      summary: Logout and invalidate tokens
+      description: Invalidate the current session and refresh token
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Distributed tracing correlation ID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: Logout successful
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                properties:
+                  message:
+                    type: string
+                    example: "Logout successful"
+              examples:
+                success:
+                  summary: Successful logout
+                  value:
+                    message: "Logout successful"
+        '401':
+          $ref: '../../_common/v1/components.yaml#/components/responses/Unauthorized'
+        '429':
+          $ref: '../../_common/v1/components.yaml#/components/responses/TooManyRequests'
+        '500':
+          $ref: '../../_common/v1/components.yaml#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    BearerAuth:
+      $ref: '../../_common/v1/components.yaml#/components/securitySchemes/BearerAuth'

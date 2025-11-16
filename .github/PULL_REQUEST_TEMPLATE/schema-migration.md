@@ -60,6 +60,82 @@
 - [ ] Drift detection will be run
 - [ ] Any drift will be resolved before merge
 
+### Events Append-Only Verification
+- [ ] `app_rw` has no UPDATE/DELETE on `attribution_events` (verify via `\dp attribution_events` or `SELECT grantee, privilege_type FROM information_schema.table_privileges WHERE table_name = 'attribution_events' AND grantee = 'app_rw'`)
+- [ ] Guard trigger `trg_events_prevent_mutation` present (if implemented, verify via `SELECT * FROM pg_trigger WHERE tgname = 'trg_events_prevent_mutation'`)
+- [ ] Any migration touching `attribution_events` preserves append-only GRANTs (no re-granting UPDATE/DELETE)
+- [ ] Trigger not removed/weakened without ADR (verify ADR exists if trigger removed)
+- [ ] Table COMMENT updated with append-only statement (verify via `SELECT obj_description('attribution_events'::regclass, 'pg_class')`)
+
+**Verification Commands**:
+```sql
+-- Verify app_rw GRANTs (should show SELECT, INSERT only, no UPDATE/DELETE)
+SELECT grantee, privilege_type 
+FROM information_schema.table_privileges 
+WHERE table_name = 'attribution_events' AND grantee = 'app_rw';
+
+-- Verify trigger exists (if implemented)
+SELECT * FROM pg_trigger WHERE tgname = 'trg_events_prevent_mutation';
+
+-- Verify table COMMENT contains append-only statement
+SELECT obj_description('attribution_events'::regclass, 'pg_class');
+```
+
+### Ledger Immutability Verification
+- [ ] `app_rw` has no UPDATE/DELETE on `revenue_ledger` (verify via `\dp revenue_ledger` or `SELECT grantee, privilege_type FROM information_schema.table_privileges WHERE table_name = 'revenue_ledger' AND grantee = 'app_rw'`)
+- [ ] Guard trigger `trg_ledger_prevent_mutation` present (if implemented, verify via `SELECT * FROM pg_trigger WHERE tgname = 'trg_ledger_prevent_mutation'`)
+- [ ] Any migration touching `revenue_ledger` preserves immutability GRANTs (no re-granting UPDATE/DELETE)
+- [ ] Trigger not removed/weakened without ADR (verify ADR exists if trigger removed)
+- [ ] CHECK constraints on `revenue_cents` and traceability (allocation_id/correlation_id) remain intact
+- [ ] Table COMMENT updated with immutability statement (verify via `SELECT obj_description('revenue_ledger'::regclass, 'pg_class')`)
+
+**Verification Commands**:
+```sql
+-- Verify app_rw GRANTs (should show SELECT, INSERT only, no UPDATE/DELETE)
+SELECT grantee, privilege_type 
+FROM information_schema.table_privileges 
+WHERE table_name = 'revenue_ledger' AND grantee = 'app_rw';
+
+-- Verify trigger exists (if implemented)
+SELECT * FROM pg_trigger WHERE tgname = 'trg_ledger_prevent_mutation';
+
+-- Verify table COMMENT contains immutability statement
+SELECT obj_description('revenue_ledger'::regclass, 'pg_class');
+
+-- Verify CHECK constraints exist
+SELECT conname, contype 
+FROM pg_constraint 
+  WHERE conrelid = 'revenue_ledger'::regclass 
+  AND contype = 'c';
+```
+
+### Channel Taxonomy Verification
+- [ ] New channels must be added via `channel_taxonomy` table (verify no hard-coded channel strings in allocations or read models)
+- [ ] Any new channel requires an update to `channel_mapping.yaml` (verify mapping file updated if new channels added)
+- [ ] FK constraint to `channel_taxonomy.code` present (if touching `attribution_allocations.channel_code`, verify via `SELECT conname, contype FROM pg_constraint WHERE conrelid = 'attribution_allocations'::regclass AND contype = 'f'`)
+- [ ] No CHECK constraints on channel values (verify CHECK constraint removed, replaced by FK)
+- [ ] Contract alignment: If exposing channel fields, verify they reference `channel_taxonomy.code` semantics
+
+**Verification Commands**:
+```sql
+-- Verify FK constraint exists (if channel_code column exists)
+SELECT conname, contype 
+FROM pg_constraint 
+WHERE conrelid = 'attribution_allocations'::regclass 
+  AND contype = 'f'
+  AND conname LIKE '%channel%';
+
+-- Verify no CHECK constraint on channel (should be removed)
+SELECT conname, contype 
+FROM pg_constraint 
+WHERE conrelid = 'attribution_allocations'::regclass 
+  AND contype = 'c'
+  AND conname LIKE '%channel%';
+
+-- Verify channel_taxonomy table exists
+SELECT tablename FROM pg_tables WHERE tablename = 'channel_taxonomy';
+```
+
 ## Testing
 
 - [ ] Migration tested locally
@@ -84,4 +160,5 @@
 ---
 
 **Reviewer Notes**: Add any additional comments or concerns here.
+
 

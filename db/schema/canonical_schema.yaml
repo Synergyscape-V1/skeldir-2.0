@@ -1,0 +1,645 @@
+# ============================================================================
+# CANONICAL SCHEMA METADATA
+# ============================================================================
+# Source: UPDATED SKELDIR BACKEND ARCHITECTURE GUIDE (§3.1)
+# Purpose: Structured metadata for schema validation and tooling
+# Version: 1.0.0
+# Last Updated: 2025-11-15
+# ============================================================================
+
+version: "1.0.0"
+source: "UPDATED SKELDIR BACKEND ARCHITECTURE GUIDE §3.1"
+generated_date: "2025-11-15"
+
+# Invariant Categories and Severity Levels
+invariant_categories:
+  auth_critical:
+    severity: BLOCKING
+    description: "Required for API authentication and authorization"
+    impact: "B0.4 API auth will fail; downstream services cannot authenticate"
+    
+  privacy_critical:
+    severity: BLOCKING
+    description: "Required for GDPR compliance and tenant isolation"
+    impact: "Privacy violations; multi-tenant data leakage possible"
+    
+  processing_critical:
+    severity: BLOCKING
+    description: "Required for event processing and background worker queues"
+    impact: "B0.4 ingestion and B0.5 workers cannot function"
+    
+  financial_critical:
+    severity: BLOCKING
+    description: "Required for revenue tracking and reconciliation"
+    impact: "B2.2 webhooks, B2.3 currency conversion, B2.4 refunds blocked"
+    
+  analytics_important:
+    severity: HIGH
+    description: "Required for statistical attribution and reporting"
+    impact: "B2.1 attribution models cannot write statistical metadata"
+
+# Canonical Tables
+tables:
+  tenants:
+    purpose: "Store tenant information for multi-tenant isolation"
+    rls_enabled: true
+    columns:
+      id:
+        type: UUID
+        nullable: false
+        primary_key: true
+        default: "gen_random_uuid()"
+        invariant: null
+        
+      name:
+        type: VARCHAR(255)
+        nullable: false
+        invariant: null
+        
+      api_key_hash:
+        type: VARCHAR(255)
+        nullable: false
+        unique: true
+        invariant: auth_critical
+        required_for: ["B0.4 API Authentication"]
+        
+      notification_email:
+        type: VARCHAR(255)
+        nullable: false
+        invariant: auth_critical
+        required_for: ["B0.4 Tenant Notifications"]
+        
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+      updated_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+    constraints:
+      - name: ck_tenants_name_not_empty
+        type: CHECK
+        definition: "LENGTH(TRIM(name)) > 0"
+        
+    indexes:
+      - name: idx_tenants_name
+        columns: [name]
+        unique: false
+        
+      - name: idx_tenants_api_key_hash
+        columns: [api_key_hash]
+        unique: true
+        
+    rls_policy:
+      name: tenant_isolation_policy
+      using: "id = current_setting('app.current_tenant_id')::UUID"
+      with_check: "id = current_setting('app.current_tenant_id')::UUID"
+
+  attribution_events:
+    purpose: "Store attribution events for revenue tracking and attribution"
+    rls_enabled: true
+    columns:
+      id:
+        type: UUID
+        nullable: false
+        primary_key: true
+        default: "gen_random_uuid()"
+        invariant: null
+        
+      tenant_id:
+        type: UUID
+        nullable: false
+        foreign_key: "tenants(id) ON DELETE CASCADE"
+        invariant: privacy_critical
+        
+      session_id:
+        type: UUID
+        nullable: false
+        invariant: privacy_critical
+        required_for: ["Attribution Logic"]
+        
+      idempotency_key:
+        type: VARCHAR(255)
+        nullable: false
+        unique: true
+        invariant: processing_critical
+        required_for: ["B0.4 Idempotent Ingestion"]
+        
+      event_type:
+        type: VARCHAR(50)
+        nullable: false
+        invariant: processing_critical
+        required_for: ["B0.4 Event Classification"]
+        values: [click, impression, purchase]
+        
+      channel:
+        type: VARCHAR(100)
+        nullable: false
+        invariant: processing_critical
+        required_for: ["B0.4 Channel Taxonomy", "B2.1 Attribution"]
+        
+      campaign_id:
+        type: VARCHAR(255)
+        nullable: true
+        invariant: analytics_important
+        
+      conversion_value_cents:
+        type: INTEGER
+        nullable: true
+        invariant: financial_critical
+        
+      currency:
+        type: VARCHAR(3)
+        nullable: true
+        default: "USD"
+        invariant: financial_critical
+        required_for: ["B2.3 Multi-Currency Support"]
+        
+      event_timestamp:
+        type: TIMESTAMPTZ
+        nullable: false
+        invariant: processing_critical
+        
+      processed_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        default: "now()"
+        invariant: processing_critical
+        
+      processing_status:
+        type: VARCHAR(20)
+        nullable: true
+        default: "pending"
+        invariant: processing_critical
+        required_for: ["B0.5 Background Worker Queue"]
+        values: [pending, processed, failed]
+        
+      retry_count:
+        type: INTEGER
+        nullable: true
+        default: 0
+        invariant: processing_critical
+        
+      raw_payload:
+        type: JSONB
+        nullable: false
+        invariant: null
+        
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+      updated_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+    constraints:
+      - name: ck_attribution_events_revenue_positive
+        type: CHECK
+        definition: "conversion_value_cents IS NULL OR conversion_value_cents >= 0"
+        
+      - name: ck_attribution_events_processing_status_valid
+        type: CHECK
+        definition: "processing_status IN ('pending', 'processed', 'failed')"
+        
+    indexes:
+      - name: idx_events_tenant_timestamp
+        columns: [tenant_id, event_timestamp]
+        unique: false
+        ops: {event_timestamp: DESC}
+        
+      - name: idx_events_processing_status
+        columns: [processing_status, processed_at]
+        unique: false
+        where: "processing_status = 'pending'"
+        
+      - name: idx_events_idempotency
+        columns: [idempotency_key]
+        unique: true
+        
+      - name: idx_events_session_id
+        columns: [session_id]
+        unique: false
+        where: "session_id IS NOT NULL"
+        
+    rls_policy:
+      name: tenant_isolation_policy
+      using: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+
+  attribution_allocations:
+    purpose: "Store attribution model results (channel credit assignments)"
+    rls_enabled: true
+    columns:
+      id:
+        type: UUID
+        nullable: false
+        primary_key: true
+        default: "gen_random_uuid()"
+        invariant: null
+        
+      tenant_id:
+        type: UUID
+        nullable: false
+        foreign_key: "tenants(id) ON DELETE CASCADE"
+        invariant: privacy_critical
+        
+      event_id:
+        type: UUID
+        nullable: true
+        foreign_key: "attribution_events(id) ON DELETE SET NULL"
+        invariant: null
+        
+      model_type:
+        type: VARCHAR(50)
+        nullable: false
+        invariant: analytics_important
+        
+      model_version:
+        type: VARCHAR(20)
+        nullable: false
+        invariant: analytics_important
+        
+      channel:
+        type: VARCHAR(100)
+        nullable: false
+        invariant: processing_critical
+        
+      allocated_revenue_cents:
+        type: INTEGER
+        nullable: false
+        invariant: financial_critical
+        
+      confidence_score:
+        type: NUMERIC(4,3)
+        nullable: false
+        invariant: analytics_important
+        required_for: ["B2.1 Statistical Attribution"]
+        check: "confidence_score >= 0 AND confidence_score <= 1"
+        
+      credible_interval_lower_cents:
+        type: INTEGER
+        nullable: true
+        invariant: analytics_important
+        
+      credible_interval_upper_cents:
+        type: INTEGER
+        nullable: true
+        invariant: analytics_important
+        
+      convergence_r_hat:
+        type: NUMERIC(5,4)
+        nullable: true
+        invariant: analytics_important
+        
+      effective_sample_size:
+        type: INTEGER
+        nullable: true
+        invariant: analytics_important
+        
+      verified:
+        type: BOOLEAN
+        nullable: true
+        default: false
+        invariant: analytics_important
+        required_for: ["B2.4 Revenue Verification"]
+        
+      verification_source:
+        type: VARCHAR(50)
+        nullable: true
+        invariant: analytics_important
+        
+      verification_timestamp:
+        type: TIMESTAMPTZ
+        nullable: true
+        invariant: analytics_important
+        
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+      updated_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+    constraints:
+      - name: ck_allocations_revenue_positive
+        type: CHECK
+        definition: "allocated_revenue_cents >= 0"
+        
+    indexes:
+      - name: idx_allocations_tenant_created_at
+        columns: [tenant_id, created_at]
+        unique: false
+        ops: {created_at: DESC}
+        
+      - name: idx_allocations_event_id
+        columns: [event_id]
+        unique: false
+        
+      - name: idx_allocations_channel_performance
+        columns: [tenant_id, channel, created_at]
+        unique: false
+        ops: {created_at: DESC}
+        include: [allocated_revenue_cents, confidence_score]
+        
+    rls_policy:
+      name: tenant_isolation_policy
+      using: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+
+  revenue_ledger:
+    purpose: "Transaction-centric revenue tracking with state machine"
+    rls_enabled: true
+    columns:
+      id:
+        type: UUID
+        nullable: false
+        primary_key: true
+        default: "gen_random_uuid()"
+        invariant: null
+        
+      tenant_id:
+        type: UUID
+        nullable: false
+        foreign_key: "tenants(id) ON DELETE CASCADE"
+        invariant: privacy_critical
+        
+      transaction_id:
+        type: VARCHAR(255)
+        nullable: false
+        unique: true
+        invariant: financial_critical
+        required_for: ["B2.2 Webhook Idempotency"]
+        
+      order_id:
+        type: VARCHAR(255)
+        nullable: true
+        invariant: financial_critical
+        
+      state:
+        type: VARCHAR(50)
+        nullable: false
+        invariant: financial_critical
+        required_for: ["B2.4 Refund Tracking"]
+        values: [authorized, captured, refunded, chargeback]
+        
+      previous_state:
+        type: VARCHAR(50)
+        nullable: true
+        invariant: financial_critical
+        
+      amount_cents:
+        type: INTEGER
+        nullable: false
+        invariant: financial_critical
+        
+      currency:
+        type: VARCHAR(3)
+        nullable: false
+        invariant: financial_critical
+        required_for: ["B2.3 Currency Conversion"]
+        
+      verification_source:
+        type: VARCHAR(50)
+        nullable: false
+        invariant: financial_critical
+        
+      verification_timestamp:
+        type: TIMESTAMPTZ
+        nullable: false
+        invariant: financial_critical
+        
+      metadata:
+        type: JSONB
+        nullable: true
+        invariant: null
+        
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+      updated_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+    constraints:
+      - name: ck_revenue_ledger_amount_positive
+        type: CHECK
+        definition: "amount_cents >= 0"
+        
+      - name: ck_revenue_ledger_state_valid
+        type: CHECK
+        definition: "state IN ('authorized', 'captured', 'refunded', 'chargeback')"
+        
+    indexes:
+      - name: idx_revenue_ledger_transaction_id
+        columns: [transaction_id]
+        unique: true
+        
+      - name: idx_revenue_ledger_tenant_created_at
+        columns: [tenant_id, created_at]
+        unique: false
+        ops: {created_at: DESC}
+        
+      - name: idx_revenue_ledger_state
+        columns: [state]
+        unique: false
+        
+    rls_policy:
+      name: tenant_isolation_policy
+      using: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+
+  revenue_state_transitions:
+    purpose: "Audit trail for revenue state changes (refunds, chargebacks)"
+    rls_enabled: false
+    columns:
+      id:
+        type: UUID
+        nullable: false
+        primary_key: true
+        default: "gen_random_uuid()"
+        invariant: null
+        
+      ledger_id:
+        type: UUID
+        nullable: false
+        foreign_key: "revenue_ledger(id) ON DELETE CASCADE"
+        invariant: financial_critical
+        
+      from_state:
+        type: VARCHAR(50)
+        nullable: true
+        invariant: financial_critical
+        
+      to_state:
+        type: VARCHAR(50)
+        nullable: false
+        invariant: financial_critical
+        
+      reason:
+        type: TEXT
+        nullable: true
+        invariant: null
+        
+      transitioned_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+    indexes:
+      - name: idx_revenue_transitions_ledger_id
+        columns: [ledger_id, transitioned_at]
+        unique: false
+        ops: {transitioned_at: DESC}
+
+  dead_events:
+    purpose: "Quarantine failed events with retry tracking"
+    rls_enabled: true
+    columns:
+      id:
+        type: UUID
+        nullable: false
+        primary_key: true
+        default: "gen_random_uuid()"
+        invariant: null
+        
+      tenant_id:
+        type: UUID
+        nullable: false
+        foreign_key: "tenants(id) ON DELETE CASCADE"
+        invariant: privacy_critical
+        
+      event_type:
+        type: VARCHAR(50)
+        nullable: false
+        invariant: processing_critical
+        
+      raw_payload:
+        type: JSONB
+        nullable: false
+        invariant: null
+        
+      error_type:
+        type: VARCHAR(100)
+        nullable: false
+        invariant: processing_critical
+        
+      error_message:
+        type: TEXT
+        nullable: false
+        invariant: processing_critical
+        
+      error_traceback:
+        type: TEXT
+        nullable: true
+        invariant: null
+        
+      retry_count:
+        type: INTEGER
+        nullable: true
+        default: 0
+        invariant: processing_critical
+        required_for: ["B0.5 Retry Logic"]
+        
+      last_retry_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        invariant: processing_critical
+        
+      remediation_status:
+        type: VARCHAR(20)
+        nullable: true
+        default: "pending"
+        invariant: processing_critical
+        required_for: ["B0.5 Background Remediation"]
+        values: [pending, in_progress, resolved, abandoned]
+        
+      remediation_notes:
+        type: TEXT
+        nullable: true
+        invariant: null
+        
+      created_at:
+        type: TIMESTAMPTZ
+        nullable: false
+        default: "now()"
+        invariant: null
+        
+      resolved_at:
+        type: TIMESTAMPTZ
+        nullable: true
+        invariant: null
+        
+    constraints:
+      - name: ck_dead_events_remediation_status_valid
+        type: CHECK
+        definition: "remediation_status IN ('pending', 'in_progress', 'resolved', 'abandoned')"
+        
+    indexes:
+      - name: idx_dead_events_tenant_created_at
+        columns: [tenant_id, created_at]
+        unique: false
+        ops: {created_at: DESC}
+        
+      - name: idx_dead_events_error_type
+        columns: [error_type]
+        unique: false
+        
+      - name: idx_dead_events_remediation
+        columns: [remediation_status, created_at]
+        unique: false
+        ops: {created_at: DESC}
+        
+    rls_policy:
+      name: tenant_isolation_policy
+      using: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id')::UUID"
+
+# Validation Rules
+validation_rules:
+  critical_columns_required:
+    description: "All columns with BLOCKING severity invariants must exist"
+    severity: BLOCKING
+    
+  critical_constraints_required:
+    description: "All CHECK constraints on critical columns must exist"
+    severity: BLOCKING
+    
+  critical_indexes_required:
+    description: "All indexes supporting critical operations must exist"
+    severity: BLOCKING
+    
+  type_mismatch_blocking:
+    description: "Column type mismatches on critical columns fail validation"
+    severity: BLOCKING
+    
+  nullability_mismatch_blocking:
+    description: "Nullability mismatches on critical columns fail validation"
+    severity: BLOCKING
+    
+  important_columns_warned:
+    description: "Missing HIGH severity columns generate warnings"
+    severity: HIGH
+
+
+

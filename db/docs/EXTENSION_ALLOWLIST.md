@@ -105,3 +105,7 @@ This document defines which PostgreSQL extensions are allowed and under what con
 
 **Rationale**: Restricting extensions prevents ad-hoc use of PostgreSQL features and ensures review of all database-level dependencies.
 
+
+
+
+

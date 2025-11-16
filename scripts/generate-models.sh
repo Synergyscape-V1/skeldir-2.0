@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-CONTRACTS_DIR="contracts/openapi/v1"
+CONTRACTS_DIR="contracts"
 SCHEMAS_DIR="backend/app/schemas"
 PYTHON_VERSION="3.11"
 
@@ -26,53 +26,57 @@ fi
 # Create schemas directory if it doesn't exist
 mkdir -p "$SCHEMAS_DIR"
 
-# Generate models for attribution.yaml (skip if no components/schemas defined)
-if [ -f "$CONTRACTS_DIR/attribution.yaml" ]; then
-    echo -e "${GREEN}Generating models from attribution.yaml...${NC}"
-    if datamodel-codegen \
-        --input "$CONTRACTS_DIR/attribution.yaml" \
-        --output "$SCHEMAS_DIR/attribution.py" \
-        --target-python-version "$PYTHON_VERSION" \
-        --use-annotated \
-        --use-standard-collections \
-        --use-schema-description \
-        --use-field-description \
-        --disable-timestamp \
-        --input-file-type openapi 2>&1 | grep -q "Models not found"; then
-        echo -e "${YELLOW}No models found in attribution.yaml (inline schemas), skipping...${NC}"
-        # Create empty file to satisfy CI check
-        echo "# No models generated - attribution.yaml uses inline schemas" > "$SCHEMAS_DIR/attribution.py"
+# Generate models for each domain contract
+for domain in attribution auth reconciliation export; do
+    CONTRACT_FILE="$CONTRACTS_DIR/${domain}/v1/${domain}.yaml"
+    if [ -f "$CONTRACT_FILE" ]; then
+        echo -e "${GREEN}Generating models from ${domain}.yaml...${NC}"
+        if datamodel-codegen \
+            --input "$CONTRACT_FILE" \
+            --output "$SCHEMAS_DIR/${domain}.py" \
+            --target-python-version "$PYTHON_VERSION" \
+            --use-annotated \
+            --use-standard-collections \
+            --use-schema-description \
+            --use-field-description \
+            --disable-timestamp \
+            --input-file-type openapi 2>&1 | grep -q "Models not found"; then
+            echo -e "${YELLOW}No models found in ${domain}.yaml (inline schemas), skipping...${NC}"
+            # Create placeholder file to satisfy CI check
+            echo "# No models generated - ${domain}.yaml uses inline schemas" > "$SCHEMAS_DIR/${domain}.py"
+        else
+            echo -e "${GREEN}✓ Generated $SCHEMAS_DIR/${domain}.py${NC}"
+        fi
     else
-        echo -e "${GREEN}✓ Generated $SCHEMAS_DIR/attribution.py${NC}"
+        echo -e "${YELLOW}Warning: $CONTRACT_FILE not found, skipping...${NC}"
     fi
-else
-    echo -e "${RED}Error: $CONTRACTS_DIR/attribution.yaml not found${NC}"
-    exit 1
-fi
+done
 
-# Generate models for auth.yaml (skip if no components/schemas defined)
-if [ -f "$CONTRACTS_DIR/auth.yaml" ]; then
-    echo -e "${GREEN}Generating models from auth.yaml...${NC}"
-    if datamodel-codegen \
-        --input "$CONTRACTS_DIR/auth.yaml" \
-        --output "$SCHEMAS_DIR/auth.py" \
-        --target-python-version "$PYTHON_VERSION" \
-        --use-annotated \
-        --use-standard-collections \
-        --use-schema-description \
-        --use-field-description \
-        --disable-timestamp \
-        --input-file-type openapi 2>&1 | grep -q "Models not found"; then
-        echo -e "${YELLOW}No models found in auth.yaml (inline schemas), skipping...${NC}"
-        # Create placeholder file to satisfy CI check
-        echo "# No models generated - auth.yaml uses inline schemas" > "$SCHEMAS_DIR/auth.py"
+# Generate models for webhook contracts
+for webhook in shopify stripe paypal woocommerce; do
+    CONTRACT_FILE="$CONTRACTS_DIR/webhooks/v1/${webhook}.yaml"
+    if [ -f "$CONTRACT_FILE" ]; then
+        echo -e "${GREEN}Generating models from ${webhook}.yaml...${NC}"
+        if datamodel-codegen \
+            --input "$CONTRACT_FILE" \
+            --output "$SCHEMAS_DIR/webhooks_${webhook}.py" \
+            --target-python-version "$PYTHON_VERSION" \
+            --use-annotated \
+            --use-standard-collections \
+            --use-schema-description \
+            --use-field-description \
+            --disable-timestamp \
+            --input-file-type openapi 2>&1 | grep -q "Models not found"; then
+            echo -e "${YELLOW}No models found in ${webhook}.yaml (inline schemas), skipping...${NC}"
+            # Create placeholder file to satisfy CI check
+            echo "# No models generated - ${webhook}.yaml uses inline schemas" > "$SCHEMAS_DIR/webhooks_${webhook}.py"
+        else
+            echo -e "${GREEN}✓ Generated $SCHEMAS_DIR/webhooks_${webhook}.py${NC}"
+        fi
     else
-        echo -e "${GREEN}✓ Generated $SCHEMAS_DIR/auth.py${NC}"
+        echo -e "${YELLOW}Warning: $CONTRACT_FILE not found, skipping...${NC}"
     fi
-else
-    echo -e "${RED}Error: $CONTRACTS_DIR/auth.yaml not found${NC}"
-    exit 1
-fi
+done
 
 # Create __init__.py if it doesn't exist
 if [ ! -f "$SCHEMAS_DIR/__init__.py" ]; then
@@ -89,6 +93,12 @@ Do not edit manually. Regenerate using scripts/generate-models.sh after contract
 try:
     from .attribution import *
     from .auth import *
+    from .reconciliation import *
+    from .export import *
+    from .webhooks_shopify import *
+    from .webhooks_stripe import *
+    from .webhooks_paypal import *
+    from .webhooks_woocommerce import *
 except ImportError:
     # Models not yet generated
     pass
@@ -96,6 +106,9 @@ except ImportError:
 __all__ = [
     # Attribution models
     # Auth models
+    # Reconciliation models
+    # Export models
+    # Webhook models
     # Add other model exports as they are generated
 ]
 EOF
