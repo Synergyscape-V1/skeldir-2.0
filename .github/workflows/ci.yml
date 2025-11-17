@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # Full history for versioning
 
@@ -24,7 +24,7 @@ jobs:
     needs: checkout
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -68,7 +68,7 @@ jobs:
     if: contains(github.event.head_commit.modified, 'backend/') || contains(github.event.head_commit.added, 'backend/')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -93,7 +93,7 @@ jobs:
     if: contains(github.event.head_commit.modified, 'frontend/') || contains(github.event.head_commit.added, 'frontend/')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -117,7 +117,7 @@ jobs:
     needs: checkout
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -150,7 +150,7 @@ jobs:
     needs: checkout
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Detect migration changes
@@ -203,7 +203,7 @@ jobs:
     if: contains(github.event.head_commit.modified, 'contracts/') || contains(github.event.head_commit.added, 'contracts/')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set up Python
         uses: actions/setup-python@v5
