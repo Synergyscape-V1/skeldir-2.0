@@ -285,26 +285,26 @@ jobs:
           pip install -q fastapi uvicorn
           
           python - << 'PYEOF' > ../evidence_registry/contracts/backend_routes_raw.txt 2>&1
-import sys
-sys.path.insert(0, '.')
-
-try:
-    from app.main import app
-    
-    print("=== Backend Route Inventory ===")
-    print(f"Total routes: {len(app.routes)}")
-    print("")
-    
-    for route in app.routes:
-        if hasattr(route, 'methods') and hasattr(route, 'path'):
+          import sys
+          sys.path.insert(0, '.')
+          
+          try:
+              from app.main import app
+              
+              print("=== Backend Route Inventory ===")
+              print(f"Total routes: {len(app.routes)}")
+              print("")
+              
+              for route in app.routes:
+                  if hasattr(route, 'methods') and hasattr(route, 'path'):
             methods = ",".join(sorted(route.methods - {'HEAD', 'OPTIONS'}))
             path = route.path
             name = getattr(route, 'name', 'unknown')
             print(f"{methods:10} {path:50} -> {name}")
-except Exception as e:
-    print(f"Error extracting routes: {e}")
-    import traceback
-    traceback.print_exc()
+          except Exception as e:
+              print(f"Error extracting routes: {e}")
+              import traceback
+              traceback.print_exc()
 PYEOF
           
           if grep -q " -> " ../evidence_registry/contracts/backend_routes_raw.txt; then
