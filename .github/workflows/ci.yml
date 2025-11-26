@@ -125,9 +125,8 @@ jobs:
           node-version: '20'
       
       - name: Install dependencies
-        run: |
-          npm install
-      - name: Start mock servers
+        run: npm install
+                - name: Start mock servers
         run: |
                       # Native mock servers using Prism (Architecture Guide compliant)
             npx @stoplight/prism-cli mock contracts/attribution/v1/attribution.yaml --port 4011 &
