@@ -1,0 +1,8 @@
+<svg width="180" height="40" viewBox="0 0 180 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="8" width="24" height="24" rx="6" fill="#468BE6" opacity="0.9"/>
+  <rect x="8" y="14" width="12" height="12" rx="3" fill="#93BFEF" opacity="0.8"/>
+  <circle cx="14" cy="20" r="3" fill="#E9F5FF"/>
+  <text x="36" y="27" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="#092F64" letter-spacing="-0.02em">
+    Skeldir
+  </text>
+</svg>

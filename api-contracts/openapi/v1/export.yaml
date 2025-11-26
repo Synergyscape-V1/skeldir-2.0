@@ -1,146 +1,139 @@
 openapi: 3.1.0
 info:
   title: Skeldir Export API
-  version: 1.1.0
-  description: Data export endpoints for Skeldir Attribution Intelligence platform
-  x-domain: "export"
-  x-owner: "export-owner@skeldir.com"
-  x-version-history:
-    - version: "1.1.0"
-      date: "2024-01-15"
-      changes: "Governance metadata added, all invariants validated"
-      phase: "G4.5"
+  version: 2.0.0
+  description: |
+    Data export functionality for CSV, JSON, and Excel formats.
+    Supports scheduled exports and custom date ranges.
+
 servers:
-  - url: https://api.skeldir.com
-    description: Production server
   - url: http://localhost:4013
-    description: Prism mock server for frontend development
+    description: Prism Mock Server (Export)
+
+security:
+  - bearerAuth: []
+
 paths:
   /api/export/revenue:
     get:
+      summary: Export revenue data
+      description: Export revenue and attribution data in specified format
       operationId: exportRevenue
       tags:
         - Export
-      summary: Export revenue data
-      description: Export revenue data in CSV or JSON format with pagination and date range filtering
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
         - name: format
           in: query
           required: false
           schema:
             type: string
-            enum:
-              - csv
-              - json
-            default: json
-          description: Export format (CSV or JSON)
-        - $ref: '_common/pagination.yaml#/components/parameters/limit'
-        - $ref: '_common/pagination.yaml#/components/parameters/cursor'
+            enum: [csv, json, xlsx]
+            default: csv
+          description: Export file format
         - name: start_date
           in: query
           required: false
           schema:
             type: string
             format: date
-          description: Start date for revenue data (ISO 8601 format)
-          example: "2025-01-01"
+          description: Start date for export range
         - name: end_date
           in: query
           required: false
           schema:
             type: string
             format: date
-          description: End date for revenue data (ISO 8601 format)
-          example: "2025-11-10"
+          description: End date for export range
+        - name: channels
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          description: Filter by specific channels
       responses:
         '200':
-          description: Revenue data exported successfully
+          description: Export file
           headers:
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-            X-RateLimit-Limit:
+            Content-Disposition:
               schema:
-                type: integer
-            X-RateLimit-Remaining:
-              schema:
-                type: integer
-            X-RateLimit-Reset:
-              schema:
-                type: integer
-                format: int64
+                type: string
+              description: Attachment filename
           content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExportRevenueResponse'
-              examples:
-                json_export:
-                  summary: JSON export
-                  value:
-                    file_url: "https://api.skeldir.com/exports/revenue_20251110.json"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
             text/csv:
               schema:
                 type: string
-                description: CSV file content
-              examples:
-                csv_export:
-                  summary: CSV export
-                  value: "date,revenue,channel\n2025-01-01,1000.50,google_search\n2025-01-02,1500.75,facebook_ads"
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportData'
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
         '401':
-          $ref: '_common/components.yaml#/components/responses/Unauthorized'
-        '429':
-          $ref: '_common/components.yaml#/components/responses/TooManyRequests'
-        '500':
-          $ref: '_common/components.yaml#/components/responses/InternalServerError'
-  /api/export/allocations:
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/export/csv:
     get:
-      operationId: exportAllocations
+      summary: Export data as CSV
+      description: Export attribution data in CSV format
+      operationId: exportCSV
       tags:
         - Export
-      summary: Export allocation data
-      description: Export channel allocation data with pagination and date range filtering.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID
-        - $ref: '_common/pagination.yaml#/components/parameters/limit'
-        - $ref: '_common/pagination.yaml#/components/parameters/cursor'
-        - name: start_date
-          in: query
-          required: false
-          schema:
-            type: string
-            format: date
-          description: Start date for allocation data (ISO 8601 format)
-          example: "2025-01-01"
-        - name: end_date
-          in: query
-          required: false
-          schema:
-            type: string
-            format: date
-          description: End date for allocation data (ISO 8601 format)
-          example: "2025-11-10"
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
       responses:
         '200':
-          description: Allocation data exported successfully
+          description: CSV file
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="skeldir-export-2025-11-26.csv"
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: |
+                date,channel,revenue,conversions,confidence
+                2025-11-25,Meta,15230.50,127,0.92
+                2025-11-25,Google,12450.00,98,0.89
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+
+  /api/export/json:
+    get:
+      summary: Export data as JSON
+      description: Export attribution data in JSON format
+      operationId: exportJSON
+      tags:
+        - Export
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: JSON data
           headers:
             X-Correlation-ID:
               schema:
@@ -149,128 +142,94 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExportAllocationsResponse'
-              examples:
-                json_export:
-                  summary: JSON export
-                  value:
-                    file_url: "https://api.skeldir.com/exports/allocations_20251110.json"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+                $ref: '#/components/schemas/ExportData'
         '401':
-          $ref: '_common/components.yaml#/components/responses/Unauthorized'
-        '429':
-          $ref: '_common/components.yaml#/components/responses/TooManyRequests'
-        '500':
-          $ref: '_common/components.yaml#/components/responses/InternalServerError'
-  /api/export/events:
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+
+  /api/export/excel:
     get:
-      operationId: exportEvents
+      summary: Export data as Excel
+      description: Export attribution data in Excel (XLSX) format
+      operationId: exportExcel
       tags:
         - Export
-      summary: Export event data
-      description: Export raw event data with pagination and date range filtering.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID
-        - $ref: '_common/pagination.yaml#/components/parameters/limit'
-        - $ref: '_common/pagination.yaml#/components/parameters/cursor'
-        - name: start_date
-          in: query
-          required: false
-          schema:
-            type: string
-            format: date
-          description: Start date for event data (ISO 8601 format)
-          example: "2025-01-01"
-        - name: end_date
-          in: query
-          required: false
-          schema:
-            type: string
-            format: date
-          description: End date for event data (ISO 8601 format)
-          example: "2025-11-10"
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
       responses:
         '200':
-          description: Event data exported successfully
+          description: Excel file
           headers:
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content:
-            application/json:
+            Content-Disposition:
               schema:
-                $ref: '#/components/schemas/ExportEventsResponse'
-              examples:
-                json_export:
-                  summary: JSON export
-                  value:
-                    file_url: "https://api.skeldir.com/exports/events_20251110.json"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+                type: string
+              example: attachment; filename="skeldir-export-2025-11-26.xlsx"
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
         '401':
-          $ref: '_common/components.yaml#/components/responses/Unauthorized'
-        '429':
-          $ref: '_common/components.yaml#/components/responses/TooManyRequests'
-        '500':
-          $ref: '_common/components.yaml#/components/responses/InternalServerError'
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+
 components:
   schemas:
-    ExportRevenueResponse:
+    ExportData:
       type: object
       required:
-        - file_url
-        - tenant_id
+        - generated_at
+        - date_range
+        - data
       properties:
-        file_url:
+        generated_at:
           type: string
-          format: uri
-          description: URL to download the exported file
-          example: "https://api.skeldir.com/exports/revenue_20251110.json"
-        tenant_id:
-          type: string
-          format: uuid
-          description: Tenant identifier
-          example: "550e8400-e29b-41d4-a716-446655440000"
-    ExportAllocationsResponse:
-      type: object
-      required:
-        - file_url
-        - tenant_id
-      properties:
-        file_url:
-          type: string
-          format: uri
-          description: URL to download the exported allocations file
-          example: "https://api.skeldir.com/exports/allocations_20251110.json"
-        tenant_id:
-          type: string
-          format: uuid
-          description: Tenant identifier
-          example: "550e8400-e29b-41d4-a716-446655440000"
-    ExportEventsResponse:
-      type: object
-      required:
-        - file_url
-        - tenant_id
-      properties:
-        file_url:
-          type: string
-          format: uri
-          description: URL to download the exported events file
-          example: "https://api.skeldir.com/exports/events_20251110.json"
-        tenant_id:
-          type: string
-          format: uuid
-          description: Tenant identifier
-          example: "550e8400-e29b-41d4-a716-446655440000"
+          format: date-time
+          description: When the export was generated
+        date_range:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              channel:
+                type: string
+              revenue:
+                type: number
+                format: float
+              conversions:
+                type: integer
+              confidence:
+                type: number
+                format: float
+        summary:
+          type: object
+          properties:
+            total_revenue:
+              type: number
+              format: float
+            total_conversions:
+              type: integer
+            average_confidence:
+              type: number
+              format: float
+
   securitySchemes:
-    BearerAuth:
-      $ref: '_common/components.yaml#/components/securitySchemes/BearerAuth'
+    bearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'

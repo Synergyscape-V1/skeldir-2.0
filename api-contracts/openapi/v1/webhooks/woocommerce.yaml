@@ -1,38 +1,23 @@
 openapi: 3.1.0
 info:
-  title: Skeldir WooCommerce Webhook API
-  version: 1.1.0
-  description: WooCommerce webhook ingestion endpoints for Skeldir Attribution Intelligence platform
-  x-domain: "webhooks/woocommerce"
-  x-owner: "webhooks-owner@skeldir.com"
-  x-version-history:
-    - version: "1.1.0"
-      date: "2024-01-15"
-      changes: "Added order/completed and order/refunded events, hardened currency field"
-      phase: "G4.4"
+  title: Skeldir WooCommerce Webhooks
+  version: 2.0.0
+  description: |
+    WooCommerce webhook schemas for order events.
+    Used for revenue verification and attribution tracking.
+
 servers:
-  - url: https://api.skeldir.com
-    description: Production server
   - url: http://localhost:4016
-    description: Prism mock server for frontend development
+    description: Prism Mock Server (WooCommerce Webhooks)
+
 paths:
   /webhooks/woocommerce/order/created:
     post:
+      summary: WooCommerce order created webhook
+      description: Triggered when a new order is created in WooCommerce
       operationId: woocommerceOrderCreated
       tags:
-        - Webhooks
-        - WooCommerce
-      summary: WooCommerce order creation webhook
-      description: |
-        Receives WooCommerce order creation webhooks for revenue attribution.
-        
-        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-WC-Webhook-Signature header.
-        The webhook secret must be configured in the tenant settings.
-        
-        **Privacy**: All PII (emails, names, addresses, phone numbers) is stripped from the payload before persistence.
-        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
-        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
-      security: []
+        - WooCommerce Webhooks
       parameters:
         - name: X-WC-Webhook-Signature
           in: header
@@ -40,314 +25,219 @@ paths:
           schema:
             type: string
           description: HMAC-SHA256 signature for webhook verification
-        - name: X-WC-Webhook-Source
+        - name: X-WC-Webhook-Topic
           in: header
           required: true
           schema:
             type: string
-          description: WooCommerce webhook source URL
-        - name: X-Correlation-ID
+            enum: [order.created]
+          description: Webhook topic
+        - name: X-WC-Webhook-Resource
           in: header
-          required: false
+          required: true
           schema:
             type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
+            enum: [order]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WooCommerceOrderCreateRequest'
+              $ref: '#/components/schemas/WooCommerceOrder'
+            example:
+              id: 12345
+              order_key: wc_order_abc123
+              number: "1001"
+              status: processing
+              total: "199.99"
+              currency: USD
+              date_created: '2025-11-26T14:30:00Z'
+              meta_data:
+                - id: 1
+                  key: skeldir_session_id
+                  value: sess_abc123
+                - id: 2
+                  key: utm_source
+                  value: google
       responses:
         '200':
           description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-              examples:
-                invalid_signature:
-                  summary: Invalid HMAC signature
-                  value:
-                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
-                    title: "Invalid Webhook Signature"
-                    status: 400
-                    detail: "HMAC signature validation failed"
-                    instance: "/webhooks/woocommerce/order/created"
-                    error_id: "550e8400-e29b-41d4-a716-446655440000"
-                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
-  
+          description: Invalid webhook signature
+        '500':
+          $ref: '../_common/base.yaml#/components/responses/ServerError'
+
+  /webhooks/woocommerce/order/updated:
+    post:
+      summary: WooCommerce order updated webhook
+      description: Triggered when an order is updated in WooCommerce
+      operationId: woocommerceOrderUpdated
+      tags:
+        - WooCommerce Webhooks
+      parameters:
+        - name: X-WC-Webhook-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-WC-Webhook-Topic
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [order.updated]
+        - name: X-WC-Webhook-Resource
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [order]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WooCommerceOrder'
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+
   /webhooks/woocommerce/order/completed:
     post:
+      summary: WooCommerce order completed webhook
+      description: Triggered when an order is marked as completed
       operationId: woocommerceOrderCompleted
       tags:
-        - Webhooks
-        - WooCommerce
-      summary: WooCommerce order completed webhook
-      description: |
-        Receives WooCommerce order completed/paid webhooks for revenue attribution.
-        
-        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-WC-Webhook-Signature header.
-        The webhook secret must be configured in the tenant settings.
-        
-        **Privacy**: All PII (billing_email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only order ID, total, currency, and date_completed are retained.
-      security: []
+        - WooCommerce Webhooks
       parameters:
         - name: X-WC-Webhook-Signature
           in: header
           required: true
           schema:
             type: string
-          description: HMAC-SHA256 signature for webhook verification
-        - name: X-WC-Webhook-Source
+        - name: X-WC-Webhook-Topic
           in: header
           required: true
           schema:
             type: string
-          description: WooCommerce webhook source URL
-        - name: X-Correlation-ID
+            enum: [order.completed]
+        - name: X-WC-Webhook-Resource
           in: header
-          required: false
+          required: true
           schema:
             type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
+            enum: [order]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WooCommerceOrderCompletedRequest'
+              $ref: '#/components/schemas/WooCommerceOrder'
       responses:
         '200':
           description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-        '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
-  
-  /webhooks/woocommerce/order/refunded:
-    post:
-      operationId: woocommerceOrderRefunded
-      tags:
-        - Webhooks
-        - WooCommerce
-      summary: WooCommerce order refunded webhook
-      description: |
-        Receives WooCommerce order refunded webhooks for revenue reconciliation.
-        
-        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-WC-Webhook-Signature header.
-        The webhook secret must be configured in the tenant settings.
-        
-        **Privacy**: All PII (billing_email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only refund ID, order ID, refund amount, and timestamp are retained.
-        
-        **Required for**: B2.4 revenue reconciliation pipeline
-      security: []
-      parameters:
-        - name: X-WC-Webhook-Signature
-          in: header
-          required: true
-          schema:
-            type: string
-          description: HMAC-SHA256 signature for webhook verification
-        - name: X-WC-Webhook-Source
-          in: header
-          required: true
-          schema:
-            type: string
-          description: WooCommerce webhook source URL
-        - name: X-Correlation-ID
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WooCommerceOrderRefundedRequest'
-      responses:
-        '200':
-          description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-        '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+
 components:
   schemas:
-    WooCommerceOrderCreateRequest:
+    WooCommerceOrder:
       type: object
-      description: |
-        WooCommerce order webhook payload. Note: PII fields (billing_email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only order ID, total, currency, and date_created are retained.
+      required:
+        - id
+        - order_key
+        - total
+        - date_created
       properties:
         id:
           type: integer
-          description: WooCommerce order ID (used for idempotency)
+          description: WooCommerce order ID
+        order_key:
+          type: string
+          description: Unique order key
+        number:
+          type: string
+          description: Order number
+        status:
+          type: string
+          enum: [pending, processing, on-hold, completed, cancelled, refunded, failed]
+          description: Order status
         total:
           type: string
-          description: Order total as string (will be converted to cents)
+          description: Order total as string
+        subtotal:
+          type: string
+          description: Order subtotal
+        total_tax:
+          type: string
+          description: Total tax amount
         currency:
           type: string
-          pattern: "^[A-Z]{3}$"
-          description: "ISO 4217 uppercase currency code"
-          example: "USD"
+          description: Currency code
+          example: USD
         date_created:
           type: string
           format: date-time
-          description: Order creation timestamp
-    WooCommerceOrderCompletedRequest:
-      type: object
-      description: |
-        WooCommerce order completed webhook payload. Note: PII fields (billing_email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only order ID, total, currency, and date_completed are retained.
-      properties:
-        id:
-          type: integer
-          minimum: 1
-          description: WooCommerce order ID (used for idempotency)
-          example: 1234
-        total:
+        date_modified:
           type: string
-          description: Order total as string (will be converted to cents)
-          example: "149.99"
-        currency:
-          type: string
-          pattern: "^[A-Z]{3}$"
-          description: "ISO 4217 uppercase currency code"
-          example: "USD"
-        status:
-          type: string
-          enum:
-            - completed
-            - processing
-          description: Order status
-          example: "completed"
+          format: date-time
         date_completed:
           type: string
           format: date-time
-          description: Order completion timestamp
-          example: "2025-11-10T14:30:00Z"
-    
-    WooCommerceOrderRefundedRequest:
-      type: object
-      description: |
-        WooCommerce order refunded webhook payload. Note: PII fields (billing_email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only refund ID, order ID, refund amount, and timestamp are retained.
-      properties:
-        id:
-          type: integer
-          minimum: 1
-          description: WooCommerce refund ID (used for idempotency)
-          example: 5678
-        order_id:
-          type: integer
-          minimum: 1
-          description: WooCommerce order ID being refunded
-          example: 1234
-        refund_amount:
-          type: string
-          description: Refund amount as string (will be converted to cents)
-          example: "49.99"
-        currency:
-          type: string
-          pattern: "^[A-Z]{3}$"
-          description: "ISO 4217 uppercase currency code"
-          example: "USD"
-        date_created:
+        date_paid:
           type: string
           format: date-time
-          description: Refund creation timestamp
-          example: "2025-11-10T15:30:00Z"
-    
-    WebhookAcknowledgement:
-      type: object
-      required:
-        - acknowledged
-        - event_id
-      properties:
-        acknowledged:
-          type: boolean
-          example: true
-        event_id:
+        payment_method:
           type: string
-          description: Internal event ID for tracking
-          example: "evt_550e8400e29b41d4a716446655440000"
+          description: Payment method ID
+        payment_method_title:
+          type: string
+          description: Payment method display name
+        customer_id:
+          type: integer
+          description: Customer ID (0 for guests)
+        billing:
+          type: object
+          properties:
+            first_name:
+              type: string
+            last_name:
+              type: string
+            email:
+              type: string
+              format: email
+        line_items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              quantity:
+                type: integer
+              total:
+                type: string
+        meta_data:
+          type: array
+          description: Order metadata including attribution data
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              key:
+                type: string
+              value:
+                type: string

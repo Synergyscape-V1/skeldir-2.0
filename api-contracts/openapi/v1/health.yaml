@@ -1,114 +1,213 @@
 openapi: 3.1.0
 info:
-  title: Skeldir Health API
-  version: 1.1.0
-  description: Health check endpoints for Skeldir Attribution Intelligence platform. Used for monitoring and uptime checks.
-  x-domain: "health"
-  x-owner: "health-owner@skeldir.com"
-  x-version-history:
-    - version: "1.1.0"
-      date: "2024-01-15"
-      changes: "Governance metadata added"
-      phase: "G4.5"
+  title: Skeldir Health Monitoring API
+  version: 2.0.0
+  description: |
+    System health and status monitoring endpoints.
+    Provides real-time health checks for all system components.
+
 servers:
-  - url: https://api.skeldir.com
-    description: Production server
   - url: http://localhost:4014
-    description: Prism mock server for frontend development
+    description: Prism Mock Server (Health)
+
 paths:
   /api/health:
     get:
-      operationId: healthCheck
+      summary: Get system health status
+      description: |
+        Returns overall system health and status of individual services.
+        No authentication required for basic health check.
+      operationId: getHealthStatus
       tags:
         - Health
-      summary: Health check endpoint
-      description: Returns the health status of the API service. Used by mock healthchecks and FE smoke tests.
-      security: []
-      parameters: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
       responses:
         '200':
-          description: Service is healthy
+          description: System is healthy
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                timestamp: '2025-11-26T14:30:00Z'
+                version: 2.0.0
+                services:
+                  database: up
+                  api: up
+                  cache: up
+                  queue: up
+                uptime_seconds: 86400
+        '503':
+          description: System is unhealthy
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: unhealthy
+                timestamp: '2025-11-26T14:30:00Z'
+                version: 2.0.0
+                services:
+                  database: down
+                  api: up
+                  cache: up
+                  queue: degraded
+                uptime_seconds: 3600
+
+  /api/health/detailed:
+    get:
+      summary: Get detailed system health
+      description: Returns detailed health information including metrics (requires authentication)
+      operationId: getDetailedHealth
+      tags:
+        - Health
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: Detailed health information
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailedHealthResponse'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+
+  /api/health/ready:
+    get:
+      summary: Kubernetes readiness probe
+      description: Indicates if the service is ready to accept traffic
+      operationId: readinessProbe
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready
           content:
             application/json:
               schema:
                 type: object
-                required:
-                  - status
-                  - timestamp
                 properties:
-                  status:
-                    type: string
-                    example: "healthy"
-                  timestamp:
-                    type: string
-                    format: date-time
-                    description: Current server timestamp
-                    example: "2025-11-10T14:30:00Z"
-              examples:
-                healthy:
-                  summary: Service healthy
-                  value:
-                    status: "healthy"
-                    timestamp: "2025-11-10T14:30:00Z"
-  /api/status:
+                  ready:
+                    type: boolean
+                    example: true
+        '503':
+          description: Service is not ready
+
+  /api/health/live:
     get:
-      operationId: serviceStatus
+      summary: Kubernetes liveness probe
+      description: Indicates if the service is alive and should not be restarted
+      operationId: livenessProbe
       tags:
         - Health
-      summary: Service status endpoint
-      description: Returns overall service status and dependency states.
-      security: []
-      parameters: []
       responses:
         '200':
-          description: Service status summary
+          description: Service is alive
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ServiceStatusResponse'
-              examples:
-                healthy:
-                  summary: Service healthy with dependencies OK
-                  value:
-                    status: "healthy"
-                    timestamp: "2025-11-10T14:30:00Z"
-                    dependencies:
-                      - name: "database"
-                        status: "healthy"
-                        latency_ms: 12
-                      - name: "queue"
-                        status: "healthy"
-                        latency_ms: 5
+                type: object
+                properties:
+                  alive:
+                    type: boolean
+                    example: true
+        '503':
+          description: Service is not alive
+
 components:
   schemas:
-    ServiceStatusResponse:
+    HealthResponse:
       type: object
       required:
         - status
         - timestamp
+        - services
       properties:
         status:
           type: string
-          example: "healthy"
+          enum: [healthy, degraded, unhealthy]
+          description: Overall system health status
         timestamp:
           type: string
           format: date-time
-          description: Current server timestamp
-          example: "2025-11-10T14:30:00Z"
-        dependencies:
-          type: array
-          description: Optional list of dependency health states.
-          items:
-            type: object
-            required:
-              - name
-              - status
-            properties:
-              name:
-                type: string
-              status:
-                type: string
-                example: "healthy"
-              latency_ms:
-                type: integer
-                description: Optional latency measurement in milliseconds.
+          description: Health check timestamp
+        version:
+          type: string
+          description: API version
+          example: '2.0.0'
+        services:
+          type: object
+          description: Individual service statuses
+          properties:
+            database:
+              type: string
+              enum: [up, down, degraded]
+            api:
+              type: string
+              enum: [up, down, degraded]
+            cache:
+              type: string
+              enum: [up, down, degraded]
+            queue:
+              type: string
+              enum: [up, down, degraded]
+        uptime_seconds:
+          type: integer
+          description: Service uptime in seconds
+          minimum: 0
+
+    DetailedHealthResponse:
+      allOf:
+        - $ref: '#/components/schemas/HealthResponse'
+        - type: object
+          properties:
+            metrics:
+              type: object
+              properties:
+                requests_per_minute:
+                  type: integer
+                average_response_ms:
+                  type: number
+                  format: float
+                error_rate:
+                  type: number
+                  format: float
+                  minimum: 0
+                  maximum: 1
+                active_connections:
+                  type: integer
+            database:
+              type: object
+              properties:
+                pool_size:
+                  type: integer
+                active_connections:
+                  type: integer
+                query_latency_ms:
+                  type: number
+                  format: float
+
+  securitySchemes:
+    bearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'

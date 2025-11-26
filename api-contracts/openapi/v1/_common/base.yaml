@@ -1,0 +1,266 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Base Schemas
+  version: 2.0.0
+  description: |
+    Shared schemas and components for all Skeldir API contracts.
+    This file defines common patterns including RFC7807 Problem Details,
+    correlation ID headers, and standard error responses.
+
+components:
+  schemas:
+    ProblemDetails:
+      type: object
+      description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - correlation_id
+        - timestamp
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference identifying the problem type
+          example: https://api.skeldir.com/problems/authentication-failed
+        title:
+          type: string
+          description: Short, human-readable summary of the problem
+          example: Authentication Failed
+        status:
+          type: integer
+          description: HTTP status code
+          example: 401
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence
+          example: The provided JWT token has expired. Please refresh your authentication token.
+        instance:
+          type: string
+          format: uri
+          description: URI reference identifying this specific occurrence
+          example: /api/attribution/revenue/realtime
+        correlation_id:
+          type: string
+          format: uuid
+          description: Request correlation ID for distributed tracing
+          example: 550e8400-e29b-41d4-a716-446655440000
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the error occurred
+          example: '2025-11-11T14:32:00Z'
+        errors:
+          type: array
+          description: Optional array of specific validation errors
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: email
+              message:
+                type: string
+                example: Invalid email format
+              code:
+                type: string
+                example: INVALID_FORMAT
+
+    Error:
+      type: object
+      deprecated: true
+      description: Legacy Error schema (deprecated - use ProblemDetails instead)
+      required:
+        - error_id
+        - correlation_id
+        - message
+        - timestamp
+      properties:
+        error_id:
+          type: string
+          format: uuid
+        correlation_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+        details:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - correlation_id
+      properties:
+        success:
+          type: boolean
+        correlation_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        per_page:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 20
+        total:
+          type: integer
+          minimum: 0
+          example: 150
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 8
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Unique request correlation ID for distributed tracing
+
+    Authorization:
+      name: Authorization
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Bearer token for authentication (format - Bearer <token>)
+
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      schema:
+        type: string
+      description: ETag from previous response for cache validation
+
+    PageNumber:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number for pagination
+
+    PageSize:
+      name: per_page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page
+
+  responses:
+    UnauthorizedError:
+      description: Unauthorized - invalid or missing authentication
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for distributed tracing
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NotFoundError:
+      description: Resource not found
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    ValidationError:
+      description: Bad Request - validation failed
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    RateLimitError:
+      description: Too Many Requests - rate limit exceeded
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    ServerError:
+      description: Internal server error
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token authentication

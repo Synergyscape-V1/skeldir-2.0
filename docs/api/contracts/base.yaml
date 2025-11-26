@@ -1,0 +1,309 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Base Schemas
+  version: 2.0.0
+  description: Shared schemas and components for all Skeldir API contracts
+
+components:
+  schemas:
+    # RFC7807 Problem Details for HTTP APIs
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - correlation_id
+        - timestamp
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference identifying the problem type
+          example: https://api.skeldir.com/problems/authentication-failed
+        title:
+          type: string
+          description: Short, human-readable summary of the problem
+          example: Authentication Failed
+        status:
+          type: integer
+          description: HTTP status code
+          example: 401
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence
+          example: The provided JWT token has expired. Please refresh your authentication token.
+        instance:
+          type: string
+          format: uri
+          description: URI reference identifying this specific occurrence
+          example: /api/attribution/revenue/realtime
+        correlation_id:
+          type: string
+          format: uuid
+          description: Request correlation ID for distributed tracing
+          example: 550e8400-e29b-41d4-a716-446655440000
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the error occurred
+          example: '2025-11-11T14:32:00Z'
+        errors:
+          type: array
+          description: Optional array of specific validation errors
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: email
+              message:
+                type: string
+                example: Invalid email format
+              code:
+                type: string
+                example: INVALID_FORMAT
+
+    # Legacy Error schema (deprecated - use ProblemDetails instead)
+    Error:
+      type: object
+      deprecated: true
+      required:
+        - error_id
+        - correlation_id
+        - message
+        - timestamp
+      properties:
+        error_id:
+          type: string
+          format: uuid
+        correlation_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+        details:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - correlation_id
+      properties:
+        success:
+          type: boolean
+        correlation_id:
+          type: string
+          format: uuid
+        message:
+          type: string
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Unique request correlation ID for tracking
+
+    Authorization:
+      name: Authorization
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Bearer token for authentication
+
+  responses:
+    UnauthorizedError:
+      description: Unauthorized - invalid or missing authentication
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for distributed tracing
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            expired_token:
+              summary: Expired JWT Token
+              value:
+                type: https://api.skeldir.com/problems/authentication-failed
+                title: Authentication Failed
+                status: 401
+                detail: The provided JWT token has expired. Please refresh your authentication token.
+                instance: /api/attribution/revenue/realtime
+                correlation_id: 550e8400-e29b-41d4-a716-446655440000
+                timestamp: '2025-11-11T14:32:00Z'
+            missing_token:
+              summary: Missing Authorization Header
+              value:
+                type: https://api.skeldir.com/problems/missing-credentials
+                title: Missing Credentials
+                status: 401
+                detail: "No Authorization header provided. Include 'Authorization: Bearer <token>' in your request."
+                instance: /api/export/data
+                correlation_id: 660e8400-e29b-41d4-a716-446655440001
+                timestamp: '2025-11-11T14:35:00Z'
+            invalid_token:
+              summary: Invalid JWT Token
+              value:
+                type: https://api.skeldir.com/problems/invalid-token
+                title: Invalid Token
+                status: 401
+                detail: The JWT token signature is invalid or the token is malformed.
+                instance: /api/reconciliation/status
+                correlation_id: 770e8400-e29b-41d4-a716-446655440002
+                timestamp: '2025-11-11T14:38:00Z'
+
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for distributed tracing
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            insufficient_permissions:
+              summary: Insufficient Permissions
+              value:
+                type: https://api.skeldir.com/problems/insufficient-permissions
+                title: Forbidden
+                status: 403
+                detail: Your account does not have permission to export data. Contact your administrator to request access.
+                instance: /api/export/data
+                correlation_id: 880e8400-e29b-41d4-a716-446655440003
+                timestamp: '2025-11-11T14:40:00Z'
+
+    NotFoundError:
+      description: Resource not found
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for distributed tracing
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            resource_not_found:
+              summary: Resource Not Found
+              value:
+                type: https://api.skeldir.com/problems/resource-not-found
+                title: Not Found
+                status: 404
+                detail: The requested attribution report with ID 'rpt_abc123' does not exist or has been deleted.
+                instance: /api/attribution/reports/rpt_abc123
+                correlation_id: 990e8400-e29b-41d4-a716-446655440004
+                timestamp: '2025-11-11T14:42:00Z'
+
+    ValidationError:
+      description: Bad Request - validation failed
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for distributed tracing
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            invalid_input:
+              summary: Validation Failed
+              value:
+                type: https://api.skeldir.com/problems/validation-failed
+                title: Validation Failed
+                status: 400
+                detail: One or more fields failed validation. See 'errors' for details.
+                instance: /api/export/schedule
+                correlation_id: aa0e8400-e29b-41d4-a716-446655440005
+                timestamp: '2025-11-11T14:45:00Z'
+                errors:
+                  - field: start_date
+                    message: Must be a valid ISO 8601 date
+                    code: INVALID_DATE_FORMAT
+                  - field: email
+                    message: Email address is required
+                    code: REQUIRED_FIELD
+
+    RateLimitError:
+      description: Too Many Requests - rate limit exceeded
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for distributed tracing
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            rate_limit_exceeded:
+              summary: Rate Limit Exceeded
+              value:
+                type: https://api.skeldir.com/problems/rate-limit-exceeded
+                title: Too Many Requests
+                status: 429
+                detail: You have exceeded the rate limit of 100 requests per minute. Please wait 45 seconds before retrying.
+                instance: /api/attribution/revenue/realtime
+                correlation_id: bb0e8400-e29b-41d4-a716-446655440006
+                timestamp: '2025-11-11T14:47:00Z'
+
+    ServerError:
+      description: Internal server error
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for distributed tracing
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            internal_error:
+              summary: Internal Server Error
+              value:
+                type: https://api.skeldir.com/problems/internal-error
+                title: Internal Server Error
+                status: 500
+                detail: An unexpected error occurred while processing your request. Our team has been notified. Please try again later.
+                instance: /api/reconciliation/process
+                correlation_id: cc0e8400-e29b-41d4-a716-446655440007
+                timestamp: '2025-11-11T14:50:00Z'
+            database_error:
+              summary: Database Connection Error
+              value:
+                type: https://api.skeldir.com/problems/database-unavailable
+                title: Service Temporarily Unavailable
+                status: 503
+                detail: Unable to connect to the database. The service is temporarily unavailable. Please try again in a few moments.
+                instance: /api/attribution/revenue/realtime
+                correlation_id: dd0e8400-e29b-41d4-a716-446655440008
+                timestamp: '2025-11-11T14:52:00Z'

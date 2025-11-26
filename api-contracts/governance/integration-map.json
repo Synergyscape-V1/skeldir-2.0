@@ -1,0 +1,114 @@
+{
+  "version": "2.0.0",
+  "description": "Skeldir API Integration Map - Port assignments and service dependencies",
+  "generated_at": "2025-11-26T00:00:00Z",
+  "services": {
+    "auth": {
+      "port": 4010,
+      "contract": "openapi/v1/auth.yaml",
+      "description": "Authentication and authorization service",
+      "endpoints": [
+        "/api/auth/login",
+        "/api/auth/refresh",
+        "/api/auth/logout",
+        "/api/auth/verify"
+      ],
+      "dependencies": []
+    },
+    "attribution": {
+      "port": 4011,
+      "contract": "openapi/v1/attribution.yaml",
+      "description": "Attribution intelligence and revenue tracking",
+      "endpoints": [
+        "/api/attribution/revenue/realtime",
+        "/api/attribution/channels"
+      ],
+      "dependencies": ["auth"]
+    },
+    "reconciliation": {
+      "port": 4012,
+      "contract": "openapi/v1/reconciliation.yaml",
+      "description": "Platform reconciliation and sync status",
+      "endpoints": [
+        "/api/reconciliation/status",
+        "/api/reconciliation/platform/{platform_id}",
+        "/api/reconciliation/sync"
+      ],
+      "dependencies": ["auth"]
+    },
+    "export": {
+      "port": 4013,
+      "contract": "openapi/v1/export.yaml",
+      "description": "Data export functionality",
+      "endpoints": [
+        "/api/export/revenue",
+        "/api/export/csv",
+        "/api/export/json",
+        "/api/export/excel"
+      ],
+      "dependencies": ["auth", "attribution"]
+    },
+    "health": {
+      "port": 4014,
+      "contract": "openapi/v1/health.yaml",
+      "description": "System health monitoring",
+      "endpoints": [
+        "/api/health",
+        "/api/health/detailed",
+        "/api/health/ready",
+        "/api/health/live"
+      ],
+      "dependencies": []
+    },
+    "webhooks_shopify": {
+      "port": 4015,
+      "contract": "openapi/v1/webhooks/shopify.yaml",
+      "description": "Shopify webhook receiver",
+      "endpoints": [
+        "/webhooks/shopify/orders/create",
+        "/webhooks/shopify/checkouts/update"
+      ],
+      "dependencies": []
+    },
+    "webhooks_woocommerce": {
+      "port": 4016,
+      "contract": "openapi/v1/webhooks/woocommerce.yaml",
+      "description": "WooCommerce webhook receiver",
+      "endpoints": [
+        "/webhooks/woocommerce/order/created",
+        "/webhooks/woocommerce/order/updated",
+        "/webhooks/woocommerce/order/completed"
+      ],
+      "dependencies": []
+    },
+    "webhooks_stripe": {
+      "port": 4017,
+      "contract": "openapi/v1/webhooks/stripe.yaml",
+      "description": "Stripe webhook receiver",
+      "endpoints": [
+        "/webhooks/stripe/charge/succeeded",
+        "/webhooks/stripe/payment_intent/succeeded",
+        "/webhooks/stripe/charge/refunded"
+      ],
+      "dependencies": []
+    },
+    "webhooks_paypal": {
+      "port": 4018,
+      "contract": "openapi/v1/webhooks/paypal.yaml",
+      "description": "PayPal webhook receiver",
+      "endpoints": [
+        "/webhooks/paypal/payment/sale/completed",
+        "/webhooks/paypal/payment/capture/completed",
+        "/webhooks/paypal/payment/sale/refunded"
+      ],
+      "dependencies": []
+    }
+  },
+  "port_range": {
+    "start": 4010,
+    "end": 4018,
+    "total": 9
+  },
+  "frontend_services": ["auth", "attribution", "reconciliation", "export", "health"],
+  "backend_only_services": ["webhooks_shopify", "webhooks_woocommerce", "webhooks_stripe", "webhooks_paypal"]
+}

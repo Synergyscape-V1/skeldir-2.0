@@ -1,41 +1,36 @@
 openapi: 3.1.0
 info:
   title: Skeldir Reconciliation API
-  version: 1.1.0
-  description: Reconciliation and verification pipeline status endpoints for Skeldir Attribution Intelligence platform
-  x-domain: "reconciliation"
-  x-owner: "reconciliation-owner@skeldir.com"
-  x-version-history:
-    - version: "1.1.0"
-      date: "2024-01-15"
-      changes: "Governance metadata added, all invariants validated"
-      phase: "G4.5"
+  version: 2.0.0
+  description: |
+    Platform reconciliation status endpoints.
+    Provides real-time connection status and data sync information for integrated platforms.
+
 servers:
-  - url: https://api.skeldir.com
-    description: Production server
   - url: http://localhost:4012
-    description: Prism mock server for frontend development
+    description: Prism Mock Server (Reconciliation)
+
+security:
+  - bearerAuth: []
+
 paths:
   /api/reconciliation/status:
     get:
+      summary: Get reconciliation status for all platforms
+      description: |
+        Returns the current connection and sync status for all integrated platforms.
+        Includes verification status for payment providers.
       operationId: getReconciliationStatus
       tags:
         - Reconciliation
-      summary: Get reconciliation pipeline status
-      description: Retrieve the current status of the revenue verification and reconciliation pipeline
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
       responses:
         '200':
-          description: Reconciliation status retrieved successfully
+          description: Reconciliation status for all platforms
           headers:
             X-Correlation-ID:
               schema:
@@ -45,59 +40,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReconciliationStatusResponse'
-              examples:
-                idle:
-                  summary: Pipeline idle
-                  value:
-                    state: "idle"
-                    last_run_at: "2025-11-10T14:30:00Z"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
-                running:
-                  summary: Pipeline running
-                  value:
-                    state: "running"
-                    last_run_at: "2025-11-10T14:30:00Z"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
-                completed:
-                  summary: Pipeline completed
-                  value:
-                    state: "completed"
-                    last_run_at: "2025-11-10T14:30:00Z"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
-                failed:
-                  summary: Pipeline failed
-                  value:
-                    state: "failed"
-                    last_run_at: "2025-11-10T14:30:00Z"
-                    tenant_id: "550e8400-e29b-41d4-a716-446655440000"
+              example:
+                platforms:
+                  - platform_name: Shopify
+                    connection_status: verified
+                    last_sync: '2025-11-26T14:30:00Z'
+                    events_processed: 1523
+                    revenue_verified: 45230.00
+                  - platform_name: Stripe
+                    connection_status: verified
+                    last_sync: '2025-11-26T14:28:00Z'
+                    events_processed: 892
+                    revenue_verified: 38120.50
+                  - platform_name: Meta
+                    connection_status: partial
+                    last_sync: '2025-11-26T12:00:00Z'
+                    error_message: API rate limit reached
+                overall_status: partial
+                last_full_sync: '2025-11-26T10:00:00Z'
         '401':
-          $ref: '_common/components.yaml#/components/responses/Unauthorized'
-        '429':
-          $ref: '_common/components.yaml#/components/responses/TooManyRequests'
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '500':
-          $ref: '_common/components.yaml#/components/responses/InternalServerError'
-  /api/reconciliation/transactions:
+          $ref: './_common/base.yaml#/components/responses/ServerError'
+
+  /api/reconciliation/platform/{platform_id}:
     get:
-      operationId: listReconciliationTransactions
+      summary: Get detailed status for a specific platform
+      description: Returns detailed reconciliation information for a single platform
+      operationId: getPlatformReconciliationStatus
       tags:
         - Reconciliation
-      summary: List reconciliation transactions
-      description: Retrieve reconciled transactions with pagination support for verification.
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
-        - name: X-Correlation-ID
-          in: header
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: platform_id
+          in: path
           required: true
           schema:
             type: string
-            format: uuid
-          description: Distributed tracing correlation ID
-        - $ref: '_common/pagination.yaml#/components/parameters/limit'
-        - $ref: '_common/pagination.yaml#/components/parameters/cursor'
+          description: Platform identifier
       responses:
         '200':
-          description: Transactions retrieved successfully
+          description: Detailed platform reconciliation status
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformStatus'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+
+  /api/reconciliation/sync:
+    post:
+      summary: Trigger manual sync for platforms
+      description: Initiates a manual synchronization for specified platforms
+      operationId: triggerSync
+      tags:
+        - Reconciliation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                platforms:
+                  type: array
+                  items:
+                    type: string
+                  description: List of platform IDs to sync (empty = all platforms)
+                full_sync:
+                  type: boolean
+                  default: false
+                  description: Whether to perform a full historical sync
+      responses:
+        '202':
+          description: Sync initiated
           headers:
             X-Correlation-ID:
               schema:
@@ -108,199 +139,78 @@ paths:
               schema:
                 type: object
                 required:
-                  - items
+                  - sync_id
+                  - status
+                  - estimated_completion
                 properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TransactionRecord'
-                  next_cursor:
+                  sync_id:
                     type: string
-                    nullable: true
-                    description: Cursor for next page, if available.
-              examples:
-                sample:
-                  summary: Transaction list
-                  value:
-                    items:
-                      - transaction_id: "txn_1"
-                        amount: 1250.75
-                        currency: "USD"
-                        status: "reconciled"
-                        occurred_at: "2025-11-10T14:30:00Z"
-                        tenant_id: "550e8400-e29b-41d4-a716-446655440000"
-                    next_cursor: null
-        '401':
-          $ref: '_common/components.yaml#/components/responses/Unauthorized'
-        '429':
-          $ref: '_common/components.yaml#/components/responses/TooManyRequests'
-        '500':
-          $ref: '_common/components.yaml#/components/responses/InternalServerError'
-  /api/reconciliation/discrepancies:
-    get:
-      operationId: listReconciliationDiscrepancies
-      tags:
-        - Reconciliation
-      summary: List reconciliation discrepancies
-      description: Retrieve discrepancies identified during reconciliation.
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID
-        - $ref: '_common/pagination.yaml#/components/parameters/limit'
-        - $ref: '_common/pagination.yaml#/components/parameters/cursor'
-      responses:
-        '200':
-          description: Discrepancies retrieved successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DiscrepancyRecord'
-                  next_cursor:
+                    format: uuid
+                  status:
                     type: string
-                    nullable: true
-                    description: Cursor for next page, if available.
-              examples:
-                sample:
-                  summary: Discrepancy list
-                  value:
-                    items:
-                      - discrepancy_id: "disc_1"
-                        transaction_id: "txn_1"
-                        expected_amount: 1250.75
-                        observed_amount: 1200.00
-                        currency: "USD"
-                        reason: "payment_gateway_delay"
-                        detected_at: "2025-11-10T15:00:00Z"
-                        tenant_id: "550e8400-e29b-41d4-a716-446655440000"
-                    next_cursor: null
+                    enum: [queued, in_progress]
+                  estimated_completion:
+                    type: string
+                    format: date-time
         '401':
-          $ref: '_common/components.yaml#/components/responses/Unauthorized'
-        '429':
-          $ref: '_common/components.yaml#/components/responses/TooManyRequests'
-        '500':
-          $ref: '_common/components.yaml#/components/responses/InternalServerError'
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+
 components:
   schemas:
     ReconciliationStatusResponse:
       type: object
       required:
-        - state
-        - last_run_at
-        - tenant_id
+        - platforms
+        - overall_status
       properties:
-        state:
+        platforms:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformStatus'
+        overall_status:
           type: string
-          enum:
-            - idle
-            - running
-            - failed
-            - completed
-          description: Current state of the reconciliation pipeline
-          example: "completed"
-        last_run_at:
+          enum: [verified, partial, pending, failed]
+          description: Aggregate status across all platforms
+        last_full_sync:
           type: string
           format: date-time
-          description: Timestamp of the last reconciliation run
-          example: "2025-11-10T14:30:00Z"
-        tenant_id:
-          type: string
-          format: uuid
-          description: Tenant identifier
-          example: "550e8400-e29b-41d4-a716-446655440000"
-    TransactionRecord:
+          description: Timestamp of last complete sync across all platforms
+
+    PlatformStatus:
       type: object
       required:
-        - transaction_id
-        - amount
-        - currency
-        - status
-        - occurred_at
-        - tenant_id
+        - platform_name
+        - connection_status
+        - last_sync
       properties:
-        transaction_id:
+        platform_name:
           type: string
-          description: Unique transaction identifier
-        amount:
-          type: number
-          format: double
-          description: Transaction amount
-        currency:
+          enum: [Meta, Google, TikTok, LinkedIn, Shopify, WooCommerce, Stripe, PayPal]
+          description: Platform identifier
+        connection_status:
           type: string
-          description: ISO currency code
-        status:
-          type: string
-          enum:
-            - reconciled
-            - pending
-            - failed
-          description: Reconciliation status for the transaction
-        occurred_at:
+          enum: [verified, partial, pending, failed, disconnected]
+          description: Current connection status
+        last_sync:
           type: string
           format: date-time
-          description: Timestamp when the transaction occurred
-        tenant_id:
-          type: string
-          format: uuid
-          description: Tenant identifier
-    DiscrepancyRecord:
-      type: object
-      required:
-        - discrepancy_id
-        - transaction_id
-        - expected_amount
-        - observed_amount
-        - currency
-        - reason
-        - detected_at
-        - tenant_id
-      properties:
-        discrepancy_id:
-          type: string
-          description: Unique discrepancy identifier
-        transaction_id:
-          type: string
-          description: Related transaction identifier
-        expected_amount:
+          description: Timestamp of last successful sync
+        events_processed:
+          type: integer
+          minimum: 0
+          description: Total events processed from this platform
+        revenue_verified:
           type: number
-          format: double
-          description: Expected transaction amount
-        observed_amount:
-          type: number
-          format: double
-          description: Observed transaction amount
-        currency:
+          format: float
+          description: Total verified revenue from this platform
+        error_message:
           type: string
-          description: ISO currency code
-        reason:
-          type: string
-          description: Reason for discrepancy
-        detected_at:
+          description: Error description if connection is not fully verified
+        next_scheduled_sync:
           type: string
           format: date-time
-          description: Timestamp when discrepancy was detected
-        tenant_id:
-          type: string
-          format: uuid
-          description: Tenant identifier
+          description: When the next automatic sync is scheduled
+
   securitySchemes:
-    BearerAuth:
-      $ref: '_common/components.yaml#/components/securitySchemes/BearerAuth'
+    bearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'

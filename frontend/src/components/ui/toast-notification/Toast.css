@@ -1,0 +1,213 @@
+/* Toast Notification System - Glass UI Design per DIRECTIVE FE-UX-023 */
+
+/* Toast Container - Fixed positioning */
+.toast-notification-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column-reverse; /* Bottom-to-top stacking */
+  gap: 12px;
+  pointer-events: none; /* Allow clicks through container */
+}
+
+/* Mobile responsive positioning */
+@media (max-width: 640px) {
+  .toast-notification-container {
+    bottom: 24px;
+    left: 24px;
+    right: 24px;
+    align-items: center;
+  }
+}
+
+/* Toast wrapper for repositioning animation */
+.toast-notification-wrapper {
+  pointer-events: auto; /* Re-enable clicks on toasts */
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Individual Toast - Glass UI Design */
+.toast-notification {
+  background: hsl(var(--brand-alice) / 0.92); /* Alice Blue at 92% opacity */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 8px 32px hsl(var(--brand-cool-black) / 0.15);
+  max-width: 400px;
+  min-width: 300px;
+  border-left: 4px solid; /* Color set inline via style prop */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Dark mode toast background */
+.dark .toast-notification {
+  background: hsl(var(--brand-cool-black) / 0.92);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Mobile toast full-width */
+@media (max-width: 640px) {
+  .toast-notification {
+    min-width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* Toast content layout */
+.toast-notification-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Icon styling */
+.toast-notification-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Message text */
+.toast-notification-message {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  word-wrap: break-word;
+  color: hsl(var(--brand-cool-black));
+}
+
+/* Dark mode message text */
+.dark .toast-notification-message {
+  color: hsl(var(--brand-alice));
+}
+
+/* Optional action button */
+.toast-notification-action {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  transition: opacity 150ms ease;
+  color: hsl(var(--brand-tufts));
+}
+
+.toast-notification-action:hover {
+  opacity: 0.8;
+}
+
+.toast-notification-action:focus-visible {
+  outline: 2px solid hsl(var(--brand-tufts));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Close button */
+.toast-notification-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.5;
+  padding: 0;
+  border-radius: 4px;
+  transition: opacity 150ms ease, transform 150ms ease;
+  color: hsl(var(--brand-cool-black));
+}
+
+/* Dark mode close button */
+.dark .toast-notification-close {
+  color: hsl(var(--brand-alice));
+}
+
+.toast-notification-close:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.toast-notification-close:focus-visible {
+  outline: 2px solid hsl(var(--brand-tufts));
+  outline-offset: 2px;
+}
+
+/* Progress bar */
+.toast-notification-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  transition: width linear;
+  border-bottom-left-radius: 12px;
+}
+
+/* Entrance animation */
+.toast-notification-enter {
+  animation: toastNotificationSlideIn 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes toastNotificationSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Exit animation */
+.toast-notification-exit {
+  animation: toastNotificationSlideOut 250ms ease-in forwards;
+}
+
+@keyframes toastNotificationSlideOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .toast-notification-enter,
+  .toast-notification-exit {
+    animation-duration: 100ms;
+  }
+  
+  .toast-notification-wrapper {
+    transition-duration: 100ms;
+  }
+  
+  .toast-notification-close:hover {
+    transform: none;
+  }
+  
+  .toast-notification-progress {
+    transition: none;
+  }
+}

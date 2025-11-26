@@ -1,0 +1,1201 @@
+/* Import brand colors for RouteGuard and authentication components */
+@import './assets/brand/colors.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* LIGHT MODE */
+:root {
+  --button-outline: rgba(0,0,0, .10);
+  --badge-outline: rgba(0,0,0, .05);
+
+  /* Automatic computation of border around primary / danger buttons */
+  --opaque-button-border-intensity: -8; /* In terms of percentages */
+
+  /* Backgrounds applied on top of other backgrounds when hovered/active */
+  --elevate-1: rgba(0,0,0, .03);
+  --elevate-2: rgba(0,0,0, .08);
+
+  /* Enterprise B2B Color Palette - Professional, High Contrast */
+  --background: 0 0% 100%;  /* Pure white for maximum clarity */
+
+  --foreground: 215 25% 15%;  /* Deep slate for strong readability */
+
+  --border: 215 15% 85%;  /* Subtle borders for clean separation */
+
+  --card: 0 0% 100%;  /* White cards on white background - rely on borders */
+
+  --card-foreground: 215 25% 15%;
+
+  --card-border: 215 15% 88%;  /* Clear card boundaries */
+
+  --sidebar: 215 20% 97%;  /* Very light gray with subtle blue undertone */
+
+  --sidebar-foreground: 215 25% 15%;
+
+  --sidebar-border: 215 15% 90%;
+
+  --sidebar-primary: 217 91% 42%;  /* Professional navy blue - authoritative */
+
+  --sidebar-primary-foreground: 0 0% 100%;
+
+  --sidebar-accent: 215 15% 92%;  /* Subtle accent for selected items */
+
+  --sidebar-accent-foreground: 215 25% 15%;
+
+  --sidebar-ring: 217 91% 42%;
+
+  --popover: 0 0% 100%;  /* Clean white popovers */
+
+  --popover-foreground: 215 25% 15%;
+
+  --popover-border: 215 15% 85%;
+
+  --primary: 217 91% 42%;  /* Professional navy - trust and authority */
+
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 215 15% 92%;  /* Neutral gray for secondary actions */
+
+  --secondary-foreground: 215 25% 15%;
+
+  --muted: 215 20% 94%;  /* Muted backgrounds */
+
+  --muted-foreground: 215 15% 45%;  /* Muted text with good contrast */
+
+  --accent: 215 15% 92%;  /* Subtle accent areas */
+
+  --accent-foreground: 215 25% 15%;
+
+  --destructive: 0 84% 60%;
+
+  --destructive-foreground: 0 15% 98%;
+
+  --input: 210 4% 80%;
+  --ring: 214 84% 56%;
+  --chart-1: 214 84% 56%;
+  --chart-2: 166 82% 51%;
+  --chart-3: 282 87% 65%;
+  --chart-4: 24 95% 53%;
+  --chart-5: 339 82% 52%;
+
+  /* Revenue verification colors per FE-UX-015 */
+  --verified: 160 84% 39%;
+  --verified-foreground: 160 84% 25%;
+  --unverified: 38 92% 50%;
+  --unverified-foreground: 38 92% 35%;
+
+  /* FE-UX-033: Elevation System - Material Design 3 Aligned */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px 0 rgba(0, 0, 0, 0.06), 0 1px 3px 0 rgba(0, 0, 0, 0.10);
+  --elevation-2: 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 4px 6px -1px rgba(0, 0, 0, 0.10);
+  --elevation-3: 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 10px 15px -3px rgba(0, 0, 0, 0.10);
+  --elevation-4: 0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 20px 25px -5px rgba(0, 0, 0, 0.10);
+  --elevation-5: 0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+
+  /* Semantic elevation mapping - verified (stable) vs unverified (floating) */
+  --elevation-verified: var(--elevation-0);
+  --elevation-unverified: var(--elevation-2);
+  --elevation-alert: 0 4px 8px rgba(239, 68, 68, 0.12);
+  --elevation-modal: var(--elevation-5);
+
+  /* Hover state elevations (one level higher than base) */
+  --elevation-verified-hover: var(--elevation-1);
+  --elevation-unverified-hover: var(--elevation-3);
+  --elevation-alert-hover: 0 10px 15px rgba(239, 68, 68, 0.15);
+
+  /* Elevation transition timing */
+  --elevation-transition-duration: 200ms;
+  --elevation-transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-sans: Open Sans, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: .25rem; /* 4px - Professional, minimal radius for B2B/Enterprise UI */
+  --shadow-2xs: 0px 2px 0px 0px hsl(210 3% 8% / 0.02);
+  --shadow-xs: 0px 2px 0px 0px hsl(210 3% 8% / 0.03);
+  --shadow-sm: 0px 2px 0px 0px hsl(210 3% 8% / 0.04), 0px 1px 2px -1px hsl(210 3% 8% / 0.06);
+  --shadow: 0px 2px 0px 0px hsl(210 3% 8% / 0.05), 0px 1px 2px -1px hsl(210 3% 8% / 0.08);
+  --shadow-md: 0px 2px 0px 0px hsl(210 3% 8% / 0.06), 0px 2px 4px -1px hsl(210 3% 8% / 0.10);
+  --shadow-lg: 0px 2px 0px 0px hsl(210 3% 8% / 0.08), 0px 4px 6px -1px hsl(210 3% 8% / 0.12);
+  --shadow-xl: 0px 2px 0px 0px hsl(210 3% 8% / 0.10), 0px 8px 10px -1px hsl(210 3% 8% / 0.15);
+  --shadow-2xl: 0px 2px 0px 0px hsl(210 3% 8% / 0.12);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
+
+  /* Fallback for older browsers */
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+.dark {
+  --button-outline: rgba(255,255,255, .10);
+  --badge-outline: rgba(255,255,255, .05);
+
+  --opaque-button-border-intensity: 9;  /* In terms of percentages */
+
+  /* Backgrounds applied on top of other backgrounds when hovered/active */
+  --elevate-1: rgba(255,255,255, .04);
+  --elevate-2: rgba(255,255,255, .09);
+
+  /* Enterprise Dark Mode - Professional, High Contrast */
+  --background: 220 20% 8%;  /* Deep charcoal with blue undertone */
+
+  --foreground: 215 15% 92%;  /* Light gray for readability */
+
+  --border: 220 15% 20%;  /* Clear borders in dark mode */
+
+  --card: 220 18% 10%;  /* Slightly elevated cards */
+
+  --card-foreground: 215 15% 92%;
+
+  --card-border: 220 15% 24%;  /* Defined card boundaries */
+
+  --sidebar: 220 20% 12%;  /* Darker sidebar for hierarchy */
+
+  --sidebar-foreground: 215 15% 92%;
+
+  --sidebar-border: 220 15% 22%;
+
+  --sidebar-primary: 217 91% 60%;  /* Brighter blue for dark mode visibility */
+
+  --sidebar-primary-foreground: 0 0% 100%;
+
+  --sidebar-accent: 220 15% 18%;  /* Subtle accent in dark mode */
+
+  --sidebar-accent-foreground: 215 15% 92%;
+
+  --sidebar-ring: 217 91% 60%;
+
+  --popover: 220 18% 12%;  /* Elevated popovers */
+
+  --popover-foreground: 215 15% 92%;
+
+  --popover-border: 220 15% 26%;
+
+  --primary: 217 91% 60%;  /* Professional blue with good contrast */
+
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 15% 22%;  /* Neutral secondary */
+
+  --secondary-foreground: 215 15% 92%;
+
+  --muted: 220 15% 16%;  /* Muted dark backgrounds */
+
+  --muted-foreground: 215 10% 60%;  /* Readable muted text */
+
+  --accent: 220 15% 20%;  /* Subtle dark accent */
+
+  --accent-foreground: 215 15% 92%;
+
+  --destructive: 0 84% 60%;
+
+  --destructive-foreground: 0 15% 98%;
+
+  --input: 210 4% 28%;
+  --ring: 214 84% 56%;
+  --chart-1: 214 84% 70%;
+  --chart-2: 166 82% 65%;
+  --chart-3: 282 87% 75%;
+  --chart-4: 24 95% 65%;
+  --chart-5: 339 82% 65%;
+
+  /* Revenue verification colors per FE-UX-015 (adjusted for dark mode) */
+  --verified: 160 84% 45%;
+  --verified-foreground: 160 84% 60%;
+  --unverified: 38 92% 55%;
+  --unverified-foreground: 38 92% 70%;
+
+  /* FE-UX-033: Dark mode elevation adjustments */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+  --elevation-2: 0 2px 4px -1px rgba(0, 0, 0, 0.3), 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --elevation-3: 0 4px 6px -2px rgba(0, 0, 0, 0.4), 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --elevation-4: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+  --elevation-5: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+
+  /* Semantic elevation (same mapping as light mode) */
+  --elevation-verified: var(--elevation-0);
+  --elevation-unverified: var(--elevation-2);
+  --elevation-alert: 0 4px 8px rgba(239, 68, 68, 0.18);
+  --elevation-modal: var(--elevation-5);
+
+  /* Hover state elevations */
+  --elevation-verified-hover: var(--elevation-1);
+  --elevation-unverified-hover: var(--elevation-3);
+  --elevation-alert-hover: 0 10px 15px rgba(239, 68, 68, 0.25);
+
+  --shadow-2xs: 0px 2px 0px 0px hsl(210 4% 2% / 0.15);
+  --shadow-xs: 0px 2px 0px 0px hsl(210 4% 2% / 0.20);
+  --shadow-sm: 0px 2px 0px 0px hsl(210 4% 2% / 0.25), 0px 1px 2px -1px hsl(210 4% 2% / 0.30);
+  --shadow: 0px 2px 0px 0px hsl(210 4% 2% / 0.30), 0px 1px 2px -1px hsl(210 4% 2% / 0.35);
+  --shadow-md: 0px 2px 0px 0px hsl(210 4% 2% / 0.35), 0px 2px 4px -1px hsl(210 4% 2% / 0.40);
+  --shadow-lg: 0px 2px 0px 0px hsl(210 4% 2% / 0.40), 0px 4px 6px -1px hsl(210 4% 2% / 0.45);
+  --shadow-xl: 0px 2px 0px 0px hsl(210 4% 2% / 0.45), 0px 8px 10px -1px hsl(210 4% 2% / 0.50);
+  --shadow-2xl: 0px 2px 0px 0px hsl(210 4% 2% / 0.50);
+
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/**
+ * Using the elevate system.
+ * Automatic contrast adjustment.
+ *
+ * <element className="hover-elevate" />
+ * <element className="active-elevate-2" />
+ *
+ * // Using the tailwind utility when a data attribute is "on"
+ * <element className="toggle-elevate data-[state=on]:toggle-elevated" />
+ * // Or manually controlling the toggle state
+ * <element className="toggle-elevate toggle-elevated" />
+ *
+ * Elevation systems have to handle many states.
+ * - not-hovered, vs. hovered vs. active  (three mutually exclusive states)
+ * - toggled or not
+ * - focused or not (this is not handled with these utilities)
+ *
+ * Even without handling focused or not, this is six possible combinations that
+ * need to be distinguished from eachother visually.
+ */
+@layer utilities {
+
+  /* FE-UX-033: Elevation utility classes */
+  .elevation-0 { box-shadow: var(--elevation-0); }
+  .elevation-1 { box-shadow: var(--elevation-1); }
+  .elevation-2 { box-shadow: var(--elevation-2); }
+  .elevation-3 { box-shadow: var(--elevation-3); }
+  .elevation-4 { box-shadow: var(--elevation-4); }
+  .elevation-5 { box-shadow: var(--elevation-5); }
+
+  /* Semantic elevation utilities */
+  .elevation-verified { box-shadow: var(--elevation-verified); }
+  .elevation-unverified { box-shadow: var(--elevation-unverified); }
+  .elevation-alert { box-shadow: var(--elevation-alert); }
+
+  /* Hover state elevation utilities */
+  .hover\:elevation-verified-hover:hover { box-shadow: var(--elevation-verified-hover); }
+  .hover\:elevation-unverified-hover:hover { box-shadow: var(--elevation-unverified-hover); }
+  .hover\:elevation-alert-hover:hover { box-shadow: var(--elevation-alert-hover); }
+
+  /* Elevation transition utility */
+  .elevation-transition {
+    transition: box-shadow var(--elevation-transition-duration) var(--elevation-transition-easing);
+  }
+
+  /* Hide ugly search cancel button in Chrome until we can style it properly */
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  /* Placeholder styling for contentEditable div */
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+
+  /* .no-default-hover-elevate/no-default-active-elevate is an escape hatch so consumers of
+   * buttons/badges can remove the automatic brightness adjustment on interactions
+   * and program their own. */
+  .no-default-hover-elevate {}
+
+  .no-default-active-elevate {}
+
+
+  /**
+   * Toggleable backgrounds go behind the content. Hoverable/active goes on top.
+   * This way they can stack/compound. Both will overlap the parent's borders!
+   * So borders will be automatically adjusted both on toggle, and hover/active,
+   * and they will be compounded.
+   */
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    /*border-radius: inherit;   match rounded corners */
+    border-radius: inherit;
+    z-index: -1;
+    /* sits behind content but above backdrop */
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  /* If there's a 1px border, adjust the inset so that it covers that parent's border */
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
+  /* Does not work on elements with overflow:hidden! */
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    /*border-radius: inherit;   match rounded corners */
+    border-radius: inherit;
+    z-index: 999;
+    /* sits in front of content */
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
+  /* If there's a 1px border, adjust the inset so that it covers that parent's border */
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
+    inset: -1px;
+  }
+
+  /* RequestStatus Component Animations */
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes crossfade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeOut {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes emptyIconEnter {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes shimmerReduced {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* RequestStatus skeleton loader shimmer effect */
+  .skeleton-loader {
+    position: relative;
+    overflow: hidden;
+    background-color: hsl(var(--brand-alice) / 0.85);
+  }
+
+  .skeleton-loader::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--brand-jordy) / 0.4) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* State transition classes */
+  .status-loading-to-success {
+    animation: fadeOut 250ms ease forwards;
+  }
+
+  .status-loading-to-error {
+    animation: fadeOut 200ms ease forwards;
+  }
+
+  .status-loading-to-empty {
+    animation: fadeOut 300ms ease forwards;
+  }
+
+  .status-error-enter {
+    animation: fadeIn 300ms ease forwards;
+  }
+
+  .status-empty-enter {
+    animation: fadeIn 300ms ease forwards;
+  }
+
+  .empty-icon {
+    animation: emptyIconEnter 400ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .action-button:hover {
+    transform: translateY(-2px);
+    transition: transform 150ms ease-out;
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-loader::after {
+      animation: shimmerReduced 2s ease-in-out infinite;
+    }
+
+    .empty-icon {
+      animation: fadeIn 200ms ease forwards;
+    }
+
+    .action-button:hover {
+      transform: none;
+    }
+
+    .status-loading-to-success,
+    .status-loading-to-error,
+    .status-loading-to-empty,
+    .status-error-enter,
+    .status-empty-enter {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  /* CorrelationIdDisplay animations */
+  @keyframes correlationEnter {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes copyPulse {
+    0% { background: rgba(233, 245, 255, 0.8); }
+    40% { background: rgba(70, 139, 230, 0.2); }
+    100% { background: rgba(233, 245, 255, 0.8); }
+  }
+
+  @keyframes iconMorph {
+    0% { opacity: 1; transform: scale(1) rotate(0deg); }
+    50% { opacity: 0; transform: scale(0.8) rotate(90deg); }
+    51% { opacity: 0; transform: scale(0.8) rotate(-90deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  }
+
+  /* Live Status Indicator Animations */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1.0; }
+  }
+
+  @keyframes success-scale {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes success-border {
+    0%, 100% { border-color: inherit; }
+    50% { border-color: #10B981; }
+  }
+
+  /* Utility classes for success animations */
+  .success-animation {
+    animation: success-scale 400ms ease-in-out, success-border 800ms ease-in-out;
+    border-width: 2px;
+  }
+
+  /* FE-UX-021: Real-Time Verification Sync Animations */
+  @keyframes pulse-once {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.92;
+      transform: scale(1.015);
+    }
+  }
+
+  .animate-pulse-once {
+    animation: pulse-once 0.5s ease-in-out 1;
+  }
+
+  /* Reduced motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.7; }
+    }
+
+    .success-animation {
+      animation: none;
+      border-color: inherit;
+    }
+
+    @keyframes pulse-once {
+      0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    .animate-pulse-once {
+      animation: none;
+    }
+  }
+
+  /* FE-UX-020: Cross-Component Hover Highlighting Animations */
+  
+  /* Smooth highlight ring animation */
+  @keyframes highlight-ring {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Ensure tabular numbers prevent layout shift during animations */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Smooth transition for all interactive dashboard elements */
+  .revenue-section,
+  .platform-card {
+    transition-property: box-shadow, transform, opacity, outline, background-color;
+    transition-duration: 300ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Subtle lift on hover for platform cards (optional enhancement) */
+  .platform-card:hover {
+    transform: translateY(-1px);
+  }
+
+  /* Ensure ring appears smoothly with proper z-index */
+  .ring-4 {
+    transition: box-shadow 300ms ease-out;
+  }
+
+  /* Slide-down expansion animation for Data Reconciliation Status (FE-UX-024) */
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      max-height: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      max-height: 5000px;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slideDown {
+    animation: slideDown 0.35s ease-out forwards;
+  }
+
+  /* Reduced motion for highlight system */
+  @media (prefers-reduced-motion: reduce) {
+    .revenue-section,
+    .platform-card {
+      transition: none;
+      transform: none !important;
+    }
+
+    .platform-card:hover {
+      transform: none;
+    }
+
+    @keyframes highlight-ring {
+      from, to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @keyframes slideDown {
+      from, to {
+        opacity: 1;
+        max-height: none;
+        transform: none;
+      }
+    }
+  }
+
+  /* ====================================================================
+   * GLASSMORPHISM - OVERLAYS ONLY
+   * Professional B2B Design: Glass effects reserved for modals and contextual overlays
+   * Standard UI uses flat, clean design for clarity and trust
+   * ==================================================================== */
+  
+  /* DEPRECATED: Flat design for standard UI */
+  .glass,
+  .glass-strong,
+  .glass-light,
+  .glass-panel,
+  .glass-card {
+    /* No glassmorphism - using standard flat design */
+    background: transparent;
+  }
+
+  /* Glass variant for modals/dialogs */
+  .glass-modal {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 16px 48px 0 rgba(31, 38, 135, 0.25);
+  }
+
+  /* Glass variant for dropdowns/popovers */
+  .glass-dropdown {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
+  }
+
+  /* WCAG 2.1 AA Compliant Tooltips - Solid backgrounds for accessibility */
+  .glass-tooltip {
+    background: #1F2937;
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+  }
+
+  /* Dark Mode - Flat design for standard UI */
+  .dark .glass,
+  .dark .glass-strong,
+  .dark .glass-light,
+  .dark .glass-panel,
+  .dark .glass-card {
+    /* No glassmorphism - using standard flat design */
+    background: transparent;
+  }
+
+  .dark .glass-modal {
+    background: rgba(20, 20, 25, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 16px 48px 0 rgba(0, 0, 0, 0.6);
+  }
+
+  .dark .glass-dropdown {
+    background: rgba(20, 20, 25, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+  }
+
+  .dark .glass-tooltip {
+    background: #1F2937;
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+  }
+
+  /* Fallback for browsers not supporting backdrop-filter */
+  @supports not (backdrop-filter: blur(8px)) {
+    .glass,
+    .glass-panel,
+    .glass-card,
+    .glass-strong,
+    .glass-light {
+      background: transparent;
+    }
+
+    .glass-modal {
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 16px 48px 0 rgba(31, 38, 135, 0.3);
+    }
+
+    .glass-dropdown {
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.22);
+    }
+
+    .glass-tooltip {
+      background: #1F2937;
+      color: #FFFFFF;
+      box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+    }
+
+    .dark .glass,
+    .dark .glass-panel,
+    .dark .glass-card,
+    .dark .glass-strong,
+    .dark .glass-light {
+      background: transparent;
+    }
+
+    .dark .glass-modal {
+      background: rgba(20, 20, 25, 0.95);
+      box-shadow: 0 16px 48px 0 rgba(0, 0, 0, 0.7);
+    }
+
+    .dark .glass-dropdown {
+      background: rgba(20, 20, 25, 0.88);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.55);
+    }
+
+    .dark .glass-tooltip {
+      background: #1F2937;
+      color: #FFFFFF;
+      box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.7);
+      pointer-events: none;
+    }
+  }
+
+  /* Performance optimization for overlay glass elements only */
+  .glass-modal,
+  .glass-dropdown,
+  .glass-tooltip {
+    will-change: backdrop-filter, transform;
+    transform: translateZ(0);
+  }
+
+  /* Reduced motion support for glassmorphism overlays */
+  @media (prefers-reduced-motion: reduce) {
+    .glass-modal,
+    .glass-dropdown,
+    .glass-tooltip {
+      will-change: auto;
+    }
+  }
+
+  /* Responsive glassmorphism adjustments for overlays only */
+  @media (max-width: 768px) {
+    .glass-modal,
+    .glass-dropdown,
+    .glass-tooltip {
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+  }
+
+  @media (max-width: 375px) {
+    .glass-modal,
+    .glass-dropdown,
+    .glass-tooltip {
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+  }
+
+  /* ====================================================================
+   * WCAG 2.1 AA ACCESSIBILITY - TOOLTIP COMPLIANCE
+   * Ensures tooltips meet accessibility standards for all users
+   * ==================================================================== */
+
+  /* Enhanced focus indicators for WCAG 2.1 AA (3:1 contrast minimum) */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Tooltip-specific ARIA and semantic styles */
+  [role="tooltip"] {
+    font-size: 0.875rem; /* 14px - WCAG AA compliant size */
+    line-height: 1.6; /* Relaxed line height for readability */
+    pointer-events: none; /* Prevent tooltip from intercepting mouse events */
+  }
+
+  /* Secondary text in tooltips - ensure 7:1 contrast */
+  [role="tooltip"] .text-secondary,
+  [role="tooltip"] .text-gray-300 {
+    color: #D1D5DB; /* WCAG AA compliant gray */
+  }
+
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    [role="tooltip"] {
+      border: 2px solid #FFFFFF !important;
+      background-color: #000000 !important;
+      color: #FFFFFF !important;
+    }
+
+    [role="tooltip"] * {
+      color: inherit !important;
+    }
+  }
+
+  /* Reduced motion support - disable all tooltip animations */
+  @media (prefers-reduced-motion: reduce) {
+    [role="tooltip"] {
+      transition: none !important;
+      animation: none !important;
+    }
+
+    [role="tooltip"] * {
+      animation: none !important;
+    }
+  }
+
+  /* Windows High Contrast Mode (Forced Colors) */
+  @media (forced-colors: active) {
+    [role="tooltip"] {
+      border: 1px solid CanvasText !important;
+      background-color: Canvas !important;
+      color: CanvasText !important;
+    }
+  }
+
+  /* Print styles - hide tooltips when printing */
+  @media print {
+    [role="tooltip"],
+    [role="tooltip"][id] {
+      display: none !important;
+      visibility: hidden !important;
+    }
+  }
+
+  /* Tooltip text colors for optimal contrast */
+  .glass-tooltip {
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  .glass-tooltip .text-xs {
+    font-size: 0.75rem; /* 12px for secondary content */
+  }
+
+  /* Ensure tooltip content is always readable */
+  .glass-tooltip *:not([class*="text-"]) {
+    color: inherit;
+  }
+
+  /* ====================================================================
+   * FE-UX-032: REVENUE OVERVIEW TYPOGRAPHY SYSTEM
+   * Implements 3:1 typography dominance ratio (48px:16px)
+   * ==================================================================== */
+
+  /* Primary Financial Metrics (48px) - Visual dominance for key decision data */
+  .revenue-overview-container .text-5xl {
+    font-size: 48px;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+    font-feature-settings: "tnum" 1; /* Tabular numerals for alignment */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Tabular Numerals - Ensures vertical alignment of currency values */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Secondary Percentage Metrics (16px) - Achieves 3:1 ratio */
+  .revenue-overview-container .text-base {
+    font-size: 16px;
+    line-height: 1.5;
+    font-weight: 600;
+  }
+
+  /* Card Label Typography */
+  .revenue-overview-container h3 {
+    font-size: 14px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Tertiary Explanation Text */
+  .revenue-overview-container .text-xs {
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+
+  /* ===== CARD ELEVATION SYSTEM ===== */
+
+  /* Verified Card: 0dp elevation (flush to background) */
+  .verified-revenue-card {
+    box-shadow: none;
+    transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .verified-revenue-card:hover {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Dark mode verified card hover */
+  .dark .verified-revenue-card:hover {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Unverified Card: 2dp elevation (subtle lift for attention) */
+  .unverified-revenue-card {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .unverified-revenue-card:hover {
+    box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Dark mode unverified card shadows */
+  .dark .unverified-revenue-card {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  }
+
+  .dark .unverified-revenue-card:hover {
+    box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+  }
+
+  /* ===== RESPONSIVE ADJUSTMENTS ===== */
+
+  /* Tablet: Reduce primary metric to 40px (maintains 2.5:1 ratio) */
+  @media (max-width: 1024px) {
+    .revenue-overview-container .text-5xl {
+      font-size: 40px;
+    }
+  }
+
+  /* Mobile: Reduce primary metric to 36px (maintains 2.25:1 ratio) */
+  @media (max-width: 640px) {
+    .revenue-overview-container .text-5xl {
+      font-size: 36px;
+      letter-spacing: -0.01em;
+    }
+    
+    .revenue-cards-grid {
+      gap: 16px;
+    }
+  }
+}
+
+/* ===== FE-UX-034: DATA RECONCILIATION STATUS COMPONENT STYLES ===== */
+
+/* Typography Hierarchy (inverted from FE-UX-015):
+ * PRIMARY: Financial variance amount (48px) - demands immediate attention
+ * SECONDARY: Transaction context (16px) - provides supporting detail  
+ * TERTIARY: Match rate (20px in badge) - confidence indicator
+ * Achieves minimum 3:1 ratio between primary and secondary
+ */
+
+/* Primary Variance Amount (48px) - Maximum Visual Impact */
+.reconciliation-status-header .text-5xl {
+  font-size: 48px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Secondary Transaction Context (16px) */
+.reconciliation-status-header .text-base {
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+/* Tertiary Match Rate in Badge (20px) - Direct targeting per FE-UX-034 */
+.reconciliation-status-badge {
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+/* Platform Variance Card - Risk-Based Sizing */
+.platform-variance-card {
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Risk severity borders - progressive thickness */
+.platform-variance-card.risk-high {
+  border-width: 3px;
+  border-color: hsl(var(--destructive));
+}
+
+.platform-variance-card.risk-medium {
+  border-width: 2px;
+  border-color: hsl(var(--unverified));
+}
+
+.platform-variance-card.risk-low {
+  border-width: 1px;
+  border-color: hsl(var(--border));
+}
+
+/* Platform Variance Grid - Risk-Based Alignment */
+.platform-variance-grid {
+  container-type: inline-size;
+}
+
+/* Responsive Grid Adjustments */
+@media (max-width: 1024px) {
+  .reconciliation-status-header .text-5xl {
+    font-size: 40px;
+  }
+  
+  .reconciliation-status-badge .text-sm {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 640px) {
+  .reconciliation-status-header .text-5xl {
+    font-size: 36px;
+    letter-spacing: -0.01em;
+  }
+  
+  .reconciliation-status-header .text-base {
+    font-size: 14px;
+  }
+  
+  .reconciliation-status-badge .text-sm {
+    font-size: 16px;
+  }
+}
+
+/* ===== FE-UX-035: PLATFORM VARIANCE CARD PROPORTIONAL SIZING ===== */
+
+/* Alert shadow for high-risk cards (4dp elevation with red tint) */
+.shadow-alert {
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.12),
+              0 2px 4px rgba(239, 68, 68, 0.08);
+}
+
+.shadow-alert:hover {
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.16),
+              0 4px 8px rgba(239, 68, 68, 0.12);
+}
+
+/* Dark mode alert shadow */
+.dark .shadow-alert {
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.24),
+              0 2px 4px rgba(239, 68, 68, 0.16);
+}
+
+.dark .shadow-alert:hover {
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.32),
+              0 4px 8px rgba(239, 68, 68, 0.24);
+}
+
+/* Variance card base styling */
+.variance-card {
+  position: relative;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+/* Hover state enhancement - lift card slightly */
+.variance-card:hover {
+  transform: translateY(-4px);
+}
+
+/* Focus state for accessibility */
+.variance-card:focus-visible {
+  outline: 3px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Ensure proper text rendering for financial figures */
+.variance-card .text-3xl {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.02em;
+}
+
+/* Loading skeleton state */
+.variance-card-skeleton {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

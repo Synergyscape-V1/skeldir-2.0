@@ -1,0 +1,110 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Authentication API
+  version: 2.0.0
+  description: User authentication and authorization endpoints
+
+servers:
+  - url: http://localhost:4015
+    description: Mock server
+
+paths:
+  /api/auth/login:
+    post:
+      summary: User login
+      operationId: login
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - access_token
+                  - refresh_token
+                  - expires_in
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+        '401':
+          $ref: './base.yaml#/components/responses/UnauthorizedError'
+
+  /api/auth/refresh:
+    post:
+      summary: Refresh access token
+      operationId: refreshToken
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - access_token
+                  - expires_in
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  /api/auth/verify:
+    get:
+      summary: Verify token
+      operationId: verifyToken
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+        - $ref: './base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: Token valid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - valid
+                  - user_id
+                properties:
+                  valid:
+                    type: boolean
+                  user_id:
+                    type: string
+        '401':
+          $ref: './base.yaml#/components/responses/UnauthorizedError'

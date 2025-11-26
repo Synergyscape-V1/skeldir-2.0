@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Attribution API
+  version: 1.0.0
+  description: |
+    Attribution Intelligence API - Realtime Revenue Counter and Attribution Data
+    
+    **NOTE: This is a MINIMAL STUB contract created by frontend team.**
+    **Awaiting complete contract delivery from backend team (B0.5.2).**
+
+servers:
+  - url: http://localhost:4010
+    description: Prism Mock Server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/attribution/revenue/realtime:
+    get:
+      summary: Get Realtime Revenue Counter
+      description: |
+        Polls realtime revenue metrics with 30-second cache TTL.
+        Supports ETag-based caching with If-None-Match header.
+      operationId: getRealtimeRevenue
+      tags:
+        - Attribution
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Request correlation ID for tracing
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+          description: ETag from previous response for cache validation
+      responses:
+        '200':
+          description: Revenue counter data returned successfully
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID echoed back
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for cache validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealtimeRevenueCounter'
+              example:
+                total_revenue: 125430.50
+                event_count: 1247
+                last_updated: '2025-10-15T14:32:00Z'
+                data_freshness_seconds: 5
+                verified: true
+                upgrade_notice: null
+        '304':
+          description: Not Modified - ETag matches, use cached data
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+        '401':
+          description: Unauthorized - Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too Many Requests - Rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RealtimeRevenueCounter:
+      type: object
+      required:
+        - total_revenue
+        - event_count
+        - last_updated
+        - data_freshness_seconds
+        - verified
+      properties:
+        total_revenue:
+          type: number
+          format: float
+          description: Total verified revenue amount
+          example: 125430.50
+        event_count:
+          type: integer
+          description: Number of revenue events tracked
+          example: 1247
+        last_updated:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of last data update
+          example: '2025-10-15T14:32:00Z'
+        data_freshness_seconds:
+          type: integer
+          description: Seconds since data was last refreshed
+          minimum: 0
+          example: 5
+        verified:
+          type: boolean
+          description: Whether revenue is verified through payment reconciliation
+          example: true
+        upgrade_notice:
+          type: string
+          nullable: true
+          description: Optional message about upgrading for more features
+          example: "Upgrade to Pro for historical analytics"
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+        - timestamp
+        - correlation_id
+      properties:
+        error:
+          type: string
+          description: Error type/code
+          example: RATE_LIMIT_EXCEEDED
+        message:
+          type: string
+          description: Human-readable error message
+          example: Rate limit exceeded. Please try again in 60 seconds.
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of error
+          example: '2025-10-15T14:32:15Z'
+        correlation_id:
+          type: string
+          format: uuid
+          description: Request correlation ID for support/debugging
+          example: 550e8400-e29b-41d4-a716-446655440000
+        details:
+          type: object
+          description: Additional error context
+          additionalProperties: true
+          example:
+            retry_after: 60
+            limit: 100
+            window: '1m'

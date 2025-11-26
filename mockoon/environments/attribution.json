@@ -1,0 +1,283 @@
+{
+  "uuid": "attribution-service-uuid-4011",
+  "lastMigration": 33,
+  "name": "Skeldir 2.0 - Attribution Service",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 4011,
+  "hostname": "0.0.0.0",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "route-revenue-realtime",
+      "type": "http",
+      "documentation": "Get Realtime Revenue Counter - B0.6 Interim Schema",
+      "method": "get",
+      "endpoint": "/api/attribution/revenue/realtime",
+      "responses": [
+        {
+          "uuid": "response-revenue-b06-200",
+          "body": "{\n  \"total_revenue\": {{faker 'number.float' min=10000 max=50000 precision=0.01}},\n  \"event_count\": {{faker 'number.int' min=100 max=1000}},\n  \"last_updated\": \"{{faker 'date.recent'}}\",\n  \"data_freshness_seconds\": {{faker 'number.int' min=5 max=300}},\n  \"verified\": false,\n  \"upgrade_notice\": \"Revenue verification available in B2.6\"\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "B0.6 Interim - Unverified revenue",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            },
+            {
+              "key": "ETag",
+              "value": "\"{{faker 'string.alphanumeric' length=32}}\""
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "response-revenue-b26-200",
+          "body": "{\n  \"total_revenue\": {{faker 'number.float' min=20000 max=100000 precision=0.01}},\n  \"verified_revenue\": {{faker 'number.float' min=18000 max=90000 precision=0.01}},\n  \"unverified_revenue\": {{faker 'number.float' min=2000 max=10000 precision=0.01}},\n  \"refunded_revenue\": {{faker 'number.float' min=100 max=1000 precision=0.01}},\n  \"event_count\": {{faker 'number.int' min=200 max=2000}},\n  \"last_updated\": \"{{faker 'date.recent'}}\",\n  \"data_freshness_seconds\": {{faker 'number.int' min=5 max=120}},\n  \"verified\": true,\n  \"verification_rate\": {{faker 'number.float' min=0.80 max=0.98 precision=0.001}}\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "B2.6 Final - Verified revenue",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            },
+            {
+              "key": "ETag",
+              "value": "\"{{faker 'string.alphanumeric' length=32}}\""
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "response-revenue-304",
+          "body": "",
+          "latency": 0,
+          "statusCode": 304,
+          "label": "Not Modified - ETag matches",
+          "headers": [
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    },
+    {
+      "uuid": "route-channels",
+      "type": "http",
+      "documentation": "Get channel performance data - B2.6",
+      "method": "get",
+      "endpoint": "/api/attribution/channels",
+      "responses": [
+        {
+          "uuid": "response-channels-200",
+          "body": "[\n  {\n    \"channel\": \"google_search\",\n    \"total_revenue\": 45200.50,\n    \"verified_revenue\": 43100.25,\n    \"conversion_count\": 1245,\n    \"avg_confidence\": 0.98,\n    \"verification_rate\": 0.954,\n    \"model_type\": \"linear\"\n  },\n  {\n    \"channel\": \"facebook_ads\",\n    \"total_revenue\": 28700.75,\n    \"verified_revenue\": 25400.50,\n    \"conversion_count\": 867,\n    \"avg_confidence\": 0.92,\n    \"verification_rate\": 0.885,\n    \"model_type\": \"linear\"\n  },\n  {\n    \"channel\": \"direct\",\n    \"total_revenue\": 15300.25,\n    \"verified_revenue\": 14800.00,\n    \"conversion_count\": 432,\n    \"avg_confidence\": 0.96,\n    \"verification_rate\": 0.967,\n    \"model_type\": \"linear\"\n  }\n]",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Channel performance array",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    },
+    {
+      "uuid": "route-models-compare",
+      "type": "http",
+      "documentation": "Compare attribution models - B2.6",
+      "method": "get",
+      "endpoint": "/api/attribution/models/compare",
+      "responses": [
+        {
+          "uuid": "response-models-200",
+          "body": "[\n  {\n    \"model_type\": \"linear\",\n    \"channel_allocations\": {\n      \"google_search\": 5000.00,\n      \"facebook_ads\": 5000.00\n    },\n    \"total_revenue\": 10000.00\n  },\n  {\n    \"model_type\": \"last_touch\",\n    \"channel_allocations\": {\n      \"google_search\": 0.00,\n      \"facebook_ads\": 10000.00\n    },\n    \"total_revenue\": 10000.00\n  },\n  {\n    \"model_type\": \"first_touch\",\n    \"channel_allocations\": {\n      \"google_search\": 10000.00,\n      \"facebook_ads\": 0.00\n    },\n    \"total_revenue\": 10000.00\n  }\n]",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Model comparison array",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    },
+    {
+      "uuid": "route-attribution-invalid",
+      "type": "http",
+      "documentation": "Catch-all route for 404 errors",
+      "method": "get",
+      "endpoint": "/api/attribution/invalid-endpoint",
+      "responses": [
+        {
+          "uuid": "response-invalid-404",
+          "body": "{\n  \"type\": \"https://api.skeldir.com/errors/not-found\",\n  \"title\": \"Resource Not Found\",\n  \"status\": 404,\n  \"detail\": \"The requested resource could not be found\",\n  \"instance\": \"/api/attribution/invalid-endpoint\",\n  \"correlation_id\": \"{{faker 'string.uuid'}}\",\n  \"error_id\": \"NOT_FOUND_001\",\n  \"timestamp\": \"{{faker 'date.recent'}}\"\n}",
+          "latency": 0,
+          "statusCode": 404,
+          "label": "Not found",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    }
+  ],
+  "rootChildren": [
+    {
+      "type": "route",
+      "uuid": "route-revenue-realtime"
+    },
+    {
+      "type": "route",
+      "uuid": "route-channels"
+    },
+    {
+      "type": "route",
+      "uuid": "route-models-compare"
+    },
+    {
+      "type": "route",
+      "uuid": "route-attribution-invalid"
+    }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "certPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [
+    {
+      "key": "Access-Control-Allow-Origin",
+      "value": "*"
+    },
+    {
+      "key": "Access-Control-Allow-Methods",
+      "value": "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS"
+    },
+    {
+      "key": "Access-Control-Allow-Headers",
+      "value": "Content-Type, Origin, Accept, Authorization, Content-Length, X-Requested-With, X-Correlation-ID, If-None-Match"
+    }
+  ],
+  "proxyReqHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "proxyResHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "data": [],
+  "callbacks": []
+}

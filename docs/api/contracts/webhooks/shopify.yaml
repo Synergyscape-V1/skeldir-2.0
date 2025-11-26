@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Shopify Webhooks
+  version: 2.0.0
+  description: Shopify webhook schemas
+
+servers:
+  - url: http://localhost:4016
+    description: Mock server
+
+paths:
+  /webhooks/shopify/order:
+    post:
+      summary: Shopify order created webhook
+      operationId: shopifyOrderCreated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - order_number
+                - total_price
+                - created_at
+              properties:
+                id:
+                  type: string
+                order_number:
+                  type: string
+                total_price:
+                  type: string
+                created_at:
+                  type: string
+                  format: date-time
+                note_attributes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: '../base.yaml#/components/schemas/SuccessResponse'
+
+  /webhooks/shopify/checkout:
+    post:
+      summary: Shopify checkout updated webhook
+      operationId: shopifyCheckoutUpdated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - total_price
+              properties:
+                token:
+                  type: string
+                total_price:
+                  type: string
+                note_attributes:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Webhook processed

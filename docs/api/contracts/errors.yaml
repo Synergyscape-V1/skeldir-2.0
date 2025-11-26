@@ -1,0 +1,64 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Error Logging API
+  version: 2.0.0
+  description: Frontend error logging endpoints
+
+servers:
+  - url: http://localhost:4014
+    description: Mock server
+
+paths:
+  /api/errors/log:
+    post:
+      summary: Log frontend error
+      operationId: logError
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - error_message
+                - stack_trace
+                - timestamp
+                - url
+                - user_agent
+              properties:
+                error_message:
+                  type: string
+                stack_trace:
+                  type: string
+                timestamp:
+                  type: string
+                  format: date-time
+                url:
+                  type: string
+                user_agent:
+                  type: string
+                user_id:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        '201':
+          description: Error logged successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error_id
+                  - correlation_id
+                properties:
+                  error_id:
+                    type: string
+                    format: uuid
+                  correlation_id:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: './base.yaml#/components/responses/ServerError'

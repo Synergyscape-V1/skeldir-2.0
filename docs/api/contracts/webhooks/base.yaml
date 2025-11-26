@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Webhook Base Schemas
+  version: 2.0.0
+  description: Shared schemas for all webhook contracts
+
+components:
+  schemas:
+    WebhookMetadata:
+      type: object
+      required:
+        - webhook_id
+        - received_at
+        - source_platform
+      properties:
+        webhook_id:
+          type: string
+          format: uuid
+        received_at:
+          type: string
+          format: date-time
+        source_platform:
+          type: string
+        signature:
+          type: string
+
+    AttributionData:
+      type: object
+      properties:
+        note_attributes:
+          type: array
+          items:
+            type: object
+        meta_data:
+          type: array
+          items:
+            type: object
+        metadata:
+          type: object
+        custom_id:
+          type: string

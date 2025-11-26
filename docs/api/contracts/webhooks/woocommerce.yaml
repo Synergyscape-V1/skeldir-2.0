@@ -1,0 +1,52 @@
+openapi: 3.1.0
+info:
+  title: Skeldir WooCommerce Webhooks
+  version: 2.0.0
+  description: WooCommerce webhook schemas
+
+servers:
+  - url: http://localhost:4017
+    description: Mock server
+
+paths:
+  /webhooks/woocommerce/order:
+    post:
+      summary: WooCommerce order created webhook
+      operationId: woocommerceOrderCreated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - order_key
+                - total
+                - date_created
+              properties:
+                id:
+                  type: integer
+                order_key:
+                  type: string
+                total:
+                  type: string
+                date_created:
+                  type: string
+                  format: date-time
+                meta_data:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key:
+                        type: string
+                      value:
+                        type: string
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: '../base.yaml#/components/schemas/SuccessResponse'

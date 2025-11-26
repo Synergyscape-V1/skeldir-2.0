@@ -1,0 +1,58 @@
+openapi: 3.1.0
+info:
+  title: Skeldir PayPal Webhooks
+  version: 2.0.0
+  description: PayPal webhook schemas
+
+servers:
+  - url: http://localhost:4019
+    description: Mock server
+
+paths:
+  /webhooks/paypal/payment:
+    post:
+      summary: PayPal payment captured webhook
+      operationId: paypalPaymentCaptured
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - event_type
+                - resource
+              properties:
+                id:
+                  type: string
+                event_type:
+                  type: string
+                  enum: [PAYMENT.CAPTURE.COMPLETED]
+                resource:
+                  type: object
+                  required:
+                    - id
+                    - amount
+                  properties:
+                    id:
+                      type: string
+                    amount:
+                      type: object
+                      required:
+                        - currency_code
+                        - value
+                      properties:
+                        currency_code:
+                          type: string
+                        value:
+                          type: string
+                    custom_id:
+                      type: string
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: '../base.yaml#/components/schemas/SuccessResponse'

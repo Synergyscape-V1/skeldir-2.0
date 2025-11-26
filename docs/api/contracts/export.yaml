@@ -1,0 +1,62 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Export API
+  version: 2.0.0
+  description: Data export functionality (CSV, JSON, Excel)
+
+servers:
+  - url: http://localhost:4012
+    description: Mock server
+
+paths:
+  /api/export/csv:
+    get:
+      summary: Export data as CSV
+      operationId: exportCSV
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+        - $ref: './base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: './base.yaml#/components/responses/UnauthorizedError'
+
+  /api/export/json:
+    get:
+      summary: Export data as JSON
+      operationId: exportJSON
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+        - $ref: './base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: JSON data
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: './base.yaml#/components/responses/UnauthorizedError'
+
+  /api/export/excel:
+    get:
+      summary: Export data as Excel
+      operationId: exportExcel
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+        - $ref: './base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: './base.yaml#/components/responses/UnauthorizedError'

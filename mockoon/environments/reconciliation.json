@@ -1,0 +1,162 @@
+{
+  "uuid": "reconciliation-service-uuid-4012",
+  "lastMigration": 33,
+  "name": "Skeldir 2.0 - Reconciliation Service",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 4012,
+  "hostname": "0.0.0.0",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "route-reconciliation-status",
+      "type": "http",
+      "documentation": "Get reconciliation status for all platforms",
+      "method": "get",
+      "endpoint": "/api/reconciliation/status",
+      "responses": [
+        {
+          "uuid": "response-status-200",
+          "body": "{\n  \"overall_status\": \"healthy\",\n  \"last_run\": \"{{faker 'date.recent'}}\",\n  \"next_run\": \"{{faker 'date.soon'}}\",\n  \"pipelines\": [\n    {\n      \"pipeline_id\": \"{{faker 'string.uuid'}}\",\n      \"platform\": \"Shopify\",\n      \"status\": \"success\",\n      \"last_updated\": \"{{faker 'date.recent'}}\",\n      \"records_processed\": {{faker 'number.int' min=1000 max=5000}},\n      \"errors_count\": 0,\n      \"duration_ms\": {{faker 'number.int' min=100 max=3000}}\n    },\n    {\n      \"pipeline_id\": \"{{faker 'string.uuid'}}\",\n      \"platform\": \"Stripe\",\n      \"status\": \"success\",\n      \"last_updated\": \"{{faker 'date.recent'}}\",\n      \"records_processed\": {{faker 'number.int' min=2000 max=8000}},\n      \"errors_count\": 2,\n      \"duration_ms\": {{faker 'number.int' min=200 max=4000}}\n    },\n    {\n      \"pipeline_id\": \"{{faker 'string.uuid'}}\",\n      \"platform\": \"Meta\",\n      \"status\": \"running\",\n      \"last_updated\": \"{{faker 'date.recent'}}\",\n      \"records_processed\": {{faker 'number.int' min=500 max=2000}},\n      \"errors_count\": 0,\n      \"duration_ms\": {{faker 'number.int' min=1000 max=5000}}\n    }\n  ]\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Reconciliation status",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "response-status-401",
+          "body": "{\n  \"type\": \"https://api.skeldir.com/errors/unauthorized\",\n  \"title\": \"Unauthorized\",\n  \"status\": 401,\n  \"detail\": \"Authentication required\",\n  \"instance\": \"/api/reconciliation/status\",\n  \"correlation_id\": \"{{faker 'string.uuid'}}\",\n  \"error_id\": \"AUTH_002\",\n  \"timestamp\": \"{{faker 'date.recent'}}\"\n}",
+          "latency": 0,
+          "statusCode": 401,
+          "label": "Unauthorized",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    },
+    {
+      "uuid": "route-reconciliation-invalid",
+      "type": "http",
+      "documentation": "Catch-all route for 404 errors",
+      "method": "get",
+      "endpoint": "/api/reconciliation/invalid",
+      "responses": [
+        {
+          "uuid": "response-invalid-404",
+          "body": "{\n  \"type\": \"https://api.skeldir.com/errors/not-found\",\n  \"title\": \"Resource Not Found\",\n  \"status\": 404,\n  \"detail\": \"The requested resource could not be found\",\n  \"instance\": \"/api/reconciliation/invalid\",\n  \"correlation_id\": \"{{faker 'string.uuid'}}\",\n  \"error_id\": \"NOT_FOUND_001\",\n  \"timestamp\": \"{{faker 'date.recent'}}\"\n}",
+          "latency": 0,
+          "statusCode": 404,
+          "label": "Not found",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    }
+  ],
+  "rootChildren": [
+    {
+      "type": "route",
+      "uuid": "route-reconciliation-status"
+    },
+    {
+      "type": "route",
+      "uuid": "route-reconciliation-invalid"
+    }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [
+    {
+      "key": "Access-Control-Allow-Origin",
+      "value": "*"
+    },
+    {
+      "key": "Access-Control-Allow-Methods",
+      "value": "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS"
+    },
+    {
+      "key": "Access-Control-Allow-Headers",
+      "value": "Content-Type, Origin, Accept, Authorization, Content-Length, X-Requested-With, X-Correlation-ID"
+    }
+  ],
+  "proxyReqHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "proxyResHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "data": [],
+  "callbacks": []
+}

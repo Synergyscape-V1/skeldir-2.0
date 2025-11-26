@@ -1,0 +1,135 @@
+@keyframes bannerSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes bannerSlideOut {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes bannerFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes bannerFadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.banner-enter {
+  animation: bannerSlideIn 300ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.banner-exit {
+  animation: bannerSlideOut 250ms cubic-bezier(0.6, 0, 0.8, 0.2) forwards;
+}
+
+.banner-reposition {
+  transition: top 200ms cubic-bezier(0.2, 0.8, 0.2, 1), bottom 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-enter {
+    animation: bannerFadeIn 200ms ease forwards;
+    transform: none !important;
+  }
+
+  .banner-exit {
+    animation: bannerFadeOut 150ms ease forwards;
+    transform: none !important;
+  }
+
+  .banner-reposition {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .error-banner-container {
+    position: fixed !important;
+    top: auto !important;
+    left: 24px;
+    right: 24px;
+    width: auto !important;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 375px) {
+  .error-banner-message {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .error-banner-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .error-banner-container {
+    padding: 10px 12px;
+  }
+}
+
+@media (max-height: 500px) {
+  .error-banner-container {
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+  }
+}
+
+@keyframes detailsExpand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    margin-top: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 100px;
+    margin-top: 8px;
+  }
+}
+
+@keyframes detailsCollapse {
+  from {
+    opacity: 1;
+    max-height: 100px;
+    margin-top: 8px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+    margin-top: 0;
+  }
+}
+
+.advanced-details-collapsed {
+  opacity: 0 !important;
+  max-height: 0 !important;
+  margin-top: 0 !important;
+}

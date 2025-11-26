@@ -1,0 +1,192 @@
+{
+  "uuid": "export-service-uuid-4013",
+  "lastMigration": 33,
+  "name": "Skeldir 2.0 - Export Service",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 4013,
+  "hostname": "0.0.0.0",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "route-export-csv",
+      "type": "http",
+      "documentation": "Export data as CSV",
+      "method": "get",
+      "endpoint": "/api/export/csv",
+      "responses": [
+        {
+          "uuid": "response-csv-200",
+          "body": "platform,revenue,conversions,date\\nGoogle Search,45200.50,1245,2024-01-15\\nFacebook Ads,28700.75,867,2024-01-15\\nDirect,15300.25,432,2024-01-15",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "CSV export",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "text/csv"
+            },
+            {
+              "key": "Content-Disposition",
+              "value": "attachment; filename=skeldir-export-{{faker 'date.recent'}}.csv"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    },
+    {
+      "uuid": "route-export-json",
+      "type": "http",
+      "documentation": "Export data as JSON",
+      "method": "get",
+      "endpoint": "/api/export/json",
+      "responses": [
+        {
+          "uuid": "response-json-200",
+          "body": "{\n  \"export_date\": \"{{faker 'date.recent'}}\",\n  \"data\": [\n    {\n      \"platform\": \"Google Search\",\n      \"revenue\": 45200.50,\n      \"conversions\": 1245,\n      \"date\": \"2024-01-15\"\n    },\n    {\n      \"platform\": \"Facebook Ads\",\n      \"revenue\": 28700.75,\n      \"conversions\": 867,\n      \"date\": \"2024-01-15\"\n    },\n    {\n      \"platform\": \"Direct\",\n      \"revenue\": 15300.25,\n      \"conversions\": 432,\n      \"date\": \"2024-01-15\"\n    }\n  ]\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "JSON export",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Content-Disposition",
+              "value": "attachment; filename=skeldir-export-{{faker 'date.recent'}}.json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    },
+    {
+      "uuid": "route-export-excel",
+      "type": "http",
+      "documentation": "Export data as Excel",
+      "method": "get",
+      "endpoint": "/api/export/excel",
+      "responses": [
+        {
+          "uuid": "response-excel-200",
+          "body": "Mock Excel binary data - use actual Excel library in production",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Excel export",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            },
+            {
+              "key": "Content-Disposition",
+              "value": "attachment; filename=skeldir-export-{{faker 'date.recent'}}.xlsx"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    }
+  ],
+  "rootChildren": [
+    {
+      "type": "route",
+      "uuid": "route-export-csv"
+    },
+    {
+      "type": "route",
+      "uuid": "route-export-json"
+    },
+    {
+      "type": "route",
+      "uuid": "route-export-excel"
+    }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [
+    {
+      "key": "Access-Control-Allow-Origin",
+      "value": "*"
+    },
+    {
+      "key": "Access-Control-Allow-Methods",
+      "value": "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS"
+    },
+    {
+      "key": "Access-Control-Allow-Headers",
+      "value": "Content-Type, Origin, Accept, Authorization, Content-Length, X-Requested-With, X-Correlation-ID"
+    }
+  ],
+  "proxyReqHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "proxyResHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "data": [],
+  "callbacks": []
+}

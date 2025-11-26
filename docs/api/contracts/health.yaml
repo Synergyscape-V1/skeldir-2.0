@@ -1,0 +1,46 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Health Monitoring API
+  version: 2.0.0
+  description: System health and status monitoring endpoints
+
+servers:
+  - url: http://localhost:4011
+    description: Mock server
+
+paths:
+  /api/health:
+    get:
+      summary: Get system health status
+      operationId: getHealthStatus
+      parameters:
+        - $ref: './base.yaml#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - timestamp
+                  - services
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        enum: [up, down]
+                      api:
+                        type: string
+                        enum: [up, down]
+        '500':
+          $ref: './base.yaml#/components/responses/ServerError'

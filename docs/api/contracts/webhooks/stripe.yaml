@@ -1,0 +1,58 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Stripe Webhooks
+  version: 2.0.0
+  description: Stripe webhook schemas
+
+servers:
+  - url: http://localhost:4018
+    description: Mock server
+
+paths:
+  /webhooks/stripe/payment:
+    post:
+      summary: Stripe payment succeeded webhook
+      operationId: stripePaymentSucceeded
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - type
+                - data
+              properties:
+                id:
+                  type: string
+                type:
+                  type: string
+                  enum: [payment_intent.succeeded, charge.refunded]
+                data:
+                  type: object
+                  required:
+                    - object
+                  properties:
+                    object:
+                      type: object
+                      required:
+                        - id
+                        - amount
+                        - currency
+                      properties:
+                        id:
+                          type: string
+                        amount:
+                          type: integer
+                        currency:
+                          type: string
+                        metadata:
+                          type: object
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: '../base.yaml#/components/schemas/SuccessResponse'

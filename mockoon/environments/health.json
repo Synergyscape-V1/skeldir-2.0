@@ -1,0 +1,148 @@
+{
+  "uuid": "health-service-uuid-4014",
+  "lastMigration": 33,
+  "name": "Skeldir 2.0 - Health Service",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 4014,
+  "hostname": "0.0.0.0",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "route-health-status",
+      "type": "http",
+      "documentation": "Get system health status",
+      "method": "get",
+      "endpoint": "/api/health",
+      "responses": [
+        {
+          "uuid": "response-health-200",
+          "body": "{\n  \"status\": \"healthy\",\n  \"timestamp\": \"{{faker 'date.recent'}}\",\n  \"version\": \"2.0.0\",\n  \"services\": {\n    \"database\": \"healthy\",\n    \"api\": \"healthy\",\n    \"auth\": \"healthy\",\n    \"attribution\": \"healthy\",\n    \"export\": \"healthy\",\n    \"reconciliation\": \"healthy\"\n  }\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "System healthy",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "response-health-degraded",
+          "body": "{\n  \"status\": \"degraded\",\n  \"timestamp\": \"{{faker 'date.recent'}}\",\n  \"version\": \"2.0.0\",\n  \"services\": {\n    \"database\": \"healthy\",\n    \"api\": \"healthy\",\n    \"auth\": \"healthy\",\n    \"attribution\": \"degraded\",\n    \"export\": \"healthy\",\n    \"reconciliation\": \"healthy\"\n  }\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "System degraded",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Correlation-ID",
+              "value": "{{faker 'string.uuid'}}"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "response-health-500",
+          "body": "{\n  \"type\": \"https://api.skeldir.com/errors/server-error\",\n  \"title\": \"Internal Server Error\",\n  \"status\": 500,\n  \"detail\": \"Health check failed\",\n  \"instance\": \"/api/health\",\n  \"correlation_id\": \"{{faker 'string.uuid'}}\",\n  \"error_id\": \"HEALTH_001\",\n  \"timestamp\": \"{{faker 'date.recent'}}\"\n}",
+          "latency": 0,
+          "statusCode": 500,
+          "label": "Server error",
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/problem+json"
+            }
+          ],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null
+    }
+  ],
+  "rootChildren": [
+    {
+      "type": "route",
+      "uuid": "route-health-status"
+    }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [
+    {
+      "key": "Access-Control-Allow-Origin",
+      "value": "*"
+    },
+    {
+      "key": "Access-Control-Allow-Methods",
+      "value": "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS"
+    },
+    {
+      "key": "Access-Control-Allow-Headers",
+      "value": "Content-Type, Origin, Accept, Authorization, Content-Length, X-Requested-With, X-Correlation-ID"
+    }
+  ],
+  "proxyReqHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "proxyResHeaders": [
+    {
+      "key": "",
+      "value": ""
+    }
+  ],
+  "data": [],
+  "callbacks": []
+}

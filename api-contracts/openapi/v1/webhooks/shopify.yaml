@@ -1,377 +1,207 @@
 openapi: 3.1.0
 info:
-  title: Skeldir Shopify Webhook API
-  version: 1.1.0
-  description: Shopify webhook ingestion endpoints for Skeldir Attribution Intelligence platform
-  x-domain: "webhooks/shopify"
-  x-owner: "webhooks-owner@skeldir.com"
-  x-version-history:
-    - version: "1.1.0"
-      date: "2024-01-15"
-      changes: "Added orders/paid and refunds/create events, hardened currency field"
-      phase: "G4.3"
+  title: Skeldir Shopify Webhooks
+  version: 2.0.0
+  description: |
+    Shopify webhook schemas for order and checkout events.
+    These webhooks are received by the backend for revenue verification.
+
 servers:
-  - url: https://api.skeldir.com
-    description: Production server
   - url: http://localhost:4015
-    description: Prism mock server for frontend development
+    description: Prism Mock Server (Shopify Webhooks)
+
 paths:
   /webhooks/shopify/orders/create:
     post:
-      operationId: shopifyOrderCreate
+      summary: Shopify order created webhook
+      description: Triggered when a new order is created in Shopify
+      operationId: shopifyOrderCreated
       tags:
-        - Webhooks
-        - Shopify
-      summary: Shopify order creation webhook
-      description: |
-        Receives Shopify order creation webhooks for revenue attribution.
-        
-        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-Shopify-Hmac-Sha256 header.
-        The webhook secret must be configured in the tenant settings.
-        
-        **Privacy**: All PII (emails, names, addresses, phone numbers) is stripped from the payload before persistence.
-        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
-        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
-      security: []
+        - Shopify Webhooks
       parameters:
-        - name: X-Shopify-Hmac-Sha256
+        - name: X-Shopify-Hmac-SHA256
           in: header
           required: true
           schema:
             type: string
-          description: HMAC-SHA256 signature for webhook verification
+          description: HMAC signature for webhook verification
         - name: X-Shopify-Shop-Domain
           in: header
           required: true
           schema:
             type: string
-          description: Shopify shop domain
-        - name: X-Correlation-ID
+          description: Shop domain that triggered the webhook
+        - name: X-Shopify-Topic
           in: header
-          required: false
+          required: true
           schema:
             type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
+            enum: [orders/create]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ShopifyOrderCreateRequest'
+              $ref: '#/components/schemas/ShopifyOrder'
+            example:
+              id: 820982911946154508
+              order_number: 1001
+              total_price: "199.99"
+              currency: USD
+              created_at: '2025-11-26T14:30:00Z'
+              note_attributes:
+                - name: skeldir_session_id
+                  value: sess_abc123
+                - name: utm_source
+                  value: facebook
       responses:
         '200':
           description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-              examples:
-                invalid_signature:
-                  summary: Invalid HMAC signature
-                  value:
-                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
-                    title: "Invalid Webhook Signature"
-                    status: 400
-                    detail: "HMAC signature validation failed"
-                    instance: "/webhooks/shopify/orders/create"
-                    error_id: "550e8400-e29b-41d4-a716-446655440000"
-                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
         '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
-  
-  /webhooks/shopify/orders/paid:
+          description: Invalid HMAC signature
+        '500':
+          $ref: '../_common/base.yaml#/components/responses/ServerError'
+
+  /webhooks/shopify/checkouts/update:
     post:
-      operationId: shopifyOrderPaid
+      summary: Shopify checkout updated webhook
+      description: Triggered when a checkout is updated in Shopify
+      operationId: shopifyCheckoutUpdated
       tags:
-        - Webhooks
-        - Shopify
-      summary: Shopify order paid webhook
-      description: |
-        Receives Shopify order paid webhooks for revenue attribution (confirms payment received).
-        
-        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-Shopify-Hmac-Sha256 header.
-        The webhook secret must be configured in the tenant settings.
-        
-        **Privacy**: All PII (emails, names, addresses, phone numbers) is stripped from the payload before persistence.
-        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
-        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
-      security: []
+        - Shopify Webhooks
       parameters:
-        - name: X-Shopify-Hmac-Sha256
+        - name: X-Shopify-Hmac-SHA256
           in: header
           required: true
           schema:
             type: string
-          description: HMAC-SHA256 signature for webhook verification
         - name: X-Shopify-Shop-Domain
           in: header
           required: true
           schema:
             type: string
-          description: Shopify shop domain
-        - name: X-Correlation-ID
+        - name: X-Shopify-Topic
           in: header
-          required: false
+          required: true
           schema:
             type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
+            enum: [checkouts/update]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ShopifyOrderPaidRequest'
+              $ref: '#/components/schemas/ShopifyCheckout'
       responses:
         '200':
           description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-              examples:
-                invalid_signature:
-                  summary: Invalid HMAC signature
-                  value:
-                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
-                    title: "Invalid Webhook Signature"
-                    status: 400
-                    detail: "HMAC signature validation failed"
-                    instance: "/webhooks/shopify/orders/paid"
-                    error_id: "550e8400-e29b-41d4-a716-446655440000"
-                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
-        '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
-  
-  /webhooks/shopify/refunds/create:
-    post:
-      operationId: shopifyRefundCreate
-      tags:
-        - Webhooks
-        - Shopify
-      summary: Shopify refund creation webhook
-      description: |
-        Receives Shopify refund creation webhooks for revenue reconciliation.
-        
-        **Security**: This endpoint validates HMAC-SHA256 signatures using the X-Shopify-Hmac-Sha256 header.
-        The webhook secret must be configured in the tenant settings.
-        
-        **Privacy**: All PII (emails, names, addresses, phone numbers) is stripped from the payload before persistence.
-        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
-        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
-        
-        **Required for**: B2.4 revenue reconciliation pipeline
-      security: []
-      parameters:
-        - name: X-Shopify-Hmac-Sha256
-          in: header
-          required: true
-          schema:
-            type: string
-          description: HMAC-SHA256 signature for webhook verification
-        - name: X-Shopify-Shop-Domain
-          in: header
-          required: true
-          schema:
-            type: string
-          description: Shopify shop domain
-        - name: X-Correlation-ID
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ShopifyRefundCreateRequest'
-      responses:
-        '200':
-          description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-              examples:
-                invalid_signature:
-                  summary: Invalid HMAC signature
-                  value:
-                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
-                    title: "Invalid Webhook Signature"
-                    status: 400
-                    detail: "HMAC signature validation failed"
-                    instance: "/webhooks/shopify/refunds/create"
-                    error_id: "550e8400-e29b-41d4-a716-446655440000"
-                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
-        '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+
 components:
   schemas:
-    ShopifyOrderCreateRequest:
-      type: object
-      description: |
-        Shopify order webhook payload. Note: PII fields (email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only transaction ID, order total, currency, and timestamp are retained.
-      properties:
-        id:
-          type: integer
-          description: Shopify order ID (used for idempotency)
-        total_price:
-          type: string
-          description: Order total as string (will be converted to cents)
-        currency:
-          type: string
-          pattern: "^[A-Z]{3}$"
-          description: "ISO 4217 uppercase currency code"
-          example: "USD"
-        created_at:
-          type: string
-          format: date-time
-          description: Order creation timestamp
-    ShopifyOrderPaidRequest:
-      type: object
-      description: |
-        Shopify order paid webhook payload. Note: PII fields (email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only transaction ID, order total, currency, and timestamp are retained.
-      properties:
-        id:
-          type: integer
-          minimum: 1
-          description: Shopify order ID (used for idempotency)
-          example: 1234567890
-        total_price:
-          type: string
-          description: Order total as string (will be converted to cents)
-          example: "129.99"
-        currency:
-          type: string
-          pattern: "^[A-Z]{3}$"
-          description: "ISO 4217 uppercase currency code"
-          example: "USD"
-        financial_status:
-          type: string
-          enum:
-            - paid
-            - partially_paid
-          description: Financial status of the order
-          example: "paid"
-        created_at:
-          type: string
-          format: date-time
-          description: Order creation timestamp
-          example: "2025-11-10T14:30:00Z"
-    
-    ShopifyRefundCreateRequest:
-      type: object
-      description: |
-        Shopify refund creation webhook payload. Note: PII fields (email, billing_address, shipping_address, customer details)
-        are stripped before persistence. Only refund ID, order ID, refund amount, and timestamp are retained.
-      properties:
-        id:
-          type: integer
-          minimum: 1
-          description: Shopify refund ID (used for idempotency)
-          example: 9876543210
-        order_id:
-          type: integer
-          minimum: 1
-          description: Shopify order ID being refunded
-          example: 1234567890
-        refund_amount:
-          type: string
-          description: Refund amount as string (will be converted to cents)
-          example: "29.99"
-        currency:
-          type: string
-          pattern: "^[A-Z]{3}$"
-          description: "ISO 4217 uppercase currency code"
-          example: "USD"
-        created_at:
-          type: string
-          format: date-time
-          description: Refund creation timestamp
-          example: "2025-11-10T15:30:00Z"
-    
-    WebhookAcknowledgement:
+    ShopifyOrder:
       type: object
       required:
-        - acknowledged
-        - event_id
+        - id
+        - order_number
+        - total_price
+        - created_at
       properties:
-        acknowledged:
-          type: boolean
-          example: true
-        event_id:
+        id:
+          type: integer
+          format: int64
+          description: Shopify order ID
+        order_number:
+          type: integer
+          description: Human-readable order number
+        total_price:
           type: string
-          description: Internal event ID for tracking
-          example: "evt_550e8400e29b41d4a716446655440000"
+          description: Total order price as string
+        subtotal_price:
+          type: string
+          description: Subtotal before taxes and shipping
+        total_tax:
+          type: string
+          description: Total tax amount
+        currency:
+          type: string
+          description: Currency code
+          example: USD
+        created_at:
+          type: string
+          format: date-time
+        confirmed:
+          type: boolean
+          description: Whether the order is confirmed
+        financial_status:
+          type: string
+          enum: [pending, paid, refunded, voided]
+        note_attributes:
+          type: array
+          description: Custom attributes including attribution data
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+        customer:
+          type: object
+          properties:
+            id:
+              type: integer
+              format: int64
+            email:
+              type: string
+              format: email
+        line_items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+              title:
+                type: string
+              quantity:
+                type: integer
+              price:
+                type: string
+
+    ShopifyCheckout:
+      type: object
+      required:
+        - token
+        - total_price
+      properties:
+        token:
+          type: string
+          description: Checkout token
+        total_price:
+          type: string
+          description: Total checkout price
+        subtotal_price:
+          type: string
+        currency:
+          type: string
+        abandoned_checkout_url:
+          type: string
+          format: uri
+        note_attributes:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              value:
+                type: string

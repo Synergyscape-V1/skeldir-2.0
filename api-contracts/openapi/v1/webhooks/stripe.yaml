@@ -1,418 +1,200 @@
 openapi: 3.1.0
 info:
-  title: Skeldir Stripe Webhook API
-  version: 1.1.0
-  description: Stripe webhook ingestion endpoints for Skeldir Attribution Intelligence platform
-  x-domain: "webhooks/stripe"
-  x-owner: "webhooks-owner@skeldir.com"
-  x-version-history:
-    - version: "1.1.0"
-      date: "2024-01-15"
-      changes: "Added charge.refunded and payment_intent.succeeded events, hardened currency field"
-      phase: "G4.2"
+  title: Skeldir Stripe Webhooks
+  version: 2.0.0
+  description: |
+    Stripe webhook schemas for payment events.
+    Used for payment verification and revenue reconciliation.
+
 servers:
-  - url: https://api.skeldir.com
-    description: Production server
   - url: http://localhost:4017
-    description: Prism mock server for frontend development
+    description: Prism Mock Server (Stripe Webhooks)
+
 paths:
   /webhooks/stripe/charge/succeeded:
     post:
+      summary: Stripe charge succeeded webhook
+      description: Triggered when a charge is successfully completed
       operationId: stripeChargeSucceeded
       tags:
-        - Webhooks
-        - Stripe
-      summary: Stripe charge succeeded webhook
-      description: |
-        Receives Stripe charge succeeded webhooks for revenue attribution.
-        
-        **Security**: This endpoint validates Stripe webhook signatures using the Stripe-Signature header.
-        The webhook secret must be configured in the tenant settings. Stripe uses HMAC-SHA256 with timestamp and event ID.
-        
-        **Privacy**: All PII (customer email, billing details, payment method details) is stripped from the payload before persistence.
-        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
-        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
-      security: []
+        - Stripe Webhooks
       parameters:
         - name: Stripe-Signature
           in: header
           required: true
           schema:
             type: string
-          description: Stripe webhook signature for verification (includes timestamp and signatures)
-        - name: X-Correlation-ID
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
+          description: Stripe webhook signature for verification
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StripeChargeSucceededRequest'
+              $ref: '#/components/schemas/StripeEvent'
+            example:
+              id: evt_1234567890
+              type: charge.succeeded
+              created: 1732631400
+              data:
+                object:
+                  id: ch_1234567890
+                  amount: 19999
+                  currency: usd
+                  status: succeeded
+                  metadata:
+                    skeldir_session_id: sess_abc123
+                    order_id: ord_12345
       responses:
         '200':
           description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
         '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-              examples:
-                invalid_signature:
-                  summary: Invalid Stripe signature
-                  value:
-                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
-                    title: "Invalid Webhook Signature"
-                    status: 400
-                    detail: "Stripe webhook signature validation failed"
-                    instance: "/webhooks/stripe/charge/succeeded"
-                    error_id: "550e8400-e29b-41d4-a716-446655440000"
-                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
-        '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
-  
-  /webhooks/stripe/charge/refunded:
-    post:
-      operationId: stripeChargeRefunded
-      tags:
-        - Webhooks
-        - Stripe
-      summary: Stripe charge refunded webhook
-      description: |
-        Receives Stripe charge refunded webhooks for revenue reconciliation.
-        
-        **Security**: This endpoint validates Stripe webhook signatures using the Stripe-Signature header.
-        The webhook secret must be configured in the tenant settings. Stripe uses HMAC-SHA256 with timestamp and event ID.
-        
-        **Privacy**: All PII (customer email, billing details, payment method details) is stripped from the payload before persistence.
-        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
-        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
-      security: []
-      parameters:
-        - name: Stripe-Signature
-          in: header
-          required: true
-          schema:
-            type: string
-          description: Stripe webhook signature for verification (includes timestamp and signatures)
-        - name: X-Correlation-ID
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StripeChargeRefundedRequest'
-      responses:
-        '200':
-          description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-              examples:
-                invalid_signature:
-                  summary: Invalid Stripe signature
-                  value:
-                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
-                    title: "Invalid Webhook Signature"
-                    status: 400
-                    detail: "Stripe webhook signature validation failed"
-                    instance: "/webhooks/stripe/charge/refunded"
-                    error_id: "550e8400-e29b-41d4-a716-446655440000"
-                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
-        '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
-  
+          description: Invalid webhook signature
+        '500':
+          $ref: '../_common/base.yaml#/components/responses/ServerError'
+
   /webhooks/stripe/payment_intent/succeeded:
     post:
+      summary: Stripe payment intent succeeded webhook
+      description: Triggered when a payment intent is successfully completed
       operationId: stripePaymentIntentSucceeded
       tags:
-        - Webhooks
-        - Stripe
-      summary: Stripe payment intent succeeded webhook
-      description: |
-        Receives Stripe payment_intent.succeeded webhooks for modern Payment Intents API integration.
-        
-        **Security**: This endpoint validates Stripe webhook signatures using the Stripe-Signature header.
-        The webhook secret must be configured in the tenant settings. Stripe uses HMAC-SHA256 with timestamp and event ID.
-        
-        **Privacy**: All PII (customer email, billing details, payment method details) is stripped from the payload before persistence.
-        No storage of personally identifiable information occurs. Only session-scoped data is retained for attribution purposes.
-        Session IDs are ephemeral (30-minute inactivity timeout) and are NOT used for cross-session tracking.
-        
-        **Note**: Modern Stripe integrations use Payment Intents rather than Charges. This endpoint supports both legacy and modern flows.
-      security: []
+        - Stripe Webhooks
       parameters:
         - name: Stripe-Signature
           in: header
           required: true
           schema:
             type: string
-          description: Stripe webhook signature for verification (includes timestamp and signatures)
-        - name: X-Correlation-ID
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uuid
-          description: Distributed tracing correlation ID (generated if not provided)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StripePaymentIntentSucceededRequest'
+              $ref: '#/components/schemas/StripeEvent'
       responses:
         '200':
           description: Webhook processed successfully
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebhookAcknowledgement'
-              examples:
-                success:
-                  summary: Webhook acknowledged
-                  value:
-                    acknowledged: true
-                    event_id: "evt_550e8400e29b41d4a716446655440000"
-        '400':
-          description: Invalid webhook payload or signature
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+
+  /webhooks/stripe/charge/refunded:
+    post:
+      summary: Stripe charge refunded webhook
+      description: Triggered when a charge is refunded
+      operationId: stripeChargeRefunded
+      tags:
+        - Stripe Webhooks
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StripeEvent'
+      responses:
+        '200':
+          description: Webhook processed successfully
           content:
             application/json:
               schema:
-                $ref: '../_common/components.yaml#/components/schemas/Problem'
-              examples:
-                invalid_signature:
-                  summary: Invalid Stripe signature
-                  value:
-                    type: "https://api.skeldir.com/problems/invalid-webhook-signature"
-                    title: "Invalid Webhook Signature"
-                    status: 400
-                    detail: "Stripe webhook signature validation failed"
-                    instance: "/webhooks/stripe/payment_intent/succeeded"
-                    error_id: "550e8400-e29b-41d4-a716-446655440000"
-                    correlation_id: "550e8400-e29b-41d4-a716-446655440000"
-        '401':
-          $ref: '../_common/components.yaml#/components/responses/Unauthorized'
+                $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+
 components:
   schemas:
-    StripeChargeSucceededRequest:
-      type: object
-      description: |
-        Stripe charge webhook payload. Note: PII fields (customer email, billing details, payment method details)
-        are stripped before persistence. Only charge ID, amount, currency, and created timestamp are retained.
-      x-mapping:
-        canonical_event: "PaymentCaptured"
-        state_transition:
-          from_state: "authorized"
-          to_state: "captured"
-          ledger_table: "revenue_state_transitions"
-        idempotency:
-          key_field: "transaction_id"
-          key_source: "id"
-          duplicate_handling: "skip"
-      properties:
-        id:
-          type: string
-          description: Stripe charge ID (used for idempotency)
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "transaction_id"
-            transform: "as-is"
-            required: true
-        amount:
-          type: integer
-          description: Charge amount in cents
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "amount_cents"
-            transform: "as-is"
-            required: true
-        currency:
-          type: string
-          pattern: "^[a-z]{3}$"
-          description: "ISO 4217 currency code (lowercase per Stripe API specification)"
-          example: "usd"
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "currency"
-            transform: "uppercase"
-            required: true
-            notes: "Stripe sends lowercase, ledger expects uppercase ISO 4217"
-        created:
-          type: integer
-          description: Unix timestamp of charge creation
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "verification_timestamp"
-            transform: "unix_to_timestamptz"
-            required: true
-    StripeChargeRefundedRequest:
-      type: object
-      description: |
-        Stripe charge refunded webhook payload. Note: PII fields (customer email, billing details, payment method details)
-        are stripped before persistence. Only charge ID, refund amount, currency, and created timestamp are retained.
-      x-mapping:
-        canonical_event: "PaymentRefunded"
-        state_transition:
-          from_state: "captured"
-          to_state: "refunded"
-          ledger_table: "revenue_state_transitions"
-        idempotency:
-          key_field: "transaction_id"
-          key_source: "id"
-          duplicate_handling: "update_state"
-      properties:
-        id:
-          type: string
-          pattern: "^ch_[a-zA-Z0-9]+$"
-          description: Stripe charge ID (used for idempotency)
-          example: "ch_1234567890abcdefg"
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "transaction_id"
-            transform: "as-is"
-            required: true
-        amount_refunded:
-          type: integer
-          minimum: 0
-          description: Refund amount in cents
-          example: 5000
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "amount_cents"
-            transform: "as-is"
-            required: true
-        currency:
-          type: string
-          pattern: "^[a-z]{3}$"
-          description: "ISO 4217 currency code (lowercase per Stripe API specification)"
-          example: "usd"
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "currency"
-            transform: "uppercase"
-            required: true
-        created:
-          type: integer
-          description: Unix timestamp of refund creation
-          example: 1609459200
-          x-maps-to:
-            table: "revenue_ledger"
-            column: "verification_timestamp"
-            transform: "unix_to_timestamptz"
-            required: true
-        refunded:
-          type: boolean
-          description: Whether the charge has been refunded (always true for this event)
-          example: true
-    
-    StripePaymentIntentSucceededRequest:
-      type: object
-      description: |
-        Stripe payment_intent.succeeded webhook payload for modern Payment Intents API.
-        Note: PII fields (customer email, billing details, payment method details) are stripped before persistence.
-        Only payment intent ID, amount, currency, and created timestamp are retained.
-      properties:
-        id:
-          type: string
-          pattern: "^pi_[a-zA-Z0-9]+$"
-          description: Stripe payment intent ID (used for idempotency)
-          example: "pi_1234567890abcdefg"
-        amount:
-          type: integer
-          minimum: 0
-          description: Payment amount in cents
-          example: 10000
-        currency:
-          type: string
-          pattern: "^[a-z]{3}$"
-          description: "ISO 4217 currency code (lowercase per Stripe API specification)"
-          example: "usd"
-        created:
-          type: integer
-          description: Unix timestamp of payment intent creation
-          example: 1609459200
-        status:
-          type: string
-          enum:
-            - succeeded
-          description: Payment intent status (succeeded for this event)
-          example: "succeeded"
-    
-    WebhookAcknowledgement:
+    StripeEvent:
       type: object
       required:
-        - acknowledged
-        - event_id
+        - id
+        - type
+        - data
+        - created
       properties:
-        acknowledged:
-          type: boolean
-          example: true
-        event_id:
+        id:
           type: string
-          description: Internal event ID for tracking
-          example: "evt_550e8400e29b41d4a716446655440000"
+          description: Unique event identifier
+          example: evt_1234567890
+        type:
+          type: string
+          enum:
+            - charge.succeeded
+            - charge.refunded
+            - payment_intent.succeeded
+            - payment_intent.payment_failed
+          description: Event type
+        created:
+          type: integer
+          description: Unix timestamp of event creation
+        livemode:
+          type: boolean
+          description: Whether this is a live mode event
+        data:
+          type: object
+          required:
+            - object
+          properties:
+            object:
+              $ref: '#/components/schemas/StripeCharge'
+
+    StripeCharge:
+      type: object
+      required:
+        - id
+        - amount
+        - currency
+        - status
+      properties:
+        id:
+          type: string
+          description: Charge ID
+          example: ch_1234567890
+        amount:
+          type: integer
+          description: Amount in cents
+          example: 19999
+        amount_refunded:
+          type: integer
+          description: Amount refunded in cents
+          example: 0
+        currency:
+          type: string
+          description: Three-letter currency code
+          example: usd
+        status:
+          type: string
+          enum: [succeeded, pending, failed]
+        paid:
+          type: boolean
+          description: Whether the charge was paid
+        refunded:
+          type: boolean
+          description: Whether the charge was fully refunded
+        metadata:
+          type: object
+          description: Custom metadata including attribution data
+          additionalProperties:
+            type: string
+          example:
+            skeldir_session_id: sess_abc123
+            order_id: ord_12345
+        receipt_email:
+          type: string
+          format: email
+        billing_details:
+          type: object
+          properties:
+            email:
+              type: string
+              format: email
+            name:
+              type: string

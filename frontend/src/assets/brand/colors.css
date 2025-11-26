@@ -1,0 +1,836 @@
+/**
+ * Skeldir Brand Color Palette
+ * Core brand colors for authentication and dashboard UI components
+ */
+
+:root {
+  /* Primary Brand Colors */
+  --brand-alice: 233 15% 97%;         /* Alice Blue #E9F5FF */
+  --brand-jordy: 213 71% 76%;         /* Jordy Blue #93BFEF */  
+  --brand-tufts: 213 74% 63%;         /* Tufts Blue #468BE6 */
+  --brand-cool-black: 213 86% 20%;    /* Cool Black #092F64 */
+  --brand-success: 142 76% 36%;       /* Success Green #16A34A */
+  --brand-warning: 38 92% 50%;        /* Warning Amber #F59E0B */
+  --brand-error: 25 95% 53%;          /* Error Orange #F97316 */
+  --brand-critical: 0 84% 43%;        /* Critical Red #B91C1C */
+  
+  /* Glass UI Specific Variables */
+  --glass-overlay-bg: hsl(var(--brand-alice) / 0.85);
+  --glass-overlay-border: hsl(var(--brand-jordy) / 0.3);
+  --glass-progress: hsl(var(--brand-jordy) / 1);
+  --glass-redirect-bg: hsl(var(--brand-tufts) / 1);
+  --glass-redirect-text: hsl(var(--brand-cool-black) / 1);
+  --glass-redirect-border: hsl(var(--brand-cool-black) / 0.2);
+  
+  /* Accessibility and State Colors */
+  --auth-loading-text: hsl(var(--brand-cool-black) / 0.8);
+  --auth-error-bg: hsl(0 84% 60% / 0.1);
+  --auth-error-border: hsl(0 84% 60% / 0.3);
+  --auth-error-text: hsl(0 84% 40% / 1);
+
+  /* ConfidenceScoreBadge Component Colors */
+  --confidence-badge-bg: hsl(var(--brand-alice) / 0.85);
+  --confidence-badge-blur: 12px;
+  --confidence-tier-high: hsl(142 76% 28%);  /* Darker green for WCAG AA compliance (4.5:1) */
+  --confidence-tier-medium: hsl(38 95% 28%);  /* Darker amber for WCAG AA compliance (4.5:1) */
+  --confidence-tier-low: hsl(0 84% 40%);  /* Darker red - already passes */
+  --confidence-tooltip-bg: hsl(var(--brand-cool-black) / 0.95);
+  --confidence-tooltip-text: hsl(var(--brand-alice) / 1);
+  --confidence-tooltip-blur: 16px;
+  --z-tooltip: 1000;
+
+  /* RequestStatus Component Colors */
+  --status-skeleton-bg: hsl(var(--brand-alice) / 0.85);
+  --status-shimmer: hsl(var(--brand-jordy) / 0.4);
+  --status-error-icon: hsl(var(--destructive));
+  --status-empty-icon: hsl(var(--brand-jordy));
+  --status-error-text: hsl(var(--brand-cool-black));
+  --status-action-btn: hsl(var(--brand-tufts));
+
+  /* VerificationBadge Component Colors */
+  --verification-badge-bg: hsl(var(--brand-alice) / 0.85);
+  --verification-badge-border: hsl(var(--brand-tufts) / 0.15);
+  --verification-tooltip-bg: hsl(var(--brand-cool-black) / 0.95);
+  --verification-tooltip-text: hsl(var(--brand-alice) / 1);
+  --verification-checkmark: hsl(var(--brand-tufts) / 1);
+  --verification-text: hsl(var(--brand-cool-black) / 1);
+  --verification-question: hsl(var(--brand-cool-black) / 0.6);
+  --verification-unverified-text: hsl(var(--brand-cool-black) / 0.7);
+
+  /* DashboardShell Enhanced Glass UI Variables - Light Mode */
+  --dash-sidebar-bg: rgba(255, 255, 255, 0.5);
+  --dash-sidebar-blur: 8px;
+  --dash-sidebar-border: rgba(255, 255, 255, 0.18);
+  --dash-sidebar-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+  
+  --dash-header-bg: rgba(255, 255, 255, 0.5);
+  --dash-header-blur: 8px;
+  --dash-header-border: rgba(255, 255, 255, 0.18);
+  --dash-header-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+  --dash-header-scrolled-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.25);
+  
+  --dash-content-bg: rgba(255, 255, 255, 0.5);
+  --dash-content-blur: 8px;
+  --dash-content-shadow: 0 4px 24px 0 rgba(31, 38, 135, 0.1);
+  
+  --dash-logo-glow: drop-shadow(0 0 12px rgba(70, 139, 230, 0.4));
+  --dash-logo-text: hsl(var(--brand-cool-black));
+  
+  /* Professional Spacing System - Predictable Scale for Enterprise UI */
+  --spacing-xs: 0.5rem;    /* 8px - Minimal spacing */
+  --spacing-sm: 0.75rem;   /* 12px - Compact spacing */
+  --spacing-md: 1rem;      /* 16px - Standard spacing */
+  --spacing-lg: 1.5rem;    /* 24px - Comfortable spacing */
+  --spacing-xl: 2rem;      /* 32px - Generous spacing */
+  --spacing-2xl: 3rem;     /* 48px - Section spacing */
+  
+  /* Legacy aliases for backward compatibility */
+  --spacing-base: var(--spacing-md);
+  --spacing-golden-sm: var(--spacing-sm);
+  --spacing-golden-md: var(--spacing-lg);
+  --spacing-golden-lg: var(--spacing-xl);
+  --spacing-golden-xl: var(--spacing-2xl);
+}
+
+.dark {
+  /* Dark mode adjustments */
+  --brand-success: 142 71% 45%;       /* Success Green #22C55E (brighter for dark mode) */
+  --brand-warning: 38 92% 58%;        /* Warning Amber #FBB040 (brighter for dark mode) */
+  --brand-error: 25 90% 58%;          /* Error Orange (brighter for dark mode) */
+  --brand-critical: 0 79% 48%;        /* Critical Red (brighter for dark mode) */
+  
+  --glass-overlay-bg: hsl(var(--brand-cool-black) / 0.9);
+  --glass-overlay-border: hsl(var(--brand-jordy) / 0.2);
+  --glass-progress: hsl(var(--brand-jordy) / 0.9);
+  --glass-redirect-bg: hsl(var(--brand-tufts) / 0.9);
+  --glass-redirect-text: hsl(var(--brand-alice) / 1);
+  --glass-redirect-border: hsl(var(--brand-alice) / 0.2);
+  
+  --auth-loading-text: hsl(var(--brand-alice) / 0.9);
+  --auth-error-bg: hsl(0 84% 60% / 0.15);
+  --auth-error-border: hsl(0 84% 60% / 0.4);
+  --auth-error-text: hsl(0 84% 70% / 1);
+
+  /* RequestStatus Component Colors - Dark Mode */
+  --status-skeleton-bg: hsl(var(--brand-cool-black) / 0.7);
+  --status-shimmer: hsl(var(--brand-jordy) / 0.3);
+  --status-error-icon: hsl(var(--destructive));
+  --status-empty-icon: hsl(var(--brand-jordy) / 0.9);
+  --status-error-text: hsl(var(--brand-alice));
+  --status-action-btn: hsl(var(--brand-tufts) / 0.9);
+
+  /* VerificationBadge Component Colors - Dark Mode */
+  --verification-badge-bg: hsl(var(--brand-cool-black) / 0.85);
+  --verification-badge-border: hsl(var(--brand-tufts) / 0.2);
+  --verification-tooltip-bg: hsl(var(--brand-cool-black) / 0.98);
+  --verification-tooltip-text: hsl(var(--brand-alice) / 1);
+  --verification-checkmark: hsl(var(--brand-tufts) / 1);
+  --verification-text: hsl(var(--brand-alice) / 1);
+  --verification-question: hsl(var(--brand-alice) / 0.6);
+  --verification-unverified-text: hsl(var(--brand-alice) / 0.7);
+
+  /* ConfidenceScoreBadge Component Colors - Dark Mode */
+  --confidence-badge-bg: hsl(var(--brand-cool-black) / 0.85);
+  --confidence-tier-high: hsl(142 71% 55%);  /* Brighter green - already passes */
+  --confidence-tier-medium: hsl(38 92% 60%);  /* Brighter amber - already passes */
+  --confidence-tier-low: hsl(0 84% 70%);  /* Brighter red for WCAG AA compliance */
+  --confidence-tooltip-bg: hsl(var(--brand-cool-black) / 0.98);
+  --confidence-tooltip-text: hsl(var(--brand-alice) / 1);
+
+  /* DashboardShell Enhanced Glass UI Variables - Dark Mode - Updated for comprehensive glassmorphism */
+  --dash-sidebar-bg: rgba(20, 20, 25, 0.5);
+  --dash-sidebar-blur: 8px;
+  --dash-sidebar-border: rgba(255, 255, 255, 0.18);
+  --dash-sidebar-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  
+  --dash-header-bg: rgba(20, 20, 25, 0.5);
+  --dash-header-blur: 8px;
+  --dash-header-border: rgba(255, 255, 255, 0.18);
+  --dash-header-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  --dash-header-scrolled-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+  
+  --dash-content-bg: rgba(20, 20, 25, 0.5);
+  --dash-content-blur: 8px;
+  --dash-content-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.3);
+  
+  --dash-logo-glow: drop-shadow(0 0 16px rgba(147, 191, 239, 0.5));
+  --dash-logo-text: hsl(var(--brand-alice));
+}
+
+/* Glass UI Animation Utilities */
+.glass-fade-in {
+  animation: glassfadeIn 200ms ease-out forwards;
+}
+
+.glass-pulse {
+  animation: glassPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes glassfadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes glassPulse {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* DEPRECATED: No glass effects for standard UI */
+.glass-container {
+  /* Removed glassmorphism for professional flat design */
+}
+
+/* Professional Dashboard Design - Flat, Clean, Authoritative */
+.dashboard-sidebar {
+  background: hsl(var(--sidebar));
+  border-right: 1px solid hsl(var(--sidebar-border));
+  /* Removed glassmorphism - using solid backgrounds for clarity */
+}
+
+.dashboard-header {
+  background: hsl(var(--background));
+  border-bottom: 1px solid hsl(var(--border));
+  transition: box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Clean flat header with clear border */
+}
+
+.dashboard-header.scrolled {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.dashboard-header-gradient {
+  /* Removed decorative gradient - using clean flat design */
+  display: none;
+}
+
+.dashboard-content {
+  background: hsl(var(--background));
+  /* Flat content area with proper background */
+}
+
+.dashboard-logo {
+  /* Removed glow effect - clean professional logo */
+  transition: opacity 200ms ease;
+}
+
+.dashboard-logo:hover {
+  opacity: 0.8;
+  /* Subtle hover without playful effects */
+}
+
+/* Enhanced Sidebar Animations */
+.sidebar-expanded {
+  width: 240px;
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-collapsed {
+  width: 60px;
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar label fade with 50ms stagger - JavaScript applies delays dynamically */
+.sidebar-items-expanded button [data-slot="label"],
+.sidebar-items-expanded a [data-slot="label"],
+.sidebar-items-expanded button span:not([data-slot="icon"]),
+.sidebar-items-expanded a span:not([data-slot="icon"]) {
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+
+.sidebar-items-collapsed button [data-slot="label"],
+.sidebar-items-collapsed a [data-slot="label"],
+.sidebar-items-collapsed button span:not([data-slot="icon"]),
+.sidebar-items-collapsed a span:not([data-slot="icon"]) {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.sidebar-item:hover {
+  /* Removed playful scale transform for professional design */
+  background-color: hsl(var(--sidebar-accent));
+  transition: background-color 150ms ease-out;
+}
+
+/* Enhanced Header Scroll Behavior */
+.header-fixed {
+  position: fixed;
+  box-shadow: 0 4px 16px rgba(9, 47, 100, 0.12);
+  transition: box-shadow 200ms ease-out;
+}
+
+/* Mobile Drawer Transition (375px breakpoint) */
+@media (max-width: 375px) {
+  [data-sidebar="sidebar"] {
+    transition: transform 300ms ease-in-out;
+  }
+}
+
+/* Accessibility - Focus Indicators */
+*:focus-visible {
+  outline: 2px solid #468BE6;
+  outline-offset: 2px;
+}
+
+/* Accessibility - Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-expanded, .sidebar-collapsed {
+    transition: width 100ms ease;
+  }
+  .sidebar-item:hover {
+    transform: none;
+  }
+}
+
+/* RevenueDisplay Component Colors */
+:root {
+  --revenue-gradient-start: rgba(233, 245, 255, 0.85);
+  --revenue-gradient-end: rgba(147, 191, 239, 0.85);
+  --revenue-border: rgba(70, 139, 230, 0.2);
+  --revenue-text: #092F64;
+  --revenue-negative: #B91C1C;
+  --revenue-verified-bg: #E9F5FF;
+  --revenue-verified-icon: #468BE6;
+}
+
+/* RevenueDisplay Card Animation */
+.revenue-card {
+  background: linear-gradient(135deg, var(--revenue-gradient-start) 0%, var(--revenue-gradient-end) 100%);
+  animation: cardFadeIn 400ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: opacity, backdrop-filter;
+  transform: translateZ(0);
+}
+
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(16px);
+  }
+}
+
+/* Verification Checkmark Bounce Animation */
+.verification-checkmark {
+  animation: checkmarkBounce 300ms cubic-bezier(0.4, 0, 0.2, 1) 200ms forwards;
+  transform-origin: center;
+  transform: scale(0);
+}
+
+@keyframes checkmarkBounce {
+  0% {
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1.0);
+  }
+}
+
+/* Revenue Value Transition */
+.revenue-value {
+  transition: color 200ms ease;
+}
+
+/* Revenue Card Hover State */
+.revenue-card:hover {
+  box-shadow: 0 8px 32px rgba(70, 139, 230, 0.15);
+  transform: translateY(-2px);
+  transition: box-shadow 250ms ease-out, transform 250ms ease-out;
+}
+
+/* Reduced Motion for RevenueDisplay */
+@media (prefers-reduced-motion: reduce) {
+  .revenue-card {
+    animation: cardFadeInSimple 200ms ease forwards;
+  }
+  
+  @keyframes cardFadeInSimple {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  .verification-checkmark {
+    animation: fadeIn 200ms ease forwards;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  .revenue-card:hover {
+    transform: none;
+  }
+}
+
+/* Responsive Font Scaling for Revenue Display */
+@media (max-width: 640px) {
+  .revenue-value {
+    font-size: clamp(18px, 6vw, 32px) !important;
+  }
+}
+
+@media (max-width: 375px) {
+  .revenue-value {
+    font-size: clamp(16px, 7vw, 28px) !important;
+  }
+  
+  .revenue-card {
+    padding: 1rem;
+  }
+}
+
+/* Ensure verification badge stays visible on small screens */
+@media (max-width: 375px) {
+  .verification-checkmark {
+    width: 2rem !important;
+    height: 2rem !important;
+  }
+  
+  .verification-checkmark img {
+    width: 1rem !important;
+    height: 1rem !important;
+  }
+}
+
+/* VerificationBadge Component Animations */
+.verification-badge {
+  animation: badgeEnter 250ms cubic-bezier(0.4, 0, 0.2, 1) 100ms forwards;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+@keyframes badgeEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.0);
+  }
+}
+
+.checkmark-verified {
+  animation: checkmarkPulse 2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes checkmarkPulse {
+  0%, 100% {
+    transform: scale(1.0);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1.0;
+  }
+}
+
+.verification-tooltip {
+  animation: tooltipFadeIn 150ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: opacity, transform;
+}
+
+@keyframes tooltipFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Reduced Motion for VerificationBadge */
+@media (prefers-reduced-motion: reduce) {
+  .verification-badge {
+    animation: fadeIn 150ms ease forwards;
+  }
+  
+  .checkmark-verified {
+    animation: none;
+  }
+  
+  .verification-tooltip {
+    animation: fadeIn 100ms ease forwards;
+  }
+}
+
+/* DashboardShell Responsive Breakpoints */
+@media (max-width: 1440px) {
+  .dashboard-content {
+    --spacing-golden-xl: 3.236rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-header {
+    backdrop-filter: blur(18px) contrast(1.1);
+    -webkit-backdrop-filter: blur(18px) contrast(1.1);
+  }
+  
+  .dashboard-content {
+    backdrop-filter: blur(15px) contrast(1.08);
+    -webkit-backdrop-filter: blur(15px) contrast(1.08);
+    --spacing-golden-md: 1rem;
+    --spacing-golden-lg: 1.618rem;
+    --spacing-golden-xl: 2.618rem;
+  }
+}
+
+@media (max-width: 375px) {
+  .dashboard-header {
+    backdrop-filter: blur(15px) contrast(1.1);
+    -webkit-backdrop-filter: blur(15px) contrast(1.1);
+  }
+  
+  .dashboard-content {
+    backdrop-filter: blur(12px) contrast(1.08);
+    -webkit-backdrop-filter: blur(12px) contrast(1.08);
+    --spacing-golden-sm: 0.5rem;
+    --spacing-golden-md: 0.75rem;
+    --spacing-golden-lg: 1.25rem;
+    --spacing-golden-xl: 2rem;
+  }
+  
+  .dashboard-logo {
+    max-width: 120px;
+  }
+}
+
+/* Dark Mode Glass UI Adjustments */
+.dark .dashboard-header-gradient {
+  background: linear-gradient(
+    135deg,
+    hsl(var(--brand-cool-black) / 0.15) 0%,
+    hsl(var(--brand-jordy) / 0.08) 35%,
+    hsl(var(--brand-tufts) / 0.12) 100%
+  );
+}
+
+/* Responsive Dashboard Glassmorphism - Tablet */
+@media (max-width: 768px) {
+  :root {
+    --dash-sidebar-blur: 6px;
+    --dash-header-blur: 6px;
+    --dash-content-blur: 6px;
+  }
+  
+  .dark {
+    --dash-sidebar-blur: 6px;
+    --dash-header-blur: 6px;
+    --dash-content-blur: 6px;
+  }
+}
+
+/* Responsive Dashboard Glassmorphism - Mobile */
+@media (max-width: 375px) {
+  :root {
+    --dash-sidebar-blur: 4px;
+    --dash-header-blur: 4px;
+    --dash-content-blur: 4px;
+  }
+  
+  .dark {
+    --dash-sidebar-blur: 4px;
+    --dash-header-blur: 4px;
+    --dash-content-blur: 4px;
+  }
+}
+
+/* Reduced Motion for DashboardShell */
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-header {
+    transition: box-shadow 100ms ease;
+  }
+  
+  .dashboard-logo {
+    transition: filter 150ms ease;
+  }
+  
+  .dashboard-sidebar,
+  .dashboard-header,
+  .dashboard-content {
+    will-change: auto;
+  }
+}
+
+/* Sidebar Icon Group Spacing */
+.sidebar-group-spacer {
+  height: var(--spacing-golden-lg);
+  min-height: 2rem;
+  position: relative;
+}
+
+.sidebar-group-spacer::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--brand-jordy) / 0.2) 50%,
+    transparent 100%
+  );
+}
+
+/* Dark mode separator */
+.dark .sidebar-group-spacer::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--brand-jordy) / 0.15) 50%,
+    transparent 100%
+  );
+}
+
+/* Hide spacer separator when sidebar is collapsed */
+[data-state="collapsed"] .sidebar-group-spacer::after {
+  opacity: 0;
+}
+
+/* Responsive adjustments for sidebar groups */
+@media (max-width: 768px) {
+  .sidebar-group-spacer {
+    height: var(--spacing-golden-md);
+    min-height: 1.5rem;
+  }
+}
+
+@media (max-width: 375px) {
+  .sidebar-group-spacer {
+    height: var(--spacing-base);
+    min-height: 1rem;
+  }
+}
+
+/* DualRevenueCard Component Colors */
+:root {
+  /* Card Container */
+  --dual-card-bg: hsl(var(--brand-alice) / 0.85);
+  --dual-card-border: hsl(var(--brand-jordy) / 0.3);
+  --dual-card-shadow: 0 8px 32px rgba(9, 47, 100, 0.12);
+  --dual-card-blur: 20px;
+  
+  /* Verified Section (Green Tint) */
+  --dual-verified-overlay: hsl(var(--brand-tufts) / 0.08);
+  --dual-verified-hover: hsl(var(--brand-tufts) / 0.12);
+  --dual-verified-border: hsl(var(--brand-tufts) / 1);
+  --dual-verified-icon: hsl(var(--brand-tufts) / 1);
+  --dual-verified-label: hsl(var(--brand-tufts) / 1);
+  
+  /* Unverified Section (Gray Tint) */
+  --dual-unverified-overlay: hsl(var(--brand-cool-black) / 0.05);
+  --dual-unverified-hover: hsl(var(--brand-cool-black) / 0.08);
+  --dual-unverified-border: hsl(var(--brand-cool-black) / 0.4);
+  --dual-unverified-icon: hsl(var(--brand-cool-black) / 0.6);
+  --dual-unverified-label: hsl(var(--brand-cool-black) / 0.7);
+  
+  /* Percentage & Progress */
+  --dual-percentage-text: hsl(var(--brand-jordy) / 1);
+  --dual-progress-bg: hsl(var(--brand-cool-black) / 0.1);
+  --dual-progress-verified: hsl(var(--brand-tufts) / 1);
+  --dual-progress-unverified: hsl(var(--brand-cool-black) / 0.4);
+  
+  /* Divider */
+  --dual-divider: hsl(var(--brand-cool-black) / 0.15);
+  
+  /* Stale Data Indicator */
+  --dual-stale-icon: hsl(var(--brand-error) / 1);
+  --dual-stale-bg: hsl(var(--brand-error) / 0.1);
+}
+
+.dark {
+  /* DualRevenueCard Component Colors - Dark Mode */
+  --dual-card-bg: hsl(var(--brand-cool-black) / 0.85);
+  --dual-card-border: hsl(var(--brand-jordy) / 0.2);
+  --dual-card-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  
+  --dual-verified-overlay: hsl(var(--brand-tufts) / 0.12);
+  --dual-verified-hover: hsl(var(--brand-tufts) / 0.18);
+  --dual-verified-border: hsl(var(--brand-tufts) / 1);
+  --dual-verified-icon: hsl(var(--brand-tufts) / 1);
+  --dual-verified-label: hsl(var(--brand-tufts) / 1);
+  
+  --dual-unverified-overlay: hsl(var(--brand-alice) / 0.05);
+  --dual-unverified-hover: hsl(var(--brand-alice) / 0.08);
+  --dual-unverified-border: hsl(var(--brand-alice) / 0.4);
+  --dual-unverified-icon: hsl(var(--brand-alice) / 0.6);
+  --dual-unverified-label: hsl(var(--brand-alice) / 0.7);
+  
+  --dual-percentage-text: hsl(var(--brand-jordy) / 0.9);
+  --dual-progress-bg: hsl(var(--brand-alice) / 0.1);
+  --dual-progress-verified: hsl(var(--brand-tufts) / 1);
+  --dual-progress-unverified: hsl(var(--brand-alice) / 0.4);
+  
+  --dual-divider: hsl(var(--brand-alice) / 0.15);
+  
+  --dual-stale-icon: hsl(var(--brand-error) / 1);
+  --dual-stale-bg: hsl(var(--brand-error) / 0.15);
+}
+
+/* DualRevenueCard Animations */
+.dual-revenue-card {
+  animation: dualCardEnter 400ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+  will-change: opacity, transform;
+  transform: translateZ(0);
+}
+
+@keyframes dualCardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.verified-icon {
+  animation: verifiedBounce 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 300ms forwards;
+  transform: scale(0);
+  will-change: transform;
+}
+
+@keyframes verifiedBounce {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1.0); }
+}
+
+.unverified-icon {
+  animation: unverifiedFade 400ms ease 500ms forwards;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+@keyframes unverifiedFade {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.0);
+  }
+}
+
+.progress-ring-circle {
+  stroke-dasharray: 0 188.5;
+  stroke-dashoffset: 0;
+  animation: ringProgress 1000ms ease-out 400ms forwards;
+  will-change: stroke-dasharray;
+}
+
+@keyframes ringProgress {
+  to {
+    stroke-dasharray: var(--progress-value) 188.5;
+  }
+}
+
+.comparison-bar {
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: barGrow 800ms ease-out 600ms forwards;
+  will-change: transform;
+}
+
+@keyframes barGrow {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.revenue-section {
+  transition: background-color 200ms ease;
+}
+
+/* Skeleton Loading Animation */
+.dual-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--dual-card-bg) 0%,
+    hsl(var(--brand-jordy) / 0.15) 50%,
+    var(--dual-card-bg) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .dual-revenue-card {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
+  
+  .section-divider {
+    width: 100%;
+    height: 2px;
+    margin: 16px 0;
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .dual-revenue-card {
+    animation: fadeIn 250ms ease forwards;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  .verified-icon, .unverified-icon {
+    animation: fadeIn 200ms ease forwards;
+  }
+  
+  .progress-ring-circle, .comparison-bar {
+    animation: none !important;
+  }
+  
+  .dual-skeleton {
+    animation: none;
+  }
+}
