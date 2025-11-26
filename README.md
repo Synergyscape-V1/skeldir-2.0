@@ -179,3 +179,4 @@ For questions:
 - Review [architecture guide](.cursor/rules) for design decisions
 - Check [contract migration template](contracts/MIGRATION_TEMPLATE.md) for breaking change documentation
 - See [monorepo structure guide](docs/MONOREPO_STRUCTURE.md) for folder organization
+# Test CI with line 129 fixed
