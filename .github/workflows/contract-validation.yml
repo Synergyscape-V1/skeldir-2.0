@@ -367,7 +367,6 @@ jobs:
       - name: "Operational Gate P4: Check for hand-rolled models"
         run: |
           python scripts/check_model_usage.py
-
       - name: "Operational Gate P2: Verify downstream dependency on generated models"
         run: |
           echo "Testing operational dependency: corrupting generated model..."
@@ -492,4 +491,3 @@ jobs:
       - name: Validate integration mappings
         run: |
           python scripts/governance/validate-integration-mappings.py
-
