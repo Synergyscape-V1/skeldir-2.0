@@ -1,0 +1,33 @@
+[0;32mGenerating Pydantic models from bundled OpenAPI contracts...[0m
+[0;32mGenerating models from attribution.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/attribution.py with 8 classes[0m
+[0;32mGenerating models from auth.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/auth.py with 6 classes[0m
+[0;32mGenerating models from reconciliation.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/reconciliation.py with 6 classes[0m
+[0;32mGenerating models from export.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/export.py with 4 classes[0m
+[0;32mGenerating models from webhooks.shopify.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/webhooks_shopify.py with 6 classes[0m
+[0;32mGenerating models from webhooks.woocommerce.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/webhooks_woocommerce.py with 6 classes[0m
+[0;32mGenerating models from webhooks.stripe.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/webhooks_stripe.py with 6 classes[0m
+[0;32mGenerating models from webhooks.paypal.bundled.yaml...[0m
+[0;32m✓ Generated backend/app/schemas/webhooks_paypal.py with 7 classes[0m
+Patched regex->pattern in backend\app\schemas\webhooks_paypal.py
+Patched regex->pattern in backend\app\schemas\webhooks_shopify.py
+Patched regex->pattern in backend\app\schemas\webhooks_stripe.py
+Patched regex->pattern in backend\app\schemas\webhooks_woocommerce.py
+[0;32mRunning import sanity check...[0m
+[OK] backend.app.schemas.attribution imports successfully
+[OK] backend.app.schemas.auth imports successfully
+[OK] backend.app.schemas.reconciliation imports successfully
+[OK] backend.app.schemas.export imports successfully
+[OK] backend.app.schemas.webhooks_shopify imports successfully
+[OK] backend.app.schemas.webhooks_woocommerce imports successfully
+[OK] backend.app.schemas.webhooks_stripe imports successfully
+[OK] backend.app.schemas.webhooks_paypal imports successfully
+
+[OK] All generated modules import successfully
+[0;32mModel generation completed successfully![0m

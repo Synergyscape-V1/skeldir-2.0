@@ -36,7 +36,7 @@ def test_login_request_instantiation():
     data = {"email": "test@example.com", "password": "secure123"}
     model = LoginRequest(**data)
     assert model.email == "test@example.com"
-    assert model.password == "secure123"
+    assert model.password.get_secret_value() == "secure123"
 
 
 def test_login_response_instantiation():
@@ -79,7 +79,7 @@ def test_reconciliation_status_response_instantiation():
         "tenant_id": "550e8400-e29b-41d4-a716-446655440000"
     }
     model = ReconciliationStatusResponse(**data)
-    assert model.state == "completed"
+    assert model.state.value == "completed"
 
 
 def test_export_revenue_response_instantiation():
@@ -89,7 +89,9 @@ def test_export_revenue_response_instantiation():
         "tenant_id": "550e8400-e29b-41d4-a716-446655440000"
     }
     model = ExportRevenueResponse(**data)
-    assert "revenue_20251110.json" in model.file_url
+    assert "revenue_20251110.json" in str(model.file_url)
+
+
 
 
 

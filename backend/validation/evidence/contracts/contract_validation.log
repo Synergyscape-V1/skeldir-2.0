@@ -1,0 +1,97 @@
+==========================================
+OpenAPI Contract Validation
+Phase E: Contract Authority Restoration
+==========================================
+
+Configuration:
+  Contracts: /c/Users/ayewhy/II SKELDIR II/api-contracts/dist/openapi/v1
+  Baselines: /c/Users/ayewhy/II SKELDIR II/api-contracts/baselines/v1.0.0
+
+[1/4] Checking validation tools...
+[0;32m✓[0m npx available
+[0;32m✓[0m Python available: /c/Users/ayewhy/AppData/Local/Microsoft/WindowsApps/python3
+
+[2/4] Bundling contracts...
+[0;32m========================================[0m
+[0;32mManifest-Driven Contract Bundling[0m
+[0;32mSource: /c/Users/ayewhy/II SKELDIR II/scripts/contracts/entrypoints.json[0m
+[0;32m========================================[0m
+
+[0;32m[1/4] Bundling 9 contracts from manifest...[0m
+
+  Bundling auth...
+  [0;32m✓[0m Bundled auth.bundled.yaml
+  Bundling attribution...
+  [0;32m✓[0m Bundled attribution.bundled.yaml
+  Bundling reconciliation...
+  [0;32m✓[0m Bundled reconciliation.bundled.yaml
+  Bundling export...
+  [0;32m✓[0m Bundled export.bundled.yaml
+  Bundling health...
+  [0;32m✓[0m Bundled health.bundled.yaml
+  Bundling shopify_webhook...
+  [0;32m✓[0m Bundled webhooks.shopify.bundled.yaml
+  Bundling woocommerce_webhook...
+  [0;32m✓[0m Bundled webhooks.woocommerce.bundled.yaml
+  Bundling stripe_webhook...
+  [0;32m✓[0m Bundled webhooks.stripe.bundled.yaml
+  Bundling paypal_webhook...
+  [0;32m✓[0m Bundled webhooks.paypal.bundled.yaml
+
+[0;32m✓ Step 1 PASSED: All contracts bundled from manifest[0m
+
+[0;32m[2/4] Gate 1: Validating bundle completeness...[0m
+[0;32m✓ Gate 1 PASSED: All bundles present[0m
+
+[0;32m[3/4] Gate 2: Validating full dereferencing...[0m
+[0;32m✓ Gate 2 PASSED: Zero external refs (fully dereferenced)[0m
+
+[0;32m[4/4] Gate 3: OpenAPI semantic validation...[0m
+  [0;32m✓[0m auth.bundled.yaml valid
+  [0;32m✓[0m attribution.bundled.yaml valid
+  [0;32m✓[0m reconciliation.bundled.yaml valid
+  [0;32m✓[0m export.bundled.yaml valid
+  [0;32m✓[0m health.bundled.yaml valid
+  [0;32m✓[0m webhooks.shopify.bundled.yaml valid
+  [0;32m✓[0m webhooks.woocommerce.bundled.yaml valid
+  [0;32m✓[0m webhooks.stripe.bundled.yaml valid
+  [0;32m✓[0m webhooks.paypal.bundled.yaml valid
+[0;32m✓ Gate 3 PASSED: All bundles are valid OpenAPI 3.x[0m
+
+[0;32m========================================[0m
+[0;32m✓ BUNDLING COMPLETE[0m
+[0;32m========================================[0m
+
+[0;32mEvidence:[0m
+  - Bundled 9 contracts from manifest
+  - All bundles present (completeness validated)
+  - Zero external refs (fully dereferenced)
+  - All bundles valid OpenAPI 3.x
+
+[0;32mManifest-Driven: VALIDATED[0m
+
+[0;32m✓[0m Contracts bundled successfully
+
+[3/4] Validating OpenAPI specifications...
+  attribution.bundled.yaml ... [0;32mPASS[0m
+  auth.bundled.yaml ... [0;32mPASS[0m
+  export.bundled.yaml ... [0;32mPASS[0m
+  health.bundled.yaml ... [0;32mPASS[0m
+  reconciliation.bundled.yaml ... [0;32mPASS[0m
+  webhooks.paypal.bundled.yaml ... [0;32mPASS[0m
+  webhooks.shopify.bundled.yaml ... [0;32mPASS[0m
+  webhooks.stripe.bundled.yaml ... [0;32mPASS[0m
+  webhooks.woocommerce.bundled.yaml ... [0;32mPASS[0m
+[0;32m✓[0m All contracts passed OpenAPI validation
+
+[4/4] Checking for breaking changes...
+  attribution ... [0;32mNO BREAKING CHANGES[0m
+  auth ... [0;32mNO BREAKING CHANGES[0m
+  export ... [0;32mNO BREAKING CHANGES[0m
+  health ... [0;32mNO BREAKING CHANGES[0m
+  reconciliation ... [0;32mNO BREAKING CHANGES[0m
+[0;32m✓[0m No breaking changes detected
+
+==========================================
+[0;32mValidation Complete: ALL PASS[0m
+==========================================
