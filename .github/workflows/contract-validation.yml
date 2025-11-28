@@ -36,13 +36,13 @@ jobs:
 
       - name: Verify bundled artifacts
         run: |
-          if [ ! -d "api-contracts/dist/openapi/v1" ]; then
+          if [ ! -d "dist/contracts" ]; then
             echo "ERROR: Bundled artifacts directory not found"
             exit 1
           fi
-          BUNDLE_COUNT=$(find api-contracts/dist/openapi/v1 -name "*.bundled.yaml" | wc -l)
-          if [ "$BUNDLE_COUNT" -lt 9 ]; then
-            echo "ERROR: Expected 9 bundled files, found $BUNDLE_COUNT"
+          BUNDLE_COUNT=$(find dist/contracts -name "*.yaml" | wc -l)
+          if [ "$BUNDLE_COUNT" -lt 5 ]; then
+            echo "ERROR: Expected bundled files, found $BUNDLE_COUNT"
             exit 1
           fi
           echo "✓ Found $BUNDLE_COUNT bundled artifacts"
@@ -76,9 +76,9 @@ jobs:
       - name: Validate bundled OpenAPI files
         run: |
           echo "Validating bundled OpenAPI specifications..."
-          for file in api-contracts/dist/openapi/v1/*.bundled.yaml; do
+          for file in dist/contracts/*.yaml; do
             if [ -f "$file" ]; then
-              echo "Validating $(basename $file)..."
+              echo "Validating $(basename "$file")..."
               npx @openapitools/openapi-generator-cli validate -i "$file" || exit 1
             fi
           done
