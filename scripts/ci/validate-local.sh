@@ -34,12 +34,12 @@ if [ $? -ne 0 ]; then echo "GATE 5 FAIL"; exit 1; fi
 echo "✓ Gate 5 PASS: Pydantic models generated"
 
 echo "6. Testing coverage matrix validation..."
-python scripts/governance/validate_coverage_matrix.py
+python scripts/governance/validate-coverage-matrix.py
 if [ $? -ne 0 ]; then echo "GATE 6 FAIL"; exit 1; fi
 echo "✓ Gate 6 PASS: Coverage matrix validated"
 
 echo "7. Testing governance validation..."
-python scripts/governance/validate_coverage.py
+python scripts/governance/validate-coverage.py
 if [ $? -ne 0 ]; then echo "GATE 7 FAIL"; exit 1; fi
 echo "✓ Gate 7 PASS: Governance validated"
 
