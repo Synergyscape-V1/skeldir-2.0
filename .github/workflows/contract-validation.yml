@@ -36,11 +36,11 @@ jobs:
 
       - name: Verify bundled artifacts
         run: |
-          if [ ! -d "dist/contracts" ]; then
+          if [ ! -d "api-contracts/dist/openapi/v1" ]; then
             echo "ERROR: Bundled artifacts directory not found"
             exit 1
           fi
-          BUNDLE_COUNT=$(find dist/contracts -name "*.yaml" | wc -l)
+          BUNDLE_COUNT=$(find api-contracts/dist/openapi/v1 -name "*.yaml" | wc -l)
           if [ "$BUNDLE_COUNT" -lt 5 ]; then
             echo "ERROR: Expected bundled files, found $BUNDLE_COUNT"
             exit 1
@@ -76,7 +76,7 @@ jobs:
       - name: Validate bundled OpenAPI files
         run: |
           echo "Validating bundled OpenAPI specifications..."
-          for file in dist/contracts/*.yaml; do
+          for file in api-contracts/dist/openapi/v1/*.yaml; do
             if [ -f "$file" ]; then
               echo "Validating $(basename "$file")..."
               npx @openapitools/openapi-generator-cli validate -i "$file" || exit 1
@@ -412,7 +412,7 @@ jobs:
 
       - name: Validate canonical events and state machine
         run: |
-          python scripts/governance/validate-canonical-events.py
+          python scripts/governance/validate_canonical_events.py
 
   validate-coverage-matrix:
     name: Validate Coverage Matrix (C1)
