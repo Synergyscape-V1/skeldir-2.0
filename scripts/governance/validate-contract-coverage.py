@@ -63,7 +63,9 @@ def validate_contract_coverage(
     # Collect all operation IDs from bundled contracts
     all_operation_ids = set()
     if dist_dir.exists():
-        for contract_file in dist_dir.glob('*.bundled.yaml'):
+        for contract_file in dist_dir.glob('*.yaml'):
+            if contract_file.name.startswith('_'):
+                continue  # Skip _common directory files
             contract_data = load_yaml(contract_file)
             ops = find_operation_ids_in_contract(contract_data)
             all_operation_ids.update(ops)

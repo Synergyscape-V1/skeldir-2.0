@@ -18,9 +18,9 @@ def validate_model_imports():
         'reconciliation': ['ReconciliationStatusResponse'],
         'export': ['ExportRevenueResponse'],
         'webhooks_shopify': ['ShopifyOrderCreateRequest', 'WebhookAcknowledgement'],
-        'webhooks_stripe': ['StripeChargeSucceededEvent', 'StripeChargeRefundedEvent'],
-        'webhooks_woocommerce': ['WooCommerceOrderCompletedEvent'],
-        'webhooks_paypal': ['PayPalSaleCompletedEvent'],
+        'webhooks_stripe': ['StripeChargeSucceededRequest', 'StripeChargeRefundedRequest'],
+        'webhooks_woocommerce': ['WooCommerceOrderCompletedRequest'],
+        'webhooks_paypal': ['PayPalSaleCompletedRequest'],
     }
 
     for module_name, models in critical_models.items():
