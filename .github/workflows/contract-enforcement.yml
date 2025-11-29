@@ -25,6 +25,7 @@ jobs:
         with:
           name: contract-bundles
           run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           path: api-contracts/dist/openapi/v1/
       
       - name: Verify bundles exist
@@ -226,7 +227,6 @@ jobs:
           echo ""
           echo "✅ Contract-First Enforcement PASSED"
           echo "Implementation perfectly aligned with specification."
-
 
 
 
