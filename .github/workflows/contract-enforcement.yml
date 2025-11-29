@@ -1,59 +1,49 @@
 name: Contract-First Enforcement
 
 on:
-  push:
-    branches: [main, develop]
-    paths:
-      - 'backend/app/api/**'
-      - 'backend/app/main.py'
-      - 'api-contracts/**'
-      - 'backend/app/config/contract_scope.yaml'
-      - 'scripts/contracts/**'
-      - '.github/workflows/contract-enforcement.yml'
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - 'backend/app/api/**'
-      - 'backend/app/main.py'
-      - 'api-contracts/**'
-      - 'backend/app/config/contract_scope.yaml'
-      - 'scripts/contracts/**'
-      - '.github/workflows/contract-enforcement.yml'
+  workflow_run:
+    workflows:
+      - Contract Artifacts CI
+    branches:
+      - main
+      - develop
+    types:
+      - completed
 
 jobs:
   # Phase 1: Bundle contracts (prerequisite from B0.1)
   bundle-contracts:
-    name: Bundle OpenAPI Contracts
-    runs-on: windows-latest
+    name: Fetch Contract Bundles
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Download bundles from Contract Artifacts CI
+        uses: actions/download-artifact@v4
         with:
-          node-version: '20'
-      
-      - name: Install dependencies
-        run: npm install
-      
-      - name: Bundle contracts
-        run: |
-          cd api-contracts
-          npx @redocly/cli bundle auth --config=redocly.yaml --output=dist/openapi/v1/auth.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle attribution --config=redocly.yaml --output=dist/openapi/v1/attribution.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle reconciliation --config=redocly.yaml --output=dist/openapi/v1/reconciliation.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle export --config=redocly.yaml --output=dist/openapi/v1/export.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle health --config=redocly.yaml --output=dist/openapi/v1/health.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle shopify_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.shopify.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle woocommerce_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.woocommerce.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle stripe_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.stripe.bundled.yaml --ext yaml --dereferenced --force
-          npx @redocly/cli bundle paypal_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.paypal.bundled.yaml --ext yaml --dereferenced --force
+          name: contract-bundles
+          run-id: ${{ github.event.workflow_run.id }}
+          path: api-contracts/dist/openapi/v1/
       
       - name: Verify bundles exist
         run: |
-          python scripts/contracts/check_dist_complete.py
+          python - <<'PY'
+          import pathlib, sys
+          
+          dist = pathlib.Path("api-contracts/dist/openapi/v1")
+          bundles = sorted(dist.glob("*.bundled.yaml"))
+          
+          if not bundles:
+              print(f"No bundled contracts found in {dist}")
+              sys.exit(1)
+          
+          print("Found bundled contracts:")
+          for bundle in bundles:
+              print(f"  - {bundle.name}")
+          PY
       
       - name: Upload bundled specs
         uses: actions/upload-artifact@v4
@@ -237,6 +227,8 @@ jobs:
           echo ""
           echo "✅ Contract-First Enforcement PASSED"
           echo "Implementation perfectly aligned with specification."
+
+
 
 
 
