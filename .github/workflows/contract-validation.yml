@@ -5,11 +5,19 @@ on:
     paths:
       - 'api-contracts/**/*.yaml'
       - 'scripts/contracts/**'
+      - 'scripts/governance/**'
+      - 'scripts/*.py'
+      - 'backend/app/schemas/**'
+      - 'backend/tests/test_generated_models.py'
       - '.github/workflows/contract-validation.yml'
   pull_request:
     paths:
       - 'api-contracts/**/*.yaml'
       - 'scripts/contracts/**'
+      - 'scripts/governance/**'
+      - 'scripts/*.py'
+      - 'backend/app/schemas/**'
+      - 'backend/tests/test_generated_models.py'
       - '.github/workflows/contract-validation.yml'
 
 jobs:
