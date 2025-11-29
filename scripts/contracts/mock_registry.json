@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "primary_mocks": [
+    "auth",
+    "attribution",
+    "health"
+  ],
+  "port_mapping": {
+    "auth": 4010,
+    "attribution": 4011,
+    "health": 4012
+  },
+  "notes": "B0.1 placeholder registry; populated in B0.2"
+}
