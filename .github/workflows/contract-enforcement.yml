@@ -15,7 +15,6 @@ jobs:
   bundle-contracts:
     name: Fetch Contract Bundles
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     
     steps:
       - name: Checkout code
@@ -227,7 +226,6 @@ jobs:
           echo ""
           echo "✅ Contract-First Enforcement PASSED"
           echo "Implementation perfectly aligned with specification."
-
 
 
 
