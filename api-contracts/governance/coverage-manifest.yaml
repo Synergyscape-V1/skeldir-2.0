@@ -99,3 +99,39 @@ webhooks_paypal:
       status: implemented
       canonical_event: purchase_completed
       description: PayPal sale completed webhook
+
+llm_explanation:
+  requirements:
+    - requirement_id: LLM-001
+      operation_id: explainAttributionEntity
+      status: implemented
+      canonical_event: null
+      description: LLM-powered natural language explanation for attribution entities
+
+llm_investigations:
+  requirements:
+    - requirement_id: LLM-002
+      operation_id: createInvestigation
+      status: implemented
+      canonical_event: null
+      description: Start bounded agent investigation
+
+    - requirement_id: LLM-003
+      operation_id: getInvestigationStatus
+      status: implemented
+      canonical_event: null
+      description: Poll investigation status
+
+llm_budget:
+  requirements:
+    - requirement_id: LLM-004
+      operation_id: createBudgetOptimization
+      status: implemented
+      canonical_event: null
+      description: Generate budget optimization recommendation
+
+    - requirement_id: LLM-005
+      operation_id: getBudgetRecommendation
+      status: implemented
+      canonical_event: null
+      description: Get budget optimization recommendation

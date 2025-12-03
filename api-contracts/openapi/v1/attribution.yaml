@@ -135,7 +135,8 @@ paths:
                       $ref: '#/components/schemas/ChannelAttribution'
                   total_revenue:
                     type: number
-                    format: float
+                    format: double
+                    minimum: 0
                   date_range:
                     type: object
                     properties:
@@ -215,7 +216,8 @@ components:
       properties:
         total_revenue:
           type: number
-          format: float
+          format: double
+          minimum: 0
           description: Total verified revenue amount in USD
           example: 125430.50
         event_count:
@@ -239,7 +241,7 @@ components:
           example: true
         confidence_score:
           type: number
-          format: float
+          format: double
           minimum: 0
           maximum: 1
           description: Statistical confidence score (0-1) for attribution accuracy
@@ -264,14 +266,15 @@ components:
           description: Marketing channel name
         revenue:
           type: number
-          format: float
+          format: double
+          minimum: 0
           description: Attributed revenue for this channel
         conversion_count:
           type: integer
           description: Number of conversions attributed to this channel
         confidence_score:
           type: number
-          format: float
+          format: double
           minimum: 0
           maximum: 1
           description: Statistical confidence in attribution accuracy

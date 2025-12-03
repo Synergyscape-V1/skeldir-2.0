@@ -231,12 +231,15 @@ components:
           properties:
             total_revenue:
               type: number
-              format: float
+              format: double
+              minimum: 0
             total_conversions:
               type: integer
             average_confidence:
               type: number
-              format: float
+              format: double
+              minimum: 0
+              maximum: 1
 
   securitySchemes:
     bearerAuth:
