@@ -1,0 +1,217 @@
+openapi: 3.1.0
+info:
+  title: Skeldir LLM Investigations API
+  description: |
+    Bounded agent system for exploratory data analysis (Insights Detective).
+    60-second timeout, 10 tool call maximum, $0.30 cost ceiling per investigation.
+    Async job pattern with status polling.
+  version: 1.0.0
+  contact:
+    name: Skeldir Engineering
+    email: engineering@skeldir.com
+    url: https://skeldir.com
+
+servers:
+  - url: http://localhost:4024
+    description: Prism Mock Server (Investigations)
+
+tags:
+  - name: Investigations
+    description: Bounded agent investigations
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/investigations:
+    post:
+      summary: Start asynchronous investigation
+      description: |
+        Initiates a new bounded agent investigation. Returns a job ID for polling.
+        Investigations have a 60-second timeout and 10 tool call maximum.
+      operationId: createInvestigation
+      tags:
+        - Investigations
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - question
+              properties:
+                question:
+                  type: string
+                  minLength: 10
+                  maxLength: 500
+                  example: "Why is Google Ads underperforming vs. last month?"
+                context:
+                  type: object
+                  properties:
+                    date_range:
+                      type: object
+                      properties:
+                        start_date:
+                          type: string
+                          format: date
+                        end_date:
+                          type: string
+                          format: date
+                    channels:
+                      type: array
+                      items:
+                        type: string
+                    budget_constraints:
+                      type: object
+      responses:
+        '202':
+          description: Investigation queued
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID echoed back
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - investigation_id
+                  - status
+                  - estimated_duration_seconds
+                  - status_url
+                properties:
+                  investigation_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [queued]
+                  estimated_duration_seconds:
+                    type: integer
+                    minimum: 30
+                    maximum: 60
+                    example: 45
+                  status_url:
+                    type: string
+                    format: uri
+                    example: "http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status"
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+      x-latency-requirement: 200ms
+      x-cost-budget: 0.00
+      x-complexity-score: 3
+
+  /api/investigations/{investigation_id}/status:
+    get:
+      summary: Poll investigation status
+      description: |
+        Returns the current status of an investigation including progress,
+        findings, and final synthesis when complete.
+      operationId: getInvestigationStatus
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: Investigation status
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID echoed back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvestigationStatus'
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+      x-latency-requirement: 100ms
+      x-cost-budget: 0.00
+      x-complexity-score: 2
+
+components:
+  schemas:
+    InvestigationStatus:
+      type: object
+      required:
+        - investigation_id
+        - status
+        - elapsed_seconds
+      properties:
+        investigation_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, complete, failed, timeout]
+        progress_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        current_step:
+          type: string
+          example: "Analyzing channel performance data"
+        elapsed_seconds:
+          type: integer
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvestigationFinding'
+        synthesis:
+          type: string
+          description: Final synthesis (only when status=complete)
+        cost_usd:
+          type: number
+          format: float
+          description: Total LLM cost for investigation
+          x-internal: true
+        tool_calls_used:
+          type: integer
+          maximum: 10
+          description: Number of tool calls (max 10)
+          x-internal: true
+
+    InvestigationFinding:
+      type: object
+      required:
+        - finding
+        - evidence
+        - confidence
+      properties:
+        finding:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: object
+            properties:
+              metric:
+                type: string
+              value:
+                type: number
+              source:
+                type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+
+  securitySchemes:
+    bearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'

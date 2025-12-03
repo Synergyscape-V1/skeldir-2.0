@@ -1,0 +1,234 @@
+openapi: 3.1.0
+info:
+  title: Skeldir LLM Budget Optimization API
+  description: |
+    Budget Analyst hybrid workflow: deterministic optimization (Python linprog)
+    + LLM synthesis layer. Async job pattern.
+  version: 1.0.0
+  contact:
+    name: Skeldir Engineering
+    email: engineering@skeldir.com
+    url: https://skeldir.com
+
+servers:
+  - url: http://localhost:4025
+    description: Prism Mock Server (Budget)
+
+tags:
+  - name: Budget
+    description: Budget optimization with LLM synthesis
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/budget/optimize:
+    post:
+      summary: Generate budget optimization recommendation
+      description: |
+        Initiates a budget optimization job using hybrid deterministic + LLM workflow.
+        Returns a job ID for polling the recommendation status.
+      operationId: createBudgetOptimization
+      tags:
+        - Budget
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - total_budget
+                - optimization_goal
+              properties:
+                total_budget:
+                  type: number
+                  format: float
+                  minimum: 1000
+                  example: 50000
+                constraints:
+                  type: object
+                  properties:
+                    date_range:
+                      type: object
+                      properties:
+                        start_date:
+                          type: string
+                          format: date
+                        end_date:
+                          type: string
+                          format: date
+                    channel_minimums:
+                      type: object
+                      additionalProperties:
+                        type: number
+                    channel_maximums:
+                      type: object
+                      additionalProperties:
+                        type: number
+                optimization_goal:
+                  type: string
+                  enum: [maximize_roas, maximize_revenue, minimize_cpa]
+      responses:
+        '202':
+          description: Optimization job started
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID echoed back
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - job_id
+                  - estimated_duration_seconds
+                  - status_url
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+                  estimated_duration_seconds:
+                    type: integer
+                    minimum: 5
+                    maximum: 30
+                    example: 15
+                  status_url:
+                    type: string
+                    format: uri
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+      x-latency-requirement: 200ms
+      x-cost-budget: 0.00
+      x-complexity-score: 3
+
+  /api/budget/recommendations/{job_id}:
+    get:
+      summary: Get budget recommendation
+      description: |
+        Retrieves the budget optimization recommendation for a completed job.
+        Returns 202 if the job is still running, 200 when complete.
+      operationId: getBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: Recommendation ready
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID echoed back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetRecommendation'
+        '202':
+          description: Job still running
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - job_id
+                  - status
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [running]
+                  progress_percentage:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+      x-latency-requirement: 200ms
+      x-cost-budget: 0.00
+      x-complexity-score: 2
+
+components:
+  schemas:
+    BudgetRecommendation:
+      type: object
+      required:
+        - job_id
+        - status
+        - allocations
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [complete, running, failed]
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelAllocation'
+        synthesis:
+          type: string
+          description: LLM-generated strategic explanation
+        metrics:
+          type: object
+          properties:
+            deterministic_runtime_ms:
+              type: integer
+              x-internal: true
+            llm_cost_usd:
+              type: number
+              format: float
+              x-internal: true
+
+    ChannelAllocation:
+      type: object
+      required:
+        - channel
+        - current_budget
+        - recommended_budget
+        - expected_roas
+      properties:
+        channel:
+          type: string
+        current_budget:
+          type: number
+          format: float
+        recommended_budget:
+          type: number
+          format: float
+        expected_roas:
+          type: number
+          format: float
+        confidence_range:
+          type: object
+          properties:
+            min:
+              type: number
+            max:
+              type: number
+
+  securitySchemes:
+    bearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'

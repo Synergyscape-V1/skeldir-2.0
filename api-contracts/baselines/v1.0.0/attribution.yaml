@@ -17,8 +17,6 @@ servers:
 tags:
   - name: Attribution
     description: Attribution and revenue tracking endpoints
-  - name: LLM Explanation
-    description: LLM-powered natural language explanations for attribution data
 
 security:
   - bearerAuth: []
@@ -148,60 +146,6 @@ paths:
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
 
-  /api/attribution/explain/{entity_type}/{entity_id}:
-    get:
-      summary: Get natural language explanation for attribution entities
-      description: |
-        Fast RAG endpoint for interactive explanations. Centaur architecture:
-        retrieves deterministic attribution data, synthesizes via LLM.
-        Target latency: <500ms p95.
-      operationId: explainAttributionEntity
-      tags:
-        - Attribution
-        - LLM Explanation
-      parameters:
-        - name: entity_type
-          in: path
-          required: true
-          schema:
-            type: string
-            enum:
-              - attribution_score
-              - channel_performance
-              - reconciliation_discrepancy
-          description: Type of entity to explain
-        - name: entity_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Unique identifier for the entity
-        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
-        - $ref: './_common/base.yaml#/components/parameters/Authorization'
-      responses:
-        '200':
-          description: Explanation with citations and confidence scoring
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-              description: Request correlation ID echoed back
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttributionExplanation'
-        '401':
-          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
-        '404':
-          $ref: './_common/base.yaml#/components/responses/NotFoundError'
-        '500':
-          $ref: './_common/base.yaml#/components/responses/ServerError'
-      x-latency-requirement: 500ms
-      x-cost-budget: 0.02
-      x-complexity-score: 5
-
 components:
   schemas:
     RealtimeRevenueCounter:
@@ -283,53 +227,6 @@ components:
           type: number
           format: float
           description: Return on Ad Spend (revenue/spend)
-
-    AttributionExplanation:
-      type: object
-      required:
-        - explanation
-        - citations
-        - confidence
-        - generated_at
-      properties:
-        explanation:
-          type: string
-          minLength: 150
-          maxLength: 500
-          description: Natural language explanation of attribution result
-          example: "Your Facebook ROAS of $3.20 indicates strong performance because you have 90 days of stable conversion data with narrow confidence bounds ($2.95-$3.45)."
-        citations:
-          type: array
-          items:
-            type: object
-            required:
-              - metric
-              - value
-              - source
-            properties:
-              metric:
-                type: string
-                example: facebook_roas
-              value:
-                type: number
-                example: 3.20
-              source:
-                type: string
-                description: Database table.column reference
-                example: attribution_results.channel_roas
-        confidence:
-          type: string
-          enum: [high, medium, low]
-          description: Explanation confidence based on data quality
-        generated_at:
-          type: string
-          format: date-time
-        cost_cents:
-          type: number
-          format: float
-          description: LLM API cost for this explanation
-          example: 1.8
-          x-internal: true
 
   securitySchemes:
     bearerAuth:

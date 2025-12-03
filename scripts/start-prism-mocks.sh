@@ -48,16 +48,26 @@ echo "✓ WooCommerce Webhooks mock started on port 4022"
 prism mock "$CONTRACTS_DIR/webhooks/paypal.yaml" --port 4023 &
 echo "✓ PayPal Webhooks mock started on port 4023"
 
+# LLM API mocks
+prism mock "$CONTRACTS_DIR/llm-investigations.yaml" --port 4024 &
+echo "✓ LLM Investigations mock started on port 4024"
+
+prism mock "$CONTRACTS_DIR/llm-budget.yaml" --port 4025 &
+echo "✓ LLM Budget Optimization mock started on port 4025"
+
 echo ""
 echo "✅ All Prism mocks started successfully"
 echo ""
 echo "Ports:"
 echo "  4010: Auth"
-echo "  4011: Attribution"
+echo "  4011: Attribution (+ LLM Explanation)"
 echo "  4014: Reconciliation"
 echo "  4015: Export"
 echo "  4016: Health"
 echo "  4020-4023: Webhooks (Shopify, Stripe, WooCommerce, PayPal)"
+echo "  4024: LLM Investigations"
+echo "  4025: LLM Budget Optimization"
 echo ""
 echo "Stop all mocks: pkill -f prism"
 echo "Test health: curl http://localhost:4016/api/health"
+echo "Test LLM explanation: curl -H 'Authorization: Bearer test' -H 'X-Correlation-ID: test-123' http://localhost:4011/api/attribution/explain/attribution_score/test-id"
