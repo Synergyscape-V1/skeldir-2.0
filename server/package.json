@@ -1,0 +1,15 @@
+{
+  "name": "skeldir-mock-server",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "ts-node prism-mocks.ts"
+  },
+  "dependencies": {
+    "@stoplight/prism-cli": "^5.14.0",
+    "concurrently": "^8.2.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

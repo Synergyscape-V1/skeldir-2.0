@@ -1,73 +1,48 @@
 #!/usr/bin/env bash
-# Start all Prism mock servers for B0.2 validation
-#
-# Usage: bash scripts/start-prism-mocks.sh
-# Stop: pkill -f prism
-
 set -euo pipefail
+
+# SKELDIR B0.2 Mock Starter
+# Aligned with 12-contract registry
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONTRACTS_DIR="$REPO_ROOT/api-contracts/openapi/v1"
+DIST_DIR="$REPO_ROOT/api-contracts/dist/openapi/v1"
 
-echo "Starting Prism mock servers from $CONTRACTS_DIR..."
+echo "Starting Prism mock servers from $DIST_DIR..."
 
-# Check if Prism is installed
-if ! command -v prism &> /dev/null; then
-    echo "ERROR: Prism CLI not found"
-    echo "Install with: npm install -g @stoplight/prism-cli"
-    exit 1
-fi
+start_mock() {
+    local name=$1
+    local port=$2
+    local file=$3
 
-# Start core API mocks
-prism mock "$CONTRACTS_DIR/auth.yaml" --port 4010 &
-echo "✓ Auth API mock started on port 4010"
+    # Handle .yaml to .bundled.yaml conversion; flatten nested paths for dist output
+    local bundle="${file%.yaml}.bundled.yaml"
+    bundle="${bundle//\//.}"
 
-prism mock "$CONTRACTS_DIR/attribution.yaml" --port 4011 &
-echo "✓ Attribution API mock started on port 4011"
+    if [ -f "$DIST_DIR/$bundle" ]; then
+        echo "Starting $name on $port..."
+        npx prism mock "$DIST_DIR/$bundle" -p "$port" -h 0.0.0.0 > /dev/null 2>&1 &
+    else
+        echo "ERROR: Bundle $bundle not found for $name"
+    fi
+}
 
-prism mock "$CONTRACTS_DIR/reconciliation.yaml" --port 4014 &
-echo "✓ Reconciliation API mock started on port 4014"
+# Core
+start_mock "auth" 4010 "auth.yaml"
+start_mock "attribution" 4011 "attribution.yaml"
+start_mock "reconciliation" 4014 "reconciliation.yaml"
+start_mock "export" 4015 "export.yaml"
+start_mock "health" 4016 "health.yaml"
 
-prism mock "$CONTRACTS_DIR/export.yaml" --port 4015 &
-echo "✓ Export API mock started on port 4015"
+# Webhooks
+start_mock "shopify" 4020 "webhooks/shopify.yaml"
+start_mock "stripe" 4021 "webhooks/stripe.yaml"
+start_mock "woocommerce" 4022 "webhooks/woocommerce.yaml"
+start_mock "paypal" 4023 "webhooks/paypal.yaml"
 
-prism mock "$CONTRACTS_DIR/health.yaml" --port 4016 &
-echo "✓ Health API mock started on port 4016"
+# LLM (B0.2 Extension)
+start_mock "llm-investigations" 4024 "llm-investigations.yaml"
+start_mock "llm-budget" 4025 "llm-budget.yaml"
+start_mock "llm-explanations" 4026 "llm-explanations.yaml"
 
-# Start webhook mocks
-prism mock "$CONTRACTS_DIR/webhooks/shopify.yaml" --port 4020 &
-echo "✓ Shopify Webhooks mock started on port 4020"
-
-prism mock "$CONTRACTS_DIR/webhooks/stripe.yaml" --port 4021 &
-echo "✓ Stripe Webhooks mock started on port 4021"
-
-prism mock "$CONTRACTS_DIR/webhooks/woocommerce.yaml" --port 4022 &
-echo "✓ WooCommerce Webhooks mock started on port 4022"
-
-prism mock "$CONTRACTS_DIR/webhooks/paypal.yaml" --port 4023 &
-echo "✓ PayPal Webhooks mock started on port 4023"
-
-# LLM API mocks
-prism mock "$CONTRACTS_DIR/llm-investigations.yaml" --port 4024 &
-echo "✓ LLM Investigations mock started on port 4024"
-
-prism mock "$CONTRACTS_DIR/llm-budget.yaml" --port 4025 &
-echo "✓ LLM Budget Optimization mock started on port 4025"
-
-echo ""
-echo "✅ All Prism mocks started successfully"
-echo ""
-echo "Ports:"
-echo "  4010: Auth"
-echo "  4011: Attribution (+ LLM Explanation)"
-echo "  4014: Reconciliation"
-echo "  4015: Export"
-echo "  4016: Health"
-echo "  4020-4023: Webhooks (Shopify, Stripe, WooCommerce, PayPal)"
-echo "  4024: LLM Investigations"
-echo "  4025: LLM Budget Optimization"
-echo ""
-echo "Stop all mocks: pkill -f prism"
-echo "Test health: curl http://localhost:4016/api/health"
-echo "Test LLM explanation: curl -H 'Authorization: Bearer test' -H 'X-Correlation-ID: test-123' http://localhost:4011/api/attribution/explain/attribution_score/test-id"
+echo "All mocks started in background."
