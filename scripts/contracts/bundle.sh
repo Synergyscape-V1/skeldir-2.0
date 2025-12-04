@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Bundles OpenAPI specs into api-contracts/dist/openapi/v1 for CI workflows.
+# Uses Redocly CLI to properly dereference all $ref references.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SOURCE_DIR="$REPO_ROOT/api-contracts/openapi/v1"
+CONTRACTS_DIR="$REPO_ROOT/api-contracts"
 DIST_DIR="$REPO_ROOT/api-contracts/dist/openapi/v1"
 
 log() {
@@ -16,38 +17,61 @@ log "Preparing output directory: $DIST_DIR"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
-shopt -s nullglob
-contracts=("$SOURCE_DIR"/*.yaml)
-if (( ${#contracts[@]} == 0 )); then
-    log "No OpenAPI files were found under $SOURCE_DIR"
+# Change to api-contracts directory for redocly config resolution
+cd "$CONTRACTS_DIR"
+
+# Check if redocly.yaml exists
+if [ ! -f "redocly.yaml" ]; then
+    log "ERROR: redocly.yaml not found in $CONTRACTS_DIR"
     exit 1
 fi
 
-for contract in "${contracts[@]}"; do
-    filename=$(basename "$contract")
-    bundled_name="${filename%.yaml}.bundled.yaml"
-    log "Bundling $filename -> $bundled_name"
-    cp "$contract" "$DIST_DIR/$bundled_name"
-    # Normalize to LF endings to keep diffs stable
-    if command -v dos2unix >/dev/null 2>&1; then
-        dos2unix "$DIST_DIR/$bundled_name" >/dev/null 2>&1 || true
-    fi
-    log "✓ $bundled_name"
-done
+# Bundle core contracts
+log "Bundling core contracts..."
+npx @redocly/cli bundle auth --config=redocly.yaml --output=dist/openapi/v1/auth.bundled.yaml --ext yaml --dereferenced
+log "✓ auth.bundled.yaml"
 
-# Copy _common directory if it exists
-if [ -d "$SOURCE_DIR/_common" ]; then
-    log "Copying _common directory"
-    cp -r "$SOURCE_DIR/_common" "$DIST_DIR/_common"
+npx @redocly/cli bundle attribution --config=redocly.yaml --output=dist/openapi/v1/attribution.bundled.yaml --ext yaml --dereferenced
+log "✓ attribution.bundled.yaml"
+
+npx @redocly/cli bundle reconciliation --config=redocly.yaml --output=dist/openapi/v1/reconciliation.bundled.yaml --ext yaml --dereferenced
+log "✓ reconciliation.bundled.yaml"
+
+npx @redocly/cli bundle export --config=redocly.yaml --output=dist/openapi/v1/export.bundled.yaml --ext yaml --dereferenced
+log "✓ export.bundled.yaml"
+
+npx @redocly/cli bundle health --config=redocly.yaml --output=dist/openapi/v1/health.bundled.yaml --ext yaml --dereferenced
+log "✓ health.bundled.yaml"
+
+# Bundle webhook contracts
+log "Bundling webhook contracts..."
+npx @redocly/cli bundle shopify_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.shopify.bundled.yaml --ext yaml --dereferenced
+log "✓ webhooks.shopify.bundled.yaml"
+
+npx @redocly/cli bundle woocommerce_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.woocommerce.bundled.yaml --ext yaml --dereferenced
+log "✓ webhooks.woocommerce.bundled.yaml"
+
+npx @redocly/cli bundle stripe_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.stripe.bundled.yaml --ext yaml --dereferenced
+log "✓ webhooks.stripe.bundled.yaml"
+
+npx @redocly/cli bundle paypal_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.paypal.bundled.yaml --ext yaml --dereferenced
+log "✓ webhooks.paypal.bundled.yaml"
+
+# Bundle LLM contracts
+log "Bundling LLM contracts..."
+npx @redocly/cli bundle llm_investigations --config=redocly.yaml --output=dist/openapi/v1/llm-investigations.bundled.yaml --ext yaml --dereferenced
+log "✓ llm-investigations.bundled.yaml"
+
+npx @redocly/cli bundle llm_budget --config=redocly.yaml --output=dist/openapi/v1/llm-budget.bundled.yaml --ext yaml --dereferenced
+log "✓ llm-budget.bundled.yaml"
+
+# Copy _common directory for reference (not bundled)
+if [ -d "openapi/v1/_common" ]; then
+    log "Copying _common directory for reference..."
+    mkdir -p dist/openapi/v1/_common
+    cp -r openapi/v1/_common/* dist/openapi/v1/_common/
     log "✓ _common directory"
 fi
 
-# Copy webhooks directory if it exists
-if [ -d "$SOURCE_DIR/webhooks" ]; then
-    log "Copying webhooks directory"
-    cp -r "$SOURCE_DIR/webhooks" "$DIST_DIR/webhooks"
-    log "✓ webhooks directory"
-fi
-
-log "All OpenAPI contracts copied successfully."
+log "All 11 OpenAPI contracts bundled successfully."
 log "Artifacts ready under api-contracts/dist/openapi/v1/."
