@@ -22,6 +22,7 @@ EXPECTED_BUNDLES = [
     "webhooks.paypal.bundled.yaml",
     "llm-investigations.bundled.yaml",
     "llm-budget.bundled.yaml",
+    "llm-explanations.bundled.yaml",
 ]
 
 def main():

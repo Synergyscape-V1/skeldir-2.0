@@ -24,6 +24,8 @@ apis:
     root: openapi/v1/llm-investigations.yaml
   llm_budget:
     root: openapi/v1/llm-budget.yaml
+  llm_explanations:
+    root: openapi/v1/llm-explanations.yaml
 
 extends:
   - recommended

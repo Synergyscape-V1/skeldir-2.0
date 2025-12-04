@@ -65,6 +65,9 @@ log "✓ llm-investigations.bundled.yaml"
 npx @redocly/cli bundle llm_budget --config=redocly.yaml --output=dist/openapi/v1/llm-budget.bundled.yaml --ext yaml --dereferenced
 log "✓ llm-budget.bundled.yaml"
 
+npx @redocly/cli bundle llm_explanations --config=redocly.yaml --output=dist/openapi/v1/llm-explanations.bundled.yaml --ext yaml --dereferenced
+log "✓ llm-explanations.bundled.yaml"
+
 # Copy _common directory for reference (not bundled)
 if [ -d "openapi/v1/_common" ]; then
     log "Copying _common directory for reference..."
@@ -73,5 +76,5 @@ if [ -d "openapi/v1/_common" ]; then
     log "✓ _common directory"
 fi
 
-log "All 11 OpenAPI contracts bundled successfully."
+log "All 12 OpenAPI contracts bundled successfully."
 log "Artifacts ready under api-contracts/dist/openapi/v1/."

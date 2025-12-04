@@ -52,6 +52,7 @@ jobs:
           npx @redocly/cli bundle paypal_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.paypal.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle llm_investigations --config=redocly.yaml --output=dist/openapi/v1/llm-investigations.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle llm_budget --config=redocly.yaml --output=dist/openapi/v1/llm-budget.bundled.yaml --ext yaml --dereferenced
+          npx @redocly/cli bundle llm_explanations --config=redocly.yaml --output=dist/openapi/v1/llm-explanations.bundled.yaml --ext yaml --dereferenced
       
       - name: Gate 1 - Validate bundle completeness
         run: |
@@ -83,7 +84,7 @@ jobs:
         if: success()
         run: |
           echo "✅ Contract validation PASSED"
-          echo "- All 11 bundles present (9 core + 2 LLM)"
+          echo "- All 12 bundles present (9 core + 3 LLM)"
           echo "- Zero external refs (fully dereferenced)"
           echo ""
           echo "Operational ≠ Functional: VALIDATED"
