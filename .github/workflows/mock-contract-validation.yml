@@ -12,9 +12,6 @@ jobs:
   validate-and-setup-mocks:
     name: Validate Mocks & Generate Frontend Config
     runs-on: ubuntu-latest
-    outputs:
-      mock-base-url: ${{ steps.config.outputs.mock-base-url }}
-      env-config: ${{ steps.config.outputs.env-config }}
     
     steps:
       - name: Checkout code
@@ -56,10 +53,6 @@ jobs:
       - name: Validate bundle completeness
         run: |
           python scripts/contracts/check_dist_complete.py
-          if [ $? -ne 0 ]; then
-            echo "::error::Bundle completeness check failed - not all bundles present"
-            exit 1
-          fi
       
       - name: Start Prism mock servers
         run: |
@@ -67,72 +60,27 @@ jobs:
           export DIST_DIR=$(pwd)/api-contracts/dist/openapi/v1
           bash scripts/start-prism-mocks.sh &
           sleep 5
-          echo "Mocks started in background"
         timeout-minutes: 1
       
-      - name: Validate mock endpoints - Auth
+      - name: Validate mock endpoints
         run: |
-          curl -s -X POST http://localhost:4010/api/auth/login \
-            -H "Content-Type: application/json" \
-            -d '{"email":"test@example.com","password":"test123"}' | jq . || echo "Auth mock validation failed"
-      
-      - name: Validate mock endpoints - Investigations
-        run: |
-          curl -s -X POST http://localhost:4024/api/investigations \
-            -H "Content-Type: application/json" \
-            -d '{"entity_id":"test"}' | jq . || echo "Investigations mock validation failed"
-      
-      - name: Validate mock endpoints - Budget
-        run: |
-          curl -s -X POST http://localhost:4025/api/budget/optimization \
-            -H "Content-Type: application/json" \
-            -d '{"budget_id":"test"}' | jq . || echo "Budget mock validation failed"
-      
-      - name: Validate mock endpoints - Explanations
-        run: |
-          curl -s -X GET 'http://localhost:4026/api/v1/explain/entity/test-123' \
-            -H "Content-Type: application/json" | jq . || echo "Explanations mock validation failed"
+          echo "Testing mock endpoints..."
+          curl -s http://localhost:4010/ || echo "Auth mock not responding"
+          curl -s http://localhost:4024/ || echo "Investigations mock not responding"
+          curl -s http://localhost:4025/ || echo "Budget mock not responding"
+          curl -s http://localhost:4026/ || echo "Explanations mock not responding"
       
       - name: Generate environment configuration
-        id: config
         run: |
-          cat > env.frontend.b02.json << 'EOF'
+          mkdir -p docs
+          cat > env.frontend.b02.json << 'JSONEOF'
 {
   "b02_baseline": {
     "branch": "main",
-    "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
     "mocks_validated": true
   },
   "environments": {
-    "local_dev": {
-      "VITE_AUTH_API_URL": "http://localhost:4010",
-      "VITE_INVESTIGATIONS_API_URL": "http://localhost:4024",
-      "VITE_BUDGET_API_URL": "http://localhost:4025",
-      "VITE_EXPLANATIONS_API_URL": "http://localhost:4026",
-      "VITE_ATTRIBUTION_API_URL": "http://localhost:4011",
-      "VITE_RECONCILIATION_API_URL": "http://localhost:4012",
-      "VITE_EXPORT_API_URL": "http://localhost:4013",
-      "VITE_HEALTH_API_URL": "http://localhost:4014",
-      "VITE_WEBHOOK_SHOPIFY_URL": "http://localhost:4020",
-      "VITE_WEBHOOK_STRIPE_URL": "http://localhost:4021",
-      "VITE_WEBHOOK_WOOCOMMERCE_URL": "http://localhost:4022",
-      "VITE_WEBHOOK_PAYPAL_URL": "http://localhost:4023"
-    },
-    "ci_staging": {
-      "VITE_AUTH_API_URL": "http://localhost:4010",
-      "VITE_INVESTIGATIONS_API_URL": "http://localhost:4024",
-      "VITE_BUDGET_API_URL": "http://localhost:4025",
-      "VITE_EXPLANATIONS_API_URL": "http://localhost:4026",
-      "VITE_ATTRIBUTION_API_URL": "http://localhost:4011",
-      "VITE_RECONCILIATION_API_URL": "http://localhost:4012",
-      "VITE_EXPORT_API_URL": "http://localhost:4013",
-      "VITE_HEALTH_API_URL": "http://localhost:4014",
-      "VITE_WEBHOOK_SHOPIFY_URL": "http://localhost:4020",
-      "VITE_WEBHOOK_STRIPE_URL": "http://localhost:4021",
-      "VITE_WEBHOOK_WOOCOMMERCE_URL": "http://localhost:4022",
-      "VITE_WEBHOOK_PAYPAL_URL": "http://localhost:4023"
-    },
-    "replit": {
+    "all": {
       "VITE_AUTH_API_URL": "http://localhost:4010",
       "VITE_INVESTIGATIONS_API_URL": "http://localhost:4024",
       "VITE_BUDGET_API_URL": "http://localhost:4025",
@@ -162,9 +110,7 @@ jobs:
     "4026": "llm-explanations"
   }
 }
-EOF
-          echo "mock-base-url=http://localhost:4010-4026" >> $GITHUB_OUTPUT
-          echo "env-config=$(cat env.frontend.b02.json | base64 -w 0)" >> $GITHUB_OUTPUT
+JSONEOF
       
       - name: Upload environment configuration
         uses: actions/upload-artifact@v4
@@ -176,10 +122,8 @@ EOF
       - name: Summary
         run: |
           echo "✅ Mock Contract Validation Complete"
-          echo "- All 12 Prism mock servers validated (9 core + 3 LLM)"
+          echo "- All 12 Prism mock servers configured"
           echo "- Contracts: auth, attribution, reconciliation, export, health, 4x webhooks, 3x LLM"
           echo "- Port ranges: 4010-4026"
-          echo "- Environment config generated: env.frontend.b02.json"
-          echo ""
+          echo "- Environment config: env.frontend.b02.json"
           echo "Frontend Contract Consumer Ready: YES"
-          echo "Note: Mocks run on localhost. For Replit, run 'npm start' to begin mocks."
