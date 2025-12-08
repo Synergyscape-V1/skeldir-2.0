@@ -114,7 +114,7 @@ def upgrade() -> None:
     """)
     
     op.execute("""
-        COMMENT ON INDEX idx_mv_allocation_summary_key ON mv_allocation_summary IS
+        COMMENT ON INDEX idx_mv_allocation_summary_key IS
             'Unique index on (tenant_id, event_id, model_version). Purpose: Enable fast lookups for sum-equality validation queries.'
     """)
     
@@ -126,7 +126,7 @@ def upgrade() -> None:
     """)
     
     op.execute("""
-        COMMENT ON INDEX idx_mv_allocation_summary_drift ON mv_allocation_summary IS
+        COMMENT ON INDEX idx_mv_allocation_summary_drift IS
             'Partial index on drift_cents WHERE drift_cents > 1. Purpose: Enable fast queries for unbalanced allocations (drift > 1 cent tolerance).'
     """)
 

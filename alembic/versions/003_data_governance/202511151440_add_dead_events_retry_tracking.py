@@ -175,8 +175,8 @@ def upgrade() -> None:
     # ========================================================================
     
     op.execute("""
-        CREATE INDEX idx_dead_events_remediation 
-        ON dead_events (remediation_status, created_at DESC)
+        CREATE INDEX idx_dead_events_remediation
+        ON dead_events (remediation_status, ingested_at DESC)
     """)
     
     # ========================================================================
