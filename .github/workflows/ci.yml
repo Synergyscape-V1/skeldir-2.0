@@ -131,11 +131,15 @@ jobs:
 
       - name: Prepare database and role
         run: |
-          echo "Creating app_user role and skeldir_validation database..."
+          echo "Creating database roles and skeldir_validation database..."
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_rw WITH PASSWORD 'app_rw';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_ro WITH PASSWORD 'app_ro';"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_rw;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT USAGE ON SCHEMA public TO app_ro;"
           echo "Database setup complete"
 
       - name: Run migrations
