@@ -142,7 +142,6 @@ jobs:
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
         run: |
-          cd backend
           alembic upgrade heads
 
       - name: Start Celery worker
