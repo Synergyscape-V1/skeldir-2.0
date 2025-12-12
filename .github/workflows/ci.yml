@@ -211,21 +211,22 @@ jobs:
       
       - name: Install dependencies
         run: npm install
-            - name: Start mock servers
+
+      - name: Start mock servers
         run: |
-                      # Native mock servers using Prism (Architecture Guide compliant)
-            npx @stoplight/prism-cli mock contracts/attribution/v1/attribution.yaml --port 4011 &
-            npx @stoplight/prism-cli mock contracts/health/v1/health.yaml --port 4014 &
-      
+          # Native mock servers using Prism (Architecture Guide compliant)
+          npx @stoplight/prism-cli mock contracts/attribution/v1/attribution.yaml --port 4011 &
+          npx @stoplight/prism-cli mock contracts/health/v1/health.yaml --port 4014 &
+
       - name: Run Playwright tests
         run: |
           npx playwright test
-      
+
       - name: Stop mock servers
         if: always()
         run: |
-                      # Terminate Prism mock servers
-            pkill -f prism-cli || true
+          # Terminate Prism mock servers
+          pkill -f prism-cli || true
 
   # Validate migrations (destructive DDL detection)
   validate-migrations:
