@@ -1,6 +1,6 @@
 /**
- * Reconciliation Status Hook - Mockoon Integration
- * Fetches reconciliation status from Reconciliation API (Port 4012)
+ * Reconciliation Status Hook - Prism Integration (B0.2)
+ * Fetches reconciliation status from Reconciliation API (Port 4014)
  * Contract: reconciliation.yaml - GET /api/reconciliation/status
  */
 

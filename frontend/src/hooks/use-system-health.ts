@@ -1,14 +1,14 @@
 /**
- * System Health Hook - Mockoon Integration
- * Fetches system health status from Health API (Port 4014)
+ * System Health Hook - Prism Integration (B0.2)
+ * Fetches system health status from Health API (Port 4016)
  * Contract: health.yaml - GET /api/health
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { healthClient, type HealthStatus } from '@/api/health-client';
+import { healthService, type HealthStatus } from '@/api/health-client';
 
 export interface UseSystemHealthOptions {
-  refetchInterval?: number; // Polling interval in milliseconds (default: 60000)
+  refetchInterval?: number;
   enabled?: boolean;
 }
 
@@ -24,7 +24,7 @@ export interface UseSystemHealthReturn {
 }
 
 /**
- * Fetch system health status from Mockoon Health API
+ * Fetch system health status from Prism Health API
  */
 export function useSystemHealth(
   options: UseSystemHealthOptions = {}
@@ -34,12 +34,7 @@ export function useSystemHealth(
   const query = useQuery({
     queryKey: ['/api/health'],
     queryFn: async () => {
-      const response = await healthClient.getSystemHealth();
-      
-      if (response.error) {
-        throw new Error(response.error.detail || 'Failed to fetch system health');
-      }
-
+      const response = await healthService.getSystemHealth();
       return {
         data: response.data,
         correlationId: response.correlationId,

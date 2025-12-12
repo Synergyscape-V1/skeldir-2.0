@@ -17,6 +17,7 @@ export type RevenueRealtimeResponseB2_6 = RealtimeRevenueCounter;
 /**
  * Legacy-compatible attribution client
  * Wraps the new attributionService to maintain backward compatibility
+ * B0.2: Only realtime revenue endpoint is supported per attribution.yaml contract
  */
 export const attributionClient = {
   async getRealtimeRevenue(params?: { start_date?: string; end_date?: string }) {
@@ -44,64 +45,6 @@ export const attributionClient = {
         error: {
           detail: error instanceof Error ? error.message : 'Failed to fetch revenue data',
           status: 500,
-        },
-        correlationId: undefined,
-      };
-    }
-  },
-
-  async getChannels(params?: { start_date?: string; end_date?: string }) {
-    try {
-      const response = await attributionService.getChannels(params);
-      return {
-        data: response.data,
-        error: null,
-        correlationId: response.correlationId,
-      };
-    } catch (error) {
-      if (error instanceof ApiError) {
-        return {
-          data: null,
-          error: {
-            detail: error.getUserMessage(),
-          },
-          correlationId: error.correlationId,
-        };
-      }
-
-      return {
-        data: null,
-        error: {
-          detail: 'Failed to fetch channel data',
-        },
-        correlationId: undefined,
-      };
-    }
-  },
-
-  async compareModels(params?: { start_date?: string; end_date?: string }) {
-    try {
-      const response = await attributionService.compareModels(params);
-      return {
-        data: response.data,
-        error: null,
-        correlationId: response.correlationId,
-      };
-    } catch (error) {
-      if (error instanceof ApiError) {
-        return {
-          data: null,
-          error: {
-            detail: error.getUserMessage(),
-          },
-          correlationId: error.correlationId,
-        };
-      }
-
-      return {
-        data: null,
-        error: {
-          detail: 'Failed to compare models',
         },
         correlationId: undefined,
       };

@@ -9,14 +9,14 @@ import { ApiError } from '@/lib/rfc7807-handler';
 /**
  * Legacy-compatible auth client
  * Wraps the new authService to maintain backward compatibility
+ * B0.2: Uses auth.yaml contract endpoints
  */
 export const authClient = {
-  async login(credentials: { email: string; password: string; rememberMe?: boolean }) {
+  async login(credentials: { email: string; password: string }) {
     try {
       const response = await authService.login({
         email: credentials.email,
         password: credentials.password,
-        remember_me: credentials.rememberMe || false,
       });
 
       return {
@@ -78,9 +78,9 @@ export const authClient = {
     }
   },
 
-  async verify(token: string) {
+  async verify() {
     try {
-      const response = await authService.verify(token);
+      const response = await authService.verify();
       return {
         data: response.data,
         error: null,

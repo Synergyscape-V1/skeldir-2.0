@@ -12,7 +12,7 @@ export class SDKClient {
   private baseUrl: string;
 
   constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl || import.meta.env.VITE_MOCK_ATTRIBUTION_URL || 'http://localhost:4010';
+    this.baseUrl = baseUrl || import.meta.env.VITE_ATTRIBUTION_API_URL || 'http://localhost:4011';
     this.client = this.createClient();
   }
 

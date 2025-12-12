@@ -112,12 +112,13 @@ export function useAuth(): UseAuthReturn {
     // Wait for storage operations to complete
     await authUtils.login(tokens);
     
-    // Update both auth state systems
+    // Update both auth state systems synchronously to prevent race conditions
     globalAuthState = { user: tokens.user, isAuthenticated: true, isLoading: false };
     authStateListeners.forEach(listener => listener());
     
-    // Force auth state manager to refresh and recognize the login
-    await authStateManager.refreshAuth();
+    // Immediately mark as authenticated in the global state manager (used by RouteGuard)
+    // This bypasses async checks to prevent race conditions during navigation
+    authStateManager.markAuthenticated();
     
     // Sync in background without blocking UI
     authUtils.syncAuthState().catch(error => {
@@ -199,39 +200,71 @@ export function useLogin() {
     setError(null);
 
     try {
-      const { authClient } = await import('@/api/auth-client');
-      const response = await authClient.login({ email, password });
+      const { authService } = await import('@/api/services/auth-client');
+      const response = await authService.login({ email, password });
 
-      if (response.error) {
-        const errorMessage = response.error.detail || 'Login failed';
-        setError(errorMessage);
+      // B0.2 contract: login response REQUIRES access_token, refresh_token, expires_in
+      // 'user' is optional - if not provided, we synthesize it from login email
+      const responseData = response.data as {
+        access_token: string;
+        refresh_token: string;
+        expires_in: number;
+        token_type?: string;
+        user?: { id: string; email: string; username: string };
+      };
+      
+      // Validate B0.2 required fields: access_token, refresh_token, expires_in
+      // Surface explicit errors via UI state (consumed by toast in LoginInterface)
+      if (!responseData.access_token) {
+        const errorMsg = 'Authentication failed: missing access_token from server';
+        console.error('[useLogin] B0.2 contract violation:', errorMsg);
+        setError(errorMsg);
+        setIsLoading(false);
+        return { success: false, user: null };
+      }
+      if (!responseData.refresh_token) {
+        const errorMsg = 'Authentication failed: missing refresh_token from server';
+        console.error('[useLogin] B0.2 contract violation:', errorMsg);
+        setError(errorMsg);
+        setIsLoading(false);
+        return { success: false, user: null };
+      }
+      if (responseData.expires_in === undefined || responseData.expires_in === null) {
+        const errorMsg = 'Authentication failed: missing expires_in from server';
+        console.error('[useLogin] B0.2 contract violation:', errorMsg);
+        setError(errorMsg);
         setIsLoading(false);
         return { success: false, user: null };
       }
       
-      if (response.data) {
-        const tokens = {
-          token: response.data.access_token,
-          user: {
-            id: email,
-            email,
-            name: email.split('@')[0],
-          },
-        };
-        await login(tokens);
-        setIsLoading(false);
-        return { success: true, user: tokens.user };
-      } else {
-        setError('Invalid login response');
-        setIsLoading(false);
-        return { success: false, user: null };
-      }
+      // Use returned user if available, otherwise synthesize from login email
+      const userFromResponse = responseData.user && responseData.user.id && responseData.user.email
+        ? {
+            id: responseData.user.id,
+            email: responseData.user.email,
+            username: responseData.user.username || responseData.user.email.split('@')[0],
+            emailVerified: false,
+          }
+        : {
+            id: crypto.randomUUID(),
+            email: email,
+            username: email.split('@')[0],
+            emailVerified: false,
+          };
+      
+      const tokens = {
+        token: responseData.access_token,
+        refreshToken: responseData.refresh_token,
+        expiresIn: responseData.expires_in,
+        user: userFromResponse,
+      };
+      await login(tokens);
+      setIsLoading(false);
+      return { success: true, user: userFromResponse };
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message || 'Login failed');
-      } else {
-        setError('Login failed');
-      }
+      const errorMessage = err instanceof Error ? err.message : 'Login failed';
+      console.error('[useLogin] Login error:', errorMessage, err);
+      setError(errorMessage);
       setIsLoading(false);
       return { success: false, user: null };
     }

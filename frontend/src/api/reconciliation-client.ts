@@ -1,9 +1,13 @@
 /**
- * Reconciliation Client Compatibility Layer
+ * Reconciliation Client Compatibility Layer (B0.2)
+ * Port 4014
  */
 
 import { reconciliationService } from './services/reconciliation-client';
 import { ApiError } from '@/lib/rfc7807-handler';
+import type { paths } from '@/types/api/reconciliation';
+
+export type ReconciliationStatus = paths['/api/reconciliation/status']['get']['responses']['200']['content']['application/json'];
 
 export const reconciliationClient = {
   async getStatus() {

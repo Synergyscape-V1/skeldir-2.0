@@ -1,29 +1,26 @@
 /**
  * Health Monitoring API Client
- * Contract: health.yaml (Port 4014)
+ * Contract: health.yaml (Port 4016 - B0.2)
  * Endpoints: /api/health, /api/health/services
  */
 
-import { BaseApiClient, type ApiResponse } from '@/lib/api-client-base';
+import { healthClient as baseHealthClient, type ApiResponse } from '@/lib/api-client-base';
 
-// Overall System Health Response
 export interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
-  timestamp: string; // ISO 8601
+  timestamp: string;
   version: string;
   uptime_seconds: number;
   services: Record<string, ServiceHealth>;
 }
 
-// Individual Service Health
 export interface ServiceHealth {
   status: 'healthy' | 'degraded' | 'unhealthy';
   response_time_ms: number;
-  last_check: string; // ISO 8601
+  last_check: string;
   error_message?: string;
 }
 
-// Detailed Service Health Response
 export interface ServiceHealthDetail {
   service_name: string;
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -36,7 +33,7 @@ export interface HealthCheck {
   check_name: string;
   status: 'pass' | 'fail';
   message?: string;
-  timestamp: string; // ISO 8601
+  timestamp: string;
 }
 
 export interface DependencyHealth {
@@ -46,22 +43,15 @@ export interface DependencyHealth {
 }
 
 /**
- * HealthClient - Handles system health monitoring
+ * Health Service - Handles system health monitoring
  */
-export class HealthClient extends BaseApiClient {
-  constructor(baseUrl?: string) {
-    super({
-      baseUrl: baseUrl || import.meta.env.VITE_HEALTH_API_URL || 'http://localhost:4014',
-      serviceName: 'HealthService',
-    });
-  }
-
+export class HealthService {
   /**
    * GET /api/health
    * Get overall system health status
    */
   async getSystemHealth(): Promise<ApiResponse<HealthStatus>> {
-    return this.get<HealthStatus>('/api/health');
+    return baseHealthClient.get<HealthStatus>('/api/health');
   }
 
   /**
@@ -69,11 +59,9 @@ export class HealthClient extends BaseApiClient {
    * Get detailed health information for a specific service
    */
   async getServiceHealth(serviceName: string): Promise<ApiResponse<ServiceHealthDetail>> {
-    return this.get<ServiceHealthDetail>(`/api/health/services/${serviceName}`);
+    return baseHealthClient.get<ServiceHealthDetail>(`/api/health/services/${serviceName}`);
   }
 }
 
-/**
- * Singleton instance of HealthClient
- */
-export const healthClient = new HealthClient();
+export const healthService = new HealthService();
+export const healthClient = healthService;

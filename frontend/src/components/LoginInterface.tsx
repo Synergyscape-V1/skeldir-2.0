@@ -70,52 +70,28 @@ export default function LoginInterface() {
   const { login, isLoading, error, clearError } = useLogin();
   const [, navigate] = useLocation();
 
-  // Real-time email validation with DNS checking via server endpoint
-  const validateEmail = useCallback(async (emailToValidate: string): Promise<boolean> => {
+  // Local email validation using regex (B0.2 contract-compliant - no server dependency)
+  const validateEmail = useCallback((emailToValidate: string): boolean => {
     if (!emailToValidate.trim()) {
-      const validation = {
+      setEmailValidation({
         isValid: false,
         isValidating: false,
         message: "Email is required",
         hasBeenValidated: true,
-      };
-      setEmailValidation(validation);
-      return false;
-    }
-
-    setEmailValidation(prev => ({ ...prev, isValidating: true }));
-
-    try {
-      const response = await fetch('/api/validate/email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: emailToValidate }),
       });
-
-      const result = await response.json();
-      
-      const validation = {
-        isValid: result.isValid,
-        isValidating: false,
-        message: result.message,
-        hasBeenValidated: true,
-      };
-      setEmailValidation(validation);
-      return result.isValid;
-      
-    } catch (error) {
-      console.error('Email validation failed:', error);
-      const validation = {
-        isValid: false,
-        isValidating: false,
-        message: "Unable to verify email address",
-        hasBeenValidated: true,
-      };
-      setEmailValidation(validation);
       return false;
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const isValid = emailRegex.test(emailToValidate);
+    
+    setEmailValidation({
+      isValid,
+      isValidating: false,
+      message: isValid ? "Valid email format" : "Please enter a valid email address",
+      hasBeenValidated: true,
+    });
+    return isValid;
   }, []);
 
   // Password strength evaluation function
@@ -205,8 +181,8 @@ export default function LoginInterface() {
   }, [evaluatePasswordStrength]);
 
   // Handle email blur event for validation
-  const handleEmailBlur = useCallback(async () => {
-    await validateEmail(email);
+  const handleEmailBlur = useCallback(() => {
+    validateEmail(email);
   }, [email, validateEmail]);
 
   // Handle form submission
@@ -216,7 +192,7 @@ export default function LoginInterface() {
 
     // Validate email before submission if not already validated
     if (!emailValidation.hasBeenValidated || !emailValidation.isValid) {
-      const isEmailValid = await validateEmail(email);
+      const isEmailValid = validateEmail(email);
       
       // Only proceed if email validation passed
       if (!isEmailValid) {

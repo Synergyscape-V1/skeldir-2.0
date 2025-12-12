@@ -1,5 +1,5 @@
 /**
- * Realtime Revenue Hook - Mockoon Integration
+ * Realtime Revenue Hook - Prism Integration (B0.2)
  * Fetches revenue data from Attribution API (Port 4011)
  * Contract: attribution.yaml - GET /api/attribution/revenue/realtime
  */

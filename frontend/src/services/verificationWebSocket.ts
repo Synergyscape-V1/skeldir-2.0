@@ -105,4 +105,23 @@ export class VerificationWebSocketService {
 
 // Use Vite environment variables (VITE_ prefix)
 const WS_URL = import.meta.env.VITE_WS_URL || 'wss://api.skeldir.com/verification-updates';
-export const verificationWebSocket = new VerificationWebSocketService(WS_URL);
+
+/**
+ * B0.2: Mock mode guard - disable WebSocket in mock environments
+ * When VITE_MOCK_MODE=true, we create a no-op service that doesn't connect
+ */
+const isMockMode = import.meta.env.VITE_MOCK_MODE === 'true';
+
+class MockVerificationWebSocketService {
+  connect(): void {
+    console.log('[VerificationWS] Mock mode enabled - WebSocket connection disabled');
+  }
+  subscribe(_callback: (update: VerificationUpdate) => void): () => void {
+    return () => {};
+  }
+  disconnect(): void {}
+}
+
+export const verificationWebSocket = isMockMode 
+  ? new MockVerificationWebSocketService() 
+  : new VerificationWebSocketService(WS_URL);

@@ -57,8 +57,10 @@ export const VerificationSyncProvider = ({
   }, [triggerVerificationUpdate]);
 
   // Set up WebSocket or Polling based on configuration
+  // B0.2: Mock mode forces polling to prevent production WebSocket traffic
   useEffect(() => {
-    const useWS = useWebSocket && import.meta.env.VITE_USE_WEBSOCKET !== 'false';
+    const isMockMode = import.meta.env.VITE_MOCK_MODE === 'true';
+    const useWS = !isMockMode && useWebSocket && import.meta.env.VITE_USE_WEBSOCKET !== 'false';
 
     if (useWS) {
       console.log('[VerificationSync] Using WebSocket mode');
@@ -70,7 +72,7 @@ export const VerificationSyncProvider = ({
         verificationWebSocket.disconnect();
       };
     } else {
-      console.log('[VerificationSync] Using Polling mode');
+      console.log('[VerificationSync] Using Polling mode (mock mode:', isMockMode, ')');
       verificationPolling.start();
       const unsubscribe = verificationPolling.subscribe(handleVerificationUpdate);
       

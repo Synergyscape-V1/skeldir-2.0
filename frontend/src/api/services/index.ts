@@ -1,6 +1,6 @@
 /**
- * Service Client Exports
- * Barrel file for all API service clients
+ * B0.2 Service Client Exports
+ * Barrel file for all 12 API service clients
  */
 
 export { authService, AuthService } from './auth-client';
@@ -9,5 +9,13 @@ export { reconciliationService, ReconciliationService } from './reconciliation-c
 export { exportService, ExportService } from './export-client';
 export { healthService, HealthService } from './health-client';
 
-// Re-export error types for convenience
+export { ShopifyWebhookService } from './webhook-shopify';
+export { StripeWebhookService } from './webhook-stripe';
+export { WooCommerceWebhookService } from './webhook-woocommerce';
+export { PayPalWebhookService } from './webhook-paypal';
+
+export { LLMInvestigationsService } from './llm-investigations';
+export { LLMBudgetService } from './llm-budget';
+export { LLMExplanationsService } from './llm-explanations';
+
 export { ApiError, type ProblemDetails } from '@/lib/rfc7807-handler';

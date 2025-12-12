@@ -19,24 +19,23 @@ export default function LoginForm() {
   const { login, isLoading, error, clearError } = useLogin();
   const [, navigate] = useLocation();
 
-  const validateEmail = useCallback(async (emailToValidate: string): Promise<boolean> => {
+  const validateEmail = useCallback((emailToValidate: string): boolean => {
     if (!emailToValidate.trim()) {
       setEmailValidation({ isValid: false, isValidating: false, message: "Email is required", hasBeenValidated: true });
       return false;
     }
-    setEmailValidation(prev => ({ ...prev, isValidating: true }));
-    try {
-      const response = await fetch('/api/validate/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: emailToValidate }) });
-      const result = await response.json();
-      setEmailValidation({ isValid: result.isValid, isValidating: false, message: result.message, hasBeenValidated: true });
-      return result.isValid;
-    } catch (error) {
-      setEmailValidation({ isValid: false, isValidating: false, message: "Unable to verify email", hasBeenValidated: true });
-      return false;
-    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const isValid = emailRegex.test(emailToValidate);
+    setEmailValidation({ 
+      isValid, 
+      isValidating: false, 
+      message: isValid ? "Valid email format" : "Please enter a valid email address", 
+      hasBeenValidated: true 
+    });
+    return isValid;
   }, []);
 
-  const handleEmailBlur = useCallback(() => validateEmail(email), [email, validateEmail]);
+  const handleEmailBlur = useCallback(() => { validateEmail(email); }, [email, validateEmail]);
   const handleLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
