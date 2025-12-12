@@ -85,6 +85,91 @@ jobs:
           cd backend
           pytest
 
+  celery-foundation:
+    name: Celery Foundation B0.5.1
+    runs-on: ubuntu-latest
+    needs: checkout
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@localhost:5432/skeldir_validation
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@localhost:5432/skeldir_validation
+      CELERY_METRICS_PORT: 9546
+      CELERY_METRICS_ADDR: 127.0.0.1
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Prepare database and role
+        run: |
+          echo "Creating app_user role and skeldir_validation database..."
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"
+          echo "Database setup complete"
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          cd backend
+          alembic upgrade heads
+
+      - name: Start Celery worker
+        run: |
+          cd backend
+          export PYTHONPATH=$(pwd):$PYTHONPATH
+          echo "Starting Celery worker..."
+          celery -A app.celery_app.celery_app worker -P solo -c 1 --loglevel=INFO &
+          echo $! > /tmp/celery.pid
+          echo "Waiting for worker to be ready..."
+          sleep 10
+          echo "Worker should be ready"
+
+      - name: Run Celery foundation tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          cd backend
+          pytest tests/test_b051_celery_foundation.py -q
+
+      - name: Stop Celery worker
+        if: always()
+        run: |
+          if [ -f /tmp/celery.pid ]; then
+            kill $(cat /tmp/celery.pid) || true
+          fi
+
   # Frontend tests (when frontend exists)
   test-frontend:
     name: Test Frontend
@@ -251,4 +336,3 @@ jobs:
             exit 1
           fi
           echo "Model generation successful"
-
