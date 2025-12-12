@@ -1,7 +1,7 @@
 """Add CI validation test column
 
 Revision ID: 202512091100
-Revises: 202511210900
+Revises: 202512081510
 Create Date: 2025-12-09 11:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '202512091100'
-down_revision = '202511210900'  # Points to last migration in 004_llm_subsystem
+down_revision = '202512081510'  # Points to last migration in 004_llm_subsystem
 branch_labels = None
 depends_on = None
 
