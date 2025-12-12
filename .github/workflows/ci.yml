@@ -146,7 +146,9 @@ jobs:
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
         run: |
-          alembic upgrade heads
+          # B0.5.1: Only run celery_foundation branch migration
+          # Full schema migrations require custom GUCs which aren't in scope for B0.5.1
+          alembic upgrade celery_foundation@head
 
       - name: Start Celery worker
         run: |
