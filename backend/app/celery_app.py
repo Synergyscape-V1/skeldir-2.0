@@ -59,6 +59,9 @@ def _build_result_backend() -> str:
 
 celery_app = Celery("skeldir_backend")
 
+# B0.5.2: Explicit queue topology for deterministic routing
+from kombu import Queue
+
 celery_app.conf.update(
     broker_url=_build_broker_url(),
     result_backend=_build_result_backend(),
@@ -76,6 +79,20 @@ celery_app.conf.update(
         "app.tasks.maintenance",
         "app.tasks.llm",
     ],
+    # B0.5.2: Fixed queue topology
+    task_queues=[
+        Queue('housekeeping', routing_key='housekeeping.#'),
+        Queue('maintenance', routing_key='maintenance.#'),
+        Queue('llm', routing_key='llm.#'),
+    ],
+    task_routes={
+        'app.tasks.housekeeping.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
+        'app.tasks.maintenance.*': {'queue': 'maintenance', 'routing_key': 'maintenance.task'},
+        'app.tasks.llm.*': {'queue': 'llm', 'routing_key': 'llm.task'},
+    },
+    task_default_queue='housekeeping',
+    task_default_exchange='tasks',
+    task_default_routing_key='housekeeping.task',
 )
 
 
@@ -127,6 +144,104 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
             "error": str(exception),
         },
     )
+
+    # B0.5.2: Persist task failure to worker DLQ
+    try:
+        import asyncio
+        from uuid import UUID, uuid4
+        from app.db.session import engine
+
+        async def _persist_dlq():
+            from sqlalchemy import text
+
+            # Extract tenant_id if present in kwargs
+            tenant_id = None
+            if kwargs and 'tenant_id' in kwargs:
+                try:
+                    tenant_id = UUID(str(kwargs['tenant_id']))
+                except (ValueError, TypeError):
+                    pass
+
+            # Classify error type
+            error_type = "unknown"
+            if exception:
+                exc_name = exception.__class__.__name__
+                if exc_name in ("ValueError", "KeyError"):
+                    error_type = "validation_error"
+                elif exc_name in ("IntegrityError", "OperationalError"):
+                    error_type = "database_error"
+                else:
+                    error_type = "application_error"
+
+            # Get worker info from task request
+            queue = None
+            worker_name = None
+            correlation_id = None
+            if task and hasattr(task, 'request'):
+                queue = getattr(task.request, 'delivery_info', {}).get('routing_key', None)
+                worker_name = getattr(task.request, 'hostname', None)
+                correlation_id_val = getattr(task.request, 'correlation_id', None)
+                if correlation_id_val:
+                    try:
+                        correlation_id = UUID(str(correlation_id_val))
+                    except (ValueError, TypeError):
+                        pass
+
+            # Insert into celery_task_failures
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("""
+                        INSERT INTO celery_task_failures (
+                            id, task_id, task_name, queue, worker,
+                            task_args, task_kwargs, tenant_id,
+                            error_type, exception_class, error_message, traceback,
+                            retry_count, status, correlation_id, failed_at
+                        ) VALUES (
+                            :id, :task_id, :task_name, :queue, :worker,
+                            :task_args, :task_kwargs, :tenant_id,
+                            :error_type, :exception_class, :error_message, :traceback,
+                            :retry_count, :status, :correlation_id, CURRENT_TIMESTAMP
+                        )
+                    """),
+                    {
+                        "id": uuid4(),
+                        "task_id": task_id,
+                        "task_name": task_name,
+                        "queue": queue,
+                        "worker": worker_name,
+                        "task_args": args if args else None,
+                        "task_kwargs": kwargs if kwargs else None,
+                        "tenant_id": tenant_id,
+                        "error_type": error_type,
+                        "exception_class": exception.__class__.__name__ if exception else "Unknown",
+                        "error_message": str(exception)[:500] if exception else "",
+                        "traceback": str(einfo)[:2000] if einfo else None,
+                        "retry_count": 0,
+                        "status": "pending",
+                        "correlation_id": correlation_id,
+                    }
+                )
+
+        # Run async DLQ persist in sync context
+        try:
+            loop = asyncio.get_running_loop()
+            # If loop is running, create new loop (worker context)
+            new_loop = asyncio.new_event_loop()
+            try:
+                new_loop.run_until_complete(_persist_dlq())
+            finally:
+                new_loop.close()
+        except RuntimeError:
+            # No running loop, use asyncio.run
+            asyncio.run(_persist_dlq())
+
+    except Exception as dlq_error:
+        # DLQ failure should not crash worker
+        logger.error(
+            "celery_dlq_persist_failed",
+            exc_info=dlq_error,
+            extra={"task_id": task_id, "task_name": task_name},
+        )
 
 
 __all__ = ["celery_app", "_build_broker_url", "_build_result_backend"]

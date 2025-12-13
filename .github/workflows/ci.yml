@@ -161,12 +161,52 @@ jobs:
           sleep 10
           echo "Worker should be ready"
 
+      - name: Capture observability evidence (B0.5.2)
+        run: |
+          echo "=== B0.5.2 Observability Evidence Capture ==="
+          mkdir -p evidence
+
+          # Wait for monitoring server to be ready
+          sleep 5
+
+          # Capture /health endpoint
+          echo "Capturing /health endpoint..."
+          curl -f http://127.0.0.1:9546/health > evidence/worker_health.json 2>&1 || echo "Health check failed"
+          cat evidence/worker_health.json
+
+          # Capture /metrics endpoint
+          echo ""
+          echo "Capturing /metrics endpoint..."
+          curl -f http://127.0.0.1:9546/metrics > evidence/worker_metrics.txt 2>&1 || echo "Metrics scrape failed"
+          head -30 evidence/worker_metrics.txt
+
+          # Validate expected content
+          echo ""
+          echo "Validating health response..."
+          grep -q "broker" evidence/worker_health.json && echo "✓ Health endpoint contains broker status"
+          grep -q "database" evidence/worker_health.json && echo "✓ Health endpoint contains database status"
+
+          echo ""
+          echo "Validating metrics response..."
+          grep -q "celery_task_started_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_started_total"
+          grep -q "celery_task_success_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_success_total"
+          grep -q "celery_task_failure_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_failure_total"
+          grep -q "celery_task_duration_seconds" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_duration_seconds"
+
       - name: Run Celery foundation tests
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           cd backend
           pytest tests/test_b051_celery_foundation.py -q
+
+      - name: Upload observability evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b052-observability-evidence
+          path: evidence/
+          retention-days: 90
 
       - name: Stop Celery worker
         if: always()

@@ -1,0 +1,58 @@
+{
+  "id": null,
+  "title": "B0.4 Ingestion Observability",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Events Ingested",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (vendor) (rate(events_ingested_total[5m]))",
+          "legendFormat": "{{vendor}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Duplicate Events",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (vendor) (rate(events_duplicate_total[5m]))",
+          "legendFormat": "{{vendor}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "DLQ Events",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (vendor,error_type) (rate(events_dlq_total[5m]))",
+          "legendFormat": "{{vendor}} / {{error_type}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingestion Latency (p50/p95)",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(ingestion_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(ingestion_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    }
+  ]
+}
