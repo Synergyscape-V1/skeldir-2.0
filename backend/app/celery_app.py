@@ -155,8 +155,44 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         from app.core.config import settings
 
         # G4-AUTH: Build sync DSN with 127.0.0.1 normalization for CI determinism
-        url = make_url(settings.DATABASE_URL.unicode_string())
-        # Normalize localhost to 127.0.0.1 for IPv4 enforcement (prevents ::1 resolution)
+        # Step 1: Get raw DATABASE_URL from settings
+        raw_database_url = settings.DATABASE_URL.unicode_string()
+
+        # G4-AUTH DIAGNOSTIC: Log raw DATABASE_URL (password redacted) BEFORE make_url parsing
+        if os.getenv("CI") == "true":
+            # Redact password for logging
+            if "@" in raw_database_url:
+                parts = raw_database_url.split("@")
+                prefix = parts[0]
+                if ":" in prefix:
+                    user_part = prefix.split("://")[1] if "://" in prefix else prefix
+                    if ":" in user_part:
+                        user = user_part.split(":")[0]
+                        redacted_prefix = prefix.split(":")[0] + "://" + user + ":***"
+                    else:
+                        redacted_prefix = prefix
+                else:
+                    redacted_prefix = prefix
+                redacted_raw = redacted_prefix + "@" + "@".join(parts[1:])
+            else:
+                redacted_raw = raw_database_url
+            logger.info(
+                f"[G4-AUTH-RAW] settings.DATABASE_URL.unicode_string() = {redacted_raw}",
+                extra={"raw_dsn_redacted": redacted_raw}
+            )
+
+        # Step 2: Parse with make_url
+        url = make_url(raw_database_url)
+
+        # G4-AUTH DIAGNOSTIC: Check if password survived make_url parsing
+        if os.getenv("CI") == "true":
+            has_password = url.password is not None and url.password != ""
+            logger.info(
+                f"[G4-AUTH-PARSED] After make_url: host={url.host} user={url.username} password_present={has_password}",
+                extra={"parsed_host": url.host, "parsed_user": url.username, "password_present": has_password}
+            )
+
+        # Step 3: Normalize localhost to 127.0.0.1 for IPv4 enforcement
         if url.host == "localhost" and os.getenv("CI") == "true":
             url = url.set(host="127.0.0.1")
         query = dict(url.query)
@@ -166,11 +202,27 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
             url = url.set(drivername="postgresql")
         dsn = str(url)
 
-        # G4-AUTH diagnostic: Prove connection determinism
+        # G4-AUTH DIAGNOSTIC: Log final DSN (password redacted)
         if os.getenv("CI") == "true":
+            # Redact password in final DSN
+            if "@" in dsn:
+                parts = dsn.split("@")
+                prefix = parts[0]
+                if ":" in prefix:
+                    user_part = prefix.split("://")[1] if "://" in prefix else prefix
+                    if ":" in user_part:
+                        user = user_part.split(":")[0]
+                        redacted_prefix = prefix.split(":")[0] + "://" + user + ":***"
+                    else:
+                        redacted_prefix = prefix
+                else:
+                    redacted_prefix = prefix
+                redacted_dsn = redacted_prefix + "@" + "@".join(parts[1:])
+            else:
+                redacted_dsn = dsn
             logger.info(
-                f"[G4-AUTH] DLQ connect: host={url.host} port={url.port} db={url.database} user={url.username}",
-                extra={"dsn_host": url.host, "dsn_port": url.port, "dsn_db": url.database, "dsn_user": url.username}
+                f"[G4-AUTH-FINAL] Final DSN for psycopg2.connect() = {redacted_dsn}",
+                extra={"final_dsn_redacted": redacted_dsn}
             )
 
         # Extract metadata
