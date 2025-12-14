@@ -55,6 +55,7 @@ def _fetch_db_user_sync(tenant_id: Optional[UUID] = None) -> str:
     """
     Sync path for DB user check using psycopg2 (avoids event loop interference in eager tests).
     """
+    import os
     url = make_url(settings.DATABASE_URL.unicode_string())
     query = dict(url.query)
     query.pop("channel_binding", None)
@@ -62,6 +63,14 @@ def _fetch_db_user_sync(tenant_id: Optional[UUID] = None) -> str:
     if url.drivername.startswith("postgresql+"):
         url = url.set(drivername="postgresql")
     dsn = str(url)
+
+    # B0.5.2: Runtime DSN diagnostic for CI verification (H2 proof)
+    if os.getenv("CI") == "true":
+        logger.info(
+            f"[B0.5.2 RUNTIME DSN] host={url.host} db={url.database} user={url.username}",
+            extra={"dsn_host": url.host, "dsn_database": url.database, "dsn_user": url.username}
+        )
+
     conn = psycopg2.connect(dsn)
     try:
         cur = conn.cursor()

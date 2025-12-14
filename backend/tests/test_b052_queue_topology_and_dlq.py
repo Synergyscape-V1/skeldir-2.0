@@ -16,8 +16,9 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
-# Set env before importing app modules
-DEFAULT_ASYNC_DSN = os.environ.get("TEST_ASYNC_DSN", "postgresql+asyncpg://skeldir:skeldir_ci_validation@localhost:5432/skeldir_validation")
+# B0.5.2: Set env BEFORE importing app modules
+# H1 fix: Align credentials with CI provisioning (app_user:app_user)
+DEFAULT_ASYNC_DSN = os.environ.get("TEST_ASYNC_DSN", "postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation")
 os.environ.setdefault("DATABASE_URL", DEFAULT_ASYNC_DSN)
 
 from app.celery_app import celery_app

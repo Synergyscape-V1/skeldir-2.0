@@ -13,10 +13,10 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
 
-# Set env before importing app modules
-# Default DSN targets local Postgres; override via env for remote Postgres if available.
-DEFAULT_SYNC_DSN = os.environ.get("TEST_SYNC_DSN", "postgresql://skeldir:skeldir_ci_validation@localhost:5432/skeldir_validation")
-DEFAULT_ASYNC_DSN = os.environ.get("TEST_ASYNC_DSN", "postgresql+asyncpg://skeldir:skeldir_ci_validation@localhost:5432/skeldir_validation")
+# B0.5.2: Set env BEFORE importing app modules
+# H1 fix: Align credentials with CI provisioning (app_user:app_user, not skeldir:skeldir_ci_validation)
+DEFAULT_SYNC_DSN = os.environ.get("TEST_SYNC_DSN", "postgresql://app_user:app_user@localhost:5432/skeldir_validation")
+DEFAULT_ASYNC_DSN = os.environ.get("TEST_ASYNC_DSN", "postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation")
 os.environ.setdefault("DATABASE_URL", DEFAULT_ASYNC_DSN)
 os.environ.setdefault("CELERY_BROKER_URL", f"sqla+{DEFAULT_SYNC_DSN}")
 os.environ.setdefault("CELERY_RESULT_BACKEND", f"db+{DEFAULT_SYNC_DSN}")
