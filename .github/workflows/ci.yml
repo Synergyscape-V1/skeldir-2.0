@@ -104,9 +104,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://app_user:app_user@localhost:5432/skeldir_validation
-      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@localhost:5432/skeldir_validation
-      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@localhost:5432/skeldir_validation
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_METRICS_PORT: 9546
       CELERY_METRICS_ADDR: 127.0.0.1
     steps:
