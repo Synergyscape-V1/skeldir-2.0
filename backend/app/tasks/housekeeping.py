@@ -62,7 +62,21 @@ def _fetch_db_user_sync(tenant_id: Optional[UUID] = None) -> str:
     url = url.set(query=query)
     if url.drivername.startswith("postgresql+"):
         url = url.set(drivername="postgresql")
-    dsn = str(url)
+
+    # Manually construct DSN to preserve password (str(url) drops password after .set() calls)
+    dsn_parts = ["postgresql://"]
+    if url.username:
+        dsn_parts.append(url.username)
+        if url.password:
+            dsn_parts.append(":")
+            dsn_parts.append(url.password)
+        dsn_parts.append("@")
+    dsn_parts.append(url.host or "localhost")
+    if url.port:
+        dsn_parts.append(f":{url.port}")
+    if url.database:
+        dsn_parts.append(f"/{url.database}")
+    dsn = "".join(dsn_parts)
 
     # B0.5.2: Runtime DSN diagnostic for CI verification (H2 proof)
     if os.getenv("CI") == "true":
