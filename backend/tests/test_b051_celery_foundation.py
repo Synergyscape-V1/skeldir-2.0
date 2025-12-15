@@ -33,16 +33,27 @@ from app.observability.logging_config import configure_logging  # noqa: E402
 
 
 def _wait_for_worker(timeout: int = 60) -> None:
+    """
+    Wait for worker readiness using data-plane task execution.
+
+    Control-plane ping (celery_app.control.ping) is unsupported by Kombu's
+    SQLAlchemy transport over Postgres - it returns [] even when the worker
+    is operational. Use data-plane task round-trip as readiness proof instead.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            resp = celery_app.control.ping(timeout=5)
-            if resp:
-                return
+            # Data-plane readiness: enqueue task to housekeeping queue
+            result = ping.delay()
+            # Block until task completes or 10s timeout
+            result.get(timeout=10)
+            # Success: worker consumed from broker and persisted to result backend
+            return
         except Exception:
+            # Worker not ready yet, retry
             pass
         time.sleep(2)
-    raise RuntimeError("Celery worker not responding to ping")
+    raise RuntimeError("Celery worker not ready: data-plane task execution failed")
 
 
 @pytest.fixture(scope="session")
