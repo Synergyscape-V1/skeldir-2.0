@@ -78,17 +78,21 @@ celery_app.conf.update(
         "app.tasks.housekeeping",
         "app.tasks.maintenance",
         "app.tasks.llm",
+        "app.tasks.attribution",
     ],
     # B0.5.2: Fixed queue topology
+    # B0.5.3.1: Added attribution queue for deterministic routing
     task_queues=[
         Queue('housekeeping', routing_key='housekeeping.#'),
         Queue('maintenance', routing_key='maintenance.#'),
         Queue('llm', routing_key='llm.#'),
+        Queue('attribution', routing_key='attribution.#'),
     ],
     task_routes={
         'app.tasks.housekeeping.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
         'app.tasks.maintenance.*': {'queue': 'maintenance', 'routing_key': 'maintenance.task'},
         'app.tasks.llm.*': {'queue': 'llm', 'routing_key': 'llm.task'},
+        'app.tasks.attribution.*': {'queue': 'attribution', 'routing_key': 'attribution.task'},
     },
     task_default_queue='housekeeping',
     task_default_exchange='tasks',
@@ -274,12 +278,13 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
                     pass
 
         # G4-LOOP/G4-JSON: Sync persistence with proper JSONB encoding
+        # B0.5.3.1: Write to canonical worker_failed_jobs table
         conn = psycopg2.connect(dsn)
         try:
             cur = conn.cursor()
             # G4-JSON: Use psycopg2.extras.Json for JSONB columns to prevent encoding defects
             cur.execute("""
-                INSERT INTO celery_task_failures (
+                INSERT INTO worker_failed_jobs (
                     id, task_id, task_name, queue, worker,
                     task_args, task_kwargs, tenant_id,
                     error_type, exception_class, error_message, traceback,
@@ -333,3 +338,4 @@ __all__ = ["celery_app", "_build_broker_url", "_build_result_backend"]
 import app.tasks.housekeeping  # noqa: E402,F401
 import app.tasks.maintenance  # noqa: E402,F401
 import app.tasks.llm  # noqa: E402,F401
+import app.tasks.attribution  # noqa: E402,F401

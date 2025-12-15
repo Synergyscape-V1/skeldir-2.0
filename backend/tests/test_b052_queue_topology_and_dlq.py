@@ -25,6 +25,7 @@ from app.celery_app import celery_app
 from app.tasks.housekeeping import ping
 from app.tasks.maintenance import refresh_all_materialized_views_task
 from app.tasks.llm import llm_routing_worker
+from app.tasks.attribution import recompute_window
 from app.db.session import engine
 
 
@@ -35,12 +36,13 @@ class TestQueueTopology:
         """Validate explicit queue declarations exist."""
         queues = celery_app.conf.task_queues
         assert queues is not None, "task_queues must be explicitly defined"
-        assert len(queues) >= 3, "At least 3 queues (housekeeping, maintenance, llm) must exist"
+        assert len(queues) >= 4, "At least 4 queues (housekeeping, maintenance, llm, attribution) must exist"
 
         queue_names = {q.name for q in queues}
         assert "housekeeping" in queue_names
         assert "maintenance" in queue_names
         assert "llm" in queue_names
+        assert "attribution" in queue_names, "B0.5.3.1: attribution queue must exist"
 
     def test_task_routing_rules_defined(self):
         """Validate task routing rules map tasks to queues."""
@@ -51,17 +53,19 @@ class TestQueueTopology:
         assert "app.tasks.housekeeping.*" in routes
         assert "app.tasks.maintenance.*" in routes
         assert "app.tasks.llm.*" in routes
+        assert "app.tasks.attribution.*" in routes, "B0.5.3.1: attribution routing rule must exist"
 
         # Verify queue assignments
         assert routes["app.tasks.housekeeping.*"]["queue"] == "housekeeping"
         assert routes["app.tasks.maintenance.*"]["queue"] == "maintenance"
         assert routes["app.tasks.llm.*"]["queue"] == "llm"
+        assert routes["app.tasks.attribution.*"]["queue"] == "attribution", "B0.5.3.1: attribution tasks must route to attribution queue"
 
     def test_task_names_stable(self):
         """Validate task names remain stable (prevent accidental renames)."""
         registered_tasks = set(celery_app.tasks.keys())
 
-        # B0.5.1 baseline tasks
+        # B0.5.1 baseline tasks + B0.5.3.1 attribution task
         expected_tasks = {
             "app.tasks.housekeeping.ping",
             "app.tasks.maintenance.refresh_all_materialized_views",
@@ -71,6 +75,7 @@ class TestQueueTopology:
             "app.tasks.llm.explanation",
             "app.tasks.llm.investigation",
             "app.tasks.llm.budget_optimization",
+            "app.tasks.attribution.recompute_window",  # B0.5.3.1: attribution stub
         }
 
         for task_name in expected_tasks:
@@ -82,6 +87,7 @@ class TestQueueTopology:
         housekeeping_route = celery_app.tasks["app.tasks.housekeeping.ping"].routing_key
         maintenance_route = celery_app.tasks["app.tasks.maintenance.refresh_all_materialized_views"].routing_key
         llm_route = celery_app.tasks["app.tasks.llm.route"].routing_key
+        attribution_route = celery_app.tasks["app.tasks.attribution.recompute_window"].routing_key
 
         # Verify routing keys align with queue topology
         # Note: routing_key may be None if not explicitly set on task decorator,
@@ -91,6 +97,7 @@ class TestQueueTopology:
         assert routes["app.tasks.housekeeping.*"]["routing_key"] == "housekeeping.task"
         assert routes["app.tasks.maintenance.*"]["routing_key"] == "maintenance.task"
         assert routes["app.tasks.llm.*"]["routing_key"] == "llm.task"
+        assert routes["app.tasks.attribution.*"]["routing_key"] == "attribution.task", "B0.5.3.1: attribution routing key must be attribution.task"
 
 
 class TestWorkerDLQ:
@@ -98,19 +105,19 @@ class TestWorkerDLQ:
 
     @pytest.mark.asyncio
     async def test_dlq_table_exists(self):
-        """Validate celery_task_failures table exists with correct schema."""
+        """Validate worker_failed_jobs table exists with correct schema."""
         async with engine.begin() as conn:
-            # Check table existence
+            # Check table existence (B0.5.3.1: canonical name is worker_failed_jobs)
             result = await conn.execute(
                 text("""
                     SELECT table_name
                     FROM information_schema.tables
                     WHERE table_schema = 'public'
-                    AND table_name = 'celery_task_failures'
+                    AND table_name = 'worker_failed_jobs'
                 """)
             )
             tables = [row[0] for row in result.fetchall()]
-            assert "celery_task_failures" in tables, "celery_task_failures table must exist"
+            assert "worker_failed_jobs" in tables, "worker_failed_jobs table must exist"
 
             # Check key columns exist
             result = await conn.execute(
@@ -118,7 +125,7 @@ class TestWorkerDLQ:
                     SELECT column_name, data_type
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
-                    AND table_name = 'celery_task_failures'
+                    AND table_name = 'worker_failed_jobs'
                     ORDER BY column_name
                 """)
             )
@@ -147,13 +154,13 @@ class TestWorkerDLQ:
 
     @pytest.mark.asyncio
     async def test_dlq_privileges_granted(self):
-        """Validate app_user has CRUD privileges on celery_task_failures."""
+        """Validate app_user has CRUD privileges on worker_failed_jobs."""
         async with engine.begin() as conn:
             result = await conn.execute(
                 text("""
                     SELECT privilege_type
                     FROM information_schema.role_table_grants
-                    WHERE table_name = 'celery_task_failures'
+                    WHERE table_name = 'worker_failed_jobs'
                     AND grantee = 'app_user'
                     ORDER BY privilege_type
                 """)
@@ -168,7 +175,7 @@ class TestWorkerDLQ:
 
     @pytest.mark.asyncio
     async def test_task_failure_captured_to_dlq(self):
-        """Validate failed tasks are persisted to celery_task_failures."""
+        """Validate failed tasks are persisted to worker_failed_jobs."""
         # Run task in eager mode to test DLQ capture
         celery_app.conf.task_always_eager = True
 
@@ -177,12 +184,12 @@ class TestWorkerDLQ:
             with pytest.raises(ValueError):
                 ping.delay(fail=True).get(propagate=True)
 
-            # Query DLQ for captured failure
+            # Query DLQ for captured failure (B0.5.3.1: canonical table is worker_failed_jobs)
             async with engine.begin() as conn:
                 result = await conn.execute(
                     text("""
                         SELECT task_name, exception_class, error_message, status
-                        FROM celery_task_failures
+                        FROM worker_failed_jobs
                         WHERE task_name = 'app.tasks.housekeeping.ping'
                         ORDER BY failed_at DESC
                         LIMIT 1
@@ -204,8 +211,66 @@ class TestWorkerDLQ:
             async with engine.begin() as conn:
                 await conn.execute(
                     text("""
-                        DELETE FROM celery_task_failures
+                        DELETE FROM worker_failed_jobs
                         WHERE task_name = 'app.tasks.housekeeping.ping'
+                        AND exception_class = 'ValueError'
+                    """)
+                )
+
+    @pytest.mark.asyncio
+    async def test_attribution_task_failure_captured_to_dlq(self):
+        """Validate attribution task failures are persisted to worker_failed_jobs with proper metadata."""
+        # B0.5.3.1: Verify attribution stub task routes to attribution queue and DLQ captures failures
+        celery_app.conf.task_always_eager = True
+
+        try:
+            # Trigger attribution task failure
+            test_tenant_id = uuid4()
+            with pytest.raises(ValueError):
+                recompute_window.delay(
+                    tenant_id=test_tenant_id,
+                    window_start="2025-01-01T00:00:00Z",
+                    window_end="2025-01-31T23:59:59Z",
+                    fail=True
+                ).get(propagate=True)
+
+            # Query DLQ for captured failure
+            async with engine.begin() as conn:
+                result = await conn.execute(
+                    text("""
+                        SELECT task_name, queue, exception_class, error_message, status, tenant_id, task_kwargs
+                        FROM worker_failed_jobs
+                        WHERE task_name = 'app.tasks.attribution.recompute_window'
+                        ORDER BY failed_at DESC
+                        LIMIT 1
+                    """)
+                )
+                row = result.fetchone()
+
+            # Verify failure captured with B0.5.3.1 requirements
+            assert row is not None, "Failed attribution task should be captured in worker_failed_jobs"
+            assert row[0] == "app.tasks.attribution.recompute_window", "task_name must be attribution.recompute_window"
+            # Note: queue may be None in eager mode, but in worker mode should be 'attribution'
+            assert row[2] == "ValueError", "exception_class must be ValueError"
+            assert "attribution recompute failure requested" in row[3], "error_message must contain failure reason"
+            assert row[4] == "pending", "status must be pending"
+            assert row[5] is not None, "tenant_id must be present"
+            assert row[6] is not None, "task_kwargs (payload JSON) must be present"
+
+            # Verify payload contains window parameters
+            kwargs = row[6]
+            assert "window_start" in kwargs, "payload must contain window_start"
+            assert "window_end" in kwargs, "payload must contain window_end"
+
+        finally:
+            celery_app.conf.task_always_eager = False
+
+            # Cleanup: Delete test DLQ entry
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("""
+                        DELETE FROM worker_failed_jobs
+                        WHERE task_name = 'app.tasks.attribution.recompute_window'
                         AND exception_class = 'ValueError'
                     """)
                 )
@@ -218,13 +283,13 @@ class TestWorkerDLQ:
                 text("""
                     SELECT policyname, tablename
                     FROM pg_policies
-                    WHERE tablename = 'celery_task_failures'
+                    WHERE tablename = 'worker_failed_jobs'
                     AND policyname = 'tenant_isolation_policy'
                 """)
             )
             policies = result.fetchall()
 
-            assert len(policies) > 0, "tenant_isolation_policy must exist on celery_task_failures"
+            assert len(policies) > 0, "tenant_isolation_policy must exist on worker_failed_jobs"
 
 
 class TestObservabilityOperability:
