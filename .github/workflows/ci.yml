@@ -150,9 +150,10 @@ jobs:
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
         run: |
-          # B0.5.1: Only run celery_foundation branch migration
-          # Full schema migrations require custom GUCs which aren't in scope for B0.5.1
-          alembic upgrade celery_foundation@head
+          # B0.5.3.2: Upgrade to skeldir_foundation (core attribution schema + celery foundation)
+          # Two-step approach: first core_schema parent, then skeldir_foundation merge
+          alembic upgrade 202511131121
+          alembic upgrade skeldir_foundation@head
 
       - name: Start Celery worker
         run: |
@@ -205,7 +206,7 @@ jobs:
           CELERY_RESULT_BACKEND: ${{ env.CELERY_RESULT_BACKEND }}
         run: |
           cd backend
-          pytest tests/test_b051_celery_foundation.py tests/test_b052_queue_topology_and_dlq.py -q
+          pytest tests/test_b051_celery_foundation.py tests/test_b052_queue_topology_and_dlq.py tests/test_b0532_window_idempotency.py -q
 
       - name: Upload observability evidence artifacts
         if: always()

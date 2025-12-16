@@ -20,11 +20,22 @@ Failure Mode Prevention:
 """
 
 import pytest
+from datetime import datetime, timezone
 from uuid import uuid4
 from sqlalchemy import text
 
 from app.core.db import engine
 from app.tasks.attribution import recompute_window
+
+
+def _parse_timestamp(iso_string: str) -> datetime:
+    """Parse ISO8601 timestamp string to timezone-aware datetime."""
+    dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt
 
 
 @pytest.mark.asyncio
@@ -80,14 +91,14 @@ class TestWindowIdempotency:
                     SELECT id, run_count, status
                     FROM attribution_recompute_jobs
                     WHERE tenant_id = :tenant_id
-                      AND window_start = :window_start::timestamptz
-                      AND window_end = :window_end::timestamptz
+                      AND window_start = :window_start
+                      AND window_end = :window_end
                       AND model_version = :model_version
                 """),
                 {
                     "tenant_id": test_tenant_id,
-                    "window_start": window_start,
-                    "window_end": window_end,
+                    "window_start": _parse_timestamp(window_start),
+                    "window_end": _parse_timestamp(window_end),
                     "model_version": model_version,
                 }
             )
@@ -116,14 +127,14 @@ class TestWindowIdempotency:
                     SELECT id, run_count, status
                     FROM attribution_recompute_jobs
                     WHERE tenant_id = :tenant_id
-                      AND window_start = :window_start::timestamptz
-                      AND window_end = :window_end::timestamptz
+                      AND window_start = :window_start
+                      AND window_end = :window_end
                       AND model_version = :model_version
                 """),
                 {
                     "tenant_id": test_tenant_id,
-                    "window_start": window_start,
-                    "window_end": window_end,
+                    "window_start": _parse_timestamp(window_start),
+                    "window_end": _parse_timestamp(window_end),
                     "model_version": model_version,
                 }
             )
@@ -134,14 +145,14 @@ class TestWindowIdempotency:
                 text("""
                     SELECT COUNT(*) FROM attribution_recompute_jobs
                     WHERE tenant_id = :tenant_id
-                      AND window_start = :window_start::timestamptz
-                      AND window_end = :window_end::timestamptz
+                      AND window_start = :window_start
+                      AND window_end = :window_end
                       AND model_version = :model_version
                 """),
                 {
                     "tenant_id": test_tenant_id,
-                    "window_start": window_start,
-                    "window_end": window_end,
+                    "window_start": _parse_timestamp(window_start),
+                    "window_end": _parse_timestamp(window_end),
                     "model_version": model_version,
                 }
             )
@@ -203,6 +214,11 @@ class TestWindowIdempotency:
             event_id_1 = uuid4()
             event_id_2 = uuid4()
 
+            # Set tenant context for RLS policy
+            await conn.execute(
+                text(f"SET LOCAL app.current_tenant_id = '{test_tenant_id}'")
+            )
+
             await conn.execute(
                 text("""
                     INSERT INTO attribution_events (
@@ -229,6 +245,11 @@ class TestWindowIdempotency:
 
         # Query allocations after first execution
         async with engine.begin() as conn:
+            # Set tenant context for RLS policy
+            await conn.execute(
+                text(f"SET LOCAL app.current_tenant_id = '{test_tenant_id}'")
+            )
+
             result_first = await conn.execute(
                 text("""
                     SELECT event_id, channel, allocation_ratio, allocated_revenue_cents
@@ -277,6 +298,11 @@ class TestWindowIdempotency:
 
         # Query allocations after second execution
         async with engine.begin() as conn:
+            # Set tenant context for RLS policy
+            await conn.execute(
+                text(f"SET LOCAL app.current_tenant_id = '{test_tenant_id}'")
+            )
+
             result_second = await conn.execute(
                 text("""
                     SELECT event_id, channel, allocation_ratio, allocated_revenue_cents
@@ -378,14 +404,14 @@ class TestWindowIdempotency:
                 text("""
                     SELECT id FROM attribution_recompute_jobs
                     WHERE tenant_id = :tenant_id
-                      AND window_start = :window_start::timestamptz
-                      AND window_end = :window_end::timestamptz
+                      AND window_start = :window_start
+                      AND window_end = :window_end
                       AND model_version = :model_version
                 """),
                 {
                     "tenant_id": test_tenant_id,
-                    "window_start": window_start,
-                    "window_end": window_end,
+                    "window_start": _parse_timestamp(window_start),
+                    "window_end": _parse_timestamp(window_end),
                     "model_version": model_version,
                 }
             )
@@ -460,14 +486,14 @@ class TestWindowIdempotency:
                     SELECT model_version, run_count
                     FROM attribution_recompute_jobs
                     WHERE tenant_id = :tenant_id
-                      AND window_start = :window_start::timestamptz
-                      AND window_end = :window_end::timestamptz
+                      AND window_start = :window_start
+                      AND window_end = :window_end
                     ORDER BY model_version
                 """),
                 {
                     "tenant_id": test_tenant_id,
-                    "window_start": window_start,
-                    "window_end": window_end,
+                    "window_start": _parse_timestamp(window_start),
+                    "window_end": _parse_timestamp(window_end),
                 }
             )
             rows = result.fetchall()

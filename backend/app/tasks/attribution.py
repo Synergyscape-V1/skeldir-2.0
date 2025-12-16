@@ -8,6 +8,7 @@ B0.5.3.2: Added window-scoped idempotency enforcement via attribution_recompute_
 table and deterministic baseline allocation proof harness.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -23,6 +24,67 @@ from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.tasks.context import tenant_task
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async(coro_factory, *args, **kwargs):
+    """
+    Thread-based async bridge for mixed sync/async contexts.
+
+    B0.5.3.2: Execute async code safely whether or not an event loop is running.
+    Uses threading to avoid deadlock when called from within a running loop.
+
+    Args:
+        coro_factory: Callable that returns a coroutine (not the coroutine itself)
+        *args, **kwargs: Arguments to pass to coro_factory
+
+    Returns:
+        The result of the coroutine execution
+
+    Raises:
+        Any exception raised by the coroutine
+    """
+    try:
+        # Check if we're in a running event loop
+        asyncio.get_running_loop()
+        # Loop is running - use thread to avoid deadlock
+        import threading
+        import concurrent.futures
+
+        result_container = {}
+        exception_container = {}
+
+        def _thread_target():
+            """Run coroutine in new event loop in this thread."""
+            try:
+                # Create fresh event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    # Create and run coroutine in this loop
+                    coro = coro_factory(*args, **kwargs)
+                    result = loop.run_until_complete(coro)
+                    result_container['value'] = result
+                finally:
+                    loop.close()
+            except Exception as e:
+                exception_container['value'] = e
+
+        thread = threading.Thread(target=_thread_target)
+        thread.start()
+        thread.join(timeout=60)  # 60s timeout for DB operations
+
+        if thread.is_alive():
+            raise TimeoutError("Async operation timed out after 60 seconds")
+
+        if 'value' in exception_container:
+            raise exception_container['value']
+
+        return result_container.get('value')
+
+    except RuntimeError:
+        # No event loop running - use asyncio.run directly
+        coro = coro_factory(*args, **kwargs)
+        return asyncio.run(coro)
 
 
 class AttributionTaskPayload(BaseModel):
@@ -113,7 +175,7 @@ async def _upsert_job_identity(
                     last_correlation_id = EXCLUDED.last_correlation_id,
                     updated_at = CURRENT_TIMESTAMP,
                     started_at = CURRENT_TIMESTAMP
-                RETURNING id, run_count, (SELECT status FROM attribution_recompute_jobs WHERE id = EXCLUDED.id LIMIT 1) as previous_status
+                RETURNING id, run_count, NULL as previous_status
             """),
             {
                 "job_id": uuid4(),
@@ -218,6 +280,9 @@ async def _compute_allocations_deterministic_baseline(
         Dict with metadata (event_count, allocation_count)
     """
     async with engine.begin() as conn:
+        # Set tenant context for RLS policy
+        await conn.execute(text(f"SET LOCAL app.current_tenant_id = '{tenant_id}'"))
+
         # Step 1: Read events in window (read-only, append-only table)
         events_result = await conn.execute(
             text("""
@@ -398,14 +463,13 @@ def recompute_window(
 
     # B0.5.3.2: Upsert job identity (idempotency gate)
     try:
-        job_id, run_count, previous_status = asyncio.run(
-            _upsert_job_identity(
-                tenant_id=model.tenant_id,
-                window_start=window_start_dt,
-                window_end=window_end_dt,
-                model_version=model_version,
-                correlation_id=correlation,
-            )
+        job_id, run_count, previous_status = _run_async(
+            _upsert_job_identity,
+            tenant_id=model.tenant_id,
+            window_start=window_start_dt,
+            window_end=window_end_dt,
+            model_version=model_version,
+            correlation_id=correlation,
         )
     except Exception as exc:
         logger.error(
@@ -438,22 +502,20 @@ def recompute_window(
 
     # B0.5.3.2: Compute allocations (deterministic baseline proof harness)
     try:
-        result = asyncio.run(
-            _compute_allocations_deterministic_baseline(
-                tenant_id=model.tenant_id,
-                window_start=window_start_dt,
-                window_end=window_end_dt,
-                model_version=model_version,
-            )
+        result = _run_async(
+            _compute_allocations_deterministic_baseline,
+            tenant_id=model.tenant_id,
+            window_start=window_start_dt,
+            window_end=window_end_dt,
+            model_version=model_version,
         )
 
         # Mark job as succeeded
-        asyncio.run(
-            _mark_job_status(
-                job_id=job_id,
-                tenant_id=model.tenant_id,
-                status="succeeded",
-            )
+        _run_async(
+            _mark_job_status,
+            job_id=job_id,
+            tenant_id=model.tenant_id,
+            status="succeeded",
         )
 
         logger.info(
@@ -487,13 +549,12 @@ def recompute_window(
 
     except Exception as exc:
         # Mark job as failed
-        asyncio.run(
-            _mark_job_status(
-                job_id=job_id,
-                tenant_id=model.tenant_id,
-                status="failed",
-                error_message=str(exc),
-            )
+        _run_async(
+            _mark_job_status,
+            job_id=job_id,
+            tenant_id=model.tenant_id,
+            status="failed",
+            error_message=str(exc),
         )
 
         logger.error(
