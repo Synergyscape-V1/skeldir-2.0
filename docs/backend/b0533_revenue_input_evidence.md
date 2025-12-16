@@ -171,23 +171,21 @@ The following columns exist in the **003_data_governance** branch but are **NOT 
 
 **Requirement**: Worker reads `revenue_ledger` if populated, otherwise computes from `attribution_events`.
 
-**Viability**: ❌ **NOT VIABLE** without schema redesign
+**Viability**: ⚠️ **NOT APPLICABLE TO skeldir_foundation@head**
 
-**Reasoning**:
-1. `revenue_ledger.allocation_id` is NOT NULL FK to `attribution_allocations`
-2. Ledger rows cannot exist without allocations
-3. Allocations are created by the worker
-4. **Circular dependency**: Worker cannot read ledger to compute allocations if ledger requires allocations to exist
+**Current Schema Reality (skeldir_foundation@head)**:
+- revenue_ledger has NO allocation_id column
+- revenue_ledger has NO columns that worker would read for allocation computation
+- Worker computes allocations from `attribution_events` (revenue_cents, occurred_at) only
+- **Conclusion**: Contract A distinction is moot; worker has nothing to read from ledger
 
-**Schema Change Required** (if Contract A desired):
-- Make `allocation_id` nullable OR
-- Add upstream keys (`transaction_id`, `order_id`) with proven population path OR
-- Redesign FK direction (ledger → events, not ledger → allocations)
+**Hypothetical Viability (IF 003_data_governance branch were merged)**:
+- IF `revenue_ledger.allocation_id` NOT NULL FK were added (migration `202511141302_ledger_allocation_id_not_null.py`), THEN:
+  - Circular dependency would exist (ledger requires allocations, allocations created by worker)
+  - Contract A would require schema redesign to break circularity
+  - Schema changes needed: make allocation_id nullable OR add upstream keys OR redesign FK direction
 
-**Implementation Delta** (if schema changed):
-- Add `SELECT FROM revenue_ledger WHERE allocation_id IN (...)` query
-- Conditional logic: if ledger rows exist, use them; else compute from events
-- **Risk**: Still circular if `allocation_id` remains NOT NULL FK
+**Status**: This analysis applies to a **future, unapplied branch** (003_data_governance), NOT the current runtime schema.
 
 ### Contract B: Worker Ignores Ledger in B0.5.3
 

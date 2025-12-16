@@ -223,6 +223,93 @@ jobs:
             kill $(cat /tmp/celery.pid) || true
           fi
 
+  # B0.5.3.3 Revenue Contract Tests (independent of B0.5.1 failures)
+  b0533-revenue-contract:
+    name: B0.5.3.3 Revenue Contract Tests
+    runs-on: ubuntu-latest
+    needs: checkout  # Only depends on checkout, NOT celery-foundation
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_validation
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Prepare database and roles
+        run: |
+          echo "Creating database roles and skeldir_validation database..."
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_rw WITH PASSWORD 'app_rw';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_ro WITH PASSWORD 'app_ro';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "ALTER DATABASE skeldir_validation SET app.current_tenant_id = '00000000-0000-0000-0000-000000000000';"
+          echo "Database setup complete"
+
+      - name: Run migrations to skeldir_foundation@head
+        run: |
+          echo "Running migrations to skeldir_foundation@head..."
+          alembic upgrade 202511131121
+          alembic upgrade skeldir_foundation@head
+          echo "Migrations complete"
+
+      - name: Verify schema (Gate G4 - Migration Reality Check)
+        run: |
+          echo "=== G4: Revenue Ledger Schema Verification ==="
+          echo "Verifying revenue_ledger table structure at skeldir_foundation@head..."
+          PGPASSWORD=app_user psql -h localhost -U app_user -d skeldir_validation -c "\d+ revenue_ledger"
+
+          echo ""
+          echo "Counting columns in revenue_ledger..."
+          COLUMN_COUNT=$(PGPASSWORD=app_user psql -h localhost -U app_user -d skeldir_validation -t -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'revenue_ledger';")
+          echo "Column count: $COLUMN_COUNT"
+
+          if [ "$COLUMN_COUNT" -ne 8 ]; then
+            echo "ERROR: Expected 8 columns in revenue_ledger (skeldir_foundation@head), got $COLUMN_COUNT"
+            exit 1
+          fi
+
+          echo "✓ Schema verification passed: 8 columns confirmed"
+
+      - name: Run B0.5.3.3 contract tests (Gate G2/G6)
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: |
+          cd backend
+          echo "=== G2/G6: Running B0.5.3.3 Revenue Contract Tests ==="
+          pytest tests/test_b0533_revenue_input_contract.py -v --tb=short
+
   # Frontend tests (when frontend exists)
   test-frontend:
     name: Test Frontend
