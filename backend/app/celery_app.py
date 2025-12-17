@@ -36,6 +36,9 @@ def _get_settings():
 def _sync_sqlalchemy_url(raw_url: str) -> str:
     """
     Convert async-friendly DATABASE_URL to a sync SQLAlchemy URL suitable for Celery.
+
+    B0.5.3.3 Gate G5 Fix: Manually construct DSN to preserve password.
+    str(url) drops password after multiple .set() calls, causing auth failures.
     """
     url = make_url(raw_url)
     # Drop channel_binding for psycopg2 compatibility.
@@ -46,7 +49,25 @@ def _sync_sqlalchemy_url(raw_url: str) -> str:
     if driver.startswith("postgresql+"):
         driver = "postgresql"
     url = url.set(drivername=driver)
-    return str(url)
+
+    # Manually construct DSN to preserve password (str(url) may drop it after .set() calls)
+    dsn_parts = [f"{driver}://"]
+    if url.username:
+        dsn_parts.append(url.username)
+        if url.password:
+            dsn_parts.append(":")
+            dsn_parts.append(url.password)
+        dsn_parts.append("@")
+    dsn_parts.append(url.host or "localhost")
+    if url.port:
+        dsn_parts.append(f":{url.port}")
+    if url.database:
+        dsn_parts.append(f"/{url.database}")
+    if query:
+        query_str = "&".join(f"{k}={v}" for k, v in query.items())
+        dsn_parts.append(f"?{query_str}")
+
+    return "".join(dsn_parts)
 
 
 def _build_broker_url() -> str:
