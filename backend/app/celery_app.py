@@ -384,10 +384,9 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         )
 
 
-__all__ = ["celery_app", "_build_broker_url", "_build_result_backend"]
+__all__ = ["celery_app", "_build_broker_url", "_build_result_backend", "_ensure_celery_configured"]
 
-# Explicit imports ensure task registration even outside worker autodiscovery.
-import app.tasks.housekeeping  # noqa: E402,F401
-import app.tasks.maintenance  # noqa: E402,F401
-import app.tasks.llm  # noqa: E402,F401
-import app.tasks.attribution  # noqa: E402,F401
+# B0.5.3.3 Gate B FIX: Remove module-level task imports to prevent premature psycopg2 import
+# Tasks are discovered via `include` config in _ensure_celery_configured() - no need for eager imports
+# Module-level imports caused: conftest → celery_app → tasks.housekeeping → psycopg2 → DB connection
+# during pytest COLLECTION (before DATABASE_URL validation), causing auth failures with stale .env creds
