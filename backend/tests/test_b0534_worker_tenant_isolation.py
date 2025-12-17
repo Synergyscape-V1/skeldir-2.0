@@ -124,7 +124,6 @@ class TestWorkerTenantIsolation:
                     text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                     {"tenant_id": str(tenant_a)},
                 )
-                await conn.execute(text("SET LOCAL ROLE app_rw"))
                 alloc_a = await conn.execute(
                     text(
                         """
