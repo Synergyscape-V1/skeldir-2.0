@@ -15,7 +15,7 @@ from alembic import op
 # revision identifiers, used by Alembic.
 revision: str = "202512171500"
 down_revision: Union[str, None] = "202512151410"
-branch_labels: Union[str, Sequence[str], None] = ("skeldir_foundation",)
+branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
