@@ -4,6 +4,9 @@ Pytest fixtures for B0.4.3 tests.
 Provides tenant creation/cleanup fixtures to satisfy FK constraints.
 """
 import os
+import sys
+import hashlib
+import traceback
 from uuid import uuid4
 
 import pytest
@@ -12,9 +15,74 @@ from sqlalchemy import text
 os.environ["TESTING"] = "1"
 
 # B0.5.3.3 Gate B: Install forensic instrumentation BEFORE any other imports
-# This must be the FIRST import to capture the initial psycopg2.connect() call
+# This must be installed BEFORE psycopg2 is imported to capture first connection
 if os.getenv("CI") == "true":
-    import conftest_instrumentation  # noqa: F401
+    class Psycopg2ImportHook:
+        def find_module(self, fullname, path=None):
+            if fullname == 'psycopg2':
+                return self
+            return None
+
+        def load_module(self, fullname):
+            if fullname in sys.modules:
+                return sys.modules[fullname]
+
+            # Import psycopg2 normally
+            import importlib
+            module = importlib.import_module(fullname)
+
+            # Install monitor immediately after import
+            original_connect = module.connect
+            first_call_logged = [False]
+
+            def instrumented_connect(*args, **kwargs):
+                if not first_call_logged[0]:
+                    first_call_logged[0] = True
+
+                    # Extract DSN
+                    dsn = None
+                    if args:
+                        dsn = args[0] if isinstance(args[0], str) else None
+                    if not dsn and 'dsn' in kwargs:
+                        dsn = kwargs['dsn']
+
+                    # Log stack trace
+                    print("\n" + "="*80, flush=True)
+                    print("[GATE B FORENSICS] First psycopg2.connect() call detected!", flush=True)
+                    print("="*80, flush=True)
+
+                    if dsn:
+                        if '://' in dsn and '@' in dsn:
+                            try:
+                                creds_part = dsn.split('://')[1].split('@')[0]
+                                if ':' in creds_part:
+                                    user, password = creds_part.split(':', 1)
+                                    pass_hash = hashlib.sha256(password.encode()).hexdigest()[:8]
+                                    redacted_dsn = dsn.replace(f':{password}@', ':***@')
+                                    print(f"DSN: {redacted_dsn}", flush=True)
+                                    print(f"User: {user}", flush=True)
+                                    print(f"Password SHA256 prefix: {pass_hash}", flush=True)
+                            except Exception as e:
+                                print(f"Could not parse DSN: {e}", flush=True)
+                                print(f"DSN (raw): {dsn[:50]}...", flush=True)
+                    else:
+                        print("DSN: <not provided as string>", flush=True)
+
+                    print("\nStack trace at first psycopg2.connect() call:", flush=True)
+                    print("-" * 80, flush=True)
+                    for line in traceback.format_stack()[:-1]:
+                        print(line.rstrip(), flush=True)
+                    print("=" * 80, flush=True)
+                    print("", flush=True)
+
+                return original_connect(*args, **kwargs)
+
+            module.connect = instrumented_connect
+            print("[GATE B] psycopg2.connect monitor installed via import hook", flush=True)
+            return module
+
+    sys.meta_path.insert(0, Psycopg2ImportHook())
+    print("[GATE B] Import hook installed to monitor psycopg2.connect", flush=True)
 
 # B0.5.3.3 Gate C: CI-first credential coherence (MUST execute before any imports)
 # In CI, DATABASE_URL MUST be provided by step env vars - no fallbacks, no defaults.
