@@ -28,7 +28,7 @@ async def _insert_tenant(conn, tenant_id):
 async def _insert_events(conn, tenant_id, events):
     # RLS requires the tenant GUC to be set for writes.
     await conn.execute(
-        text("SET LOCAL app.current_tenant_id = :tenant_id"),
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)},
     )
     await conn.execute(
@@ -112,7 +112,7 @@ class TestWorkerTenantIsolation:
             # Tenant A visibility
             async with engine.begin() as conn:
                 await conn.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                     {"tenant_id": str(tenant_a)},
                 )
                 alloc_a = await conn.execute(
@@ -148,7 +148,7 @@ class TestWorkerTenantIsolation:
             # Tenant B cannot see Tenant A data under RLS
             async with engine.begin() as conn:
                 await conn.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                     {"tenant_id": str(tenant_b)},
                 )
                 cross_alloc = await conn.execute(
@@ -213,7 +213,7 @@ class TestWorkerTenantIsolation:
 
             async with engine.begin() as conn:
                 await conn.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                     {"tenant_id": str(tenant_id)},
                 )
                 total_allocations = await conn.execute(
@@ -304,7 +304,7 @@ class TestWorkerTenantIsolation:
 
             async with engine.begin() as conn:
                 await conn.execute(
-                    text("SET LOCAL app.current_tenant_id = :tenant_id"),
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                     {"tenant_id": str(tenant_id)},
                 )
                 allocation_count = await conn.execute(
