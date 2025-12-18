@@ -584,6 +584,20 @@ jobs:
 
           echo "✓ R5-6 MET / B0.5.3.4 PASSED: Worker tenant isolation tests executed"
 
+      - name: R5-7 / B0.5.3.5 - Worker ingestion tables read-only
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL_ASYNC }}  # Use async driver for tests
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: |
+          cd backend
+          echo "=== R5-7 / B0.5.3.5: Worker ingestion tables read-only ==="
+          echo "DATABASE_URL (async): postgresql+asyncpg://app_user:***@127.0.0.1:5432/skeldir_validation"
+          echo "Expected: worker-context INSERT/UPDATE/DELETE to attribution_events/dead_events fail + static posture scan"
+
+          pytest tests/test_b0535_worker_readonly_ingestion.py -q
+
+          echo "✓ R5-7 MET / B0.5.3.5 PASSED: Worker ingestion read-only proofs executed"
+
   # Frontend tests (when frontend exists)
   test-frontend:
     name: Test Frontend

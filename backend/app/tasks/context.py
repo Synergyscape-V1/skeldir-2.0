@@ -32,6 +32,11 @@ async def _set_tenant_guc_global(tenant_id: UUID) -> None:
         # This prevents connection pool reuse from leaking a previous tenant_id into
         # a subsequent task when the same connection is returned to the pool.
         await set_tenant_guc(conn, tenant_id, local=True)
+        # Explicitly mark execution context as worker so DB guardrails can distinguish
+        # worker traffic from ingestion/API traffic (B0.5.3.5).
+        await conn.execute(
+            text("SELECT set_config('app.execution_context', 'worker', true)")
+        )
         # Guardrail: read back to prove the GUC is set for this transaction
         await conn.execute(text("SELECT current_setting('app.current_tenant_id', true)"))
 
