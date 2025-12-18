@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 
-pytest_plugins = ["test_b051_celery_foundation"]
+pytest_plugins = ["tests.test_b051_celery_foundation"]
 
 from app.celery_app import celery_app  # noqa: E402
 from app.db.session import engine, set_tenant_guc  # noqa: E402
