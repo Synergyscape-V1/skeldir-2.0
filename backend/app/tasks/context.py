@@ -10,7 +10,7 @@ import functools
 import logging
 import threading
 import uuid
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 from uuid import UUID
 
 from sqlalchemy import text
@@ -43,7 +43,7 @@ def get_worker_event_loop() -> asyncio.AbstractEventLoop:
     return _WORKER_LOOP
 
 
-def run_in_worker_loop(coro: asyncio.Future | asyncio.coroutines.Coroutine) -> Any:
+def run_in_worker_loop(coro: Awaitable[Any]) -> Any:
     """
     Execute the given coroutine on the dedicated worker loop.
 
