@@ -41,6 +41,7 @@ def _wait_for_worker(timeout: int = 60) -> None:
     is operational. Use data-plane task round-trip as readiness proof instead.
     """
     import logging
+    import asyncio
 
     logger = logging.getLogger(__name__)
     broker = celery_app.conf.broker_url
