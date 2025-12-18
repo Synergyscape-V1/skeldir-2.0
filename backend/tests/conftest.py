@@ -64,6 +64,43 @@ from app.celery_app import _ensure_celery_configured
 _ensure_celery_configured()
 
 
+async def _insert_tenant(conn, tenant_id: uuid4, api_key_hash: str) -> None:
+    """
+    Insert a tenant row while tolerating schema drift (api_key_hash/notification_email optional).
+    """
+    columns = {
+        row[0]
+        for row in (
+            await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'tenants'"
+                )
+            )
+        ).scalars()
+    }
+
+    insert_cols = ["id", "name"]
+    params = {
+        "id": str(tenant_id),
+        "name": f"Test Tenant {str(tenant_id)[:8]}",
+        "api_key_hash": api_key_hash,
+        "notification_email": f"test_{str(tenant_id)[:8]}@test.local",
+    }
+
+    if "api_key_hash" in columns:
+        insert_cols.append("api_key_hash")
+    if "notification_email" in columns:
+        insert_cols.append("notification_email")
+
+    values_clause = ", ".join(f":{col}" for col in insert_cols)
+    await conn.execute(
+        text(
+            f"INSERT INTO tenants ({', '.join(insert_cols)}) VALUES ({values_clause})"
+        ),
+        params,
+    )
+
+
 @pytest.fixture(scope="function")
 async def test_tenant():
     """
@@ -75,32 +112,7 @@ async def test_tenant():
     api_key_hash = "test_hash_" + str(tenant_id)[:8]
 
     async with engine.begin() as conn:
-        params = {
-            "id": str(tenant_id),
-            "api_key_hash": api_key_hash,
-            "name": f"Test Tenant {str(tenant_id)[:8]}",
-            "email": f"test_{str(tenant_id)[:8]}@test.local",
-        }
-        try:
-            await conn.execute(
-                text("""
-                    INSERT INTO tenants (id, api_key_hash, name, notification_email, created_at, updated_at)
-                    VALUES (:id, :api_key_hash, :name, :email, NOW(), NOW())
-                """),
-                params,
-            )
-        except ProgrammingError as exc:
-            # Some schema baselines omit api_key_hash/notification_email; fall back to minimal insert.
-            if "api_key_hash" in str(exc) or "notification_email" in str(exc):
-                await conn.execute(
-                    text("""
-                        INSERT INTO tenants (id, name, created_at, updated_at)
-                        VALUES (:id, :name, NOW(), NOW())
-                    """),
-                    params,
-                )
-            else:
-                raise
+        await _insert_tenant(conn, tenant_id, api_key_hash)
 
     yield tenant_id
 
@@ -145,31 +157,9 @@ async def test_tenant_pair():
     async with engine.begin() as conn:
         # Insert both tenants
         for tenant_id in [tenant_a, tenant_b]:
-            params = {
-                "id": str(tenant_id),
-                "api_key_hash": f"test_hash_{str(tenant_id)[:8]}",
-                "name": f"Test Tenant {str(tenant_id)[:8]}",
-                "email": f"test_{str(tenant_id)[:8]}@test.local",
-            }
-            try:
-                await conn.execute(
-                    text("""
-                        INSERT INTO tenants (id, api_key_hash, name, notification_email, created_at, updated_at)
-                        VALUES (:id, :api_key_hash, :name, :email, NOW(), NOW())
-                    """),
-                    params,
-                )
-            except ProgrammingError as exc:
-                if "api_key_hash" in str(exc) or "notification_email" in str(exc):
-                    await conn.execute(
-                        text("""
-                            INSERT INTO tenants (id, name, created_at, updated_at)
-                            VALUES (:id, :name, NOW(), NOW())
-                        """),
-                        params,
-                    )
-                else:
-                    raise
+            await _insert_tenant(
+                conn, tenant_id, api_key_hash=f"test_hash_{str(tenant_id)[:8]}"
+            )
 
     yield (tenant_a, tenant_b)
 
