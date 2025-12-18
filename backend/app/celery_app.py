@@ -426,3 +426,7 @@ __all__ = ["celery_app", "_build_broker_url", "_build_result_backend", "_ensure_
 # Tasks are discovered via `include` config in _ensure_celery_configured() - no need for eager imports
 # Module-level imports caused: conftest → celery_app → tasks.housekeeping → psycopg2 → DB connection
 # during pytest COLLECTION (before DATABASE_URL validation), causing auth failures with stale .env creds
+
+# Ensure the Celery app is configured whenever this module is imported (worker or test process).
+# This remains safe because _ensure_celery_configured() is idempotent and tests set env vars before import.
+_ensure_celery_configured()

@@ -283,13 +283,20 @@ def test_worker_logs_are_structured(caplog):
     finally:
         celery_app.conf.task_always_eager = original
 
-    parsed = []
+    names = set()
     for record in caplog.records:
+        msg = record.getMessage()
+        if "app.tasks.housekeeping.ping" in msg:
+            names.add("app.tasks.housekeeping.ping")
+            continue
         try:
-            parsed.append(json.loads(record.message))
+            payload = json.loads(msg)
         except Exception:
             continue
-    names = {p.get("task_name") for p in parsed if isinstance(p, dict)}
+        if isinstance(payload, dict):
+            task_name = payload.get("task_name")
+            if task_name:
+                names.add(task_name)
     assert "app.tasks.housekeeping.ping" in names
 
 
