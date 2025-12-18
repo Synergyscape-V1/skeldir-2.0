@@ -5,6 +5,7 @@ Validates deterministic allocations, idempotency, and DLQ correlation propagatio
 via the schedule_recompute_window scheduling layer (not direct task invocation).
 """
 import os
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -34,6 +35,8 @@ WINDOW_START = "2025-06-01T00:00:00Z"
 WINDOW_END = "2025-06-01T23:59:59.999999Z"
 MODEL_VERSION = "1.0.0"
 EXPECTED_ALLOCATION_RATIO = round(1.0 / 3.0, 6)
+EVENT_A_OCCURRED_AT = datetime(2025, 6, 1, 10, 0, tzinfo=timezone.utc)
+EVENT_B_OCCURRED_AT = datetime(2025, 6, 1, 15, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture(scope="session")
@@ -64,8 +67,8 @@ async def _prepare_facts():
                 "id1": EVENT_A_ID,
                 "id2": EVENT_B_ID,
                 "tenant_id": TENANT_ID,
-                "ts1": "2025-06-01T10:00:00Z",
-                "ts2": "2025-06-01T15:00:00Z",
+                "ts1": EVENT_A_OCCURRED_AT,
+                "ts2": EVENT_B_OCCURRED_AT,
                 "rev1": 10000,
                 "rev2": 15000,
             },

@@ -282,31 +282,36 @@ def test_worker_logs_are_structured(caplog):
     original = celery_app.conf.task_always_eager
     celery_app.conf.task_always_eager = True
     caplog.set_level("INFO")
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.setLevel(logging.INFO)
+    handler.emit = lambda record: records.append(record)
+    logger = logging.getLogger("app.tasks.housekeeping")
+    logger.addHandler(handler)
     try:
         ping.delay()
         with pytest.raises(ValueError):
             ping.delay(fail=True).get(propagate=True)
     finally:
+        logger.removeHandler(handler)
         celery_app.conf.task_always_eager = original
 
     names = set()
-    for record in caplog.records:
+    for record in list(caplog.records) + records:
         msg = record.getMessage()
         if "app.tasks.housekeeping.ping" in msg:
             names.add("app.tasks.housekeeping.ping")
-            continue
+        task_name = getattr(record, "task_name", None)
+        if task_name:
+            names.add(task_name)
         try:
             payload = json.loads(msg)
+            if isinstance(payload, dict) and payload.get("task_name"):
+                names.add(payload["task_name"])
         except Exception:
             continue
-        if isinstance(payload, dict):
-            task_name = payload.get("task_name")
-            if task_name:
-                names.add(task_name)
-    if not names:
-        assert "app.tasks.housekeeping.ping" in caplog.text
-    else:
-        assert "app.tasks.housekeeping.ping" in names
+
+    assert "app.tasks.housekeeping.ping" in names
 
 
 def test_registered_tasks_include_stubs():
