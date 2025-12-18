@@ -161,7 +161,7 @@ jobs:
           cd backend
           export PYTHONPATH=$(pwd):$PYTHONPATH
           echo "Starting Celery worker..."
-          celery -A app.celery_app.celery_app worker -P solo -c 1 --loglevel=INFO &
+          celery -A app.celery_app.celery_app worker -P solo -c 1 -Q housekeeping,maintenance,llm,attribution --loglevel=INFO &
           echo $! > /tmp/celery.pid
           echo "Waiting for worker to be ready..."
           sleep 10
@@ -199,7 +199,7 @@ jobs:
           grep -q "celery_task_failure_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_failure_total"
           grep -q "celery_task_duration_seconds" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_duration_seconds"
 
-      - name: Run Celery foundation tests
+      - name: Run Celery foundation tests (including B0.5.3.6 E2E)
         env:
           PYTHONPATH: ${{ github.workspace }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
@@ -207,7 +207,12 @@ jobs:
           CELERY_RESULT_BACKEND: ${{ env.CELERY_RESULT_BACKEND }}
         run: |
           cd backend
-          pytest tests/test_b051_celery_foundation.py tests/test_b052_queue_topology_and_dlq.py tests/test_b0532_window_idempotency.py -q
+          pytest \
+            tests/test_b051_celery_foundation.py \
+            tests/test_b052_queue_topology_and_dlq.py \
+            tests/test_b0532_window_idempotency.py \
+            tests/test_b0536_attribution_e2e.py \
+            -v
 
       - name: Upload observability evidence artifacts
         if: always()

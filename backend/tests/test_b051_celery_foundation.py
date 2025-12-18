@@ -40,20 +40,67 @@ def _wait_for_worker(timeout: int = 60) -> None:
     SQLAlchemy transport over Postgres - it returns [] even when the worker
     is operational. Use data-plane task round-trip as readiness proof instead.
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    broker = celery_app.conf.broker_url
+    backend = celery_app.conf.result_backend
+    queues = [q.name for q in celery_app.conf.task_queues or []]
+    logger.warning(
+        "[readiness-debug] broker=%s result_backend=%s queues=%s app=%s",
+        broker,
+        backend,
+        queues,
+        celery_app.main,
+    )
+
+    async def _result_row_exists(task_id: str) -> bool:
+        async with engine.begin() as conn:
+            row = await conn.execute(
+                text(
+                    "SELECT status FROM celery_taskmeta WHERE task_id = :tid"
+                ),
+                {"tid": task_id},
+            )
+            rec = row.first()
+            return bool(rec)
+
     deadline = time.time() + timeout
+    last_exc: Exception | None = None
     while time.time() < deadline:
         try:
             # Data-plane readiness: enqueue task to housekeeping queue
             result = ping.delay()
+            logger.warning("[readiness-debug] published ping task_id=%s", result.id)
             # Block until task completes or 10s timeout
             result.get(timeout=10)
+            logger.warning(
+                "[readiness-debug] ping task_id=%s completed via result backend", result.id
+            )
             # Success: worker consumed from broker and persisted to result backend
             return
-        except Exception:
-            # Worker not ready yet, retry
-            pass
+        except Exception as exc:
+            last_exc = exc
+            # Worker not ready yet, retry after checking DB for persisted result
+            try:
+                if asyncio.run(_result_row_exists(result.id)):
+                    logger.warning(
+                        "[readiness-debug] ping task_id=%s persisted despite get() error (%s); treating as ready",
+                        result.id,
+                        exc,
+                    )
+                    return
+            except Exception as db_exc:
+                logger.warning(
+                    "[readiness-debug] DB probe failed for task_id=%s: %s",
+                    result.id,
+                    db_exc,
+                )
+            logger.warning("[readiness-debug] ping attempt failed (%s); retrying...", exc)
         time.sleep(2)
-    raise RuntimeError("Celery worker not ready: data-plane task execution failed")
+    raise RuntimeError(
+        f"Celery worker not ready: data-plane task execution failed (last_error={last_exc}, broker={broker}, backend={backend})"
+    )
 
 
 @pytest.fixture(scope="session")

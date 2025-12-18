@@ -152,6 +152,15 @@ def _ensure_celery_configured():
         task_default_exchange='tasks',
         task_default_routing_key='housekeeping.task',
     )
+    logger.info(
+        "celery_app_configured",
+        extra={
+            "broker_url": celery_app.conf.broker_url,
+            "result_backend": celery_app.conf.result_backend,
+            "queues": [q.name for q in celery_app.conf.task_queues],
+            "app_name": celery_app.main,
+        },
+    )
     _celery_configured = True
 
 
