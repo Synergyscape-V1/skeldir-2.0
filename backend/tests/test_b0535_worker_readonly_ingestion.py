@@ -114,6 +114,22 @@ async def _build_insert_sql(
     return sql, params
 
 
+async def _build_dead_events_update_sql(conn) -> str:
+    cols = await _get_columns(conn, "dead_events")
+    update_candidates = [
+        ("retry_count", "COALESCE(retry_count, 0) + 1"),
+        ("error_code", "'UPDATED_CODE'"),
+        ("error_message", "'updated message'"),
+        ("raw_payload", "'{\"patched\": true}'::jsonb"),
+    ]
+
+    for col, expr in update_candidates:
+        if col in cols:
+            return f"UPDATE dead_events SET {col} = {expr} WHERE id = :dead_id"
+
+    raise AssertionError("No updatable columns available in dead_events for update guard test")
+
+
 async def _insert_attribution_event(conn, tenant_id) -> uuid.UUID:
     await _seed_channel(conn)
 
@@ -213,6 +229,7 @@ async def test_worker_context_blocks_dead_events_mutation(test_tenant):
             DEAD_EVENTS_COL_VALUES,
             {"tenant_id": str(tenant_id)},
         )
+        update_sql = await _build_dead_events_update_sql(conn)
 
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
@@ -221,7 +238,7 @@ async def test_worker_context_blocks_dead_events_mutation(test_tenant):
     await _expect_blocked(tenant_id, insert_sql, insert_params)
     await _expect_blocked(
         tenant_id,
-        "UPDATE dead_events SET retry_count = retry_count + 1 WHERE id = :dead_id",
+        update_sql,
         {"dead_id": str(dead_id)},
     )
     await _expect_blocked(
