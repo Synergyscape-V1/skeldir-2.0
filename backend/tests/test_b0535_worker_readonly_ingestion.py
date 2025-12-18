@@ -10,7 +10,7 @@ from app.db.session import engine, set_tenant_guc
 
 async def _set_worker_context(conn, tenant_id):
     await set_tenant_guc(conn, tenant_id, local=True)
-        await conn.execute(text("SELECT set_config('app.execution_context', 'worker', true)"))
+    await conn.execute(text("SELECT set_config('app.execution_context', 'worker', true)"))
     # Gate 0 proof: same role/session path as worker (uses DATABASE_URL user)
     current_user = await conn.scalar(text("SELECT current_user"))
     assert current_user == settings.DATABASE_URL.username
