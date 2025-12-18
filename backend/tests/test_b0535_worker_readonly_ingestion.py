@@ -7,8 +7,6 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.db.session import engine, set_tenant_guc
 
-pytestmark = pytest.mark.asyncio
-
 
 async def _set_worker_context(conn, tenant_id):
     await set_tenant_guc(conn, tenant_id, local=True)
@@ -137,6 +135,7 @@ async def _expect_blocked(tenant_id, sql: str, params: dict):
         await _assert_worker_blocked(conn, sql, params)
 
 
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("test_tenant")
 async def test_worker_context_blocks_attribution_events_mutation(test_tenant):
     tenant_id = test_tenant
@@ -169,6 +168,7 @@ async def test_worker_context_blocks_attribution_events_mutation(test_tenant):
     )
 
 
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("test_tenant")
 async def test_worker_context_blocks_dead_events_mutation(test_tenant):
     tenant_id = test_tenant

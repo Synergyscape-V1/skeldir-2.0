@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 
 os.environ["TESTING"] = "1"
 
@@ -74,19 +75,32 @@ async def test_tenant():
     api_key_hash = "test_hash_" + str(tenant_id)[:8]
 
     async with engine.begin() as conn:
-        # Insert tenant record (id is the PK, not tenant_id)
-        await conn.execute(
-            text("""
-                INSERT INTO tenants (id, api_key_hash, name, notification_email, created_at, updated_at)
-                VALUES (:id, :api_key_hash, :name, :email, NOW(), NOW())
-            """),
-            {
-                "id": str(tenant_id),
-                "api_key_hash": api_key_hash,
-                "name": f"Test Tenant {str(tenant_id)[:8]}",
-                "email": f"test_{str(tenant_id)[:8]}@test.local",
-            },
-        )
+        params = {
+            "id": str(tenant_id),
+            "api_key_hash": api_key_hash,
+            "name": f"Test Tenant {str(tenant_id)[:8]}",
+            "email": f"test_{str(tenant_id)[:8]}@test.local",
+        }
+        try:
+            await conn.execute(
+                text("""
+                    INSERT INTO tenants (id, api_key_hash, name, notification_email, created_at, updated_at)
+                    VALUES (:id, :api_key_hash, :name, :email, NOW(), NOW())
+                """),
+                params,
+            )
+        except ProgrammingError as exc:
+            # Some schema baselines omit api_key_hash/notification_email; fall back to minimal insert.
+            if "api_key_hash" in str(exc) or "notification_email" in str(exc):
+                await conn.execute(
+                    text("""
+                        INSERT INTO tenants (id, name, created_at, updated_at)
+                        VALUES (:id, :name, NOW(), NOW())
+                    """),
+                    params,
+                )
+            else:
+                raise
 
     yield tenant_id
 
@@ -131,18 +145,31 @@ async def test_tenant_pair():
     async with engine.begin() as conn:
         # Insert both tenants
         for tenant_id in [tenant_a, tenant_b]:
-            await conn.execute(
-                text("""
-                    INSERT INTO tenants (id, api_key_hash, name, notification_email, created_at, updated_at)
-                    VALUES (:id, :api_key_hash, :name, :email, NOW(), NOW())
-                """),
-                {
-                    "id": str(tenant_id),
-                    "api_key_hash": f"test_hash_{str(tenant_id)[:8]}",
-                    "name": f"Test Tenant {str(tenant_id)[:8]}",
-                    "email": f"test_{str(tenant_id)[:8]}@test.local",
-                },
-            )
+            params = {
+                "id": str(tenant_id),
+                "api_key_hash": f"test_hash_{str(tenant_id)[:8]}",
+                "name": f"Test Tenant {str(tenant_id)[:8]}",
+                "email": f"test_{str(tenant_id)[:8]}@test.local",
+            }
+            try:
+                await conn.execute(
+                    text("""
+                        INSERT INTO tenants (id, api_key_hash, name, notification_email, created_at, updated_at)
+                        VALUES (:id, :api_key_hash, :name, :email, NOW(), NOW())
+                    """),
+                    params,
+                )
+            except ProgrammingError as exc:
+                if "api_key_hash" in str(exc) or "notification_email" in str(exc):
+                    await conn.execute(
+                        text("""
+                            INSERT INTO tenants (id, name, created_at, updated_at)
+                            VALUES (:id, :name, NOW(), NOW())
+                        """),
+                        params,
+                    )
+                else:
+                    raise
 
     yield (tenant_a, tenant_b)
 
