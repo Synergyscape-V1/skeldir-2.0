@@ -8,6 +8,7 @@ correlation IDs for observability.
 import asyncio
 import functools
 import logging
+import threading
 import uuid
 from typing import Any, Callable, Optional
 from uuid import UUID
@@ -19,6 +20,46 @@ from app.observability.context import set_request_correlation_id, set_tenant_id
 
 logger = logging.getLogger(__name__)
 
+# Dedicated worker event loop reused for all async DB bridge calls from Celery tasks.
+_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
+_WORKER_LOOP_LOCK = threading.Lock()
+
+
+def get_worker_event_loop() -> asyncio.AbstractEventLoop:
+    """
+    Return a reusable event loop for worker-side async bridges.
+
+    Using a single loop prevents asyncpg/SQLAlchemy pools from being bound to
+    different loops across sequential Celery tasks.
+    """
+    global _WORKER_LOOP
+    with _WORKER_LOOP_LOCK:
+        if _WORKER_LOOP is None or _WORKER_LOOP.is_closed():
+            _WORKER_LOOP = asyncio.new_event_loop()
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.set_event_loop(_WORKER_LOOP)
+    return _WORKER_LOOP
+
+
+def run_in_worker_loop(coro: asyncio.Future | asyncio.coroutines.Coroutine) -> Any:
+    """
+    Execute the given coroutine on the dedicated worker loop.
+
+    This avoids creating a fresh loop per call (the source of the cross-loop
+    Future failure) while keeping execution synchronous for the caller.
+    """
+    loop = get_worker_event_loop()
+    if loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result(timeout=60)
+    logger.info(
+        "tenant_guc_event_loop_selected",
+        extra={"loop_id": id(loop), "loop_running": loop.is_running()},
+    )
+    return loop.run_until_complete(coro)
+
 
 def _normalize_tenant_id(value: Any) -> UUID:
     if isinstance(value, UUID):
@@ -27,6 +68,15 @@ def _normalize_tenant_id(value: Any) -> UUID:
 
 
 async def _set_tenant_guc_global(tenant_id: UUID) -> None:
+    loop = asyncio.get_running_loop()
+    logger.info(
+        "tenant_guc_async_entry",
+        extra={
+            "loop_id": id(loop),
+            "loop_running": loop.is_running(),
+            "tenant_id": str(tenant_id),
+        },
+    )
     async with engine.begin() as conn:
         # Use SET LOCAL semantics so the value is scoped to this transaction only.
         # This prevents connection pool reuse from leaking a previous tenant_id into
@@ -69,7 +119,7 @@ def tenant_task(task_fn: Callable) -> Callable:
 
         if not is_eager:
             try:
-                asyncio.run(_set_tenant_guc_global(tenant_uuid))
+                run_in_worker_loop(_set_tenant_guc_global(tenant_uuid))
             except RuntimeError as exc:
                 # If already in event loop (shouldn't happen in worker mode), log and continue
                 if "cannot be called from a running event loop" in str(exc):

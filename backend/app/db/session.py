@@ -14,7 +14,13 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -116,12 +122,14 @@ async def validate_database_connection() -> None:
         raise
 
 
-async def set_tenant_guc(session: AsyncSession, tenant_id: UUID, local: bool = True) -> None:
+async def set_tenant_guc_async(
+    session: AsyncConnection | AsyncSession, tenant_id: UUID, local: bool = True
+) -> None:
     """
-    Explicit helper to set tenant context (app.current_tenant_id) on an existing session.
+    Async helper to set tenant context (app.current_tenant_id) on an existing session/connection.
 
     Args:
-        session: AsyncSession to mutate
+        session: AsyncSession/AsyncConnection to mutate
         tenant_id: UUID tenant context value
         local: use SET LOCAL (transaction-scoped) when True; otherwise session-scoped
     """
@@ -129,3 +137,23 @@ async def set_tenant_guc(session: AsyncSession, tenant_id: UUID, local: bool = T
         text("SELECT set_config('app.current_tenant_id', :tenant_id, :is_local)"),
         {"tenant_id": str(tenant_id), "is_local": local},
     )
+
+
+def set_tenant_guc_sync(
+    session: Connection, tenant_id: UUID, local: bool = True
+) -> None:
+    """
+    Sync helper to set tenant context (app.current_tenant_id) on an existing sync connection.
+
+    This avoids running async DB calls through ad-hoc event loops when executing in
+    synchronous contexts (e.g., Celery worker threads).
+    """
+    session.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, :is_local)"),
+        {"tenant_id": str(tenant_id), "is_local": local},
+    )
+
+
+# Backwards-compatible alias for existing async callers.
+async def set_tenant_guc(session: AsyncSession, tenant_id: UUID, local: bool = True) -> None:
+    await set_tenant_guc_async(session, tenant_id, local)

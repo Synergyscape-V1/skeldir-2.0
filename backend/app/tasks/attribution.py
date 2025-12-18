@@ -21,7 +21,7 @@ from app.celery_app import celery_app
 from app.core.db import engine
 from app.db.session import set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
-from app.tasks.context import tenant_task
+from app.tasks.context import tenant_task, run_in_worker_loop
 
 logger = logging.getLogger(__name__)
 
@@ -31,63 +31,13 @@ BASELINE_CHANNELS = ["direct", "email", "google_search"]
 
 def _run_async(coro_factory, *args, **kwargs):
     """
-    Thread-based async bridge for mixed sync/async contexts.
+    Execute async coroutines on the dedicated worker event loop.
 
-    B0.5.3.2: Execute async code safely whether or not an event loop is running.
-    Uses threading to avoid deadlock when called from within a running loop.
-
-    Args:
-        coro_factory: Callable that returns a coroutine (not the coroutine itself)
-        *args, **kwargs: Arguments to pass to coro_factory
-
-    Returns:
-        The result of the coroutine execution
-
-    Raises:
-        Any exception raised by the coroutine
+    Reusing a single loop prevents asyncpg/SQLAlchemy pools from being bound to
+    multiple event loops across sequential task executions.
     """
-    try:
-        # Check if we're in a running event loop
-        asyncio.get_running_loop()
-        # Loop is running - use thread to avoid deadlock
-        import threading
-        import concurrent.futures
-
-        result_container = {}
-        exception_container = {}
-
-        def _thread_target():
-            """Run coroutine in new event loop in this thread."""
-            try:
-                # Create fresh event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    # Create and run coroutine in this loop
-                    coro = coro_factory(*args, **kwargs)
-                    result = loop.run_until_complete(coro)
-                    result_container['value'] = result
-                finally:
-                    loop.close()
-            except Exception as e:
-                exception_container['value'] = e
-
-        thread = threading.Thread(target=_thread_target)
-        thread.start()
-        thread.join(timeout=60)  # 60s timeout for DB operations
-
-        if thread.is_alive():
-            raise TimeoutError("Async operation timed out after 60 seconds")
-
-        if 'value' in exception_container:
-            raise exception_container['value']
-
-        return result_container.get('value')
-
-    except RuntimeError:
-        # No event loop running - use asyncio.run directly
-        coro = coro_factory(*args, **kwargs)
-        return asyncio.run(coro)
+    coro = coro_factory(*args, **kwargs)
+    return run_in_worker_loop(coro)
 
 
 class AttributionTaskPayload(BaseModel):
