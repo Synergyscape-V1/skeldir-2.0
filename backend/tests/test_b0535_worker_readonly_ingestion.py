@@ -3,6 +3,7 @@ from typing import List
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 from app.core.config import settings
 from app.db.session import engine, set_tenant_guc
@@ -13,7 +14,8 @@ async def _set_worker_context(conn, tenant_id):
     await conn.execute(text("SELECT set_config('app.execution_context', 'worker', true)"))
     # Gate 0 proof: same role/session path as worker (uses DATABASE_URL user)
     current_user = await conn.scalar(text("SELECT current_user"))
-    assert current_user == settings.DATABASE_URL.username
+    expected_user = make_url(str(settings.DATABASE_URL)).username
+    assert current_user == expected_user
 
 
 async def _table_exists(conn, table_name: str) -> bool:
