@@ -152,12 +152,19 @@ def _ensure_celery_configured():
         task_default_exchange='tasks',
         task_default_routing_key='housekeeping.task',
     )
+
+    # B0.5.4.0: Load Beat schedule (closes G11 drift - beat not deployed)
+    from app.tasks.maintenance import BEAT_SCHEDULE
+    celery_app.conf.beat_schedule = BEAT_SCHEDULE
+
     logger.info(
         "celery_app_configured",
         extra={
             "broker_url": celery_app.conf.broker_url,
             "result_backend": celery_app.conf.result_backend,
             "queues": [q.name for q in celery_app.conf.task_queues],
+            "beat_schedule_loaded": bool(celery_app.conf.beat_schedule),
+            "scheduled_tasks": list(celery_app.conf.beat_schedule.keys()) if celery_app.conf.beat_schedule else [],
             "app_name": celery_app.main,
         },
     )

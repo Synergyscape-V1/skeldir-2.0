@@ -317,7 +317,8 @@ def test_worker_logs_are_structured(caplog):
 def test_registered_tasks_include_stubs():
     registered = set(celery_app.tasks.keys())
     assert "app.tasks.housekeeping.ping" in registered
-    assert "app.tasks.maintenance.refresh_all_materialized_views" in registered
+    assert "app.tasks.maintenance.refresh_all_matviews_global_legacy" in registered
+    assert "app.tasks.maintenance.refresh_matview_for_tenant" in registered
     assert "app.tasks.llm.route" in registered
     assert "app.tasks.llm.explanation" in registered
     assert "app.tasks.llm.investigation" in registered
