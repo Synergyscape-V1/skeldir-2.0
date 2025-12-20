@@ -126,6 +126,9 @@ def upgrade() -> None:
     # Step 2: Backfill data from existing columns
     # ========================================================================
     
+    # Temporarily disable mutation guard to allow backfill
+    op.execute("ALTER TABLE attribution_events DISABLE TRIGGER trg_events_prevent_mutation")
+
     # Backfill idempotency_key from composite external_event_id/correlation_id
     op.execute("""
         UPDATE attribution_events 
@@ -136,14 +139,14 @@ def upgrade() -> None:
         )
         WHERE idempotency_key IS NULL
     """)
-    
+
     # Backfill event_timestamp from occurred_at
     op.execute("""
         UPDATE attribution_events 
         SET event_timestamp = occurred_at 
         WHERE event_timestamp IS NULL
     """)
-    
+
     # Backfill conversion_value_cents from revenue_cents
     op.execute("""
         UPDATE attribution_events 
@@ -160,6 +163,9 @@ def upgrade() -> None:
             processing_status = 'processed'
         WHERE event_type IS NULL OR channel IS NULL
     """)
+
+    # Re-enable mutation guard after all backfills
+    op.execute("ALTER TABLE attribution_events ENABLE TRIGGER trg_events_prevent_mutation")
     
     # ========================================================================
     # Step 3: Set NOT NULL constraints after backfill

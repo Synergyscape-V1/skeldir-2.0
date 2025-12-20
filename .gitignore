@@ -146,3 +146,4 @@ tmp/
 backend/celerybeat-schedule.*
 docs/NUL
 NUL
+backend/.venv311/
