@@ -3,7 +3,7 @@
 Session metadata
 - Timestamp: 2025-12-20T13:12:00-06:00 (local)
 - Branch: b0540-zero-drift-v3-proofpack
-- Commit under test: 59fef14ba565eb2dea5fc82dfe7ff3eebac528bb (clean tree, backend-only scope)
+- Commit under test: d4efce325dee29998bf23d95944cf60bca3e92eb (clean tree, backend-only scope)
 - Policy: P1-A enforced via `scripts/run_alembic.ps1` (MIGRATION_DATABASE_URL uses postgres superuser); runtime uses app_user
 - DB targets: fresh `skeldir_zg_fresh`, existing `skeldir_zg_existing`
 
@@ -20,7 +20,7 @@ git ls-files | findstr /I "\.venv"
 <no matches>
 
 git rev-parse HEAD
-59fef14ba565eb2dea5fc82dfe7ff3eebac528bb
+d4efce325dee29998bf23d95944cf60bca3e92eb
 ```
 
 ### ZG-1 (PASS) — Fresh DB migration determinism
@@ -214,7 +214,7 @@ CONTEXT:  PL/pgSQL function fn_block_worker_ingestion_mutation() line 4 at RAISE
 ### Gate Ledger (v3.2)
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| ZG-0.2 | PASS | Clean tree proof: git status/diff empty; no tracked .venv; HEAD=59fef14ba565eb2dea5fc82dfe7ff3eebac528bb |
+| ZG-0.2 | PASS | Clean tree proof: git status/diff empty; no tracked .venv; HEAD=d4efce325dee29998bf23d95944cf60bca3e92eb |
 | ZG-1 | PASS | Fresh DB `skeldir_zg_fresh` -> head `202512191900` under P1-A |
 | ZG-2 | PASS | Existing DB `skeldir_zg_existing` seeded at 202511151400 -> head with backfill validated |
 | ZG-3 | PASS | Matview inventory = registry (3 views) |
