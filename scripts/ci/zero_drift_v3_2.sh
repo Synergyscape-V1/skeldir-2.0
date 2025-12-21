@@ -89,6 +89,7 @@ psql_super -d skeldir_zg_existing -c "SELECT id, idempotency_key, event_timestam
 echo "== ZG-3: matview inventory determinism (fresh) =="
 pg_matviews=$(psql_app -d skeldir_zg_fresh -t -A -c "SELECT matviewname FROM pg_matviews WHERE schemaname='public' ORDER BY matviewname;")
 echo "$pg_matviews"
+export PG_MATVIEWS="$pg_matviews"
 echo "Registry from code:"
 python - <<'PY'
 from app.core.matview_registry import MATERIALIZED_VIEWS
