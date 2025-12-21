@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.db.session import engine
 from app.core.pg_locks import try_acquire_refresh_lock, release_refresh_lock
+from app.tasks.maintenance import _qualified_matview_identifier
 
 # Configure logging to see lock acquisition messages
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
@@ -33,7 +34,8 @@ async def simulate_refresh_with_delay(view_name: str, task_id: str, delay_sec: f
             print(f"[{task_id}] Lock acquired - RUNNING")
             # Simulate refresh operation
             await asyncio.sleep(delay_sec)
-            await conn.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view_name}"))
+            qualified = _qualified_matview_identifier(view_name, task_id=task_id)
+            await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY " + qualified))
             print(f"[{task_id}] Refresh completed")
             return "success"
         finally:

@@ -13,6 +13,8 @@ from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from app.celery_app import celery_app
 from app.core.matview_registry import MATERIALIZED_VIEWS
@@ -22,6 +24,43 @@ from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.tasks.context import tenant_task
 
 logger = logging.getLogger(__name__)
+_IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
+_PUBLIC_SCHEMA = _IDENTIFIER_PREPARER.quote_schema("public")
+
+
+def _validated_matview_identifier(
+    view_name: str, task_id: Optional[str] = None, tenant_id: Optional[UUID] = None
+) -> str:
+    """
+    Validate matview name against registry and return a safely quoted identifier.
+
+    Using IdentifierPreparer prevents SQL injection even if a malicious name is passed
+    in; validation further constrains the surface to the closed registry set.
+    """
+    from app.core.matview_registry import validate_matview_name
+
+    if not validate_matview_name(view_name):
+        logger.error(
+            "matview_refresh_invalid_view_name",
+            extra={
+                "view_name": view_name,
+                "task_id": task_id,
+                "tenant_id": str(tenant_id) if tenant_id else None,
+            },
+        )
+        raise ValueError(f"View '{view_name}' not in canonical registry")
+
+    return _IDENTIFIER_PREPARER.quote(view_name)
+
+
+def _qualified_matview_identifier(
+    view_name: str, task_id: Optional[str] = None, tenant_id: Optional[UUID] = None
+) -> str:
+    """
+    Return schema-qualified, safely quoted matview identifier.
+    """
+    quoted_view = _validated_matview_identifier(view_name, task_id=task_id, tenant_id=tenant_id)
+    return f"{_PUBLIC_SCHEMA}.{quoted_view}"
 
 
 async def _refresh_view(view_name: str, task_id: str, tenant_id: Optional[UUID] = None) -> str:
@@ -38,6 +77,7 @@ async def _refresh_view(view_name: str, task_id: str, tenant_id: Optional[UUID] 
     Returns:
         "success" if refreshed, "skipped_already_running" if lock held
     """
+    qualified_view = _qualified_matview_identifier(view_name, task_id=task_id, tenant_id=tenant_id)
     async with engine.begin() as conn:
         # Try to acquire advisory lock
         acquired = await try_acquire_refresh_lock(conn, view_name, tenant_id)
@@ -49,8 +89,8 @@ async def _refresh_view(view_name: str, task_id: str, tenant_id: Optional[UUID] 
             return "skipped_already_running"
 
         try:
-            # Refresh the view
-            await conn.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view_name}"))
+            # Refresh the view using a schema-qualified, identifier-quoted name to prevent SQL injection
+            await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY " + qualified_view))
             logger.info(
                 "matview_refreshed",
                 extra={"view_name": view_name, "task_id": task_id},
@@ -85,8 +125,7 @@ def refresh_all_matviews_global_legacy(self) -> Dict[str, str]:
     results: Dict[str, str] = {}
     try:
         for view_name in MATERIALIZED_VIEWS:
-            asyncio.run(_refresh_view(view_name, self.request.id))
-            results[view_name] = "success"
+            results[view_name] = asyncio.run(_refresh_view(view_name, self.request.id))
         return results
     except Exception as exc:
         logger.error(
@@ -131,20 +170,8 @@ def refresh_matview_for_tenant(self, tenant_id: UUID, view_name: str, correlatio
     set_request_correlation_id(correlation_id)
     set_tenant_id(tenant_id)
 
-    # Validate view name against registry
-    if not validate_matview_name(view_name):
-        logger.error(
-            "matview_refresh_invalid_view_name",
-            extra={
-                "view_name": view_name,
-                "tenant_id": str(tenant_id),
-                "task_id": self.request.id,
-                "correlation_id": correlation_id,
-            },
-        )
-        raise ValueError(f"View '{view_name}' not in canonical registry")
-
     try:
+        _qualified_matview_identifier(view_name, task_id=self.request.id, tenant_id=tenant_id)
         result = asyncio.run(_refresh_view(view_name, self.request.id, tenant_id))
         logger.info(
             "tenant_matview_refresh_completed",

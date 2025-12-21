@@ -1,37 +1,40 @@
 ## B0.5.4.0 — GitHub CI Truth-Layer Evidence (Backend Only)
 
-### Scope
-- Backend-only Zero-Drift v3.2 validation in GitHub Actions.
-- Frontend untouched.
+### Run Attribution
+- Branch: `b0540-zero-drift-v3-proofpack`
+- Commit (checkout): `3c999f29aae0c53120fad160c049890a875f12cd`
+- Workflow: `.github/workflows/ci.yml` (`zero-drift-v3-2` job)
+- Workflow title: `B0.5.4.0-CI-ZERO-DRIFT-V3-2-TRUTH-AUDIT`
+- Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20414138528 (Zero-Drift v3.2 CI Truth Layer job: ✅)
+- Log capture: `tmp/zero_drift_v3_2_run7.log` (local export of the Actions log for the run above)
 
-### Commit / Branch Under Test
-- Branch: b0540-zero-drift-v3-proofpack
-- CI workflow target commit: fd65767edf9c29524d22759803999dd491a3bcdf (branch head at dispatch)
-- CI workflow run: https://github.com/Muk223/skeldir-2.0/actions/runs/20400778070 (workflow_dispatch)
+### Canonical Inventory Contract (5)
+- Contract source: B0.5.4 approach intent + prior forensic ledger (`docs/evidence/b054-forensic-readiness-evidence.md`, G8).
+- Canonical matviews (registry-enforced): `mv_allocation_summary`, `mv_channel_performance`, `mv_daily_revenue_summary`, `mv_realtime_revenue`, `mv_reconciliation_status`.
 
-### CI Workflow Entry Points
-- `.github/workflows/ci.yml` now contains job `zero-drift-v3-2` (triggered on `workflow_dispatch` and on main/develop).
-- Script executed: `scripts/ci/zero_drift_v3_2.sh`.
+### Gate Ledger (GATE-0A..0D, binary/falsifiable)
+- **GATE-0A — Inventory determinism (registry ↔ pg_matviews = 5)**: **PASS**  
+  - `pg_matviews` (fresh DB) shows exactly 5: `mv_allocation_summary`, `mv_channel_performance`, `mv_daily_revenue_summary`, `mv_realtime_revenue`, `mv_reconciliation_status` (`tmp/zero_drift_v3_2_run7.log` @ `2025-12-21T18:40:01.562Z`).  
+  - Registry print matches, and the harness equality check reports `MATVIEW INVENTORY OK (registry == pg_matviews)` (same log block).
+- **GATE-0B — Alembic determinism (single head, upgradeable)**: **PASS**  
+  - Fresh upgrade reaches head with `202512201000 (head)` and `202512201000 (skeldir_foundation, celery_foundation) (head)` after `alembic current`/`alembic heads` (`tmp/zero_drift_v3_2_run7.log` @ `2025-12-21T18:39:59.748Z` and `2025-12-21T18:40:02.195Z`).  
+  - Existing DB seed-before-upgrade repeats the same head (log block at `2025-12-21T18:40:01.399Z`).
+- **GATE-0C — Privilege compatibility (grants + refresh + worker immutability)**: **PASS**  
+  - Owners: all mv_* owned by `app_user` (`tmp/zero_drift_v3_2_run7.log` rows following `== ZG-4` @ `2025-12-21T18:40:01.647Z`).  
+  - Indexes: all 5 have unique indexes for CONCURRENTLY refresh (`2025-12-21T18:40:01.685Z` block).  
+  - Grants evidence: `Role grants for app_user` shows SELECT on ingestion tables and Celery tables plus refresh dependencies (`tmp/zero_drift_v3_2_run7.log` @ `2025-12-21T18:40:01.907Z`).  
+  - Refresh as app_user: `REFRESH MATERIALIZED VIEW CONCURRENTLY` executed for all 5 views on fresh and existing DBs with no errors (commands in ZG-4 block).  
+  - Worker ingestion immutability: worker-context INSERT rejected with `ERROR:  permission denied for table attribution_events` (`tmp/zero_drift_v3_2_run7.log` @ `2025-12-21T18:40:25.375Z` during `== ZG-7`).
+- **GATE-0D — CI attribution + evidence immutability**: **PASS**  
+  - workflow_dispatch run recorded above; checkout SHA logged (`git log -1 --format=%H` → `3c999f29aae0c53120fad160c049890a875f12cd` at `2025-12-21T18:39:23.615Z`).  
+  - Harness completed end-to-end with exit 0 (`== Zero-Drift v3.2 CI harness completed ==` @ `2025-12-21T18:40:25.376Z`). Evidence captured in log and summarized here.
 
-### Zero-Drift v3.2 CI Gates (CG-1 .. CG-7)
-- CG-1 CI run existence: **PASS** - workflow_dispatch run 20400778070 executed on `b0540-zero-drift-v3-proofpack` (Zero-Drift v3.2 job invoked).
-- CG-2 Fresh DB migration determinism: **PASS** - ZG-1 fresh upgrade reached head on `skeldir_zg_fresh` (Alembic log stack starting at `== ZG-1: fresh DB upgrade to head ==`).
-- CG-3 Seed-before-upgrade determinism: **PASS** - ZG-2 seeded `skeldir_zg_existing`, upgraded to head, and selected seeded attribution_event row.
-- CG-4 Matview registry coherence & refresh permissions: **PASS** - ZG-3/4 enumerated mv_* registry, owners `app_user`, unique indexes present, and REFRESH MATERIALIZED VIEW succeeded for fresh + existing contexts.
-- CG-5 Beat dispatch proof: **PASS** - ZG-5 shows schedule interval forced to 1s and repeated `Scheduler: Sending due task refresh-matviews-every-5-min` lines (beat dispatch observed).
-- CG-6 Serialization enforced in refresh path: **PASS** - ZG-6 shows lock-holder acquired, concurrent attempt skipped (`skipped_already_running`), then successful refresh after release.
-- CG-7 Worker ingestion write-block: **PASS** - ZG-7 worker-context INSERT rejected with `ERROR:  permission denied for table attribution_events`.
+### ZG-5 / ZG-6 / ZG-7 Evidence Anchors
+- **Beat dispatch proof (ZG-5)**: `Scheduler: Sending due task refresh-matviews-every-5-min (app.tasks.maintenance.refresh_all_matviews_global_legacy)` repeats with 1s interval (`tmp/zero_drift_v3_2_run7.log` lines @ `2025-12-21T18:40:04Z`–`18:40:22Z`), demonstrating dispatch, not just startup.
+- **Serialization proof (ZG-6)**: Concurrent refresh test shows lock acquisition + skip + success: `refresh_lock_acquired`, `refresh_lock_already_held`, `matview_refresh_skipped_already_running`, `refresh_lock_released`, final results `{'skip': 'skipped_already_running', 'success': 'success'}` (`tmp/zero_drift_v3_2_run7.log` @ `2025-12-21T18:40:23Z`–`18:40:25Z`).
+- **Worker ingestion write-block (ZG-7)**: worker execution context INSERT blocked with `ERROR:  permission denied for table attribution_events` (`tmp/zero_drift_v3_2_run7.log` @ `2025-12-21T18:40:25.375Z`), proving immutability invariant.
 
-### How to Trigger CI (workflow_dispatch)
-1) In GitHub UI: Actions → CI → “Run workflow”.
-2) Select branch: `b0540-zero-drift-v3-proofpack`.
-3) Run workflow. Capture run URL.
-
-### Artifacts to Capture Post-Run
-- CI run URL.
-- `zero-drift-v3-2` job log anchors proving each CG gate (script outputs include all commands/results).
-- Update this file with PASS/FAIL per gate + log links after run completes.
-
-### Notes
-- No frontend changes.
-- Database/broker use Postgres service; roles/db created inside harness.
+### Notes / Scope Compliance
+- Backend-only; no changes under `frontend/**`.
+- Zero-Drift harness uses `scripts/ci/zero_drift_v3_2.sh` (matview registry equality enforced; refreshes run as `app_user`; beat interval forced to 1s in CI).
+- Canonical matview registry centralized at `backend/app/core/matview_registry.py` and enforced by migration `alembic/versions/007_skeldir_foundation/202512201000_restore_matview_contract_five_views.py` (reintroduces mv_realtime_revenue + mv_reconciliation_status and sets ownership/grants).

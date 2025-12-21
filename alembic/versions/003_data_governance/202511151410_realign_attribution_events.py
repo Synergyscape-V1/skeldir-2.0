@@ -126,8 +126,9 @@ def upgrade() -> None:
     # Step 2: Backfill data from existing columns
     # ========================================================================
     
-    # Temporarily disable mutation guard to allow backfill
+    # Temporarily disable mutation guard and RLS to allow backfill across tenants
     op.execute("ALTER TABLE attribution_events DISABLE TRIGGER trg_events_prevent_mutation")
+    op.execute("ALTER TABLE attribution_events DISABLE ROW LEVEL SECURITY")
 
     # Backfill idempotency_key from composite external_event_id/correlation_id
     op.execute("""
@@ -164,8 +165,9 @@ def upgrade() -> None:
         WHERE event_type IS NULL OR channel IS NULL
     """)
 
-    # Re-enable mutation guard after all backfills
+    # Re-enable mutation guard and RLS after all backfills
     op.execute("ALTER TABLE attribution_events ENABLE TRIGGER trg_events_prevent_mutation")
+    op.execute("ALTER TABLE attribution_events ENABLE ROW LEVEL SECURITY")
     
     # ========================================================================
     # Step 3: Set NOT NULL constraints after backfill
