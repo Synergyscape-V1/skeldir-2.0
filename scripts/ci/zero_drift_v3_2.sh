@@ -72,6 +72,7 @@ PY
 echo "== ZG-1: fresh DB upgrade to head =="
 run_alembic "${MIGRATION_DATABASE_URL_FRESH}" "upgrade head"
 run_alembic "${MIGRATION_DATABASE_URL_FRESH}" "current"
+run_alembic "${MIGRATION_DATABASE_URL_FRESH}" "heads"
 
 echo "== ZG-2: existing DB seed-before-upgrade =="
 run_alembic "${MIGRATION_DATABASE_URL_EXISTING}" "upgrade 202511151400"
@@ -86,17 +87,36 @@ run_alembic "${MIGRATION_DATABASE_URL_EXISTING}" "upgrade head"
 psql_super -d skeldir_zg_existing -c "SELECT id, idempotency_key, event_timestamp, conversion_value_cents FROM attribution_events;"
 
 echo "== ZG-3: matview inventory determinism (fresh) =="
-psql_app -d skeldir_zg_fresh -c "SELECT matviewname FROM pg_matviews ORDER BY matviewname;"
+pg_matviews=$(psql_app -d skeldir_zg_fresh -t -A -c "SELECT matviewname FROM pg_matviews WHERE schemaname='public' ORDER BY matviewname;")
+echo "$pg_matviews"
+echo "Registry from code:"
 python - <<'PY'
 from app.core.matview_registry import MATERIALIZED_VIEWS
 print(MATERIALIZED_VIEWS)
+PY
+python - <<'PY'
+from app.core.matview_registry import MATERIALIZED_VIEWS
+db_list = """$pg_matviews""".strip().splitlines()
+reg_set, db_set = set(MATERIALIZED_VIEWS), set(db_list)
+print(f"registry={sorted(reg_set)}")
+print(f"db={sorted(db_set)}")
+missing = reg_set - db_set
+extra = db_set - reg_set
+if missing or extra:
+    print(f"MATVIEW MISMATCH missing={sorted(missing)} extra={sorted(extra)}")
+    raise SystemExit(1)
+print("MATVIEW INVENTORY OK (registry == pg_matviews)")
 PY
 
 echo "== ZG-4: refresh viability as app_user (fresh + existing) =="
 psql_app -d skeldir_zg_fresh -c "SELECT relname, pg_get_userbyid(relowner) AS owner FROM pg_class WHERE relkind='m' AND relname LIKE 'mv_%' ORDER BY relname;"
 psql_app -d skeldir_zg_fresh -c "SELECT c.relname AS matview, i.relname AS index_name, idx.indisunique FROM pg_index idx JOIN pg_class i ON i.oid = idx.indexrelid JOIN pg_class c ON c.oid = idx.indrelid WHERE c.relkind='m' AND c.relname LIKE 'mv_%' ORDER BY c.relname;"
-psql_app -d skeldir_zg_fresh -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_allocation_summary; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_channel_performance; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_revenue_summary;"
-psql_app -d skeldir_zg_existing -c "SET app.current_tenant_id='11111111-1111-1111-1111-111111111111'; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_allocation_summary; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_channel_performance; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_revenue_summary;"
+psql_app -d skeldir_zg_fresh -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_allocation_summary; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_channel_performance; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_revenue_summary; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_realtime_revenue; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_reconciliation_status;"
+psql_app -d skeldir_zg_existing -c "SET app.current_tenant_id='11111111-1111-1111-1111-111111111111'; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_allocation_summary; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_channel_performance; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_revenue_summary; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_realtime_revenue; REFRESH MATERIALIZED VIEW CONCURRENTLY mv_reconciliation_status;"
+echo "Role grants for app_user:"
+psql_app -d skeldir_zg_fresh -c "SELECT table_name, privilege_type FROM information_schema.role_table_grants WHERE grantee='app_user' ORDER BY table_name, privilege_type;"
+echo "Alembic heads (fresh):"
+run_alembic "${MIGRATION_DATABASE_URL_FRESH}" "heads"
 
 echo "== ZG-5: beat dispatch proof =="
 export DATABASE_URL="${RUNTIME_DATABASE_URL}"

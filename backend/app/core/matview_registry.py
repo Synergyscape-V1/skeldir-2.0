@@ -11,13 +11,14 @@ EG-2: Removed deprecated views (mv_realtime_revenue, mv_reconciliation_status)
 from typing import List
 
 
-# Canonical matview list - MUST match pg_matviews in target DB
-# Note: mv_realtime_revenue and mv_reconciliation_status were deprecated
-# and dropped by migration 202511171400 (superseded by canonical views)
+# Canonical matview list - MUST match pg_matviews in target DB.
+# B0.5.4.0 contract: 5 canonical matviews.
 MATERIALIZED_VIEWS: List[str] = [
     "mv_allocation_summary",
     "mv_channel_performance",
     "mv_daily_revenue_summary",
+    "mv_realtime_revenue",
+    "mv_reconciliation_status",
 ]
 
 
