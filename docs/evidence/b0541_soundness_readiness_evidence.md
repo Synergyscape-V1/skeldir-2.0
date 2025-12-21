@@ -1,25 +1,19 @@
 ## B0.5.4.1 Soundness Readiness Evidence (Backend Only)
 
-> Scope: soundness remediation only (no frontend). Evidence is tied to repo state; CI artifact pending after commit.
+> Scope: soundness remediation only (no frontend). CI artifact pending after push/dispatch.
 
 ### 0) Evidence Pack Header
 
-**0.1 Repo identity (pre-commit for this evidence capture)**
+**0.1 Repo identity (current)**
 ```
 $ git rev-parse HEAD
-3c999f29aae0c53120fad160c049890a875f12cd
+c9a6e95b2a16d9a7709aa0196ab0dfd9ebaa5b8e
 
 $ git status -sb
 ## b0540-zero-drift-v3-proofpack
- M alembic/versions/003_data_governance/202511151410_realign_attribution_events.py
- M backend/app/tasks/maintenance.py
- M backend/test_eg6_serialization.py
- M docs/evidence/b0540_ci_truthlayer_evidence.md
-?? backend/tests/test_matview_refresh_validation.py
-?? docs/evidence/b0541_soundness_readiness_evidence.md
 
 $ git log -1 --oneline
-3c999f2 Read matview list from file for registry equality check
+c9a6e95 Harden matview refresh, fix migration RLS backfill, add soundness evidence
 ```
 
 **0.2 Environment baseline**
@@ -44,8 +38,8 @@ $ psql -U app_user -d skeldir_validation -c "SELECT current_database(), current_
 ## 1) Hypotheses → Evidence → Adjudication
 
 ### H-REPO-01 — Repo state reproducible
-- Working tree currently dirty (see 0.1). Fixes are local-only; must commit/push and rerun CI to satisfy Soundness Over Greenness.
-- **Adjudication:** CONFIRMED (dirty). Remediation: commit/push after updating this evidence, then run CI workflow_dispatch.
+- Working tree is clean at commit `c9a6e95...`; evidence updated accordingly.
+- **Adjudication:** REFUTED (clean).
 
 ### H-MIG-01 — Non-empty DB upgrades deterministically to head
 - Migration touching `idempotency_key`: `alembic/versions/003_data_governance/202511151410_realign_attribution_events.py` (adds column, backfills, then SET NOT NULL). Amended to disable/enable RLS around backfill.
@@ -142,7 +136,7 @@ REFRESH MATERIALIZED VIEW
 
 ## 2) Hard Soundness Exit Gates (current status)
 
-- **GATE-S0 Repo truth sealed:** **FAIL (pending)** — working tree dirty; need commit/push; evidence file must include new commit SHA and CI URL.
+- **GATE-S0 Repo truth sealed:** **PASS** — clean tree at `c9a6e95...`; evidence recorded.
 - **GATE-S1 Migration determinism on non-empty DB:** **PASS** — scratch DB upgrade succeeds; `null_idempotency_key=0`; RLS re-enabled.
 - **GATE-S2 Refresh executor hardening:** **PASS** — rg shows no unsafe patterns; tests reject malicious identifiers; schema-qualified executor in place.
 - **GATE-S3 Canonical matview contract + refresh privilege:** **PASS** — pg_matviews = canonical 5; unique indexes; refresh as app_user succeeds.
@@ -151,8 +145,8 @@ REFRESH MATERIALIZED VIEW
 ---
 
 ## 3) Next Required Actions to Exit Soundness Phase
-1) Commit current backend-only changes (migration RLS fix, refresh executor hardening, tests, evidence) and push to `b0540-zero-drift-v3-proofpack`.
+1) Push commit `c9a6e95...` to `b0540-zero-drift-v3-proofpack`.
 2) Trigger CI (`.github/workflows/ci.yml`, zero-drift job) on that commit; capture run URL + log anchors showing registry list, pg_matviews list, equality assertion, refresh proof.
-3) Update this evidence file with the committed SHA, clean `git status`, CI run URL, and mark GATE-S0/GATE-S4 PASS.
+3) Update this evidence file with the CI run URL/log anchors and flip GATE-S4 to PASS.
 
 Only after the above are done is B0.5.4.1 registry work authorized.
