@@ -708,3 +708,57 @@ jobs:
             exit 1
           fi
           echo "Model generation successful"
+
+  zero-drift:
+    name: Zero-Drift v3.2 CI Truth Layer
+    runs-on: ubuntu-latest
+    needs: checkout
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGSUPER_USER: postgres
+      PGSUPER_PASS: postgres
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      ZG_BEAT_TEST_INTERVAL_SECONDS: 1
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run Zero-Drift harness
+        env:
+          DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_zg_fresh
+          CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_zg_fresh
+          CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_zg_fresh
+        run: |
+          chmod +x scripts/ci/zero_drift_v3_2.sh
+          bash scripts/ci/zero_drift_v3_2.sh
