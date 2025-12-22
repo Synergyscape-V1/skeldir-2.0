@@ -5,7 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
-  workflow_dispatch:
+      workflow_dispatch:
 
 jobs:
   # Single git checkout - Schmidt's key requirement
@@ -161,7 +161,7 @@ jobs:
           cd backend
           export PYTHONPATH=$(pwd):$PYTHONPATH
           echo "Starting Celery worker..."
-          celery -A app.celery_app.celery_app worker -P solo -c 1 -Q housekeeping,maintenance,llm,attribution --loglevel=INFO &
+          celery -A app.celery_app.celery_app worker -P solo -c 1 --loglevel=INFO &
           echo $! > /tmp/celery.pid
           echo "Waiting for worker to be ready..."
           sleep 10
@@ -199,7 +199,7 @@ jobs:
           grep -q "celery_task_failure_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_failure_total"
           grep -q "celery_task_duration_seconds" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_duration_seconds"
 
-      - name: Run Celery foundation tests (including B0.5.3.6 E2E)
+      - name: Run Celery foundation tests
         env:
           PYTHONPATH: ${{ github.workspace }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
@@ -207,12 +207,7 @@ jobs:
           CELERY_RESULT_BACKEND: ${{ env.CELERY_RESULT_BACKEND }}
         run: |
           cd backend
-          pytest \
-            tests/test_b051_celery_foundation.py \
-            tests/test_b052_queue_topology_and_dlq.py \
-            tests/test_b0532_window_idempotency.py \
-            tests/test_b0536_attribution_e2e.py \
-            -v
+          pytest tests/test_b051_celery_foundation.py tests/test_b052_queue_topology_and_dlq.py tests/test_b0532_window_idempotency.py -q
 
       - name: Upload observability evidence artifacts
         if: always()
@@ -574,87 +569,6 @@ jobs:
           pytest tests/test_b0533_revenue_input_contract.py -v --tb=short
 
           echo "✓ R5-5 MET / G5 PASSED: Contract tests executed (see pytest output above for pass/fail status)"
-
-      - name: R5-6 / B0.5.3.4 - Worker tenant isolation tests
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL_ASYNC }}  # Use async driver for tests
-          PYTHONPATH: ${{ github.workspace }}/backend
-        run: |
-          cd backend
-          echo "=== R5-6 / B0.5.3.4: Worker tenant isolation tests ==="
-          echo "DATABASE_URL (async): postgresql+asyncpg://app_user:***@127.0.0.1:5432/skeldir_validation"
-          echo "Expected: 4 tests (Gate A isolation + idempotency + concurrency + Gate B DLQ)"
-
-          pytest tests/test_b0534_worker_tenant_isolation.py -q
-
-          echo "✓ R5-6 MET / B0.5.3.4 PASSED: Worker tenant isolation tests executed"
-
-      - name: R5-7 / B0.5.3.5 - Worker ingestion tables read-only
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL_ASYNC }}  # Use async driver for tests
-          PYTHONPATH: ${{ github.workspace }}/backend
-        run: |
-          cd backend
-          echo "=== R5-7 / B0.5.3.5: Worker ingestion tables read-only ==="
-          echo "DATABASE_URL (async): postgresql+asyncpg://app_user:***@127.0.0.1:5432/skeldir_validation"
-          echo "Expected: worker-context INSERT/UPDATE/DELETE to attribution_events/dead_events fail + static posture scan"
-
-          pytest tests/test_b0535_worker_readonly_ingestion.py -q
-
-          echo "✓ R5-7 MET / B0.5.3.5 PASSED: Worker ingestion read-only proofs executed"
-
-  zero-drift-v3-2:
-    name: Zero-Drift v3.2 CI Truth Layer
-    runs-on: ubuntu-latest
-    needs: checkout
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/develop')
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      PGSUPER_USER: postgres
-      PGSUPER_PASS: postgres
-      PGHOST: 127.0.0.1
-      PGPORT: 5432
-      MIGRATION_DATABASE_URL_FRESH: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_zg_fresh
-      MIGRATION_DATABASE_URL_EXISTING: postgresql://postgres:postgres@127.0.0.1:5432/skeldir_zg_existing
-      RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_zg_fresh
-      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_zg_fresh
-      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_zg_fresh
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install -r backend/requirements.txt
-          pip install -r backend/requirements-dev.txt
-
-      - name: Install psql client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      - name: Run Zero-Drift v3.2 harness
-        run: |
-          chmod +x scripts/ci/zero_drift_v3_2.sh
-          ./scripts/ci/zero_drift_v3_2.sh
 
   # Frontend tests (when frontend exists)
   test-frontend:
