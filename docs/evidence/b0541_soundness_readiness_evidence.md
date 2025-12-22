@@ -7,13 +7,13 @@
 **0.1 Repo identity (commit under test / CI run)**
 ```
 $ git rev-parse HEAD
-8fa7f8ed0a196b106f81dd102642c125088439b4
+49fe74ff957ce92fbdef48eee20f89cec7542568
 
 $ git status -sb
-## b0540-zero-drift-v3-proofpack
+## main
 
 $ git log -1 --oneline
-8fa7f8e Document CI run and current soundness state
+49fe74f Add Zero-Drift truth-layer job and workflow_dispatch
 ```
 
 **0.2 Environment baseline**
@@ -38,7 +38,7 @@ $ psql -U app_user -d skeldir_validation -c "SELECT current_database(), current_
 ## 1) Hypotheses → Evidence → Adjudication
 
 ### H-REPO-01 — Repo state reproducible
-- Working tree clean at `8fa7f8e...`; evidence captured for this commit and CI run triggered on it.
+- Working tree clean on `main` at `49fe74f...`; evidence captured for this commit and CI run triggered on it.
 - **Adjudication:** REFUTED (clean).
 
 ### H-MIG-01 — Non-empty DB upgrades deterministically to head
@@ -136,15 +136,13 @@ REFRESH MATERIALIZED VIEW
 
 ## 2) Hard Soundness Exit Gates (current status)
 
-- **GATE-S0 Repo truth sealed:** **PASS** — clean tree at `8fa7f8e...` (commit under test).
+- **GATE-S0 Repo truth sealed:** **PASS** — clean tree at `49fe74f...` (commit under test, main).
 - **GATE-S1 Migration determinism on non-empty DB:** **PASS** — scratch DB upgrade succeeds; `null_idempotency_key=0`; RLS re-enabled.
 - **GATE-S2 Refresh executor hardening:** **PASS** — rg shows no unsafe patterns; tests reject malicious identifiers; schema-qualified executor in place.
 - **GATE-S3 Canonical matview contract + refresh privilege:** **PASS** — pg_matviews = canonical 5; unique indexes; refresh as app_user succeeds.
-- **GATE-S4 CI truth-layer validation:** **PARTIAL (policy clarified)** — Zero-Drift job SUCCESS on workflow_dispatch https://github.com/Muk223/skeldir-2.0/actions/runs/20416673326 (commit `a5c5e6d`; job https://github.com/Muk223/skeldir-2.0/actions/runs/20416673326/job/58661362072; log anchor `MATVIEW INVENTORY OK (registry == pg_matviews)` at 2025-12-21T22:23:42Z). Overall workflow failed due to unrelated Playwright/revenue jobs; per S4 definition this does not block, but a main-anchored run is still required.
+- **GATE-S4 CI truth-layer validation:** **PASS** — Zero-Drift job SUCCESS on main workflow_dispatch https://github.com/Muk223/skeldir-2.0/actions/runs/20436762061 (job https://github.com/Muk223/skeldir-2.0/actions/runs/20436762061/job/58719850101; log anchor `MATVIEW INVENTORY OK (registry == pg_matviews)` at 2025-12-22T15:47:07Z). Other jobs failed (Playwright/Revenue), acceptable per S4 definition.
 
 ---
 
 ## 3) Next Required Actions to Exit Soundness Phase
-1) Merge this branch into `main` (PR #10) to anchor soundness artifacts.
-2) Trigger workflow_dispatch on `main`; capture Zero-Drift job SUCCESS + invariant log; record run URL and flip GATE-S4 to PASS per definition.
-3) After GATE-S4 PASS on main, B0.5.4.1 registry work is authorized.
+All soundness gates S0–S4 are now PASS on main; B0.5.4.1 registry work is authorized under the clarified S4 policy (truth-layer success sufficient).
