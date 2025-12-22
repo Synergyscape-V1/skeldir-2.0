@@ -12,50 +12,120 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from celery.schedules import crontab
 from sqlalchemy import text
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from app.celery_app import celery_app
+from app.core.matview_registry import MATERIALIZED_VIEWS
+from app.core.pg_locks import try_acquire_refresh_lock, release_refresh_lock
 from app.db.session import engine, set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.tasks.context import tenant_task
 
 logger = logging.getLogger(__name__)
-
-# Materialized views that require refresh automation
-MATERIALIZED_VIEWS: List[str] = [
-    "mv_channel_performance",
-    "mv_daily_revenue_summary",
-]
+_IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
+_PUBLIC_SCHEMA = _IDENTIFIER_PREPARER.quote_schema("public")
 
 
-async def _refresh_view(view_name: str, task_id: str) -> None:
-    async with engine.begin() as conn:
-        await conn.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view_name}"))
-        logger.info(
-            "matview_refreshed",
-            extra={"view_name": view_name, "task_id": task_id},
+def _validated_matview_identifier(
+    view_name: str, task_id: Optional[str] = None, tenant_id: Optional[UUID] = None
+) -> str:
+    """
+    Validate matview name against registry and return a safely quoted identifier.
+
+    Using IdentifierPreparer prevents SQL injection even if a malicious name is passed
+    in; validation further constrains the surface to the closed registry set.
+    """
+    from app.core.matview_registry import validate_matview_name
+
+    if not validate_matview_name(view_name):
+        logger.error(
+            "matview_refresh_invalid_view_name",
+            extra={
+                "view_name": view_name,
+                "task_id": task_id,
+                "tenant_id": str(tenant_id) if tenant_id else None,
+            },
         )
+        raise ValueError(f"View '{view_name}' not in canonical registry")
+
+    return _IDENTIFIER_PREPARER.quote(view_name)
+
+
+def _qualified_matview_identifier(
+    view_name: str, task_id: Optional[str] = None, tenant_id: Optional[UUID] = None
+) -> str:
+    """
+    Return schema-qualified, safely quoted matview identifier.
+    """
+    quoted_view = _validated_matview_identifier(view_name, task_id=task_id, tenant_id=tenant_id)
+    return f"{_PUBLIC_SCHEMA}.{quoted_view}"
+
+
+async def _refresh_view(view_name: str, task_id: str, tenant_id: Optional[UUID] = None) -> str:
+    """
+    Refresh a single materialized view with advisory lock serialization.
+
+    B0.5.4.0: Added pg_advisory_lock to prevent duplicate execution (G12 remediation).
+
+    Args:
+        view_name: Name of materialized view to refresh
+        task_id: Celery task ID for correlation
+        tenant_id: Optional tenant UUID (None for global refresh)
+
+    Returns:
+        "success" if refreshed, "skipped_already_running" if lock held
+    """
+    qualified_view = _qualified_matview_identifier(view_name, task_id=task_id, tenant_id=tenant_id)
+    async with engine.begin() as conn:
+        # Try to acquire advisory lock
+        acquired = await try_acquire_refresh_lock(conn, view_name, tenant_id)
+        if not acquired:
+            logger.info(
+                "matview_refresh_skipped_already_running",
+                extra={"view_name": view_name, "task_id": task_id, "reason": "lock_held"}
+            )
+            return "skipped_already_running"
+
+        try:
+            # Refresh the view using a schema-qualified, identifier-quoted name to prevent SQL injection
+            await conn.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY " + qualified_view))
+            logger.info(
+                "matview_refreshed",
+                extra={"view_name": view_name, "task_id": task_id},
+            )
+            return "success"
+        finally:
+            # Release lock
+            await release_refresh_lock(conn, view_name, tenant_id)
 
 
 @celery_app.task(
     bind=True,
-    name="app.tasks.maintenance.refresh_all_materialized_views",
+    name="app.tasks.maintenance.refresh_all_matviews_global_legacy",
     routing_key="maintenance.task",
     max_retries=3,
     default_retry_delay=60,
 )
-def refresh_all_materialized_views_task(self) -> Dict[str, str]:
+def refresh_all_matviews_global_legacy(self) -> Dict[str, str]:
     """
-    Refresh configured materialized views. Global (non-tenant) scope.
+    DEPRECATED: Global refresh (non-tenant-scoped).
+
+    B0.5.4.0: This task violates worker-tenant isolation principles by refreshing
+    materialized views without tenant context. Kept for backward compatibility
+    during B0.5.4 transition; scheduled for removal in B0.5.5.
+
+    Use `refresh_matview_for_tenant` for new integrations.
+
+    Marked for removal: B0.5.5
     """
     correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
     set_request_correlation_id(correlation_id)
     results: Dict[str, str] = {}
     try:
         for view_name in MATERIALIZED_VIEWS:
-            asyncio.run(_refresh_view(view_name, self.request.id))
-            results[view_name] = "success"
+            results[view_name] = asyncio.run(_refresh_view(view_name, self.request.id))
         return results
     except Exception as exc:
         logger.error(
@@ -66,6 +136,71 @@ def refresh_all_materialized_views_task(self) -> Dict[str, str]:
         raise self.retry(exc=exc, countdown=60)
     finally:
         set_request_correlation_id(None)
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.refresh_matview_for_tenant",
+    routing_key="maintenance.task",
+    max_retries=3,
+    default_retry_delay=60,
+)
+@tenant_task
+def refresh_matview_for_tenant(self, tenant_id: UUID, view_name: str, correlation_id: Optional[str] = None) -> Dict[str, str]:
+    """
+    Refresh a single materialized view for a specific tenant.
+
+    B0.5.4.0: Tenant-aware refresh API surface. This is the preferred interface
+    for materialized view refresh operations in the worker-tenant isolation model.
+
+    Args:
+        tenant_id: UUID of tenant scope
+        view_name: Name of materialized view to refresh (must be in registry)
+        correlation_id: Optional correlation ID for tracing
+
+    Returns:
+        Dict with status, view_name, tenant_id, and result ("success" or "skipped_already_running")
+
+    Raises:
+        ValueError: If view_name not in canonical registry
+    """
+    from app.core.matview_registry import validate_matview_name
+
+    correlation_id = correlation_id or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    set_tenant_id(tenant_id)
+
+    try:
+        _qualified_matview_identifier(view_name, task_id=self.request.id, tenant_id=tenant_id)
+        result = asyncio.run(_refresh_view(view_name, self.request.id, tenant_id))
+        logger.info(
+            "tenant_matview_refresh_completed",
+            extra={
+                "view_name": view_name,
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                "result": result,
+            },
+        )
+        return {
+            "status": "ok",
+            "view_name": view_name,
+            "tenant_id": str(tenant_id),
+            "result": result,
+        }
+    except Exception as exc:
+        logger.error(
+            "tenant_matview_refresh_failed",
+            exc_info=exc,
+            extra={
+                "view_name": view_name,
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+            },
+        )
+        raise self.retry(exc=exc, countdown=60)
 
 
 async def _validate_db_connection_for_tenant(tenant_id: UUID) -> str:
@@ -164,23 +299,3 @@ def enforce_data_retention_task(self, tenant_id: UUID, correlation_id: Optional[
             extra={"tenant_id": str(tenant_id), "task_id": self.request.id, "correlation_id": correlation_id},
         )
         raise self.retry(exc=exc, countdown=60)
-
-
-# Celery Beat schedule configuration (reference)
-BEAT_SCHEDULE = {
-    "refresh-matviews-every-5-min": {
-        "task": "app.tasks.maintenance.refresh_all_materialized_views",
-        "schedule": 300.0,  # 5 minutes
-        "options": {"expires": 300},
-    },
-    "pii-audit-scanner": {
-        "task": "app.tasks.maintenance.scan_for_pii_contamination",
-        "schedule": crontab(hour=4, minute=0),
-        "options": {"expires": 3600},
-    },
-    "enforce-data-retention": {
-        "task": "app.tasks.maintenance.enforce_data_retention",
-        "schedule": crontab(hour=3, minute=0),
-        "options": {"expires": 3600},
-    },
-}

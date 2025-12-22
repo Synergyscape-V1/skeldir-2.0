@@ -143,8 +143,8 @@ def upgrade() -> None:
     
     op.execute("""
         CREATE POLICY tenant_isolation_policy ON revenue_state_transitions
-            USING (tenant_id = current_setting('app.current_tenant_id')::UUID)
-            WITH CHECK (tenant_id = current_setting('app.current_tenant_id')::UUID)
+            USING (tenant_id = current_setting('app.current_tenant_id', true)::UUID)
+            WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::UUID)
     """)
     
     op.execute("""

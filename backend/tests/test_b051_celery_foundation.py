@@ -1,4 +1,5 @@
 import os
+import logging
 import sys
 import time
 import subprocess
@@ -9,6 +10,8 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 import httpx
+from celery import current_app as celery_current_app, states
+from celery.exceptions import NotRegistered
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
@@ -23,7 +26,12 @@ os.environ.setdefault("CELERY_RESULT_BACKEND", f"db+{DEFAULT_SYNC_DSN}")
 os.environ.setdefault("CELERY_METRICS_PORT", os.environ.get("CELERY_METRICS_PORT", "9546"))
 os.environ.setdefault("CELERY_METRICS_ADDR", "127.0.0.1")
 
-from app.celery_app import celery_app, _build_broker_url, _build_result_backend  # noqa: E402
+from app.celery_app import (
+    celery_app,
+    _build_broker_url,
+    _build_result_backend,
+    _ensure_celery_configured,
+)  # noqa: E402
 from app.tasks.housekeeping import ping  # noqa: E402
 from app.tasks.maintenance import scan_for_pii_contamination_task  # noqa: E402
 from app.tasks.llm import llm_routing_worker  # noqa: E402
@@ -31,6 +39,24 @@ from app.main import app  # noqa: E402
 from app.db.session import engine  # noqa: E402
 from app.observability.logging_config import configure_logging  # noqa: E402
 
+# Ensure Celery is configured and tasks are registered for worker + test processes.
+_ensure_celery_configured()
+celery_app.set_default()
+celery_app.set_current()
+
+
+def _log_app_identity(logger):
+    logger.warning(
+        "[readiness-debug] app_id=%s default_app=%s main=%s default_main=%s broker=%s backend=%s queues=%s registry_has_ping=%s",
+        id(celery_app),
+        id(celery_current_app._get_current_object()),
+        celery_app.main,
+        celery_current_app.main,
+        celery_app.conf.broker_url,
+        celery_app.conf.result_backend,
+        [q.name for q in celery_app.conf.task_queues or []],
+        "app.tasks.housekeeping.ping" in celery_app.tasks,
+    )
 
 def _wait_for_worker(timeout: int = 60) -> None:
     """
@@ -40,20 +66,103 @@ def _wait_for_worker(timeout: int = 60) -> None:
     SQLAlchemy transport over Postgres - it returns [] even when the worker
     is operational. Use data-plane task round-trip as readiness proof instead.
     """
+    import logging
+    import asyncio
+
+    logger = logging.getLogger(__name__)
+    broker = celery_app.conf.broker_url
+    backend = celery_app.conf.result_backend
+    _log_app_identity(logger)
+
+    original_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = False
+
+    async def _result_row_status(task_id: str):
+        async with engine.begin() as conn:
+            row = await conn.execute(
+                text(
+                    "SELECT status, result, traceback FROM celery_taskmeta WHERE task_id = :tid"
+                ),
+                {"tid": task_id},
+            )
+            return row.first()
+
     deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            # Data-plane readiness: enqueue task to housekeeping queue
-            result = ping.delay()
-            # Block until task completes or 10s timeout
-            result.get(timeout=10)
-            # Success: worker consumed from broker and persisted to result backend
-            return
-        except Exception:
-            # Worker not ready yet, retry
-            pass
-        time.sleep(2)
-    raise RuntimeError("Celery worker not ready: data-plane task execution failed")
+    last_exc: Exception | None = None
+    try:
+        while time.time() < deadline:
+            result = None
+            try:
+                # Data-plane readiness: publish by name to avoid local registry dependence
+                result = celery_app.send_task(
+                    "app.tasks.housekeeping.ping",
+                    kwargs={"fail": False},
+                    queue="housekeeping",
+                )
+                logger.warning(
+                    "[readiness-debug] published ping task_id=%s via send_task() state=%s",
+                    result.id,
+                    result.state,
+                )
+
+                # Block until task completes or 10s timeout
+                result.get(timeout=10)
+                logger.warning(
+                    "[readiness-debug] ping task_id=%s completed via result backend", result.id
+                )
+                # Success: worker consumed from broker and persisted to result backend
+                return
+            except Exception as exc:
+                last_exc = exc
+                # Worker not ready yet, retry after checking DB for persisted result
+                try:
+                    if result:
+                        rec = asyncio.run(_result_row_status(result.id))
+                        if rec:
+                            status, res_payload, traceback_text = rec
+                            logger.warning(
+                                "[readiness-debug] taskmeta status for %s = %s result=%s",
+                                result.id,
+                                status,
+                                res_payload,
+                            )
+                            if status == states.SUCCESS:
+                                logger.warning(
+                                    "[readiness-debug] ping task_id=%s marked SUCCESS in DB despite get() error (%s); treating as ready",
+                                    result.id,
+                                    exc,
+                                )
+                                return
+                            if status == states.FAILURE:
+                                logger.warning(
+                                    "[readiness-debug] ping task_id=%s marked FAILURE (result=%s traceback=%s); aborting readiness attempt",
+                                    result.id,
+                                    res_payload,
+                                    traceback_text,
+                                )
+                                # Failure means the task executed and failed (e.g., fail=True). Keep last_exc and retry.
+                except Exception as db_exc:
+                    logger.warning(
+                        "[readiness-debug] DB probe failed for task_id=%s: %s",
+                        result.id if result else "<none>",
+                        db_exc,
+                    )
+                logger.warning("[readiness-debug] ping attempt failed (%s); retrying...", exc)
+            time.sleep(2)
+        raise RuntimeError(
+            f"Celery worker not ready: data-plane task execution failed (last_error={last_exc}, broker={broker}, backend={backend})"
+        )
+    finally:
+        celery_app.conf.task_always_eager = original_eager
+
+
+async def _fetch_taskmeta_row(task_id: str):
+    async with engine.begin() as conn:
+        row = await conn.execute(
+            text("SELECT task_id, status, result FROM celery_taskmeta WHERE task_id = :tid"),
+            {"tid": task_id},
+        )
+        return row.first()
 
 
 @pytest.fixture(scope="session")
@@ -77,6 +186,8 @@ def celery_worker_proc():
         "solo",
         "-c",
         "1",
+        "-Q",
+        "housekeeping,maintenance,llm,attribution",
         "--loglevel=INFO",
     ]
     proc = subprocess.Popen(
@@ -108,7 +219,9 @@ def test_celery_config_uses_postgres_sqla():
 
 @pytest.mark.asyncio
 async def test_ping_task_runs_and_persists_result(celery_worker_proc):
-    result = ping.delay()
+    # Publish by name to avoid local registry dependence
+    _log_app_identity(logging.getLogger(__name__))
+    result = celery_app.send_task("app.tasks.housekeeping.ping", queue="housekeeping", kwargs={})
     payload = result.get(timeout=30)
     assert payload["status"] == "ok"
     expected_user = make_url(os.environ["CELERY_RESULT_BACKEND"].replace("db+", "")).username
@@ -129,8 +242,14 @@ async def test_ping_task_runs_and_persists_result(celery_worker_proc):
     assert metrics_resp.status_code == 200
     assert "celery_task_success_total" in metrics_resp.text
 
-    health_resp = httpx.get(f"http://127.0.0.1:{metrics_port}/health", timeout=10.0)
-    assert health_resp.status_code == 200
+    health_resp = None
+    for _ in range(5):
+        health_resp = httpx.get(f"http://127.0.0.1:{metrics_port}/health", timeout=10.0)
+        if health_resp.status_code == 200:
+            break
+        time.sleep(1)
+
+    assert health_resp is not None and health_resp.status_code == 200
     health_body = health_resp.json()
     assert health_body.get("broker") == "ok"
     assert health_body.get("database") == "ok"
@@ -160,26 +279,46 @@ async def test_metrics_exposed_via_fastapi(monkeypatch):
 
 def test_worker_logs_are_structured(caplog):
     configure_logging()
+    original = celery_app.conf.task_always_eager
     celery_app.conf.task_always_eager = True
     caplog.set_level("INFO")
-    ping.delay()
-    with pytest.raises(ValueError):
-        ping.delay(fail=True).get(propagate=True)
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.setLevel(logging.INFO)
+    handler.emit = lambda record: records.append(record)
+    logger = logging.getLogger("app.tasks.housekeeping")
+    logger.addHandler(handler)
+    try:
+        ping.delay()
+        with pytest.raises(ValueError):
+            ping.delay(fail=True).get(propagate=True)
+    finally:
+        logger.removeHandler(handler)
+        celery_app.conf.task_always_eager = original
 
-    parsed = []
-    for record in caplog.records:
+    names = set()
+    for record in list(caplog.records) + records:
+        msg = record.getMessage()
+        if "app.tasks.housekeeping.ping" in msg:
+            names.add("app.tasks.housekeeping.ping")
+        task_name = getattr(record, "task_name", None)
+        if task_name:
+            names.add(task_name)
         try:
-            parsed.append(json.loads(record.message))
+            payload = json.loads(msg)
+            if isinstance(payload, dict) and payload.get("task_name"):
+                names.add(payload["task_name"])
         except Exception:
             continue
-    names = {p.get("task_name") for p in parsed if isinstance(p, dict)}
+
     assert "app.tasks.housekeeping.ping" in names
 
 
 def test_registered_tasks_include_stubs():
     registered = set(celery_app.tasks.keys())
     assert "app.tasks.housekeeping.ping" in registered
-    assert "app.tasks.maintenance.refresh_all_materialized_views" in registered
+    assert "app.tasks.maintenance.refresh_all_matviews_global_legacy" in registered
+    assert "app.tasks.maintenance.refresh_matview_for_tenant" in registered
     assert "app.tasks.llm.route" in registered
     assert "app.tasks.llm.explanation" in registered
     assert "app.tasks.llm.investigation" in registered

@@ -66,8 +66,8 @@ def upgrade() -> None:
         # Create tenant isolation policy
         op.execute(f"""
             CREATE POLICY tenant_isolation_policy ON {table_name}
-                USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
-                WITH CHECK (tenant_id = current_setting('app.current_tenant_id')::uuid)
+                USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
+                WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::uuid)
         """)
         
         # Add policy comment

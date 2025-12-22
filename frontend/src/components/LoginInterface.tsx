@@ -7,20 +7,8 @@ import { Eye, EyeOff, AlertCircle, CheckCircle, Loader2, Shield, ShieldCheck, Sh
 import { useLogin } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
 import type { PasswordStrength } from "@shared/schema";
-import skelditLogo from "@assets/Skeldir Logo (no background)_1759004645592.png";
-import Skeldir_Logo_V3 from "@assets/Skeldir Logo V3.png";
-
-import Skeldir_Logo_V4 from "@assets/Skeldir Logo V4.png";
-
-import Skeldir_Logo_V5 from "@assets/Skeldir Logo V5.png";
-
-import Skeldir_Logo_V6 from "@assets/Skeldir Logo V6.png";
-
-import _2573a716_13f7_4ceb_a8d3_b100edc9d516 from "@assets/2573a716-13f7-4ceb-a8d3-b100edc9d516.png";
-
-import Final_Skeldir_Logo from "@assets/Final Skeldir Logo.png";
-
-import Final_Skeldir_Logo__Black_wording_ from "@assets/Final Skeldir Logo (Black wording).png";
+import skeldirLogoShield from "@assets/brand/logo-shield.png";
+import skeldirLogoSvg from "@assets/brand/logo.svg";
 
 interface EmailValidationState {
   isValid: boolean;
@@ -253,20 +241,22 @@ export default function LoginInterface() {
           <div className="relative inline-block cursor-pointer hover:opacity-80 transition-opacity duration-200"
                onClick={() => window.location.href = '/'}>
             <img 
-              src={Final_Skeldir_Logo__Black_wording_}
+              src={skeldirLogoShield}
               alt="Skeldir Logo"
-              className="block w-[90px] md:w-[99px] h-auto"
+              className="block w-[90px] md:w-[99px] h-auto drop-shadow-md"
               onError={() => setLogoError(true)}
               data-testid="logo-skeldir"
             />
           </div>
         ) : (
-          <div 
-            className="flex items-center justify-center h-8 w-auto min-w-[90px] px-3 bg-white/90 backdrop-blur-md border border-white/40 rounded cursor-pointer hover:opacity-80 transition-all duration-200"
-            onClick={() => window.location.href = '/'}
-            data-testid="logo-skeldir-fallback"
-          >
-            <span className="text-gray-800 font-semibold text-sm tracking-wide">Skeldir</span>
+          <div className="relative inline-block cursor-pointer hover:opacity-80 transition-opacity duration-200"
+               onClick={() => window.location.href = '/'}>
+            <img 
+              src={skeldirLogoSvg}
+              alt="Skeldir Logo"
+              className="block w-[90px] md:w-[99px] h-auto"
+              data-testid="logo-skeldir-fallback"
+            />
           </div>
         )}
       </div>

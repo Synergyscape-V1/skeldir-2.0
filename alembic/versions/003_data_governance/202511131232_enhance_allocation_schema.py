@@ -47,7 +47,7 @@ def upgrade() -> None:
     # Add allocation_ratio column
     op.execute("""
         ALTER TABLE attribution_allocations
-            ADD COLUMN allocation_ratio numeric(6,5) NOT NULL DEFAULT 0.0
+            ADD COLUMN IF NOT EXISTS allocation_ratio numeric(6,5) NOT NULL DEFAULT 0.0
     """)
     
     op.execute("""
@@ -64,7 +64,7 @@ def upgrade() -> None:
     # Add model_version column
     op.execute("""
         ALTER TABLE attribution_allocations
-            ADD COLUMN model_version text NOT NULL DEFAULT 'unknown'
+            ADD COLUMN IF NOT EXISTS model_version text NOT NULL DEFAULT 'unknown'
     """)
     
     op.execute("""

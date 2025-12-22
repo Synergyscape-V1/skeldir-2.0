@@ -1,9 +1,15 @@
+import { useState } from "react";
 import { useSidebar } from "@/components/ui/sidebar";
-import Final_Skeldir_Logo__image_alone_ from "@assets/Final Skeldir Logo (image alone).png";
+import skeldirLogoShield from "@assets/brand/logo-shield.png";
+import skeldirLogoSvg from "@assets/brand/logo.svg";
 
 export function SidebarBranding() {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const [logoError, setLogoError] = useState(false);
+
+  // Use PNG shield logo, fallback to SVG if error
+  const logoSrc = logoError ? skeldirLogoSvg : skeldirLogoShield;
 
   return (
     <div className="relative h-16 overflow-visible flex items-center justify-center">
@@ -24,11 +30,12 @@ export function SidebarBranding() {
           }}
         >
           <img 
-            src={Final_Skeldir_Logo__image_alone_} 
+            src={logoSrc} 
             alt={isCollapsed ? "Skeldir" : ""} 
             aria-hidden={!isCollapsed}
             className="object-contain"
             style={{ width: '34px', height: '34px' }}
+            onError={() => setLogoError(true)}
           />
         </div>
       </div>
@@ -40,24 +47,19 @@ export function SidebarBranding() {
         data-testid="logo-sidebar-expanded"
       >
         <div 
-          className="flex items-center gap-2 dashboard-logo"
+          className="flex items-center dashboard-logo"
           style={{
             filter: 'var(--dash-logo-glow)',
             transition: 'filter 300ms ease'
           }}
         >
           <img 
-            src={Final_Skeldir_Logo__image_alone_} 
+            src={logoSrc} 
             alt={!isCollapsed ? "Skeldir Logo" : ""} 
             aria-hidden={isCollapsed}
-            className="h-10 w-auto object-contain"
+            className="h-12 w-auto object-contain"
+            onError={() => setLogoError(true)}
           />
-          <span 
-            className="text-lg font-bold tracking-tight"
-            style={{ color: 'hsl(var(--brand-cool-black))' }}
-          >
-            SKELDIR
-          </span>
         </div>
       </div>
     </div>

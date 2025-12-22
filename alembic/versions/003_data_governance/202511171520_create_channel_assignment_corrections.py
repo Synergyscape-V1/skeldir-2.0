@@ -90,8 +90,8 @@ def upgrade() -> None:
     # Step 4: Create RLS policy for tenant isolation
     op.execute("""
         CREATE POLICY tenant_isolation_policy ON channel_assignment_corrections
-        USING (tenant_id = current_setting('app.current_tenant_id')::UUID)
-        WITH CHECK (tenant_id = current_setting('app.current_tenant_id')::UUID)
+        USING (tenant_id = current_setting('app.current_tenant_id', true)::UUID)
+        WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true)::UUID)
     """)
     
     op.execute("""

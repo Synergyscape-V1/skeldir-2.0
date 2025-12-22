@@ -1,10 +1,14 @@
-import backgroundImage from "@assets/5594016_1758830475467.jpg";
+import { useState } from 'react';
+import geometricBg from '@assets/backgrounds/geometric-light.png';
 
 interface GeometricBackgroundProps {
   className?: string;
 }
 
 export default function GeometricBackground({ className = "" }: GeometricBackgroundProps) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
   return (
     <>
       <div 
@@ -12,14 +16,28 @@ export default function GeometricBackground({ className = "" }: GeometricBackgro
         aria-hidden="true"
         data-testid="geometric-background"
       >
-        {/* Background image */}
+        {/* Background image with gradient fallback */}
+        {!imageError && (
+          <img
+            src={geometricBg}
+            alt=""
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
+            onLoad={() => setImageLoaded(true)}
+            onError={() => setImageError(true)}
+          />
+        )}
+        
+        {/* Gradient fallback (shown while loading or on error) */}
         <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: `url(${backgroundImage})` }}
+          className={`absolute inset-0 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-blue-950 dark:to-indigo-950 transition-opacity duration-500 ${
+            imageLoaded && !imageError ? 'opacity-0' : 'opacity-100'
+          }`}
         />
         
-        {/* Optional dark overlay for better text readability */}
-        <div className="absolute inset-0 bg-black/20 dark:bg-black/40" />
+        {/* Subtle overlay for text readability (only in dark mode) */}
+        <div className="absolute inset-0 bg-transparent dark:bg-black/30" />
         
         {/* Animated geometric shapes */}
         <div className="absolute inset-0">

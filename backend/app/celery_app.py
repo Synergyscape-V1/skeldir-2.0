@@ -152,6 +152,22 @@ def _ensure_celery_configured():
         task_default_exchange='tasks',
         task_default_routing_key='housekeeping.task',
     )
+
+    # B0.5.4.0: Load Beat schedule (closes G11 drift - beat not deployed)
+    from app.tasks.beat_schedule import BEAT_SCHEDULE
+    celery_app.conf.beat_schedule = BEAT_SCHEDULE
+
+    logger.info(
+        "celery_app_configured",
+        extra={
+            "broker_url": celery_app.conf.broker_url,
+            "result_backend": celery_app.conf.result_backend,
+            "queues": [q.name for q in celery_app.conf.task_queues],
+            "beat_schedule_loaded": bool(celery_app.conf.beat_schedule),
+            "scheduled_tasks": list(celery_app.conf.beat_schedule.keys()) if celery_app.conf.beat_schedule else [],
+            "app_name": celery_app.main,
+        },
+    )
     _celery_configured = True
 
 
@@ -334,6 +350,12 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
                     correlation_id = UUID(str(correlation_id_val))
                 except (ValueError, TypeError):
                     pass
+        # Correlation must be present for DLQ diagnostics; fall back to task_id when missing.
+        if correlation_id is None and task_id:
+            try:
+                correlation_id = UUID(str(task_id))
+            except (ValueError, TypeError):
+                correlation_id = None
 
         # B0.5.3.1: Convert UUIDs to strings for JSON serialization
         def _serialize_for_json(obj):
@@ -411,3 +433,7 @@ __all__ = ["celery_app", "_build_broker_url", "_build_result_backend", "_ensure_
 # Tasks are discovered via `include` config in _ensure_celery_configured() - no need for eager imports
 # Module-level imports caused: conftest → celery_app → tasks.housekeeping → psycopg2 → DB connection
 # during pytest COLLECTION (before DATABASE_URL validation), causing auth failures with stale .env creds
+
+# Ensure the Celery app is configured whenever this module is imported (worker or test process).
+# This remains safe because _ensure_celery_configured() is idempotent and tests set env vars before import.
+_ensure_celery_configured()

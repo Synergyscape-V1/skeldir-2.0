@@ -195,23 +195,52 @@ export function useLogin() {
   const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
 
+  // Memoize clearError to prevent infinite effect loops in consumers
+  const clearError = useCallback(() => setError(null), []);
+
   const performLogin = useCallback(async (email: string, password: string, rememberMe: boolean = false) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const { authService } = await import('@/api/services/auth-client');
-      const response = await authService.login({ email, password });
-
-      // B0.2 contract: login response REQUIRES access_token, refresh_token, expires_in
-      // 'user' is optional - if not provided, we synthesize it from login email
-      const responseData = response.data as {
+      // DEV MODE: If no backend is available, use mock authentication
+      // This allows testing the UI flow without a running backend
+      const useMockAuth = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_AUTH !== 'false';
+      
+      let responseData: {
         access_token: string;
         refresh_token: string;
         expires_in: number;
         token_type?: string;
         user?: { id: string; email: string; username: string };
       };
+
+      if (useMockAuth) {
+        // Mock authentication for development
+        console.log('[useLogin] Using mock authentication (DEV mode)');
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
+        
+        // Accept any email/password in dev mode
+        responseData = {
+          access_token: 'mock_access_token_' + Date.now(),
+          refresh_token: 'mock_refresh_token_' + Date.now(),
+          expires_in: 3600,
+          token_type: 'Bearer',
+          user: {
+            id: 'mock-user-' + Date.now(),
+            email: email,
+            username: email.split('@')[0],
+          },
+        };
+      } else {
+        // Production: Use real API
+        const { authService } = await import('@/api/services/auth-client');
+        const response = await authService.login({ email, password });
+        responseData = response.data as typeof responseData;
+      }
+
+      // B0.2 contract: login response REQUIRES access_token, refresh_token, expires_in
+      // 'user' is optional - if not provided, we synthesize it from login email
       
       // Validate B0.2 required fields: access_token, refresh_token, expires_in
       // Surface explicit errors via UI state (consumed by toast in LoginInterface)
@@ -274,6 +303,6 @@ export function useLogin() {
     login: performLogin,
     isLoading,
     error,
-    clearError: () => setError(null),
+    clearError,
   };
 }

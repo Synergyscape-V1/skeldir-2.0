@@ -21,12 +21,19 @@ if config.config_file_name is not None:
 
 # Get database URL from environment variable
 # This ensures no hardcoded credentials in the codebase
-database_url = os.environ.get("DATABASE_URL")
+migration_database_url = os.environ.get("MIGRATION_DATABASE_URL")
+database_url = migration_database_url or os.environ.get("DATABASE_URL")
 if not database_url:
     raise ValueError(
-        "DATABASE_URL environment variable is required. "
+        "MIGRATION_DATABASE_URL (preferred) or DATABASE_URL environment variable is required. "
         "Set it to your PostgreSQL connection string, e.g., "
-        "postgresql://user:password@localhost:5432/skeldir"
+        "postgresql://migration_role:password@localhost:5432/skeldir"
+    )
+if "postgresql+asyncpg://" in database_url:
+    raise ValueError(
+        "Async driver detected in DATABASE_URL/MIGRATION_DATABASE_URL "
+        "(postgresql+asyncpg://). Alembic requires a sync driver "
+        "(postgresql://user:password@host:port/dbname)."
     )
 
 # Override sqlalchemy.url with environment variable
@@ -94,7 +101,6 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
 
 
 

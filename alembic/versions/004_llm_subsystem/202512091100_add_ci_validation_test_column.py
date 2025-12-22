@@ -17,14 +17,14 @@ depends_on = None
 
 
 def upgrade():
-    # EMPIRICAL VALIDATION TEST: Add harmless test column to llm_inference_cache
+    # EMPIRICAL VALIDATION TEST: Add harmless test column to explanation_cache
     # This migration serves to validate:
     # 1. GitHub Actions automatically triggers on schema changes
     # 2. Migration deploys to Neon production
     # 3. CI audit logs capture the deployment
     
     op.add_column(
-        'llm_inference_cache',
+        'explanation_cache',
         sa.Column(
             'ci_validation_test',
             sa.Boolean(),
@@ -37,4 +37,4 @@ def upgrade():
 
 def downgrade():
     # Remove test column
-    op.drop_column('llm_inference_cache', 'ci_validation_test')
+    op.drop_column('explanation_cache', 'ci_validation_test')

@@ -25,6 +25,7 @@ venv/
 ENV/
 env/
 backend/.venv/
+backend/.venv311/
 backend/venv/
 backend/ENV/
 backend/env/
@@ -139,3 +140,10 @@ Videos/
 .void-editor/
 .vscode/extensions/
 .cursor/extensions/
+
+# Local-only artifacts
+tmp/
+backend/celerybeat-schedule.*
+docs/NUL
+NUL
+backend/.venv311/

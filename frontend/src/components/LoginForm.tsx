@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Eye, EyeOff, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { useLogin } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
-import skeldir_logo from "@assets/Skeldir Logo (no background)_1759004645592.png";
+import skeldirLogoShield from "@assets/brand/logo-shield.png";
 
 export default function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
@@ -57,7 +57,7 @@ export default function LoginForm() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-2xl" style={{ background: "rgba(255, 255, 255, 0.2)", backdropFilter: "blur(10px)", border: "1px solid rgba(255, 255, 255, 0.3)" }}>
         <CardHeader className="text-center pb-6">
-          <img src={skeldir_logo} alt="Skeldir" className="h-16 w-auto mx-auto mb-4" data-testid="img-skeldir-logo" />
+          <img src={skeldirLogoShield} alt="Skeldir" className="h-16 w-auto mx-auto mb-4 drop-shadow-md" data-testid="img-skeldir-logo" />
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Welcome Back</h1>
           <p className="text-gray-600 dark:text-gray-300">Sign in to your account</p>
         </CardHeader>

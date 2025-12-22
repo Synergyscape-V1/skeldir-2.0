@@ -5,7 +5,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "202512120900"
-down_revision = None
+down_revision = "202511131121"  # EG-1B: Depend on core schema (tenants table exists)
 branch_labels = ("celery_foundation",)
 depends_on = None
 

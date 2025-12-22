@@ -23,7 +23,7 @@ os.environ.setdefault("DATABASE_URL", DEFAULT_ASYNC_DSN)
 
 from app.celery_app import celery_app
 from app.tasks.housekeeping import ping
-from app.tasks.maintenance import refresh_all_materialized_views_task
+from app.tasks.maintenance import refresh_all_matviews_global_legacy
 from app.tasks.llm import llm_routing_worker
 from app.tasks.attribution import recompute_window
 from app.db.session import engine
@@ -68,7 +68,8 @@ class TestQueueTopology:
         # B0.5.1 baseline tasks + B0.5.3.1 attribution task
         expected_tasks = {
             "app.tasks.housekeeping.ping",
-            "app.tasks.maintenance.refresh_all_materialized_views",
+            "app.tasks.maintenance.refresh_all_matviews_global_legacy",
+            "app.tasks.maintenance.refresh_matview_for_tenant",
             "app.tasks.maintenance.scan_for_pii_contamination",
             "app.tasks.maintenance.enforce_data_retention",
             "app.tasks.llm.route",
@@ -85,7 +86,7 @@ class TestQueueTopology:
         """Validate tasks route to expected queues deterministically."""
         # Get routing info for sample tasks
         housekeeping_route = celery_app.tasks["app.tasks.housekeeping.ping"].routing_key
-        maintenance_route = celery_app.tasks["app.tasks.maintenance.refresh_all_materialized_views"].routing_key
+        maintenance_route = celery_app.tasks["app.tasks.maintenance.refresh_all_matviews_global_legacy"].routing_key
         llm_route = celery_app.tasks["app.tasks.llm.route"].routing_key
         attribution_route = celery_app.tasks["app.tasks.attribution.recompute_window"].routing_key
 
