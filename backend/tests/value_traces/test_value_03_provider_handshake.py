@@ -17,6 +17,7 @@ import yaml
 EVIDENCE_JSON = Path("backend/validation/evidence/value_traces/value_03_summary.json")
 EVIDENCE_MD = Path("docs/evidence/value_traces/value_03_provider_handshake.md")
 CONTRACT_PATH = Path("api-contracts/dist/openapi/v1/llm-explanations.bundled.yaml")
+ENDPOINT_PATH = "/api/v1/explain/{entity_type}/{entity_id}"
 
 
 def _load_contract() -> Dict[str, Any]:
@@ -29,10 +30,10 @@ def _load_contract() -> Dict[str, Any]:
 @pytest.mark.asyncio
 async def test_value_trace_provider_handshake_fields_present_and_valid():
     spec = _load_contract()
-    path_obj = spec["paths"]["/api/llm/explanations"]
-    post_op = path_obj.get("post") or path_obj.get("get") or {}
+    path_obj = spec["paths"][ENDPOINT_PATH]
+    operation = path_obj.get("get") or path_obj.get("post") or {}
     resp_schema = (
-        post_op.get("responses", {})
+        operation.get("responses", {})
         .get("200", {})
         .get("content", {})
         .get("application/json", {})
@@ -42,7 +43,7 @@ async def test_value_trace_provider_handshake_fields_present_and_valid():
     assert "cost_usd" in props, "cost_usd field missing from contract"
     assert "latency_ms" in props, "latency_ms field missing from contract"
 
-    parameters = post_op.get("parameters", [])
+    parameters = operation.get("parameters", [])
     timeout_param = next(
         (
             param

@@ -60,6 +60,7 @@ async def test_value_trace_revenue_mismatch_resolves_to_verified_amount():
                 """
             )
         )
+        # RAW_SQL_ALLOWLIST: value trace revenue ledger seed
         await conn.execute(
             text(
                 """
@@ -68,7 +69,7 @@ async def test_value_trace_revenue_mismatch_resolves_to_verified_amount():
                     verification_source, verification_timestamp, metadata
                 ) VALUES (
                     :id, :tenant_id, :tx, 'captured', :amount, 'USD',
-                    'webhook', :ts, :metadata::jsonb
+                    'webhook', :ts, CAST(:metadata_payload AS JSONB)
                 )
                 """
             ),
@@ -78,7 +79,7 @@ async def test_value_trace_revenue_mismatch_resolves_to_verified_amount():
                 "tx": transaction_id,
                 "amount": verified_cents,
                 "ts": now,
-                "metadata": json.dumps(
+                "metadata_payload": json.dumps(
                     {
                         "claimed_cents": claimed_cents,
                         "source": "platform_claim",
