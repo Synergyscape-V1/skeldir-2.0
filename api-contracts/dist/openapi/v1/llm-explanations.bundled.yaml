@@ -51,6 +51,14 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: timeout_ms
+          in: query
+          required: false
+          description: Optional timeout budget for the LLM request in milliseconds
+          schema:
+            type: integer
+            minimum: 100
+            maximum: 20000
         - name: X-Correlation-ID
           in: header
           required: true
@@ -82,6 +90,8 @@ paths:
                   - citations
                   - confidence
                   - generated_at
+                  - cost_usd
+                  - latency_ms
                 properties: &ref_3
                   explanation:
                     type: string
@@ -122,12 +132,15 @@ paths:
                     type: string
                     format: date-time
                     description: ISO 8601 timestamp when explanation was generated
-                  cost_cents:
+                  cost_usd:
                     type: number
                     format: float
-                    description: LLM API cost for this explanation (internal tracking)
-                    example: 1.8
-                    x-internal: true
+                    description: LLM API cost for this explanation (USD)
+                    example: 0.0123
+                  latency_ms:
+                    type: integer
+                    description: Total request latency in milliseconds
+                    example: 120
               example:
                 explanation: Your Facebook ROAS of $3.20 indicates strong performance because you have 90 days of stable conversion data with narrow confidence bounds ($2.95-$3.45). This outperforms your Google Ads ROAS of $2.10 by 52%.
                 citations:

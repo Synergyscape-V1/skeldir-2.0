@@ -67,3 +67,51 @@ phases:
     exit_gates:
       - migrations
       - ingestion_soundness
+
+  - id: VALUE_01
+    intent: "Value Trace 01 - Penny-perfect revenue verification (claimed vs verified)."
+    prerequisites: ["B0.4"]
+    ci_gate:
+      job_name: gate-value-01
+      command: ["python", "scripts/phase_gates/value_01_gate.py"]
+      artifacts:
+        - backend/validation/evidence/value_traces/value_01_summary.json
+        - docs/evidence/value_traces/value_01_revenue_trace.md
+    exit_gates:
+      - revenue_trace
+
+  - id: VALUE_02
+    intent: "Value Trace 02 - Constraint guard/bypass prevention."
+    prerequisites: ["SCHEMA_GUARD"]
+    ci_gate:
+      job_name: gate-value-02
+      command: ["python", "scripts/phase_gates/value_02_gate.py"]
+      artifacts:
+        - backend/validation/evidence/value_traces/value_02_summary.json
+        - docs/evidence/value_traces/value_02_constraint_trace.md
+    exit_gates:
+      - constraint_trace
+
+  - id: VALUE_03
+    intent: "Value Trace 03 - Provider-agnostic LLM handshake contract validity."
+    prerequisites: ["B0.1"]
+    ci_gate:
+      job_name: gate-value-03
+      command: ["python", "scripts/phase_gates/value_03_gate.py"]
+      artifacts:
+        - backend/validation/evidence/value_traces/value_03_summary.json
+        - docs/evidence/value_traces/value_03_provider_handshake.md
+    exit_gates:
+      - provider_handshake
+
+  - id: VALUE_04
+    intent: "Value Trace 04 - Registry-to-reality matview inventory parity."
+    prerequisites: ["B0.3"]
+    ci_gate:
+      job_name: gate-value-04
+      command: ["python", "scripts/phase_gates/value_04_gate.py"]
+      artifacts:
+        - backend/validation/evidence/value_traces/value_04_summary.json
+        - docs/evidence/value_traces/value_04_registry_trace.md
+    exit_gates:
+      - registry_parity

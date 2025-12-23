@@ -55,6 +55,14 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: timeout_ms
+          in: query
+          required: false
+          description: Optional timeout budget for the LLM request in milliseconds
+          schema:
+            type: integer
+            minimum: 100
+            maximum: 20000
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
       responses:
@@ -106,6 +114,8 @@ components:
         - citations
         - confidence
         - generated_at
+        - cost_usd
+        - latency_ms
       properties:
         explanation:
           type: string
@@ -129,12 +139,15 @@ components:
           type: string
           format: date-time
           description: ISO 8601 timestamp when explanation was generated
-        cost_cents:
+        cost_usd:
           type: number
           format: float
-          description: LLM API cost for this explanation (internal tracking)
-          example: 1.8
-          x-internal: true
+          description: LLM API cost for this explanation (USD)
+          example: 0.0123
+        latency_ms:
+          type: integer
+          description: Total request latency in milliseconds
+          example: 120
 
     Citation:
       type: object
