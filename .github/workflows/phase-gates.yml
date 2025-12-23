@@ -139,9 +139,9 @@ jobs:
       - name: Start PostgreSQL and create database
         run: |
           sudo service postgresql start
-          sudo -u postgres psql -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END $$;"
-          sudo -u postgres psql -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END $$;"
-          sudo -u postgres psql -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE USER app_user WITH PASSWORD 'app_user'; END IF; END $$;"
+          sudo -u postgres psql -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
+          sudo -u postgres psql -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END \$\$;"
+          sudo -u postgres psql -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE USER app_user WITH PASSWORD 'app_user'; END IF; END \$\$;"
           sudo -u postgres psql -c "CREATE DATABASE skeldir_b03 OWNER app_user;"
           sudo -u postgres psql -d skeldir_b03 -c "GRANT ALL ON SCHEMA public TO app_user;"
           sudo -u postgres psql -c "GRANT app_rw TO app_user;"

@@ -181,8 +181,8 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
-          psql -h localhost -U postgres -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END $$;"
-          psql -h localhost -U postgres -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END $$;"
+          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
+          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END \$\$;"
           psql -h localhost -U postgres -c "CREATE DATABASE skeldir_phase OWNER app_user;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
@@ -250,8 +250,8 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
-          psql -h localhost -U postgres -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END $$;"
-          psql -h localhost -U postgres -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END $$;"
+          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
+          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END \$\$;"
           psql -h localhost -U postgres -c "CREATE DATABASE skeldir_phase OWNER app_user;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
