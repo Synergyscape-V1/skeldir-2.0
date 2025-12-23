@@ -1,8 +1,8 @@
 """
-VALUE_01 gate runner.
+VALUE_01-WIN gate runner.
 
-Ensures required schema is migrated, then runs the Value Trace 01 test which
-emits evidence artifacts.
+Ensures required schema is migrated (including ghost_revenue columns),
+then runs the Value Trace 01 test which proves ghost revenue detection.
 """
 from __future__ import annotations
 
@@ -42,12 +42,20 @@ def main() -> int:
         return 1
 
     try:
+        # Run core migrations
         run(["alembic", "upgrade", "202511131121"], "value_01_alembic_core.log", env=env)
         run(
             ["alembic", "upgrade", "skeldir_foundation@head"],
             "value_01_alembic_foundation.log",
             env=env,
         )
+        # Run forensic migrations (ghost_revenue_columns)
+        run(
+            ["alembic", "upgrade", "head"],
+            "value_01_alembic_forensic.log",
+            env=env,
+        )
+        # Run VALUE_01-WIN test
         run(
             [
                 "python",

@@ -1,0 +1,14 @@
+{
+  "fields_present": {
+    "cost_usd": true,
+    "latency_ms": true,
+    "timeout_ms": true
+  },
+  "sample_response": {
+    "explanation": "This is a mocked explanation.",
+    "model": "test-model",
+    "cost_usd": 0.0123,
+    "latency_ms": 120,
+    "tokens_used": 256
+  }
+}

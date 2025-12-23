@@ -1,0 +1,45 @@
+=== Route-Contract Gap Analysis ===
+Timestamp: 2025-11-20 13:50:00
+
+=== Backend Routes Implemented ===
+1. POST /api/auth/login (operationId: login)
+2. POST /api/auth/refresh (operationId: refreshToken)
+3. POST /api/auth/logout (operationId: logout)
+4. GET /api/attribution/revenue/realtime (operationId: getRealtimeRevenue)
+5. GET /health (out-of-scope)
+6. GET / (out-of-scope)
+
+=== Contract Operations (from bundled specs) ===
+(See contract_operations_map.txt for full list)
+
+Main Contracts:
+- auth.bundled.yaml: 3 operations (login, refresh, logout)
+- attribution.bundled.yaml: 1+ operations
+- export.bundled.yaml: operations defined
+- health.bundled.yaml: operations defined
+- reconciliation.bundled.yaml: operations defined
+- webhooks.*.bundled.yaml: operations defined
+
+=== Gap Analysis ===
+
+Routes WITHOUT Contracts:
+- None identified (all implemented routes have corresponding contracts)
+
+Contracts WITHOUT Backend Implementation:
+- Export operations (no backend/app/api/export.py)
+- Reconciliation operations (no backend/app/api/reconciliation.py)
+- Health API operations (no backend/app/api/health.py)
+- Webhook operations (no backend/app/api/webhooks.py)
+
+=== Status ===
+Current implementation: PARTIAL
+- Auth API: Implemented
+- Attribution API: Partially implemented (1 endpoint)
+- Export API: Not implemented
+- Reconciliation API: Not implemented
+- Health API: Not implemented (only generic /health endpoint)
+- Webhooks API: Not implemented
+
+This is EXPECTED for Phase B0.1 baseline. Full implementation is not required yet.
+Evidence captured for contract-first enforcement validation.
+

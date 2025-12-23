@@ -69,7 +69,7 @@ phases:
       - ingestion_soundness
 
   - id: VALUE_01
-    intent: "Value Trace 01 - Penny-perfect revenue verification (claimed vs verified)."
+    intent: "Value Trace 01-WIN - Ghost revenue reconciliation (adversarial double-counting detection)."
     prerequisites: ["B0.4"]
     ci_gate:
       job_name: gate-value-01
@@ -78,7 +78,9 @@ phases:
         - backend/validation/evidence/value_traces/value_01_summary.json
         - docs/evidence/value_traces/value_01_revenue_trace.md
     exit_gates:
-      - revenue_trace
+      - ghost_revenue_detection
+      - idempotent_reconciliation
+      - penny_perfect
 
   - id: VALUE_02
     intent: "Value Trace 02 - Constraint guard/bypass prevention."
@@ -93,8 +95,8 @@ phases:
       - constraint_trace
 
   - id: VALUE_03
-    intent: "Value Trace 03 - Provider-agnostic LLM handshake contract validity."
-    prerequisites: ["B0.1"]
+    intent: "Value Trace 03-WIN - Budget-kill circuit breaker (premium call enforcement)."
+    prerequisites: ["B0.1", "B0.4"]
     ci_gate:
       job_name: gate-value-03
       command: ["python", "scripts/phase_gates/value_03_gate.py"]
@@ -102,7 +104,9 @@ phases:
         - backend/validation/evidence/value_traces/value_03_summary.json
         - docs/evidence/value_traces/value_03_provider_handshake.md
     exit_gates:
-      - provider_handshake
+      - contract_fields_present
+      - budget_enforcement
+      - audit_trail
 
   - id: VALUE_04
     intent: "Value Trace 04 - Registry-to-reality matview inventory parity."
@@ -115,3 +119,17 @@ phases:
         - docs/evidence/value_traces/value_04_registry_trace.md
     exit_gates:
       - registry_parity
+
+  - id: VALUE_05
+    intent: "Value Trace 05-WIN - Centaur friction (review/approve + minimum pending enforcement)."
+    prerequisites: ["B0.4"]
+    ci_gate:
+      job_name: gate-value-05
+      command: ["python", "scripts/phase_gates/value_05_gate.py"]
+      artifacts:
+        - backend/validation/evidence/value_traces/value_05_summary.json
+        - docs/evidence/value_traces/value_05_centaur_enforcement.md
+    exit_gates:
+      - min_hold_enforced
+      - approval_gate_enforced
+      - state_machine_integrity

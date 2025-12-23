@@ -1,7 +1,8 @@
 """
-VALUE_03 gate runner.
+VALUE_03-WIN gate runner.
 
-Runs the Value Trace 03 contract handshake test which emits evidence artifacts.
+Ensures required schema is migrated (including llm_call_audit),
+then runs the Value Trace 03 test which proves budget enforcement.
 """
 from __future__ import annotations
 
@@ -36,7 +37,25 @@ def run(cmd: list[str], log_name: str, env: dict | None = None) -> None:
 
 def main() -> int:
     env = os.environ.copy()
+    if "DATABASE_URL" not in env:
+        print("DATABASE_URL is required.", file=os.sys.stderr)
+        return 1
+
     try:
+        # Run core migrations
+        run(["alembic", "upgrade", "202511131121"], "value_03_alembic_core.log", env=env)
+        run(
+            ["alembic", "upgrade", "skeldir_foundation@head"],
+            "value_03_alembic_foundation.log",
+            env=env,
+        )
+        # Run forensic migrations (llm_call_audit)
+        run(
+            ["alembic", "upgrade", "head"],
+            "value_03_alembic_forensic.log",
+            env=env,
+        )
+        # Run VALUE_03-WIN test
         run(
             [
                 "python",
