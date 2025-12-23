@@ -29,7 +29,7 @@ paths:
         - name: X-Correlation-ID
           in: header
           required: true
-          schema: &ref_2
+          schema: &ref_0
             type: string
             format: uuid
           description: Unique request correlation ID for distributed tracing
@@ -45,11 +45,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_0
+                required: &ref_1
                   - status
                   - timestamp
                   - services
-                properties: &ref_1
+                properties: &ref_2
                   status:
                     type: string
                     enum:
@@ -108,105 +108,19 @@ paths:
                   queue: up
                 uptime_seconds: 86400
         '503':
-          description: System is unhealthy
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                type: object
-                required: *ref_0
-                properties: *ref_1
-              example:
-                status: unhealthy
-                timestamp: '2025-11-26T14:30:00Z'
-                version: 2.0.0
-                services:
-                  database: down
-                  api: up
-                  cache: up
-                  queue: degraded
-                uptime_seconds: 3600
-  /api/health/detailed:
-    get:
-      summary: Get detailed system health
-      description: Returns detailed health information including metrics (requires authentication)
-      operationId: getDetailedHealth
-      tags:
-        - Health
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: X-Correlation-ID
-          in: header
-          required: true
-          schema: *ref_2
-          description: Unique request correlation ID for distributed tracing
-        - name: Authorization
-          in: header
-          required: true
-          schema: &ref_6
-            type: string
-          description: Bearer token for authentication (format - Bearer <token>)
-      responses:
-        '200':
-          description: Detailed health information
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                allOf: &ref_3
-                  - type: object
-                    required: *ref_0
-                    properties: *ref_1
-                  - type: object
-                    properties:
-                      metrics:
-                        type: object
-                        properties:
-                          requests_per_minute:
-                            type: integer
-                          average_response_ms:
-                            type: number
-                            format: float
-                          error_rate:
-                            type: number
-                            format: float
-                            minimum: 0
-                            maximum: 1
-                          active_connections:
-                            type: integer
-                      database:
-                        type: object
-                        properties:
-                          pool_size:
-                            type: integer
-                          active_connections:
-                            type: integer
-                          query_latency_ms:
-                            type: number
-                            format: float
-        '401':
-          description: Unauthorized - invalid or missing authentication
-          headers: &ref_7
+          description: Service is unavailable
+          headers: &ref_5
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
               description: Request correlation ID for distributed tracing
-          content: &ref_8
+          content: &ref_6
             application/problem+json:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: &ref_4
+                required: &ref_3
                   - type
                   - title
                   - status
@@ -214,7 +128,7 @@ paths:
                   - instance
                   - correlation_id
                   - timestamp
-                properties: &ref_5
+                properties: &ref_4
                   type:
                     type: string
                     format: uri
@@ -262,6 +176,103 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+  /api/health/detailed:
+    get:
+      summary: Get detailed system health
+      description: Returns detailed health information including metrics (requires authentication)
+      operationId: getDetailedHealth
+      tags:
+        - Health
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_0
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: &ref_10
+            type: string
+          description: Bearer token for authentication (format - Bearer <token>)
+      responses:
+        '200':
+          description: Detailed health information
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                allOf: &ref_7
+                  - type: object
+                    required: *ref_1
+                    properties: *ref_2
+                  - type: object
+                    properties:
+                      metrics:
+                        type: object
+                        properties:
+                          requests_per_minute:
+                            type: integer
+                          average_response_ms:
+                            type: number
+                            format: float
+                          error_rate:
+                            type: number
+                            format: float
+                            minimum: 0
+                            maximum: 1
+                          active_connections:
+                            type: integer
+                      database:
+                        type: object
+                        properties:
+                          pool_size:
+                            type: integer
+                          active_connections:
+                            type: integer
+                          query_latency_ms:
+                            type: number
+                            format: float
+              example:
+                status: healthy
+                timestamp: '2025-11-26T14:30:00Z'
+                version: 2.0.0
+                services:
+                  database: up
+                  api: up
+                  cache: up
+                  queue: up
+                uptime_seconds: 86400
+                metrics:
+                  requests_per_minute: 1200
+                  average_response_ms: 180.5
+                  error_rate: 0.002
+                  active_connections: 24
+                database:
+                  pool_size: 50
+                  active_connections: 12
+                  query_latency_ms: 12.3
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_8
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID for distributed tracing
+          content: &ref_9
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_3
+                properties: *ref_4
   /api/health/ready:
     get:
       summary: Kubernetes readiness probe
@@ -280,8 +291,12 @@ paths:
                   ready:
                     type: boolean
                     example: true
+              example:
+                ready: true
         '503':
-          description: Service is not ready
+          description: Service is unavailable
+          headers: *ref_5
+          content: *ref_6
   /api/health/live:
     get:
       summary: Kubernetes liveness probe
@@ -300,21 +315,34 @@ paths:
                   alive:
                     type: boolean
                     example: true
+              example:
+                alive: true
         '503':
-          description: Service is not alive
+          description: Service is unavailable
+          headers: *ref_5
+          content: *ref_6
 components:
   schemas:
     HealthResponse:
       type: object
-      required: *ref_0
-      properties: *ref_1
+      required: *ref_1
+      properties: *ref_2
     DetailedHealthResponse:
-      allOf: *ref_3
+      allOf: *ref_7
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required: *ref_4
-      properties: *ref_5
+      required: *ref_3
+      properties: *ref_4
+  responses:
+    ServiceUnavailable:
+      description: Service is unavailable
+      headers: *ref_5
+      content: *ref_6
+    UnauthorizedError:
+      description: Unauthorized - invalid or missing authentication
+      headers: *ref_8
+      content: *ref_9
   securitySchemes:
     bearerAuth:
       type: http
@@ -326,16 +354,11 @@ components:
       name: X-Correlation-ID
       in: header
       required: true
-      schema: *ref_2
+      schema: *ref_0
       description: Unique request correlation ID for distributed tracing
     Authorization:
       name: Authorization
       in: header
       required: true
-      schema: *ref_6
+      schema: *ref_10
       description: Bearer token for authentication (format - Bearer <token>)
-  responses:
-    UnauthorizedError:
-      description: Unauthorized - invalid or missing authentication
-      headers: *ref_7
-      content: *ref_8

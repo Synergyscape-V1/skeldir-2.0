@@ -26,19 +26,19 @@ paths:
       parameters:
         - name: X-Shopify-Hmac-SHA256
           in: header
-          required: true
+          required: false
           schema:
             type: string
           description: HMAC signature for webhook verification
         - name: X-Shopify-Shop-Domain
           in: header
-          required: true
+          required: false
           schema:
             type: string
           description: Shop domain that triggered the webhook
         - name: X-Shopify-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -49,12 +49,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_0
+              required: &ref_2
                 - id
                 - order_number
                 - total_price
                 - created_at
-              properties: &ref_1
+              properties: &ref_3
                 id:
                   type: integer
                   format: int64
@@ -123,7 +123,7 @@ paths:
                       price:
                         type: string
             example:
-              id: 820982911946154500
+              id: 8209829119461
               order_number: 1001
               total_price: '199.99'
               currency: USD
@@ -136,14 +136,14 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content:
+          content: &ref_4
             application/json:
               schema:
                 type: object
-                required: &ref_2
+                required: &ref_15
                   - success
                   - correlation_id
-                properties: &ref_3
+                properties: &ref_16
                   success:
                     type: boolean
                   correlation_id:
@@ -151,21 +151,24 @@ paths:
                     format: uuid
                   message:
                     type: string
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                message: Webhook received
         '401':
-          description: Invalid HMAC signature
-        '500':
-          description: Internal server error
-          headers: &ref_10
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_7
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_11
+              description: Request correlation ID for distributed tracing
+          content: &ref_8
             application/problem+json:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: &ref_8
+                required: &ref_0
                   - type
                   - title
                   - status
@@ -173,7 +176,7 @@ paths:
                   - instance
                   - correlation_id
                   - timestamp
-                properties: &ref_9
+                properties: &ref_1
                   type:
                     type: string
                     format: uri
@@ -221,6 +224,34 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+        '422':
+          description: Bad Request - validation failed
+          headers: &ref_5
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_6
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '500':
+          description: Internal server error
+          headers: &ref_9
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_10
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
   /webhooks/shopify/orders/paid:
     post:
       summary: Shopify order paid webhook
@@ -231,17 +262,17 @@ paths:
       parameters:
         - name: X-Shopify-Hmac-SHA256
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-Shopify-Shop-Domain
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-Shopify-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -252,10 +283,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: *ref_0
-              properties: *ref_1
+              required: *ref_2
+              properties: *ref_3
             example:
-              id: 820982911946154500
+              id: 8209829119461
               order_number: 1001
               total_price: '199.99'
               currency: USD
@@ -267,12 +298,11 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                required: *ref_2
-                properties: *ref_3
+          content: *ref_4
+        '422':
+          description: Bad Request - validation failed
+          headers: *ref_5
+          content: *ref_6
   /webhooks/shopify/refunds/create:
     post:
       summary: Shopify refund created webhook
@@ -283,17 +313,17 @@ paths:
       parameters:
         - name: X-Shopify-Hmac-SHA256
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-Shopify-Shop-Domain
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-Shopify-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -304,11 +334,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_6
+              required: &ref_13
                 - id
                 - order_id
                 - transactions
-              properties: &ref_7
+              properties: &ref_14
                 id:
                   type: integer
                   format: int64
@@ -344,22 +374,21 @@ paths:
                         type: integer
                         format: int64
             example:
-              id: 230982911946154500
-              order_id: 820982911946154500
+              id: 2309829119461
+              order_id: 8209829119461
               transactions:
-                - id: 389274982374
+                - id: 3892749823
                   amount: '50.00'
                   kind: refund
                   currency: USD
       responses:
         '200':
           description: Webhook processed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                required: *ref_2
-                properties: *ref_3
+          content: *ref_4
+        '422':
+          description: Bad Request - validation failed
+          headers: *ref_5
+          content: *ref_6
   /webhooks/shopify/checkouts/update:
     post:
       summary: Shopify checkout updated webhook
@@ -370,17 +399,17 @@ paths:
       parameters:
         - name: X-Shopify-Hmac-SHA256
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-Shopify-Shop-Domain
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-Shopify-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -391,10 +420,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_4
+              required: &ref_11
                 - token
                 - total_price
-              properties: &ref_5
+              properties: &ref_12
                 token:
                   type: string
                   description: Checkout token
@@ -421,37 +450,43 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                required: *ref_2
-                properties: *ref_3
+          content: *ref_4
 components:
+  responses:
+    WebhookAccepted:
+      description: Webhook processed successfully
+      content: *ref_4
+    UnauthorizedError:
+      description: Unauthorized - invalid or missing authentication
+      headers: *ref_7
+      content: *ref_8
+    ValidationError:
+      description: Bad Request - validation failed
+      headers: *ref_5
+      content: *ref_6
+    ServerError:
+      description: Internal server error
+      headers: *ref_9
+      content: *ref_10
   schemas:
     ShopifyOrder:
       type: object
-      required: *ref_0
-      properties: *ref_1
-    ShopifyCheckout:
-      type: object
-      required: *ref_4
-      properties: *ref_5
-    ShopifyRefund:
-      type: object
-      required: *ref_6
-      properties: *ref_7
-    SuccessResponse:
-      type: object
       required: *ref_2
       properties: *ref_3
+    ShopifyCheckout:
+      type: object
+      required: *ref_11
+      properties: *ref_12
+    ShopifyRefund:
+      type: object
+      required: *ref_13
+      properties: *ref_14
+    SuccessResponse:
+      type: object
+      required: *ref_15
+      properties: *ref_16
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required: *ref_8
-      properties: *ref_9
-  responses:
-    ServerError:
-      description: Internal server error
-      headers: *ref_10
-      content: *ref_11
+      required: *ref_0
+      properties: *ref_1

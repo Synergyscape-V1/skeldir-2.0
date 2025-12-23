@@ -26,13 +26,13 @@ paths:
       parameters:
         - name: X-WC-Webhook-Signature
           in: header
-          required: true
+          required: false
           schema:
             type: string
           description: HMAC-SHA256 signature for webhook verification
         - name: X-WC-Webhook-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -40,7 +40,7 @@ paths:
           description: Webhook topic
         - name: X-WC-Webhook-Resource
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -51,12 +51,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_0
+              required: &ref_2
                 - id
                 - order_key
                 - total
                 - date_created
-              properties: &ref_1
+              properties: &ref_3
                 id:
                   type: integer
                   description: WooCommerce order ID
@@ -177,14 +177,14 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content:
+          content: &ref_4
             application/json:
               schema:
                 type: object
-                required: &ref_2
+                required: &ref_9
                   - success
                   - correlation_id
-                properties: &ref_3
+                properties: &ref_10
                   success:
                     type: boolean
                   correlation_id:
@@ -192,21 +192,24 @@ paths:
                     format: uuid
                   message:
                     type: string
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                message: Webhook received
         '401':
-          description: Invalid webhook signature
-        '500':
-          description: Internal server error
-          headers: &ref_6
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_5
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_7
+              description: Request correlation ID for distributed tracing
+          content: &ref_6
             application/problem+json:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: &ref_4
+                required: &ref_0
                   - type
                   - title
                   - status
@@ -214,7 +217,7 @@ paths:
                   - instance
                   - correlation_id
                   - timestamp
-                properties: &ref_5
+                properties: &ref_1
                   type:
                     type: string
                     format: uri
@@ -262,6 +265,20 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+        '500':
+          description: Internal server error
+          headers: &ref_7
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_8
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
   /webhooks/woocommerce/order/updated:
     post:
       summary: WooCommerce order updated webhook
@@ -272,19 +289,19 @@ paths:
       parameters:
         - name: X-WC-Webhook-Signature
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-WC-Webhook-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
               - order.updated
         - name: X-WC-Webhook-Resource
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -295,17 +312,23 @@ paths:
           application/json:
             schema:
               type: object
-              required: *ref_0
-              properties: *ref_1
+              required: *ref_2
+              properties: *ref_3
+            example:
+              id: 12345
+              order_key: wc_order_update_12345
+              date_created: '2025-11-26T14:30:00Z'
+              status: processing
+              total: '199.99'
+              currency: USD
+              meta_data:
+                - id: 1
+                  key: skeldir_session_id
+                  value: sess_update123
       responses:
         '200':
           description: Webhook processed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                required: *ref_2
-                properties: *ref_3
+          content: *ref_4
   /webhooks/woocommerce/order/completed:
     post:
       summary: WooCommerce order completed webhook
@@ -316,19 +339,19 @@ paths:
       parameters:
         - name: X-WC-Webhook-Signature
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-WC-Webhook-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
               - order.completed
         - name: X-WC-Webhook-Resource
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -339,17 +362,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: *ref_0
-              properties: *ref_1
+              required: *ref_2
+              properties: *ref_3
       responses:
         '200':
           description: Webhook processed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                required: *ref_2
-                properties: *ref_3
+          content: *ref_4
   /webhooks/woocommerce/order/refunded:
     post:
       summary: WooCommerce order refunded webhook
@@ -360,19 +378,19 @@ paths:
       parameters:
         - name: X-WC-Webhook-Signature
           in: header
-          required: true
+          required: false
           schema:
             type: string
         - name: X-WC-Webhook-Topic
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
               - order.refunded
         - name: X-WC-Webhook-Resource
           in: header
-          required: true
+          required: false
           schema:
             type: string
             enum:
@@ -383,8 +401,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: *ref_0
-              properties: *ref_1
+              required: *ref_2
+              properties: *ref_3
             example:
               id: 12345
               order_key: wc_order_ref_12345
@@ -403,29 +421,31 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                required: *ref_2
-                properties: *ref_3
+          content: *ref_4
 components:
+  responses:
+    WebhookAccepted:
+      description: Webhook processed successfully
+      content: *ref_4
+    UnauthorizedError:
+      description: Unauthorized - invalid or missing authentication
+      headers: *ref_5
+      content: *ref_6
+    ServerError:
+      description: Internal server error
+      headers: *ref_7
+      content: *ref_8
   schemas:
     WooCommerceOrder:
       type: object
-      required: *ref_0
-      properties: *ref_1
-    SuccessResponse:
-      type: object
       required: *ref_2
       properties: *ref_3
+    SuccessResponse:
+      type: object
+      required: *ref_9
+      properties: *ref_10
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required: *ref_4
-      properties: *ref_5
-  responses:
-    ServerError:
-      description: Internal server error
-      headers: *ref_6
-      content: *ref_7
+      required: *ref_0
+      properties: *ref_1

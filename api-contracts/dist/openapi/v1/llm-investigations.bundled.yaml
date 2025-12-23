@@ -109,6 +109,11 @@ paths:
                     type: string
                     format: uri
                     example: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                status: queued
+                estimated_duration_seconds: 45
+                status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
         '400':
           description: Bad Request - validation failed
           headers: &ref_8
@@ -300,6 +305,21 @@ paths:
                     maximum: 10
                     description: Number of tool calls (max 10)
                     x-internal: true
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                status: complete
+                progress_percentage: 100
+                current_step: Synthesizing findings
+                elapsed_seconds: 48
+                findings:
+                  - finding: Google Ads underperformance driven by lower CTR (-18% WoW)
+                    evidence:
+                      - source: attribution_events
+                        detail: CTR decreased from 2.5% to 2.0% week-over-week
+                    confidence: high
+                synthesis: Shift 10% budget from Google Search to Meta while monitoring CPA; retrain Google creatives.
+                cost_usd: 0.12
+                tool_calls_used: 6
         '404':
           description: Resource not found
           headers: &ref_12

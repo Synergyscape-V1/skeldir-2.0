@@ -54,14 +54,14 @@ paths:
         - name: X-Correlation-ID
           in: header
           required: true
-          schema: &ref_8
+          schema: &ref_6
             type: string
             format: uuid
           description: Unique request correlation ID for distributed tracing
         - name: Authorization
           in: header
           required: true
-          schema: &ref_9
+          schema: &ref_7
             type: string
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
@@ -141,36 +141,13 @@ paths:
                 generated_at: '2025-12-04T02:30:00Z'
                 cost_cents: 1.8
         '400':
-          description: Invalid entity_type or entity_id format
-          content:
-            application/json:
-              schema:
-                type: object
-                required: &ref_6
-                  - error
-                  - message
-                properties: &ref_7
-                  error:
-                    type: string
-                    description: Error code
-                    example: invalid_entity_type
-                  message:
-                    type: string
-                    description: Human-readable error message
-                    example: 'entity_type must be one of: attribution_score, budget_recommendation, reconciliation_discrepancy, channel_performance'
-                  details:
-                    type: object
-                    description: Additional error context
-                    additionalProperties: true
-        '401':
-          description: Unauthorized - invalid or missing authentication
-          headers: &ref_10
+          description: Bad Request - validation failed
+          headers: &ref_8
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-              description: Request correlation ID for distributed tracing
-          content: &ref_11
+          content: &ref_9
             application/problem+json:
               schema:
                 type: object
@@ -231,6 +208,21 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_10
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID for distributed tracing
+          content: &ref_11
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '404':
           description: Resource not found
           headers: &ref_12
@@ -277,8 +269,22 @@ components:
       properties: *ref_5
     ExplanationError:
       type: object
-      required: *ref_6
-      properties: *ref_7
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+          example: invalid_entity_type
+        message:
+          type: string
+          description: Human-readable error message
+          example: 'entity_type must be one of: attribution_score, budget_recommendation, reconciliation_discrepancy, channel_performance'
+        details:
+          type: object
+          description: Additional error context
+          additionalProperties: true
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -295,15 +301,19 @@ components:
       name: X-Correlation-ID
       in: header
       required: true
-      schema: *ref_8
+      schema: *ref_6
       description: Unique request correlation ID for distributed tracing
     Authorization:
       name: Authorization
       in: header
       required: true
-      schema: *ref_9
+      schema: *ref_7
       description: Bearer token for authentication (format - Bearer <token>)
   responses:
+    ValidationError:
+      description: Bad Request - validation failed
+      headers: *ref_8
+      content: *ref_9
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_10

@@ -25,6 +25,7 @@ paths:
       operationId: login
       tags:
         - Authentication
+      security: []
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -290,6 +291,10 @@ paths:
                     format: uuid
                   message:
                     type: string
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                message: Session terminated
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_3

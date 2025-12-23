@@ -143,6 +143,22 @@ paths:
                         format: double
                         minimum: 0
                         maximum: 1
+              example:
+                generated_at: '2025-11-26T14:30:00Z'
+                date_range:
+                  start: '2025-11-01'
+                  end: '2025-11-26'
+                data:
+                  - date: '2025-11-25'
+                    channel: Meta
+                    revenue: 15230.5
+                    conversions: 127
+                    confidence: 0.92
+                  - date: '2025-11-25'
+                    channel: Google
+                    revenue: 12450
+                    conversions: 98
+                    confidence: 0.89
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string
@@ -308,6 +324,22 @@ paths:
                 type: object
                 required: *ref_6
                 properties: *ref_7
+              example:
+                generated_at: '2025-11-26T14:30:00Z'
+                date_range:
+                  start: '2025-11-01'
+                  end: '2025-11-26'
+                data:
+                  - date: '2025-11-25'
+                    channel: Meta
+                    revenue: 15230.5
+                    conversions: 127
+                    confidence: 0.92
+                  - date: '2025-11-25'
+                    channel: Google
+                    revenue: 12450
+                    conversions: 98
+                    confidence: 0.89
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4

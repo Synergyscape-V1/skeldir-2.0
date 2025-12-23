@@ -261,6 +261,13 @@ paths:
                 type: object
                 required: *ref_4
                 properties: *ref_5
+              example:
+                platform_name: Shopify
+                connection_status: verified
+                last_sync: '2025-11-26T13:00:00Z'
+                events_processed: 9821
+                revenue_verified: 452120.75
+                next_scheduled_sync: '2025-11-26T14:00:00Z'
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_6
@@ -343,6 +350,10 @@ paths:
                   estimated_completion:
                     type: string
                     format: date-time
+              example:
+                sync_id: 99999999-aaaa-bbbb-cccc-111111111111
+                status: queued
+                estimated_completion: '2025-11-26T15:00:00Z'
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_6
