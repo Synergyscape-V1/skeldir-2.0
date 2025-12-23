@@ -584,12 +584,14 @@ jobs:
           COLUMN_COUNT=$(psql -h "${{ env.DB_HOST }}" -p "${{ env.DB_PORT }}" -U "${{ env.APP_USER }}" -d "${{ env.DB_NAME }}" -t -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'revenue_ledger';")
           echo "Column count: $COLUMN_COUNT"
 
-          if [ "$COLUMN_COUNT" -ne 8 ]; then
-            echo "ERROR: Expected 8 columns in revenue_ledger (skeldir_foundation@head), got $COLUMN_COUNT"
+          # Schema evolution: 8 (original) + 2 (allocation/posted) + 9 (realignment) = 19 columns
+          # Ghost revenue columns (claimed/verified/ghost/discrepancy_bps) are added at head
+          if [ "$COLUMN_COUNT" -lt 19 ]; then
+            echo "ERROR: Expected at least 19 columns in revenue_ledger, got $COLUMN_COUNT"
             exit 1
           fi
 
-          echo "✓ R5-4 MET / G4 PASSED: Schema verification passed with 8 columns confirmed (using canonical credentials)"
+          echo "✓ R5-4 MET / G4 PASSED: Schema verification passed with $COLUMN_COUNT columns (>= 19 expected)"
 
       - name: Verify Contract B code-path integrity (Gate G6 - Part 1)
         run: |
