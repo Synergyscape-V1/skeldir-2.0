@@ -1,13 +1,37 @@
-# Value Trace Proof Pack (Main-Anchored)
+# Value Trace Proof Pack (Authoritative = CI Artifact)
 
-- Candidate SHA: `f86c62e` (Phase Gates VALUE_01..VALUE_05 all ✅)
-- CI run (authoritative): `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929`
-- Anchor mechanism:
-  - Each phase summary JSON includes `candidate_sha` + `ci_run_url`:
-    - `backend/validation/evidence/phases/<phase>_summary.json`
-  - Emitted from `GITHUB_SHA` + `GITHUB_RUN_ID` at runtime.
+This file is intentionally **NOT** the authoritative proof pack.
 
-This proof pack is satisfied by the `Phase Gates (VALUE_01..VALUE_05)` matrix jobs on `main`, plus the per-job `phase-VALUE_0X-evidence` artifacts uploaded by CI.
+Why: see `docs/evidence/EG5_TEMPORAL_PARADOX.md` (EG-5 temporal incoherence).
+
+## Where the authoritative proof pack lives
+
+The authoritative EG-5 proof pack is generated inside GitHub Actions and uploaded as a CI artifact:
+
+- **Artifact name**: `value-trace-proof-pack`
+- **Contents**:
+  - `backend/validation/evidence/proof_pack/value_trace_proof_pack.json` (machine-verifiable)
+  - `backend/validation/evidence/proof_pack/value_trace_proof_pack.md` (human-readable)
+
+## What it contains (required fields)
+
+- `candidate_sha` (must equal `GITHUB_SHA`)
+- `run_id` (must equal `GITHUB_RUN_ID`)
+- `run_url`
+- `value_gates[]`: `{ gate_id, job_url, artifact_name, artifact_id }` for VALUE_01..VALUE_05
+
+## How to retrieve it
+
+1. Open GitHub Actions for the commit SHA you care about: `https://github.com/Muk223/skeldir-2.0/actions`
+2. Open the **CI** run for that SHA.
+3. Download the artifact **`value-trace-proof-pack`**.
+
+## How EG-5 is enforced
+
+CI fails the `proof-pack` job if:
+- the proof pack’s `candidate_sha` ≠ `GITHUB_SHA`, or
+- the proof pack’s `run_id` ≠ `GITHUB_RUN_ID`, or
+- any of the five VALUE gate evidence artifacts are missing from the run.
 
 ## Migration Chain Verified
 
@@ -18,56 +42,4 @@ The forensic migrations are properly linked:
 
 All downgrades include `# CI:DESTRUCTIVE_OK` markers for intentional destructive operations.
 
-## EG-VT-01 (VALUE_01)
-
-- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018338`
-- Artifact: `phase-VALUE_01-evidence` (id `4963263672`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263672/zip`)
-- Evidence outputs:
-  - `backend/validation/evidence/value_traces/value_01_summary.json`
-  - `docs/evidence/value_traces/value_01_revenue_trace.md`
-- Log anchor (within artifact): `backend/validation/evidence/phases/value_01_pytest.log` contains `1 passed`
-- Gate enforcement (within artifact): `backend/validation/evidence/phases/value_01_summary.json` has `status=success` and `missing_artifacts=[]`
-
-## EG-VT-02 (VALUE_02)
-
-- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018321`
-- Artifact: `phase-VALUE_02-evidence` (id `4963263783`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263783/zip`)
-- Evidence outputs:
-  - `backend/validation/evidence/value_traces/value_02_summary.json`
-  - `docs/evidence/value_traces/value_02_constraint_trace.md`
-- Log anchor (within artifact): `backend/validation/evidence/phases/value_02_pytest.log` contains `1 passed`
-- Gate enforcement (within artifact): `backend/validation/evidence/phases/value_02_summary.json` has `status=success` and `missing_artifacts=[]`
-
-## EG-VT-03 (VALUE_03)
-
-- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018327`
-- Artifact: `phase-VALUE_03-evidence` (id `4963263869`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263869/zip`)
-- Evidence outputs:
-  - `backend/validation/evidence/value_traces/value_03_summary.json`
-  - `docs/evidence/value_traces/value_03_provider_handshake.md`
-- Log anchor (within artifact): `backend/validation/evidence/phases/value_03_pytest.log` contains `1 passed`
-- Gate enforcement (within artifact): `backend/validation/evidence/phases/value_03_summary.json` has `status=success` and `missing_artifacts=[]`
-
-## EG-VT-04 (VALUE_04)
-
-- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018329`
-- Artifact: `phase-VALUE_04-evidence` (id `4963263518`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263518/zip`)
-- Evidence outputs:
-  - `backend/validation/evidence/value_traces/value_04_summary.json`
-  - `docs/evidence/value_traces/value_04_registry_trace.md`
-- Log anchor (within artifact): `backend/validation/evidence/phases/value_04_pytest.log` contains `1 passed`
-- Gate enforcement (within artifact): `backend/validation/evidence/phases/value_04_summary.json` has `status=success` and `missing_artifacts=[]`
-
-## EG-VT-05 (VALUE_05) - NEW
-
-- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018324`
-- Artifact: `phase-VALUE_05-evidence` (id `4963263023`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263023/zip`)
-- Evidence outputs:
-  - `backend/validation/evidence/value_traces/value_05_summary.json`
-  - `docs/evidence/value_traces/value_05_centaur_enforcement.md`
-- Log anchor (within artifact): `backend/validation/evidence/phases/value_05_pytest.log` should contain `2 passed`
-- Gate enforcement (within artifact): `backend/validation/evidence/phases/value_05_summary.json` has `status=success` and `missing_artifacts=[]`
-- Invariants proven:
-  - Minimum hold enforced (cannot skip 45s wait)
-  - Approval gate enforced (cannot auto-complete)
-  - State machine integrity (PENDING -> READY_FOR_REVIEW -> COMPLETED)
+Detailed per-run job URLs and artifact IDs are emitted into the CI-generated proof pack artifact.

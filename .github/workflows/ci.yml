@@ -296,6 +296,39 @@ jobs:
             backend/validation/evidence/**
             docs/evidence/value_traces/**
           retention-days: 7
+
+  proof-pack:
+    name: Proof Pack (EG-5)
+    runs-on: ubuntu-latest
+    needs: [phase-gates]
+    # Generate even if other non-gate jobs fail; EG-5 is scoped to VALUE gates.
+    if: always()
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate and validate EG-5 proof pack
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/phase_gates/generate_value_trace_proof_pack.py
+
+      - name: Upload value trace proof pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: value-trace-proof-pack
+          path: |
+            backend/validation/evidence/proof_pack/value_trace_proof_pack.json
+            backend/validation/evidence/proof_pack/value_trace_proof_pack.md
+          retention-days: 30
   # Backend tests (when backend exists)
   test-backend:
     name: Test Backend
