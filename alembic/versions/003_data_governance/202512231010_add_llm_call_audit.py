@@ -96,4 +96,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop LLM call audit table."""
-    op.execute("DROP TABLE IF EXISTS llm_call_audit CASCADE")
+    # CI:DESTRUCTIVE_OK - Downgrade function intentionally removes forensic audit table
+    op.execute("DROP TABLE IF EXISTS llm_call_audit CASCADE")  # CI:DESTRUCTIVE_OK

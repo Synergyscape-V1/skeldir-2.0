@@ -108,4 +108,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop investigation_jobs table."""
-    op.execute("DROP TABLE IF EXISTS investigation_jobs CASCADE")
+    # CI:DESTRUCTIVE_OK - Downgrade function intentionally removes centaur friction table
+    op.execute("DROP TABLE IF EXISTS investigation_jobs CASCADE")  # CI:DESTRUCTIVE_OK

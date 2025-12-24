@@ -123,12 +123,13 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove ghost revenue reconciliation columns."""
 
-    op.execute("DROP INDEX IF EXISTS idx_revenue_ledger_tenant_order_reconciliation")
-    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_discrepancy_positive")
-    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_ghost_positive")
-    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_verified_positive")
-    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_claimed_positive")
-    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS discrepancy_bps")
-    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS ghost_revenue_cents")
-    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS verified_total_cents")
-    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS claimed_total_cents")
+    # CI:DESTRUCTIVE_OK - Downgrade function intentionally removes forensic columns
+    op.execute("DROP INDEX IF EXISTS idx_revenue_ledger_tenant_order_reconciliation")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_discrepancy_positive")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_ghost_positive")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_verified_positive")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP CONSTRAINT IF EXISTS ck_revenue_ledger_claimed_positive")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS discrepancy_bps")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS ghost_revenue_cents")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS verified_total_cents")  # CI:DESTRUCTIVE_OK
+    op.execute("ALTER TABLE revenue_ledger DROP COLUMN IF EXISTS claimed_total_cents")  # CI:DESTRUCTIVE_OK
