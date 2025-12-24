@@ -685,7 +685,7 @@ jobs:
       - name: Gate 2A - DSN Fingerprint Diagnostic (Pre-Pytest)
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_ASYNC }}  # Use async driver for tests
-          PYTHONPATH: ${{ github.workspace }}/backend/backend
+          PYTHONPATH: ${{ github.workspace }}/backend
         run: |
           cd backend
           echo "=== Gate 2A: DSN Fingerprint Diagnostic (Pre-Pytest Env State) ==="
@@ -724,7 +724,7 @@ jobs:
       - name: Gate 2B - In-Test DSN Instrumentation
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_ASYNC }}  # Use async driver for tests
-          PYTHONPATH: ${{ github.workspace }}/backend/backend
+          PYTHONPATH: ${{ github.workspace }}/backend
         run: |
           cd backend
           echo "=== Gate 2B: In-Test DSN Instrumentation ==="
@@ -786,7 +786,7 @@ jobs:
       - name: R5-5 / Gate G5 - Run B0.5.3.3 contract tests (2 tests must pass)
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_ASYNC }}  # Use async driver for tests
-          PYTHONPATH: ${{ github.workspace }}/backend/backend
+          PYTHONPATH: ${{ github.workspace }}/backend
         run: |
           cd backend
           echo "=== R5-5 / G5: Running B0.5.3.3 Revenue Contract Tests ==="
