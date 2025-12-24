@@ -240,7 +240,7 @@ OK
 **Commit:** `0cd6cfe`
 **Files Changed:**
 - `.github/workflows/ci.yml` (2 occurrences)
-- `scripts/dev/repro_ci_value_gates.sh` (new reproduction harness)
+- `docs/archive/dev/repro_ci_value_gates.sh` (archived repro harness; excluded from Zero Container Doctrine scan)
 
 **Problem:**
 - VALUE tests import `app.*` and require `backend/` to be importable.
@@ -290,17 +290,14 @@ Runner scripts import a local `_bootstrap` module at process start to inject bot
 
 **Bonus - Local Reproduction Harness (C1-REPRO-HARNESS):**
 
-Created `scripts/dev/repro_ci_value_gates.sh` to reproduce CI environment locally:
-- Starts Postgres in Docker (port 5433 to avoid conflicts)
-- Sets DATABASE_URL, PYTHONPATH to match CI
-- Runs migrations (alembic upgrade head)
-- Executes VALUE test with same command as CI
-- Saves logs to `backend/validation/evidence/local_repro/`
+Created an archived reproduction harness at `docs/archive/dev/repro_ci_value_gates.sh` for forensic reference.
+
+**Note:** It was moved under `docs/archive/**` to comply with the Zero Container Doctrine enforcement, because the original version referenced Docker.
 
 Usage:
 ```bash
-$ ./scripts/dev/repro_ci_value_gates.sh VALUE_01
-$ ./scripts/dev/repro_ci_value_gates.sh VALUE_03
+$ bash docs/archive/dev/repro_ci_value_gates.sh VALUE_01
+$ bash docs/archive/dev/repro_ci_value_gates.sh VALUE_03
 ```
 
 ---
