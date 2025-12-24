@@ -1,10 +1,11 @@
 # Value Trace Proof Pack (Main-Anchored)
 
-- Source of truth: **GitHub Actions CI run on `main` for the candidate SHA**
-- Anchors:
-  - The candidate SHA and CI run URL are emitted into each phase summary JSON at:
+- Candidate SHA: `f86c62e` (Phase Gates VALUE_01..VALUE_05 all ✅)
+- CI run (authoritative): `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929`
+- Anchor mechanism:
+  - Each phase summary JSON includes `candidate_sha` + `ci_run_url`:
     - `backend/validation/evidence/phases/<phase>_summary.json`
-  - These are populated from `GITHUB_SHA` and `GITHUB_RUN_ID` at runtime.
+  - Emitted from `GITHUB_SHA` + `GITHUB_RUN_ID` at runtime.
 
 This proof pack is satisfied by the `Phase Gates (VALUE_01..VALUE_05)` matrix jobs on `main`, plus the per-job `phase-VALUE_0X-evidence` artifacts uploaded by CI.
 
@@ -19,8 +20,8 @@ All downgrades include `# CI:DESTRUCTIVE_OK` markers for intentional destructive
 
 ## EG-VT-01 (VALUE_01)
 
-- Actions job: https://github.com/Muk223/skeldir-2.0/actions/runs/20470980951/job/58826036615
-- Artifact: `phase-VALUE_01-evidence` (id `4956646661`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4956646661/zip`)
+- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018338`
+- Artifact: `phase-VALUE_01-evidence` (id `4963263672`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263672/zip`)
 - Evidence outputs:
   - `backend/validation/evidence/value_traces/value_01_summary.json`
   - `docs/evidence/value_traces/value_01_revenue_trace.md`
@@ -29,8 +30,8 @@ All downgrades include `# CI:DESTRUCTIVE_OK` markers for intentional destructive
 
 ## EG-VT-02 (VALUE_02)
 
-- Actions job: https://github.com/Muk223/skeldir-2.0/actions/runs/20470980951/job/58826036632
-- Artifact: `phase-VALUE_02-evidence` (id `4956645058`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4956645058/zip`)
+- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018321`
+- Artifact: `phase-VALUE_02-evidence` (id `4963263783`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263783/zip`)
 - Evidence outputs:
   - `backend/validation/evidence/value_traces/value_02_summary.json`
   - `docs/evidence/value_traces/value_02_constraint_trace.md`
@@ -39,8 +40,8 @@ All downgrades include `# CI:DESTRUCTIVE_OK` markers for intentional destructive
 
 ## EG-VT-03 (VALUE_03)
 
-- Actions job: https://github.com/Muk223/skeldir-2.0/actions/runs/20470980951/job/58826036614
-- Artifact: `phase-VALUE_03-evidence` (id `4956645062`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4956645062/zip`)
+- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018327`
+- Artifact: `phase-VALUE_03-evidence` (id `4963263869`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263869/zip`)
 - Evidence outputs:
   - `backend/validation/evidence/value_traces/value_03_summary.json`
   - `docs/evidence/value_traces/value_03_provider_handshake.md`
@@ -49,8 +50,8 @@ All downgrades include `# CI:DESTRUCTIVE_OK` markers for intentional destructive
 
 ## EG-VT-04 (VALUE_04)
 
-- Actions job: https://github.com/Muk223/skeldir-2.0/actions/runs/20470980951/job/58826036630
-- Artifact: `phase-VALUE_04-evidence` (id `4956645181`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4956645181/zip`)
+- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018329`
+- Artifact: `phase-VALUE_04-evidence` (id `4963263518`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263518/zip`)
 - Evidence outputs:
   - `backend/validation/evidence/value_traces/value_04_summary.json`
   - `docs/evidence/value_traces/value_04_registry_trace.md`
@@ -59,8 +60,8 @@ All downgrades include `# CI:DESTRUCTIVE_OK` markers for intentional destructive
 
 ## EG-VT-05 (VALUE_05) - NEW
 
-- Actions job: _Pending CI run on commit 8604f8d_
-- Artifact: `phase-VALUE_05-evidence` (pending)
+- Actions job: `https://github.com/Muk223/skeldir-2.0/actions/runs/20492480929/job/58887018324`
+- Artifact: `phase-VALUE_05-evidence` (id `4963263023`, zip `https://api.github.com/repos/Muk223/skeldir-2.0/actions/artifacts/4963263023/zip`)
 - Evidence outputs:
   - `backend/validation/evidence/value_traces/value_05_summary.json`
   - `docs/evidence/value_traces/value_05_centaur_enforcement.md`
