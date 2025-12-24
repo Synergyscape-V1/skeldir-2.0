@@ -1,7 +1,7 @@
 """Add ghost revenue reconciliation columns to revenue_ledger
 
 Revision ID: 202512231000
-Revises: 202511271210
+Revises: 202512201000
 Create Date: 2025-12-23 10:00:00
 
 Migration Description:
@@ -31,7 +31,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = '202512231000'
-down_revision: Union[str, None] = '202511271210'
+down_revision: Union[str, None] = '202512201000'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
