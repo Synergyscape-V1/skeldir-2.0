@@ -244,10 +244,17 @@ class BudgetPolicyEngine:
         return BudgetDecision(
             allowed=True,
             action=BudgetAction.FALLBACK,
-            estimated_cost_cents=fallback_cost,
+            # IMPORTANT: Keep `estimated_cost_cents` as the cost of the *requested* model.
+            # We may substitute a cheaper model, but the enforcement decision is based on
+            # the premium estimate crossing the cap; this is what should be audited.
+            estimated_cost_cents=estimated_cents,
             cap_cents=cap_cents,
             resolved_model=fallback_model,
-            reason=f"FALLBACK: {requested_model} -> {fallback_model} (cost {estimated_cents}¢ > cap {cap_cents}¢)",
+            reason=(
+                f"FALLBACK: {requested_model} -> {fallback_model} "
+                f"(requested {estimated_cents}¢ > cap {cap_cents}¢; "
+                f"fallback_estimate {fallback_cost}¢)"
+            ),
             request_id=request_id,
         )
 

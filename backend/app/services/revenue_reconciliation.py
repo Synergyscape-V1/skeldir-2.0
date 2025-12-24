@@ -137,13 +137,11 @@ class RevenueReconciliationService:
             # If verified is 0, discrepancy is 100% if any claims exist
             discrepancy_bps = BasisPoints(10000 if claimed_total_cents > 0 else 0)
 
-        # Step 5: Upsert into revenue_ledger
-        ledger_id = uuid4()
-        claim_sources = sorted(set(c.source for c in platform_claims))
-
-        await self._upsert_ledger_row(
+        # Step 5: Insert into revenue_ledger (immutable ledger; no UPDATEs allowed)
+        # If an entry for this transaction already exists, we reuse its id.
+        ledger_id = await self._upsert_ledger_row(
             conn=conn,
-            ledger_id=ledger_id,
+            ledger_id=uuid4(),
             tenant_id=tenant_id,
             order_id=order_id,
             transaction_id=verified_revenue.transaction_id,
@@ -155,6 +153,7 @@ class RevenueReconciliationService:
             verification_timestamp=verified_revenue.verification_timestamp,
             reconciled_at=now,
         )
+        claim_sources = sorted(set(c.source for c in platform_claims))
 
         logger.info(
             "revenue_reconciliation_complete",
@@ -196,14 +195,15 @@ class RevenueReconciliationService:
         verification_source: str,
         verification_timestamp: datetime,
         reconciled_at: datetime,
-    ) -> None:
+    ) -> UUID:
         """
-        Upsert a reconciliation row into revenue_ledger.
+        Insert a reconciliation row into revenue_ledger (immutable ledger).
 
-        Uses ON CONFLICT to ensure idempotency on (tenant_id, order_id).
+        IMPORTANT: revenue_ledger is immutable in this codebase (updates/deletes blocked),
+        so we must not use ON CONFLICT DO UPDATE.
         """
         # RAW_SQL_ALLOWLIST: revenue reconciliation upsert
-        await conn.execute(
+        insert_result = await conn.execute(
             text("""
                 INSERT INTO revenue_ledger (
                     id, tenant_id, order_id, transaction_id, state,
@@ -212,22 +212,22 @@ class RevenueReconciliationService:
                     metadata, created_at, updated_at
                 ) VALUES (
                     :id, :tenant_id, :order_id, :transaction_id, 'captured',
-                    :verified_total_cents, 'USD', :verification_source, :verification_timestamp,
+                    :amount_cents, 'USD', :verification_source, :verification_timestamp,
                     :claimed_total_cents, :verified_total_cents, :ghost_revenue_cents, :discrepancy_bps,
                     :metadata, :reconciled_at, :reconciled_at
                 )
-                ON CONFLICT (transaction_id) DO UPDATE SET
-                    claimed_total_cents = EXCLUDED.claimed_total_cents,
-                    verified_total_cents = EXCLUDED.verified_total_cents,
-                    ghost_revenue_cents = EXCLUDED.ghost_revenue_cents,
-                    discrepancy_bps = EXCLUDED.discrepancy_bps,
-                    updated_at = EXCLUDED.updated_at
+                ON CONFLICT (transaction_id) DO NOTHING
+                RETURNING id
             """),
             {
                 "id": str(ledger_id),
                 "tenant_id": str(tenant_id),
                 "order_id": order_id,
                 "transaction_id": transaction_id,
+                # Avoid reusing a single bind parameter across columns of different SQL
+                # types (INTEGER vs BIGINT), which can trigger asyncpg
+                # AmbiguousParameterError during statement preparation.
+                "amount_cents": int(verified_total_cents),
                 "verified_total_cents": verified_total_cents,
                 "verification_source": verification_source,
                 "verification_timestamp": verification_timestamp,
@@ -238,6 +238,24 @@ class RevenueReconciliationService:
                 "reconciled_at": reconciled_at,
             },
         )
+
+        inserted_id = insert_result.scalar_one_or_none()
+        if inserted_id:
+            return UUID(str(inserted_id))
+
+        # Row already exists; fetch existing immutable id.
+        existing = await conn.execute(
+            text("""
+                SELECT id
+                FROM revenue_ledger
+                WHERE tenant_id = :tenant_id
+                  AND transaction_id = :transaction_id
+                LIMIT 1
+            """),
+            {"tenant_id": str(tenant_id), "transaction_id": transaction_id},
+        )
+        existing_id = existing.scalar_one()
+        return UUID(str(existing_id))
 
     async def get_reconciliation_by_order(
         self,

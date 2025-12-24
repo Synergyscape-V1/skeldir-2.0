@@ -63,8 +63,8 @@ async def test_value_trace_budget_enforcement_blocks_premium():
     VALUE_03-WIN: Prove budget-kill circuit breaker prevents premium calls.
 
     Scenario:
-    - Request gpt-4 with 5000 input + 2000 output tokens
-    - At gpt-4 pricing: ~$0.27 input + ~$0.12 output = ~$0.39
+    - Request gpt-4 with 5000 input + 3000 output tokens
+    - At gpt-4 pricing: ~$0.15 input + ~$0.18 output = ~$0.33
     - Cap is $0.30 (30 cents)
     - System must not ALLOW premium model
 
@@ -116,7 +116,7 @@ async def test_value_trace_budget_enforcement_blocks_premium():
     # Adversarial request: Premium model that exceeds cap
     requested_model = "gpt-4"
     input_tokens = 5000  # 5k input tokens
-    output_tokens = 2000  # 2k output tokens
+    output_tokens = 3000  # 3k output tokens (forces cost > $0.30 cap under current catalog)
 
     # Calculate expected cost to verify it exceeds cap
     expected_cost = engine_instance.estimate_cost_cents(
