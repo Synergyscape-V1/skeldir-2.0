@@ -178,11 +178,11 @@ jobs:
    - B0 gates only run in `phase-gates.yml`
    - They don't compete or contradict
 
-**Adjudication Result:** ⚠️ **PARTIAL SPLIT-BRAIN**
+**Adjudication Result:** ✅ **SPLIT-BRAIN CONFIRMED (AND REMEDIATED)**
 
-There is intentional separation (B0 gates vs VALUE gates), but not a "split-brain" where the same gate runs differently in two places. However, PYTHONPATH inconsistency IS a problem:
-- `ci.yml` sets PYTHONPATH incorrectly (repo root instead of backend/)
-- This breaks VALUE tests that import `app.*`
+Two workflows (`ci.yml` vs `phase-gates.yml`) were both triggering on push/PR, producing contradictory signals (and different gate sets).
+
+Additionally, a PYTHONPATH-only-to-`backend/` fix creates a potential **import paradox** when runner scripts are executed as files (e.g. `python scripts/phase_gates/run_phase.py ...`): Python sets `sys.path[0]` to `scripts/phase_gates/`, which can break `scripts.*` imports unless repo root is also visible.
 
 ---
 
@@ -235,7 +235,7 @@ OK
 
 ---
 
-### Remediation R2: Fix CI PYTHONPATH from Repo Root to Backend/
+### Remediation R2: Fix CI PYTHONPATH to Include BOTH Repo Root and Backend/
 
 **Commit:** `0cd6cfe`
 **Files Changed:**
@@ -243,7 +243,8 @@ OK
 - `scripts/dev/repro_ci_value_gates.sh` (new reproduction harness)
 
 **Problem:**
-CI set `PYTHONPATH=${{ github.workspace }}` (repo root), but Python code imports `app.*` which requires `backend/` to be on PYTHONPATH.
+- VALUE tests import `app.*` and require `backend/` to be importable.
+- Phase gate infrastructure imports `scripts.*` and requires **repo root** to be importable.
 
 **Fix Applied:**
 ```yaml
@@ -252,15 +253,40 @@ env:
   DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
   MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
 - PYTHONPATH: ${{ github.workspace }}
-+ PYTHONPATH: ${{ github.workspace }}/backend
++ PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
   CI: "true"
 ```
 
 **Impact:**
-- Python now searches `backend/` for `app` package
+- Python can import BOTH:
+  - `app.*` (via `backend/`)
+  - `scripts.*` (via repo root)
 - Enables: `from app.core.money import MoneyCents`
 - Enables: `from app.services.revenue_reconciliation import RevenueReconciliationService`
 - Applies to both `phase-gates` and `phase-chain` jobs
+
+---
+
+### Remediation R3: Environment-Invariant Runner Bootstrap (No YAML Fragility)
+
+**Files Changed:**
+- `scripts/phase_gates/_bootstrap.py`
+- `scripts/phase_gates/run_phase.py`
+- `scripts/phase_gates/run_gate.py`
+- `scripts/phase_gates/run_chain.py`
+
+**Fix Applied:**
+Runner scripts import a local `_bootstrap` module at process start to inject both repo root and `backend/` into `sys.path`, preventing runner-level import paralysis even if CI YAML drifts.
+
+---
+
+### Remediation R4: Workflow Unification (Remove Push/PR Split-Brain)
+
+**Files Changed:**
+- `.github/workflows/phase-gates.yml`
+
+**Fix Applied:**
+`phase-gates.yml` was converted to `workflow_call` / `workflow_dispatch` only. `ci.yml` is now the single authoritative push/PR workflow for phase matrices.
 
 **Bonus - Local Reproduction Harness (C1-REPRO-HARNESS):**
 
@@ -284,7 +310,9 @@ $ ./scripts/dev/repro_ci_value_gates.sh VALUE_03
 | Fix ID | Commit | Files Changed | Root Cause Addressed |
 |--------|--------|---------------|---------------------|
 | R1 | `a7c4ce4` | `backend/app/core/__init__.py` | ModuleNotFoundError: No module named 'app.core' |
-| R2 | `0cd6cfe` | `.github/workflows/ci.yml`, `scripts/dev/repro_ci_value_gates.sh` | PYTHONPATH mismatch (repo root vs backend/) |
+| R2 | `0cd6cfe` | `.github/workflows/ci.yml`, `scripts/dev/repro_ci_value_gates.sh` | PYTHONPATH mismatch (runner vs app imports) |
+| R3 | (post-`0cd6cfe`) | `scripts/phase_gates/_bootstrap.py`, runners | Environment-invariant bootstrap (no pipeline paralysis) |
+| R4 | (post-`0cd6cfe`) | `.github/workflows/phase-gates.yml` | Split-brain elimination (single push/PR truth) |
 
 **Combined Impact:**
 - Resolves import errors in VALUE_01, VALUE_03, VALUE_05 tests
@@ -298,8 +326,8 @@ $ ./scripts/dev/repro_ci_value_gates.sh VALUE_03
 | Exit Gate | Status | Evidence |
 |-----------|--------|----------|
 | **EG-REPRO** (C1) | ✅ **MET** | `scripts/dev/repro_ci_value_gates.sh` created and tested locally |
-| **EG-CONTEXT-HARDENED** (C2) | ✅ **MET** | `__init__.py` created, PYTHONPATH fixed in CI |
-| **EG-WORKFLOW-UNIFIED** (C3) | ✅ **MET** | No split-brain; VALUE gates only in ci.yml, B0 gates in phase-gates.yml (intentional separation) |
+| **EG-CONTEXT-HARDENED** (C2) | ✅ **MET** | `__init__.py` created; runner bootstrap + dual-path PYTHONPATH |
+| **EG-WORKFLOW-UNIFIED** (C3) | ✅ **MET** | `ci.yml` is authoritative on push/PR; `phase-gates.yml` is manual/callable only |
 | **EG-VALUE-MATRIX-GREEN** (C4) | ⏳ **PENDING** | CI run triggered on commit `0cd6cfe`, awaiting results |
 | **EG-DRIFT-RESISTANT** (C5) | ⏳ **PENDING** | Negative tests not yet added (deferred until green state achieved) |
 

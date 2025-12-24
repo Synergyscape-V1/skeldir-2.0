@@ -148,7 +148,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
       MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
-      PYTHONPATH: ${{ github.workspace }}/backend
+      # Include BOTH repo root and backend/ to avoid "pipeline paralysis" (runner + app imports).
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       CI: "true"
     steps:
       - name: Checkout code
@@ -176,6 +177,10 @@ jobs:
           pip install -r backend/requirements-dev.txt
           go install github.com/oasdiff/oasdiff@v1.11.7
 
+      - name: Zero Container Doctrine (single-truth enforcement)
+        run: |
+          python scripts/guard_no_docker.py
+
       - name: Prepare database and role
         env:
           PGPASSWORD: postgres
@@ -198,11 +203,11 @@ jobs:
           echo "Python sys.path:"
           python -c "import sys; print('\n'.join(sys.path))"
           echo ""
-          echo "Testing scripts.phase_gates import (expected FAIL with current PYTHONPATH):"
-          python -c "import scripts.phase_gates" || echo "CONFIRMED: ModuleNotFoundError for scripts.phase_gates"
+          echo "Testing scripts.phase_gates import (must succeed):"
+          python -c "import scripts.phase_gates; print('OK: scripts.phase_gates import works')"
           echo ""
-          echo "Testing app import (expected SUCCESS with current PYTHONPATH):"
-          python -c "import app; print('app module imported successfully')" || echo "FAIL: app import also broken"
+          echo "Testing app import (must succeed):"
+          python -c "import app; print('OK: app import works')"
 
       - name: Run phase gate
         run: |
@@ -238,7 +243,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
       MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
-      PYTHONPATH: ${{ github.workspace }}/backend
+      # Include BOTH repo root and backend/ to avoid "pipeline paralysis" (runner + app imports).
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       CI: "true"
     steps:
       - name: Checkout code
@@ -263,6 +269,10 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           go install github.com/oasdiff/oasdiff@v1.11.7
+
+      - name: Zero Container Doctrine (single-truth enforcement)
+        run: |
+          python scripts/guard_no_docker.py
       - name: Prepare database and role
         env:
           PGPASSWORD: postgres

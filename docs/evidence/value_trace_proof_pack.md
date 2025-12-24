@@ -1,8 +1,10 @@
 # Value Trace Proof Pack (Main-Anchored)
 
-- main commit: `8604f8d` (Add CI:DESTRUCTIVE_OK markers to forensic migration downgrades)
-- Prior CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/20470980951
-- CI re-run required: Commit `8604f8d` pushed to main on 2025-12-24; check latest CI run for updated proof
+- Source of truth: **GitHub Actions CI run on `main` for the candidate SHA**
+- Anchors:
+  - The candidate SHA and CI run URL are emitted into each phase summary JSON at:
+    - `backend/validation/evidence/phases/<phase>_summary.json`
+  - These are populated from `GITHUB_SHA` and `GITHUB_RUN_ID` at runtime.
 
 This proof pack is satisfied by the `Phase Gates (VALUE_01..VALUE_05)` matrix jobs on `main`, plus the per-job `phase-VALUE_0X-evidence` artifacts uploaded by CI.
 

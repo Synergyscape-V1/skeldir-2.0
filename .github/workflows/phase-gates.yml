@@ -1,10 +1,11 @@
-name: Phase Gates
+name: DEPRECATED - Phase Gates (legacy)
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  # Split-brain remediation:
+  # - CI truth for phase matrices lives in `.github/workflows/ci.yml`
+  # - This legacy workflow is kept only for manual invocation / debugging.
+  workflow_dispatch:
+  workflow_call:
 
 jobs:
   guard-zero-containers:

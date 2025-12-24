@@ -4,20 +4,15 @@ Run a phase chain enforcing prerequisites from phase_manifest.yaml.
 """
 from __future__ import annotations
 
-# Bootstrap sys.path FIRST (inline to avoid circular import)
-import sys
-from pathlib import Path as _Path
-_repo_root = _Path(__file__).resolve().parents[2]
-_backend_root = _repo_root / "backend"
-if str(_repo_root) not in sys.path:
-    sys.path.insert(0, str(_repo_root))
-if str(_backend_root) not in sys.path:
-    sys.path.insert(0, str(_backend_root))
-del _Path, _repo_root, _backend_root
+# Bootstrap sys.path FIRST (environment-invariant)
+import _bootstrap
+_bootstrap.bootstrap()
+del _bootstrap
 
 import json
+import os
 import subprocess
-# sys already imported above for bootstrap
+import sys
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +24,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = REPO_ROOT / "docs" / "phases" / "phase_manifest.yaml"
 EVIDENCE_DIR = REPO_ROOT / "backend" / "validation" / "evidence" / "phases"
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _ci_run_url() -> str:
+    server = os.environ.get("GITHUB_SERVER_URL")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    if server and repo and run_id:
+        return f"{server}/{repo}/actions/runs/{run_id}"
+    return ""
 
 
 class ChainError(RuntimeError):
@@ -93,6 +97,8 @@ def main() -> int:
             break
     summary = {
         "target": target,
+        "candidate_sha": (os.environ.get("GITHUB_SHA") or os.environ.get("CI_COMMIT_SHA") or ""),
+        "ci_run_url": _ci_run_url(),
         "status": status,
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         "chain": results,

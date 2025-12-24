@@ -7,19 +7,13 @@ Dispatches to dedicated gate runners once they are implemented.
 
 from __future__ import annotations
 
-# Bootstrap sys.path FIRST (inline to avoid circular import)
-import sys
-from pathlib import Path as _Path
-_repo_root = _Path(__file__).resolve().parents[2]
-_backend_root = _repo_root / "backend"
-if str(_repo_root) not in sys.path:
-    sys.path.insert(0, str(_repo_root))
-if str(_backend_root) not in sys.path:
-    sys.path.insert(0, str(_backend_root))
-del _Path, _repo_root, _backend_root
+# Bootstrap sys.path FIRST (environment-invariant)
+import _bootstrap
+_bootstrap.bootstrap()
+del _bootstrap
 
 import argparse
-# sys already imported above for bootstrap
+import sys
 from importlib import import_module
 
 
