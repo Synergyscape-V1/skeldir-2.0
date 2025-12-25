@@ -117,9 +117,12 @@ jobs:
 
       - name: Verify bundled artifacts
         run: |
-          BUNDLE_COUNT=$(find api-contracts/dist/openapi/v1 -name "*.bundled.yaml" | wc -l)
+          BUNDLE_COUNT=$(ls -1 api-contracts/dist/openapi/v1/*.bundled.yaml 2>/dev/null | wc -l)
+          echo "Found $BUNDLE_COUNT bundled YAML files"
+
           if [ "$BUNDLE_COUNT" -lt 5 ]; then
             echo "ERROR: Expected at least 5 bundled contracts, found $BUNDLE_COUNT"
+            ls -la api-contracts/dist/openapi/v1/ || echo "dist directory not found"
             exit 1
           fi
           echo "✓ Found $BUNDLE_COUNT bundled contracts"
