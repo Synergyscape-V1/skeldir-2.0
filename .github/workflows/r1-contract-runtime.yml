@@ -233,7 +233,9 @@ jobs:
         run: |
           cd backend
           pip install -r requirements-lock.txt
-          echo "pip install -r backend/requirements-lock.txt" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
+          # email-validator is required for Pydantic EmailStr validation
+          pip install email-validator
+          echo "pip install -r backend/requirements-lock.txt email-validator" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
 
       - name: "EG-R1-4: Live stack boot + health/metrics probes"
         run: |
