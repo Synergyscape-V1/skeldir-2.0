@@ -1,0 +1,69 @@
+{
+  "run_identity": {
+    "candidate_sha": "7650d094a7d440d1f3707c306c4752d40f047587",
+    "run_id": "local_dev",
+    "captured_at_utc": "2025-12-24T00:00:00Z",
+    "operator_id": "claude-code-haiku-4-5",
+    "substrate": "Windows_MINGW64_developer_convenience",
+    "authoritative_substrate": "CI_UBUNTU_22.04",
+    "note": "Local run for evidence gathering - CI execution required for authoritative PASS"
+  },
+  "exit_gates_status": {
+    "EG-R0-1": "PASS",
+    "EG-R0-2": "FAIL (Python deps not pinned)",
+    "EG-R0-3": "FAIL (containers not digest-pinned)",
+    "EG-R0-4": "NOT_TESTED (requires CI)",
+    "EG-R0-5": "NOT_TESTED (requires CI)",
+    "EG-R0-6": "PASS (enforcement script created, CI enforces)",
+    "EG-R0-7": "PASS (CI Ubuntu chosen)",
+    "EG-R0-8": "PASS (manifest structure)",
+    "EG-R0-9": "PASS (CI fingerprint in workflow)"
+  },
+  "artifacts": {
+    "DOCKER_IMAGE_DIGESTS.json": {
+      "sha256": "<computed on commit>",
+      "purpose": "Container digest capture for EG-R0-3",
+      "status": "REMEDIATION_REQUIRED"
+    },
+    "ARTIFACT_MANIFEST.json": {
+      "sha256": "self",
+      "purpose": "Tamper-evident registry",
+      "status": "COMPLETE"
+    }
+  },
+  "remediation_commits_required": [
+    {
+      "gate": "EG-R0-2",
+      "remediation": "Create requirements-lock.txt with pinned Python dependencies",
+      "command": "pip freeze > backend/requirements-lock.txt (in CI clean environment)",
+      "priority": "HIGH"
+    },
+    {
+      "gate": "EG-R0-3",
+      "remediation": "Replace container tags with digest references",
+      "files": [
+        "docker-compose.component-dev.yml",
+        "docker-compose.mock.yml"
+      ],
+      "example": "image: postgres@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21",
+      "priority": "HIGH"
+    }
+  ],
+  "ci_execution_required_for": [
+    "EG-R0-4: DB fresh-boot determinism test",
+    "EG-R0-5: Harness Run1 vs Run2 determinism comparison",
+    "Authoritative artifact package generation"
+  ],
+  "deliverables_created": {
+    "summary_report": "docs/validation/runtime/r0_preflight_summary.md",
+    "network_isolation_script": "scripts/r0/enforce_network_isolation.sh",
+    "ci_workflow": ".github/workflows/r0-preflight-validation.yml",
+    "artifacts_directory": "artifacts/runtime_preflight/2025-12-24_7650d094/"
+  },
+  "final_verdict": "R0_NOT_COMPLETE",
+  "completion_blockers": [
+    "EG-R0-2: Python dependency pinning required",
+    "EG-R0-3: Container digest pinning required",
+    "EG-R0-4, EG-R0-5: CI execution required for determinism tests"
+  ]
+}

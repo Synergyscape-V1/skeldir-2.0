@@ -1,0 +1,46 @@
+{
+  "captured_at_utc": "2025-12-24T00:00:00Z",
+  "timezone": "UTC",
+  "operator_id": "claude-code-haiku-4-5",
+  "environment": {
+    "os": {
+      "platform": "win32",
+      "system": "MINGW64_NT-10.0-26100",
+      "arch": "x86_64",
+      "version": "2025-07-16"
+    },
+    "python": {
+      "version": "3.11.9",
+      "executable": "python"
+    },
+    "docker": {
+      "engine_version": "28.5.1",
+      "compose_version": "v2.40.0-desktop.1",
+      "running_containers": 3
+    },
+    "database": {
+      "postgres_version": "15-alpine",
+      "psql_version": "18.0",
+      "running_instances": {
+        "skeldir-pg": "postgres:15-alpine",
+        "skeldir-ci-debug-pg": "postgres:15-alpine",
+        "skeldir-gate-run": "skeldir-gate-base"
+      }
+    }
+  },
+  "git": {
+    "head_sha": "7650d094a7d440d1f3707c306c4752d40f047587",
+    "branch": "main",
+    "remote_origin": "https://github.com/Muk223/skeldir-2.0.git",
+    "status": "clean"
+  },
+  "working_directory": "c:\\Users\\ayewhy\\II SKELDIR II",
+  "repo_structure": {
+    "backend": "present",
+    "frontend": "present",
+    "api_contracts": "present",
+    "alembic_migrations": "36 files across 3 phases",
+    "docker_compose_mock": "present",
+    "test_suites": "17 B0-phase tests + contract tests"
+  }
+}

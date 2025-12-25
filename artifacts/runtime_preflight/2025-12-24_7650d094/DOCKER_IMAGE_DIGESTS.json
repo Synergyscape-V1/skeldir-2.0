@@ -1,0 +1,26 @@
+{
+  "captured_at_utc": "2025-12-24T00:00:00Z",
+  "candidate_sha": "7650d094a7d440d1f3707c306c4752d40f047587",
+  "runtime_critical_images": {
+    "postgres": {
+      "current_reference": "postgres:15-alpine",
+      "image_id": "b3968e348b48",
+      "digest": "sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21",
+      "pinning_status": "NOT_PINNED",
+      "recommended_pin": "postgres@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21"
+    },
+    "skeldir-gate-base": {
+      "current_reference": "skeldir-gate-base:latest",
+      "image_id": "c4f7100040c7",
+      "digest": "sha256:c4f7100040c70e0c009d3bd662e88aff5b03e884c79dad9993039bb3b7220660",
+      "pinning_status": "NOT_PINNED",
+      "note": "Custom built image - recommend tagging with semantic version instead of 'latest'"
+    }
+  },
+  "remediation_required": true,
+  "remediation_steps": [
+    "Replace 'postgres:15-alpine' with 'postgres@sha256:b3968e348b48...' in docker-compose files",
+    "Tag skeldir-gate-base with semantic version (e.g., v1.0.0) instead of 'latest'",
+    "Document digest update process in scripts/r0/update_digests.sh"
+  ]
+}

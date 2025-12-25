@@ -1,0 +1,171 @@
+{
+  "version": "1.0.0",
+  "name": "skeldir-frontend",
+  "dependencies": {
+    "@floating-ui/react": {
+      "version": "0.27.16",
+      "resolved": "https://registry.npmjs.org/@floating-ui/react/-/react-0.27.16.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-avatar": {
+      "version": "1.1.11",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-avatar/-/react-avatar-1.1.11.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-checkbox": {
+      "version": "1.3.3",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-checkbox/-/react-checkbox-1.3.3.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-dialog": {
+      "version": "1.1.15",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-dialog/-/react-dialog-1.1.15.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-separator": {
+      "version": "1.1.8",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-separator/-/react-separator-1.1.8.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-slot": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-slot/-/react-slot-1.2.4.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-tabs": {
+      "version": "1.1.13",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-tabs/-/react-tabs-1.1.13.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-toast": {
+      "version": "1.2.15",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-toast/-/react-toast-1.2.15.tgz",
+      "overridden": false
+    },
+    "@radix-ui/react-tooltip": {
+      "version": "1.2.8",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-tooltip/-/react-tooltip-1.2.8.tgz",
+      "overridden": false
+    },
+    "@tanstack/react-query": {
+      "version": "5.90.12",
+      "resolved": "https://registry.npmjs.org/@tanstack/react-query/-/react-query-5.90.12.tgz",
+      "overridden": false
+    },
+    "@types/node": {
+      "version": "20.19.26",
+      "resolved": "https://registry.npmjs.org/@types/node/-/node-20.19.26.tgz",
+      "overridden": false
+    },
+    "@types/react-dom": {
+      "version": "18.3.7",
+      "resolved": "https://registry.npmjs.org/@types/react-dom/-/react-dom-18.3.7.tgz",
+      "overridden": false
+    },
+    "@types/react": {
+      "version": "18.3.27",
+      "resolved": "https://registry.npmjs.org/@types/react/-/react-18.3.27.tgz",
+      "overridden": false
+    },
+    "@typescript-eslint/eslint-plugin": {
+      "version": "6.21.0",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-6.21.0.tgz",
+      "overridden": false
+    },
+    "@typescript-eslint/parser": {
+      "version": "6.21.0",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/parser/-/parser-6.21.0.tgz",
+      "overridden": false
+    },
+    "@vitejs/plugin-react": {
+      "version": "4.7.0",
+      "resolved": "https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-4.7.0.tgz",
+      "overridden": false
+    },
+    "autoprefixer": {
+      "version": "10.4.22",
+      "resolved": "https://registry.npmjs.org/autoprefixer/-/autoprefixer-10.4.22.tgz",
+      "overridden": false
+    },
+    "class-variance-authority": {
+      "version": "0.7.1",
+      "resolved": "https://registry.npmjs.org/class-variance-authority/-/class-variance-authority-0.7.1.tgz",
+      "overridden": false
+    },
+    "clsx": {
+      "version": "2.1.1",
+      "resolved": "https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz",
+      "overridden": false
+    },
+    "date-fns": {
+      "version": "3.6.0",
+      "resolved": "https://registry.npmjs.org/date-fns/-/date-fns-3.6.0.tgz",
+      "overridden": false
+    },
+    "eslint-plugin-react-hooks": {
+      "version": "4.6.2",
+      "resolved": "https://registry.npmjs.org/eslint-plugin-react-hooks/-/eslint-plugin-react-hooks-4.6.2.tgz",
+      "overridden": false
+    },
+    "eslint-plugin-react-refresh": {
+      "version": "0.4.24",
+      "resolved": "https://registry.npmjs.org/eslint-plugin-react-refresh/-/eslint-plugin-react-refresh-0.4.24.tgz",
+      "overridden": false
+    },
+    "eslint": {
+      "version": "8.57.1",
+      "resolved": "https://registry.npmjs.org/eslint/-/eslint-8.57.1.tgz",
+      "overridden": false
+    },
+    "lucide-react": {
+      "version": "0.309.0",
+      "resolved": "https://registry.npmjs.org/lucide-react/-/lucide-react-0.309.0.tgz",
+      "overridden": false
+    },
+    "postcss": {
+      "version": "8.5.6",
+      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.6.tgz",
+      "overridden": false
+    },
+    "react-dom": {
+      "version": "18.3.1",
+      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
+      "overridden": false
+    },
+    "react": {
+      "version": "18.3.1",
+      "resolved": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+      "overridden": false
+    },
+    "recharts": {
+      "version": "2.15.4",
+      "resolved": "https://registry.npmjs.org/recharts/-/recharts-2.15.4.tgz",
+      "overridden": false
+    },
+    "tailwind-merge": {
+      "version": "2.6.0",
+      "resolved": "https://registry.npmjs.org/tailwind-merge/-/tailwind-merge-2.6.0.tgz",
+      "overridden": false
+    },
+    "tailwindcss": {
+      "version": "3.4.19",
+      "resolved": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-3.4.19.tgz",
+      "overridden": false
+    },
+    "typescript": {
+      "version": "5.9.3",
+      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+      "overridden": false
+    },
+    "vite": {
+      "version": "5.4.21",
+      "resolved": "https://registry.npmjs.org/vite/-/vite-5.4.21.tgz",
+      "overridden": false
+    },
+    "wouter": {
+      "version": "2.12.1",
+      "resolved": "https://registry.npmjs.org/wouter/-/wouter-2.12.1.tgz",
+      "overridden": false
+    }
+  }
+}

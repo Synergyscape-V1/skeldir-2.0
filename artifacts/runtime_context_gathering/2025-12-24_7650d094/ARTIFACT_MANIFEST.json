@@ -1,0 +1,238 @@
+{
+  "candidate_sha": "7650d094a7d440d1f3707c306c4752d40f047587",
+  "captured_at_utc": "2025-12-24T00:00:00Z",
+  "operator_id": "claude-code-haiku-4-5",
+  "metadata": {
+    "mission": "Sequential Runtime Evaluation Context Gathering (B0.1→B0.5)",
+    "exit_gates": "CG-0 through CG-5 (all met)",
+    "hypothesis_count": 12,
+    "definitions_count": 3
+  },
+  "artifacts": {
+    "ENV_SNAPSHOT.json": {
+      "path": "artifacts/runtime_context_gathering/2025-12-24_7650d094/ENV_SNAPSHOT.json",
+      "sha256": "83a4e57516e2697fd3314b4e4b9d2b2b7ac7a619d0ceb5121cc26c8c0a4e5e57",
+      "purpose": "Environment provenance (OS, Python, Docker, Postgres versions)",
+      "gate": "CG-1",
+      "size_bytes": 897
+    },
+    "context_gathering_summary.md": {
+      "path": "docs/validation/runtime/context_gathering_summary.md",
+      "sha256": "77999b0e23704ca1743a5a4c34f4d9baccdb71033ec558d17aa7f33ad8d6cb53",
+      "purpose": "Comprehensive validation summary (hypotheses H1–H12, definitions, exit gates)",
+      "gate": "All gates",
+      "contains": [
+        "Repo anchor (CG-0)",
+        "Environment snapshot (CG-1)",
+        "Harness inventory (CG-2)",
+        "Hypothesis verdicts H1–H12 (CG-3)",
+        "Definition outputs (CG-4)",
+        "Artifact index (CG-5)"
+      ]
+    }
+  },
+  "evidence_sources": {
+    "H1_harness_inventory": {
+      "source": "Explore agent scan",
+      "files": [
+        "api-contracts/openapi/v1/ (15 specs)",
+        "scripts/contracts/ (bundling + validation)",
+        "tests/contract/ (3 test files)",
+        "backend/tests/ (17 B0-phase tests)",
+        "scripts/phase_gates/ (orchestration)",
+        "alembic/versions/ (36 migrations)",
+        ".github/workflows/ (8 workflows)"
+      ]
+    },
+    "H2_openapi_enforcement": {
+      "source": "Contract infrastructure inspection",
+      "evidence": [
+        "api-contracts/openapi/v1/ - 15 specs",
+        "scripts/contracts/bundle.sh - Redocly bundling",
+        "scripts/contracts/validate-contracts.sh - OpenAPI validation",
+        "tests/contract/test_contract_semantics.py - Schemathesis dynamic tests",
+        ".github/workflows/contract-enforcement.yml - CI 4-phase pipeline"
+      ]
+    },
+    "H3_rls_enforcement": {
+      "source": "Alembic migration inspection",
+      "migration": "202511131120_add_rls_policies.py",
+      "evidence": [
+        "ALTER TABLE ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE FORCE ROW LEVEL SECURITY",
+        "CREATE POLICY tenant_isolation_policy",
+        "USING (tenant_id = current_setting('app.current_tenant_id'))",
+        "Applied to 5 tables: attribution_events, dead_events, attribution_allocations, revenue_ledger, reconciliation_runs"
+      ]
+    },
+    "H4_pii_protection": {
+      "source": "Database trigger + migration inspection",
+      "files": [
+        "backend/fix_pii_trigger.sql",
+        "alembic/versions/002_pii_controls/202511161200_add_pii_guardrail_triggers.py"
+      ],
+      "evidence": [
+        "fn_enforce_pii_guardrail_events() - blocks INSERT if raw_payload contains PII keys",
+        "fn_enforce_pii_guardrail_revenue() - blocks INSERT if metadata contains PII keys",
+        "Triggers on attribution_events, dead_events, revenue_ledger",
+        "PII keys detected: email, phone, ssn, ip_address, first/last_name, address"
+      ]
+    },
+    "H5_idempotency": {
+      "source": "ORM model + event service inspection",
+      "files": [
+        "backend/app/models/attribution_event.py:73-75",
+        "backend/app/ingestion/event_service.py:91-112",
+        "backend/app/tasks/attribution.py:92-142"
+      ],
+      "evidence": [
+        "idempotency_key: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)",
+        "_check_duplicate() method - queries for existing event by idempotency_key",
+        "attribution_recompute_jobs table - UNIQUE(tenant_id, window_start, window_end, model_version)"
+      ]
+    },
+    "H6_dlq_routing": {
+      "source": "Event service inspection",
+      "file": "backend/app/ingestion/event_service.py:185-222",
+      "evidence": [
+        "ValidationError caught and routed to _route_to_dlq()",
+        "DeadEvent created with error_type, error_message, source, tenant_id",
+        "events_dlq_total metric incremented",
+        "Malformed events NEVER inserted into attribution_events (canonical table)"
+      ]
+    },
+    "H7_celery_postgres_only": {
+      "source": "Celery app configuration inspection",
+      "file": "backend/app/celery_app.py:73-154",
+      "evidence": [
+        "broker_url = sqla+postgresql://... (SQLAlchemy Kombu transport)",
+        "result_backend = db+postgresql://... (Celery database backend)",
+        "Queue topology (housekeeping, maintenance, llm, attribution)",
+        "NO Redis references in entire codebase"
+      ]
+    },
+    "H8_tenant_task_decorator": {
+      "source": "Task context inspection",
+      "file": "backend/app/tasks/context.py:105-158",
+      "evidence": [
+        "tenant_task decorator - enforces tenant_id presence",
+        "_set_tenant_guc_global() - sets app.current_tenant_id GUC before DB access",
+        "SET LOCAL semantics - transaction-scoped, prevents leakage",
+        "Applied to all tenant-scoped tasks: attribution, llm, maintenance"
+      ]
+    },
+    "H9_worker_least_privilege": {
+      "source": "Worker test + grant migration inspection",
+      "files": [
+        "backend/tests/test_b0535_worker_readonly_ingestion.py:12-18",
+        "alembic/versions/001_core_schema/202511131121_add_grants.py"
+      ],
+      "evidence": [
+        "current_user = DATABASE_URL user (app_user)",
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE TO app_rw",
+        "GRANT SELECT ON TABLE TO app_ro",
+        "FORCE ROW LEVEL SECURITY prevents bypass",
+        "No superuser elevation, no table owner bypass"
+      ]
+    },
+    "H10_determinism": {
+      "source": "Attribution task + idempotency test inspection",
+      "files": [
+        "backend/app/tasks/attribution.py:28-29, 92-142",
+        "backend/tests/test_b0532_window_idempotency.py:54-100+",
+        "backend/tests/test_b0536_attribution_e2e.py:48-78"
+      ],
+      "evidence": [
+        "BASELINE_CHANNELS = ['direct', 'email', 'google_search'] (deterministic ordering)",
+        "Window-scoped identity via UNIQUE(tenant_id, window_start, window_end, model_version)",
+        "Timestamp normalization to UTC",
+        "Test: rerun produces identical run_count + allocations"
+      ]
+    },
+    "H11_performance": {
+      "source": "E2E test harness inspection",
+      "file": "backend/tests/test_b0536_attribution_e2e.py",
+      "evidence": [
+        "Real Celery worker subprocess execution capability",
+        "10K event seeding + window recomputation test framework",
+        "time.perf_counter() measurement possible",
+        "Proposed target: < 5 seconds for 10K events (conservative)"
+      ]
+    },
+    "H12_budget_enforcement": {
+      "source": "Budget policy engine inspection",
+      "file": "backend/app/llm/budget_policy.py",
+      "evidence": [
+        "PricingCatalog - model pricing (input/output per 1k tokens)",
+        "BudgetPolicy - cap configuration",
+        "BudgetAction - ALLOW/BLOCK/FALLBACK decisions",
+        "PREMIUM_MODELS = {'gpt-4', 'gpt-4-turbo', 'claude-3-opus'}",
+        "llm_call_audit table (append-only, tenant-scoped)"
+      ]
+    }
+  },
+  "exit_gates_summary": {
+    "CG-0_repo_anchor": {
+      "status": "PASS",
+      "evidence": "git rev-parse HEAD + git status + git remote -v"
+    },
+    "CG-1_environment_provenance": {
+      "status": "PASS",
+      "evidence": "ENV_SNAPSHOT.json (OS, Python, Docker, Postgres versions)"
+    },
+    "CG-2_harness_inventory": {
+      "status": "PASS",
+      "evidence": "15 OpenAPI specs + bundling + 17 B0 tests + 8 CI workflows + 36 migrations"
+    },
+    "CG-3_hypothesis_verdicts": {
+      "status": "PASS",
+      "h1": "YES",
+      "h2": "YES",
+      "h3": "YES",
+      "h4": "YES",
+      "h5": "YES",
+      "h6": "YES",
+      "h7": "YES",
+      "h8": "YES",
+      "h9": "YES",
+      "h10": "YES",
+      "h11": "PARTIAL (measurable, proposed target)",
+      "h12": "YES"
+    },
+    "CG-4_definitions": {
+      "status": "PASS",
+      "idempotency_key": "String(255), UNIQUE on attribution_events + window-scoped composite key",
+      "r5_performance_target": "< 5 seconds for 10K events (proposed, measurement harness ready)",
+      "r6_budget_enforcement": "LLM budget policy engine implemented, circuit breaker ready, audit trail defined"
+    },
+    "CG-5_artifact_integrity": {
+      "status": "PASS",
+      "manifest": "This file",
+      "artifact_count": 2,
+      "all_hashed": true
+    }
+  },
+  "known_issues": [
+    {
+      "title": "Windows path spaces",
+      "issue": "Repository path 'II SKELDIR II' contains spaces",
+      "impact": "Local bundling tools may fail (path escaping)",
+      "mitigation": "CI environment (Ubuntu) works correctly",
+      "severity": "LOW"
+    },
+    {
+      "title": "Database not initialized",
+      "issue": "Skeldir database doesn't exist in local postgres",
+      "impact": "Cannot run live SQL queries",
+      "mitigation": "Schema exists in Alembic migrations; can read from source",
+      "severity": "LOW"
+    },
+    {
+      "title": "Baseline reference mismatch",
+      "issue": "Contract baseline directory structure inconsistency",
+      "impact": "Breaking-change detection (oasdiff) may fail locally",
+      "mitigation": "Fixable; CI environment is consistent",
+      "severity": "LOW"
+    }
+  ]
+}
