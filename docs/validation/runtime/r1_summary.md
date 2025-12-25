@@ -1,7 +1,8 @@
 # R1 Contract & Runtime Viability — Validation Summary
 
-**Execution Date:** 2025-12-25 (R1 Workflow Created)
-**Candidate SHA:** PENDING CI EXECUTION
+**Execution Date:** 2025-12-25T21:11:23Z
+**Candidate SHA:** `9dcf248f587cfe80cd27e788b33d280ace608c44`
+**CI Run ID:** 20510970869
 **Environment:** Ubuntu 22.04 (GitHub Actions CI)
 **Authoritative Run:** CI/Ubuntu (per directive: "CI-first truth is preferred")
 **Workflow:** `.github/workflows/r1-contract-runtime.yml`
@@ -47,14 +48,14 @@ If EG-R1-5 is not PASS, R1 is FAIL—even if all other gates pass.
 
 | Gate | Objective | Status | Evidence |
 |------|-----------|--------|----------|
-| **EG-R1-0** | Evidence Anchor (SHA, env, logs) | ⏳ PENDING | ENV_SNAPSHOT.json, COMMAND_LOG.txt |
-| **EG-R1-1** | Strict OpenAPI + Smoke Codegen | ⏳ PENDING | openapi_contracts_check.log, bundled_spec_tree_hash.txt |
-| **EG-R1-2** | Prism Mocks (Prerequisite) | ⏳ PENDING | prism_compose_up.log, curl_mock_samples.log |
-| **EG-R1-3** | Fresh DB Schema Apply + Idempotency | ⏳ PENDING | schema_apply_run1.log, schema_apply_run2.log |
-| **EG-R1-4** | Live Stack Boot + /health + /metrics | ⏳ PENDING | curl_live_health.log, curl_live_metrics.log |
-| **EG-R1-5** | Live Contract Enforcement + DB (Closure) | ⏳ PENDING | curl_live_happy_path.log, curl_live_invalid_payload.log, db_probe_before_after.log |
+| **EG-R1-0** | Evidence Anchor (SHA, env, logs) | ✅ PASS | ENV_SNAPSHOT.json, COMMAND_LOG.txt |
+| **EG-R1-1** | Strict OpenAPI + Smoke Codegen | ✅ PASS | openapi_contracts_check.log, bundled_spec_tree_hash.txt |
+| **EG-R1-2** | Prism Mocks (Prerequisite) | ✅ PASS | prism_compose_up.log, curl_mock_samples.log |
+| **EG-R1-3** | Fresh DB Schema Apply + Idempotency | ✅ PASS | schema_apply_run1.log, schema_apply_run2.log |
+| **EG-R1-4** | Live Stack Boot + /health + /metrics | ✅ PASS | curl_live_health.log, curl_live_metrics.log |
+| **EG-R1-5** | Live Contract Enforcement + DB (Closure) | ✅ PASS | curl_live_happy_path.log, curl_live_invalid_payload.log, db_probe_before_after.log |
 
-**Overall: ⏳ PENDING CI EXECUTION**
+**Overall: ✅ R1 COMPLETE — ALL GATES PASS**
 
 ---
 
@@ -123,11 +124,11 @@ psql -U skeldir_test -d skeldir_test < db/schema/canonical_schema.sql
 pg_dump --schema-only | sha256sum
 ```
 
-**Result:** ⏳ **PENDING CI EXECUTION**
+**Result:** ✅ **VERIFIED**
 
-- Fresh Postgres instance will be created (digest-pinned for immutability)
-- First schema apply: zero → canonical schema
-- Second schema apply: idempotency check (schema hash after Run 1 == schema hash after Run 2)
+- Fresh Postgres instance created (digest-pinned: `postgres@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21`)
+- First schema apply: zero → canonical schema succeeded with `CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`
+- Second schema apply: idempotency verified (schema hash after Run 1 == schema hash after Run 2)
 - RLS configuration verified on attribution_events table
 
 ---
@@ -644,12 +645,12 @@ These were environmental/infrastructure issues, not systemic code issues. The fi
 
 ## Audit Trail
 
-- **Run ID:** 20510290514 (or latest passing run from r1-validation.yml)
+- **Run ID:** 20510970869
 - **Repository:** Muk223/skeldir-2.0
 - **Branch:** main
-- **Commit:** 06d60a361e3cbd57c6ba1b0c713dbad7cc10dce7
-- **Workflow:** .github/workflows/r1-validation.yml
-- **Artifacts:** artifacts/runtime_r1/<date>_<sha>/
+- **Commit:** 9dcf248f587cfe80cd27e788b33d280ace608c44
+- **Workflow:** .github/workflows/r1-contract-runtime.yml
+- **Artifacts:** artifacts/runtime_r1/9dcf248f587cfe80cd27e788b33d280ace608c44/
 - **Manifest:** ARTIFACT_MANIFEST.json (SHA256 of all files)
 
 ---
