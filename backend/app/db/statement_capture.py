@@ -196,11 +196,14 @@ def _before_cursor_execute(conn, cursor, statement, parameters, context, execute
         print(f"[R2_STATEMENT] {normalized[:100]}")
 
 
-def attach_capture_hook(engine: Engine) -> bool:
+def attach_capture_hook(engine) -> bool:
     """
     Attach statement capture hook to SQLAlchemy engine.
 
     Only attaches if R2_STATEMENT_CAPTURE=1 environment variable is set.
+
+    For async engines (AsyncEngine), attaches to the underlying sync_engine
+    since SQLAlchemy doesn't support async event listeners directly.
 
     Returns:
         True if hook was attached, False otherwise.
@@ -208,7 +211,13 @@ def attach_capture_hook(engine: Engine) -> bool:
     if os.getenv("R2_STATEMENT_CAPTURE") != "1":
         return False
 
-    event.listen(engine, "before_cursor_execute", _before_cursor_execute)
+    # Handle async engines - attach to sync_engine
+    target_engine = engine
+    if hasattr(engine, 'sync_engine'):
+        target_engine = engine.sync_engine
+        print("[R2_STATEMENT_CAPTURE] Detected AsyncEngine, using sync_engine for events")
+
+    event.listen(target_engine, "before_cursor_execute", _before_cursor_execute)
     _capture.enable()
 
     print("[R2_STATEMENT_CAPTURE] Hook attached to engine")
@@ -218,10 +227,14 @@ def attach_capture_hook(engine: Engine) -> bool:
     return True
 
 
-def detach_capture_hook(engine: Engine):
+def detach_capture_hook(engine):
     """Detach statement capture hook from engine."""
+    target_engine = engine
+    if hasattr(engine, 'sync_engine'):
+        target_engine = engine.sync_engine
+
     try:
-        event.remove(engine, "before_cursor_execute", _before_cursor_execute)
+        event.remove(target_engine, "before_cursor_execute", _before_cursor_execute)
     except Exception:
         pass  # Hook wasn't attached
     _capture.disable()
