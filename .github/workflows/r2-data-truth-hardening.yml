@@ -913,7 +913,7 @@ jobs:
           SCOPE_HASH=$(find backend/app -name "*.py" -not -path "*/tests/*" -not -name "test_*" -exec sha256sum {} \; 2>/dev/null | sort | sha256sum | cut -d' ' -f1)
           echo "- **Files in scope:** $FILE_COUNT Python files" | tee -a $GITHUB_STEP_SUMMARY
           echo "- **Scope hash:** \`${SCOPE_HASH:0:16}...\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **Exclusions:** /tests/, test_*, validate_*, conftest, maintenance.py with allowlist" | tee -a $GITHUB_STEP_SUMMARY
+          echo "- **Exclusions:** /tests/, test_*, validate_*, conftest, maintenance.py (allowlisted), statement_capture.py (instrumentation)" | tee -a $GITHUB_STEP_SUMMARY
           echo "" | tee -a $GITHUB_STEP_SUMMARY
 
           # =====================================================================
@@ -929,22 +929,23 @@ jobs:
             echo "**Scanning for destructive operations on $table:**" | tee -a $GITHUB_STEP_SUMMARY
 
             # Pattern 1: Raw SQL UPDATE/DELETE
+            # Exclusions: tests, maintenance (allowlisted), statement_capture (instrumentation)
             UPDATE_RAW=$(grep -rn --include="*.py" "UPDATE.*$table" backend/ 2>/dev/null | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
+              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
 
             DELETE_RAW=$(grep -rn --include="*.py" "DELETE.*$table" backend/ 2>/dev/null | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
+              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
 
             # Pattern 2: SQLAlchemy Core update()/delete()
             # Matches: update(attribution_events), delete(table_name)
             UPDATE_CORE=$(grep -rn --include="*.py" "\.update()\|update($table\|\.delete()\|delete($table" backend/ 2>/dev/null | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST" || true)
+              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST" || true)
 
             # Pattern 3: SQLAlchemy ORM Query.delete()/Query.update()
             # Matches: .query(...).delete(), session.query(...).update()
             ORM_MUTATIONS=$(grep -rn --include="*.py" "\.query.*\.delete\|\.query.*\.update\|session\.delete\|session\.execute.*delete\|session\.execute.*update" backend/ 2>/dev/null | \
               grep -i "$table" | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST" || true)
+              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST" || true)
 
             # Combine results
             ALL_VIOLATIONS=""
