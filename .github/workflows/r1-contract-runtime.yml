@@ -151,10 +151,12 @@ jobs:
       # ====================================================================
       # EG-R1-3: Fresh DB Schema Apply (Zero → Head) + Idempotency
       # ====================================================================
-      - name: "Create isolated Docker network for R1"
+      - name: "Create Docker network for R1"
         run: |
-          docker network create --internal skeldir-r1-isolated || true
-          echo "docker network create --internal skeldir-r1-isolated" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
+          # NOTE: Do NOT use --internal flag as it blocks host access to published ports
+          # The API runs on the host and needs to connect to Postgres via localhost:5432
+          docker network create skeldir-r1-isolated || true
+          echo "docker network create skeldir-r1-isolated" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
 
       - name: "EG-R1-3: Fresh DB schema apply + idempotency test"
         run: |
