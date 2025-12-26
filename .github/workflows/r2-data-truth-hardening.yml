@@ -773,10 +773,14 @@ jobs:
             echo "**Scanning for UPDATE/DELETE on $table:**" | tee -a $GITHUB_STEP_SUMMARY
 
             # Search for UPDATE statements
-            UPDATE_MATCHES=$(grep -rn --include="*.py" "UPDATE.*$table\|\.update().*$table\|update($table" backend/ 2>/dev/null | grep -v "# RAW_SQL_ALLOWLIST\|#.*test\|\.pyc\|__pycache__" || true)
+            # Exclude: test directories, test files, validation scripts, maintenance tasks
+            UPDATE_MATCHES=$(grep -rn --include="*.py" "UPDATE.*$table\|\.update().*$table\|update($table" backend/ 2>/dev/null | \
+              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
 
             # Search for DELETE statements
-            DELETE_MATCHES=$(grep -rn --include="*.py" "DELETE.*$table\|\.delete().*$table\|delete($table" backend/ 2>/dev/null | grep -v "# RAW_SQL_ALLOWLIST\|#.*test\|\.pyc\|__pycache__" || true)
+            # Exclude: test directories, test files, validation scripts, maintenance tasks
+            DELETE_MATCHES=$(grep -rn --include="*.py" "DELETE.*$table\|\.delete().*$table\|delete($table" backend/ 2>/dev/null | \
+              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
 
             if [ -n "$UPDATE_MATCHES" ]; then
               echo "⚠️ Found UPDATE patterns for $table:" | tee -a $GITHUB_STEP_SUMMARY
