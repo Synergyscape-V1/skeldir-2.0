@@ -31,12 +31,12 @@ Prove "truth is protected at runtime" with two simultaneous guarantees:
 
 ### Passing Run Anchor
 
-- **Run ID:** 20514240955 *(original static-only run)*
-- **SHA:** e25126e
-- **Status:** Pending re-validation with EG-R2-FIX-4
-- **Date:** 2025-12-26
+- **Run ID:** [20525315505](https://github.com/Muk223/skeldir-2.0/actions/runs/20525315505)
+- **SHA:** `2d1c863`
+- **Status:** SUCCESS (All 9 gates passed including EG-R2-FIX-4)
+- **Date:** 2025-12-26T16:02:07Z
 
-**Note:** R2 requires re-validation with the new EG-R2-FIX-4 gate (runtime innocence proof).
+**Runtime Innocence Verdict:** `MATCH_COUNT=0` - Application code produces ZERO destructive SQL statements against immutable tables.
 
 ## Closed Sets (Derived from canonical_schema.sql)
 
@@ -159,10 +159,10 @@ If any gate fails:
 1. DO NOT merge to main
 2. Fix the issue in code/schema
 3. Re-run the workflow
-4. All 8 gates must pass for R2 COMPLETE
+4. All 9 gates must pass for R2 COMPLETE
 
-Closure gates (EG-R2-5, EG-R2-6) are mandatory - R2 cannot complete without both passing.
+**EG-R2-FIX-4 (Runtime Innocence)** is the PRIMARY BLOCKER. Static analysis (EG-R2-5) cannot override runtime failure.
 
 ---
 
-*Last updated: 2025-12-26 - R2 COMPLETE (Run 20514240955)*
+*Last updated: 2025-12-26 - R2 COMPLETE (Run 20525315505, SHA 2d1c863)*
