@@ -10,14 +10,21 @@ Prove "truth is protected at runtime" with two simultaneous guarantees:
 
 | Gate | Description | Status |
 |------|-------------|--------|
-| EG-R2-0 | Evidence anchoring & closed-set declaration | PENDING |
-| EG-R2-1 | RLS forced + cross-tenant denial (DB-level proof) | PENDING |
-| EG-R2-2 | Tenant context discipline (API + Celery) | PENDING |
-| EG-R2-3 | PII defense-in-depth (DB trigger enforcement) | PENDING |
-| EG-R2-4 | DB immutability enforcement (UPDATE/DELETE denied) | PENDING |
-| EG-R2-5 | **Behavioral immutability audit (CLOSURE GATE)** | PENDING |
-| EG-R2-6 | **Combined adversarial probe (CLOSURE GATE)** | PENDING |
-| EG-R2-7 | Human-readable truth record | PENDING |
+| EG-R2-0 | Evidence anchoring & closed-set declaration | PASS |
+| EG-R2-1 | RLS forced + cross-tenant denial (DB-level proof) | PASS |
+| EG-R2-2 | Tenant context discipline (API + Celery) | PASS |
+| EG-R2-3 | PII defense-in-depth (DB trigger enforcement) | PASS |
+| EG-R2-4 | DB immutability enforcement (UPDATE/DELETE denied) | PASS |
+| EG-R2-5 | **Behavioral immutability audit (CLOSURE GATE)** | PASS |
+| EG-R2-6 | **Combined adversarial probe (CLOSURE GATE)** | PASS |
+| EG-R2-7 | Human-readable truth record | PASS |
+
+### Passing Run Anchor
+
+- **Run ID:** 20514240955
+- **SHA:** e25126e
+- **Status:** SUCCESS (All 8 gates passed)
+- **Date:** 2025-12-26
 
 ## Closed Sets (Derived from canonical_schema.sql)
 
@@ -146,4 +153,4 @@ Closure gates (EG-R2-5, EG-R2-6) are mandatory - R2 cannot complete without both
 
 ---
 
-*Last updated: Awaiting first CI run*
+*Last updated: 2025-12-26 - R2 COMPLETE (Run 20514240955)*
