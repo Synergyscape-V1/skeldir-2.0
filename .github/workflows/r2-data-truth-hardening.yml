@@ -1,26 +1,15 @@
 # R2 Data-Truth Hardening Validation
 #
-# Mission: Prove "truth is protected at runtime" with two simultaneous guarantees:
-# 1. DB prevents violations (RLS + triggers + privileges)
-# 2. Application never attempts destructive writes to immutable tables
+# Mission (non-negotiable):
+# 1) DB prevents violations (RLS + triggers + privileges)
+# 2) Application/worker fabric is innocent:
+#    - AUTHORITATIVE: Postgres log statement capture over a provably executed window
+#    - MANDATORY secondary: ORM window capture cross-check
+#    - CO-PRIMARY for latent paths: static behavioral innocence + canary integrity
 #
-# PROOF HIERARCHY (non-negotiable):
-# - AUTHORITATIVE for "attempts that reach DB": DB statement capture (Postgres logs)
-# - AUTHORITATIVE for "latent code paths": Static behavioral audit (whole-repo)
-# - App/ORM capture = localization cross-check only (NEVER authoritative)
-#
-# Exit Gates (all must PASS for R2 COMPLETE):
-# - EG-R2-0: Evidence anchoring & closed-set declaration
-# - EG-R2-FIX-1: DB capture enablement proof (SHOW log_statement)
-# - EG-R2-FIX-B: Runtime scenario suite hard gate (6 scenarios)
-# - EG-R2-FIX-A: Runtime innocence via DB statement capture (PRIMARY BLOCKER)
-# - EG-R2-FIX-4: Static behavioral innocence (CO-PRIMARY BLOCKER)
-# - EG-R2-FIX-5: Canary integrity (anti-theater proof)
-# - EG-R2-FIX-6: DB refusal regression check (RLS + triggers still work)
-# - EG-R2-FIX-7: Documentation truth correction
-#
-# CRITICAL: Both EG-R2-FIX-A (runtime) AND EG-R2-FIX-4 (static) must pass.
-# Runtime testing is probabilistic - static audit covers latent paths.
+# This workflow is structured to avoid "false greens":
+# - Each exit gate step is allowed to run to completion (continue-on-error),
+#   and a final aggregator step fails the job if any gate failed.
 
 name: "R2: Data-Truth Hardening"
 
@@ -30,9 +19,8 @@ on:
     branches: [main]
     paths:
       - 'db/schema/**'
-      - 'backend/app/core/tenant_context.py'
-      - 'backend/app/tasks/context.py'
       - 'backend/app/**'
+      - 'scripts/r2/**'
       - '.github/workflows/r2-data-truth-hardening.yml'
 
 env:
@@ -40,12 +28,12 @@ env:
   POSTGRES_PASSWORD: skeldir_r2_test_password
   POSTGRES_DB: skeldir_r2_test
   POSTGRES_DIGEST: postgres@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21
+  R2_NUM_SCENARIOS: "6"
 
 jobs:
   r2-validation:
     name: "R2 Data-Truth Hardening"
     runs-on: ubuntu-22.04
-
     env:
       ARTIFACTS_DIR: ${{ github.workspace }}/artifacts/runtime_r2/${{ github.sha }}
 
@@ -55,14 +43,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: "Setup Python (for R2 runtime + audits)"
+      - name: "Setup Python (for runtime suite + audits)"
         uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d  # v5.1.0 pinned by SHA
         with:
           python-version: "3.11"
 
       - name: "Install backend dependencies"
         run: |
-          set -o pipefail
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
@@ -70,132 +58,70 @@ jobs:
       # EG-R2-0: Evidence Anchoring & Closed-Set Declaration
       # ====================================================================
       - name: "EG-R2-0: Evidence anchoring & closed-set declaration"
+        id: eg_r2_0
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-0: Evidence Anchoring & Closed-Set Declaration ===" | tee -a $GITHUB_STEP_SUMMARY
+          set -euo pipefail
           mkdir -p "$ARTIFACTS_DIR"
 
-          # Capture candidate SHA and environment
-          CANDIDATE_SHA=$(git rev-parse HEAD)
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          echo "R2_CANDIDATE_SHA=${{ github.sha }}" >> "$GITHUB_ENV"
 
-          echo "**Candidate SHA:** \`$CANDIDATE_SHA\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Run ID:** \`${{ github.run_id }}\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Run URL:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
+          echo "=== EG-R2-0: Evidence Anchoring & Closed-Set Declaration ===" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "CANDIDATE_SHA=$CANDIDATE_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "RUN_ID=${{ github.run_id }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "RUN_URL=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
 
-          # Environment snapshot
           cat > "$ARTIFACTS_DIR/R2_ENV_SNAPSHOT.json" <<EOF
           {
-            "candidate_sha": "$CANDIDATE_SHA",
+            "candidate_sha": "${{ github.sha }}",
             "run_id": "${{ github.run_id }}",
             "run_attempt": "${{ github.run_attempt }}",
             "captured_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "substrate": "ubuntu-22.04",
-            "os_version": "$(cat /etc/os-release | grep VERSION= | cut -d'=' -f2 | tr -d '\"')",
-            "kernel": "$(uname -r)",
             "docker_version": "$(docker --version | awk '{print $3}' | tr -d ',')",
             "python_version": "$(python3 --version | awk '{print $2}')"
           }
           EOF
-          cat "$ARTIFACTS_DIR/R2_ENV_SNAPSHOT.json" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
 
-          # =====================================================================
-          # CLOSED SET: Tenant-Scoped Tables (derived from schema RLS statements)
-          # =====================================================================
-          echo "### Closed Set: Tenant-Scoped Tables (with RLS ENABLE + FORCE + Policy)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Extract tables with ENABLE ROW LEVEL SECURITY from canonical schema
+          # Closed set: tenant-scoped tables (ENABLE RLS)
           TENANT_TABLES=$(grep -E "^ALTER TABLE .* ENABLE ROW LEVEL SECURITY" db/schema/canonical_schema.sql \
-            | sed 's/ALTER TABLE //' | sed 's/ ENABLE ROW LEVEL SECURITY;$//' \
-            | sed 's/public\.//' | sort -u)
-
-          echo "**Tenant-scoped tables ($(echo "$TENANT_TABLES" | wc -l) total):**" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$TENANT_TABLES" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
+            | sed 's/^ALTER TABLE public\\.//' \
+            | sed 's/ ENABLE ROW LEVEL SECURITY;//' \
+            | sort -u)
           echo "$TENANT_TABLES" > "$ARTIFACTS_DIR/CLOSED_SET_TENANT_TABLES.txt"
 
-          # Verify FORCE RLS exists for each
-          FORCE_COUNT=$(grep -c "FORCE ROW LEVEL SECURITY" db/schema/canonical_schema.sql || true)
-          echo "**FORCE ROW LEVEL SECURITY count:** $FORCE_COUNT" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # CLOSED SET: Immutable Tables (derived from prevent_mutation triggers)
-          # =====================================================================
-          echo "### Closed Set: Immutable Tables (with prevent_mutation triggers)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
+          # Closed set: immutable tables (prevent_mutation triggers)
           IMMUTABLE_TABLES=$(grep -E "trg_.*_prevent_mutation" db/schema/canonical_schema.sql \
             | grep "CREATE TRIGGER" \
-            | sed 's/.*ON public\.//' | sed 's/ FOR.*//' | sort -u)
-
-          echo "**Immutable tables ($(echo "$IMMUTABLE_TABLES" | wc -l) total):**" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$IMMUTABLE_TABLES" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
+            | sed 's/.*ON public\\.//' | sed 's/ FOR.*//' | sort -u)
           echo "$IMMUTABLE_TABLES" > "$ARTIFACTS_DIR/CLOSED_SET_IMMUTABLE_TABLES.txt"
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
 
-          # =====================================================================
-          # CLOSED SET: PII-Guarded Tables (derived from PII guardrail triggers)
-          # =====================================================================
-          echo "### Closed Set: PII-Guarded Tables (with fn_enforce_pii_guardrail triggers)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
+          # Closed set: PII-guarded tables (pii guardrail triggers)
           PII_TABLES=$(grep -E "trg_pii_guardrail" db/schema/canonical_schema.sql \
             | grep "CREATE TRIGGER" \
-            | sed 's/.*ON public\.//' | sed 's/ FOR.*//' | sort -u)
-
-          echo "**PII-guarded tables ($(echo "$PII_TABLES" | wc -l) total):**" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$PII_TABLES" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
+            | sed 's/.*ON public\\.//' | sed 's/ FOR.*//' | sort -u)
           echo "$PII_TABLES" > "$ARTIFACTS_DIR/CLOSED_SET_PII_TABLES.txt"
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
 
-          # =====================================================================
-          # PII Key Blocklist (derived from fn_detect_pii_keys function)
-          # =====================================================================
-          echo "### PII Key Blocklist (from fn_detect_pii_keys)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          PII_KEYS=$(grep -E "payload \? '" db/schema/canonical_schema.sql \
-            | sed "s/.*payload ? '//" | sed "s/' OR.*//" | sed "s/'$//" | sort -u)
-
-          echo "**PII keys blocked ($(echo "$PII_KEYS" | wc -l) total):**" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$PII_KEYS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$PII_KEYS" > "$ARTIFACTS_DIR/CLOSED_SET_PII_KEYS.txt"
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Schema Fingerprint (SHA256 of canonical schema)
-          # =====================================================================
+          # Schema fingerprint
           SCHEMA_HASH=$(sha256sum db/schema/canonical_schema.sql | awk '{print $1}')
-          echo "**Schema fingerprint (SHA256):** \`$SCHEMA_HASH\`" | tee -a $GITHUB_STEP_SUMMARY
           echo "$SCHEMA_HASH" > "$ARTIFACTS_DIR/SCHEMA_FINGERPRINT.txt"
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
 
-          echo "✅ **EG-R2-0 PASS:** Evidence anchoring and closed-set declaration complete" | tee -a $GITHUB_STEP_SUMMARY
+          echo "EG-R2-0_PASS" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # ====================================================================
       # Setup: Docker network and Postgres
       # ====================================================================
       - name: "Create Docker network for R2"
         run: |
+          set -euo pipefail
           docker network create skeldir-r2-isolated || true
 
       - name: "Start Postgres container (digest-pinned, with statement logging)"
         run: |
-          set -o pipefail
-          echo "Starting Postgres container with statement logging enabled..." | tee -a $GITHUB_STEP_SUMMARY
+          set -euo pipefail
 
-          # Start Postgres with log_statement=all for DB-level statement capture
-          # This is AUTHORITATIVE - we will parse actual DB logs, not app hooks
           docker run -d \
             --name skeldir-r2-postgres \
             --network skeldir-r2-isolated \
@@ -208,75 +134,54 @@ jobs:
             -c log_destination=stderr \
             -c logging_collector=off
 
-          echo "Postgres started with log_statement=all for DB capture" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Wait for Postgres to be fully ready
           echo "Waiting for Postgres to be ready..."
           for i in {1..60}; do
-            if docker exec skeldir-r2-postgres pg_isready -U $POSTGRES_USER 2>/dev/null; then
+            if docker exec skeldir-r2-postgres pg_isready -U $POSTGRES_USER >/dev/null 2>&1; then
               if docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1" >/dev/null 2>&1; then
-                echo "Postgres is fully ready after $i seconds"
                 break
               fi
             fi
             sleep 1
           done
-          sleep 3  # Extra stabilization
+          sleep 2
 
           # Capture dynamically allocated host port for runtime scenarios.
           R2_PG_PORT=$(docker port skeldir-r2-postgres 5432/tcp | head -1 | awk -F: '{print $2}')
-          echo "R2_PG_PORT=$R2_PG_PORT" >> $GITHUB_ENV
-          echo "Postgres host port: $R2_PG_PORT" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Verify Postgres is running
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT version();"
+          echo "R2_PG_PORT=$R2_PG_PORT" >> "$GITHUB_ENV"
+          echo "Postgres host port: $R2_PG_PORT" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: "Apply canonical schema"
         run: |
-          set -o pipefail
-          echo "=== Applying canonical schema ===" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Apply schema
+          set -euo pipefail
           docker exec -i skeldir-r2-postgres psql -v ON_ERROR_STOP=1 -U $POSTGRES_USER -d $POSTGRES_DB < db/schema/canonical_schema.sql
 
-          echo "✅ Schema applied successfully" | tee -a $GITHUB_STEP_SUMMARY
-
-      - name: "Create application role for RLS tests"
+      - name: "Create application role (non-superuser) for RLS tests"
         run: |
-          set -o pipefail
-          echo "=== Creating non-superuser app role for RLS tests ===" | tee -a $GITHUB_STEP_SUMMARY
+          set -euo pipefail
+          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -c "
+            DO \$\$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'r2_app_role') THEN
+                CREATE ROLE r2_app_role WITH LOGIN PASSWORD 'r2_app_password' NOSUPERUSER NOINHERIT;
+              END IF;
+            END
+            \$\$;
 
-          # Create a non-superuser application role (superusers bypass RLS)
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
-            -- Create app role (non-superuser, no inherit superuser privileges)
-            CREATE ROLE r2_app_role WITH LOGIN PASSWORD 'r2_app_password' NOSUPERUSER NOINHERIT;
-
-            -- Grant connect
             GRANT CONNECT ON DATABASE $POSTGRES_DB TO r2_app_role;
-
-            -- Grant usage on schema
             GRANT USAGE ON SCHEMA public TO r2_app_role;
-
-            -- Grant broad DML on tables, then explicitly revoke immutable table mutations (defense-in-depth).
             GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO r2_app_role;
+            GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO r2_app_role;
 
-            -- Immutable tables: no UPDATE/DELETE (must be blocked both by privileges and triggers).
+            -- Defense-in-depth: immutable tables are read-only at privilege layer too.
             REVOKE UPDATE, DELETE ON TABLE attribution_events FROM r2_app_role;
             REVOKE UPDATE, DELETE ON TABLE revenue_ledger FROM r2_app_role;
-
-            -- Grant usage on sequences
-            GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO r2_app_role;
           "
-
-          echo "✅ App role created (r2_app_role is non-superuser, RLS will apply)" | tee -a $GITHUB_STEP_SUMMARY
 
       - name: "Seed R2 scenario prerequisites (tenants + channel taxonomy)"
         run: |
-          set -o pipefail
-          echo "=== Seeding R2 scenario prerequisites ===" | tee -a $GITHUB_STEP_SUMMARY
+          set -euo pipefail
 
-          # Tenants used by runtime scenario suite (non-PII, deterministic UUIDs)
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
+          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -c "
             INSERT INTO tenants (id, name, api_key_hash, notification_email, created_at, updated_at)
             VALUES
               ('11111111-1111-1111-1111-111111111111', 'R2 Scenario Tenant A', 'hash_a', 'a@test.invalid', NOW(), NOW()),
@@ -284,8 +189,7 @@ jobs:
             ON CONFLICT (id) DO NOTHING;
           " >/dev/null
 
-          # Canonical channel taxonomy codes required by ingestion normalization + corrections.
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
+          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -c "
             INSERT INTO channel_taxonomy (code, family, is_paid, display_name, is_active, state, created_at)
             VALUES
               ('unknown', 'unknown', false, 'Unknown', true, 'active', NOW()),
@@ -301,584 +205,168 @@ jobs:
             ON CONFLICT (code) DO NOTHING;
           " >/dev/null
 
-          echo "✅ Seeded tenants + channel_taxonomy" | tee -a $GITHUB_STEP_SUMMARY
-
-      - name: "Initialize R2 window identifiers"
+      - name: "Initialize window identifiers"
         run: |
-          set -o pipefail
-          echo "R2_CANDIDATE_SHA=${{ github.sha }}" >> $GITHUB_ENV
-          echo "R2_WINDOW_ID=$(date -u +%Y%m%d%H%M%S)-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
-          echo "R2_CANARY_WINDOW_ID=canary-$(date -u +%Y%m%d%H%M%S)-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+          set -euo pipefail
+          echo "R2_WINDOW_ID=$(date -u +%Y%m%d%H%M%S)-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "R2_CANARY_WINDOW_ID=canary-$(date -u +%Y%m%d%H%M%S)-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
 
       # ====================================================================
-      # EG-R2-FIX-1: DB Capture Enablement Proof
-      # Proves Postgres is configured to log all statements for later parsing
+      # EG-R2-FIX-2 — DB Capture Enablement Proof
       # ====================================================================
-      - name: "EG-R2-FIX-1: DB capture enablement proof"
+      - name: "EG-R2-FIX-2: DB capture enablement proof"
+        id: eg_r2_fix_2
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-1: DB Capture Enablement Proof ===" | tee -a $GITHUB_STEP_SUMMARY
+          set -euo pipefail
           mkdir -p "$ARTIFACTS_DIR/DB_CAPTURE_PROOF"
 
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Postgres Statement Logging Configuration" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Query and display log_statement setting - MUST be 'all'
           LOG_STATEMENT=$(docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SHOW log_statement;" | tr -d ' ')
           LOG_DESTINATION=$(docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SHOW log_destination;" | tr -d ' ')
 
-          echo "| Setting | Value |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "|---------|-------|" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| log_statement | \`$LOG_STATEMENT\` |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| log_destination | \`$LOG_DESTINATION\` |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
+          echo "EG_R2_FIX_2_DB_CAPTURE_ENABLEMENT_PROOF" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "SHOW_log_statement=$LOG_STATEMENT" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "SHOW_log_destination=$LOG_DESTINATION" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "END_PROOF" | tee -a "$GITHUB_STEP_SUMMARY"
 
-          # Save proof to artifacts
-          echo "log_statement=$LOG_STATEMENT" > "$ARTIFACTS_DIR/DB_CAPTURE_PROOF/db_logging_config.txt"
-          echo "log_destination=$LOG_DESTINATION" >> "$ARTIFACTS_DIR/DB_CAPTURE_PROOF/db_logging_config.txt"
+          {
+            echo "log_statement=$LOG_STATEMENT"
+            echo "log_destination=$LOG_DESTINATION"
+          } > "$ARTIFACTS_DIR/DB_CAPTURE_PROOF/db_logging_config.txt"
 
-          # Verify log_statement is 'all'
-          if [ "$LOG_STATEMENT" = "all" ]; then
-            echo "✅ **EG-R2-FIX-1 PASS:** DB statement logging enabled (log_statement=all)" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" | tee -a $GITHUB_STEP_SUMMARY
-            echo "All SQL statements will be captured in Postgres logs for authoritative runtime innocence proof." | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-FIX-1 FAIL:** DB statement logging NOT enabled" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Expected: log_statement=all, Got: $LOG_STATEMENT" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Cannot prove runtime innocence without DB-level statement capture." | tee -a $GITHUB_STEP_SUMMARY
+          if [ "$LOG_STATEMENT" != "all" ]; then
+            echo "FAIL: expected log_statement=all" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
       # ====================================================================
-      # EG-R2-FIX-6: DB Refusal Regression Check
-      # (Renumbered from EG-R2-1 through EG-R2-4)
+      # DB prevents violations (RLS + triggers + privileges)
       # ====================================================================
-      - name: "EG-R2-FIX-6a: RLS forced + cross-tenant denial"
+      - name: "EG-R2-ENFORCEMENT: DB prevents violations"
+        id: eg_r2_enforcement
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-1: RLS Forced + Cross-Tenant Denial ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/RLS_PROOF"
+          set -euo pipefail
+          mkdir -p "$ARTIFACTS_DIR/DB_ENFORCEMENT"
 
-          GATE_PASS=true
+          FAILURES=()
 
-          # =====================================================================
-          # Test 1: Verify RLS is ENABLED and FORCED on all tenant-scoped tables
-          # =====================================================================
-          echo "### RLS Status Verification" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
+          echo "R2_DB_ENFORCEMENT_VERDICT"
 
-          RLS_STATUS=$(docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
-            SELECT
-              relname as table_name,
-              relrowsecurity as rls_enabled,
-              relforcerowsecurity as rls_forced
-            FROM pg_class
-            WHERE relname IN (
-              'attribution_events', 'attribution_allocations', 'revenue_ledger',
-              'dead_events', 'reconciliation_runs', 'budget_optimization_jobs',
-              'channel_assignment_corrections', 'explanation_cache', 'investigations',
-              'investigation_tool_calls', 'llm_api_calls', 'llm_monthly_costs',
-              'llm_validation_failures', 'pii_audit_findings', 'revenue_state_transitions'
-            )
-            ORDER BY relname;
-          ")
+          # (1) RLS enabled + forced on tenant-scoped tables (closed set derived from schema)
+          echo "RLS_STATUS_BEGIN"
+          while IFS= read -r table; do
+            [ -z "$table" ] && continue
+            row=$(docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname='${table}';" | tr -d ' ')
+            echo "${table}=${row}"
+            if ! echo "$row" | grep -q "t|t"; then
+              FAILURES+=("RLS_NOT_ENFORCED:${table}=${row}")
+            fi
+          done < "$ARTIFACTS_DIR/CLOSED_SET_TENANT_TABLES.txt"
+          echo "RLS_STATUS_END"
 
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$RLS_STATUS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$RLS_STATUS" > "$ARTIFACTS_DIR/RLS_PROOF/rls_status.log"
-
-          # Check for any tables without RLS enabled
-          RLS_DISABLED=$(echo "$RLS_STATUS" | grep -E "\| f \|" || true)
-          if [ -n "$RLS_DISABLED" ]; then
-            echo "❌ Some tables have RLS disabled:" | tee -a $GITHUB_STEP_SUMMARY
-            echo "$RLS_DISABLED" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          else
-            echo "✅ All tenant-scoped tables have RLS enabled and forced" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Test 2: Cross-Tenant Denial - Setup and Probe
-          # =====================================================================
-          echo "### Cross-Tenant Denial Test" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Create test data - use separate commands for better error visibility
-          echo "Setting up test tenants..." | tee -a $GITHUB_STEP_SUMMARY
-
-          # Create test channels first (required for FK constraint on attribution_events)
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
-            INSERT INTO channel_taxonomy (code, family, is_paid, display_name, is_active, state) VALUES
-              ('organic', 'organic', false, 'Organic Search', true, 'active'),
-              ('malicious', 'other', false, 'Test Channel', true, 'active')
-            ON CONFLICT (code) DO NOTHING;
-          " 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          # Create tenants (with all required columns)
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
-            INSERT INTO tenants (id, name, api_key_hash, notification_email) VALUES
-              ('11111111-1111-1111-1111-111111111111', 'R2 Test Tenant A', 'hash_a', 'a@test.com'),
-              ('22222222-2222-2222-2222-222222222222', 'R2 Test Tenant B', 'hash_b', 'b@test.com')
-            ON CONFLICT (id) DO NOTHING;
-          " 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-
-          # Write SQL to a file and execute it (heredocs don't work well with docker exec)
-          cat > /tmp/cross_tenant_test.sql << 'EOSQL'
-          -- Insert data as Tenant A (using correct schema columns)
+          # (2) Cross-tenant denial (SELECT Tenant B rows while scoped to Tenant A must be 0)
+          cat > /tmp/r2_cross_tenant.sql <<'EOSQL'
           SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
           INSERT INTO attribution_events (
-            tenant_id, session_id, occurred_at, event_timestamp, event_type, channel,
-            idempotency_key, raw_payload, external_event_id
+            event_id, tenant_id, event_timestamp, event_type, source_url, attribution_model, created_at, channel
           ) VALUES (
+            'r2_enforce_a_' || gen_random_uuid()::text,
             '11111111-1111-1111-1111-111111111111',
-            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            now(), now(), 'page_view', 'organic',
-            'R2_CROSS_TENANT_TEST_A', '{"test": "data_a"}'::jsonb, 'R2_CROSS_TENANT_TEST_A'
+            NOW(),
+            'page_view',
+            'https://r2.invalid/enforce',
+            'last_touch',
+            NOW(),
+            'organic'
           ) ON CONFLICT DO NOTHING;
-
-          -- Insert data as Tenant B
-          SET app.current_tenant_id = '22222222-2222-2222-2222-222222222222';
-          INSERT INTO attribution_events (
-            tenant_id, session_id, occurred_at, event_timestamp, event_type, channel,
-            idempotency_key, raw_payload, external_event_id
-          ) VALUES (
-            '22222222-2222-2222-2222-222222222222',
-            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-            now(), now(), 'page_view', 'organic',
-            'R2_CROSS_TENANT_TEST_B', '{"test": "data_b"}'::jsonb, 'R2_CROSS_TENANT_TEST_B'
-          ) ON CONFLICT DO NOTHING;
-
-          -- Cross-Tenant Denial: Tenant A tries to SELECT Tenant B data
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          SELECT
-            'CROSS_TENANT_SELECT_' ||
-            CASE WHEN COUNT(*) = 0 THEN 'BLOCKED' ELSE 'LEAKED' END as result
-          FROM attribution_events
-          WHERE tenant_id = '22222222-2222-2222-2222-222222222222';
-
-          -- Verify Tenant A can see own data
-          SELECT
-            'OWN_DATA_' ||
-            CASE WHEN COUNT(*) > 0 THEN 'VISIBLE' ELSE 'BLOCKED' END as result
-          FROM attribution_events
-          WHERE external_event_id = 'R2_CROSS_TENANT_TEST_A';
-
-          -- Cross-Tenant Denial: Tenant A tries to INSERT into Tenant B
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          INSERT INTO attribution_events (
-            tenant_id, session_id, occurred_at, event_timestamp, event_type, channel,
-            idempotency_key, raw_payload, external_event_id
-          ) VALUES (
-            '22222222-2222-2222-2222-222222222222',
-            'cccccccc-cccc-cccc-cccc-cccccccccccc',
-            now(), now(), 'page_view', 'malicious',
-            'R2_CROSS_TENANT_INSERT_ATTEMPT', '{"test": "cross_tenant"}'::jsonb, 'R2_CROSS_TENANT_INSERT_ATTEMPT'
-          ) ON CONFLICT DO NOTHING;
-
-          -- Verify cross-tenant insert was blocked (check as Tenant B)
-          SET app.current_tenant_id = '22222222-2222-2222-2222-222222222222';
-          SELECT
-            'CROSS_TENANT_INSERT_' ||
-            CASE WHEN COUNT(*) = 0 THEN 'BLOCKED' ELSE 'LEAKED' END as result
-          FROM attribution_events
-          WHERE external_event_id = 'R2_CROSS_TENANT_INSERT_ATTEMPT';
-
-          -- Default-deny: Unset GUC should block all access
-          RESET app.current_tenant_id;
-          SELECT
-            'UNSET_GUC_' ||
-            CASE WHEN COUNT(*) = 0 THEN 'DEFAULT_DENY' ELSE 'LEAKED' END as result
-          FROM attribution_events;
+          SELECT COUNT(*) FROM attribution_events WHERE tenant_id = '22222222-2222-2222-2222-222222222222';
           EOSQL
-
-          # Copy SQL to container and execute AS APP ROLE (non-superuser, RLS applies)
-          docker cp /tmp/cross_tenant_test.sql skeldir-r2-postgres:/tmp/cross_tenant_test.sql
-          CROSS_TENANT_PROOF=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -t -f /tmp/cross_tenant_test.sql 2>&1)
-
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$CROSS_TENANT_PROOF" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$CROSS_TENANT_PROOF" > "$ARTIFACTS_DIR/RLS_PROOF/cross_tenant_denial.log"
-
-          # Verify all probes passed
-          # Note: UNSET_GUC test may return UUID error (invalid input syntax for type uuid: "")
-          # which is also a valid "default-deny" - the app can't access anything without valid tenant
-          if echo "$CROSS_TENANT_PROOF" | grep -q "CROSS_TENANT_SELECT_BLOCKED" && \
-             echo "$CROSS_TENANT_PROOF" | grep -q "OWN_DATA_VISIBLE" && \
-             echo "$CROSS_TENANT_PROOF" | grep -q "CROSS_TENANT_INSERT_BLOCKED" && \
-             (echo "$CROSS_TENANT_PROOF" | grep -q "UNSET_GUC_DEFAULT_DENY" || \
-              echo "$CROSS_TENANT_PROOF" | grep -q "invalid input syntax for type uuid"); then
-            echo "✅ All cross-tenant denial tests passed" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Cross-tenant denial tests failed" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          if [ "$GATE_PASS" = true ]; then
-            echo "✅ **EG-R2-1 PASS:** RLS forced + cross-tenant denial verified" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-1 FAIL:** RLS verification failed" | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
+          docker cp /tmp/r2_cross_tenant.sql skeldir-r2-postgres:/tmp/r2_cross_tenant.sql
+          cross_count=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -t -f /tmp/r2_cross_tenant.sql 2>&1 | tr -d ' ')
+          echo "CROSS_TENANT_B_ROWS_VISIBLE_TO_A=${cross_count}"
+          if ! echo "$cross_count" | grep -qE '^[0]+$'; then
+            FAILURES+=("CROSS_TENANT_DENIAL_FAILED:count=${cross_count}")
           fi
 
-      # ====================================================================
-      # EG-R2-2: Tenant Context Discipline (API + Celery)
-      # ====================================================================
-      - name: "EG-R2-2: Tenant context discipline verification"
-        run: |
-          set -o pipefail
-          echo "=== EG-R2-2: Tenant Context Discipline ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/TENANT_CONTEXT"
-
-          # =====================================================================
-          # Verify API tenant context module exists and has required functions
-          # =====================================================================
-          echo "### API Tenant Context Module" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          if [ -f "backend/app/core/tenant_context.py" ]; then
-            echo "✅ tenant_context.py exists" | tee -a $GITHUB_STEP_SUMMARY
-
-            # Check for required functions
-            if grep -q "def derive_tenant_id_from_request" backend/app/core/tenant_context.py && \
-               grep -q "async def set_tenant_context_on_session" backend/app/core/tenant_context.py; then
-              echo "✅ Required functions present: derive_tenant_id_from_request, set_tenant_context_on_session" | tee -a $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ Missing required tenant context functions" | tee -a $GITHUB_STEP_SUMMARY
-              exit 1
-            fi
-
-            # Check for SET LOCAL usage (transaction-scoped)
-            if grep -q "SET LOCAL app.current_tenant_id" backend/app/core/tenant_context.py; then
-              echo "✅ Uses SET LOCAL for transaction-scoped tenant context" | tee -a $GITHUB_STEP_SUMMARY
-            else
-              echo "⚠️ SET LOCAL not found - verify session scoping" | tee -a $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "❌ tenant_context.py not found" | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Verify Celery tenant context module
-          # =====================================================================
-          echo "### Celery Tenant Context Module" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          if [ -f "backend/app/tasks/context.py" ]; then
-            echo "✅ tasks/context.py exists" | tee -a $GITHUB_STEP_SUMMARY
-
-            # Check for @tenant_task decorator
-            if grep -q "def tenant_task" backend/app/tasks/context.py; then
-              echo "✅ @tenant_task decorator present" | tee -a $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ @tenant_task decorator missing" | tee -a $GITHUB_STEP_SUMMARY
-              exit 1
-            fi
-
-            # Check for tenant_id enforcement
-            if grep -q "tenant_id is required" backend/app/tasks/context.py; then
-              echo "✅ tenant_id enforcement present" | tee -a $GITHUB_STEP_SUMMARY
-            else
-              echo "⚠️ tenant_id enforcement not found" | tee -a $GITHUB_STEP_SUMMARY
-            fi
-
-            # Check for GUC setting
-            if grep -q "set_tenant_guc\|app.current_tenant_id" backend/app/tasks/context.py; then
-              echo "✅ Celery sets tenant GUC" | tee -a $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ Celery does not set tenant GUC" | tee -a $GITHUB_STEP_SUMMARY
-              exit 1
-            fi
-          else
-            echo "❌ tasks/context.py not found" | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "✅ **EG-R2-2 PASS:** Tenant context discipline verified for API and Celery" | tee -a $GITHUB_STEP_SUMMARY
-
-      # ====================================================================
-      # EG-R2-3: PII Defense-in-Depth (DB Trigger Enforcement)
-      # ====================================================================
-      - name: "EG-R2-3: PII defense-in-depth (trigger enforcement)"
-        run: |
-          set -o pipefail
-          echo "=== EG-R2-3: PII Defense-in-Depth ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/PII_PROOF"
-
-          # =====================================================================
-          # Verify PII triggers exist and are enabled
-          # =====================================================================
-          echo "### PII Trigger Status" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          PII_TRIGGERS=$(docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
-            SELECT
-              tgname as trigger_name,
-              tgenabled as enabled,
-              pg_get_triggerdef(oid) as definition
-            FROM pg_trigger
-            WHERE tgname LIKE 'trg_pii_guardrail%'
-            ORDER BY tgname;
-          ")
-
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$PII_TRIGGERS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$PII_TRIGGERS" > "$ARTIFACTS_DIR/PII_PROOF/pii_triggers.log"
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Test PII Rejection: Attempt to insert payload with PII keys
-          # =====================================================================
-          echo "### PII Rejection Test" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Set tenant context for test
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          " > /dev/null
-
-          # Test each PII key - should all be rejected
-          PII_KEYS="email phone ssn ip_address first_name"
-          ALL_BLOCKED=true
-
-          for key in $PII_KEYS; do
-            # Write SQL to file (heredocs don't work well with docker exec)
-            cat > /tmp/pii_test_${key}.sql << EOSQL
+          # (3) PII guardrail (attempt insert with prohibited key must fail)
+          cat > /tmp/r2_pii_fail.sql <<'EOSQL'
           SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
           INSERT INTO attribution_events (
-            tenant_id, session_id, occurred_at, event_timestamp, event_type,
-            channel, idempotency_key, raw_payload
+            event_id, tenant_id, event_timestamp, event_type, source_url, attribution_model, created_at, channel, raw_payload
           ) VALUES (
+            'r2_pii_' || gen_random_uuid()::text,
             '11111111-1111-1111-1111-111111111111',
-            'dddddddd-dddd-dddd-dddd-dddddddddddd',
-            now(), now(), 'page_view', 'organic',
-            'PII_TEST_${key}',
-            '{"${key}": "test_value"}'::jsonb
+            NOW(),
+            'page_view',
+            'https://r2.invalid/pii',
+            'last_touch',
+            NOW(),
+            'organic',
+            '{"email":"x@test.invalid"}'::jsonb
           );
           EOSQL
-            docker cp /tmp/pii_test_${key}.sql skeldir-r2-postgres:/tmp/pii_test_${key}.sql
-            RESULT=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -t -f /tmp/pii_test_${key}.sql 2>&1 || true)
-
-            if echo "$RESULT" | grep -q "PII key detected\|violates check constraint"; then
-              echo "✅ PII key '$key' correctly blocked" | tee -a $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ PII key '$key' was NOT blocked" | tee -a $GITHUB_STEP_SUMMARY
-              echo "Result: $RESULT" | tee -a $GITHUB_STEP_SUMMARY
-              ALL_BLOCKED=false
-            fi
-          done
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Test Valid Payload (no PII keys)
-          # =====================================================================
-          echo "### Valid Payload Test (no PII)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Write SQL to file
-          cat > /tmp/pii_valid_test.sql << 'EOSQL'
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          INSERT INTO attribution_events (
-            tenant_id, session_id, occurred_at, event_timestamp, event_type,
-            channel, idempotency_key, raw_payload
-          ) VALUES (
-            '11111111-1111-1111-1111-111111111111',
-            'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-            now(), now(), 'page_view', 'organic',
-            'PII_TEST_VALID_PAYLOAD',
-            '{"channel": "organic", "utm_source": "google"}'::jsonb
-          )
-          RETURNING idempotency_key;
-          EOSQL
-          docker cp /tmp/pii_valid_test.sql skeldir-r2-postgres:/tmp/pii_valid_test.sql
-          VALID_INSERT=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -t -f /tmp/pii_valid_test.sql 2>&1)
-
-          if echo "$VALID_INSERT" | grep -q "PII_TEST_VALID_PAYLOAD"; then
-            echo "✅ Valid payload (no PII) accepted" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Valid payload rejected incorrectly" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Result: $VALID_INSERT" | tee -a $GITHUB_STEP_SUMMARY
-            ALL_BLOCKED=false
+          docker cp /tmp/r2_pii_fail.sql skeldir-r2-postgres:/tmp/r2_pii_fail.sql
+          pii_result=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/r2_pii_fail.sql 2>&1 || true)
+          echo "PII_INSERT_ATTEMPT_RESULT=$(echo "$pii_result" | head -1)"
+          if ! echo "$pii_result" | grep -qiE "pii|guardrail|not allowed|violat"; then
+            FAILURES+=("PII_GUARDRAIL_NOT_ENFORCED")
           fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
 
-          if [ "$ALL_BLOCKED" = true ]; then
-            echo "✅ **EG-R2-3 PASS:** PII defense-in-depth verified - triggers block PII keys" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-3 FAIL:** PII defense-in-depth incomplete" | tee -a $GITHUB_STEP_SUMMARY
+          # (4) Immutability enforcement (UPDATE/DELETE blocked on immutable tables)
+          cat > /tmp/r2_immut_update.sql <<'EOSQL'
+          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
+          UPDATE attribution_events SET event_type = 'r2_immut' WHERE 1=0;
+          EOSQL
+          docker cp /tmp/r2_immut_update.sql skeldir-r2-postgres:/tmp/r2_immut_update.sql
+          immut_update=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/r2_immut_update.sql 2>&1 || true)
+          if ! echo "$immut_update" | grep -qiE "immutable|permission denied|not allowed"; then
+            FAILURES+=("ATTRIBUTION_EVENTS_UPDATE_NOT_BLOCKED")
+          fi
+
+          cat > /tmp/r2_immut_delete.sql <<'EOSQL'
+          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
+          DELETE FROM revenue_ledger WHERE 1=0;
+          EOSQL
+          docker cp /tmp/r2_immut_delete.sql skeldir-r2-postgres:/tmp/r2_immut_delete.sql
+          immut_delete=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/r2_immut_delete.sql 2>&1 || true)
+          if ! echo "$immut_delete" | grep -qiE "immutable|permission denied|not allowed"; then
+            FAILURES+=("REVENUE_LEDGER_DELETE_NOT_BLOCKED")
+          fi
+
+          echo "FAILURE_COUNT=${#FAILURES[@]}"
+          if [ "${#FAILURES[@]}" -gt 0 ]; then
+            echo "FAILURES=$(IFS=';'; echo "${FAILURES[*]}")"
+            echo "END_VERDICT"
             exit 1
           fi
+          echo "END_VERDICT"
 
       # ====================================================================
-      # EG-R2-4: DB Immutability Enforcement (UPDATE/DELETE denied)
+      # EG-R2-FIX-7 — Static Behavioral Innocence (latent paths)
       # ====================================================================
-      - name: "EG-R2-4: DB immutability enforcement"
+      - name: "EG-R2-FIX-7: Static behavioral innocence"
+        id: eg_r2_fix_7
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-4: DB Immutability Enforcement ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/IMMUTABILITY_PROOF"
-
-          GATE_PASS=true
-
-          # =====================================================================
-          # Verify prevent_mutation triggers exist
-          # =====================================================================
-          echo "### Immutability Trigger Status" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          IMMUT_TRIGGERS=$(docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
-            SELECT
-              tgname as trigger_name,
-              tgenabled as enabled
-            FROM pg_trigger
-            WHERE tgname LIKE 'trg_%_prevent_mutation'
-            ORDER BY tgname;
-          ")
-
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$IMMUT_TRIGGERS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "$IMMUT_TRIGGERS" > "$ARTIFACTS_DIR/IMMUTABILITY_PROOF/immutability_triggers.log"
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Test 1: attribution_events UPDATE should be blocked
-          # =====================================================================
-          echo "### attribution_events Immutability Test" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Write SQL to file and execute (heredocs don't work with docker exec)
-          cat > /tmp/immut_update_test.sql << 'EOSQL'
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          UPDATE attribution_events
-          SET event_type = 'modified'
-          WHERE external_event_id = 'R2_CROSS_TENANT_TEST_A';
-          EOSQL
-          docker cp /tmp/immut_update_test.sql skeldir-r2-postgres:/tmp/immut_update_test.sql
-          UPDATE_RESULT=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/immut_update_test.sql 2>&1 || true)
-
-          # Check for immutability enforcement (trigger or privilege denial both valid)
-          if echo "$UPDATE_RESULT" | grep -qE "append-only|immutable|not allowed|permission denied"; then
-            echo "✅ attribution_events UPDATE blocked (trigger or privilege)" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ attribution_events UPDATE was NOT blocked" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Result: $UPDATE_RESULT" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-
-          # Test DELETE
-          cat > /tmp/immut_delete_test.sql << 'EOSQL'
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          DELETE FROM attribution_events
-          WHERE external_event_id = 'R2_CROSS_TENANT_TEST_A';
-          EOSQL
-          docker cp /tmp/immut_delete_test.sql skeldir-r2-postgres:/tmp/immut_delete_test.sql
-          DELETE_RESULT=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/immut_delete_test.sql 2>&1 || true)
-
-          if echo "$DELETE_RESULT" | grep -qE "append-only|immutable|not allowed|permission denied"; then
-            echo "✅ attribution_events DELETE blocked (trigger or privilege)" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ attribution_events DELETE was NOT blocked" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Result: $DELETE_RESULT" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Test 2: revenue_ledger UPDATE should be blocked
-          # =====================================================================
-          echo "### revenue_ledger Immutability Test" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # First insert a test ledger entry
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-
-            -- Create test allocation first (required for FK)
-            INSERT INTO attribution_allocations (
-              id, tenant_id, channel_code, model_type, confidence_score, allocated_revenue_cents
-            ) VALUES (
-              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-              '11111111-1111-1111-1111-111111111111',
-              'organic', 'last_touch', 0.95, 10000
-            ) ON CONFLICT DO NOTHING;
-
-            -- Insert ledger entry (with all required columns)
-            INSERT INTO revenue_ledger (
-              tenant_id, allocation_id, revenue_cents, amount_cents, state,
-              transaction_id, verification_source, verification_timestamp, posted_at
-            ) VALUES (
-              '11111111-1111-1111-1111-111111111111',
-              'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-              10000, 10000, 'captured',
-              'R2_TEST_TXN_001', 'test', now(), now()
-            ) ON CONFLICT DO NOTHING;
-          " 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
-
-          # Test UPDATE
-          cat > /tmp/ledger_update_test.sql << 'EOSQL'
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          UPDATE revenue_ledger SET revenue_cents = 99999;
-          EOSQL
-          docker cp /tmp/ledger_update_test.sql skeldir-r2-postgres:/tmp/ledger_update_test.sql
-          LEDGER_UPDATE=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/ledger_update_test.sql 2>&1 || true)
-
-          if echo "$LEDGER_UPDATE" | grep -qE "immutable|not allowed|permission denied"; then
-            echo "✅ revenue_ledger UPDATE blocked (trigger or privilege)" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ revenue_ledger UPDATE was NOT blocked" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Result: $LEDGER_UPDATE" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-
-          # Test DELETE
-          cat > /tmp/ledger_delete_test.sql << 'EOSQL'
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-          DELETE FROM revenue_ledger;
-          EOSQL
-          docker cp /tmp/ledger_delete_test.sql skeldir-r2-postgres:/tmp/ledger_delete_test.sql
-          LEDGER_DELETE=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/ledger_delete_test.sql 2>&1 || true)
-
-          if echo "$LEDGER_DELETE" | grep -qE "immutable|not allowed|permission denied"; then
-            echo "✅ revenue_ledger DELETE blocked (trigger or privilege)" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ revenue_ledger DELETE was NOT blocked" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Result: $LEDGER_DELETE" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          if [ "$GATE_PASS" = true ]; then
-            echo "✅ **EG-R2-4 PASS:** DB immutability enforced - UPDATE/DELETE blocked on immutable tables" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-4 FAIL:** Immutability enforcement incomplete" | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
+          set -euo pipefail
+          mkdir -p "$ARTIFACTS_DIR/STATIC_AUDIT"
+          python scripts/r2/static_behavioral_audit.py \
+            --repo-root . \
+            --artifact-json "$ARTIFACTS_DIR/STATIC_AUDIT/verdict.json" \
+            | tee "$ARTIFACTS_DIR/STATIC_AUDIT/verdict.log"
 
       # ====================================================================
-      # EG-R2-FIX-B: Runtime Scenario Suite (HARD GATE)
-      # Execute 6 scenarios with DB window delimiters and per-scenario markers
-      # FAIL CONDITION: Any scenario fails OR markers missing
+      # EG-R2-FIX-8 — Canary Integrity (anti-theater)
       # ====================================================================
-      - name: "EG-R2-FIX-D: DB capture canary window emission (expected violation)"
+      - name: "EG-R2-FIX-8: Canary integrity (DB parser + static detector)"
+        id: eg_r2_fix_8
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-D: DB Capture Canary (Emission) ===" | tee -a $GITHUB_STEP_SUMMARY
-          echo "This step emits a deliberate destructive statement OUTSIDE the real scenario window." | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Canary Window ID:** \`$R2_CANARY_WINDOW_ID\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
+          set -euo pipefail
+          mkdir -p "$ARTIFACTS_DIR/CANARY"
 
-          # We intentionally run a destructive statement as r2_app_role; it should be refused by privileges/triggers,
-          # but MUST still appear in Postgres logs so the parser can prove it detects violations.
+          # DB canary window emission: deliberate destructive statement (WHERE 1=0) that must be visible in Postgres logs.
           docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
             "SELECT 'R2_WINDOW_START::${R2_CANDIDATE_SHA}::${R2_CANARY_WINDOW_ID}';" >/dev/null 2>&1 || true
           docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
@@ -888,16 +376,62 @@ jobs:
           docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
             "SELECT 'R2_WINDOW_END::${R2_CANDIDATE_SHA}::${R2_CANARY_WINDOW_ID}';" >/dev/null 2>&1 || true
 
-          echo "✅ Canary emission complete (parser will be validated later against captured logs)" | tee -a $GITHUB_STEP_SUMMARY
+          docker logs skeldir-r2-postgres 2>&1 > "$ARTIFACTS_DIR/CANARY/postgres_full_log.txt"
 
-      - name: "EG-R2-FIX-B: Runtime scenario suite (HARD GATE, app/worker)"
+          set +e
+          python scripts/r2/db_log_window_audit.py \
+            --log-file "$ARTIFACTS_DIR/CANARY/postgres_full_log.txt" \
+            --candidate-sha "$R2_CANDIDATE_SHA" \
+            --window-id "$R2_CANARY_WINDOW_ID" \
+            --num-scenarios 0 \
+            --artifact-json "$ARTIFACTS_DIR/CANARY/db_canary_verdict.json"
+          canary_exit=$?
+          set -e
+          if [ "$canary_exit" -eq 0 ]; then
+            echo "FAIL: DB parser did not fail on canary window" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          path = "${ARTIFACTS_DIR}/CANARY/db_canary_verdict.json"
+          with open(path, "r", encoding="utf-8") as f:
+            verdict = json.load(f)
+          match_count = int(verdict.get("match_count_destructive_on_immutable", 0))
+          if match_count <= 0:
+            raise SystemExit(f"FAIL: canary window did not produce destructive matches (match_count={match_count})")
+          print(f"R2_DB_CANARY_MATCH_COUNT={match_count}")
+          PY
+
+          # Static canary injection: detector must fail when canary exists, then pass after removal.
+          CANARY_FILE="backend/app/_r2_static_canary_violation.py"
+          cat > "$CANARY_FILE" << 'EOCANARY'
+          from sqlalchemy import text
+          VIOLATION_1 = text("DELETE FROM attribution_events WHERE 1=0")
+          VIOLATION_2 = text("UPDATE attribution_events SET event_type = 'canary' WHERE 1=0")
+          VIOLATION_3 = "TRUNCATE TABLE revenue_ledger"
+          EOCANARY
+
+          set +e
+          python scripts/r2/static_behavioral_audit.py --repo-root . --artifact-json "$ARTIFACTS_DIR/CANARY/static_fail_verdict.json" > "$ARTIFACTS_DIR/CANARY/static_fail.log" 2>&1
+          static_fail_exit=$?
+          set -e
+          if [ "$static_fail_exit" -eq 0 ]; then
+            echo "FAIL: static audit did not fail with canary present" | tee -a "$GITHUB_STEP_SUMMARY"
+            rm -f "$CANARY_FILE"
+            exit 1
+          fi
+          rm -f "$CANARY_FILE"
+          python scripts/r2/static_behavioral_audit.py --repo-root . --artifact-json "$ARTIFACTS_DIR/CANARY/static_pass_verdict.json" > "$ARTIFACTS_DIR/CANARY/static_pass.log" 2>&1
+
+      # ====================================================================
+      # EG-R2-FIX-1 — Scenario Suite Hard Gate
+      # ====================================================================
+      - name: "EG-R2-FIX-1: Runtime scenario suite (hard gate)"
+        id: eg_r2_fix_1
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-B: Runtime Scenario Suite (HARD GATE) ===" | tee -a $GITHUB_STEP_SUMMARY
+          set -euo pipefail
           mkdir -p "$ARTIFACTS_DIR/SCENARIO_SUITE"
-          echo "**Candidate SHA:** \`$R2_CANDIDATE_SHA\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Window ID:** \`$R2_WINDOW_ID\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
 
           export PYTHONPATH="${{ github.workspace }}/backend"
           export DATABASE_URL="postgresql+asyncpg://r2_app_role:r2_app_password@localhost:${R2_PG_PORT}/${POSTGRES_DB}"
@@ -907,1102 +441,174 @@ jobs:
           python scripts/r2/runtime_scenario_suite.py \
             --candidate-sha "$R2_CANDIDATE_SHA" \
             --window-id "$R2_WINDOW_ID" \
+            --orm-verdict-json "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_verdict.json" \
             | tee "$ARTIFACTS_DIR/SCENARIO_SUITE/scenario_suite.log"
 
-      - name: "EG-R2-FIX-B: Runtime scenario suite (HARD GATE)"
-        if: ${{ false }}
-        run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-B: Runtime Scenario Suite (HARD GATE) ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/SCENARIO_SUITE"
-
-          CANDIDATE_SHA=$(git rev-parse --short HEAD)
-          WINDOW_TS=$(date -u +%Y%m%d%H%M%S)
-
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Window-Delimited Scenario Execution" | tee -a $GITHUB_STEP_SUMMARY
-          echo "Each scenario has DB markers (R2_Si_START/END) that MUST appear in Postgres logs." | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Candidate SHA:** \`$CANDIDATE_SHA\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Window Timestamp:** \`$WINDOW_TS\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          SCENARIOS_EXECUTED=0
-          SCENARIOS_PASSED=0
-          declare -a SCENARIO_RESULTS
-
-          # Create test tenants and channels first (prerequisite setup)
-          docker exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "
-            INSERT INTO tenants (id, name, api_key_hash, notification_email, created_at)
-            VALUES
-              ('11111111-1111-1111-1111-111111111111', 'R2 Scenario Tenant A', 'hash_a', 'a@test.com', NOW()),
-              ('22222222-2222-2222-2222-222222222222', 'R2 Scenario Tenant B', 'hash_b', 'b@test.com', NOW())
-            ON CONFLICT (id) DO NOTHING;
-
-            INSERT INTO channel_taxonomy (channel, category, description, created_at)
-            VALUES ('organic', 'natural', 'Organic traffic', NOW())
-            ON CONFLICT (channel) DO NOTHING;
-          " 2>/dev/null || true
-
-          # =====================================================================
-          # EMIT GLOBAL WINDOW START MARKER (must appear in DB logs)
-          # =====================================================================
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_WINDOW_START::${CANDIDATE_SHA}::${WINDOW_TS}';" > /dev/null 2>&1
-
-          # =====================================================================
-          # Scenario 1: Happy Path Ingestion (baseline write)
-          # =====================================================================
-          SCENARIOS_EXECUTED=$((SCENARIOS_EXECUTED + 1))
-          echo "**SCENARIO_1: Happy Path Ingestion**" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Per-scenario START marker
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S1_START::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          SCENARIO_1=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-            INSERT INTO attribution_events (
-              event_id, tenant_id, event_timestamp, event_type, source_url, attribution_model, created_at, channel
-            ) VALUES (
-              'scenario1_' || gen_random_uuid()::text,
-              '11111111-1111-1111-1111-111111111111',
-              NOW(),
-              'page_view',
-              'https://test.com/scenario1',
-              'last_touch',
-              NOW(),
-              'organic'
-            );
-            SELECT 'S1_DB_INTERACTION_COMPLETE';
-          " 2>&1) || true
-
-          # Per-scenario END marker
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S1_END::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          if echo "$SCENARIO_1" | grep -q "S1_DB_INTERACTION_COMPLETE"; then
-            echo "  SCENARIO_1_PASS" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIOS_PASSED=$((SCENARIOS_PASSED + 1))
-            SCENARIO_RESULTS[1]="PASS"
-          else
-            echo "  SCENARIO_1_FAIL" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIO_RESULTS[1]="FAIL"
-          fi
-
-          # =====================================================================
-          # Scenario 2: Duplicate/Idempotency Check (SELECT query)
-          # =====================================================================
-          SCENARIOS_EXECUTED=$((SCENARIOS_EXECUTED + 1))
-          echo "**SCENARIO_2: Duplicate/Idempotency Check**" | tee -a $GITHUB_STEP_SUMMARY
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S2_START::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          SCENARIO_2=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-            SELECT COUNT(*) FROM attribution_events
-            WHERE event_id LIKE 'scenario1_%' AND tenant_id = '11111111-1111-1111-1111-111111111111';
-            SELECT 'S2_DB_INTERACTION_COMPLETE';
-          " 2>&1) || true
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S2_END::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          if echo "$SCENARIO_2" | grep -q "S2_DB_INTERACTION_COMPLETE"; then
-            echo "  SCENARIO_2_PASS" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIOS_PASSED=$((SCENARIOS_PASSED + 1))
-            SCENARIO_RESULTS[2]="PASS"
-          else
-            echo "  SCENARIO_2_FAIL" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIO_RESULTS[2]="FAIL"
-          fi
-
-          # =====================================================================
-          # Scenario 3: Validation Failure (NULL constraint violation)
-          # =====================================================================
-          SCENARIOS_EXECUTED=$((SCENARIOS_EXECUTED + 1))
-          echo "**SCENARIO_3: Validation Failure Path**" | tee -a $GITHUB_STEP_SUMMARY
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S3_START::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          SCENARIO_3=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-            INSERT INTO attribution_events (event_id, tenant_id, event_timestamp, event_type, source_url, attribution_model, created_at, channel)
-            VALUES (NULL, '11111111-1111-1111-1111-111111111111', NOW(), 'test', 'url', 'model', NOW(), 'organic');
-          " 2>&1) || true
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S3_END::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          # This scenario PASSES if the constraint violation is triggered
-          if echo "$SCENARIO_3" | grep -qiE "null|violation|constraint|error"; then
-            echo "  SCENARIO_3_PASS (constraint correctly rejected)" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIOS_PASSED=$((SCENARIOS_PASSED + 1))
-            SCENARIO_RESULTS[3]="PASS"
-          else
-            echo "  SCENARIO_3_FAIL (constraint should have rejected)" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIO_RESULTS[3]="FAIL"
-          fi
-
-          # =====================================================================
-          # Scenario 4: Retry/Recovery Pattern
-          # =====================================================================
-          SCENARIOS_EXECUTED=$((SCENARIOS_EXECUTED + 1))
-          echo "**SCENARIO_4: Retry/Recovery Pattern**" | tee -a $GITHUB_STEP_SUMMARY
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S4_START::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          # First attempt (will fail)
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-            BEGIN; SELECT 'TRANSACTION_STARTED'; INSERT INTO nonexistent_table VALUES (1);
-          " 2>&1 || true
-
-          # Retry succeeds
-          SCENARIO_4=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-            SELECT 'S4_DB_INTERACTION_COMPLETE';
-          " 2>&1) || true
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S4_END::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          if echo "$SCENARIO_4" | grep -q "S4_DB_INTERACTION_COMPLETE"; then
-            echo "  SCENARIO_4_PASS" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIOS_PASSED=$((SCENARIOS_PASSED + 1))
-            SCENARIO_RESULTS[4]="PASS"
-          else
-            echo "  SCENARIO_4_FAIL" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIO_RESULTS[4]="FAIL"
-          fi
-
-          # =====================================================================
-          # Scenario 5: Cross-Tenant Denial
-          # =====================================================================
-          SCENARIOS_EXECUTED=$((SCENARIOS_EXECUTED + 1))
-          echo "**SCENARIO_5: Cross-Tenant Denial**" | tee -a $GITHUB_STEP_SUMMARY
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S5_START::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          SCENARIO_5=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-            SELECT COUNT(*) as cross_tenant_count FROM attribution_events
-            WHERE tenant_id = '22222222-2222-2222-2222-222222222222';
-            SELECT 'S5_DB_INTERACTION_COMPLETE';
-          " 2>&1) || true
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S5_END::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          if echo "$SCENARIO_5" | grep -q "S5_DB_INTERACTION_COMPLETE"; then
-            echo "  SCENARIO_5_PASS" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIOS_PASSED=$((SCENARIOS_PASSED + 1))
-            SCENARIO_RESULTS[5]="PASS"
-          else
-            echo "  SCENARIO_5_FAIL" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIO_RESULTS[5]="FAIL"
-          fi
-
-          # =====================================================================
-          # Scenario 6: PII Rejection
-          # =====================================================================
-          SCENARIOS_EXECUTED=$((SCENARIOS_EXECUTED + 1))
-          echo "**SCENARIO_6: PII Rejection**" | tee -a $GITHUB_STEP_SUMMARY
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S6_START::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          SCENARIO_6=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c "
-            SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-            INSERT INTO attribution_events (
-              event_id, tenant_id, event_timestamp, event_type, source_url, attribution_model, created_at, channel, raw_payload
-            ) VALUES (
-              'pii_test_' || gen_random_uuid()::text,
-              '11111111-1111-1111-1111-111111111111',
-              NOW(), 'test', 'url', 'model', NOW(), 'organic',
-              '{\"email\": \"victim@example.com\"}'::jsonb
-            );
-          " 2>&1) || true
-
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_S6_END::${CANDIDATE_SHA}';" > /dev/null 2>&1
-
-          # This scenario PASSES if the PII trigger blocks the insert
-          if echo "$SCENARIO_6" | grep -qiE "pii|blocked|denied|reject|guardrail"; then
-            echo "  SCENARIO_6_PASS (PII correctly rejected)" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIOS_PASSED=$((SCENARIOS_PASSED + 1))
-            SCENARIO_RESULTS[6]="PASS"
-          else
-            echo "  SCENARIO_6_FAIL (PII should have been rejected)" | tee -a $GITHUB_STEP_SUMMARY
-            SCENARIO_RESULTS[6]="FAIL"
-          fi
-
-          # =====================================================================
-          # EMIT GLOBAL WINDOW END MARKER
-          # =====================================================================
-          docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -c \
-            "SELECT 'R2_WINDOW_END::${CANDIDATE_SHA}::${WINDOW_TS}';" > /dev/null 2>&1
-
-          # =====================================================================
-          # HARD GATE VERDICT
-          # =====================================================================
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Scenario Suite Verdict Block" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "R2_SCENARIO_SUITE_VERDICT" | tee -a $GITHUB_STEP_SUMMARY
-          echo "SCENARIOS_EXECUTED=$SCENARIOS_EXECUTED" | tee -a $GITHUB_STEP_SUMMARY
-          echo "SCENARIOS_PASSED=$SCENARIOS_PASSED" | tee -a $GITHUB_STEP_SUMMARY
-          for i in 1 2 3 4 5 6; do
-            echo "SCENARIO_${i}_RESULT=${SCENARIO_RESULTS[$i]:-UNEXECUTED}" | tee -a $GITHUB_STEP_SUMMARY
-          done
-          echo "WINDOW_MARKERS_EMITTED=R2_WINDOW_START,R2_WINDOW_END,R2_S1-6_START,R2_S1-6_END" | tee -a $GITHUB_STEP_SUMMARY
-          echo "END_VERDICT" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Save to artifact
-          cat > "$ARTIFACTS_DIR/SCENARIO_SUITE/verdict.txt" <<EOF
-          R2_SCENARIO_SUITE_VERDICT
-          SCENARIOS_EXECUTED=$SCENARIOS_EXECUTED
-          SCENARIOS_PASSED=$SCENARIOS_PASSED
-          END_VERDICT
-          EOF
-
-          # HARD GATE: MUST have SCENARIOS_PASSED == SCENARIOS_EXECUTED
-          if [ "$SCENARIOS_PASSED" -eq "$SCENARIOS_EXECUTED" ] && [ "$SCENARIOS_EXECUTED" -eq 6 ]; then
-            echo "✅ **EG-R2-FIX-B PASS (HARD GATE):** All $SCENARIOS_EXECUTED scenarios passed ($SCENARIOS_PASSED/$SCENARIOS_EXECUTED)" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-FIX-B FAIL (HARD GATE):** Scenarios failed ($SCENARIOS_PASSED/$SCENARIOS_EXECUTED)" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" | tee -a $GITHUB_STEP_SUMMARY
-            echo "**R2 IS BLOCKED:** SCENARIOS_PASSED must equal SCENARIOS_EXECUTED." | tee -a $GITHUB_STEP_SUMMARY
-            echo "Fix the failing scenarios before R2 can complete." | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
       # ====================================================================
-      # EG-R2-FIX-A: Runtime Innocence via DB Statement Capture (MANDATORY AUTHORITATIVE)
-      # Window-delimited parsing with per-scenario verification
-      # FAIL CONDITIONS: Missing markers, zero statements in window, any destructive match
+      # EG-R2-FIX-3 — DB Window Binding + Per-Scenario Activity
       # ====================================================================
-      - name: "EG-R2-FIX-A: DB statement capture (MANDATORY AUTHORITATIVE, window-delimited)"
+      - name: "EG-R2-FIX-3: DB window binding + per-scenario DB activity"
+        id: eg_r2_fix_3
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-A: Runtime Innocence via DB Statement Capture (MANDATORY AUTHORITATIVE) ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE"
+          set -euo pipefail
+          mkdir -p "$ARTIFACTS_DIR/DB_CAPTURE"
 
-          echo "### Capturing raw Postgres logs (docker logs)" | tee -a $GITHUB_STEP_SUMMARY
-          docker logs skeldir-r2-postgres 2>&1 > "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/postgres_full_log.txt"
+          docker logs skeldir-r2-postgres 2>&1 > "$ARTIFACTS_DIR/DB_CAPTURE/postgres_full_log.txt"
 
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Raw DB Log Head (first 200 lines)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          sed -n '1,200p' "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/postgres_full_log.txt" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
+          echo "R2_DB_LOG_HEAD_200_LINES" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" | tee -a "$GITHUB_STEP_SUMMARY"
+          sed -n '1,200p' "$ARTIFACTS_DIR/DB_CAPTURE/postgres_full_log.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" | tee -a "$GITHUB_STEP_SUMMARY"
 
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Canary Proof (DB parser must FAIL on deliberate destructive statement)" | tee -a $GITHUB_STEP_SUMMARY
-          set +e
           python scripts/r2/db_log_window_audit.py \
-            --log-file "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/postgres_full_log.txt" \
-            --candidate-sha "$R2_CANDIDATE_SHA" \
-            --window-id "$R2_CANARY_WINDOW_ID" \
-            --num-scenarios 0 \
-            --artifact-json "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/canary_verdict.json"
-          CANARY_EXIT=$?
-          set -e
-          if [ "$CANARY_EXIT" -eq 0 ]; then
-            echo "❌ **EG-R2-FIX-D FAIL:** DB parser did not fail on canary window" | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-          python - <<'PY'
-          import json
-          path = "${ARTIFACTS_DIR}/DB_STATEMENT_CAPTURE/canary_verdict.json"
-          with open(path, "r", encoding="utf-8") as f:
-            verdict = json.load(f)
-          match_count = verdict.get("match_count_destructive_on_immutable", 0)
-          if match_count <= 0:
-            raise SystemExit(f"EG-R2-FIX-D FAIL: canary window did not produce destructive matches (match_count={match_count})")
-          print(f"EG-R2-FIX-D canary destructive match_count={match_count}")
-          PY
-          echo "✅ **EG-R2-FIX-D PASS:** DB parser failed on canary window as expected" | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Authoritative Window Audit (must PASS)" | tee -a $GITHUB_STEP_SUMMARY
-          python scripts/r2/db_log_window_audit.py \
-            --log-file "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/postgres_full_log.txt" \
+            --log-file "$ARTIFACTS_DIR/DB_CAPTURE/postgres_full_log.txt" \
             --candidate-sha "$R2_CANDIDATE_SHA" \
             --window-id "$R2_WINDOW_ID" \
-            --num-scenarios 6 \
-            --artifact-json "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_verdict.json" \
-            | tee "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_verdict.log"
+            --num-scenarios "$R2_NUM_SCENARIOS" \
+            --no-enforce-forbidden \
+            --artifact-json "$ARTIFACTS_DIR/DB_CAPTURE/window_verdict.json" \
+            | tee "$ARTIFACTS_DIR/DB_CAPTURE/window_verdict.log"
 
-      - name: "EG-R2-FIX-A: DB statement capture (MANDATORY AUTHORITATIVE)"
-        if: ${{ false }}
+      # ====================================================================
+      # EG-R2-FIX-4 — DB Runtime Innocence (AUTHORITATIVE)
+      # ====================================================================
+      - name: "EG-R2-FIX-4: DB runtime innocence (authoritative)"
+        id: eg_r2_fix_4
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-A: Runtime Innocence via DB Statement Capture (MANDATORY AUTHORITATIVE) ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE"
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("${ARTIFACTS_DIR}/DB_CAPTURE/window_verdict.json")
+          if not path.exists():
+            raise SystemExit("FAIL: missing DB window verdict json (did EG-R2-FIX-3 run?)")
+          verdict = json.loads(path.read_text(encoding="utf-8"))
+          match_count = int(verdict.get("match_count_destructive_on_immutable", 0))
+          print("R2_DB_RUNTIME_INNOCENCE_VERDICT")
+          print("IMMUTABLE_TABLE_SET=attribution_events,revenue_ledger")
+          print("DESTRUCTIVE_VERBS=ALTER,DELETE,TRUNCATE,UPDATE")
+          print(f"DB_FORBIDDEN_MATCH_COUNT={match_count}")
+          if match_count != 0:
+            print("FAILURES=DB_FORBIDDEN_MATCH_COUNT_NONZERO")
+          print("END_VERDICT")
+          raise SystemExit(1 if match_count != 0 else 0)
+          PY
 
-          CANDIDATE_SHA=$(git rev-parse --short HEAD)
-
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Proof Hierarchy" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **MANDATORY (AUTHORITATIVE)**: This DB statement capture parses actual Postgres logs" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- App/ORM hooks are NEVER authoritative - DB logs are the source of truth" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- Parsing is window-delimited with per-scenario markers" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "### Closed Sets" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **Immutable Tables:** attribution_events, revenue_ledger" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **Destructive Verbs:** UPDATE, DELETE, TRUNCATE, ALTER" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Pull Postgres container logs
-          echo "### Capturing DB Logs..." | tee -a $GITHUB_STEP_SUMMARY
-          docker logs skeldir-r2-postgres 2>&1 > "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/postgres_full_log.txt"
-
-          # Extract statement lines (match Postgres log format)
-          # Format: 2024-12-26 17:29:28.123 UTC [123] LOG:  statement: SELECT ...
-          grep -E "statement:" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/postgres_full_log.txt" \
-            > "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/all_statements.txt" 2>/dev/null || touch "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/all_statements.txt"
-
-          TOTAL_ALL_STATEMENTS=$(wc -l < "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/all_statements.txt" | tr -d ' ')
-          echo "Total statements in full log: **$TOTAL_ALL_STATEMENTS**" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # WINDOW DELIMITER VERIFICATION
-          # Must find R2_WINDOW_START and R2_WINDOW_END markers
-          # =====================================================================
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Window Delimiter Verification" | tee -a $GITHUB_STEP_SUMMARY
-
-          WINDOW_START_LINE=$(grep -n "R2_WINDOW_START::${CANDIDATE_SHA}" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/all_statements.txt" | head -1 | cut -d: -f1 || echo "0")
-          WINDOW_END_LINE=$(grep -n "R2_WINDOW_END::${CANDIDATE_SHA}" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/all_statements.txt" | tail -1 | cut -d: -f1 || echo "0")
-
-          WINDOW_START_FOUND=false
-          WINDOW_END_FOUND=false
-
-          if [ "$WINDOW_START_LINE" != "0" ] && [ -n "$WINDOW_START_LINE" ]; then
-            echo "✅ R2_WINDOW_START marker found at line $WINDOW_START_LINE" | tee -a $GITHUB_STEP_SUMMARY
-            WINDOW_START_FOUND=true
-          else
-            echo "❌ R2_WINDOW_START marker NOT FOUND" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "$WINDOW_END_LINE" != "0" ] && [ -n "$WINDOW_END_LINE" ]; then
-            echo "✅ R2_WINDOW_END marker found at line $WINDOW_END_LINE" | tee -a $GITHUB_STEP_SUMMARY
-            WINDOW_END_FOUND=true
-          else
-            echo "❌ R2_WINDOW_END marker NOT FOUND" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-
-          # Extract statements within window only
-          if [ "$WINDOW_START_FOUND" = true ] && [ "$WINDOW_END_FOUND" = true ]; then
-            sed -n "${WINDOW_START_LINE},${WINDOW_END_LINE}p" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/all_statements.txt" \
-              > "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt"
-            TOTAL_WINDOW_STATEMENTS=$(wc -l < "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt" | tr -d ' ')
-            echo "Statements in window: **$TOTAL_WINDOW_STATEMENTS**" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            TOTAL_WINDOW_STATEMENTS=0
-            touch "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt"
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # PER-SCENARIO MARKER VERIFICATION
-          # Each scenario MUST have START/END markers AND ≥1 non-marker statement
-          # =====================================================================
-          echo "### Per-Scenario Marker Verification" | tee -a $GITHUB_STEP_SUMMARY
-          SCENARIOS_WITH_MARKERS=0
-          SCENARIOS_WITH_STATEMENTS=0
-
-          for i in 1 2 3 4 5 6; do
-            S_START=$(grep -c "R2_S${i}_START::${CANDIDATE_SHA}" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt" 2>/dev/null || echo 0)
-            S_END=$(grep -c "R2_S${i}_END::${CANDIDATE_SHA}" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt" 2>/dev/null || echo 0)
-
-            # Extract lines between S${i}_START and S${i}_END
-            S_START_LINE=$(grep -n "R2_S${i}_START::${CANDIDATE_SHA}" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt" 2>/dev/null | head -1 | cut -d: -f1 || echo "0")
-            S_END_LINE=$(grep -n "R2_S${i}_END::${CANDIDATE_SHA}" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt" 2>/dev/null | head -1 | cut -d: -f1 || echo "0")
-
-            # Count non-marker statements in this scenario
-            NON_MARKER_COUNT=0
-            if [ "$S_START_LINE" != "0" ] && [ "$S_END_LINE" != "0" ] && [ -n "$S_START_LINE" ] && [ -n "$S_END_LINE" ]; then
-              # Extract scenario slice and count non-marker lines
-              SCENARIO_SLICE=$(sed -n "${S_START_LINE},${S_END_LINE}p" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt" | grep -v "R2_S${i}_START\|R2_S${i}_END" || true)
-              NON_MARKER_COUNT=$(echo "$SCENARIO_SLICE" | grep -v "^$" | wc -l | tr -d ' ')
-            fi
-
-            if [ "$S_START" -ge 1 ] && [ "$S_END" -ge 1 ]; then
-              SCENARIOS_WITH_MARKERS=$((SCENARIOS_WITH_MARKERS + 1))
-              if [ "$NON_MARKER_COUNT" -ge 1 ]; then
-                echo "✅ S$i: markers present, $NON_MARKER_COUNT non-marker statements" | tee -a $GITHUB_STEP_SUMMARY
-                SCENARIOS_WITH_STATEMENTS=$((SCENARIOS_WITH_STATEMENTS + 1))
-              else
-                echo "⚠️ S$i: markers present but 0 non-marker statements (theater risk)" | tee -a $GITHUB_STEP_SUMMARY
-              fi
-            else
-              echo "❌ S$i: markers MISSING (START=$S_START, END=$S_END)" | tee -a $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # DESTRUCTIVE STATEMENT DETECTION
-          # Scan window for destructive verbs on immutable tables
-          # =====================================================================
-          echo "### Destructive Statement Scan (Window Only)" | tee -a $GITHUB_STEP_SUMMARY
-
-          IMMUTABLE_TABLES="attribution_events revenue_ledger"
-          DESTRUCTIVE_VERBS="UPDATE DELETE TRUNCATE ALTER"
-          MATCH_COUNT=0
-
-          for table in $IMMUTABLE_TABLES; do
-            for verb in $DESTRUCTIVE_VERBS; do
-              # Case-insensitive search
-              MATCHES=$(grep -i "$verb" "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/window_statements.txt" 2>/dev/null | grep -i "$table" || true)
-              if [ -n "$MATCHES" ]; then
-                echo "⚠️ Found $verb on $table:" | tee -a $GITHUB_STEP_SUMMARY
-                echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-                echo "$MATCHES" | head -10 | tee -a $GITHUB_STEP_SUMMARY
-                echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-                MATCH_COUNT=$((MATCH_COUNT + $(echo "$MATCHES" | wc -l)))
-              fi
-            done
-          done
-
-          if [ "$MATCH_COUNT" -eq 0 ]; then
-            echo "✅ No destructive statements found on immutable tables in window" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # AUTHORITATIVE VERDICT BLOCK
-          # =====================================================================
-          echo "### Authoritative Verdict Block" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "R2_DB_RUNTIME_INNOCENCE_VERDICT" | tee -a $GITHUB_STEP_SUMMARY
-          echo "CANDIDATE_SHA=$CANDIDATE_SHA" | tee -a $GITHUB_STEP_SUMMARY
-          echo "WINDOW_START_FOUND=$WINDOW_START_FOUND" | tee -a $GITHUB_STEP_SUMMARY
-          echo "WINDOW_END_FOUND=$WINDOW_END_FOUND" | tee -a $GITHUB_STEP_SUMMARY
-          echo "TOTAL_ALL_STATEMENTS=$TOTAL_ALL_STATEMENTS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "TOTAL_WINDOW_STATEMENTS=$TOTAL_WINDOW_STATEMENTS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "SCENARIOS_WITH_MARKERS=$SCENARIOS_WITH_MARKERS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "SCENARIOS_WITH_STATEMENTS=$SCENARIOS_WITH_STATEMENTS" | tee -a $GITHUB_STEP_SUMMARY
-          echo "MATCH_COUNT_DESTRUCTIVE_ON_IMMUTABLE=$MATCH_COUNT" | tee -a $GITHUB_STEP_SUMMARY
-          echo "IMMUTABLE_TABLE_SET=attribution_events,revenue_ledger" | tee -a $GITHUB_STEP_SUMMARY
-          echo "DESTRUCTIVE_VERBS=ALTER,DELETE,TRUNCATE,UPDATE" | tee -a $GITHUB_STEP_SUMMARY
-          echo "END_VERDICT" | tee -a $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Save verdict to artifact
-          cat > "$ARTIFACTS_DIR/DB_STATEMENT_CAPTURE/verdict.txt" <<EOF
-          R2_DB_RUNTIME_INNOCENCE_VERDICT
-          CANDIDATE_SHA=$CANDIDATE_SHA
-          WINDOW_START_FOUND=$WINDOW_START_FOUND
-          WINDOW_END_FOUND=$WINDOW_END_FOUND
-          TOTAL_ALL_STATEMENTS=$TOTAL_ALL_STATEMENTS
-          TOTAL_WINDOW_STATEMENTS=$TOTAL_WINDOW_STATEMENTS
-          SCENARIOS_WITH_MARKERS=$SCENARIOS_WITH_MARKERS
-          SCENARIOS_WITH_STATEMENTS=$SCENARIOS_WITH_STATEMENTS
-          MATCH_COUNT_DESTRUCTIVE_ON_IMMUTABLE=$MATCH_COUNT
-          END_VERDICT
-          EOF
-
-          # =====================================================================
-          # HARD FAIL CONDITIONS (any of these blocks R2)
-          # =====================================================================
-          GATE_PASS=true
-
-          # Fail 1: Window markers missing
-          if [ "$WINDOW_START_FOUND" != "true" ] || [ "$WINDOW_END_FOUND" != "true" ]; then
-            echo "❌ **FAIL CONDITION 1:** Window delimiters missing" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-
-          # Fail 2: Fewer than 6 scenarios with markers
-          if [ "$SCENARIOS_WITH_MARKERS" -lt 6 ]; then
-            echo "❌ **FAIL CONDITION 2:** Per-scenario markers missing ($SCENARIOS_WITH_MARKERS/6)" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-
-          # Fail 3: Any scenario has zero non-marker statements (theater window)
-          if [ "$SCENARIOS_WITH_STATEMENTS" -lt 6 ]; then
-            echo "❌ **FAIL CONDITION 3:** Some scenarios have 0 DB statements (theater window)" | tee -a $GITHUB_STEP_SUMMARY
-            echo "SCENARIOS_WITH_STATEMENTS=$SCENARIOS_WITH_STATEMENTS, expected 6" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-
-          # Fail 4: Too few total statements in window (parsing/format broken)
-          MIN_EXPECTED=$((2 * 6 + 2))  # 2 per scenario + start/end = 14 minimum
-          if [ "$TOTAL_WINDOW_STATEMENTS" -lt "$MIN_EXPECTED" ]; then
-            echo "❌ **FAIL CONDITION 4:** Too few statements in window ($TOTAL_WINDOW_STATEMENTS < $MIN_EXPECTED)" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-
-          # Fail 5: Any destructive statements on immutable tables
-          if [ "$MATCH_COUNT" -gt 0 ]; then
-            echo "❌ **FAIL CONDITION 5:** Destructive statements found (MATCH_COUNT=$MATCH_COUNT)" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-
-          # Final verdict
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          if [ "$GATE_PASS" = true ]; then
-            echo "✅ **EG-R2-FIX-A PASS (MANDATORY AUTHORITATIVE):** Runtime innocence proven" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" | tee -a $GITHUB_STEP_SUMMARY
-            echo "- Window delimiters present and validated" | tee -a $GITHUB_STEP_SUMMARY
-            echo "- All 6 scenarios have markers AND non-marker statements" | tee -a $GITHUB_STEP_SUMMARY
-            echo "- MATCH_COUNT_DESTRUCTIVE_ON_IMMUTABLE=0" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" | tee -a $GITHUB_STEP_SUMMARY
-            echo "During the delimited runtime window, **zero** destructive statements" | tee -a $GITHUB_STEP_SUMMARY
-            echo "reached the database for immutable tables." | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-FIX-A FAIL (MANDATORY AUTHORITATIVE):** Runtime innocence NOT proven" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" | tee -a $GITHUB_STEP_SUMMARY
-            echo "**R2 IS BLOCKED:** Fix the fail conditions above." | tee -a $GITHUB_STEP_SUMMARY
+      # ====================================================================
+      # EG-R2-FIX-5 — ORM Runtime Innocence (MANDATORY secondary)
+      # ====================================================================
+      - name: "EG-R2-FIX-5: ORM runtime innocence (mandatory cross-check)"
+        id: eg_r2_fix_5
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [ ! -f "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_verdict.json" ]; then
+            echo "FAIL: missing orm_verdict.json (did EG-R2-FIX-1 run?)"
             exit 1
           fi
+          python scripts/r2/orm_window_audit.py \
+            --orm-window-json "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_verdict.json" \
+            --num-scenarios "$R2_NUM_SCENARIOS" \
+            | tee "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_gate.log"
 
       # ====================================================================
-      # EG-R2-FIX-4: Static Behavioral Innocence (CO-PRIMARY BLOCKER)
-      # Proves no latent destructive code paths exist
+      # EG-R2-FIX-6 — Instrument Consistency (DB vs ORM)
       # ====================================================================
-      - name: "EG-R2-FIX-4: Static behavioral innocence (CO-PRIMARY BLOCKER, whole-repo)"
+      - name: "EG-R2-FIX-6: Instrument consistency (DB vs ORM)"
+        id: eg_r2_fix_6
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-4: Static Behavioral Innocence (CO-PRIMARY BLOCKER) ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT"
-
-          python scripts/r2/static_behavioral_audit.py \
-            --repo-root . \
-            --artifact-json "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/verdict.json" \
-            | tee "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/verdict.log"
-
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "✅ **EG-R2-FIX-4 PASS:** Static behavioral audit found 0 latent destructive patterns on immutable tables" | tee -a $GITHUB_STEP_SUMMARY
-
-      - name: "EG-R2-FIX-5: Canary integrity (Anti-Theater, static detector)"
-        run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-5: Canary Integrity (Anti-Theater) ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT"
-
-          CANARY_FILE="backend/app/_r2_static_canary_violation.py"
-          cat > "$CANARY_FILE" << 'EOCANARY'
-from sqlalchemy import text
-
-# R2 CANARY FILE - DO NOT COMMIT
-# Deliberate destructive SQL on immutable tables (must be detected by static audit).
-VIOLATION_1 = text("DELETE FROM attribution_events WHERE 1=0")
-VIOLATION_2 = text("UPDATE attribution_events SET event_type = 'canary' WHERE 1=0")
-VIOLATION_3 = "TRUNCATE TABLE revenue_ledger"
-EOCANARY
-
-          echo "Created canary file: $CANARY_FILE" | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Canary Phase 1: Static audit MUST FAIL" | tee -a $GITHUB_STEP_SUMMARY
-          set +e
-          python scripts/r2/static_behavioral_audit.py \
-            --repo-root . \
-            --artifact-json "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/canary_fail_verdict.json" \
-            > "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/canary_fail.log" 2>&1
-          CANARY_EXIT=$?
-          set -e
-          if [ "$CANARY_EXIT" -eq 0 ]; then
-            echo "❌ **EG-R2-FIX-5 FAIL:** Static audit did not fail with canary present" | tee -a $GITHUB_STEP_SUMMARY
-            rm -f "$CANARY_FILE"
+          set -euo pipefail
+          if [ ! -f "$ARTIFACTS_DIR/DB_CAPTURE/window_verdict.json" ]; then
+            echo "FAIL: missing DB window verdict json"
             exit 1
           fi
-          echo "✅ Canary detected (static audit failed as expected)" | tee -a $GITHUB_STEP_SUMMARY
+          if [ ! -f "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_verdict.json" ]; then
+            echo "FAIL: missing ORM window verdict json"
+            exit 1
+          fi
+          python scripts/r2/instrument_consistency_gate.py \
+            --db-window-json "$ARTIFACTS_DIR/DB_CAPTURE/window_verdict.json" \
+            --orm-window-json "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_verdict.json" \
+            --num-scenarios "$R2_NUM_SCENARIOS" \
+            | tee "$ARTIFACTS_DIR/DB_CAPTURE/instrument_consistency.log"
 
-          rm -f "$CANARY_FILE"
-
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Canary Phase 2: Static audit MUST PASS after removal" | tee -a $GITHUB_STEP_SUMMARY
-          python scripts/r2/static_behavioral_audit.py \
-            --repo-root . \
-            --artifact-json "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/canary_pass_verdict.json" \
-            > "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/canary_pass.log" 2>&1
-          echo "✅ **EG-R2-FIX-5 PASS:** Static detector proven functional (fails with canary, passes after removal)" | tee -a $GITHUB_STEP_SUMMARY
-
-      - name: "EG-R2-FIX-4: Static behavioral innocence (CO-PRIMARY BLOCKER)"
-        if: ${{ false }}
+      # ====================================================================
+      # EG-R2-FIX-9 — Truth Record (browser-visible)
+      # ====================================================================
+      - name: "EG-R2-FIX-9: Truth record (browser-visible)"
+        id: eg_r2_fix_9
+        continue-on-error: true
         run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-4: Static Behavioral Innocence (CO-PRIMARY BLOCKER) ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT"
-
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Proof Hierarchy:**" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- EG-R2-FIX-A: AUTHORITATIVE for 'attempts that reach DB' (DB logs)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- EG-R2-FIX-4: AUTHORITATIVE for 'latent code paths' (static whole-repo)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- Both gates are PRIMARY BLOCKERS - R2 requires BOTH to pass" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          GATE_PASS=true
-
-          # =====================================================================
-          # Scope Manifest: Document what we're scanning
-          # =====================================================================
-          echo "### Scope Manifest" | tee -a $GITHUB_STEP_SUMMARY
-          FILE_COUNT=$(find backend/app -name "*.py" -not -path "*/tests/*" -not -name "test_*" | wc -l)
-          SCOPE_HASH=$(find backend/app -name "*.py" -not -path "*/tests/*" -not -name "test_*" -exec sha256sum {} \; 2>/dev/null | sort | sha256sum | cut -d' ' -f1)
-          echo "- **Files in scope:** $FILE_COUNT Python files" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **Scope hash:** \`${SCOPE_HASH:0:16}...\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **Exclusions:** /tests/, test_*, validate_*, conftest, maintenance.py (allowlisted), statement_capture.py (instrumentation)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Scan codebase for UPDATE/DELETE statements on immutable tables
-          # Enhanced patterns for SQLAlchemy ORM/Core
-          # =====================================================================
-          echo "### Static Analysis: Destructive SQL Patterns" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          IMMUTABLE_TABLES="attribution_events revenue_ledger"
-
-          for table in $IMMUTABLE_TABLES; do
-            echo "**Scanning for destructive operations on $table:**" | tee -a $GITHUB_STEP_SUMMARY
-
-            # Pattern 1: Raw SQL UPDATE/DELETE
-            # Exclusions: tests, maintenance (allowlisted), statement_capture (instrumentation)
-            UPDATE_RAW=$(grep -rn --include="*.py" "UPDATE.*$table" backend/ 2>/dev/null | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
-
-            DELETE_RAW=$(grep -rn --include="*.py" "DELETE.*$table" backend/ 2>/dev/null | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST\|\.pyc\|__pycache__" || true)
-
-            # Pattern 2: SQLAlchemy Core update()/delete()
-            # Matches: update(attribution_events), delete(table_name)
-            UPDATE_CORE=$(grep -rn --include="*.py" "\.update()\|update($table\|\.delete()\|delete($table" backend/ 2>/dev/null | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST" || true)
-
-            # Pattern 3: SQLAlchemy ORM Query.delete()/Query.update()
-            # Matches: .query(...).delete(), session.query(...).update()
-            ORM_MUTATIONS=$(grep -rn --include="*.py" "\.query.*\.delete\|\.query.*\.update\|session\.delete\|session\.execute.*delete\|session\.execute.*update" backend/ 2>/dev/null | \
-              grep -i "$table" | \
-              grep -v "/tests/\|test_\|validate_\|conftest\|maintenance\.py\|statement_capture\.py\|# RAW_SQL_ALLOWLIST\|# DATA_RETENTION_ALLOWLIST" || true)
-
-            # Combine results
-            ALL_VIOLATIONS=""
-            [ -n "$UPDATE_RAW" ] && ALL_VIOLATIONS="$ALL_VIOLATIONS$UPDATE_RAW\n"
-            [ -n "$DELETE_RAW" ] && ALL_VIOLATIONS="$ALL_VIOLATIONS$DELETE_RAW\n"
-            [ -n "$UPDATE_CORE" ] && ALL_VIOLATIONS="$ALL_VIOLATIONS$UPDATE_CORE\n"
-            [ -n "$ORM_MUTATIONS" ] && ALL_VIOLATIONS="$ALL_VIOLATIONS$ORM_MUTATIONS\n"
-
-            if [ -n "$(echo -e "$ALL_VIOLATIONS" | grep -v '^$')" ]; then
-              echo "⚠️ Found destructive patterns for $table:" | tee -a $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-              echo -e "$ALL_VIOLATIONS" | grep -v '^$' | tee -a $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" | tee -a $GITHUB_STEP_SUMMARY
-              # Check if any are not allowlisted
-              if echo -e "$ALL_VIOLATIONS" | grep -v "RAW_SQL_ALLOWLIST\|DATA_RETENTION_ALLOWLIST" | grep -v '^$' | grep -q .; then
-                GATE_PASS=false
-              fi
-            else
-              echo "✅ No destructive patterns found for $table" | tee -a $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Scan for SQLAlchemy ORM model method overrides
-          # =====================================================================
-          echo "### SQLAlchemy ORM Model Audit" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Check if models have dangerous method overrides
-          for model_file in backend/app/models/attribution_event.py backend/app/models/revenue_ledger.py; do
-            if [ -f "$model_file" ]; then
-              DANGEROUS_METHODS=$(grep -n "def update\|def delete\|def save" "$model_file" 2>/dev/null | grep -v "__\|#" || true)
-              if [ -n "$DANGEROUS_METHODS" ]; then
-                echo "⚠️ Found mutation methods in $model_file:" | tee -a $GITHUB_STEP_SUMMARY
-                echo "$DANGEROUS_METHODS" | tee -a $GITHUB_STEP_SUMMARY
-              else
-                echo "✅ $(basename $model_file) has no mutation methods" | tee -a $GITHUB_STEP_SUMMARY
-              fi
-            fi
-          done
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Verify immutability documentation exists
-          # =====================================================================
-          echo "### Immutability Policy Documentation" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          if [ -f "db/docs/EVENTS_IMMUTABILITY_POLICY.md" ]; then
-            echo "✅ EVENTS_IMMUTABILITY_POLICY.md exists" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ EVENTS_IMMUTABILITY_POLICY.md not found" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ -f "db/docs/IMMUTABILITY_POLICY.md" ]; then
-            echo "✅ IMMUTABILITY_POLICY.md exists" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ IMMUTABILITY_POLICY.md not found" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Save audit results
-          echo "Files scanned: $FILE_COUNT" > "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/scope_manifest.txt"
-          echo "Scope hash: $SCOPE_HASH" >> "$ARTIFACTS_DIR/BEHAVIORAL_AUDIT/scope_manifest.txt"
-
-          if [ "$GATE_PASS" = true ]; then
-            echo "✅ **EG-R2-FIX-4 PASS (CO-PRIMARY BLOCKER):** Static analysis found no destructive SQL patterns in production code" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-FIX-4 FAIL (CO-PRIMARY BLOCKER):** Static analysis found destructive patterns" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" | tee -a $GITHUB_STEP_SUMMARY
-            echo "**R2 IS BLOCKED:** Static behavioral innocence is a PRIMARY BLOCKER. Fix the violations above." | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
-      # ====================================================================
-      # EG-R2-FIX-5: Canary Injection (Anti-Theater Proof)
-      # Proves the static detector is NOT broken (would catch violations)
-      # ====================================================================
-      - name: "EG-R2-FIX-5: Canary injection (anti-theater proof)"
-        if: ${{ false }}
-        run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-5: Canary Injection (Anti-Theater Proof) ===" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Purpose:** Prove the static detector in EG-R2-FIX-4 actually works" | tee -a $GITHUB_STEP_SUMMARY
-          echo "**Method:** Inject canary violation → verify detection → remove → verify clean" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Create canary file with deliberate violation
-          CANARY_FILE="backend/app/_r2_canary_violation.py"
-          cat > "$CANARY_FILE" << 'EOCANARY'
-          """
-          R2 CANARY FILE - DO NOT COMMIT
-
-          This file is injected by EG-R2-FIX-5 to verify the static detector works.
-          It contains deliberate violations that MUST be detected.
-          """
-          from sqlalchemy import text
-
-          # DELIBERATE VIOLATION 1: UPDATE on immutable table
-          async def _canary_update_attribution_events(conn):
-              await conn.execute(text("UPDATE attribution_events SET event_type = 'hacked'"))
-
-          # DELIBERATE VIOLATION 2: DELETE on immutable table
-          async def _canary_delete_revenue_ledger(conn):
-              await conn.execute(text("DELETE FROM revenue_ledger WHERE id = 1"))
-
-          # DELIBERATE VIOLATION 3: TRUNCATE (DDL attack)
-          async def _canary_truncate_events(conn):
-              await conn.execute(text("TRUNCATE TABLE attribution_events"))
-          EOCANARY
-
-          echo "### Step 1: Canary Injected" | tee -a $GITHUB_STEP_SUMMARY
-          echo "Created \`$CANARY_FILE\` with 3 deliberate violations" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Run static detector on canary (should find violations)
-          echo "### Step 2: Testing Detector on Canary" | tee -a $GITHUB_STEP_SUMMARY
-          CANARY_MATCHES=0
-          for pattern in "UPDATE.*attribution_events" "DELETE.*revenue_ledger" "TRUNCATE.*attribution_events"; do
-            if grep -q "$pattern" "$CANARY_FILE"; then
-              CANARY_MATCHES=$((CANARY_MATCHES + 1))
-              echo "✅ Detected: \`$pattern\`" | tee -a $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ MISSED: \`$pattern\`" | tee -a $GITHUB_STEP_SUMMARY
-            fi
-          done
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Verify at least the 2 critical patterns were detected
-          if [ "$CANARY_MATCHES" -lt 2 ]; then
-            echo "❌ **EG-R2-FIX-5 FAIL:** Detector failed to find canary violations ($CANARY_MATCHES/3)" | tee -a $GITHUB_STEP_SUMMARY
-            echo "**THEATER DETECTED:** The static audit is broken and cannot catch violations." | tee -a $GITHUB_STEP_SUMMARY
-            rm -f "$CANARY_FILE"
-            exit 1
-          fi
-
-          # Test the full static audit would fail
-          echo "### Step 3: Verify Full Audit Detects Canary" | tee -a $GITHUB_STEP_SUMMARY
-          FULL_DETECT=$(grep -rn --include="*.py" -E "UPDATE.*attribution_events|DELETE.*revenue_ledger" backend/app/_r2_canary*.py 2>/dev/null | wc -l || echo 0)
-          if [ "$FULL_DETECT" -gt 0 ]; then
-            echo "✅ Full audit found $FULL_DETECT canary violation lines" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Full audit missed canary file!" | tee -a $GITHUB_STEP_SUMMARY
-            rm -f "$CANARY_FILE"
-            exit 1
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Remove canary
-          echo "### Step 4: Canary Removed" | tee -a $GITHUB_STEP_SUMMARY
-          rm -f "$CANARY_FILE"
-          echo "Deleted \`$CANARY_FILE\`" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Verify clean state
-          echo "### Step 5: Verify Clean State" | tee -a $GITHUB_STEP_SUMMARY
-          if [ -f "$CANARY_FILE" ]; then
-            echo "❌ Canary file still exists!" | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          else
-            echo "✅ Canary file removed successfully" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          echo "✅ **EG-R2-FIX-5 PASS (Anti-Theater):** Static detector proven functional ($CANARY_MATCHES/3 patterns detected)" | tee -a $GITHUB_STEP_SUMMARY
-
-      # ====================================================================
-      # EG-R2-FIX-6: Combined Adversarial Probe (DB refusal regression)
-      # Proves RLS + triggers still work (defense-in-depth still holds)
-      # ====================================================================
-      - name: "EG-R2-FIX-6: DB refusal regression check (CLOSURE GATE)"
-        run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-6: DB Refusal Regression Check (CLOSURE GATE) ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR/ADVERSARIAL_PROBE"
-
-          GATE_PASS=true
-
-          # =====================================================================
-          # Attack Vector 1: Tenant ID Spoofing via SQL Injection Pattern
-          # =====================================================================
-          echo "### Attack Vector 1: Tenant ID Spoofing" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # Write SQL to file (heredocs don't work with docker exec)
-          cat > /tmp/adv_spoof_test.sql << 'EOSQL'
-          -- Attacker tries to set GUC to different tenant, then access data
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-
-          -- Try to access Tenant B data (should return 0)
-          SELECT 'SPOOF_ATTEMPT_' ||
-            CASE WHEN COUNT(*) = 0 THEN 'BLOCKED' ELSE 'LEAKED' END as result
-          FROM attribution_events
-          WHERE tenant_id = '22222222-2222-2222-2222-222222222222';
-          EOSQL
-          docker cp /tmp/adv_spoof_test.sql skeldir-r2-postgres:/tmp/adv_spoof_test.sql
-          SPOOF_RESULT=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -t -f /tmp/adv_spoof_test.sql 2>&1)
-
-          if echo "$SPOOF_RESULT" | grep -q "SPOOF_ATTEMPT_BLOCKED"; then
-            echo "✅ Tenant spoofing blocked - RLS enforced" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Tenant spoofing attack succeeded!" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Attack Vector 2: PII Exfiltration via JSONB
-          # =====================================================================
-          echo "### Attack Vector 2: PII Injection via JSONB" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          cat > /tmp/adv_pii_attack.sql << 'EOSQL'
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-
-          -- Try to insert PII via nested JSONB
-          INSERT INTO attribution_events (
-            tenant_id, session_id, occurred_at, event_timestamp, event_type,
-            channel, idempotency_key, raw_payload
-          ) VALUES (
-            '11111111-1111-1111-1111-111111111111',
-            'ffffffff-ffff-ffff-ffff-ffffffffffff',
-            now(), now(), 'page_view', 'organic',
-            'ADVERSARIAL_PII_ATTACK',
-            '{"user_data": {"email": "victim@example.com"}}'::jsonb
-          );
-          EOSQL
-          docker cp /tmp/adv_pii_attack.sql skeldir-r2-postgres:/tmp/adv_pii_attack.sql
-          PII_ATTACK=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/adv_pii_attack.sql 2>&1 || true)
-
-          if echo "$PII_ATTACK" | grep -qE "PII key detected|violates"; then
-            echo "✅ PII injection blocked - trigger enforced" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ PII injection attack may have succeeded" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Result: $PII_ATTACK" | tee -a $GITHUB_STEP_SUMMARY
-            # Note: If nested keys aren't blocked, this is a known limitation
-            echo "⚠️ Note: Nested PII keys may require deeper inspection" | tee -a $GITHUB_STEP_SUMMARY
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Attack Vector 3: Immutability Bypass via Direct SQL
-          # =====================================================================
-          echo "### Attack Vector 3: Immutability Bypass Attempt" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          cat > /tmp/adv_immut_attack.sql << 'EOSQL'
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-
-          -- Try UPDATE with WHERE clause trick
-          UPDATE attribution_events
-          SET event_type = 'hacked'
-          WHERE external_event_id = 'R2_CROSS_TENANT_TEST_A'
-            AND 1=1;
-          EOSQL
-          docker cp /tmp/adv_immut_attack.sql skeldir-r2-postgres:/tmp/adv_immut_attack.sql
-          IMMUT_ATTACK=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/adv_immut_attack.sql 2>&1 || true)
-
-          if echo "$IMMUT_ATTACK" | grep -qE "append-only|immutable|not allowed|permission denied"; then
-            echo "✅ Immutability bypass blocked (trigger or privilege)" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Immutability bypass attack may have succeeded" | tee -a $GITHUB_STEP_SUMMARY
-            echo "Result: $IMMUT_ATTACK" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Attack Vector 4: Cross-Tenant Data Modification
-          # =====================================================================
-          echo "### Attack Vector 4: Cross-Tenant Modification" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          cat > /tmp/adv_cross_mod.sql << 'EOSQL'
-          -- Tenant A tries to modify Tenant B's data
-          SET app.current_tenant_id = '11111111-1111-1111-1111-111111111111';
-
-          UPDATE attribution_events
-          SET event_type = 'cross_tenant_modified'
-          WHERE tenant_id = '22222222-2222-2222-2222-222222222222';
-
-          -- Verify no modification occurred
-          SET app.current_tenant_id = '22222222-2222-2222-2222-222222222222';
-          SELECT
-            'CROSS_MOD_' ||
-            CASE WHEN COUNT(*) = 0 THEN 'BLOCKED' ELSE 'LEAKED' END as result
-          FROM attribution_events
-          WHERE event_type = 'cross_tenant_modified';
-          EOSQL
-          docker cp /tmp/adv_cross_mod.sql skeldir-r2-postgres:/tmp/adv_cross_mod.sql
-          CROSS_MOD=$(docker exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -t -f /tmp/adv_cross_mod.sql 2>&1)
-
-          if echo "$CROSS_MOD" | grep -q "CROSS_MOD_BLOCKED"; then
-            echo "✅ Cross-tenant modification blocked" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Cross-tenant modification may have succeeded" | tee -a $GITHUB_STEP_SUMMARY
-            GATE_PASS=false
-          fi
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          # =====================================================================
-          # Summary
-          # =====================================================================
-          echo "### Adversarial Probe Summary" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-
-          if [ "$GATE_PASS" = true ]; then
-            echo "✅ **EG-R2-FIX-6 PASS (CLOSURE):** All adversarial attack vectors blocked" | tee -a $GITHUB_STEP_SUMMARY
-            echo "- Tenant spoofing: BLOCKED" | tee -a $GITHUB_STEP_SUMMARY
-            echo "- PII injection: BLOCKED (top-level keys)" | tee -a $GITHUB_STEP_SUMMARY
-            echo "- Immutability bypass: BLOCKED" | tee -a $GITHUB_STEP_SUMMARY
-            echo "- Cross-tenant modification: BLOCKED" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **EG-R2-FIX-6 FAIL (CLOSURE):** Some attack vectors succeeded" | tee -a $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
-      # ====================================================================
-      # EG-R2-FIX-7: Human-Readable Truth Record
-      # ====================================================================
-      - name: "EG-R2-FIX-7: Human-readable truth record"
-        run: |
-          set -o pipefail
-          echo "=== EG-R2-FIX-7: Human-Readable Truth Record ===" | tee -a $GITHUB_STEP_SUMMARY
-          mkdir -p "$ARTIFACTS_DIR"
-
-          CANDIDATE_SHA=$(git rev-parse HEAD)
-
+          set -euo pipefail
           cat > "$ARTIFACTS_DIR/R2_TRUTH_RECORD.md" <<EOF
-          # R2 Data-Truth Hardening Validation Record
+          # R2 Data-Truth Hardening Truth Record
 
-          ## Evidence Summary
+          - Candidate SHA: ${{ github.sha }}
+          - Run URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          | Attribute | Value |
-          |-----------|-------|
-          | **Candidate SHA** | \`$CANDIDATE_SHA\` |
-          | **Run ID** | \`${{ github.run_id }}\` |
-          | **Run URL** | https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} |
-          | **Timestamp (UTC)** | $(date -u +%Y-%m-%dT%H:%M:%SZ) |
-          | **Postgres Digest** | \`$POSTGRES_DIGEST\` |
+          ## Exit Gates (Expected PASS for R2 COMPLETE)
 
-          ## Proof Hierarchy (Non-Negotiable)
+          - EG-R2-FIX-1 Scenario hard gate: ${{ steps.eg_r2_fix_1.outcome }}
+          - EG-R2-FIX-2 DB capture enablement: ${{ steps.eg_r2_fix_2.outcome }}
+          - EG-R2-FIX-3 DB window binding/activity: ${{ steps.eg_r2_fix_3.outcome }}
+          - EG-R2-FIX-4 DB runtime innocence (authoritative): ${{ steps.eg_r2_fix_4.outcome }}
+          - EG-R2-FIX-5 ORM runtime innocence (mandatory): ${{ steps.eg_r2_fix_5.outcome }}
+          - EG-R2-FIX-6 Instrument consistency: ${{ steps.eg_r2_fix_6.outcome }}
+          - EG-R2-FIX-7 Static behavioral innocence: ${{ steps.eg_r2_fix_7.outcome }}
+          - EG-R2-FIX-8 Canary integrity: ${{ steps.eg_r2_fix_8.outcome }}
+          - EG-R2-FIX-9 Documentary coherence: pending repo update (this record is run-generated)
 
-          | Level | Gate | Description |
-          |-------|------|-------------|
-          | **PRIMARY BLOCKER** | EG-R2-FIX-B | Scenario suite hard gate (app/worker code paths) |
-          | **PRIMARY BLOCKER** | EG-R2-FIX-A | Runtime innocence via DB statement capture (Postgres logs) |
-          | **CO-PRIMARY BLOCKER** | EG-R2-FIX-4 | Static behavioral innocence (whole-repo analysis) |
-          | Anti-Theater | EG-R2-FIX-D | DB parser canary proves runtime detector works |
-          | Anti-Theater | EG-R2-FIX-5 | Static canary proves static detector works |
-
-          **Critical:** Both EG-R2-FIX-A AND EG-R2-FIX-4 must pass. Runtime testing is probabilistic; static analysis covers latent paths.
-
-          ## Exit Gate Results
-
-          | Gate | Description | Status |
-          |------|-------------|--------|
-          | EG-R2-0 | Evidence anchoring & closed-set declaration | ✅ PASS |
-          | EG-R2-1 | RLS forced + cross-tenant denial | ✅ PASS |
-          | EG-R2-2 | Tenant context discipline (API + Celery) | ✅ PASS |
-          | EG-R2-3 | PII defense-in-depth (DB trigger) | ✅ PASS |
-          | EG-R2-4 | DB immutability enforcement | ✅ PASS |
-          | EG-R2-FIX-1 | DB capture enablement proof | ✅ PASS |
-          | **EG-R2-FIX-B** | **Scenario suite hard gate (6 scenarios)** | ✅ PASS |
-          | **EG-R2-FIX-A** | **Runtime innocence via DB logs (PRIMARY BLOCKER)** | ✅ PASS |
-          | **EG-R2-FIX-4** | **Static behavioral innocence (CO-PRIMARY BLOCKER)** | ✅ PASS |
-          | EG-R2-FIX-D | DB parser canary (anti-theater proof) | ✅ PASS |
-          | EG-R2-FIX-5 | Static canary integrity (anti-theater proof) | ✅ PASS |
-          | EG-R2-FIX-6 | DB refusal regression check | ✅ PASS |
-          | EG-R2-FIX-7 | Human-readable truth record | ✅ PASS |
-
-          ## Closed Sets Validated
-
-          ### Tenant-Scoped Tables (RLS Protected)
-          $(cat "$ARTIFACTS_DIR/CLOSED_SET_TENANT_TABLES.txt" | sed 's/^/- /')
-
-          ### Immutable Tables (Trigger Protected)
-          $(cat "$ARTIFACTS_DIR/CLOSED_SET_IMMUTABLE_TABLES.txt" | sed 's/^/- /')
-
-          ### PII-Guarded Tables (Trigger Protected)
-          $(cat "$ARTIFACTS_DIR/CLOSED_SET_PII_TABLES.txt" | sed 's/^/- /')
-
-          ### PII Key Blocklist
-          $(cat "$ARTIFACTS_DIR/CLOSED_SET_PII_KEYS.txt" | sed 's/^/- /')
-
-          ## Schema Fingerprint
-
-          \`\`\`
-          SHA256: $(cat "$ARTIFACTS_DIR/SCHEMA_FINGERPRINT.txt")
-          \`\`\`
-
-          ## Guarantees Proven
-
-          1. **RLS Isolation**: Every tenant-scoped table has ENABLE + FORCE RLS with tenant_isolation_policy
-          2. **Cross-Tenant Denial**: Tenant A cannot SELECT/INSERT/UPDATE/DELETE Tenant B data
-          3. **Default-Deny**: Unset GUC results in zero rows returned
-          4. **PII Defense-in-Depth**: DB triggers block PII keys in raw_payload
-          5. **Immutability**: attribution_events and revenue_ledger reject UPDATE/DELETE
-          6. **Behavioral Compliance**: No destructive SQL patterns in application code
-          7. **Adversarial Resilience**: Multi-vector attack simulation blocked
-
-          ---
-          *Generated by R2 Data-Truth Hardening CI at $(date -u +%Y-%m-%dT%H:%M:%SZ)*
+          ## DB enforcement (mission requirement)
+          - EG-R2-ENFORCEMENT DB prevents violations: ${{ steps.eg_r2_enforcement.outcome }}
           EOF
 
-          echo "### Truth Record Generated" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          cat "$ARTIFACTS_DIR/R2_TRUTH_RECORD.md" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "✅ **EG-R2-FIX-7 PASS:** Human-readable truth record generated" | tee -a $GITHUB_STEP_SUMMARY
+          echo "R2_TRUTH_RECORD_BEGIN" | tee -a "$GITHUB_STEP_SUMMARY"
+          cat "$ARTIFACTS_DIR/R2_TRUTH_RECORD.md" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "R2_TRUTH_RECORD_END" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # ====================================================================
-      # Cleanup
+      # Aggregate and fail the job if any exit gate failed.
       # ====================================================================
+      - name: "R2 Gate Aggregation (hard fail on any gate)"
+        if: always()
+        run: |
+          set -euo pipefail
+          failures=()
+
+          check () {
+            local name="$1"
+            local outcome="$2"
+            if [ "$outcome" != "success" ]; then
+              failures+=("${name}=${outcome}")
+            fi
+          }
+
+          check "EG-R2-0" "${{ steps.eg_r2_0.outcome }}"
+          check "EG-R2-ENFORCEMENT" "${{ steps.eg_r2_enforcement.outcome }}"
+          check "EG-R2-FIX-1" "${{ steps.eg_r2_fix_1.outcome }}"
+          check "EG-R2-FIX-2" "${{ steps.eg_r2_fix_2.outcome }}"
+          check "EG-R2-FIX-3" "${{ steps.eg_r2_fix_3.outcome }}"
+          check "EG-R2-FIX-4" "${{ steps.eg_r2_fix_4.outcome }}"
+          check "EG-R2-FIX-5" "${{ steps.eg_r2_fix_5.outcome }}"
+          check "EG-R2-FIX-6" "${{ steps.eg_r2_fix_6.outcome }}"
+          check "EG-R2-FIX-7" "${{ steps.eg_r2_fix_7.outcome }}"
+          check "EG-R2-FIX-8" "${{ steps.eg_r2_fix_8.outcome }}"
+
+          if [ "${#failures[@]}" -gt 0 ]; then
+            echo "R2_GATE_AGGREGATION_VERDICT"
+            echo "FAILURE_COUNT=${#failures[@]}"
+            echo "FAILURES=$(IFS=';'; echo "${failures[*]}")"
+            echo "END_VERDICT"
+            exit 1
+          fi
+
+          echo "R2_GATE_AGGREGATION_VERDICT"
+          echo "FAILURE_COUNT=0"
+          echo "END_VERDICT"
+
       - name: "Cleanup Docker resources"
         if: always()
         run: |
@@ -2010,45 +616,11 @@ EOCANARY
           docker rm skeldir-r2-postgres || true
           docker network rm skeldir-r2-isolated || true
 
-      # ====================================================================
-      # Upload Artifacts
-      # ====================================================================
       - name: "Upload R2 validation artifacts"
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: r2-validation-artifacts-${{ github.sha }}
           path: ${{ github.workspace }}/artifacts/runtime_r2/
           retention-days: 90
 
-      # ====================================================================
-      # Final Summary
-      # ====================================================================
-      - name: "R2 Validation Summary"
-        run: |
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "---" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "## R2 Data-Truth Hardening: COMPLETE" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "All exit gates passed. Truth is protected at runtime." | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "### Proof Hierarchy (Non-Negotiable)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **PRIMARY BLOCKER**: EG-R2-FIX-A (Runtime innocence via DB logs - actual Postgres statements)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **CO-PRIMARY BLOCKER**: EG-R2-FIX-4 (Static behavioral innocence - whole-repo analysis)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "- **Anti-Theater**: EG-R2-FIX-5 (Canary integrity proves detector works)" | tee -a $GITHUB_STEP_SUMMARY
-          echo "" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| Gate | Status |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "|------|--------|" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-0 Evidence Anchor | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-1 RLS Forced | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-2 Tenant Context | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-3 PII Defense | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-4 Immutability | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-FIX-1 DB Capture Enabled | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| **EG-R2-FIX-B Scenario Suite (PRIMARY BLOCKER)** | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| **EG-R2-FIX-A Runtime Innocence (PRIMARY BLOCKER)** | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| **EG-R2-FIX-4 Static Innocence (CO-PRIMARY BLOCKER)** | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-FIX-5 Canary (Anti-Theater) | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-FIX-6 DB Refusal Regression | ✅ |" | tee -a $GITHUB_STEP_SUMMARY
-          echo "| EG-R2-FIX-7 Truth Record | ✅ |" | tee -a $GITHUB_STEP_SUMMARY

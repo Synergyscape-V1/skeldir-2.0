@@ -54,6 +54,12 @@ def _normalize(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip().upper()
 
 
+def _is_txn_noise(normalized_sql: str) -> bool:
+    if normalized_sql in {"BEGIN", "COMMIT", "ROLLBACK"}:
+        return True
+    return normalized_sql.startswith("SAVEPOINT") or normalized_sql.startswith("RELEASE SAVEPOINT")
+
+
 def _is_destructive_on_immutable(sql: str) -> bool:
     normalized = _normalize(sql)
     if not any(re.search(rf"\b{verb}\b", normalized) for verb in DESTRUCTIVE_VERBS):
@@ -66,6 +72,10 @@ class StatementEvent:
     line_no: int
     raw_line: str
     sql: str
+
+    @property
+    def normalized_sql(self) -> str:
+        return _normalize(self.sql)
 
     @property
     def is_marker(self) -> bool:
@@ -108,7 +118,14 @@ def _slice_inclusive(events: List[StatementEvent], start_idx: int, end_idx: int)
 
 
 def _count_non_marker(events: List[StatementEvent]) -> int:
-    return sum(1 for e in events if not e.is_marker)
+    count = 0
+    for e in events:
+        if e.is_marker:
+            continue
+        if _is_txn_noise(e.normalized_sql):
+            continue
+        count += 1
+    return count
 
 
 @dataclass(frozen=True)
@@ -125,6 +142,7 @@ def audit(
     candidate_sha: str,
     window_id: str,
     num_scenarios: int,
+    enforce_forbidden: bool = True,
 ) -> Tuple[dict, int]:
     window_start = f"R2_WINDOW_START::{candidate_sha}::{window_id}"
     window_end = f"R2_WINDOW_END::{candidate_sha}::{window_id}"
@@ -204,7 +222,7 @@ def audit(
         )
 
     destructive_matches = [e for e in window_events if e.is_destructive_on_immutable]
-    if destructive_matches:
+    if enforce_forbidden and destructive_matches:
         failures.append(
             f"Destructive statements on immutable tables detected: {len(destructive_matches)}"
         )
@@ -235,6 +253,7 @@ def main() -> int:
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument("--window-id", required=True)
     parser.add_argument("--num-scenarios", type=int, default=6)
+    parser.add_argument("--enforce-forbidden", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--artifact-json", required=False)
     args = parser.parse_args()
 
@@ -247,17 +266,21 @@ def main() -> int:
         candidate_sha=args.candidate_sha,
         window_id=args.window_id,
         num_scenarios=args.num_scenarios,
+        enforce_forbidden=args.enforce_forbidden,
     )
 
-    print("R2_DB_STATEMENT_CAPTURE_VERDICT")
-    print(f"STATEMENT_EVENT_REGEX={STATEMENT_EVENT_RE.pattern.strip()}")
+    print("R2_DB_RUNTIME_INNOCENCE_VERDICT")
+    print("IMMUTABLE_TABLE_SET=attribution_events,revenue_ledger")
+    print("DESTRUCTIVE_VERBS=ALTER,DELETE,TRUNCATE,UPDATE")
     print(f"CANDIDATE_SHA={args.candidate_sha}")
     print(f"WINDOW_ID={args.window_id}")
+    print(f"STATEMENT_EVENT_REGEX={STATEMENT_EVENT_RE.pattern.strip()}")
+    print(f"ERROR_STATEMENT_REGEX={ERROR_STATEMENT_RE.pattern.strip()}")
     print(f"TOTAL_STATEMENT_EVENTS_PARSED={verdict.get('total_statement_events_parsed', 0)}")
     print(f"TOTAL_DB_STATEMENTS_CAPTURED_IN_WINDOW={verdict.get('total_db_statements_captured_in_window', 0)}")
     for w in verdict.get("scenario_windows", []):
-        print(f"S{w['number']}_NON_MARKER_STATEMENTS_COUNT={w['non_marker_count']}")
-    print(f"MATCH_COUNT_DESTRUCTIVE_ON_IMMUTABLE={verdict.get('match_count_destructive_on_immutable', 0)}")
+        print(f"S{w['number']}_NON_MARKER_DB_STATEMENTS_COUNT={w['non_marker_count']}")
+    print(f"DB_FORBIDDEN_MATCH_COUNT={verdict.get('match_count_destructive_on_immutable', 0)}")
     if verdict.get("failures"):
         print("FAILURES=" + "; ".join(verdict["failures"]))
     print("END_VERDICT")

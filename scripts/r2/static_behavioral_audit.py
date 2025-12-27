@@ -282,11 +282,11 @@ def main() -> int:
         "findings": [asdict(f) for f in findings[:200]],
     }
 
-    print("R2_STATIC_BEHAVIORAL_AUDIT_VERDICT")
+    print("R2_STATIC_BEHAVIORAL_INNOCENCE_VERDICT")
     print(f"SCOPE_FILES_COUNT={len(files)}")
     print(f"SCOPE_HASH_SHA256={scope_hash}")
     print(f"ALLOWLIST_ENTRIES={len(allowlist.get('allow', []))}")
-    print(f"MATCH_COUNT_DESTRUCTIVE_ON_IMMUTABLE={len(findings)}")
+    print(f"STATIC_FORBIDDEN_MATCH_COUNT={len(findings)}")
     if findings:
         print("FAILURES=" + "; ".join(f"{f.path}:{f.line}:{f.kind}" for f in findings[:25]))
     print("END_VERDICT")
