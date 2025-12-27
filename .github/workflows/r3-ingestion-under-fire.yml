@@ -60,6 +60,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: "EG-R3-FIX-1: SHA anchoring"
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          echo "EG_R3_FIX_1_SHA_ANCHOR"
+          echo "GITHUB_SHA=${GITHUB_SHA}"
+          echo "git_rev_parse_HEAD=${CANDIDATE_SHA}"
+          echo "RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          echo "END_EG_R3_FIX_1_SHA_ANCHOR"
+          if [ "${CANDIDATE_SHA}" != "${GITHUB_SHA}" ]; then
+            echo "FAIL: git rev-parse HEAD does not match GITHUB_SHA"
+            exit 1
+          fi
+
       - name: Install dependencies
         shell: bash
         run: |
@@ -123,7 +138,7 @@ jobs:
             r3_harness.log
             uvicorn.log
 
-      - name: EG-R3-FIX-1: Hard gate (harness must succeed)
+      - name: "EG-R3-FIX-1: Hard gate (harness must succeed)"
         if: always()
         shell: bash
         run: |

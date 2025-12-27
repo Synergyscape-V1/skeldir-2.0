@@ -73,43 +73,43 @@ jobs:
         run: |
           mkdir -p docs
           cat > env.frontend.b02.json << 'JSONEOF'
-{
-  "b02_baseline": {
-    "branch": "main",
-    "mocks_validated": true
-  },
-  "environments": {
-    "all": {
-      "VITE_AUTH_API_URL": "http://localhost:4010",
-      "VITE_INVESTIGATIONS_API_URL": "http://localhost:4024",
-      "VITE_BUDGET_API_URL": "http://localhost:4025",
-      "VITE_EXPLANATIONS_API_URL": "http://localhost:4026",
-      "VITE_ATTRIBUTION_API_URL": "http://localhost:4011",
-      "VITE_RECONCILIATION_API_URL": "http://localhost:4012",
-      "VITE_EXPORT_API_URL": "http://localhost:4013",
-      "VITE_HEALTH_API_URL": "http://localhost:4014",
-      "VITE_WEBHOOK_SHOPIFY_URL": "http://localhost:4020",
-      "VITE_WEBHOOK_STRIPE_URL": "http://localhost:4021",
-      "VITE_WEBHOOK_WOOCOMMERCE_URL": "http://localhost:4022",
-      "VITE_WEBHOOK_PAYPAL_URL": "http://localhost:4023"
-    }
-  },
-  "ports_mapping": {
-    "4010": "auth",
-    "4011": "attribution",
-    "4012": "reconciliation",
-    "4013": "export",
-    "4014": "health",
-    "4020": "webhooks/shopify",
-    "4021": "webhooks/stripe",
-    "4022": "webhooks/woocommerce",
-    "4023": "webhooks/paypal",
-    "4024": "llm-investigations",
-    "4025": "llm-budget",
-    "4026": "llm-explanations"
-  }
-}
-JSONEOF
+          {
+            "b02_baseline": {
+              "branch": "main",
+              "mocks_validated": true
+            },
+            "environments": {
+              "all": {
+                "VITE_AUTH_API_URL": "http://localhost:4010",
+                "VITE_INVESTIGATIONS_API_URL": "http://localhost:4024",
+                "VITE_BUDGET_API_URL": "http://localhost:4025",
+                "VITE_EXPLANATIONS_API_URL": "http://localhost:4026",
+                "VITE_ATTRIBUTION_API_URL": "http://localhost:4011",
+                "VITE_RECONCILIATION_API_URL": "http://localhost:4012",
+                "VITE_EXPORT_API_URL": "http://localhost:4013",
+                "VITE_HEALTH_API_URL": "http://localhost:4014",
+                "VITE_WEBHOOK_SHOPIFY_URL": "http://localhost:4020",
+                "VITE_WEBHOOK_STRIPE_URL": "http://localhost:4021",
+                "VITE_WEBHOOK_WOOCOMMERCE_URL": "http://localhost:4022",
+                "VITE_WEBHOOK_PAYPAL_URL": "http://localhost:4023"
+              }
+            },
+            "ports_mapping": {
+              "4010": "auth",
+              "4011": "attribution",
+              "4012": "reconciliation",
+              "4013": "export",
+              "4014": "health",
+              "4020": "webhooks/shopify",
+              "4021": "webhooks/stripe",
+              "4022": "webhooks/woocommerce",
+              "4023": "webhooks/paypal",
+              "4024": "llm-investigations",
+              "4025": "llm-budget",
+              "4026": "llm-explanations"
+            }
+          }
+          JSONEOF
 
       - name: Commit environment configuration to repository
         run: |

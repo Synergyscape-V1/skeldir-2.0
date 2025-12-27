@@ -369,25 +369,25 @@ jobs:
           mkdir -p evidence_registry/statistics
           
           python - << 'PYEOF' > evidence_registry/statistics/imports_raw.txt 2>&1
-try:
-    import numpy
-    import pandas
-    import scipy
-    import matplotlib
-    import pymc
-    import arviz
-    print("OK: imports succeeded")
-    print(f"  numpy: {numpy.__version__}")
-    print(f"  pandas: {pandas.__version__}")
-    print(f"  scipy: {scipy.__version__}")
-    print(f"  matplotlib: {matplotlib.__version__}")
-    print(f"  pymc: {pymc.__version__}")
-    print(f" arviz: {arviz.__version__}")
-except ImportError as e:
-    print(f"FAIL: Import error - {e}")
-    import sys
-    sys.exit(1)
-PYEOF
+          try:
+              import numpy
+              import pandas
+              import scipy
+              import matplotlib
+              import pymc
+              import arviz
+              print("OK: imports succeeded")
+              print(f"  numpy: {numpy.__version__}")
+              print(f"  pandas: {pandas.__version__}")
+              print(f"  scipy: {scipy.__version__}")
+              print(f"  matplotlib: {matplotlib.__version__}")
+              print(f"  pymc: {pymc.__version__}")
+              print(f"  arviz: {arviz.__version__}")
+          except ImportError as e:
+              print(f"FAIL: Import error - {e}")
+              import sys
+              sys.exit(1)
+          PYEOF
           
           if grep -q "OK: imports succeeded" evidence_registry/statistics/imports_raw.txt; then
             echo "✓ Direct imports: PASS" > evidence_registry/statistics/phase_3_status.txt
@@ -499,12 +499,12 @@ PYEOF
           
           # Create PII payload
           cat > /tmp/pii_payload.json << 'EOF'
-{
-  "email": "user@example.com",
-  "nested": { "phone": "555-1212", "safe": "ok" },
-  "items": [{ "customer_email": "buyer@example.com" }]
-}
-EOF
+          {
+            "email": "user@example.com",
+            "nested": { "phone": "555-1212", "safe": "ok" },
+            "items": [{ "customer_email": "buyer@example.com" }]
+          }
+          EOF
           
           curl -i \
             -H "Content-Type: application/json" \
@@ -522,29 +522,29 @@ EOF
           export PGPASSWORD="${{ env.POSTGRES_PASSWORD }}"
           
           psql -h localhost -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }} << 'SQL' > evidence_registry/privacy/db_pii_guardrail_raw.txt 2>&1
--- Test 1: Try PII insert (should fail if triggers exist)
-DO $$
-BEGIN
-    BEGIN        INSERT INTO attribution_events (tenant_id, occurred_at, raw_payload) 
-        VALUES ('00000000-0000-0000-0000-000000000000', NOW(), '{"email":"test@example.com"}');
-        RAISE NOTICE 'TEST 1: PII insert succeeded (no trigger)';
-    EXCEPTION WHEN OTHERS THEN
-        RAISE NOTICE 'TEST 1 PASS: PII insert blocked - %', SQLERRM;
-    END;
-END $$;
-
--- Test 2: Clean insert (should succeed)
-DO $$
-BEGIN
-    BEGIN
-        INSERT INTO attribution_events (tenant_id, occurred_at, raw_payload) 
-        VALUES ('00000000-0000-0000-0000-000000000000', NOW(), '{"safe_key":"ok"}');
-        RAISE NOTICE 'TEST 2 PASS: Clean insert succeeded';
-    EXCEPTION WHEN OTHERS THEN
-        RAISE NOTICE 'TEST 2 FAIL: Clean insert failed - %', SQLERRM;
-    END;
-END $$;
-SQL
+          -- Test 1: Try PII insert (should fail if triggers exist)
+          DO $$
+          BEGIN
+              BEGIN        INSERT INTO attribution_events (tenant_id, occurred_at, raw_payload) 
+                  VALUES ('00000000-0000-0000-0000-000000000000', NOW(), '{"email":"test@example.com"}');
+                  RAISE NOTICE 'TEST 1: PII insert succeeded (no trigger)';
+              EXCEPTION WHEN OTHERS THEN
+                  RAISE NOTICE 'TEST 1 PASS: PII insert blocked - %', SQLERRM;
+              END;
+          END $$;
+          
+          -- Test 2: Clean insert (should succeed)
+          DO $$
+          BEGIN
+              BEGIN
+                  INSERT INTO attribution_events (tenant_id, occurred_at, raw_payload) 
+                  VALUES ('00000000-0000-0000-0000-000000000000', NOW(), '{"safe_key":"ok"}');
+                  RAISE NOTICE 'TEST 2 PASS: Clean insert succeeded';
+              EXCEPTION WHEN OTHERS THEN
+                  RAISE NOTICE 'TEST 2 FAIL: Clean insert failed - %', SQLERRM;
+              END;
+          END $$;
+          SQL
           
           echo "✓ DB guardrail test executed" >> evidence_registry/privacy/phase_4_status.txt
       
@@ -582,20 +582,20 @@ SQL
       - name: Generate EMPIRICAL_CHAIN.md
         run: |
           cat > evidence_registry/EMPIRICAL_CHAIN.md << 'MANIFEST'
-# Empirical Evidence Chain - CI Validation
-
-**Generated**: $(date -Iseconds)
-**Environment**: GitHub Actions CI (ubuntu-latest)
-**Workflow Run**: ${{ github.run_id }}
-**Commit**: ${{ github.sha }}
-
----
-
-## Evidence Chain Table
-
-| Phase | Criterion | Artifact Path | Status |
-|-------|-----------|---------------|--------|
-MANIFEST
+          # Empirical Evidence Chain - CI Validation
+          
+          **Generated**: $(date -Iseconds)
+          **Environment**: GitHub Actions CI (ubuntu-latest)
+          **Workflow Run**: ${{ github.run_id }}
+          **Commit**: ${{ github.sha }}
+          
+          ---
+          
+          ## Evidence Chain Table
+          
+          | Phase | Criterion | Artifact Path | Status |
+          |-------|-----------|---------------|--------|
+          MANIFEST
           
           # Add phase summaries
           for phase_dir in evidence_registry/{runtime,contracts,statistics,privacy}; do
@@ -606,12 +606,12 @@ MANIFEST
           done
           
           cat >> evidence_registry/EMPIRICAL_CHAIN.md << 'FOOTER'
-
----
-
-## Artifact Inventory
-
-FOOTER
+          
+          ---
+          
+          ## Artifact Inventory
+          
+          FOOTER
           
           # List all files
           find evidence_registry -type f -exec ls -lh {} \; | awk '{print "- `" $9 "` - " $5 " bytes"}' >> evidence_registry/EMPIRICAL_CHAIN.md

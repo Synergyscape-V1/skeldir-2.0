@@ -1,0 +1,57 @@
+# Workflow YAML validity gate
+#
+# Prevents "silent paralysis" where a workflow stops loading due to YAML syntax errors.
+# This job parses all `.github/workflows/*.yml|*.yaml` files with PyYAML.
+
+name: "CI: Workflow YAML Lint"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+
+jobs:
+  workflow-yaml-lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: "3.11"
+
+      - name: Parse workflow YAML files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+          python - <<'PY'
+          from __future__ import annotations
+          from pathlib import Path
+          import sys
+          import yaml
+
+          root = Path(".github/workflows")
+          files = sorted([*root.glob("*.yml"), *root.glob("*.yaml")])
+          if not files:
+            print("No workflow files found")
+            sys.exit(0)
+
+          failed = False
+          for f in files:
+            try:
+              yaml.safe_load(f.read_text(encoding="utf-8", errors="replace"))
+              print(f"OK {f}")
+            except Exception as e:
+              failed = True
+              print(f"FAIL {f}: {e}")
+
+          sys.exit(1 if failed else 0)
+          PY
+
