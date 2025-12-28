@@ -108,6 +108,7 @@ def _record_crash_barrier(
     name="app.tasks.r4_failure_semantics.poison_pill",
     max_retries=3,
     default_retry_delay=1,
+    acks_late=False,
 )
 def poison_pill(self, *, tenant_id: str, correlation_id: str, marker: str) -> None:
     """
@@ -162,6 +163,7 @@ def poison_pill(self, *, tenant_id: str, correlation_id: str, marker: str) -> No
     bind=True,
     name="app.tasks.r4_failure_semantics.crash_after_write_pre_ack",
     max_retries=0,
+    acks_late=True,
 )
 def crash_after_write_pre_ack(self, *, tenant_id: str, correlation_id: str, effect_key: str) -> dict[str, str | int]:
     """
@@ -241,7 +243,7 @@ def crash_after_write_pre_ack(self, *, tenant_id: str, correlation_id: str, effe
     return {"inserted": inserted, "task_id": task_id, "effect_key": effect_key, "attempt_no": attempt_no}
 
 
-@celery_app.task(bind=True, name="app.tasks.r4_failure_semantics.rls_cross_tenant_probe")
+@celery_app.task(bind=True, name="app.tasks.r4_failure_semantics.rls_cross_tenant_probe", acks_late=False)
 def rls_cross_tenant_probe(
     self,
     *,
@@ -272,6 +274,7 @@ def rls_cross_tenant_probe(
     name="app.tasks.r4_failure_semantics.runaway_sleep",
     soft_time_limit=2,
     time_limit=4,
+    acks_late=False,
 )
 def runaway_sleep(self, *, tenant_id: str, correlation_id: str, sleep_s: int) -> dict[str, str]:
     """
@@ -300,7 +303,7 @@ def runaway_sleep(self, *, tenant_id: str, correlation_id: str, sleep_s: int) ->
     return {"status": "completed_unexpectedly"}
 
 
-@celery_app.task(bind=True, name="app.tasks.r4_failure_semantics.sentinel_side_effect")
+@celery_app.task(bind=True, name="app.tasks.r4_failure_semantics.sentinel_side_effect", acks_late=False)
 def sentinel_side_effect(self, *, tenant_id: str, correlation_id: str, effect_key: str) -> dict[str, str]:
     tenant_uuid = _require_uuid(tenant_id, name="tenant_id")
     correlation_uuid = _require_uuid(correlation_id, name="correlation_id")
@@ -322,7 +325,7 @@ def sentinel_side_effect(self, *, tenant_id: str, correlation_id: str, effect_ke
     return {"task_id": str(self.request.id), "effect_key": effect_key}
 
 
-@celery_app.task(bind=True, name="app.tasks.r4_failure_semantics.privilege_probes")
+@celery_app.task(bind=True, name="app.tasks.r4_failure_semantics.privilege_probes", acks_late=False)
 def privilege_probes(self, *, tenant_id: str, correlation_id: str) -> dict[str, dict[str, str]]:
     """
     Executes DDL/RLS-disable/escalation probes under the worker DB role.
