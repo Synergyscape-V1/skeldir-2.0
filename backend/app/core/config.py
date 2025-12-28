@@ -75,6 +75,22 @@ class Settings(BaseSettings):
         1,
         description="Prefetch multiplier for worker (1 minimizes starvation and improves crash determinism).",
     )
+    CELERY_BROKER_ENGINE_POOL_SIZE: int = Field(
+        5,
+        description="SQLAlchemy pool_size for sqla+ Postgres broker engine (per process).",
+    )
+    CELERY_BROKER_ENGINE_MAX_OVERFLOW: int = Field(
+        0,
+        description="SQLAlchemy max_overflow for sqla+ Postgres broker engine (per process).",
+    )
+    CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE: int = Field(
+        5,
+        description="SQLAlchemy pool_size for db+ Postgres result backend engine (per process).",
+    )
+    CELERY_RESULT_BACKEND_ENGINE_MAX_OVERFLOW: int = Field(
+        0,
+        description="SQLAlchemy max_overflow for db+ Postgres result backend engine (per process).",
+    )
     CELERY_BROKER_VISIBILITY_TIMEOUT_S: int = Field(
         3600,
         description="Visibility timeout (seconds) used by the worker to requeue stuck kombu messages after worker loss; must exceed max task runtime in production.",
@@ -139,6 +155,26 @@ class Settings(BaseSettings):
     def validate_celery_prefetch_multiplier(cls, value: int) -> int:
         if value < 1:
             raise ValueError("CELERY_WORKER_PREFETCH_MULTIPLIER must be >= 1")
+        return value
+
+    @field_validator(
+        "CELERY_BROKER_ENGINE_POOL_SIZE",
+        "CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE",
+    )
+    @classmethod
+    def validate_celery_engine_pool_size(cls, value: int, info) -> int:
+        if value < 1:
+            raise ValueError(f"{info.field_name} must be >= 1")
+        return value
+
+    @field_validator(
+        "CELERY_BROKER_ENGINE_MAX_OVERFLOW",
+        "CELERY_RESULT_BACKEND_ENGINE_MAX_OVERFLOW",
+    )
+    @classmethod
+    def validate_celery_engine_max_overflow(cls, value: int, info) -> int:
+        if value < 0:
+            raise ValueError(f"{info.field_name} must be >= 0")
         return value
 
     @field_validator("CELERY_BROKER_VISIBILITY_TIMEOUT_S")

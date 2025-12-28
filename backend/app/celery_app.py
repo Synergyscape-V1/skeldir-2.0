@@ -121,7 +121,11 @@ def _ensure_celery_configured():
     settings = _get_settings()  # Lazy settings access
 
     broker_url = _build_broker_url()
-    broker_transport_options: dict[str, object] = {"pool_recycle": 300}
+    broker_transport_options: dict[str, object] = {
+        "pool_recycle": 300,
+        "pool_size": settings.CELERY_BROKER_ENGINE_POOL_SIZE,
+        "max_overflow": settings.CELERY_BROKER_ENGINE_MAX_OVERFLOW,
+    }
 
     celery_app.conf.update(
         broker_url=broker_url,
@@ -133,6 +137,11 @@ def _ensure_celery_configured():
         timezone="UTC",
         task_track_started=True,
         broker_transport_options=broker_transport_options,
+        database_engine_options={
+            "pool_recycle": 300,
+            "pool_size": settings.CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE,
+            "max_overflow": settings.CELERY_RESULT_BACKEND_ENGINE_MAX_OVERFLOW,
+        },
         worker_send_task_events=True,
         worker_hijack_root_logger=False,
         # R4: crash-safe + starvation-resistant defaults (override via env via Settings)

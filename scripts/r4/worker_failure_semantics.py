@@ -845,12 +845,13 @@ async def main() -> int:
     concurrency = int(_env("R4_WORKER_CONCURRENCY", "4") or 4)
     crash_concurrency = int(_env("R4_CRASH_WORKER_CONCURRENCY", "1") or 1)
     pool = _env("R4_WORKER_POOL", "prefork")
-    crash_worker = WorkerSupervisor(concurrency=crash_concurrency, pool=pool, log_prefix="celery_harness_worker_crash")
-    crash_worker_pid_initial = crash_worker.start()
+    poison_worker = WorkerSupervisor(concurrency=concurrency, pool=pool, log_prefix="celery_harness_worker_poison")
+    poison_worker_pid_initial = poison_worker.start()
     ping = _ping_worker_safe(timeout_s=25.0)
-    print("R4_WORKER_PING_CRASH_INITIAL", json.dumps(ping, sort_keys=True))
+    print("R4_WORKER_PING_POISON_INITIAL", json.dumps(ping, sort_keys=True))
 
     main_worker: WorkerSupervisor | None = None
+    crash_worker: WorkerSupervisor | None = None
 
     broker_transport_options = getattr(celery_app.conf, "broker_transport_options", None)
     broker_recovery_config = {
@@ -895,7 +896,7 @@ async def main() -> int:
                 "time_limits": {"runaway_soft_s": 2, "runaway_hard_s": 4},
                 "retry_policy": {"poison_max_retries": 3, "poison_backoff_cap_s": 4, "poison_jitter_s": "0..1"},
                 "worker_pool": pool,
-                "worker_pid_crash_initial": crash_worker_pid_initial,
+                "worker_pid_poison_initial": poison_worker_pid_initial,
                 "worker_ping": ping,
             },
             sort_keys=True,
@@ -922,6 +923,13 @@ async def main() -> int:
             n=poison_n,
         )
         print("R4_S1_WORKER_PING_AFTER", json.dumps(_ping_worker_safe(), sort_keys=True))
+
+        poison_worker.ensure_dead()
+
+        crash_worker = WorkerSupervisor(concurrency=crash_concurrency, pool=pool, log_prefix="celery_harness_worker_crash")
+        crash_worker_pid_initial = crash_worker.start()
+        print(f"R4_WORKER_CRASH_STARTED pid={crash_worker_pid_initial}")
+        print("R4_WORKER_PING_CRASH_INITIAL", json.dumps(_ping_worker_safe(timeout_s=20.0), sort_keys=True))
 
         s2 = await _run_safely(
             f"S2_CrashAfterWritePreAck_N{crash_n}",
@@ -979,7 +987,9 @@ async def main() -> int:
 
         all_passed = all(v.get("passed") is True for v in [s1, s2, s3, s4, s5])
     finally:
-        crash_worker.ensure_dead()
+        poison_worker.ensure_dead()
+        if crash_worker is not None:
+            crash_worker.ensure_dead()
         if main_worker is not None:
             main_worker.ensure_dead()
         await conn.close()
