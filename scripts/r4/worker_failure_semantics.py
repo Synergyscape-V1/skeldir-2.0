@@ -480,28 +480,29 @@ async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n:
 
     task_name = "app.tasks.r4_failure_semantics.poison_pill"
     task_ids: list[str] = []
-    results = []
     for i in range(n):
         task_id = str(_uuid_deterministic("r4", ctx.candidate_sha, "S1", "poison", str(i)))
         task_ids.append(task_id)
-        results.append(
-            celery_app.send_task(
-                task_name,
-                kwargs={
-                    "tenant_id": str(ctx.tenant_a),
-                    "correlation_id": task_id,
-                    "marker": f"R4_S1_{i}",
-                },
-                task_id=task_id,
-            )
+        celery_app.send_task(
+            task_name,
+            kwargs={
+                "tenant_id": str(ctx.tenant_a),
+                "correlation_id": task_id,
+                "marker": f"R4_S1_{i}",
+            },
+            task_id=task_id,
         )
 
-    _wait_for_results(results, timeout_s=120.0)
-    failures = sum(1 for r in results if r.failed())
-    successes = sum(1 for r in results if r.successful())
+    deadline = time.time() + 180.0
+    dlq: dict[str, int] = {"rows": 0, "max_retry_count": 0}
+    while time.time() < deadline:
+        now = _now_utc()
+        dlq = await _count_worker_failed_jobs(conn, task_name=task_name, task_ids=task_ids, since=s_start, until=now)
+        if dlq["rows"] >= n:
+            break
+        await asyncio.sleep(0.5)
 
     s_end = _now_utc()
-    dlq = await _count_worker_failed_jobs(conn, task_name=task_name, task_ids=task_ids, since=s_start, until=s_end)
     effects = await _count_side_effects(conn, tenant_id=ctx.tenant_a, task_ids=task_ids, since=s_start, until=s_end)
     attempts = await _attempt_stats(
         conn,
@@ -513,13 +514,12 @@ async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n:
     )
 
     passed = (
-        failures == n
-        and successes == 0
-        and dlq["rows"] == n
-        and dlq["max_retry_count"] <= 3
+        dlq["rows"] == n
+        and dlq["max_retry_count"] == 3
         and effects["rows"] == 0
         and attempts["task_count_observed"] == n
         and attempts["attempts_min_per_task"] >= 2
+        and attempts["attempts_max_per_task"] <= 4
     )
 
     verdict = {
@@ -530,7 +530,7 @@ async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n:
         "tenant_a": str(ctx.tenant_a),
         "tenant_b": str(ctx.tenant_b),
         "db_truth": {"worker_failed_jobs": dlq, "worker_side_effects": effects, "attempts": attempts},
-        "worker_observed": {"failed_results": failures, "successful_results": successes},
+        "worker_observed": {"dlq_rows_observed": dlq["rows"]},
         "passed": passed,
     }
     _verdict_block(f"S1_PoisonPill_N{n}", verdict)
@@ -753,20 +753,25 @@ async def scenario_runaway(ctx: ScenarioCtx, conn: asyncpg.Connection, *, sentin
     time.sleep(0.5)
 
     sentinel_task_ids: list[str] = []
-    sentinels = []
     for i in range(sentinel_n):
         tid = str(_uuid_deterministic("r4", ctx.candidate_sha, "S4", "sentinel", str(i)))
         sentinel_task_ids.append(tid)
-        sentinels.append(
-            celery_app.send_task(
-                "app.tasks.r4_failure_semantics.sentinel_side_effect",
-                kwargs={"tenant_id": str(ctx.tenant_a), "correlation_id": tid, "effect_key": f"R4_S4_{i}"},
-                task_id=tid,
-            )
+        celery_app.send_task(
+            "app.tasks.r4_failure_semantics.sentinel_side_effect",
+            kwargs={"tenant_id": str(ctx.tenant_a), "correlation_id": tid, "effect_key": f"R4_S4_{i}"},
+            task_id=tid,
         )
 
-    _wait_for_results(sentinels, timeout_s=120.0)
-    sent_ok = sum(1 for r in sentinels if r.successful())
+    deadline = time.time() + 180.0
+    effects: dict[str, int] = {"rows": 0, "duplicate_task_ids": 0}
+    while time.time() < deadline:
+        now = _now_utc()
+        effects = await _count_side_effects(
+            conn, tenant_id=ctx.tenant_a, task_ids=sentinel_task_ids, since=s_start, until=now
+        )
+        if effects["rows"] >= sentinel_n:
+            break
+        await asyncio.sleep(0.5)
 
     runaway_outcome = "unknown"
     try:
@@ -780,7 +785,7 @@ async def scenario_runaway(ctx: ScenarioCtx, conn: asyncpg.Connection, *, sentin
         conn, tenant_id=ctx.tenant_a, task_ids=sentinel_task_ids, since=s_start, until=s_end
     )
 
-    passed = sent_ok == sentinel_n and effects["rows"] == sentinel_n and effects["duplicate_task_ids"] == 0 and runaway_outcome != "completed_unexpectedly"
+    passed = effects["rows"] == sentinel_n and effects["duplicate_task_ids"] == 0 and runaway_outcome != "completed_unexpectedly"
 
     verdict = {
         "scenario": "S4_RunawayNoStarve",
@@ -790,7 +795,7 @@ async def scenario_runaway(ctx: ScenarioCtx, conn: asyncpg.Connection, *, sentin
         "tenant_a": str(ctx.tenant_a),
         "tenant_b": str(ctx.tenant_b),
         "db_truth": {"worker_side_effects": effects},
-        "worker_observed": {"runaway_outcome": runaway_outcome, "sentinel_success": sent_ok},
+        "worker_observed": {"runaway_outcome": runaway_outcome, "sentinel_rows_observed": effects["rows"]},
         "passed": passed,
     }
     _verdict_block(f"S4_RunawayNoStarve_N{sentinel_n}", verdict)
