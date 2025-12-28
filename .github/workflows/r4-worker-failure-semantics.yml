@@ -53,7 +53,7 @@ jobs:
       CELERY_BROKER_ENGINE_MAX_OVERFLOW: "0"
       CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE: "2"
       # R4 crash physics: make SQLAlchemy transport redelivery observable within harness windows.
-      CELERY_BROKER_VISIBILITY_TIMEOUT_S: "8"
+      CELERY_BROKER_VISIBILITY_TIMEOUT_S: "2"
       CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S: "0.5"
       R4_ADMIN_DATABASE_URL: postgresql://r4_admin:r4_admin@127.0.0.1:5432/r4
       R4_POISON_N: "10"

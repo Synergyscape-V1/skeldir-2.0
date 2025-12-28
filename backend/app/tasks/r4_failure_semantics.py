@@ -138,7 +138,9 @@ def poison_pill(self, *, tenant_id: str, correlation_id: str, marker: str) -> No
             "correlation_id": str(correlation_uuid),
             "task_id": task_id,
             "attempt_no": attempt_no,
-            "retries": int(getattr(self.request, "retries", 0) or 0),
+            # Kombu SQLAlchemy transport does not reliably propagate retries across redelivery;
+            # attempt_no is the authoritative, DB-backed retry counter for R4.
+            "retries": attempt_no - 1,
             "marker": marker,
             "ts": _now_utc_iso(),
         },
@@ -147,9 +149,10 @@ def poison_pill(self, *, tenant_id: str, correlation_id: str, marker: str) -> No
     try:
         raise RuntimeError(f"R4 poison pill marker={marker}")
     except Exception as exc:  # noqa: BLE001 - intentional poison pill
-        retries = int(getattr(self.request, "retries", 0) or 0)
-        if retries < int(getattr(self, "max_retries", 0) or 0):
-            backoff = min(2**retries, 4)
+        max_retries = int(getattr(self, "max_retries", 0) or 0)
+        if attempt_no <= max_retries:
+            retry_index = attempt_no - 1
+            backoff = min(2**retry_index, 4)
             countdown = backoff + random.randint(0, 1)
             raise self.retry(exc=exc, countdown=countdown)
         raise
