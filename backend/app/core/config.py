@@ -87,10 +87,6 @@ class Settings(BaseSettings):
         5,
         description="SQLAlchemy pool_size for db+ Postgres result backend engine (per process).",
     )
-    CELERY_RESULT_BACKEND_ENGINE_MAX_OVERFLOW: int = Field(
-        0,
-        description="SQLAlchemy max_overflow for db+ Postgres result backend engine (per process).",
-    )
     CELERY_BROKER_VISIBILITY_TIMEOUT_S: int = Field(
         3600,
         description="Visibility timeout (seconds) used by the worker to requeue stuck kombu messages after worker loss; must exceed max task runtime in production.",
@@ -169,7 +165,6 @@ class Settings(BaseSettings):
 
     @field_validator(
         "CELERY_BROKER_ENGINE_MAX_OVERFLOW",
-        "CELERY_RESULT_BACKEND_ENGINE_MAX_OVERFLOW",
     )
     @classmethod
     def validate_celery_engine_max_overflow(cls, value: int, info) -> int:

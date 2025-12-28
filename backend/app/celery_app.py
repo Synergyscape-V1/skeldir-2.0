@@ -140,7 +140,6 @@ def _ensure_celery_configured():
         database_engine_options={
             "pool_recycle": 300,
             "pool_size": settings.CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE,
-            "max_overflow": settings.CELERY_RESULT_BACKEND_ENGINE_MAX_OVERFLOW,
         },
         worker_send_task_events=True,
         worker_hijack_root_logger=False,
