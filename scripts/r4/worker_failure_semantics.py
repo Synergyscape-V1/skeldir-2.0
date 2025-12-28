@@ -941,8 +941,12 @@ async def main() -> int:
 
     concurrency = int(_env("R4_WORKER_CONCURRENCY", "4") or 4)
     crash_concurrency = int(_env("R4_CRASH_WORKER_CONCURRENCY", "1") or 1)
-    pool = _env("R4_WORKER_POOL", "prefork")
-    poison_worker = WorkerSupervisor(concurrency=concurrency, pool=pool, log_prefix="celery_harness_worker_poison")
+    default_pool = _env("R4_WORKER_POOL", "prefork")
+    poison_pool = _env("R4_POISON_WORKER_POOL", default_pool)
+    crash_pool = _env("R4_CRASH_WORKER_POOL", default_pool)
+    main_pool = _env("R4_MAIN_WORKER_POOL", default_pool)
+
+    poison_worker = WorkerSupervisor(concurrency=concurrency, pool=poison_pool, log_prefix="celery_harness_worker_poison")
     poison_worker_pid_initial = poison_worker.start()
     ping = _ping_worker_safe(timeout_s=25.0)
     print("R4_WORKER_PING_POISON_INITIAL", json.dumps(ping, sort_keys=True))
@@ -993,7 +997,10 @@ async def main() -> int:
                 "broker_recovery": broker_recovery_config,
                 "time_limits": {"runaway_soft_s": 2, "runaway_hard_s": 4},
                 "retry_policy": {"poison_max_retries": 3, "poison_backoff_cap_s": 4, "poison_jitter_s": "0..1"},
-                "worker_pool": pool,
+                "worker_pool_default": default_pool,
+                "worker_pool_poison": poison_pool,
+                "worker_pool_crash": crash_pool,
+                "worker_pool_main": main_pool,
                 "worker_pid_poison_initial": poison_worker_pid_initial,
                 "worker_ping": ping,
             },
@@ -1029,7 +1036,7 @@ async def main() -> int:
         _kill_stray_celery_workers()
         print("R4_DB_CONN_SNAPSHOT_AFTER_POISON_WORKER_STOP", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
-        crash_worker = WorkerSupervisor(concurrency=crash_concurrency, pool=pool, log_prefix="celery_harness_worker_crash")
+        crash_worker = WorkerSupervisor(concurrency=crash_concurrency, pool=crash_pool, log_prefix="celery_harness_worker_crash")
         crash_worker_pid_initial = crash_worker.start()
         print(f"R4_WORKER_CRASH_STARTED pid={crash_worker_pid_initial}")
         print("R4_WORKER_PING_CRASH_INITIAL", json.dumps(_ping_worker_safe(timeout_s=20.0), sort_keys=True))
@@ -1053,7 +1060,7 @@ async def main() -> int:
         _kill_stray_celery_workers()
         print("R4_DB_CONN_SNAPSHOT_AFTER_CRASH_WORKER_STOP", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
-        main_worker = WorkerSupervisor(concurrency=concurrency, pool=pool, log_prefix="celery_harness_worker_main")
+        main_worker = WorkerSupervisor(concurrency=concurrency, pool=main_pool, log_prefix="celery_harness_worker_main")
         worker_pid_initial = main_worker.start()
         print(f"R4_WORKER_MAIN_STARTED pid={worker_pid_initial}")
         print("R4_WORKER_PING_MAIN_INITIAL", json.dumps(_ping_worker_safe(timeout_s=20.0), sort_keys=True))

@@ -61,7 +61,10 @@ jobs:
       R4_CRASH_N: "10"
       R4_SENTINEL_N: "10"
       R4_WORKER_CONCURRENCY: "2"
-      R4_WORKER_POOL: "threads"
+      R4_WORKER_POOL: "prefork"
+      R4_POISON_WORKER_POOL: "threads"
+      R4_CRASH_WORKER_POOL: "prefork"
+      R4_MAIN_WORKER_POOL: "prefork"
       R4_CRASH_WORKER_CONCURRENCY: "1"
 
     steps:

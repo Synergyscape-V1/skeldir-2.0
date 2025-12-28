@@ -225,6 +225,20 @@ def _recover_invisible_kombu_messages(*, engine, visibility_timeout_s: int, task
         sql += "\n          AND payload LIKE :task_name_filter"
         params["task_name_filter"] = f"%{task_name_filter}%"
 
+        # R4: Prevent infinite redelivery loops for crash probes once redelivery has been observed.
+        # The Kombu SQLAlchemy transport does not delete messages on ack; without this guard, the
+        # recovery sweep will keep re-queueing the same message forever.
+        if "r4_failure_semantics.crash_after_write_pre_ack" in task_name_filter:
+            sql += """
+              AND NOT EXISTS (
+                SELECT 1
+                FROM public.r4_task_attempts a
+                WHERE a.scenario = 'S2_CrashAfterWritePreAck'
+                  AND a.attempt_no >= 2
+                  AND public.kombu_message.payload LIKE ('%' || a.task_id || '%')
+              )
+            """
+
     with engine.begin() as conn:
         res = conn.execute(text(sql), params)
         return int(res.rowcount or 0)
