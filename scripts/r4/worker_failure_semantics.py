@@ -179,6 +179,26 @@ async def _seed_worker_side_effect(conn: asyncpg.Connection, tenant_id: UUID, *,
     )
 
 
+async def _db_conn_snapshot(conn: asyncpg.Connection) -> dict[str, Any]:
+    max_connections_raw = await conn.fetchval("SHOW max_connections")
+    max_connections = int(str(max_connections_raw))
+    rows = await conn.fetch(
+        """
+        SELECT usename, state, COUNT(*)::int AS cnt
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+        GROUP BY 1, 2
+        ORDER BY cnt DESC, usename, state
+        """
+    )
+    return {
+        "max_connections": max_connections,
+        "by_user_state": [
+            {"usename": r["usename"], "state": r["state"], "count": int(r["cnt"])} for r in rows
+        ],
+    }
+
+
 def _wait_for_results(results, timeout_s: float) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -905,6 +925,7 @@ async def main() -> int:
 
     conn = await _pg(admin_db)
     try:
+        print("R4_DB_CONN_SNAPSHOT_START", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
         await _seed_tenant(conn, tenant_a, label="A")
         await _seed_tenant(conn, tenant_b, label="B")
 
@@ -923,13 +944,16 @@ async def main() -> int:
             n=poison_n,
         )
         print("R4_S1_WORKER_PING_AFTER", json.dumps(_ping_worker_safe(), sort_keys=True))
+        print("R4_DB_CONN_SNAPSHOT_AFTER_S1", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         poison_worker.ensure_dead()
+        print("R4_DB_CONN_SNAPSHOT_AFTER_POISON_WORKER_STOP", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         crash_worker = WorkerSupervisor(concurrency=crash_concurrency, pool=pool, log_prefix="celery_harness_worker_crash")
         crash_worker_pid_initial = crash_worker.start()
         print(f"R4_WORKER_CRASH_STARTED pid={crash_worker_pid_initial}")
         print("R4_WORKER_PING_CRASH_INITIAL", json.dumps(_ping_worker_safe(timeout_s=20.0), sort_keys=True))
+        print("R4_DB_CONN_SNAPSHOT_AFTER_CRASH_WORKER_START", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         s2 = await _run_safely(
             f"S2_CrashAfterWritePreAck_N{crash_n}",
@@ -942,13 +966,16 @@ async def main() -> int:
             n=crash_n,
         )
         print("R4_S2_WORKER_PING_AFTER", json.dumps(_ping_worker_safe(), sort_keys=True))
+        print("R4_DB_CONN_SNAPSHOT_AFTER_S2", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         crash_worker.ensure_dead()
+        print("R4_DB_CONN_SNAPSHOT_AFTER_CRASH_WORKER_STOP", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         main_worker = WorkerSupervisor(concurrency=concurrency, pool=pool, log_prefix="celery_harness_worker_main")
         worker_pid_initial = main_worker.start()
         print(f"R4_WORKER_MAIN_STARTED pid={worker_pid_initial}")
         print("R4_WORKER_PING_MAIN_INITIAL", json.dumps(_ping_worker_safe(timeout_s=20.0), sort_keys=True))
+        print("R4_DB_CONN_SNAPSHOT_AFTER_MAIN_WORKER_START", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         s3 = await _run_safely(
             "S3_RLSProbe_N1",
