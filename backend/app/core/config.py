@@ -59,6 +59,22 @@ class Settings(BaseSettings):
     )
     CELERY_METRICS_PORT: int = Field(9540, description="Port for Celery worker metrics/health HTTP server")
     CELERY_METRICS_ADDR: str = Field("0.0.0.0", description="Bind address for Celery worker metrics/health server")
+    CELERY_TASK_ACKS_LATE: bool = Field(
+        True,
+        description="Acknowledge tasks only after execution completes (crash-safe, required for idempotent side effects).",
+    )
+    CELERY_TASK_REJECT_ON_WORKER_LOST: bool = Field(
+        True,
+        description="Requeue tasks when a worker process is lost (required for crash-after-write tests).",
+    )
+    CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT: bool = Field(
+        True,
+        description="Acknowledge tasks even when they fail/time out to prevent infinite redelivery loops.",
+    )
+    CELERY_WORKER_PREFETCH_MULTIPLIER: int = Field(
+        1,
+        description="Prefetch multiplier for worker (1 minimizes starvation and improves crash determinism).",
+    )
 
     model_config = SettingsConfigDict(
         env_file=None,
@@ -104,6 +120,13 @@ class Settings(BaseSettings):
         """
         if value <= 0:
             raise ValueError("IDEMPOTENCY_CACHE_TTL must be greater than zero")
+        return value
+
+    @field_validator("CELERY_WORKER_PREFETCH_MULTIPLIER")
+    @classmethod
+    def validate_celery_prefetch_multiplier(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("CELERY_WORKER_PREFETCH_MULTIPLIER must be >= 1")
         return value
 
 

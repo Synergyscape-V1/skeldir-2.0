@@ -1,0 +1,249 @@
+# R4 — Worker Failure Semantics (Crash Physics + Adversarial Proof)
+#
+# Boots Postgres + FastAPI + Celery worker (Postgres-only broker/backend), runs
+# a single harness that prints browser-verifiable verdict blocks + DB truth checks.
+
+name: "R4: Worker Failure Semantics"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/app/**'
+      - 'alembic/**'
+      - 'scripts/r4/**'
+      - '.github/workflows/r4-worker-failure-semantics.yml'
+
+jobs:
+  r4-worker-failure-semantics:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: r4_admin
+          POSTGRES_PASSWORD: r4_admin
+          POSTGRES_DB: r4
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U r4_admin -d r4"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CI: "true"
+      PYTHONPATH: backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r4
+      MIGRATION_DATABASE_URL: postgresql://r4_admin:r4_admin@127.0.0.1:5432/r4
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/r4
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/r4
+      DATABASE_POOL_SIZE: "20"
+      DATABASE_MAX_OVERFLOW: "60"
+      CELERY_TASK_ACKS_LATE: "true"
+      CELERY_TASK_REJECT_ON_WORKER_LOST: "true"
+      CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT: "true"
+      CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
+      R4_ADMIN_DATABASE_URL: postgresql://r4_admin:r4_admin@127.0.0.1:5432/r4
+      R4_POISON_N: "10"
+      R4_CRASH_N: "10"
+      R4_SENTINEL_N: "10"
+      R4_WORKER_CONCURRENCY: "4"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: "3.11"
+
+      - name: "EG-R4-0: SHA anchoring"
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          echo "EG_R4_SHA_ANCHOR"
+          echo "GITHUB_SHA=${GITHUB_SHA}"
+          echo "git_rev_parse_HEAD=${CANDIDATE_SHA}"
+          echo "RUN_URL=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          echo "END_EG_R4_SHA_ANCHOR"
+          if [ "${CANDIDATE_SHA}" != "${GITHUB_SHA}" ]; then
+            echo "FAIL: git rev-parse HEAD does not match GITHUB_SHA"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Create least-privilege app_user role
+        shell: bash
+        env:
+          PGPASSWORD: r4_admin
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U r4_admin -d r4 <<'SQL'
+          DO $$
+          BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                  CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+              END IF;
+          END
+          $$;
+          
+          REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          GRANT CONNECT ON DATABASE r4 TO app_user;
+          SQL
+
+      - name: Run migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          alembic upgrade heads
+
+      - name: Start API
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+              echo "API is healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API failed to become healthy"
+          tail -n 200 uvicorn.log || true
+          exit 1
+
+      - name: Start Celery worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup celery -A app.celery_app.celery_app worker \
+            --loglevel=INFO \
+            --concurrency "${R4_WORKER_CONCURRENCY}" \
+            --pool=prefork \
+            > celery.log 2>&1 &
+
+      - name: Wait for worker ping
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import time
+          from app.celery_app import celery_app
+          deadline = time.time() + 60
+          last = None
+          while time.time() < deadline:
+              try:
+                  res = celery_app.send_task("app.tasks.housekeeping.ping", kwargs={"fail": False})
+                  out = res.get(timeout=10)
+                  print("PING_OK", out)
+                  raise SystemExit(0)
+              except Exception as e:
+                  last = e
+                  time.sleep(1)
+          print("PING_FAIL", repr(last))
+          raise SystemExit(1)
+          PY
+
+      - name: Run R4 harness
+        id: r4_harness
+        continue-on-error: true
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python scripts/r4/worker_failure_semantics.py | tee r4_harness.log
+
+      - name: Render R4 summary (candidate-anchored)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          python scripts/r4/render_r4_summary.py \
+            --log r4_harness.log \
+            --out docs/validation/runtime/r4_summary.md \
+            --candidate-sha "${GITHUB_SHA}" \
+            --run-url "${RUN_URL}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload R4 logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r4-runtime-logs-${{ github.sha }}
+          path: |
+            r4_harness.log
+            celery.log
+            uvicorn.log
+
+      - name: "EG-R4-0: Hard gate (harness must succeed)"
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.r4_harness.outcome }}" != "success" ]; then
+            echo "FAIL: harness step outcome=${{ steps.r4_harness.outcome }}"
+            exit 1
+          fi
+          echo "PASS: harness step outcome=success"
+
+      - name: Open PR to anchor proof in repo
+        if: steps.r4_harness.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs/validation/runtime/r4_summary.md; then
+            echo "No r4_summary changes to commit."
+            exit 0
+          fi
+          BRANCH="ci/r4-proof-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
+          git add docs/validation/runtime/r4_summary.md
+          git commit -m "docs: anchor R4 proof for ${GITHUB_SHA}"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "${BRANCH}"
+          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          TITLE="R4 proof: ${GITHUB_SHA}"
+          BODY="Anchors R4 completion evidence for candidate SHA ${GITHUB_SHA}.\n\nCI run: ${RUN_URL}"
+          export TITLE BRANCH BODY
+          python - <<'PY' > pr.json
+          import json, os
+          print(json.dumps({"title": os.environ["TITLE"], "head": os.environ["BRANCH"], "base": "main", "body": os.environ["BODY"]}))
+          PY
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
+            -d @pr.json >/dev/null || true
+          echo "Opened PR for ${BRANCH}"
+
+      - name: Dump logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "---- uvicorn.log ----"
+          tail -n 200 uvicorn.log || true
+          echo "---- celery.log ----"
+          tail -n 300 celery.log || true
+

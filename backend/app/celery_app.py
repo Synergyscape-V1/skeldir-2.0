@@ -115,6 +115,7 @@ def _ensure_celery_configured():
         return
 
     from kombu import Queue
+    settings = _get_settings()  # Lazy settings access
 
     celery_app.conf.update(
         broker_url=_build_broker_url(),
@@ -128,11 +129,17 @@ def _ensure_celery_configured():
         broker_transport_options={"pool_recycle": 300},
         worker_send_task_events=True,
         worker_hijack_root_logger=False,
+        # R4: crash-safe + starvation-resistant defaults (override via env via Settings)
+        task_acks_late=settings.CELERY_TASK_ACKS_LATE,
+        task_reject_on_worker_lost=settings.CELERY_TASK_REJECT_ON_WORKER_LOST,
+        task_acks_on_failure_or_timeout=settings.CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT,
+        worker_prefetch_multiplier=settings.CELERY_WORKER_PREFETCH_MULTIPLIER,
         include=[
             "app.tasks.housekeeping",
             "app.tasks.maintenance",
             "app.tasks.llm",
             "app.tasks.attribution",
+            "app.tasks.r4_failure_semantics",
         ],
         # B0.5.2: Fixed queue topology
         # B0.5.3.1: Added attribution queue for deterministic routing
@@ -147,6 +154,7 @@ def _ensure_celery_configured():
             'app.tasks.maintenance.*': {'queue': 'maintenance', 'routing_key': 'maintenance.task'},
             'app.tasks.llm.*': {'queue': 'llm', 'routing_key': 'llm.task'},
             'app.tasks.attribution.*': {'queue': 'attribution', 'routing_key': 'attribution.task'},
+            'app.tasks.r4_failure_semantics.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
         },
         task_default_queue='housekeeping',
         task_default_exchange='tasks',
@@ -341,6 +349,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         queue = None
         worker_name = None
         correlation_id = None
+        retry_count = 0
         if task and hasattr(task, 'request'):
             queue = getattr(task.request, 'delivery_info', {}).get('routing_key', None)
             worker_name = getattr(task.request, 'hostname', None)
@@ -350,6 +359,15 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
                     correlation_id = UUID(str(correlation_id_val))
                 except (ValueError, TypeError):
                     pass
+            try:
+                retry_count = int(getattr(task.request, "retries", 0) or 0)
+            except (TypeError, ValueError):
+                retry_count = 0
+        if correlation_id is None and kwargs and "correlation_id" in kwargs:
+            try:
+                correlation_id = UUID(str(kwargs["correlation_id"]))
+            except (ValueError, TypeError):
+                correlation_id = None
         # Correlation must be present for DLQ diagnostics; fall back to task_id when missing.
         if correlation_id is None and task_id:
             try:
@@ -403,7 +421,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
                 exception.__class__.__name__ if exception else "Unknown",
                 str(exception)[:500] if exception else "",
                 str(einfo)[:2000] if einfo else None,
-                0,
+                retry_count,
                 "pending",
                 str(correlation_id) if correlation_id else None,
             ))
