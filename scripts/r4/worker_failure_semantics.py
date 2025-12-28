@@ -321,11 +321,26 @@ async def _count_worker_failed_jobs(
     until: datetime,
 ) -> dict[str, int]:
     if not task_ids:
-        return {"rows": 0, "max_retry_count": 0}
-    rows = int(
+        return {"rows": 0, "rows_total": 0, "max_retry_count": 0}
+    rows_total = int(
         await conn.fetchval(
             """
             SELECT COUNT(*) FROM worker_failed_jobs
+            WHERE task_name=$1
+              AND task_id = ANY($2::text[])
+              AND failed_at >= $3
+              AND failed_at <= $4
+            """,
+            task_name,
+            task_ids,
+            since,
+            until,
+        )
+    )
+    rows = int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(DISTINCT task_id) FROM worker_failed_jobs
             WHERE task_name=$1
               AND task_id = ANY($2::text[])
               AND failed_at >= $3
@@ -352,7 +367,7 @@ async def _count_worker_failed_jobs(
             until,
         )
     )
-    return {"rows": rows, "max_retry_count": max_retry}
+    return {"rows": rows, "rows_total": rows_total, "max_retry_count": max_retry}
 
 
 async def _count_side_effects(
