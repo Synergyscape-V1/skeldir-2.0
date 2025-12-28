@@ -99,6 +99,10 @@ class Settings(BaseSettings):
         ),
         description="Interval (seconds) for worker-side kombu message visibility recovery sweeps (lower improves redelivery latency at higher DB load).",
     )
+    CELERY_BROKER_RECOVERY_TASK_NAME_FILTER: Optional[str] = Field(
+        None,
+        description="If set, kombu visibility recovery only requeues messages whose payload contains this substring (e.g., a task name).",
+    )
 
     model_config = SettingsConfigDict(
         env_file=None,

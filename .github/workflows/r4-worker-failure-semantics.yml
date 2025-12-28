@@ -55,6 +55,7 @@ jobs:
       # R4 crash physics: make SQLAlchemy transport redelivery observable within harness windows.
       CELERY_BROKER_VISIBILITY_TIMEOUT_S: "2"
       CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S: "0.5"
+      CELERY_BROKER_RECOVERY_TASK_NAME_FILTER: "app.tasks.r4_failure_semantics.crash_after_write_pre_ack"
       R4_ADMIN_DATABASE_URL: postgresql://r4_admin:r4_admin@127.0.0.1:5432/r4
       R4_POISON_N: "10"
       R4_CRASH_N: "10"

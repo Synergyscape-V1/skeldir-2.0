@@ -212,20 +212,21 @@ def _configure_worker_logging(**kwargs):
     )
 
 
-def _recover_invisible_kombu_messages(*, engine, visibility_timeout_s: int) -> int:
+def _recover_invisible_kombu_messages(*, engine, visibility_timeout_s: int, task_name_filter: str | None) -> int:
+    sql = """
+        UPDATE public.kombu_message
+        SET visible = true
+        WHERE visible = false
+          AND "timestamp" IS NOT NULL
+          AND "timestamp" < (now() - make_interval(secs => :visibility_timeout_s))
+    """
+    params: dict[str, object] = {"visibility_timeout_s": int(visibility_timeout_s)}
+    if task_name_filter:
+        sql += "\n          AND payload LIKE :task_name_filter"
+        params["task_name_filter"] = f"%{task_name_filter}%"
+
     with engine.begin() as conn:
-        res = conn.execute(
-            text(
-                """
-                UPDATE public.kombu_message
-                SET visible = true
-                WHERE visible = false
-                  AND "timestamp" IS NOT NULL
-                  AND "timestamp" < (now() - make_interval(secs => :visibility_timeout_s))
-                """
-            ),
-            {"visibility_timeout_s": int(visibility_timeout_s)},
-        )
+        res = conn.execute(text(sql), params)
         return int(res.rowcount or 0)
 
 
@@ -248,6 +249,7 @@ def _start_kombu_visibility_recovery_thread() -> None:
     dsn = _sync_sqlalchemy_url(settings.DATABASE_URL.unicode_string())
     visibility_timeout_s = int(settings.CELERY_BROKER_VISIBILITY_TIMEOUT_S)
     sweep_interval_s = float(settings.CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S)
+    task_name_filter = settings.CELERY_BROKER_RECOVERY_TASK_NAME_FILTER
 
     recovery_engine = create_engine(
         dsn,
@@ -262,6 +264,7 @@ def _start_kombu_visibility_recovery_thread() -> None:
         extra={
             "visibility_timeout_s": visibility_timeout_s,
             "sweep_interval_s": sweep_interval_s,
+            "task_name_filter": task_name_filter,
         },
     )
 
@@ -269,7 +272,9 @@ def _start_kombu_visibility_recovery_thread() -> None:
         while True:
             try:
                 recovered = _recover_invisible_kombu_messages(
-                    engine=recovery_engine, visibility_timeout_s=visibility_timeout_s
+                    engine=recovery_engine,
+                    visibility_timeout_s=visibility_timeout_s,
+                    task_name_filter=task_name_filter,
                 )
                 if recovered:
                     logger.warning(

@@ -956,6 +956,7 @@ async def main() -> int:
         "sweep_interval_s": float(
             _env("CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S", _env("CELERY_BROKER_POLLING_INTERVAL_S", "0.0")) or 0.0
         ),
+        "task_name_filter": _env("CELERY_BROKER_RECOVERY_TASK_NAME_FILTER", ""),
     }
     config_dump = {
         "candidate_sha": candidate_sha,
