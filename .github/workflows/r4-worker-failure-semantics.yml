@@ -204,8 +204,8 @@ jobs:
           fi
           echo "PASS: harness step outcome=success"
 
-      - name: Open PR to anchor proof in repo
-        if: steps.r4_harness.outcome == 'success'
+      - name: Open PR to anchor run evidence in repo
+        if: always()
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -220,7 +220,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "${BRANCH}"
           git add docs/validation/runtime/r4_summary.md
-          git commit -m "docs: anchor R4 proof for ${GITHUB_SHA}"
+          git commit -m "docs: anchor R4 run evidence for ${GITHUB_SHA} (harness=${{ steps.r4_harness.outcome }})"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "${BRANCH}"
           RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -246,4 +246,3 @@ jobs:
           tail -n 200 uvicorn.log || true
           echo "---- celery.log ----"
           tail -n 300 celery.log || true
-
