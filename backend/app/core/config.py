@@ -9,7 +9,7 @@ import os
 from typing import Optional
 
 from dotenv import load_dotenv
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import AliasChoices, Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load local .env without overriding explicit environment variables.
@@ -77,11 +77,15 @@ class Settings(BaseSettings):
     )
     CELERY_BROKER_VISIBILITY_TIMEOUT_S: int = Field(
         3600,
-        description="Broker (sqla+ Postgres) visibility timeout in seconds for redelivery after worker loss; must exceed max task runtime in production.",
+        description="Visibility timeout (seconds) used by the worker to requeue stuck kombu messages after worker loss; must exceed max task runtime in production.",
     )
-    CELERY_BROKER_POLLING_INTERVAL_S: float = Field(
+    CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S: float = Field(
         1.0,
-        description="Broker (sqla+ Postgres) polling interval in seconds (lower improves redelivery latency at higher DB load).",
+        validation_alias=AliasChoices(
+            "CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S",
+            "CELERY_BROKER_POLLING_INTERVAL_S",
+        ),
+        description="Interval (seconds) for worker-side kombu message visibility recovery sweeps (lower improves redelivery latency at higher DB load).",
     )
 
     model_config = SettingsConfigDict(
@@ -144,11 +148,11 @@ class Settings(BaseSettings):
             raise ValueError("CELERY_BROKER_VISIBILITY_TIMEOUT_S must be >= 1")
         return value
 
-    @field_validator("CELERY_BROKER_POLLING_INTERVAL_S")
+    @field_validator("CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S")
     @classmethod
-    def validate_celery_polling_interval(cls, value: float) -> float:
+    def validate_celery_recovery_sweep_interval(cls, value: float) -> float:
         if value <= 0:
-            raise ValueError("CELERY_BROKER_POLLING_INTERVAL_S must be > 0")
+            raise ValueError("CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S must be > 0")
         return value
 
 

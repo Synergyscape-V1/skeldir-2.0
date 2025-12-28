@@ -5,10 +5,12 @@ This module centralizes Celery initialization so workers and tests share
 the same configuration, logging, and metrics wiring as the FastAPI app.
 """
 import logging
+import threading
 import time
 from typing import Optional
 
 from celery import Celery, signals
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine.url import make_url
 
 # B0.5.3.3 Gate C: Defer settings import to prevent premature initialization
@@ -98,6 +100,7 @@ def _build_result_backend() -> str:
 # This prevents premature settings import at module load time
 celery_app = Celery("skeldir_backend")
 _celery_configured = False
+_kombu_visibility_recovery_started = False
 
 
 def _ensure_celery_configured():
@@ -119,13 +122,6 @@ def _ensure_celery_configured():
 
     broker_url = _build_broker_url()
     broker_transport_options: dict[str, object] = {"pool_recycle": 300}
-    if broker_url.startswith("sqla+"):
-        broker_transport_options.update(
-            {
-                "visibility_timeout": settings.CELERY_BROKER_VISIBILITY_TIMEOUT_S,
-                "polling_interval": settings.CELERY_BROKER_POLLING_INTERVAL_S,
-            }
-        )
 
     celery_app.conf.update(
         broker_url=broker_url,
@@ -206,6 +202,77 @@ def _configure_worker_logging(**kwargs):
         "celery_worker_logging_configured",
         extra={"metrics_addr": settings.CELERY_METRICS_ADDR, "metrics_port": settings.CELERY_METRICS_PORT},
     )
+
+
+def _recover_invisible_kombu_messages(*, dsn: str, visibility_timeout_s: int) -> int:
+    engine = create_engine(dsn, pool_pre_ping=True, pool_recycle=300)
+    with engine.begin() as conn:
+        res = conn.execute(
+            text(
+                """
+                UPDATE public.kombu_message
+                SET visible = true
+                WHERE visible = false
+                  AND "timestamp" IS NOT NULL
+                  AND "timestamp" < (now() - make_interval(secs => :visibility_timeout_s))
+                """
+            ),
+            {"visibility_timeout_s": int(visibility_timeout_s)},
+        )
+        return int(res.rowcount or 0)
+
+
+def _start_kombu_visibility_recovery_thread() -> None:
+    """
+    Kombu SQLAlchemy transport marks reserved messages as visible=false, with no built-in redelivery.
+
+    This worker-side recovery loop re-queues "stuck" invisible messages by restoring visible=true once
+    they are older than the configured visibility timeout. This restores at-least-once semantics
+    after worker loss, and is safe when paired with idempotent side effects + task time limits.
+    """
+    global _kombu_visibility_recovery_started
+    if _kombu_visibility_recovery_started:
+        return
+
+    settings = _get_settings()
+    if not str(celery_app.conf.broker_url or "").startswith("sqla+"):
+        return
+
+    dsn = _sync_sqlalchemy_url(settings.DATABASE_URL.unicode_string())
+    visibility_timeout_s = int(settings.CELERY_BROKER_VISIBILITY_TIMEOUT_S)
+    sweep_interval_s = float(settings.CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S)
+
+    logger.info(
+        "celery_kombu_visibility_recovery_started",
+        extra={
+            "visibility_timeout_s": visibility_timeout_s,
+            "sweep_interval_s": sweep_interval_s,
+        },
+    )
+
+    def _loop() -> None:
+        while True:
+            try:
+                recovered = _recover_invisible_kombu_messages(
+                    dsn=dsn, visibility_timeout_s=visibility_timeout_s
+                )
+                if recovered:
+                    logger.warning(
+                        "celery_kombu_visibility_recovered_messages",
+                        extra={"recovered": recovered, "visibility_timeout_s": visibility_timeout_s},
+                    )
+            except Exception:
+                logger.exception("celery_kombu_visibility_recovery_failed")
+            time.sleep(sweep_interval_s)
+
+    threading.Thread(target=_loop, name="celery-kombu-visibility-recovery", daemon=True).start()
+    _kombu_visibility_recovery_started = True
+
+
+@signals.worker_ready.connect
+def _on_worker_ready(**kwargs):
+    _ensure_celery_configured()
+    _start_kombu_visibility_recovery_thread()
 
 
 @signals.task_prerun.connect

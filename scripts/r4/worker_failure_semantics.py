@@ -853,6 +853,12 @@ async def main() -> int:
     main_worker: WorkerSupervisor | None = None
 
     broker_transport_options = getattr(celery_app.conf, "broker_transport_options", None)
+    broker_recovery_config = {
+        "visibility_timeout_s": int(_env("CELERY_BROKER_VISIBILITY_TIMEOUT_S", "0") or 0),
+        "sweep_interval_s": float(
+            _env("CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S", _env("CELERY_BROKER_POLLING_INTERVAL_S", "0.0")) or 0.0
+        ),
+    }
     config_dump = {
         "candidate_sha": candidate_sha,
         "run_url": run_url,
@@ -862,6 +868,7 @@ async def main() -> int:
             "broker_url": celery_app.conf.broker_url,
             "result_backend": celery_app.conf.result_backend,
             "broker_transport_options": broker_transport_options,
+            "broker_recovery": broker_recovery_config,
             "acks_late": bool(getattr(celery_app.conf, "task_acks_late", False)),
             "reject_on_worker_lost": bool(getattr(celery_app.conf, "task_reject_on_worker_lost", False)),
             "acks_on_failure_or_timeout": bool(getattr(celery_app.conf, "task_acks_on_failure_or_timeout", False)),
@@ -884,6 +891,7 @@ async def main() -> int:
                 "reject_on_worker_lost": config_dump["celery"]["reject_on_worker_lost"],
                 "acks_on_failure_or_timeout": config_dump["celery"]["acks_on_failure_or_timeout"],
                 "broker_transport_options": broker_transport_options,
+                "broker_recovery": broker_recovery_config,
                 "time_limits": {"runaway_soft_s": 2, "runaway_hard_s": 4},
                 "retry_policy": {"poison_max_retries": 3, "poison_backoff_cap_s": 4, "poison_jitter_s": "0..1"},
                 "worker_pool": pool,
