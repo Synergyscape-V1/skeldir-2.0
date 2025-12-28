@@ -35,6 +35,50 @@ def _env(name: str, default: str | None = None) -> str:
     return v
 
 
+def _kill_stray_celery_workers() -> int:
+    """
+    Best-effort cleanup: ensure no orphaned Celery worker processes remain between scenarios.
+
+    This is intentionally aggressive but scoped (matches only this app's worker command) and is
+    required to keep Postgres connection usage bounded in CI evidence runs.
+    """
+    if os.name != "posix":
+        return 0
+
+    try:
+        out = subprocess.check_output(["ps", "-eo", "pid,pgid,args"], stderr=subprocess.STDOUT).decode(
+            "utf-8", errors="replace"
+        )
+    except Exception:
+        return 0
+
+    killed = 0
+    for line in out.splitlines()[1:]:
+        parts = line.strip().split(None, 2)
+        if len(parts) != 3:
+            continue
+        pid_s, pgid_s, args = parts
+        if "celery" not in args or "app.celery_app.celery_app" not in args or " worker" not in args:
+            continue
+        try:
+            pid = int(pid_s)
+            pgid = int(pgid_s)
+        except ValueError:
+            continue
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+            print(f"R4_CLEANUP_KILLED pid={pid} pgid={pgid}")
+            killed += 1
+        except Exception:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                print(f"R4_CLEANUP_KILLED pid={pid} pgid={pgid} mode=pid")
+                killed += 1
+            except Exception:
+                pass
+    return killed
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -966,6 +1010,7 @@ async def main() -> int:
         print("R4_DB_CONN_SNAPSHOT_AFTER_S1", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         poison_worker.ensure_dead()
+        _kill_stray_celery_workers()
         print("R4_DB_CONN_SNAPSHOT_AFTER_POISON_WORKER_STOP", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         crash_worker = WorkerSupervisor(concurrency=crash_concurrency, pool=pool, log_prefix="celery_harness_worker_crash")
@@ -989,6 +1034,7 @@ async def main() -> int:
         print("R4_DB_CONN_SNAPSHOT_AFTER_S2", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         crash_worker.ensure_dead()
+        _kill_stray_celery_workers()
         print("R4_DB_CONN_SNAPSHOT_AFTER_CRASH_WORKER_STOP", json.dumps(await _db_conn_snapshot(conn), sort_keys=True))
 
         main_worker = WorkerSupervisor(concurrency=concurrency, pool=pool, log_prefix="celery_harness_worker_main")
@@ -1038,10 +1084,13 @@ async def main() -> int:
         all_passed = all(v.get("passed") is True for v in [s1, s2, s3, s4, s5])
     finally:
         poison_worker.ensure_dead()
+        _kill_stray_celery_workers()
         if crash_worker is not None:
             crash_worker.ensure_dead()
+            _kill_stray_celery_workers()
         if main_worker is not None:
             main_worker.ensure_dead()
+            _kill_stray_celery_workers()
         await conn.close()
 
     window_end = _now_utc()
