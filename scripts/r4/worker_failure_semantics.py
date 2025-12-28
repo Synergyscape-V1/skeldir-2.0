@@ -543,6 +543,37 @@ async def _wait_for_redelivery_attempt(
     return None
 
 
+async def _kombu_payload_debug(conn: asyncpg.Connection, *, task_id: str, task_name_substr: str) -> dict[str, Any]:
+    row = await conn.fetchrow(
+        """
+        SELECT payload
+        FROM kombu_message
+        WHERE payload LIKE $1 OR payload LIKE $2
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        f"%{task_id}%",
+        f"%{task_name_substr}%",
+    )
+    if not row or not row.get("payload"):
+        return {"found": False}
+    payload_text = str(row["payload"])
+    try:
+        payload = json.loads(payload_text)
+    except Exception as exc:  # noqa: BLE001
+        return {"found": True, "parse_error": f"{exc.__class__.__name__}: {exc}", "payload_prefix": payload_text[:200]}
+
+    headers = payload.get("headers") if isinstance(payload, dict) else None
+    return {
+        "found": True,
+        "top_keys": sorted(list(payload.keys())) if isinstance(payload, dict) else [],
+        "headers_id": headers.get("id") if isinstance(headers, dict) else None,
+        "headers_task_id": headers.get("task_id") if isinstance(headers, dict) else None,
+        "top_id": payload.get("id") if isinstance(payload, dict) else None,
+        "headers_task": headers.get("task") if isinstance(headers, dict) else None,
+    }
+
+
 async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n: int) -> dict[str, Any]:
     correlation_id_prefix = f"r4:{ctx.candidate_sha}:S1"
     print(
@@ -629,6 +660,7 @@ async def scenario_crash_after_write(
     kill_events: list[dict[str, Any]] = []
     redelivery_observed = 0
     barrier_observed = 0
+    kombu_debug: dict[str, Any] | None = None
 
     for i in range(n):
         task_id = str(_uuid_deterministic("r4", ctx.candidate_sha, "S2", "crash", str(i)))
@@ -643,6 +675,9 @@ async def scenario_crash_after_write(
             },
             task_id=task_id,
         )
+        if i == 0:
+            kombu_debug = await _kombu_payload_debug(conn, task_id=task_id, task_name_substr=task_name)
+            print("R4_S2_KOMBU_PAYLOAD_DEBUG", json.dumps(kombu_debug, sort_keys=True))
 
         barrier = await _barrier_row(
             conn,
@@ -724,6 +759,7 @@ async def scenario_crash_after_write(
             "worker_exit_codes": [e.get("exit_code") for e in kill_events],
             "worker_pid_restarts": restart_pids,
             "redelivery_observed_count": redelivery_observed,
+            "kombu_payload_debug": kombu_debug,
             "crash_physics": {
                 "barrier_observed_count": barrier_observed,
                 "kill_issued_count": len(kill_events),

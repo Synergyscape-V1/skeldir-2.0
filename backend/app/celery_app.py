@@ -235,7 +235,11 @@ def _recover_invisible_kombu_messages(*, engine, visibility_timeout_s: int, task
                 FROM public.r4_task_attempts a
                 WHERE a.scenario = 'S2_CrashAfterWritePreAck'
                   AND a.attempt_no >= 2
-                  AND a.task_id = (public.kombu_message.payload::jsonb -> 'headers' ->> 'id')
+                  AND a.task_id = COALESCE(
+                    (public.kombu_message.payload::jsonb -> 'headers' ->> 'id'),
+                    (public.kombu_message.payload::jsonb -> 'headers' ->> 'task_id'),
+                    (public.kombu_message.payload::jsonb ->> 'id')
+                  )
               )
             """
 
