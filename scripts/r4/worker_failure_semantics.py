@@ -11,6 +11,7 @@ import json
 import os
 import platform
 import asyncio
+import signal
 import subprocess
 import sys
 import time
@@ -66,8 +67,83 @@ def _verdict_block(name: str, payload: dict[str, Any]) -> None:
 @dataclass(frozen=True)
 class ScenarioCtx:
     candidate_sha: str
+    run_url: str
     tenant_a: UUID
     tenant_b: UUID
+
+
+@dataclass
+class WorkerSupervisor:
+    concurrency: int
+    pool: str
+    log_prefix: str
+    proc: subprocess.Popen | None = None
+    pid_history: list[int] | None = None
+
+    def __post_init__(self) -> None:
+        if self.pid_history is None:
+            self.pid_history = []
+
+    def start(self) -> int:
+        if self.proc is not None and self.proc.poll() is None:
+            return int(self.proc.pid)
+
+        log_path = f"{self.log_prefix}.pid{len(self.pid_history) + 1}.log"
+        log_f = open(log_path, "ab", buffering=0)
+        cmd = [
+            "celery",
+            "-A",
+            "app.celery_app.celery_app",
+            "worker",
+            "--loglevel=INFO",
+            "--pool",
+            self.pool,
+            "--concurrency",
+            str(self.concurrency),
+        ]
+        self.proc = subprocess.Popen(
+            cmd,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            env=os.environ.copy(),
+            start_new_session=True,
+        )
+        log_f.close()
+        self.pid_history.append(int(self.proc.pid))
+        print(f"R4_WORKER_STARTED pid={self.proc.pid} log={log_path}")
+        return int(self.proc.pid)
+
+    def kill(self, *, sig: int = 9, timeout_s: float = 30.0) -> dict[str, Any]:
+        if self.proc is None:
+            return {"killed": False, "reason": "no_process"}
+        pid = int(self.proc.pid)
+        print(f"R4_S2_KILL_ISSUED pid={pid} sig={sig}")
+        os.killpg(pid, sig)
+        try:
+            rc = self.proc.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            rc = None
+        print(f"R4_S2_WORKER_EXITED pid={pid} exit_code={rc}")
+        self.proc = None
+        return {"killed": True, "pid": pid, "sig": sig, "exit_code": rc}
+
+    def restart(self) -> int:
+        new_pid = self.start()
+        print(f"R4_S2_WORKER_RESTARTED new_pid={new_pid}")
+        return new_pid
+
+    def ensure_dead(self) -> None:
+        if self.proc is None:
+            return
+        try:
+            os.killpg(int(self.proc.pid), signal.SIGTERM)
+        except Exception:
+            pass
+        try:
+            self.proc.wait(timeout=10)
+        except Exception:
+            pass
+        self.proc = None
 
 
 async def _pg(database_url: str) -> asyncpg.Connection:
@@ -130,13 +206,25 @@ def _ping_worker_safe(timeout_s: float = 10.0) -> dict[str, Any]:
         return {"ok": False, "error": f"{exc.__class__.__name__}: {exc}"}
 
 
-async def _run_safely(verdict_name: str, scenario: str, fn, *, tenant_a: UUID, tenant_b: UUID, n: int | None = None) -> dict[str, Any]:
+async def _run_safely(
+    verdict_name: str,
+    scenario: str,
+    fn,
+    *,
+    candidate_sha: str,
+    run_url: str,
+    tenant_a: UUID,
+    tenant_b: UUID,
+    n: int | None = None,
+) -> dict[str, Any]:
     try:
         return await fn
     except Exception as exc:  # noqa: BLE001 - harness must remain evidence-producing
         verdict = {
             "scenario": scenario,
             "N": n,
+            "candidate_sha": candidate_sha,
+            "run_url": run_url,
             "tenant_a": str(tenant_a),
             "tenant_b": str(tenant_b),
             "db_truth": {},
@@ -233,6 +321,113 @@ async def _count_side_effects(
     return {"rows": rows, "duplicate_task_ids": dupes}
 
 
+async def _attempt_stats(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    scenario: str,
+    task_ids: list[str],
+    since: datetime,
+    until: datetime,
+) -> dict[str, Any]:
+    if not task_ids:
+        return {
+            "attempts_total": 0,
+            "attempts_min_per_task": 0,
+            "attempts_max_per_task": 0,
+            "attempts_distribution": {},
+            "task_count_observed": 0,
+        }
+    rows = await conn.fetch(
+        """
+        SELECT task_id, COUNT(*) AS attempts
+        FROM r4_task_attempts
+        WHERE tenant_id=$1
+          AND scenario=$2
+          AND task_id = ANY($3::text[])
+          AND created_at >= $4
+          AND created_at <= $5
+        GROUP BY task_id
+        """,
+        str(tenant_id),
+        scenario,
+        task_ids,
+        since,
+        until,
+    )
+    per_task = [int(r["attempts"]) for r in rows]
+    dist: dict[str, int] = {}
+    for a in per_task:
+        k = str(a)
+        dist[k] = dist.get(k, 0) + 1
+    return {
+        "attempts_total": int(sum(per_task)),
+        "attempts_min_per_task": int(min(per_task)) if per_task else 0,
+        "attempts_max_per_task": int(max(per_task)) if per_task else 0,
+        "attempts_distribution": dist,
+        "task_count_observed": int(len(per_task)),
+    }
+
+
+async def _barrier_row(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    task_id: str,
+    scenario: str,
+    timeout_s: float,
+) -> dict[str, Any] | None:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        row = await conn.fetchrow(
+            """
+            SELECT attempt_no, worker_pid, wrote_at
+            FROM r4_crash_barriers
+            WHERE tenant_id=$1 AND task_id=$2 AND scenario=$3 AND attempt_no=1
+            ORDER BY wrote_at DESC
+            LIMIT 1
+            """,
+            str(tenant_id),
+            task_id,
+            scenario,
+        )
+        if row:
+            return {
+                "attempt_no": int(row["attempt_no"]),
+                "worker_pid": int(row["worker_pid"]) if row["worker_pid"] is not None else None,
+                "wrote_at": row["wrote_at"].isoformat() if row["wrote_at"] else None,
+            }
+        await asyncio.sleep(0.2)
+    return None
+
+
+async def _wait_for_redelivery_attempt(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    task_id: str,
+    scenario: str,
+    min_attempt_no: int,
+    timeout_s: float,
+) -> int | None:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        val = await conn.fetchval(
+            """
+            SELECT COALESCE(MAX(attempt_no), 0) FROM r4_task_attempts
+            WHERE tenant_id=$1 AND task_id=$2 AND scenario=$3
+            """,
+            str(tenant_id),
+            task_id,
+            scenario,
+        )
+        max_attempt = int(val or 0)
+        if max_attempt >= min_attempt_no:
+            return max_attempt
+        await asyncio.sleep(0.2)
+    return None
+
+
 async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n: int) -> dict[str, Any]:
     correlation_id_prefix = f"r4:{ctx.candidate_sha}:S1"
     print(
@@ -265,6 +460,14 @@ async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n:
     s_end = _now_utc()
     dlq = await _count_worker_failed_jobs(conn, task_name=task_name, task_ids=task_ids, since=s_start, until=s_end)
     effects = await _count_side_effects(conn, tenant_id=ctx.tenant_a, task_ids=task_ids, since=s_start, until=s_end)
+    attempts = await _attempt_stats(
+        conn,
+        tenant_id=ctx.tenant_a,
+        scenario="S1_PoisonPill",
+        task_ids=task_ids,
+        since=s_start,
+        until=s_end,
+    )
 
     passed = (
         failures == n
@@ -272,14 +475,18 @@ async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n:
         and dlq["rows"] == n
         and dlq["max_retry_count"] <= 3
         and effects["rows"] == 0
+        and attempts["task_count_observed"] == n
+        and attempts["attempts_min_per_task"] >= 2
     )
 
     verdict = {
         "scenario": "S1_PoisonPill",
         "N": n,
+        "candidate_sha": ctx.candidate_sha,
+        "run_url": ctx.run_url,
         "tenant_a": str(ctx.tenant_a),
         "tenant_b": str(ctx.tenant_b),
-        "db_truth": {"worker_failed_jobs": dlq, "worker_side_effects": effects},
+        "db_truth": {"worker_failed_jobs": dlq, "worker_side_effects": effects, "attempts": attempts},
         "worker_observed": {"failed_results": failures, "successful_results": successes},
         "passed": passed,
     }
@@ -288,46 +495,132 @@ async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n:
     return verdict
 
 
-async def scenario_crash_after_write(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n: int) -> dict[str, Any]:
+async def scenario_crash_after_write(
+    ctx: ScenarioCtx, conn: asyncpg.Connection, *, n: int, worker: WorkerSupervisor
+) -> dict[str, Any]:
     correlation_id_prefix = f"r4:{ctx.candidate_sha}:S2"
     print(
         f"R4_S2_START CrashAfterWritePreAck N={n} tenant_a={ctx.tenant_a} tenant_b={ctx.tenant_b} correlation_id_prefix={correlation_id_prefix}"
     )
     s_start = _now_utc()
 
+    worker_pid = worker.start()
+    print(f"R4_S2_WORKER_PID_BEFORE {worker_pid}")
+    print("R4_S2_WORKER_PING_BEFORE", json.dumps(_ping_worker_safe(timeout_s=30.0), sort_keys=True))
+
     task_name = "app.tasks.r4_failure_semantics.crash_after_write_pre_ack"
     task_ids: list[str] = []
-    results = []
+    restart_pids: list[int] = []
+    kill_events: list[dict[str, Any]] = []
+    redelivery_observed = 0
+    barrier_observed = 0
+
     for i in range(n):
         task_id = str(_uuid_deterministic("r4", ctx.candidate_sha, "S2", "crash", str(i)))
         task_ids.append(task_id)
-        results.append(
-            celery_app.send_task(
-                task_name,
-                kwargs={
-                    "tenant_id": str(ctx.tenant_a),
-                    "correlation_id": task_id,
-                    "effect_key": f"R4_S2_{i}",
-                },
-                task_id=task_id,
-            )
+
+        celery_app.send_task(
+            task_name,
+            kwargs={
+                "tenant_id": str(ctx.tenant_a),
+                "correlation_id": task_id,
+                "effect_key": f"R4_S2_{i}",
+            },
+            task_id=task_id,
         )
 
-    _wait_for_results(results, timeout_s=120.0)
-    failures = sum(1 for r in results if r.failed())
-    successes = sum(1 for r in results if r.successful())
+        barrier = await _barrier_row(
+            conn,
+            tenant_id=ctx.tenant_a,
+            task_id=task_id,
+            scenario="S2_CrashAfterWritePreAck",
+            timeout_s=30.0,
+        )
+        if not barrier:
+            print(f"R4_S2_BARRIER_TIMEOUT task_id={task_id}")
+            break
+
+        barrier_observed += 1
+        print(
+            "R4_S2_BARRIER_OBSERVED",
+            f"task_id={task_id}",
+            f"attempt_no={barrier['attempt_no']}",
+            f"task_worker_pid={barrier['worker_pid']}",
+            f"worker_main_pid={worker_pid}",
+            f"wrote_at={barrier['wrote_at']}",
+        )
+
+        kill = worker.kill(sig=9, timeout_s=30.0)
+        kill_events.append(kill)
+
+        worker_pid = worker.restart()
+        restart_pids.append(worker_pid)
+        print("R4_S2_WORKER_PING_AFTER_RESTART", json.dumps(_ping_worker_safe(timeout_s=60.0), sort_keys=True))
+
+        attempt = await _wait_for_redelivery_attempt(
+            conn,
+            tenant_id=ctx.tenant_a,
+            task_id=task_id,
+            scenario="S2_CrashAfterWritePreAck",
+            min_attempt_no=2,
+            timeout_s=30.0,
+        )
+        if attempt is not None and attempt >= 2:
+            redelivery_observed += 1
+            print(f"R4_S2_REDELIVERED task_id={task_id} attempt={attempt}")
+
+        try:
+            out = celery_app.AsyncResult(task_id).get(timeout=60)
+            print("R4_S2_TASK_COMPLETED", f"task_id={task_id}", json.dumps(out, sort_keys=True))
+        except Exception as exc:  # noqa: BLE001
+            print("R4_S2_TASK_COMPLETION_ERROR", f"task_id={task_id}", f"error={exc.__class__.__name__}:{exc}")
 
     s_end = _now_utc()
     effects = await _count_side_effects(conn, tenant_id=ctx.tenant_a, task_ids=task_ids, since=s_start, until=s_end)
-    passed = successes == n and failures == 0 and effects["rows"] == n and effects["duplicate_task_ids"] == 0
+    attempts = await _attempt_stats(
+        conn,
+        tenant_id=ctx.tenant_a,
+        scenario="S2_CrashAfterWritePreAck",
+        task_ids=task_ids,
+        since=s_start,
+        until=s_end,
+    )
+
+    crash_markers_ok = (
+        barrier_observed == n
+        and len(kill_events) == n
+        and len(restart_pids) == n
+        and redelivery_observed == n
+        and all(e.get("exit_code") is not None for e in kill_events)
+        and attempts["task_count_observed"] == n
+        and attempts["attempts_min_per_task"] >= 2
+    )
+    passed = crash_markers_ok and effects["rows"] == n and effects["duplicate_task_ids"] == 0
 
     verdict = {
         "scenario": "S2_CrashAfterWritePreAck",
         "N": n,
+        "candidate_sha": ctx.candidate_sha,
+        "run_url": ctx.run_url,
         "tenant_a": str(ctx.tenant_a),
         "tenant_b": str(ctx.tenant_b),
-        "db_truth": {"worker_side_effects": effects},
-        "worker_observed": {"failed_results": failures, "successful_results": successes},
+        "db_truth": {"worker_side_effects": effects, "attempts": attempts},
+        "worker_observed": {
+            "worker_pid_before": worker.pid_history[0] if worker.pid_history else None,
+            "worker_pid_after": worker.pid_history[-1] if worker.pid_history else None,
+            "kill_sig": 9,
+            "kill_issued": True,
+            "worker_exit_codes": [e.get("exit_code") for e in kill_events],
+            "worker_pid_restarts": restart_pids,
+            "redelivery_observed_count": redelivery_observed,
+            "crash_physics": {
+                "barrier_observed_count": barrier_observed,
+                "kill_issued_count": len(kill_events),
+                "worker_exited_count": sum(1 for e in kill_events if e.get("exit_code") is not None),
+                "worker_restarted_count": len(restart_pids),
+                "redelivery_observed_count": redelivery_observed,
+            },
+        },
         "passed": passed,
     }
     _verdict_block(f"S2_CrashAfterWritePreAck_N{n}", verdict)
@@ -390,6 +683,8 @@ async def scenario_rls_probe(ctx: ScenarioCtx, conn: asyncpg.Connection) -> dict
     verdict = {
         "scenario": "S3_RLSProbe",
         "N": 1,
+        "candidate_sha": ctx.candidate_sha,
+        "run_url": ctx.run_url,
         "tenant_a": str(ctx.tenant_a),
         "tenant_b": str(ctx.tenant_b),
         "db_truth": {"missing_tenant_dlq_rows": dlq["rows"]},
@@ -451,6 +746,8 @@ async def scenario_runaway(ctx: ScenarioCtx, conn: asyncpg.Connection, *, sentin
     verdict = {
         "scenario": "S4_RunawayNoStarve",
         "N": sentinel_n,
+        "candidate_sha": ctx.candidate_sha,
+        "run_url": ctx.run_url,
         "tenant_a": str(ctx.tenant_a),
         "tenant_b": str(ctx.tenant_b),
         "db_truth": {"worker_side_effects": effects},
@@ -501,6 +798,8 @@ async def scenario_least_privilege(ctx: ScenarioCtx, conn: asyncpg.Connection) -
     verdict = {
         "scenario": "S5_LeastPrivilege",
         "N": 1,
+        "candidate_sha": ctx.candidate_sha,
+        "run_url": ctx.run_url,
         "tenant_a": str(ctx.tenant_a),
         "tenant_b": str(ctx.tenant_b),
         "db_truth": {"worker_failed_jobs_rows": dlq["rows"]},
@@ -519,10 +818,17 @@ async def main() -> int:
 
     tenant_a = _uuid_deterministic("r4", candidate_sha, "tenant_a")
     tenant_b = _uuid_deterministic("r4", candidate_sha, "tenant_b")
-    ctx = ScenarioCtx(candidate_sha=candidate_sha, tenant_a=tenant_a, tenant_b=tenant_b)
+    ctx = ScenarioCtx(candidate_sha=candidate_sha, run_url=run_url, tenant_a=tenant_a, tenant_b=tenant_b)
 
     window_start = _now_utc()
     print(f"R4_WINDOW_START {_utc_iso(window_start)} {candidate_sha}")
+
+    concurrency = int(_env("R4_WORKER_CONCURRENCY", "4") or 4)
+    pool = _env("R4_WORKER_POOL", "prefork")
+    worker = WorkerSupervisor(concurrency=concurrency, pool=pool, log_prefix="celery_harness_worker")
+    worker_pid_initial = worker.start()
+    ping = _ping_worker_safe(timeout_s=60.0)
+    print("R4_WORKER_PING_INITIAL", json.dumps(ping, sort_keys=True))
 
     config_dump = {
         "candidate_sha": candidate_sha,
@@ -543,19 +849,19 @@ async def main() -> int:
     print("=== R4_ENV ===")
     print(json.dumps(config_dump, indent=2, sort_keys=True))
 
-    # Verify worker is alive and DB role is least-privileged (app_user)
-    ping = _ping_worker_safe()
     print(
         "R4_CONFIG",
         json.dumps(
             {
-                "concurrency": int(_env("R4_WORKER_CONCURRENCY", "0") or 0),
+                "concurrency": concurrency,
                 "prefetch": config_dump["celery"]["prefetch_multiplier"],
                 "acks_late": config_dump["celery"]["acks_late"],
                 "reject_on_worker_lost": config_dump["celery"]["reject_on_worker_lost"],
                 "acks_on_failure_or_timeout": config_dump["celery"]["acks_on_failure_or_timeout"],
                 "time_limits": {"runaway_soft_s": 2, "runaway_hard_s": 4},
                 "retry_policy": {"poison_max_retries": 3, "poison_backoff_cap_s": 4, "poison_jitter_s": "0..1"},
+                "worker_pool": pool,
+                "worker_pid_initial": worker_pid_initial,
                 "worker_ping": ping,
             },
             sort_keys=True,
@@ -575,6 +881,8 @@ async def main() -> int:
             f"S1_PoisonPill_N{poison_n}",
             "S1_PoisonPill",
             scenario_poison_pill(ctx, conn, n=poison_n),
+            candidate_sha=candidate_sha,
+            run_url=run_url,
             tenant_a=tenant_a,
             tenant_b=tenant_b,
             n=poison_n,
@@ -584,7 +892,9 @@ async def main() -> int:
         s2 = await _run_safely(
             f"S2_CrashAfterWritePreAck_N{crash_n}",
             "S2_CrashAfterWritePreAck",
-            scenario_crash_after_write(ctx, conn, n=crash_n),
+            scenario_crash_after_write(ctx, conn, n=crash_n, worker=worker),
+            candidate_sha=candidate_sha,
+            run_url=run_url,
             tenant_a=tenant_a,
             tenant_b=tenant_b,
             n=crash_n,
@@ -595,6 +905,8 @@ async def main() -> int:
             "S3_RLSProbe_N1",
             "S3_RLSProbe",
             scenario_rls_probe(ctx, conn),
+            candidate_sha=candidate_sha,
+            run_url=run_url,
             tenant_a=tenant_a,
             tenant_b=tenant_b,
             n=1,
@@ -605,6 +917,8 @@ async def main() -> int:
             f"S4_RunawayNoStarve_N{sentinel_n}",
             "S4_RunawayNoStarve",
             scenario_runaway(ctx, conn, sentinel_n=sentinel_n),
+            candidate_sha=candidate_sha,
+            run_url=run_url,
             tenant_a=tenant_a,
             tenant_b=tenant_b,
             n=sentinel_n,
@@ -615,6 +929,8 @@ async def main() -> int:
             "S5_LeastPrivilege_N1",
             "S5_LeastPrivilege",
             scenario_least_privilege(ctx, conn),
+            candidate_sha=candidate_sha,
+            run_url=run_url,
             tenant_a=tenant_a,
             tenant_b=tenant_b,
             n=1,
@@ -622,6 +938,7 @@ async def main() -> int:
 
         all_passed = all(v.get("passed") is True for v in [s1, s2, s3, s4, s5])
     finally:
+        worker.ensure_dead()
         await conn.close()
 
     window_end = _now_utc()

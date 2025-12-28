@@ -89,15 +89,40 @@ def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, ou
     s4 = _pick("S4_RunawayNoStarve_N10")
     s5 = _pick("S5_LeastPrivilege_N1")
 
-    gate_0 = bool(env.get("candidate_sha") and env.get("tenants") and verdicts)
-    gate_1 = bool(s1 and s1.get("passed") is True)
-    gate_2 = bool(s2 and s2.get("passed") is True)
-    gate_3 = bool(s3 and s3.get("passed") is True)
-    gate_4 = bool(s4 and s4.get("passed") is True)
-    gate_5 = bool(s5 and s5.get("passed") is True)
-    gate_6 = all(x is not None for x in [s1, s2, s3, s4, s5])
+    def _int(v: Any) -> int:
+        try:
+            return int(v)
+        except Exception:
+            return 0
 
-    complete = all([gate_0, gate_1, gate_2, gate_3, gate_4, gate_5, gate_6])
+    evidence_pack = all(x is not None for x in [s1, s2, s3, s4, s5])
+    gate_fix_0 = bool(env.get("candidate_sha") and env.get("tenants") and verdicts and evidence_pack)
+
+    s1_attempts = (s1 or {}).get("db_truth", {}).get("attempts", {})
+    gate_fix_1 = bool(s1 and s1.get("passed") is True and _int(s1_attempts.get("attempts_min_per_task")) >= 2)
+
+    s2_phys = (s2 or {}).get("worker_observed", {}).get("crash_physics", {})
+    s2_n = _int((s2 or {}).get("N"))
+    gate_fix_2 = bool(
+        s2
+        and s2.get("passed") is True
+        and _int(s2_phys.get("barrier_observed_count")) == s2_n
+        and _int(s2_phys.get("kill_issued_count")) == s2_n
+        and _int(s2_phys.get("worker_exited_count")) == s2_n
+        and _int(s2_phys.get("worker_restarted_count")) == s2_n
+        and _int(s2_phys.get("redelivery_observed_count")) == s2_n
+    )
+    gate_fix_3 = bool(s2 and _int(s2_phys.get("redelivery_observed_count")) == s2_n and s2_n > 0)
+    gate_fix_4 = bool(
+        s3
+        and s3.get("passed") is True
+        and s4
+        and s4.get("passed") is True
+        and s5
+        and s5.get("passed") is True
+    )
+
+    complete = all([gate_fix_0, gate_fix_1, gate_fix_2, gate_fix_3, gate_fix_4])
     status = "COMPLETE" if complete else "IN PROGRESS"
 
     def _gate(v: bool) -> str:
@@ -130,19 +155,25 @@ def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, ou
             "",
             "| Gate | Description | Status |",
             "|------|-------------|--------|",
-            f"| EG-R4-0 | Instrument & SHA binding | {_gate(gate_0)} |",
-            f"| EG-R4-1 | Retry/DLQ physics (PoisonPill N=10) | {_gate(gate_1)} |",
-            f"| EG-R4-2 | Idempotency under crash (CrashAfterWritePreAck N=10) | {_gate(gate_2)} |",
-            f"| EG-R4-3 | Worker RLS enforcement (Cross-tenant probe) | {_gate(gate_3)} |",
-            f"| EG-R4-4 | Timeouts & starvation resistance (Runaway + sentinels) | {_gate(gate_4)} |",
-            f"| EG-R4-5 | Least privilege reality (probes fail) | {_gate(gate_5)} |",
-            f"| EG-R4-6 | Evidence pack present (verdict blocks S1..S5) | {_gate(gate_6)} |",
+            f"| EG-R4-FIX-0 | Instrument integrity (SHA + config + verdicts) | {_gate(gate_fix_0)} |",
+            f"| EG-R4-FIX-1 | Poison retries proven (attempts_min_per_task >= 2) | {_gate(gate_fix_1)} |",
+            f"| EG-R4-FIX-2 | Crash physics proven (barrier→kill→exit→restart→redelivery) | {_gate(gate_fix_2)} |",
+            f"| EG-R4-FIX-3 | Redelivery accounting (redelivery_observed_count == N) | {_gate(gate_fix_3)} |",
+            f"| EG-R4-FIX-4 | RLS + runaway + least-privilege still pass | {_gate(gate_fix_4)} |",
             "",
             "## Evidence (Browser-Verifiable Logs)",
             "",
             "This run prints, to CI logs, one `R4_VERDICT_BEGIN/END` JSON block per scenario.",
             "",
             "Log step containing verdict blocks: `Run R4 harness` in `.github/workflows/r4-worker-failure-semantics.yml`.",
+            "",
+            "Crash proof markers printed in logs (per task_id):",
+            "",
+            "- `R4_S2_BARRIER_OBSERVED`",
+            "- `R4_S2_KILL_ISSUED`",
+            "- `R4_S2_WORKER_EXITED`",
+            "- `R4_S2_WORKER_RESTARTED`",
+            "- `R4_S2_REDELIVERED`",
             "",
             "## Key Verdicts",
             "",
@@ -206,4 +237,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

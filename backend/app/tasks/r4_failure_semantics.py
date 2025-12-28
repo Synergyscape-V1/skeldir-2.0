@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import os
 import random
-import signal
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -61,6 +60,49 @@ def _set_worker_context(cur: psycopg2.extensions.cursor, ctx: DbCtx) -> None:
         raise RuntimeError(f"tenant GUC mismatch: expected={ctx.tenant_id} got={guc}")
 
 
+def _record_attempt(
+    cur: psycopg2.extensions.cursor,
+    ctx: DbCtx,
+    *,
+    task_id: str,
+    scenario: str,
+    worker_pid: int,
+) -> int:
+    cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s)::bigint)", (task_id,))
+    cur.execute(
+        "SELECT COALESCE(MAX(attempt_no), 0) FROM r4_task_attempts WHERE tenant_id=%s AND task_id=%s",
+        (str(ctx.tenant_id), task_id),
+    )
+    attempt_no = int(cur.fetchone()[0] or 0) + 1
+    cur.execute(
+        """
+        INSERT INTO r4_task_attempts (tenant_id, task_id, scenario, attempt_no, worker_pid)
+        VALUES (%s,%s,%s,%s,%s)
+        """,
+        (str(ctx.tenant_id), task_id, scenario, attempt_no, worker_pid),
+    )
+    return attempt_no
+
+
+def _record_crash_barrier(
+    cur: psycopg2.extensions.cursor,
+    ctx: DbCtx,
+    *,
+    task_id: str,
+    scenario: str,
+    attempt_no: int,
+    worker_pid: int,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO r4_crash_barriers (tenant_id, task_id, scenario, attempt_no, worker_pid)
+        VALUES (%s,%s,%s,%s,%s)
+        ON CONFLICT (tenant_id, task_id, attempt_no) DO NOTHING
+        """,
+        (str(ctx.tenant_id), task_id, scenario, attempt_no, worker_pid),
+    )
+
+
 @celery_app.task(
     bind=True,
     name="app.tasks.r4_failure_semantics.poison_pill",
@@ -73,13 +115,29 @@ def poison_pill(self, *, tenant_id: str, correlation_id: str, marker: str) -> No
     """
     tenant_uuid = _require_uuid(tenant_id, name="tenant_id")
     correlation_uuid = _require_uuid(correlation_id, name="correlation_id")
+    ctx = DbCtx(tenant_id=tenant_uuid, correlation_id=correlation_uuid)
+    task_id = str(self.request.id)
+    worker_pid = os.getpid()
+
+    with _db_connect() as conn:
+        with conn.cursor() as cur:
+            _set_worker_context(cur, ctx)
+            attempt_no = _record_attempt(
+                cur,
+                ctx,
+                task_id=task_id,
+                scenario="S1_PoisonPill",
+                worker_pid=worker_pid,
+            )
+        conn.commit()
 
     logger.info(
         "r4_poison_pill_attempt",
         extra={
             "tenant_id": str(tenant_uuid),
             "correlation_id": str(correlation_uuid),
-            "task_id": self.request.id,
+            "task_id": task_id,
+            "attempt_no": attempt_no,
             "retries": int(getattr(self.request, "retries", 0) or 0),
             "marker": marker,
             "ts": _now_utc_iso(),
@@ -106,42 +164,78 @@ def crash_after_write_pre_ack(self, *, tenant_id: str, correlation_id: str, effe
     """
     Simulates crash-after-write/pre-ack and proves idempotent side effects.
 
-    First execution inserts a row and SIGKILLs the worker child process.
-    Redelivery sees the existing row (conflict) and returns success without crashing again.
+    First execution inserts the side effect, commits, writes a crash barrier row, then blocks (pre-ack).
+    The harness must SIGKILL the worker and restart it. Redelivery re-executes the same task_id; DB upsert
+    prevents double-apply.
     """
     tenant_uuid = _require_uuid(tenant_id, name="tenant_id")
     correlation_uuid = _require_uuid(correlation_id, name="correlation_id")
     ctx = DbCtx(tenant_id=tenant_uuid, correlation_id=correlation_uuid)
 
     inserted = 0
+    attempt_no = 0
+    task_id = str(self.request.id)
+    worker_pid = os.getpid()
     with _db_connect() as conn:
         with conn.cursor() as cur:
             _set_worker_context(cur, ctx)
+            attempt_no = _record_attempt(
+                cur,
+                ctx,
+                task_id=task_id,
+                scenario="S2_CrashAfterWritePreAck",
+                worker_pid=worker_pid,
+            )
             cur.execute(
                 """
                 INSERT INTO worker_side_effects (tenant_id, task_id, correlation_id, effect_key)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (tenant_id, task_id) DO NOTHING
                 """,
-                (str(tenant_uuid), str(self.request.id), str(correlation_uuid), effect_key),
+                (str(tenant_uuid), task_id, str(correlation_uuid), effect_key),
             )
             inserted = cur.rowcount
+            if attempt_no == 1:
+                _record_crash_barrier(
+                    cur,
+                    ctx,
+                    task_id=task_id,
+                    scenario="S2_CrashAfterWritePreAck",
+                    attempt_no=attempt_no,
+                    worker_pid=worker_pid,
+                )
         conn.commit()
 
-    if inserted == 1:
+    logger.info(
+        "r4_crash_after_write_progress",
+        extra={
+            "tenant_id": str(tenant_uuid),
+            "correlation_id": str(correlation_uuid),
+            "task_id": task_id,
+            "attempt_no": attempt_no,
+            "inserted": inserted,
+            "worker_pid": worker_pid,
+            "effect_key": effect_key,
+            "ts": _now_utc_iso(),
+        },
+    )
+
+    if attempt_no == 1:
         logger.error(
-            "r4_crash_after_write_triggered",
+            "r4_crash_after_write_barrier_committed_pre_ack",
             extra={
                 "tenant_id": str(tenant_uuid),
                 "correlation_id": str(correlation_uuid),
-                "task_id": self.request.id,
+                "task_id": task_id,
+                "attempt_no": attempt_no,
                 "effect_key": effect_key,
+                "worker_pid": worker_pid,
                 "ts": _now_utc_iso(),
             },
         )
-        os.kill(os.getpid(), signal.SIGKILL)
+        time.sleep(3600)
 
-    return {"inserted": inserted, "task_id": str(self.request.id), "effect_key": effect_key}
+    return {"inserted": inserted, "task_id": task_id, "effect_key": effect_key, "attempt_no": attempt_no}
 
 
 @celery_app.task(bind=True, name="app.tasks.r4_failure_semantics.rls_cross_tenant_probe")

@@ -128,38 +128,6 @@ jobs:
           tail -n 200 uvicorn.log || true
           exit 1
 
-      - name: Start Celery worker
-        shell: bash
-        run: |
-          set -euo pipefail
-          nohup celery -A app.celery_app.celery_app worker \
-            --loglevel=INFO \
-            --concurrency "${R4_WORKER_CONCURRENCY}" \
-            --pool=prefork \
-            > celery.log 2>&1 &
-
-      - name: Wait for worker ping
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import time
-          from app.celery_app import celery_app
-          deadline = time.time() + 60
-          last = None
-          while time.time() < deadline:
-              try:
-                  res = celery_app.send_task("app.tasks.housekeeping.ping", kwargs={"fail": False})
-                  out = res.get(timeout=10)
-                  print("PING_OK", out)
-                  raise SystemExit(0)
-              except Exception as e:
-                  last = e
-                  time.sleep(1)
-          print("PING_FAIL", repr(last))
-          raise SystemExit(1)
-          PY
-
       - name: Run R4 harness
         id: r4_harness
         continue-on-error: true
@@ -190,7 +158,7 @@ jobs:
           name: r4-runtime-logs-${{ github.sha }}
           path: |
             r4_harness.log
-            celery.log
+            celery_harness_worker*.log
             uvicorn.log
 
       - name: "EG-R4-0: Hard gate (harness must succeed)"
