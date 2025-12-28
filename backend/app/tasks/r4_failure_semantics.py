@@ -209,6 +209,15 @@ def crash_after_write_pre_ack(self, *, tenant_id: str, correlation_id: str, effe
                     attempt_no=attempt_no,
                     worker_pid=worker_pid,
                 )
+            if attempt_no >= 2:
+                cur.execute(
+                    """
+                    INSERT INTO r4_recovery_exclusions (scenario, task_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (scenario, task_id) DO NOTHING
+                    """,
+                    ("S2_CrashAfterWritePreAck", task_id),
+                )
         conn.commit()
 
     logger.info(
