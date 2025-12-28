@@ -43,8 +43,8 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://r4_admin:r4_admin@127.0.0.1:5432/r4
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/r4
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/r4
-      DATABASE_POOL_SIZE: "20"
-      DATABASE_MAX_OVERFLOW: "60"
+      DATABASE_POOL_SIZE: "5"
+      DATABASE_MAX_OVERFLOW: "5"
       CELERY_TASK_ACKS_LATE: "true"
       CELERY_TASK_REJECT_ON_WORKER_LOST: "true"
       CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT: "true"

@@ -204,8 +204,7 @@ def _configure_worker_logging(**kwargs):
     )
 
 
-def _recover_invisible_kombu_messages(*, dsn: str, visibility_timeout_s: int) -> int:
-    engine = create_engine(dsn, pool_pre_ping=True, pool_recycle=300)
+def _recover_invisible_kombu_messages(*, engine, visibility_timeout_s: int) -> int:
     with engine.begin() as conn:
         res = conn.execute(
             text(
@@ -242,6 +241,14 @@ def _start_kombu_visibility_recovery_thread() -> None:
     visibility_timeout_s = int(settings.CELERY_BROKER_VISIBILITY_TIMEOUT_S)
     sweep_interval_s = float(settings.CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S)
 
+    recovery_engine = create_engine(
+        dsn,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_size=1,
+        max_overflow=0,
+    )
+
     logger.info(
         "celery_kombu_visibility_recovery_started",
         extra={
@@ -254,7 +261,7 @@ def _start_kombu_visibility_recovery_thread() -> None:
         while True:
             try:
                 recovered = _recover_invisible_kombu_messages(
-                    dsn=dsn, visibility_timeout_s=visibility_timeout_s
+                    engine=recovery_engine, visibility_timeout_s=visibility_timeout_s
                 )
                 if recovered:
                     logger.warning(
