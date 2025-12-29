@@ -11,6 +11,7 @@ table and deterministic baseline allocation proof harness.
 import asyncio
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -274,6 +275,11 @@ async def _compute_allocations_deterministic_baseline(
         # Step 2: Deterministic baseline allocation logic
         # Fixed channels for deterministic output (alphabetical ordering enforced)
         allocation_ratio = 1.0 / len(BASELINE_CHANNELS)  # Equal split
+        # attribution_allocations has NOT NULL statistical metadata fields; provide deterministic baseline values.
+        confidence_score = float(
+            Decimal(str(allocation_ratio)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        )
+        model_type = "deterministic_baseline"
 
         allocation_count = 0
 
@@ -291,14 +297,19 @@ async def _compute_allocations_deterministic_baseline(
                     text("""
                         INSERT INTO attribution_allocations (
                             id, tenant_id, event_id, channel_code, allocation_ratio,
-                            model_version, allocated_revenue_cents, created_at, updated_at
+                            model_version, model_type, confidence_score, verified,
+                            allocated_revenue_cents, created_at, updated_at
                         ) VALUES (
                             :allocation_id, :tenant_id, :event_id, :channel, :allocation_ratio,
-                            :model_version, :allocated_revenue_cents, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            :model_version, :model_type, :confidence_score, FALSE,
+                            :allocated_revenue_cents, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                         )
                         ON CONFLICT (tenant_id, event_id, model_version, channel_code)
                         DO UPDATE SET
                             allocation_ratio = EXCLUDED.allocation_ratio,
+                            model_type = EXCLUDED.model_type,
+                            confidence_score = EXCLUDED.confidence_score,
+                            verified = EXCLUDED.verified,
                             allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
                             updated_at = CURRENT_TIMESTAMP
                     """),
@@ -309,6 +320,8 @@ async def _compute_allocations_deterministic_baseline(
                         "channel": channel,
                         "allocation_ratio": allocation_ratio,
                         "model_version": model_version,
+                        "model_type": model_type,
+                        "confidence_score": confidence_score,
                         "allocated_revenue_cents": allocated_revenue,
                     }
                 )

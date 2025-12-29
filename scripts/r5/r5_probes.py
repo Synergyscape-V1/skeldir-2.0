@@ -257,6 +257,9 @@ async def _fetch_allocations(conn: asyncpg.Connection, *, tenant_id: UUID) -> li
             channel_code,
             allocation_ratio,
             model_version,
+            model_type,
+            confidence_score,
+            verified,
             allocated_revenue_cents,
             created_at,
             updated_at
@@ -277,6 +280,9 @@ async def _fetch_allocations(conn: asyncpg.Connection, *, tenant_id: UUID) -> li
                 "channel_code": str(r["channel_code"]),
                 "allocation_ratio": str(r["allocation_ratio"]),
                 "model_version": str(r["model_version"]),
+                "model_type": str(r["model_type"]),
+                "confidence_score": str(r["confidence_score"]),
+                "verified": bool(r["verified"]),
                 "allocated_revenue_cents": int(r["allocated_revenue_cents"]),
                 "created_at": r["created_at"].isoformat(),
                 "updated_at": r["updated_at"].isoformat(),
@@ -344,6 +350,9 @@ def _strip_nondeterministic_allocation_fields(rows: list[dict[str, Any]]) -> lis
                 "channel_code": r["channel_code"],
                 "allocation_ratio": r["allocation_ratio"],
                 "model_version": r["model_version"],
+                "model_type": r["model_type"],
+                "confidence_score": r["confidence_score"],
+                "verified": r["verified"],
                 "allocated_revenue_cents": r["allocated_revenue_cents"],
             }
         )
