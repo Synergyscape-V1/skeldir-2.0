@@ -353,6 +353,7 @@ async def _compute_allocations_deterministic_baseline(
                         created_at,
                         updated_at
                     FROM rows
+                    ORDER BY tenant_id ASC, event_id ASC, model_version ASC, channel_code ASC
                     ON CONFLICT (id)
                     DO UPDATE SET
                         allocation_ratio = EXCLUDED.allocation_ratio,
