@@ -254,7 +254,7 @@ async def _fetch_allocations(conn: asyncpg.Connection, *, tenant_id: UUID) -> li
             id,
             tenant_id,
             event_id,
-            channel,
+            channel_code,
             allocation_ratio,
             model_version,
             allocated_revenue_cents,
@@ -263,7 +263,7 @@ async def _fetch_allocations(conn: asyncpg.Connection, *, tenant_id: UUID) -> li
         FROM attribution_allocations
         WHERE tenant_id = $1
           AND model_version = '1.0.0'
-        ORDER BY event_id ASC, channel ASC, id ASC
+        ORDER BY event_id ASC, channel_code ASC, id ASC
         """,
         str(tenant_id),
     )
@@ -274,7 +274,7 @@ async def _fetch_allocations(conn: asyncpg.Connection, *, tenant_id: UUID) -> li
                 "id": str(r["id"]),
                 "tenant_id": str(r["tenant_id"]),
                 "event_id": str(r["event_id"]),
-                "channel": str(r["channel"]),
+                "channel_code": str(r["channel_code"]),
                 "allocation_ratio": str(r["allocation_ratio"]),
                 "model_version": str(r["model_version"]),
                 "allocated_revenue_cents": int(r["allocated_revenue_cents"]),
@@ -341,7 +341,7 @@ def _strip_nondeterministic_allocation_fields(rows: list[dict[str, Any]]) -> lis
         out.append(
             {
                 "event_id": r["event_id"],
-                "channel": r["channel"],
+                "channel_code": r["channel_code"],
                 "allocation_ratio": r["allocation_ratio"],
                 "model_version": r["model_version"],
                 "allocated_revenue_cents": r["allocated_revenue_cents"],

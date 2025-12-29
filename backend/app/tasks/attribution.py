@@ -25,8 +25,9 @@ from app.tasks.context import tenant_task, run_in_worker_loop
 
 logger = logging.getLogger(__name__)
 
-# B0.5.3.6: Canonical deterministic channel ordering for baseline allocations
-BASELINE_CHANNELS = ["direct", "email", "google_search"]
+# B0.5.3.6: Canonical deterministic channel ordering for baseline allocations.
+# NOTE: `attribution_allocations` uses `channel_code` with FK to `channel_taxonomy.code`.
+BASELINE_CHANNELS = ["direct", "email", "google_search_paid"]
 
 
 def _run_async(coro_factory, *args, **kwargs):
@@ -289,13 +290,13 @@ async def _compute_allocations_deterministic_baseline(
                 await conn.execute(
                     text("""
                         INSERT INTO attribution_allocations (
-                            id, tenant_id, event_id, channel, allocation_ratio,
+                            id, tenant_id, event_id, channel_code, allocation_ratio,
                             model_version, allocated_revenue_cents, created_at, updated_at
                         ) VALUES (
                             :allocation_id, :tenant_id, :event_id, :channel, :allocation_ratio,
                             :model_version, :allocated_revenue_cents, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                         )
-                        ON CONFLICT (tenant_id, event_id, model_version, channel)
+                        ON CONFLICT (tenant_id, event_id, model_version, channel_code)
                         DO UPDATE SET
                             allocation_ratio = EXCLUDED.allocation_ratio,
                             allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
