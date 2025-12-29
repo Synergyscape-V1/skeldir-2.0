@@ -376,7 +376,7 @@ async def _cleanup_allocations(
         window_start=window_start,
         window_end=window_end,
     )
-    await conn.execute("TRUNCATE TABLE attribution_allocations")
+    await conn.execute("TRUNCATE TABLE revenue_ledger, attribution_allocations")
     remaining = await _count_allocations(
         conn,
         tenant_id=tenant_id,
@@ -388,7 +388,7 @@ async def _cleanup_allocations(
         " ".join(
             [
                 f"R5_CLEANUP_PHASE={phase}",
-                "R5_CLEANUP_MODE=truncate_all",
+                "R5_CLEANUP_MODE=truncate_allocations_and_ledger",
                 f"R5_ALLOCATIONS_BEFORE={before}",
                 f"R5_ALLOCATIONS_REMAINING={remaining}",
             ]
