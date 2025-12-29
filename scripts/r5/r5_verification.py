@@ -118,6 +118,14 @@ class RunCtx:
     admin_db_url: str
 
 
+@dataclass(frozen=True)
+class InputBinding:
+    tenant_id: UUID
+    dataset_id: str
+    window_start: datetime
+    window_end: datetime
+
+
 async def _pg(admin_db_url: str) -> asyncpg.Connection:
     return await asyncpg.connect(admin_db_url)
 
@@ -158,6 +166,29 @@ async def _ensure_tenant(conn: asyncpg.Connection, tenant_id: UUID, *, label: st
         f"R5 Tenant {label}",
         api_key_hash,
         notification_email,
+    )
+
+
+async def _count_events(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+) -> int:
+    return int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM attribution_events
+            WHERE tenant_id = $1
+              AND occurred_at >= $2
+              AND occurred_at < $3
+            """,
+            str(tenant_id),
+            window_start,
+            window_end,
+        )
     )
 
 
@@ -249,6 +280,121 @@ async def _seed_events(
     )
     t1 = time.perf_counter()
     return {"seeded_events": n, "seed_wall_s": round(t1 - t0, 6)}
+
+
+async def _dataset_identity(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+) -> dict[str, Any]:
+    rows = await conn.fetch(
+        """
+        SELECT
+            id::text AS id,
+            occurred_at AS occurred_at,
+            revenue_cents AS revenue_cents,
+            correlation_id::text AS correlation_id,
+            session_id::text AS session_id,
+            idempotency_key AS idempotency_key,
+            event_type AS event_type,
+            channel AS channel,
+            currency AS currency,
+            external_event_id AS external_event_id
+        FROM attribution_events
+        WHERE tenant_id = $1
+          AND occurred_at >= $2
+          AND occurred_at < $3
+        ORDER BY occurred_at ASC, id ASC
+        """,
+        str(tenant_id),
+        window_start,
+        window_end,
+    )
+    payload = [
+        {
+            "id": r["id"],
+            "occurred_at": r["occurred_at"].isoformat(),
+            "revenue_cents": int(r["revenue_cents"]),
+            "correlation_id": r["correlation_id"],
+            "session_id": r["session_id"],
+            "idempotency_key": r["idempotency_key"],
+            "event_type": r["event_type"],
+            "channel": r["channel"],
+            "currency": r["currency"],
+            "external_event_id": r["external_event_id"],
+        }
+        for r in rows
+    ]
+    dataset_hash = _sha256_hex(_canonical_json_bytes(payload))
+    return {"dataset_hash": dataset_hash, "event_count": len(payload)}
+
+
+async def _count_allocations(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    model_version: str,
+    window_start: datetime,
+    window_end: datetime,
+) -> int:
+    return int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM attribution_allocations aa
+            INNER JOIN attribution_events e
+                ON e.id = aa.event_id
+               AND e.tenant_id = aa.tenant_id
+            WHERE aa.tenant_id = $1
+              AND aa.model_version = $2
+              AND e.occurred_at >= $3
+              AND e.occurred_at < $4
+            """,
+            str(tenant_id),
+            model_version,
+            window_start,
+            window_end,
+        )
+    )
+
+
+async def _cleanup_allocations(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    model_version: str,
+    window_start: datetime,
+    window_end: datetime,
+    phase: str,
+) -> None:
+    result = await conn.execute(
+        """
+        DELETE FROM attribution_allocations aa
+        USING attribution_events e
+        WHERE aa.tenant_id = $1
+          AND aa.model_version = $2
+          AND e.id = aa.event_id
+          AND e.tenant_id = aa.tenant_id
+          AND e.occurred_at >= $3
+          AND e.occurred_at < $4
+        """,
+        str(tenant_id),
+        model_version,
+        window_start,
+        window_end,
+    )
+    deleted = int(result.split()[-1]) if result else 0
+    remaining = await _count_allocations(
+        conn,
+        tenant_id=tenant_id,
+        model_version=model_version,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    print(f"R5_CLEANUP_PHASE={phase} R5_ALLOCATIONS_DELETED={deleted} R5_ALLOCATIONS_REMAINING={remaining}")
+    _require(remaining == 0, f"R5 cleanup failed for {phase}: remaining allocations {remaining}")
 
 
 async def _fetch_allocations_snapshot(
@@ -369,29 +515,76 @@ async def _run_compute_concurrency(
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
     try:
-        tasks = [
-            _compute_allocations_deterministic_baseline(
+        async def _compute_with_timing(index: int) -> dict[str, Any]:
+            started = time.perf_counter()
+            await _compute_allocations_deterministic_baseline(
                 tenant_id=tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version=model_version,
             )
-            for _ in range(concurrency)
-        ]
-        await asyncio.gather(*tasks)
+            finished = time.perf_counter()
+            return {"index": index, "started": started, "finished": finished}
+
+        tasks = [_compute_with_timing(i) for i in range(concurrency)]
+        timings = await asyncio.gather(*tasks)
     finally:
         t1 = time.perf_counter()
         sa_event.remove(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
+
+    overlap_count = 0
+    max_end = None
+    for timing in sorted(timings, key=lambda t: t["started"]):
+        if max_end is not None and timing["started"] < max_end:
+            overlap_count += 1
+        max_end = max(max_end or timing["finished"], timing["finished"])
     return {
         "compute_wall_s": round(t1 - t0, 6),
         "sqlalchemy_statement_count": int(counter.count),
         "ru_maxrss_kb": _ru_maxrss_kb(),
+        "concurrency_tasks": len(timings),
+        "concurrency_overlap": overlap_count,
     }
 
 
 def _require(cond: bool, msg: str) -> None:
     if not cond:
         raise RuntimeError(msg)
+
+
+def _binding_line(mode: str, binding: InputBinding) -> str:
+    return " ".join(
+        [
+            f"R5_RUN_MODE={mode}",
+            f"R5_TENANT_ID={binding.tenant_id}",
+            f"R5_DATASET_ID={binding.dataset_id}",
+            f"R5_WINDOW_START={binding.window_start.isoformat()}",
+            f"R5_WINDOW_END={binding.window_end.isoformat()}",
+        ]
+    )
+
+
+def _enforce_binding(mode: str, binding: InputBinding, expected: InputBinding | None) -> InputBinding:
+    print(_binding_line(mode, binding))
+    if expected is None:
+        return binding
+    _require(
+        binding.tenant_id == expected.tenant_id,
+        f"R5 input binding mismatch for {mode}: tenant {binding.tenant_id} != {expected.tenant_id}",
+    )
+    _require(
+        binding.dataset_id == expected.dataset_id,
+        f"R5 input binding mismatch for {mode}: dataset {binding.dataset_id} != {expected.dataset_id}",
+    )
+    _require(
+        binding.window_start == expected.window_start,
+        f"R5 input binding mismatch for {mode}: window_start {binding.window_start} != {expected.window_start}",
+    )
+    _require(
+        binding.window_end == expected.window_end,
+        f"R5 input binding mismatch for {mode}: window_end {binding.window_end} != {expected.window_end}",
+    )
+    return expected
 
 
 async def main() -> int:
@@ -439,16 +632,46 @@ async def main() -> int:
         # ------------------------------------------------------------------
         # EG-R5-1: Determinism - 3 sequential reruns
         # ------------------------------------------------------------------
-        tenant_det = _uuid_det("r5", ctx.candidate_sha, "DET_SERIAL", "tenant")
-        print(f"R5_DATASET_SEED=sha:{candidate_sha} scenario:DET_SERIAL tenant:{tenant_det}")
+        tenant_det = _uuid_det("r5", ctx.candidate_sha, "DET_SHARED", "tenant")
+        dataset_seed = f"sha:{candidate_sha} scenario:DET_SHARED tenant:{tenant_det}"
+        print(f"R5_DATASET_SEED={dataset_seed}")
         await _seed_events(
             conn,
             tenant_id=tenant_det,
             candidate_sha=ctx.candidate_sha,
-            scenario="DET_SERIAL",
+            scenario="DET_SHARED",
             n=n_det,
             window_start=window_start,
             occurred_at_step_us=10,
+        )
+        dataset_meta = await _dataset_identity(
+            conn,
+            tenant_id=tenant_det,
+            window_start=window_start,
+            window_end=window_end,
+        )
+        dataset_id = f"sha256:{dataset_meta['dataset_hash']}"
+        print(f"R5_DATASET_ID={dataset_id}")
+        print(f"R5_EVENTS_INGESTED={dataset_meta['event_count']}")
+        _require(
+            dataset_meta["event_count"] == n_det,
+            f"R5 dataset mismatch: expected {n_det} events, got {dataset_meta['event_count']}",
+        )
+        binding = InputBinding(
+            tenant_id=tenant_det,
+            dataset_id=dataset_id,
+            window_start=window_start,
+            window_end=window_end,
+        )
+        expected_binding: InputBinding | None = None
+        expected_binding = _enforce_binding("serial", binding, expected_binding)
+        await _cleanup_allocations(
+            conn,
+            tenant_id=tenant_det,
+            model_version=model_version,
+            window_start=window_start,
+            window_end=window_end,
+            phase="baseline_init",
         )
 
         serial_hashes: list[str] = []
@@ -474,6 +697,7 @@ async def main() -> int:
                         "R5_RUN_MODE=serial",
                         f"R5_RUN_INDEX={i+1}",
                         f"R5_DETERMINISM_FULL_SHA256={h}",
+                        f"R5_EVENTS_PROCESSED={meta['compute_meta'].get('event_count')}",
                         f"R5_STATEMENTS_TOTAL={meta['sqlalchemy_statement_count']}",
                         f"R5_WALL_S={meta['compute_wall_s']}",
                         f"R5_PEAK_RSS_KB={meta['ru_maxrss_kb']}",
@@ -482,26 +706,33 @@ async def main() -> int:
             )
 
         _require(len(set(serial_hashes)) == 1, f"EG-R5-1 FAIL: serial hashes drifted: {serial_hashes}")
-        verdict["gates"]["EG-R5-1"] = {"pass": True, "hash": serial_hashes[0]}
+        baseline_hash = serial_hashes[0]
+        print(f"R5_BASELINE_SHA256={baseline_hash}")
+        verdict["gates"]["EG-R5-1"] = {"pass": True, "hash": baseline_hash}
 
         # ------------------------------------------------------------------
         # EG-R5-2: Determinism - concurrency invariance
         # ------------------------------------------------------------------
-        tenant_conc = _uuid_det("r5", ctx.candidate_sha, "DET_CONC", "tenant")
-        print(f"R5_DATASET_SEED=sha:{candidate_sha} scenario:DET_CONC tenant:{tenant_conc}")
-        await _seed_events(
+        await _cleanup_allocations(
             conn,
-            tenant_id=tenant_conc,
-            candidate_sha=ctx.candidate_sha,
-            scenario="DET_CONC",
-            n=n_det,
+            tenant_id=tenant_det,
+            model_version=model_version,
             window_start=window_start,
-            occurred_at_step_us=10,
+            window_end=window_end,
+            phase="between_serial_concurrency",
         )
-
-        print(f"R5_RUN_MODE=concurrency10 R5_CONCURRENCY_TARGET={det_concurrency}")
+        expected_binding = _enforce_binding("concurrency10", binding, expected_binding)
+        print(
+            " ".join(
+                [
+                    "R5_RUN_MODE=concurrency10",
+                    f"R5_CONCURRENCY_TARGET={det_concurrency}",
+                    f"R5_EVENTS_INGESTED={dataset_meta['event_count']}",
+                ]
+            )
+        )
         conc_meta = await _run_compute_concurrency(
-            tenant_id=tenant_conc,
+            tenant_id=tenant_det,
             window_start=window_start,
             window_end=window_end,
             model_version=model_version,
@@ -509,7 +740,7 @@ async def main() -> int:
         )
         conc_snap = await _fetch_allocations_snapshot(
             conn,
-            tenant_id=tenant_conc,
+            tenant_id=tenant_det,
             model_version=model_version,
             window_start=window_start,
             window_end=window_end,
@@ -520,68 +751,51 @@ async def main() -> int:
                 [
                     "R5_RUN_MODE=concurrency10",
                     f"R5_DETERMINISM_FULL_SHA256={conc_hash}",
+                    f"R5_EVENTS_PROCESSED={dataset_meta['event_count']}",
                     f"R5_STATEMENTS_TOTAL={conc_meta['sqlalchemy_statement_count']}",
                     f"R5_WALL_S={conc_meta['compute_wall_s']}",
                     f"R5_PEAK_RSS_KB={conc_meta['ru_maxrss_kb']}",
+                    f"R5_CONCURRENCY_TASKS={conc_meta['concurrency_tasks']}",
+                    f"R5_CONCURRENCY_OVERLAP={conc_meta['concurrency_overlap']}",
                 ]
             )
         )
-
-        rerun_meta = await _run_compute_with_count(
-            tenant_id=tenant_conc,
-            window_start=window_start,
-            window_end=window_end,
-            model_version=model_version,
-        )
-        rerun_snap = await _fetch_allocations_snapshot(
-            conn,
-            tenant_id=tenant_conc,
-            model_version=model_version,
-            window_start=window_start,
-            window_end=window_end,
-        )
-        rerun_hash = _sha256_hex(_canonical_json_bytes(rerun_snap))
-        print(
-            " ".join(
-                [
-                    "R5_RUN_MODE=post_concurrency_serial",
-                    f"R5_DETERMINISM_FULL_SHA256={rerun_hash}",
-                    f"R5_STATEMENTS_TOTAL={rerun_meta['sqlalchemy_statement_count']}",
-                    f"R5_WALL_S={rerun_meta['compute_wall_s']}",
-                    f"R5_PEAK_RSS_KB={rerun_meta['ru_maxrss_kb']}",
-                ]
-            )
-        )
+        print(f"R5_CONC_SHA256={conc_hash}")
 
         _require(
-            conc_hash == rerun_hash,
-            f"EG-R5-2 FAIL: concurrency hash != serial hash (same dataset): {conc_hash} vs {rerun_hash}",
+            conc_meta["concurrency_tasks"] == det_concurrency,
+            "EG-R5-2 FAIL: concurrency tasks did not match requested count",
+        )
+        _require(
+            conc_meta["concurrency_overlap"] > 0,
+            "EG-R5-2 FAIL: concurrency overlap not observed",
+        )
+        _require(
+            conc_hash == baseline_hash,
+            f"EG-R5-2 FAIL: concurrency hash != baseline hash: {conc_hash} vs {baseline_hash}",
         )
         verdict["gates"]["EG-R5-2"] = {"pass": True, "hash": conc_hash}
 
         # ------------------------------------------------------------------
         # EG-R5-3: Determinism - induced retry invariance (proof via log markers)
         # ------------------------------------------------------------------
-        tenant_retry = _uuid_det("r5", ctx.candidate_sha, "DET_RETRY", "tenant")
-        print(f"R5_DATASET_SEED=sha:{candidate_sha} scenario:DET_RETRY tenant:{tenant_retry}")
-        await _seed_events(
+        await _cleanup_allocations(
             conn,
-            tenant_id=tenant_retry,
-            candidate_sha=ctx.candidate_sha,
-            scenario="DET_RETRY",
-            n=n_det,
+            tenant_id=tenant_det,
+            model_version=model_version,
             window_start=window_start,
-            occurred_at_step_us=10,
+            window_end=window_end,
+            phase="between_concurrency_retry",
         )
-
+        expected_binding = _enforce_binding("retry_injected", binding, expected_binding)
         print("R5_RUN_MODE=retry_injected R5_RETRY_ATTEMPT=1")
         try:
             await _compute_allocations_deterministic_baseline(
-                tenant_id=tenant_retry,
+                tenant_id=tenant_det,
                 window_start=window_start,
                 window_end=window_end,
                 model_version=model_version,
-                inject_fail_once_key=f"r5:{candidate_sha}:DET_RETRY",
+                inject_fail_once_key=f"r5:{candidate_sha}:DET_SHARED",
                 inject_fail_after_batches=1,
             )
             raise RuntimeError("Expected retry injection failure did not occur")
@@ -590,7 +804,7 @@ async def main() -> int:
 
         after_fail = await _fetch_allocations_snapshot(
             conn,
-            tenant_id=tenant_retry,
+            tenant_id=tenant_det,
             model_version=model_version,
             window_start=window_start,
             window_end=window_end,
@@ -603,7 +817,7 @@ async def main() -> int:
 
         print("R5_RUN_MODE=retry_injected R5_RETRY_ATTEMPT=2")
         retry_meta = await _run_compute_with_count(
-            tenant_id=tenant_retry,
+            tenant_id=tenant_det,
             window_start=window_start,
             window_end=window_end,
             model_version=model_version,
@@ -611,7 +825,7 @@ async def main() -> int:
 
         retry_snap = await _fetch_allocations_snapshot(
             conn,
-            tenant_id=tenant_retry,
+            tenant_id=tenant_det,
             model_version=model_version,
             window_start=window_start,
             window_end=window_end,
@@ -622,42 +836,19 @@ async def main() -> int:
                 [
                     "R5_RUN_MODE=retry_injected",
                     "R5_RETRY_OBSERVED=1",
+                    "R5_RETRY_ATTEMPTS_TOTAL=2",
                     f"R5_DETERMINISM_FULL_SHA256={retry_hash}",
+                    f"R5_EVENTS_PROCESSED={retry_meta['compute_meta'].get('event_count')}",
                     f"R5_STATEMENTS_TOTAL={retry_meta['sqlalchemy_statement_count']}",
                     f"R5_WALL_S={retry_meta['compute_wall_s']}",
                     f"R5_PEAK_RSS_KB={retry_meta['ru_maxrss_kb']}",
                 ]
             )
         )
-
-        post_retry_meta = await _run_compute_with_count(
-            tenant_id=tenant_retry,
-            window_start=window_start,
-            window_end=window_end,
-            model_version=model_version,
-        )
-        post_retry_snap = await _fetch_allocations_snapshot(
-            conn,
-            tenant_id=tenant_retry,
-            model_version=model_version,
-            window_start=window_start,
-            window_end=window_end,
-        )
-        post_retry_hash = _sha256_hex(_canonical_json_bytes(post_retry_snap))
-        print(
-            " ".join(
-                [
-                    "R5_RUN_MODE=post_retry_serial",
-                    f"R5_DETERMINISM_FULL_SHA256={post_retry_hash}",
-                    f"R5_STATEMENTS_TOTAL={post_retry_meta['sqlalchemy_statement_count']}",
-                    f"R5_WALL_S={post_retry_meta['compute_wall_s']}",
-                    f"R5_PEAK_RSS_KB={post_retry_meta['ru_maxrss_kb']}",
-                ]
-            )
-        )
+        print(f"R5_RETRY_SHA256={retry_hash}")
         _require(
-            retry_hash == post_retry_hash,
-            f"EG-R5-3 FAIL: retry hash != post-retry serial hash: {retry_hash} vs {post_retry_hash}",
+            retry_hash == baseline_hash,
+            f"EG-R5-3 FAIL: retry hash != baseline hash: {retry_hash} vs {baseline_hash}",
         )
         verdict["gates"]["EG-R5-3"] = {"pass": True, "hash": retry_hash}
 
@@ -679,6 +870,12 @@ async def main() -> int:
             window_start=scale_start,
             occurred_at_step_us=1,
         )
+        small_seeded = await _count_events(
+            conn,
+            tenant_id=tenant_small,
+            window_start=scale_start,
+            window_end=scale_end,
+        )
         small_meta = await _run_compute_with_count(
             tenant_id=tenant_small,
             window_start=scale_start,
@@ -689,11 +886,18 @@ async def main() -> int:
             " ".join(
                 [
                     f"R5_N={n_small}",
+                    f"R5_EVENTS_INGESTED={small_seeded}",
+                    f"R5_EVENTS_PROCESSED={small_meta['compute_meta'].get('event_count')}",
                     f"R5_WALL_S={small_meta['compute_wall_s']}",
                     f"R5_STATEMENTS_TOTAL={small_meta['sqlalchemy_statement_count']}",
                     f"R5_PEAK_RSS_KB={small_meta['ru_maxrss_kb']}",
                 ]
             )
+        )
+        _require(small_seeded == n_small, f"EG-R5-4 FAIL: expected {n_small} events, got {small_seeded}")
+        _require(
+            small_meta["compute_meta"].get("event_count") == n_small,
+            f"EG-R5-4 FAIL: processed {small_meta['compute_meta'].get('event_count')} events, expected {n_small}",
         )
 
         await _seed_events(
@@ -705,6 +909,12 @@ async def main() -> int:
             window_start=scale_start,
             occurred_at_step_us=1,
         )
+        large_seeded = await _count_events(
+            conn,
+            tenant_id=tenant_large,
+            window_start=scale_start,
+            window_end=scale_end,
+        )
         large_meta = await _run_compute_with_count(
             tenant_id=tenant_large,
             window_start=scale_start,
@@ -715,11 +925,18 @@ async def main() -> int:
             " ".join(
                 [
                     f"R5_N={n_large}",
+                    f"R5_EVENTS_INGESTED={large_seeded}",
+                    f"R5_EVENTS_PROCESSED={large_meta['compute_meta'].get('event_count')}",
                     f"R5_WALL_S={large_meta['compute_wall_s']}",
                     f"R5_STATEMENTS_TOTAL={large_meta['sqlalchemy_statement_count']}",
                     f"R5_PEAK_RSS_KB={large_meta['ru_maxrss_kb']}",
                 ]
             )
+        )
+        _require(large_seeded == n_large, f"EG-R5-4 FAIL: expected {n_large} events, got {large_seeded}")
+        _require(
+            large_meta["compute_meta"].get("event_count") == n_large,
+            f"EG-R5-4 FAIL: processed {large_meta['compute_meta'].get('event_count')} events, expected {n_large}",
         )
 
         time_ratio = float(large_meta["compute_wall_s"]) / float(small_meta["compute_wall_s"])
