@@ -1,0 +1,104 @@
+# R5 — Context Gathering (Determinism + Complexity Ratios)
+#
+# Measurement-only: seeds deterministic datasets and runs attribution baseline compute.
+# Produces browser-visible verdict blocks (stdout) for use in docs summary anchoring.
+
+name: "R5: Context Gathering"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  r5-context-gathering:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: r5_admin
+          POSTGRES_PASSWORD: r5_admin
+          POSTGRES_DB: r5
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U r5_admin -d r5"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CI: "true"
+      PYTHONPATH: backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r5
+      MIGRATION_DATABASE_URL: postgresql://r5_admin:r5_admin@127.0.0.1:5432/r5
+      R5_ADMIN_DATABASE_URL: postgresql://r5_admin:r5_admin@127.0.0.1:5432/r5
+      DATABASE_POOL_SIZE: "5"
+      DATABASE_MAX_OVERFLOW: "0"
+      # Probe sizing (override in workflow_dispatch inputs if needed later)
+      R5_P1_EVENTS_N: "500"
+      R5_P1_RUNS: "3"
+      R5_P3_N_SMALL: "10000"
+      R5_P3_N_LARGE: "100000"
+      R5_P3_MAX_SECONDS: "900"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Create least-privilege app_user role
+        shell: bash
+        env:
+          PGPASSWORD: r5_admin
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U r5_admin -d r5 <<'SQL'
+          DO $$
+          BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                  CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+              END IF;
+          END
+          $$;
+
+          REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          GRANT CONNECT ON DATABASE r5 TO app_user;
+          SQL
+
+      - name: Run migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          alembic upgrade heads
+
+      - name: Run R5 probes
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python scripts/r5/r5_probes.py | tee r5_harness.log
+
+      - name: Upload R5 logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r5-context-gathering-${{ github.sha }}
+          path: |
+            r5_harness.log
+
