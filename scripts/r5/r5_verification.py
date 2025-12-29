@@ -122,6 +122,29 @@ async def _pg(admin_db_url: str) -> asyncpg.Connection:
     return await asyncpg.connect(admin_db_url)
 
 
+async def _db_settings_snapshot(conn: asyncpg.Connection) -> dict[str, str]:
+    settings = {}
+    for k in [
+        "server_version",
+        "shared_buffers",
+        "work_mem",
+        "maintenance_work_mem",
+        "max_wal_size",
+        "checkpoint_timeout",
+        "checkpoint_completion_target",
+        "wal_compression",
+        "wal_level",
+        "fsync",
+        "synchronous_commit",
+        "full_page_writes",
+    ]:
+        try:
+            settings[k] = str(await conn.fetchval(f"SHOW {k}"))
+        except Exception:
+            settings[k] = "UNKNOWN"
+    return settings
+
+
 async def _ensure_tenant(conn: asyncpg.Connection, tenant_id: UUID, *, label: str) -> None:
     api_key_hash = f"R5_{label}_{tenant_id}"
     notification_email = f"r5_{label}_{str(tenant_id)[:8]}@test.invalid"
@@ -409,6 +432,10 @@ async def main() -> int:
     conn = await _pg(admin_db_url)
     verdict: dict[str, Any] = {"candidate_sha": candidate_sha, "run_url": run_url, "gates": {}}
     try:
+        db_settings = await _db_settings_snapshot(conn)
+        for k, v in sorted(db_settings.items()):
+            print(f"R5_DB_{k.upper()}={v}")
+
         # ------------------------------------------------------------------
         # EG-R5-1: Determinism - 3 sequential reruns
         # ------------------------------------------------------------------

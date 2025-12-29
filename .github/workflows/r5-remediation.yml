@@ -45,7 +45,7 @@ jobs:
       R5_SCALE_N_SMALL: "10000"
       R5_SCALE_N_LARGE: "100000"
       # Reduce statement overhead for 100k while preserving determinism.
-      ATTRIBUTION_BASELINE_BATCH_EVENTS: "10000"
+      ATTRIBUTION_BASELINE_BATCH_EVENTS: "100000"
 
     steps:
       - name: Checkout
@@ -72,7 +72,11 @@ jobs:
               -c max_wal_size=4GB \
               -c checkpoint_timeout=30min \
               -c checkpoint_completion_target=0.9 \
-              -c wal_compression=on
+              -c wal_compression=on \
+              -c fsync=off \
+              -c synchronous_commit=off \
+              -c full_page_writes=off \
+              -c wal_level=minimal
 
           for i in $(seq 1 60); do
             status="$(docker inspect -f '{{.State.Health.Status}}' r5-postgres 2>/dev/null || true)"
