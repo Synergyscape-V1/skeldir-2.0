@@ -10,10 +10,11 @@ table and deterministic baseline allocation proof harness.
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 # B0.5.3.6: Canonical deterministic channel ordering for baseline allocations.
 # NOTE: `attribution_allocations` uses `channel_code` with FK to `channel_taxonomy.code`.
 BASELINE_CHANNELS = ["direct", "email", "google_search_paid"]
+_ALLOCATION_ID_NAMESPACE = uuid5(NAMESPACE_URL, "skeldir:attribution_allocations:id:v1")
+_R5_FAILED_ONCE_KEYS: set[str] = set()
 
 
 def _run_async(coro_factory, *args, **kwargs):
@@ -89,6 +92,29 @@ def _normalize_timestamp(iso_string: Optional[str]) -> Optional[datetime]:
         return dt
     except (ValueError, AttributeError) as exc:
         raise ValueError(f"Invalid ISO8601 timestamp: {iso_string}") from exc
+
+
+def _deterministic_allocation_id(
+    *,
+    tenant_id: UUID,
+    event_id: UUID,
+    model_version: str,
+    channel_code: str,
+) -> UUID:
+    return uuid5(
+        _ALLOCATION_ID_NAMESPACE,
+        f"{tenant_id}:{event_id}:{model_version}:{channel_code}",
+    )
+
+
+def _split_revenue_cents_evenly(revenue_cents: int, parts: int) -> list[int]:
+    if parts < 1:
+        raise ValueError("parts must be >= 1")
+    if revenue_cents < 0:
+        raise ValueError("revenue_cents must be >= 0")
+    base = revenue_cents // parts
+    remainder = revenue_cents % parts
+    return [base + (1 if i < remainder else 0) for i in range(parts)]
 
 
 async def _upsert_job_identity(
@@ -221,6 +247,9 @@ async def _compute_allocations_deterministic_baseline(
     window_start: datetime,
     window_end: datetime,
     model_version: str = "1.0.0",
+    *,
+    inject_fail_once_key: Optional[str] = None,
+    inject_fail_after_batches: int = 1,
 ) -> dict:
     """
     Deterministic baseline attribution allocation proof harness.
@@ -238,29 +267,218 @@ async def _compute_allocations_deterministic_baseline(
     Returns:
         Dict with metadata (event_count, allocation_count)
     """
+    batch_events = int(os.getenv("ATTRIBUTION_BASELINE_BATCH_EVENTS", "2000"))
+    if batch_events < 1:
+        raise ValueError("ATTRIBUTION_BASELINE_BATCH_EVENTS must be >= 1")
+
+    if inject_fail_once_key is not None:
+        if os.getenv("ENABLE_R5_RETRY_INJECTION", "") != "1":
+            raise ValueError("Retry injection requested but ENABLE_R5_RETRY_INJECTION != '1'")
+        if inject_fail_after_batches < 1:
+            raise ValueError("inject_fail_after_batches must be >= 1")
+
+    fixed_ts = window_end
+    allocation_ratio = (Decimal(1) / Decimal(len(BASELINE_CHANNELS))).quantize(
+        Decimal("0.00001"), rounding=ROUND_HALF_UP
+    )
+    confidence_score = allocation_ratio.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    model_type = "deterministic_baseline"
+
     async with engine.begin() as conn:
         # Set tenant context for RLS policy
         await set_tenant_guc(conn, tenant_id, local=True)
 
-        # Step 1: Read events in window (read-only, append-only table)
-        events_result = await conn.execute(
-            text("""
+        def _event_batch_query(*, has_cursor: bool) -> str:
+            cursor_clause = ""
+            if has_cursor:
+                cursor_clause = """
+                  AND (
+                        occurred_at > :last_occurred_at
+                     OR (occurred_at = :last_occurred_at AND id > :last_id)
+                  )
+                """
+            return f"""
                 SELECT id, revenue_cents, occurred_at
                 FROM attribution_events
                 WHERE tenant_id = :tenant_id
                   AND occurred_at >= :window_start
                   AND occurred_at < :window_end
-                ORDER BY occurred_at ASC
-            """),
-            {
+                  {cursor_clause}
+                ORDER BY occurred_at ASC, id ASC
+                LIMIT :limit
+            """
+
+        async def _upsert_allocations_bulk(*, rows: dict[str, list]) -> None:
+            if not rows["ids"]:
+                return
+
+            await conn.execute(
+                text(
+                    """
+                    WITH rows AS (
+                        SELECT *
+                        FROM unnest(
+                            :ids::uuid[],
+                            :tenant_ids::uuid[],
+                            :event_ids::uuid[],
+                            :channel_codes::text[],
+                            :allocation_ratios::numeric[],
+                            :model_versions::text[],
+                            :model_types::text[],
+                            :confidence_scores::numeric[],
+                            :verifieds::bool[],
+                            :allocated_revenue_cents::int[],
+                            :created_ats::timestamptz[],
+                            :updated_ats::timestamptz[]
+                        ) AS t(
+                            id,
+                            tenant_id,
+                            event_id,
+                            channel_code,
+                            allocation_ratio,
+                            model_version,
+                            model_type,
+                            confidence_score,
+                            verified,
+                            allocated_revenue_cents,
+                            created_at,
+                            updated_at
+                        )
+                    )
+                    INSERT INTO attribution_allocations (
+                        id,
+                        tenant_id,
+                        event_id,
+                        channel_code,
+                        allocation_ratio,
+                        model_version,
+                        model_type,
+                        confidence_score,
+                        verified,
+                        allocated_revenue_cents,
+                        created_at,
+                        updated_at
+                    )
+                    SELECT
+                        id,
+                        tenant_id,
+                        event_id,
+                        channel_code,
+                        allocation_ratio,
+                        model_version,
+                        model_type,
+                        confidence_score,
+                        verified,
+                        allocated_revenue_cents,
+                        created_at,
+                        updated_at
+                    FROM rows
+                    ON CONFLICT (id)
+                    DO UPDATE SET
+                        allocation_ratio = EXCLUDED.allocation_ratio,
+                        model_type = EXCLUDED.model_type,
+                        confidence_score = EXCLUDED.confidence_score,
+                        verified = EXCLUDED.verified,
+                        allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
+                        updated_at = EXCLUDED.updated_at
+                    WHERE
+                        attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
+                        OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
+                        OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
+                        OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
+                        OR attribution_allocations.allocated_revenue_cents IS DISTINCT FROM EXCLUDED.allocated_revenue_cents;
+                    """
+                ),
+                rows,
+            )
+
+        event_count = 0
+        allocation_count = 0
+        batches_written = 0
+        last_occurred_at: Optional[datetime] = None
+        last_id: Optional[UUID] = None
+
+        while True:
+            query = _event_batch_query(has_cursor=last_occurred_at is not None)
+            params = {
                 "tenant_id": tenant_id,
                 "window_start": window_start,
                 "window_end": window_end,
+                "limit": batch_events,
             }
-        )
-        events = events_result.fetchall()
+            if last_occurred_at is not None and last_id is not None:
+                params.update({"last_occurred_at": last_occurred_at, "last_id": last_id})
 
-        if len(events) == 0:
+            events_result = await conn.execute(text(query), params)
+            events = events_result.fetchall()
+            if not events:
+                break
+
+            event_count += len(events)
+
+            batch_rows: dict[str, list] = {
+                "ids": [],
+                "tenant_ids": [],
+                "event_ids": [],
+                "channel_codes": [],
+                "allocation_ratios": [],
+                "model_versions": [],
+                "model_types": [],
+                "confidence_scores": [],
+                "verifieds": [],
+                "allocated_revenue_cents": [],
+                "created_ats": [],
+                "updated_ats": [],
+            }
+
+            for event_id, revenue_cents, _occurred_at in events:
+                allocated = _split_revenue_cents_evenly(int(revenue_cents), len(BASELINE_CHANNELS))
+                for channel_code, allocated_revenue_cents in zip(
+                    BASELINE_CHANNELS, allocated, strict=True
+                ):
+                    batch_rows["ids"].append(
+                        _deterministic_allocation_id(
+                            tenant_id=tenant_id,
+                            event_id=event_id,
+                            model_version=model_version,
+                            channel_code=channel_code,
+                        )
+                    )
+                    batch_rows["tenant_ids"].append(tenant_id)
+                    batch_rows["event_ids"].append(event_id)
+                    batch_rows["channel_codes"].append(channel_code)
+                    batch_rows["allocation_ratios"].append(str(allocation_ratio))
+                    batch_rows["model_versions"].append(model_version)
+                    batch_rows["model_types"].append(model_type)
+                    batch_rows["confidence_scores"].append(str(confidence_score))
+                    batch_rows["verifieds"].append(False)
+                    batch_rows["allocated_revenue_cents"].append(int(allocated_revenue_cents))
+                    batch_rows["created_ats"].append(fixed_ts)
+                    batch_rows["updated_ats"].append(fixed_ts)
+                    allocation_count += 1
+
+            await _upsert_allocations_bulk(rows=batch_rows)
+            batches_written += 1
+
+            if inject_fail_once_key is not None:
+                if inject_fail_once_key not in _R5_FAILED_ONCE_KEYS and batches_written >= inject_fail_after_batches:
+                    _R5_FAILED_ONCE_KEYS.add(inject_fail_once_key)
+                    logger.warning(
+                        "attribution_baseline_r5_retry_injection_triggered",
+                        extra={
+                            "tenant_id": str(tenant_id),
+                            "model_version": model_version,
+                            "inject_fail_once_key": inject_fail_once_key,
+                            "inject_fail_after_batches": inject_fail_after_batches,
+                            "batches_written": batches_written,
+                        },
+                    )
+                    raise RuntimeError("R5 retry injection: transient failure")
+
+            last_id = events[-1][0]
+            last_occurred_at = events[-1][2]
+
+        if event_count == 0:
             logger.info(
                 "attribution_baseline_no_events_in_window",
                 extra={
@@ -268,64 +486,9 @@ async def _compute_allocations_deterministic_baseline(
                     "window_start": window_start.isoformat(),
                     "window_end": window_end.isoformat(),
                     "model_version": model_version,
-                }
+                },
             )
             return {"event_count": 0, "allocation_count": 0}
-
-        # Step 2: Deterministic baseline allocation logic
-        # Fixed channels for deterministic output (alphabetical ordering enforced)
-        allocation_ratio = 1.0 / len(BASELINE_CHANNELS)  # Equal split
-        # attribution_allocations has NOT NULL statistical metadata fields; provide deterministic baseline values.
-        confidence_score = float(
-            Decimal(str(allocation_ratio)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-        )
-        model_type = "deterministic_baseline"
-
-        allocation_count = 0
-
-        for event_row in events:
-            event_id = event_row[0]
-            revenue_cents = event_row[1]
-            occurred_at = event_row[2]
-
-            # Allocate revenue equally across baseline channels
-            for channel in BASELINE_CHANNELS:
-                allocated_revenue = int(revenue_cents * allocation_ratio)
-
-                # Upsert allocation (event-scoped overwrite via unique constraint)
-                await conn.execute(
-                    text("""
-                        INSERT INTO attribution_allocations (
-                            id, tenant_id, event_id, channel_code, allocation_ratio,
-                            model_version, model_type, confidence_score, verified,
-                            allocated_revenue_cents, created_at, updated_at
-                        ) VALUES (
-                            :allocation_id, :tenant_id, :event_id, :channel, :allocation_ratio,
-                            :model_version, :model_type, :confidence_score, FALSE,
-                            :allocated_revenue_cents, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                        ON CONFLICT (tenant_id, event_id, model_version, channel_code)
-                        DO UPDATE SET
-                            allocation_ratio = EXCLUDED.allocation_ratio,
-                            model_type = EXCLUDED.model_type,
-                            confidence_score = EXCLUDED.confidence_score,
-                            verified = EXCLUDED.verified,
-                            allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
-                            updated_at = CURRENT_TIMESTAMP
-                    """),
-                    {
-                        "allocation_id": uuid4(),
-                        "tenant_id": tenant_id,
-                        "event_id": event_id,
-                        "channel": channel,
-                        "allocation_ratio": allocation_ratio,
-                        "model_version": model_version,
-                        "model_type": model_type,
-                        "confidence_score": confidence_score,
-                        "allocated_revenue_cents": allocated_revenue,
-                    }
-                )
-                allocation_count += 1
 
         logger.info(
             "attribution_baseline_allocations_computed",
@@ -334,13 +497,13 @@ async def _compute_allocations_deterministic_baseline(
                 "window_start": window_start.isoformat(),
                 "window_end": window_end.isoformat(),
                 "model_version": model_version,
-                "event_count": len(events),
+                "event_count": event_count,
                 "allocation_count": allocation_count,
             }
         )
 
         return {
-            "event_count": len(events),
+            "event_count": event_count,
             "allocation_count": allocation_count,
         }
 

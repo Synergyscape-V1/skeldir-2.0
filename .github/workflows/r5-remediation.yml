@@ -1,0 +1,137 @@
+#
+# R5 remediation verifier: must hard-fail unless CI logs prove:
+# - bit-identical determinism (serial reruns, concurrency, induced retry)
+# - ~O(N) scaling via 10k vs 100k ratios
+#
+
+name: "R5: Determinism + Scaling Proof"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/app/tasks/attribution.py"
+      - "scripts/r5/r5_verification.py"
+      - "alembic/**"
+      - ".github/workflows/r5-remediation.yml"
+  pull_request:
+    paths:
+      - "backend/app/tasks/attribution.py"
+      - "scripts/r5/r5_verification.py"
+      - "alembic/**"
+      - ".github/workflows/r5-remediation.yml"
+
+jobs:
+  r5-remediation:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: r5_admin
+          POSTGRES_PASSWORD: r5_admin
+          POSTGRES_DB: r5
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U r5_admin -d r5"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CI: "true"
+      PYTHONPATH: backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r5
+      MIGRATION_DATABASE_URL: postgresql://r5_admin:r5_admin@127.0.0.1:5432/r5
+      R5_ADMIN_DATABASE_URL: postgresql://r5_admin:r5_admin@127.0.0.1:5432/r5
+      DATABASE_POOL_SIZE: "15"
+      DATABASE_MAX_OVERFLOW: "0"
+      ENABLE_R5_RETRY_INJECTION: "1"
+
+      # Harness sizing (10k/100k required for R5 COMPLETE)
+      R5_DETERMINISM_EVENTS_N: "1000"
+      R5_DETERMINISM_RUNS: "3"
+      R5_DETERMINISM_CONCURRENCY: "10"
+      R5_SCALE_N_SMALL: "10000"
+      R5_SCALE_N_LARGE: "100000"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Create least-privilege app_user role
+        shell: bash
+        env:
+          PGPASSWORD: r5_admin
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U r5_admin -d r5 <<'SQL'
+          DO $$
+          BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                  CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+              END IF;
+          END
+          $$;
+
+          REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          GRANT CONNECT ON DATABASE r5 TO app_user;
+          SQL
+
+      - name: Run migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          alembic upgrade heads
+
+      - name: Grant app_user membership in app_rw
+        shell: bash
+        env:
+          PGPASSWORD: r5_admin
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U r5_admin -d r5 <<'SQL'
+          DO $$
+          BEGIN
+              IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw')
+                 AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                  GRANT app_rw TO app_user;
+              END IF;
+          END
+          $$;
+          SQL
+
+      - name: Run R5 verification harness
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python scripts/r5/r5_verification.py | tee r5_verification.log
+
+      - name: Upload R5 logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r5-remediation-${{ github.sha }}
+          path: |
+            r5_verification.log
+
