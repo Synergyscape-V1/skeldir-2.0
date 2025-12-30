@@ -1,0 +1,16 @@
+{
+  "R6_SHA": "c7abcf220dc96f0029baa701341b1e6def10cbb5",
+  "R6_TIMESTAMP_UTC": "2025-12-30T16:31:21.381749+00:00",
+  "source": "app_registry_fallback",
+  "tasks": [
+    "celery.accumulate",
+    "celery.backend_cleanup",
+    "celery.chain",
+    "celery.chord",
+    "celery.chord_unlock",
+    "celery.chunks",
+    "celery.group",
+    "celery.map",
+    "celery.starmap"
+  ]
+}
