@@ -353,16 +353,11 @@ jobs:
           echo "R7_R2_RESULT_JSON_END"
           echo "R7_PHASE_END=R2 status=PASS"
 
-      - name: "R7 Phase R3: Ingestion under fire"
+      - name: "R7 Phase R3a: Ingestion migrate"
         shell: bash
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
           MIGRATION_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r3
-          R3_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
-          R3_API_BASE_URL: http://127.0.0.1:8000
-          R3_LADDER: "50,250,1000"
-          R3_CONCURRENCY: "200"
-          R3_TIMEOUT_S: "30"
           DATABASE_POOL_SIZE: "20"
           DATABASE_MAX_OVERFLOW: "20"
           LOG_LEVEL: "DEBUG"
@@ -374,7 +369,18 @@ jobs:
           export PGPASSWORD="${R7_PG_ADMIN_PASSWORD}"
           psql -h "${R7_PG_HOST}" -U "${R7_PG_ADMIN_USER}" -d r3 -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;" >/dev/null
           psql -h "${R7_PG_HOST}" -U "${R7_PG_ADMIN_USER}" -d r3 -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;" >/dev/null
+          echo "R3_MIGRATIONS_OK"
 
+      - name: "R7 Phase R3b: Ingestion API start"
+        shell: bash
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
+          R3_API_BASE_URL: http://127.0.0.1:8000
+          DATABASE_POOL_SIZE: "20"
+          DATABASE_MAX_OVERFLOW: "20"
+          LOG_LEVEL: "DEBUG"
+        run: |
+          set -euo pipefail
           pkill -f "uvicorn app.main:app" || true
           nohup env PYTHONUNBUFFERED=1 python -u -m uvicorn app.main:app \
             --host 127.0.0.1 \
@@ -384,7 +390,7 @@ jobs:
             --workers 2 \
             --backlog 2048 > /tmp/r7_uvicorn_r3.log 2>&1 &
           API_PID=$!
-          echo "R3_API_PID=${API_PID}"
+          echo "R3_API_PID=${API_PID}" >> "${GITHUB_ENV}"
           sleep 1
           if ! kill -0 "${API_PID}" 2>/dev/null; then
             echo "R3 API process exited immediately"
@@ -406,11 +412,30 @@ jobs:
             tail -n 200 /tmp/r7_uvicorn_r3.log || true
             exit 1
           fi
+          echo "R3_API_READY"
 
+      - name: "R7 Phase R3c: Ingestion harness"
+        shell: bash
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
+          R3_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
+          R3_API_BASE_URL: http://127.0.0.1:8000
+          R3_LADDER: "50,250,1000"
+          R3_CONCURRENCY: "200"
+          R3_TIMEOUT_S: "30"
+          DATABASE_POOL_SIZE: "20"
+          DATABASE_MAX_OVERFLOW: "20"
+          LOG_LEVEL: "DEBUG"
+        run: |
+          set -euo pipefail
           python scripts/r3/ingestion_under_fire.py | tee /tmp/r3_harness.log
           R3_HARNESS_EXIT=${PIPESTATUS[0]}
           export R3_HARNESS_EXIT
-          pkill -f "uvicorn app.main:app" || true
+          if [ -n "${R3_API_PID:-}" ]; then
+            kill "${R3_API_PID}" || true
+          else
+            pkill -f "uvicorn app.main:app" || true
+          fi
 
           python - <<'PY' > /tmp/r7_results/r3.json
           import json
@@ -452,7 +477,9 @@ jobs:
           )
           if [ "${R3_STATUS}" != "PASS" ]; then
             echo "R3 verdict failed; dumping uvicorn log"
-            ps -p "${API_PID}" -o pid,ppid,cmd || true
+            if [ -n "${R3_API_PID:-}" ]; then
+              ps -p "${R3_API_PID}" -o pid,ppid,cmd || true
+            fi
             ss -ltnp | grep ":8000" || true
             ls -l /tmp/r7_uvicorn_r3.log || true
             tail -n 200 /tmp/r7_uvicorn_r3.log || true
