@@ -35,7 +35,7 @@ def _sanitize_value(value):
 
 def _coerce_json_safe(value):
     try:
-        json.dumps(value)
+        json.dumps(value, allow_nan=False)
         return value
     except Exception:
         return str(value)

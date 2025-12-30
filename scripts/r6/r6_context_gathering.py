@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import re
 import subprocess
 import sys
 import time
@@ -18,7 +17,7 @@ from datetime import datetime, timezone
 from fnmatch import fnmatch
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from uuid import uuid4
 from urllib.parse import urlsplit
 
@@ -99,20 +98,6 @@ def _ensure_output_dir(base_dir: Path, sha: str) -> Path:
     out = base_dir / sha
     out.mkdir(parents=True, exist_ok=True)
     return out
-
-
-def _parse_active_queues_from_log(log_text: str) -> list[str]:
-    queues: set[str] = set()
-    for line in log_text.splitlines():
-        if "queues:" in line.lower():
-            match = re.search(r"queues:\s*(.*)", line, re.IGNORECASE)
-            if match:
-                tail = match.group(1)
-                for token in re.split(r"[,\s]+", tail):
-                    token = token.strip("[]")
-                    if token:
-                        queues.add(token)
-    return sorted(queues)
 
 
 def _resolve_task_route(task_name: str, routes: dict) -> dict[str, str]:
@@ -474,6 +459,11 @@ def main() -> int:
     stats = inspector.stats() or {}
     active = inspector.active_queues() or {}
     registered = inspector.registered() or {}
+    if not active:
+        active = {
+            "source": "runtime_snapshot_conf",
+            "queues": snapshot.get("task_queues", []),
+        }
 
     _write_json(output_dir / "R6_CELERY_INSPECT_STATS.json", stats, sha=sha, timestamp=timestamp)
     _write_json(output_dir / "R6_ACTIVE_QUEUES.json", active, sha=sha, timestamp=timestamp)
@@ -519,12 +509,10 @@ def main() -> int:
     }
     _write_json(output_dir / "R6_QUEUE_TOPOLOGY.json", topology, sha=sha, timestamp=timestamp)
 
-    active_from_logs = _parse_active_queues_from_log(
-        ctx.worker_log_path.read_text(encoding="utf-8", errors="replace")
-        if ctx.worker_log_path.exists()
-        else ""
-    )
-    gap_report = _build_gap_report(snapshot, matrix_rows, active_from_logs)
+    active_list = []
+    if isinstance(active, dict) and "queues" in active:
+        active_list = active.get("queues") or []
+    gap_report = _build_gap_report(snapshot, matrix_rows, active_list)
     _write_text(output_dir / "R6_GAP_REPORT.md", gap_report, sha=sha, timestamp=timestamp)
 
     _probe_timeout(ctx)
