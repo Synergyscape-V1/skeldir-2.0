@@ -412,9 +412,20 @@ jobs:
           passed = all(s.get("passed") for s in scenarios)
           payload = {"phase": "R3", "status": "PASS" if passed else "FAIL", "scenarios": scenarios}
           print(json.dumps(payload, indent=2, sort_keys=True))
-          if not passed:
-              raise SystemExit(1)
           PY
+
+          R3_STATUS=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("/tmp/r7_results/r3.json").read_text())
+          print(payload.get("status", "FAIL"))
+          PY
+          )
+          if [ "${R3_STATUS}" != "PASS" ]; then
+            echo "R3 verdict failed; dumping uvicorn log"
+            tail -n 200 /tmp/r7_uvicorn_r3.log || true
+            exit 1
+          fi
 
           echo "R7_R3_RESULT_JSON_BEGIN"
           cat /tmp/r7_results/r3.json
