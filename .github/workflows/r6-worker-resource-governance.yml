@@ -1,0 +1,131 @@
+# R6 — Worker Resource Governance (Context Gathering)
+name: "R6: Worker Resource Governance (Context Gathering)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/app/**'
+      - 'alembic/**'
+      - 'scripts/r6/**'
+      - '.github/workflows/r6-worker-resource-governance.yml'
+
+jobs:
+  r6-worker-resource-governance:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: r6_admin
+          POSTGRES_PASSWORD: r6_admin
+          POSTGRES_DB: r6
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U r6_admin -d r6"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CI: "true"
+      PYTHONPATH: backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r6
+      MIGRATION_DATABASE_URL: postgresql://r6_admin:r6_admin@127.0.0.1:5432/r6
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/r6
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/r6
+      CELERY_TASK_ACKS_LATE: "true"
+      CELERY_TASK_REJECT_ON_WORKER_LOST: "true"
+      CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT: "true"
+      CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
+      CELERY_BROKER_ENGINE_POOL_SIZE: "2"
+      CELERY_BROKER_ENGINE_MAX_OVERFLOW: "0"
+      CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE: "2"
+      R6_POSTGRES_IMAGE: "postgres:16"
+      R6_WORKER_LOG_PATH: r6_worker.log
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Create least-privilege app_user role
+        shell: bash
+        env:
+          PGPASSWORD: r6_admin
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U r6_admin -d r6 <<'SQL'
+          DO $$
+          BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                  CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+              END IF;
+          END
+          $$;
+          
+          REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          GRANT CONNECT ON DATABASE r6 TO app_user;
+          SQL
+
+      - name: Run migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          alembic upgrade heads
+
+      - name: Start Celery worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup celery -A app.celery_app.celery_app worker \
+            --loglevel=INFO \
+            --pool=prefork \
+            --concurrency=2 \
+            -Q housekeeping,maintenance,llm,attribution \
+            --logfile r6_worker.log \
+            --pidfile r6_worker.pid >/dev/null 2>&1 &
+          sleep 5
+
+      - name: Run R6 context gathering
+        shell: bash
+        env:
+          R6_SHA: ${{ github.sha }}
+          R6_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python scripts/r6/r6_context_gathering.py
+
+      - name: Stop Celery worker
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f r6_worker.pid ]; then
+            kill "$(cat r6_worker.pid)" || true
+          fi
+
+      - name: Upload R6 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r6-context-gathering-${{ github.sha }}
+          path: |
+            r6_worker.log
+            docs/validation/runtime/R6_context_gathering/${{ github.sha }}/

@@ -154,6 +154,7 @@ def _ensure_celery_configured():
             "app.tasks.llm",
             "app.tasks.attribution",
             "app.tasks.r4_failure_semantics",
+            "app.tasks.r6_resource_governance",
         ],
         # B0.5.2: Fixed queue topology
         # B0.5.3.1: Added attribution queue for deterministic routing
@@ -169,6 +170,7 @@ def _ensure_celery_configured():
             'app.tasks.llm.*': {'queue': 'llm', 'routing_key': 'llm.task'},
             'app.tasks.attribution.*': {'queue': 'attribution', 'routing_key': 'attribution.task'},
             'app.tasks.r4_failure_semantics.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
+            'app.tasks.r6_resource_governance.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
         },
         task_default_queue='housekeeping',
         task_default_exchange='tasks',
