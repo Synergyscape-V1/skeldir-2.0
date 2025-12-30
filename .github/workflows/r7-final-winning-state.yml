@@ -626,14 +626,20 @@ jobs:
                   missing.append(key)
                   continue
               results[key] = json.loads(path.read_text())
-          passed = not missing and all(r.get("passed") for r in results.values())
+          failed = [k for k, r in results.items() if not r.get("passed")]
+          passed = not missing and not failed
           payload = {
               "phase": "R4",
               "status": "PASS" if passed else "FAIL",
               "missing": missing,
+              "failed": failed,
               "results": results,
           }
           print(json.dumps(payload, indent=2, sort_keys=True))
+          if missing:
+              print(f"::error::R4_MISSING_RESULTS={','.join(missing)}")
+          if failed:
+              print(f"::error::R4_FAILED_SCENARIOS={','.join(failed)}")
           if not passed:
               raise SystemExit(1)
           PY
