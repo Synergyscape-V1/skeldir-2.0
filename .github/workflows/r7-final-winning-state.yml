@@ -291,13 +291,16 @@ jobs:
           ON CONFLICT (code) DO NOTHING;
           SQL
 
+          LOG_SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "R2_LOG_SINCE=${LOG_SINCE}"
           WINDOW_ID="r7_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           python scripts/r2/runtime_scenario_suite.py \
             --candidate-sha "${GITHUB_SHA}" \
             --window-id "${WINDOW_ID}" \
             --orm-verdict-json /tmp/r2_orm.json | tee /tmp/r2_scenario.log
 
-          docker logs "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log
+          sleep 2
+          docker logs --since "${LOG_SINCE}" "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1
 
           python scripts/r2/db_log_window_audit.py \
             --log-file /tmp/r7_postgres.log \
