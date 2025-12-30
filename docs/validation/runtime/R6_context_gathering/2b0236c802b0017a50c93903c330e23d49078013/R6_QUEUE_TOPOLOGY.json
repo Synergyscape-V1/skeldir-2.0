@@ -1,0 +1,48 @@
+{
+  "R6_SHA": "2b0236c802b0017a50c93903c330e23d49078013",
+  "R6_TIMESTAMP_UTC": "2025-12-30T17:19:40.948452+00:00",
+  "active_queues": {
+    "queues": [
+      "housekeeping",
+      "maintenance",
+      "llm",
+      "attribution"
+    ],
+    "source": "runtime_snapshot_conf"
+  },
+  "task_default_exchange": "tasks",
+  "task_default_queue": "housekeeping",
+  "task_default_routing_key": "housekeeping.task",
+  "task_queues": [
+    "housekeeping",
+    "maintenance",
+    "llm",
+    "attribution"
+  ],
+  "task_routes": {
+    "app.tasks.attribution.*": {
+      "queue": "attribution",
+      "routing_key": "attribution.task"
+    },
+    "app.tasks.housekeeping.*": {
+      "queue": "housekeeping",
+      "routing_key": "housekeeping.task"
+    },
+    "app.tasks.llm.*": {
+      "queue": "llm",
+      "routing_key": "llm.task"
+    },
+    "app.tasks.maintenance.*": {
+      "queue": "maintenance",
+      "routing_key": "maintenance.task"
+    },
+    "app.tasks.r4_failure_semantics.*": {
+      "queue": "housekeeping",
+      "routing_key": "housekeeping.task"
+    },
+    "app.tasks.r6_resource_governance.*": {
+      "queue": "housekeeping",
+      "routing_key": "housekeeping.task"
+    }
+  }
+}

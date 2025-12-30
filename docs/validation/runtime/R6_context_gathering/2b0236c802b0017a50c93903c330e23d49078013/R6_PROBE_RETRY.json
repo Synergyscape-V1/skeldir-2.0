@@ -1,0 +1,36 @@
+{
+  "R6_SHA": "2b0236c802b0017a50c93903c330e23d49078013",
+  "R6_TIMESTAMP_UTC": "2025-12-30T17:19:40.948452+00:00",
+  "attempt_count": 3,
+  "attempt_events": [
+    {
+      "attempt": 0,
+      "event": "retry_attempt",
+      "run_id": "retry-f40156a2-27a0-4859-9fcb-913798332405",
+      "task_id": "becce486-6eca-448a-8fbe-c1ad55b882e1",
+      "timestamp": "2025-12-30T17:20:10.122574+00:00"
+    },
+    {
+      "attempt": 1,
+      "event": "retry_attempt",
+      "run_id": "retry-f40156a2-27a0-4859-9fcb-913798332405",
+      "task_id": "becce486-6eca-448a-8fbe-c1ad55b882e1",
+      "timestamp": "2025-12-30T17:20:11.159263+00:00"
+    },
+    {
+      "attempt": 2,
+      "event": "retry_attempt",
+      "run_id": "retry-f40156a2-27a0-4859-9fcb-913798332405",
+      "task_id": "becce486-6eca-448a-8fbe-c1ad55b882e1",
+      "timestamp": "2025-12-30T17:20:12.195234+00:00"
+    }
+  ],
+  "attempt_max": 2,
+  "attempt_numbers": [
+    0,
+    1,
+    2
+  ],
+  "result_error": "RuntimeError:r6 retry probe failure",
+  "run_id": "retry-f40156a2-27a0-4859-9fcb-913798332405"
+}

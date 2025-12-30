@@ -1,0 +1,12 @@
+{
+  "R6_SHA": "2b0236c802b0017a50c93903c330e23d49078013",
+  "R6_TIMESTAMP_UTC": "2025-12-30T17:19:40.948452+00:00",
+  "long_task_count": 4,
+  "max_short_wait_s": 10.733988046646118,
+  "run_id": "prefetch-f909ea15-6883-4d33-9f30-be793146156c",
+  "short_result_count": 4,
+  "short_start_count": 0,
+  "short_start_log_lines": [],
+  "short_wait_threshold_s": 20.0,
+  "short_wait_within_threshold": true
+}

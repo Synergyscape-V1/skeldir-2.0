@@ -1,0 +1,18 @@
+{
+  "R6_SHA": "2b0236c802b0017a50c93903c330e23d49078013",
+  "R6_TIMESTAMP_UTC": "2025-12-30T17:19:40.948452+00:00",
+  "pid_samples": [
+    2808,
+    2809,
+    2840
+  ],
+  "recycled_per_task": true,
+  "run_id": "recycle-181119f2-9489-46ec-8d6f-e512e1297854",
+  "sample_count": 3,
+  "unique_pid_count": 3,
+  "unique_pids": [
+    2808,
+    2809,
+    2840
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "R6_SHA": "2b0236c802b0017a50c93903c330e23d49078013",
+  "R6_TIMESTAMP_UTC": "2025-12-30T17:19:40.948452+00:00",
+  "celery": {
+    "version": "5.6.1"
+  },
+  "docker_version": "Docker version 28.0.4, build b8034c0",
+  "git_status_porcelain": "",
+  "os": {
+    "machine": "x86_64",
+    "platform": "Linux-6.8.0-1044-azure-x86_64-with-glibc2.35"
+  },
+  "postgres_image": "postgres:16",
+  "python": {
+    "full": "3.11.14 (main, Oct 10 2025, 01:00:56) [GCC 11.4.0]",
+    "version": "3.11.14"
+  },
+  "run_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/20602002910"
+}
