@@ -620,19 +620,24 @@ jobs:
               "S5": Path("tmp/r4_results/r4_s5.json"),
           }
           results = {}
+          errors = {}
           missing = []
           for key, path in result_files.items():
               if not path.exists():
                   missing.append(key)
                   continue
-              results[key] = json.loads(path.read_text())
+              try:
+                  results[key] = json.loads(path.read_text())
+              except Exception as exc:  # noqa: BLE001
+                  errors[key] = f"{exc.__class__.__name__}: {exc}"
           failed = [k for k, r in results.items() if not r.get("passed")]
-          passed = not missing and not failed
+          passed = not missing and not failed and not errors
           payload = {
               "phase": "R4",
               "status": "PASS" if passed else "FAIL",
               "missing": missing,
               "failed": failed,
+              "errors": errors,
               "results": results,
           }
           print(json.dumps(payload, indent=2, sort_keys=True))
@@ -640,6 +645,8 @@ jobs:
               print(f"::error::R4_MISSING_RESULTS={','.join(missing)}")
           if failed:
               print(f"::error::R4_FAILED_SCENARIOS={','.join(failed)}")
+          if errors:
+              print(f"::error::R4_RESULT_PARSE_ERRORS={','.join(errors.keys())}")
           if not passed:
               raise SystemExit(1)
           PY
