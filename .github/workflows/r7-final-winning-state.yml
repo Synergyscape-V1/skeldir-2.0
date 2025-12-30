@@ -502,6 +502,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "R7_PHASE_START=R4 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${GITHUB_SHA}"
+          mkdir -p tmp/r4_results
           alembic upgrade heads
           export PGPASSWORD="${R7_PG_ADMIN_PASSWORD}"
           psql -h "${R7_PG_HOST}" -U "${R7_PG_ADMIN_USER}" -d r4 -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;" >/dev/null
@@ -536,7 +537,7 @@ jobs:
           R4_POISON_WORKER_POOL: "threads"
         run: |
           set -euo pipefail
-          python scripts/r4/worker_failure_semantics.py --scenario S1 --output-json /tmp/r4_s1.json
+          python scripts/r4/worker_failure_semantics.py --scenario S1 --output-json tmp/r4_results/r4_s1.json
 
       - name: "R7 Phase R4c: Crash after write"
         shell: bash
@@ -554,7 +555,7 @@ jobs:
           R4_CRASH_WORKER_CONCURRENCY: "1"
         run: |
           set -euo pipefail
-          python scripts/r4/worker_failure_semantics.py --scenario S2 --output-json /tmp/r4_s2.json
+          python scripts/r4/worker_failure_semantics.py --scenario S2 --output-json tmp/r4_results/r4_s2.json
 
       - name: "R7 Phase R4d: RLS probe"
         shell: bash
@@ -569,7 +570,7 @@ jobs:
           R4_WORKER_POOL: "prefork"
         run: |
           set -euo pipefail
-          python scripts/r4/worker_failure_semantics.py --scenario S3 --output-json /tmp/r4_s3.json
+          python scripts/r4/worker_failure_semantics.py --scenario S3 --output-json tmp/r4_results/r4_s3.json
 
       - name: "R7 Phase R4e: Runaway no-starve"
         shell: bash
@@ -585,7 +586,7 @@ jobs:
           R4_WORKER_POOL: "prefork"
         run: |
           set -euo pipefail
-          python scripts/r4/worker_failure_semantics.py --scenario S4 --output-json /tmp/r4_s4.json
+          python scripts/r4/worker_failure_semantics.py --scenario S4 --output-json tmp/r4_results/r4_s4.json
 
       - name: "R7 Phase R4f: Least privilege"
         shell: bash
@@ -600,7 +601,7 @@ jobs:
           R4_WORKER_POOL: "prefork"
         run: |
           set -euo pipefail
-          python scripts/r4/worker_failure_semantics.py --scenario S5 --output-json /tmp/r4_s5.json
+          python scripts/r4/worker_failure_semantics.py --scenario S5 --output-json tmp/r4_results/r4_s5.json
 
       - name: "R7 Phase R4g: Aggregate"
         shell: bash
@@ -612,11 +613,11 @@ jobs:
           from pathlib import Path
 
           result_files = {
-              "S1": Path("/tmp/r4_s1.json"),
-              "S2": Path("/tmp/r4_s2.json"),
-              "S3": Path("/tmp/r4_s3.json"),
-              "S4": Path("/tmp/r4_s4.json"),
-              "S5": Path("/tmp/r4_s5.json"),
+              "S1": Path("tmp/r4_results/r4_s1.json"),
+              "S2": Path("tmp/r4_results/r4_s2.json"),
+              "S3": Path("tmp/r4_results/r4_s3.json"),
+              "S4": Path("tmp/r4_results/r4_s4.json"),
+              "S5": Path("tmp/r4_results/r4_s5.json"),
           }
           results = {}
           missing = []
