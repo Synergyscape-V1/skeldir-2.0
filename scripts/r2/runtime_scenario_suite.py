@@ -321,13 +321,26 @@ async def _scenario_4_revenue_reconciliation_insert(tenant_id: UUID) -> None:
 
 async def _scenario_5_worker_context_db_roundtrip(tenant_id: UUID) -> None:
     from app.tasks.context import run_in_worker_loop
-    from app.db.session import engine, set_tenant_guc_async
+    from app.db.session import set_tenant_guc_async
 
     async def _worker_coro() -> None:
-        async with engine.begin() as conn:
-            await set_tenant_guc_async(conn, tenant_id, local=True)
-            await conn.execute(text("SELECT set_config('app.execution_context', 'worker', true)"))
-            await conn.execute(text("SELECT 1"))
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import NullPool
+
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            raise RuntimeError("DATABASE_URL is required for worker context probe")
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        worker_engine = create_async_engine(db_url, poolclass=NullPool)
+        try:
+            async with worker_engine.begin() as conn:
+                await set_tenant_guc_async(conn, tenant_id, local=True)
+                await conn.execute(text("SELECT set_config('app.execution_context', 'worker', true)"))
+                await conn.execute(text("SELECT 1"))
+        finally:
+            await worker_engine.dispose()
 
     await asyncio.to_thread(lambda: run_in_worker_loop(_worker_coro()))
 
