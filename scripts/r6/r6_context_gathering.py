@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -112,9 +113,20 @@ def _resolve_task_route(task_name: str, routes: dict) -> dict[str, str]:
     return {"queue": "", "routing_key": ""}
 
 
+def _resolve_task_annotation(task_name: str, annotations: dict) -> dict[str, Any]:
+    if not isinstance(annotations, dict):
+        return {}
+    if task_name in annotations and isinstance(annotations[task_name], dict):
+        return annotations[task_name]
+    if "*" in annotations and isinstance(annotations["*"], dict):
+        return annotations["*"]
+    return {}
+
+
 def _task_governance_matrix() -> list[dict[str, Any]]:
     conf = celery_app.conf
     routes = conf.task_routes or {}
+    annotations = conf.task_annotations or {}
     rows: list[dict[str, Any]] = []
     for task_name, task in celery_app.tasks.items():
         if task_name.startswith("celery.") or task_name.startswith("kombu."):
@@ -126,6 +138,8 @@ def _task_governance_matrix() -> list[dict[str, Any]]:
         route = _resolve_task_route(task_name, routes)
         queue = options.get("queue") or route["queue"] or conf.task_default_queue
         routing_key = options.get("routing_key") or route["routing_key"] or conf.task_default_routing_key
+
+        annotation = _resolve_task_annotation(task_name, annotations)
 
         max_retries = getattr(task, "max_retries", None)
         retry_backoff = getattr(task, "retry_backoff", None)
@@ -157,6 +171,16 @@ def _task_governance_matrix() -> list[dict[str, Any]]:
             retry_source = "task"
         elif autoretry_for:
             retry_source = "autoretry"
+        elif annotation.get("max_retries") is not None:
+            max_retries = annotation.get("max_retries")
+            retry_source = "annotation"
+
+        if retry_backoff is None:
+            retry_backoff = annotation.get("retry_backoff")
+        if retry_jitter is None:
+            retry_jitter = annotation.get("retry_jitter")
+        if default_retry_delay is None:
+            default_retry_delay = annotation.get("default_retry_delay")
 
         rows.append(
             {
@@ -329,10 +353,17 @@ def _probe_retry(ctx: R6Context) -> dict[str, Any]:
         for line in log_text.splitlines()
         if "r6_retry_attempt" in line and run_id in line
     ]
+    attempt_numbers = []
+    for line in attempt_lines:
+        match = re.search(r"attempt=(\d+)", line)
+        if match:
+            attempt_numbers.append(int(match.group(1)))
     payload = {
         "run_id": run_id,
         "attempt_lines": attempt_lines,
         "attempt_count": len(attempt_lines),
+        "attempt_numbers": attempt_numbers,
+        "attempt_max": max(attempt_numbers) if attempt_numbers else None,
         "result_error": error,
     }
     _write_json(
@@ -346,6 +377,7 @@ def _probe_retry(ctx: R6Context) -> dict[str, Any]:
 
 def _probe_prefetch(ctx: R6Context) -> dict[str, Any]:
     run_id = f"prefetch-{uuid4()}"
+    sent_at = time.time()
     long_ids = [
         celery_app.send_task(
             "app.tasks.r6_resource_governance.prefetch_long_task",
@@ -363,8 +395,19 @@ def _probe_prefetch(ctx: R6Context) -> dict[str, Any]:
         for i in range(4)
     ]
 
-    for tid in long_ids + short_ids:
-        AsyncResult(tid).get(timeout=30)
+    long_results = [AsyncResult(tid).get(timeout=30) for tid in long_ids]
+    short_results = [AsyncResult(tid).get(timeout=30) for tid in short_ids]
+
+    short_wait_s = []
+    for result in short_results:
+        if isinstance(result, dict) and result.get("started"):
+            started = datetime.fromisoformat(result["started"]).timestamp()
+            short_wait_s.append(started - sent_at)
+    max_short_wait_s = max(short_wait_s) if short_wait_s else None
+    wait_threshold_s = 5.0
+    wait_within_threshold = (
+        max_short_wait_s is not None and max_short_wait_s <= wait_threshold_s
+    )
 
     log_text = (
         ctx.worker_log_path.read_text(encoding="utf-8", errors="replace")
@@ -379,9 +422,43 @@ def _probe_prefetch(ctx: R6Context) -> dict[str, Any]:
         "short_start_log_lines": short_starts,
         "short_start_count": len(short_starts),
         "long_task_count": len(long_ids),
+        "short_result_count": len(short_results),
+        "max_short_wait_s": max_short_wait_s,
+        "short_wait_threshold_s": wait_threshold_s,
+        "short_wait_within_threshold": wait_within_threshold,
     }
     _write_json(
         ctx.output_dir / "R6_PROBE_PREFETCH.json",
+        payload,
+        sha=ctx.sha,
+        timestamp=ctx.timestamp_utc,
+    )
+    return payload
+
+
+def _probe_recycle(ctx: R6Context) -> dict[str, Any]:
+    run_id = f"recycle-{uuid4()}"
+    pids = []
+    for index in range(3):
+        result = celery_app.send_task(
+            "app.tasks.r6_resource_governance.pid_probe",
+            kwargs={"run_id": run_id, "index": index},
+            queue="housekeeping",
+        )
+        payload = result.get(timeout=10)
+        if isinstance(payload, dict) and payload.get("pid"):
+            pids.append(int(payload["pid"]))
+    unique_pids = sorted(set(pids))
+    payload = {
+        "run_id": run_id,
+        "pid_samples": pids,
+        "unique_pid_count": len(unique_pids),
+        "unique_pids": unique_pids,
+        "sample_count": len(pids),
+        "recycled_per_task": len(unique_pids) == len(pids) if pids else False,
+    }
+    _write_json(
+        ctx.output_dir / "R6_PROBE_RECYCLE.json",
         payload,
         sha=ctx.sha,
         timestamp=ctx.timestamp_utc,
@@ -418,6 +495,8 @@ def main() -> int:
     }
     _write_json(output_dir / "R6_ENV_SNAPSHOT.json", env_snapshot, sha=sha, timestamp=timestamp)
 
+    snapshot = _wait_for_worker_snapshot()
+
     _write_text(
         output_dir / "R6_CELERY_REPORT.log",
         _celery_cli(["report"]),
@@ -449,7 +528,6 @@ def main() -> int:
         timestamp=timestamp,
     )
 
-    snapshot = _wait_for_worker_snapshot()
     snapshot["sha"] = sha
     snapshot["timestamp_utc"] = timestamp
     snapshot["run_url"] = run_url
@@ -518,6 +596,7 @@ def main() -> int:
     _probe_timeout(ctx)
     _probe_retry(ctx)
     _probe_prefetch(ctx)
+    _probe_recycle(ctx)
 
     return 0
 

@@ -120,7 +120,7 @@ def timeout_probe(self, run_id: str) -> None:
     Exceeds soft+hard time limits to prove enforcement.
     """
     logger.info(
-        "r6_timeout_probe_start",
+        f"r6_timeout_probe_start run_id={run_id} task_id={self.request.id}",
         extra={"run_id": run_id, "task_id": self.request.id},
     )
     try:
@@ -128,7 +128,7 @@ def timeout_probe(self, run_id: str) -> None:
             time.sleep(0.2)
     except SoftTimeLimitExceeded:
         logger.warning(
-            "r6_timeout_soft_limit_exceeded",
+            f"r6_timeout_soft_limit_exceeded run_id={run_id} task_id={self.request.id}",
             extra={"run_id": run_id, "task_id": self.request.id},
         )
         while True:
@@ -148,7 +148,7 @@ def retry_probe(self, run_id: str) -> None:
     """
     attempt = int(getattr(self.request, "retries", 0) or 0)
     logger.warning(
-        "r6_retry_attempt",
+        f"r6_retry_attempt run_id={run_id} task_id={self.request.id} attempt={attempt}",
         extra={"run_id": run_id, "task_id": self.request.id, "attempt": attempt},
     )
     raise self.retry(exc=RuntimeError("r6 retry probe failure"), countdown=1)
@@ -162,13 +162,13 @@ def retry_probe(self, run_id: str) -> None:
 def prefetch_short_task(self, run_id: str, index: int) -> dict:
     started = datetime.now(timezone.utc).isoformat()
     logger.info(
-        "r6_prefetch_short_start",
+        f"r6_prefetch_short_start run_id={run_id} task_id={self.request.id} index={index}",
         extra={"run_id": run_id, "task_id": self.request.id, "index": index, "started": started},
     )
     time.sleep(0.2)
     finished = datetime.now(timezone.utc).isoformat()
     logger.info(
-        "r6_prefetch_short_end",
+        f"r6_prefetch_short_end run_id={run_id} task_id={self.request.id} index={index}",
         extra={"run_id": run_id, "task_id": self.request.id, "index": index, "finished": finished},
     )
     return {"started": started, "finished": finished}
@@ -182,13 +182,27 @@ def prefetch_short_task(self, run_id: str, index: int) -> dict:
 def prefetch_long_task(self, run_id: str, index: int, sleep_s: float = 2.0) -> dict:
     started = datetime.now(timezone.utc).isoformat()
     logger.info(
-        "r6_prefetch_long_start",
+        f"r6_prefetch_long_start run_id={run_id} task_id={self.request.id} index={index}",
         extra={"run_id": run_id, "task_id": self.request.id, "index": index, "started": started},
     )
     time.sleep(float(sleep_s))
     finished = datetime.now(timezone.utc).isoformat()
     logger.info(
-        "r6_prefetch_long_end",
+        f"r6_prefetch_long_end run_id={run_id} task_id={self.request.id} index={index}",
         extra={"run_id": run_id, "task_id": self.request.id, "index": index, "finished": finished},
     )
     return {"started": started, "finished": finished}
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.r6_resource_governance.pid_probe",
+    routing_key="housekeeping.task",
+)
+def pid_probe(self, run_id: str, index: int) -> dict:
+    pid = os.getpid()
+    logger.info(
+        f"r6_pid_probe run_id={run_id} task_id={self.request.id} index={index} pid={pid}",
+        extra={"run_id": run_id, "task_id": self.request.id, "index": index, "pid": pid},
+    )
+    return {"pid": pid, "index": index}

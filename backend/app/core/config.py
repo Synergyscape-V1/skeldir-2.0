@@ -75,6 +75,30 @@ class Settings(BaseSettings):
         1,
         description="Prefetch multiplier for worker (1 minimizes starvation and improves crash determinism).",
     )
+    CELERY_TASK_SOFT_TIME_LIMIT_S: int = Field(
+        300,
+        description="Global soft time limit (seconds) for Celery tasks to allow graceful aborts.",
+    )
+    CELERY_TASK_TIME_LIMIT_S: int = Field(
+        360,
+        description="Global hard time limit (seconds) for Celery tasks to force termination.",
+    )
+    CELERY_WORKER_MAX_TASKS_PER_CHILD: int = Field(
+        100,
+        description="Restart worker child processes after this many tasks to bound leaks.",
+    )
+    CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB: int = Field(
+        250000,
+        description="Restart worker child processes after exceeding this memory (KB).",
+    )
+    CELERY_CHORD_UNLOCK_MAX_RETRIES: int = Field(
+        5,
+        description="Maximum retries for Celery chord unlock orchestration task.",
+    )
+    CELERY_CHORD_UNLOCK_RETRY_DELAY_S: int = Field(
+        2,
+        description="Base retry delay (seconds) for Celery chord unlock retries.",
+    )
     CELERY_BROKER_ENGINE_POOL_SIZE: int = Field(
         5,
         description="SQLAlchemy pool_size for sqla+ Postgres broker engine (per process).",
@@ -155,6 +179,27 @@ class Settings(BaseSettings):
     def validate_celery_prefetch_multiplier(cls, value: int) -> int:
         if value < 1:
             raise ValueError("CELERY_WORKER_PREFETCH_MULTIPLIER must be >= 1")
+        return value
+
+    @field_validator("CELERY_TASK_SOFT_TIME_LIMIT_S", "CELERY_TASK_TIME_LIMIT_S")
+    @classmethod
+    def validate_celery_task_time_limits(cls, value: int, info) -> int:
+        if value < 1:
+            raise ValueError(f"{info.field_name} must be >= 1")
+        return value
+
+    @field_validator("CELERY_WORKER_MAX_TASKS_PER_CHILD", "CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB")
+    @classmethod
+    def validate_celery_worker_recycle_limits(cls, value: int, info) -> int:
+        if value < 1:
+            raise ValueError(f"{info.field_name} must be >= 1")
+        return value
+
+    @field_validator("CELERY_CHORD_UNLOCK_MAX_RETRIES", "CELERY_CHORD_UNLOCK_RETRY_DELAY_S")
+    @classmethod
+    def validate_celery_chord_unlock_limits(cls, value: int, info) -> int:
+        if value < 0:
+            raise ValueError(f"{info.field_name} must be >= 0")
         return value
 
     @field_validator(

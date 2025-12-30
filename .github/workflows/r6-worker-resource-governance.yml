@@ -42,6 +42,12 @@ jobs:
       CELERY_TASK_REJECT_ON_WORKER_LOST: "true"
       CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT: "true"
       CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
+      CELERY_TASK_SOFT_TIME_LIMIT_S: "300"
+      CELERY_TASK_TIME_LIMIT_S: "360"
+      CELERY_WORKER_MAX_TASKS_PER_CHILD: "1"
+      CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB: "200000"
+      CELERY_CHORD_UNLOCK_MAX_RETRIES: "5"
+      CELERY_CHORD_UNLOCK_RETRY_DELAY_S: "2"
       CELERY_BROKER_ENGINE_POOL_SIZE: "2"
       CELERY_BROKER_ENGINE_MAX_OVERFLOW: "0"
       CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE: "2"
@@ -99,6 +105,8 @@ jobs:
             --pool=prefork \
             --concurrency=2 \
             -Q housekeeping,maintenance,llm,attribution \
+            --max-tasks-per-child "${CELERY_WORKER_MAX_TASKS_PER_CHILD}" \
+            --max-memory-per-child "${CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB}" \
             --logfile r6_worker.log \
             --pidfile /tmp/r6_worker.pid >/dev/null 2>&1 &
           sleep 5
@@ -111,6 +119,46 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/r6/r6_context_gathering.py
+
+      - name: Print R6 runtime evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="docs/validation/runtime/R6_context_gathering/${{ github.sha }}"
+          echo "R6_CELERY_REPORT_LOG_BEGIN"
+          cat "$base/R6_CELERY_REPORT.log" || true
+          echo "R6_CELERY_REPORT_LOG_END"
+          echo "R6_CELERY_INSPECT_CONF_LOG_BEGIN"
+          cat "$base/R6_CELERY_INSPECT_CONF.log" || true
+          echo "R6_CELERY_INSPECT_CONF_LOG_END"
+          echo "R6_CELERY_INSPECT_STATS_LOG_BEGIN"
+          cat "$base/R6_CELERY_INSPECT_STATS.log" || true
+          echo "R6_CELERY_INSPECT_STATS_LOG_END"
+          echo "R6_ACTIVE_QUEUES_LOG_BEGIN"
+          cat "$base/R6_ACTIVE_QUEUES.log" || true
+          echo "R6_ACTIVE_QUEUES_LOG_END"
+          echo "R6_TASK_REGISTRY_LOG_BEGIN"
+          cat "$base/R6_TASK_REGISTRY.log" || true
+          echo "R6_TASK_REGISTRY_LOG_END"
+          echo "R6_RUNTIME_SNAPSHOT_JSON_BEGIN"
+          cat "$base/R6_CELERY_INSPECT_CONF.json" || true
+          echo "R6_RUNTIME_SNAPSHOT_JSON_END"
+          echo "R6_GAP_REPORT_BEGIN"
+          cat "$base/R6_GAP_REPORT.md" || true
+          echo "R6_GAP_REPORT_END"
+          echo "R6_PROBE_TIMEOUT_JSON_BEGIN"
+          cat "$base/R6_PROBE_TIMEOUT.json" || true
+          echo "R6_PROBE_TIMEOUT_JSON_END"
+          echo "R6_PROBE_RETRY_JSON_BEGIN"
+          cat "$base/R6_PROBE_RETRY.json" || true
+          echo "R6_PROBE_RETRY_JSON_END"
+          echo "R6_PROBE_PREFETCH_JSON_BEGIN"
+          cat "$base/R6_PROBE_PREFETCH.json" || true
+          echo "R6_PROBE_PREFETCH_JSON_END"
+          echo "R6_PROBE_RECYCLE_JSON_BEGIN"
+          cat "$base/R6_PROBE_RECYCLE.json" || true
+          echo "R6_PROBE_RECYCLE_JSON_END"
 
       - name: Stop Celery worker
         if: always()

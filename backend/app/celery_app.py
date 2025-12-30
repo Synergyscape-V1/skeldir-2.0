@@ -148,6 +148,18 @@ def _ensure_celery_configured():
         task_reject_on_worker_lost=settings.CELERY_TASK_REJECT_ON_WORKER_LOST,
         task_acks_on_failure_or_timeout=settings.CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT,
         worker_prefetch_multiplier=settings.CELERY_WORKER_PREFETCH_MULTIPLIER,
+        task_soft_time_limit=settings.CELERY_TASK_SOFT_TIME_LIMIT_S,
+        task_time_limit=settings.CELERY_TASK_TIME_LIMIT_S,
+        worker_max_tasks_per_child=settings.CELERY_WORKER_MAX_TASKS_PER_CHILD,
+        worker_max_memory_per_child=settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB,
+        task_annotations={
+            "celery.chord_unlock": {
+                "max_retries": settings.CELERY_CHORD_UNLOCK_MAX_RETRIES,
+                "default_retry_delay": settings.CELERY_CHORD_UNLOCK_RETRY_DELAY_S,
+                "retry_backoff": True,
+                "retry_jitter": True,
+            }
+        },
         include=[
             "app.tasks.housekeeping",
             "app.tasks.maintenance",
