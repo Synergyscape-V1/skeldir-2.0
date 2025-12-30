@@ -310,6 +310,7 @@ def _wait_for_worker_snapshot(timeout_s: int = 30) -> dict[str, Any]:
 
 def _probe_timeout(ctx: R6Context) -> dict[str, Any]:
     run_id = f"timeout-{uuid4()}"
+    start = time.monotonic()
     result = celery_app.send_task(
         "app.tasks.r6_resource_governance.timeout_probe",
         kwargs={"run_id": run_id},
@@ -320,6 +321,7 @@ def _probe_timeout(ctx: R6Context) -> dict[str, Any]:
         result.get(timeout=15)
     except Exception as exc:  # noqa: BLE001
         error = f"{exc.__class__.__name__}:{exc}"
+    elapsed_s = time.monotonic() - start
 
     events = _read_probe_events(ctx.probe_log_path)
     soft_hit = any(
@@ -331,6 +333,9 @@ def _probe_timeout(ctx: R6Context) -> dict[str, Any]:
         "run_id": run_id,
         "soft_limit_observed": soft_hit,
         "hard_limit_observed": hard_hit,
+        "elapsed_s": elapsed_s,
+        "soft_limit_s": 2,
+        "hard_limit_s": 4,
         "result_error": error,
     }
     _write_json(
@@ -350,10 +355,12 @@ def _probe_retry(ctx: R6Context) -> dict[str, Any]:
         queue="housekeeping",
     )
     error = None
+    result_state = None
     try:
         result.get(timeout=20)
     except Exception as exc:  # noqa: BLE001
         error = f"{exc.__class__.__name__}:{exc}"
+    result_state = result.state
 
     events = _read_probe_events(ctx.probe_log_path)
     attempt_events = [
@@ -372,6 +379,7 @@ def _probe_retry(ctx: R6Context) -> dict[str, Any]:
         "attempt_count": len(attempt_events),
         "attempt_numbers": attempt_numbers,
         "attempt_max": max(attempt_numbers) if attempt_numbers else None,
+        "terminal_state": result_state,
         "result_error": error,
     }
     _write_json(
@@ -476,7 +484,17 @@ def _probe_recycle(ctx: R6Context) -> dict[str, Any]:
 
 def main() -> int:
     run_url = os.getenv("R6_RUN_URL", "UNKNOWN")
-    sha = os.getenv("R6_SHA", _git_rev_parse_head())
+    git_sha = _git_rev_parse_head()
+    sha = os.getenv("R6_SHA", git_sha)
+    github_sha = os.getenv("GITHUB_SHA")
+    if sha != git_sha:
+        raise RuntimeError(f"R6_SHA mismatch: env={sha} git={git_sha}")
+    if github_sha and github_sha != sha:
+        raise RuntimeError(f"R6_SHA mismatch: github={github_sha} env={sha}")
+    print(f"R6_SHA={sha}")
+    print(f"R6_GIT_SHA={git_sha}")
+    if github_sha:
+        print(f"R6_GITHUB_SHA={github_sha}")
     timestamp = _utc_now()
     output_root = Path("docs/validation/runtime/R6_context_gathering")
     output_dir = _ensure_output_dir(output_root, sha)
@@ -499,6 +517,7 @@ def main() -> int:
         "R6_TIMESTAMP_UTC": timestamp,
         "git_status_porcelain": _git_status_porcelain(),
         "run_url": run_url,
+        "github_sha": github_sha or "",
         "os": {"platform": platform.platform(), "machine": platform.machine()},
         "python": {"version": sys.version.split()[0], "full": sys.version},
         "celery": {"version": celery_version},

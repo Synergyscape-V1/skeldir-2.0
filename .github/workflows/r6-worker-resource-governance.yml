@@ -59,6 +59,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
 
+      - name: R6 SHA guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "R6_GITHUB_SHA=$GITHUB_SHA"
+          head_sha="$(git rev-parse HEAD)"
+          echo "R6_GIT_SHA=$head_sha"
+          if [ "$head_sha" != "$GITHUB_SHA" ]; then
+            echo "R6_SHA_MISMATCH head=$head_sha github=$GITHUB_SHA"
+            exit 1
+          fi
+
       - name: Setup Python
         uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
         with:
@@ -163,6 +175,100 @@ jobs:
           echo "R6_PROBE_LOG_BEGIN"
           cat r6_probe.log || true
           echo "R6_PROBE_LOG_END"
+          echo "R6_TASK_GOVERNANCE_MATRIX_BEGIN"
+          cat "$base/R6_TASK_GOVERNANCE_MATRIX.md" || true
+          echo "R6_TASK_GOVERNANCE_MATRIX_END"
+
+      - name: Verify R6 runtime probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+          import re
+
+          sha = os.environ.get("GITHUB_SHA") or ""
+          base = Path("docs/validation/runtime/R6_context_gathering") / sha
+          def read_json(name):
+              path = base / name
+              if not path.exists():
+                  print(f"R6_VERIFY_MISSING_FILE {path}")
+                  sys.exit(1)
+              return json.loads(path.read_text(encoding="utf-8"))
+
+          env = read_json("R6_ENV_SNAPSHOT.json")
+          conf = read_json("R6_CELERY_INSPECT_CONF.json")
+          timeout = read_json("R6_PROBE_TIMEOUT.json")
+          retry = read_json("R6_PROBE_RETRY.json")
+          recycle = read_json("R6_PROBE_RECYCLE.json")
+          prefetch = read_json("R6_PROBE_PREFETCH.json")
+
+          env_sha = env.get("R6_SHA")
+          github_sha = env.get("github_sha") or sha
+          if env_sha != sha or github_sha != sha:
+              print(f"R6_VERIFY_SHA_FAIL env={env_sha} github={github_sha} expected={sha}")
+              sys.exit(1)
+          print(f"R6_VERIFY_SHA_OK {sha}")
+
+          conf_summary = conf.get("conf", {})
+          soft = conf_summary.get("task_soft_time_limit")
+          hard = conf_summary.get("task_time_limit")
+          max_tasks = conf_summary.get("worker_max_tasks_per_child")
+          max_mem = conf_summary.get("worker_max_memory_per_child")
+          prefetch_mult = conf_summary.get("worker_prefetch_multiplier")
+          print(f"R6_VERIFY_BOUNDS soft={soft} hard={hard} max_tasks={max_tasks} max_mem={max_mem} prefetch={prefetch_mult}")
+          if any(value in (None, 0, "") for value in (soft, hard, prefetch_mult)):
+              sys.exit(1)
+          if max_tasks in (None, 0) and max_mem in (None, 0):
+              sys.exit(1)
+
+          if not timeout.get("soft_limit_observed") or not timeout.get("hard_limit_observed"):
+              print("R6_VERIFY_TIMEOUT_FAIL")
+              sys.exit(1)
+          print(f"R6_VERIFY_TIMEOUT_OK elapsed_s={timeout.get('elapsed_s')}")
+
+          attempts = retry.get("attempt_numbers") or []
+          attempt_max = retry.get("attempt_max")
+          terminal_state = retry.get("terminal_state")
+          if len(attempts) < 2 or attempt_max is None:
+              print("R6_VERIFY_RETRY_FAIL no attempts")
+              sys.exit(1)
+          if terminal_state not in ("FAILURE", "REVOKED"):
+              print(f"R6_VERIFY_RETRY_FAIL terminal_state={terminal_state}")
+              sys.exit(1)
+          print(f"R6_VERIFY_RETRY_OK attempts={attempts} terminal_state={terminal_state}")
+
+          unique_pids = recycle.get("unique_pid_count")
+          if unique_pids is None or unique_pids < 2:
+              print("R6_VERIFY_RECYCLE_FAIL")
+              sys.exit(1)
+          print(f"R6_VERIFY_RECYCLE_OK unique_pids={unique_pids}")
+
+          max_wait = prefetch.get("max_short_wait_s")
+          threshold = prefetch.get("short_wait_threshold_s")
+          if max_wait is None or threshold is None or max_wait > threshold:
+              print(f"R6_VERIFY_PREFETCH_FAIL max_wait={max_wait} threshold={threshold}")
+              sys.exit(1)
+          print(f"R6_VERIFY_PREFETCH_OK max_wait={max_wait} threshold={threshold}")
+
+          annotations = (conf.get("conf_full") or {}).get("task_annotations") or {}
+          chord = annotations.get("celery.chord_unlock") or {}
+          max_retries = chord.get("max_retries")
+          delay = chord.get("default_retry_delay")
+          backoff = chord.get("retry_backoff")
+          jitter = chord.get("retry_jitter")
+          print(f"R6_VERIFY_CHORD_UNLOCK max_retries={max_retries} delay={delay} backoff={backoff} jitter={jitter}")
+          if not isinstance(max_retries, int) or max_retries <= 0:
+              sys.exit(1)
+          if not isinstance(delay, int) or delay <= 0:
+              sys.exit(1)
+          if backoff is None or jitter is None:
+              sys.exit(1)
+          print("R6_VERIFY_ALL_PASS true")
+          PY
 
       - name: Stop Celery worker
         if: always()
