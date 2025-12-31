@@ -239,6 +239,13 @@ async def _pg(database_url: str) -> asyncpg.Connection:
     return await asyncpg.connect(database_url)
 
 
+async def _set_tenant_context(conn: asyncpg.Connection, tenant_id: UUID) -> None:
+    await conn.execute(
+        "SELECT set_config('app.current_tenant_id', $1, false)",
+        str(tenant_id),
+    )
+
+
 async def _seed_tenant(conn: asyncpg.Connection, tenant_id: UUID, *, label: str) -> None:
     api_key_hash = f"R4_{label}_{tenant_id}"
     notification_email = f"r4_{label}_{str(tenant_id)[:8]}@test.invalid"
@@ -256,6 +263,7 @@ async def _seed_tenant(conn: asyncpg.Connection, tenant_id: UUID, *, label: str)
 
 
 async def _seed_worker_side_effect(conn: asyncpg.Connection, tenant_id: UUID, *, task_id: str, effect_key: str) -> UUID:
+    await _set_tenant_context(conn, tenant_id)
     row_id = await conn.fetchval(
         """
         INSERT INTO worker_side_effects (tenant_id, task_id, correlation_id, effect_key, created_at)
@@ -363,6 +371,7 @@ async def _run_safely(
 async def _count_worker_failed_jobs(
     conn: asyncpg.Connection,
     *,
+    tenant_id: UUID,
     task_name: str,
     task_ids: list[str],
     since: datetime,
@@ -370,6 +379,7 @@ async def _count_worker_failed_jobs(
 ) -> dict[str, int]:
     if not task_ids:
         return {"rows": 0, "rows_total": 0, "max_retry_count": 0}
+    await _set_tenant_context(conn, tenant_id)
     rows_total = int(
         await conn.fetchval(
             """
@@ -428,6 +438,7 @@ async def _count_side_effects(
 ) -> dict[str, int]:
     if not task_ids:
         return {"rows": 0, "duplicate_task_ids": 0}
+    await _set_tenant_context(conn, tenant_id)
     rows = int(
         await conn.fetchval(
             """
@@ -478,6 +489,7 @@ async def _attempt_stats(
             "attempts_distribution": {},
             "task_count_observed": 0,
         }
+    await _set_tenant_context(conn, tenant_id)
     rows = await conn.fetch(
         """
         SELECT task_id, COUNT(*) AS attempts
@@ -519,6 +531,7 @@ async def _barrier_row(
 ) -> dict[str, Any] | None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
+        await _set_tenant_context(conn, tenant_id)
         row = await conn.fetchrow(
             """
             SELECT attempt_no, worker_pid, wrote_at
@@ -553,6 +566,7 @@ async def _wait_for_redelivery_attempt(
 ) -> int | None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
+        await _set_tenant_context(conn, tenant_id)
         if since_ts is None:
             val = await conn.fetchval(
                 """
@@ -648,7 +662,14 @@ async def scenario_poison_pill(ctx: ScenarioCtx, conn: asyncpg.Connection, *, n:
     dlq: dict[str, int] = {"rows": 0, "max_retry_count": 0}
     while time.time() < deadline:
         now = _now_utc()
-        dlq = await _count_worker_failed_jobs(conn, task_name=task_name, task_ids=task_ids, since=s_start, until=now)
+        dlq = await _count_worker_failed_jobs(
+            conn,
+            tenant_id=ctx.tenant_a,
+            task_name=task_name,
+            task_ids=task_ids,
+            since=s_start,
+            until=now,
+        )
         if dlq["rows"] >= n:
             break
         await asyncio.sleep(0.5)
@@ -981,6 +1002,7 @@ async def scenario_least_privilege(ctx: ScenarioCtx, conn: asyncpg.Connection) -
     s_end = _now_utc()
     dlq = await _count_worker_failed_jobs(
         conn,
+        tenant_id=ctx.tenant_a,
         task_name="app.tasks.r4_failure_semantics.privilege_probes",
         task_ids=[task_id],
         since=s_start,
