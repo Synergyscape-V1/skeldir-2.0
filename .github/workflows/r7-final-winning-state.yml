@@ -642,11 +642,20 @@ jobs:
           }
           print(json.dumps(payload, indent=2, sort_keys=True))
           if missing:
-              print(f"::error::R4_MISSING_RESULTS={','.join(missing)}")
+              print(
+                  f"::error file=.github/workflows/r7-final-winning-state.yml,line=1,col=1::"
+                  f"R4_MISSING_RESULTS={','.join(missing)}"
+              )
           if failed:
-              print(f"::error::R4_FAILED_SCENARIOS={','.join(failed)}")
+              print(
+                  f"::error file=.github/workflows/r7-final-winning-state.yml,line=1,col=1::"
+                  f"R4_FAILED_SCENARIOS={','.join(failed)}"
+              )
           if errors:
-              print(f"::error::R4_RESULT_PARSE_ERRORS={','.join(errors.keys())}")
+              print(
+                  f"::error file=.github/workflows/r7-final-winning-state.yml,line=1,col=1::"
+                  f"R4_RESULT_PARSE_ERRORS={','.join(errors.keys())}"
+              )
           if not passed:
               raise SystemExit(1)
           PY
