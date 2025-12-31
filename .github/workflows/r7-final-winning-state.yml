@@ -669,6 +669,15 @@ jobs:
               except Exception as exc:  # noqa: BLE001
                   errors[key] = f"{exc.__class__.__name__}: {exc}"
           failed = [k for k, r in results.items() if not r.get("passed")]
+          for key, result in results.items():
+              if not result:
+                  continue
+              err_list = result.get("errors") or []
+              if err_list:
+                  print(
+                      f"::error file=.github/workflows/r7-final-winning-state.yml,line=1,col=1::"
+                      f"R4_{key}_ERRORS={json.dumps(err_list, sort_keys=True)}"
+                  )
           passed = not missing and not failed and not errors
           payload = {
               "phase": "R4",
