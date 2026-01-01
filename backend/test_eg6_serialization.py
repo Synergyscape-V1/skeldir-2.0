@@ -10,7 +10,7 @@ import logging
 from sqlalchemy import text
 
 from app.db.session import engine
-from app.core.pg_locks import try_acquire_refresh_lock, release_refresh_lock
+from app.core.pg_locks import try_acquire_refresh_xact_lock
 from app.tasks.maintenance import _qualified_matview_identifier
 
 # Configure logging to see lock acquisition messages
@@ -24,7 +24,7 @@ async def simulate_refresh_with_delay(view_name: str, task_id: str, delay_sec: f
     """
     async with engine.begin() as conn:
         # Try to acquire lock
-        acquired = await try_acquire_refresh_lock(conn, view_name)
+        acquired, _lock_key = await try_acquire_refresh_xact_lock(conn, view_name)
 
         if not acquired:
             print(f"[{task_id}] Lock already held - SKIPPING")
@@ -39,9 +39,8 @@ async def simulate_refresh_with_delay(view_name: str, task_id: str, delay_sec: f
             print(f"[{task_id}] Refresh completed")
             return "success"
         finally:
-            # Release lock
-            await release_refresh_lock(conn, view_name)
-            print(f"[{task_id}] Lock released")
+            # Xact lock releases automatically when the transaction ends.
+            print(f"[{task_id}] Transaction ended; xact lock released")
 
 
 async def test_concurrent_refresh():

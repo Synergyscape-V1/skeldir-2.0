@@ -1,0 +1,63 @@
+name: B0.5.4.2 Refresh Executor Gates
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  b0542-gates:
+    name: B0.5.4.2 Gates (G2A/G2B/G2C)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app_user
+          POSTGRES_PASSWORD: app_user
+          POSTGRES_DB: skeldir_validation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U app_user -d skeldir_validation"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      TESTING: "1"
+      CI: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            pg_isready -h 127.0.0.1 -p 5432 -U app_user -d skeldir_validation && break
+            sleep 1
+          done
+
+      - name: Apply migrations
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Run B0.5.4.2 gate tests
+        run: |
+          cd backend
+          pytest tests/test_b0542_refresh_executor.py -q

@@ -142,21 +142,20 @@ grep -n "Sending due task" /tmp/zg_beat.log || true
 echo "== ZG-6: serialization enforced in refresh path =="
 python - <<'PY'
 import asyncio, logging
-from app.tasks import maintenance as m
-from app.core.pg_locks import try_acquire_refresh_lock, release_refresh_lock
+from app.core.pg_locks import try_acquire_refresh_xact_lock
 from app.db.session import engine
+from app.matviews.executor import refresh_single_async
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
 async def hold_lock(duration):
     async with engine.begin() as conn:
-        acquired = await try_acquire_refresh_lock(conn, 'mv_allocation_summary', None)
+        acquired, _lock_key = await try_acquire_refresh_xact_lock(conn, 'mv_allocation_summary', None)
         print(f"lock_holder_acquired={acquired}")
         await asyncio.sleep(duration)
-        await release_refresh_lock(conn, 'mv_allocation_summary', None)
-        print("lock_holder_released")
+    print("lock_holder_released")
 async def attempt(label):
-    result = await m._refresh_view('mv_allocation_summary', label, None)
-    print(f"{label}: {result}")
-    return result
+    result = await refresh_single_async('mv_allocation_summary', None, label)
+    print(f"{label}: {result.outcome.value}")
+    return result.outcome.value
 async def main():
     lock_task = asyncio.create_task(hold_lock(2.0))
     await asyncio.sleep(0.2)

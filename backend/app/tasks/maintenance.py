@@ -18,7 +18,7 @@ from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from app.celery_app import celery_app
 from app.matviews.registry import get_entry, list_names
-from app.core.pg_locks import try_acquire_refresh_lock, release_refresh_lock
+from app.matviews.executor import RefreshOutcome, refresh_single
 from app.db.session import engine, set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.tasks.context import tenant_task
@@ -63,47 +63,6 @@ def _qualified_matview_identifier(
     return f"{_PUBLIC_SCHEMA}.{quoted_view}"
 
 
-async def _refresh_view(view_name: str, task_id: str, tenant_id: Optional[UUID] = None) -> str:
-    """
-    Refresh a single materialized view with advisory lock serialization.
-
-    B0.5.4.0: Added pg_advisory_lock to prevent duplicate execution (G12 remediation).
-
-    Args:
-        view_name: Name of materialized view to refresh
-        task_id: Celery task ID for correlation
-        tenant_id: Optional tenant UUID (None for global refresh)
-
-    Returns:
-        "success" if refreshed, "skipped_already_running" if lock held
-    """
-    entry = get_entry(view_name)
-    qualified_view = _qualified_matview_identifier(view_name, task_id=task_id, tenant_id=tenant_id)
-    async with engine.begin() as conn:
-        # Try to acquire advisory lock
-        acquired = await try_acquire_refresh_lock(conn, view_name, tenant_id)
-        if not acquired:
-            logger.info(
-                "matview_refresh_skipped_already_running",
-                extra={"view_name": view_name, "task_id": task_id, "reason": "lock_held"}
-            )
-            return "skipped_already_running"
-
-        try:
-            if not entry.refresh_sql:
-                raise ValueError(f"View '{view_name}' missing refresh_sql")
-            refresh_sql = entry.refresh_sql.format(qualified_name=qualified_view)
-            await conn.execute(text(refresh_sql))
-            logger.info(
-                "matview_refreshed",
-                extra={"view_name": view_name, "task_id": task_id},
-            )
-            return "success"
-        finally:
-            # Release lock
-            await release_refresh_lock(conn, view_name, tenant_id)
-
-
 @celery_app.task(
     bind=True,
     name="app.tasks.maintenance.refresh_all_matviews_global_legacy",
@@ -128,7 +87,10 @@ def refresh_all_matviews_global_legacy(self) -> Dict[str, str]:
     results: Dict[str, str] = {}
     try:
         for view_name in list_names():
-            results[view_name] = asyncio.run(_refresh_view(view_name, self.request.id))
+            result = refresh_single(view_name, None, correlation_id)
+            results[view_name] = result.to_log_dict()
+            if result.outcome == RefreshOutcome.FAILED:
+                raise RuntimeError(f"Matview refresh failed: {view_name}")
         return results
     except Exception as exc:
         logger.error(
@@ -173,7 +135,7 @@ def refresh_matview_for_tenant(self, tenant_id: UUID, view_name: str, correlatio
 
     try:
         _qualified_matview_identifier(view_name, task_id=self.request.id, tenant_id=tenant_id)
-        result = asyncio.run(_refresh_view(view_name, self.request.id, tenant_id))
+        result = refresh_single(view_name, tenant_id, correlation_id)
         logger.info(
             "tenant_matview_refresh_completed",
             extra={
@@ -181,14 +143,16 @@ def refresh_matview_for_tenant(self, tenant_id: UUID, view_name: str, correlatio
                 "tenant_id": str(tenant_id),
                 "task_id": self.request.id,
                 "correlation_id": correlation_id,
-                "result": result,
+                "result": result.to_log_dict(),
             },
         )
+        if result.outcome == RefreshOutcome.FAILED:
+            raise RuntimeError("Matview refresh failed")
         return {
             "status": "ok",
             "view_name": view_name,
             "tenant_id": str(tenant_id),
-            "result": result,
+            "result": result.to_log_dict(),
         }
     except Exception as exc:
         logger.error(
