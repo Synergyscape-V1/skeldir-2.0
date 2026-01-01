@@ -1,6 +1,11 @@
 {
   "version": 1,
   "notes": "Explicit, reviewed exceptions only. Keep this tiny; prefer fixing code over allowlisting.",
-  "allow": []
+  "allow": [
+    {
+      "path": "scripts/r5/r5_probes.py",
+      "kind": "execute_literal_sql_destructive_on_immutable",
+      "excerpt_regex": "DELETE\\s+FROM\\s+attribution_events"
+    }
+  ]
 }
-
