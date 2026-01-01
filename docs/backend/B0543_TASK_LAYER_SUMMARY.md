@@ -34,6 +34,7 @@ PENDING (set after commit C)
 - `backend/tests/test_b052_queue_topology_and_dlq.py`
 - `backend/tests/test_b0543_matview_task_layer.py`
 - `docs/backend/B0543_TASK_LAYER_SUMMARY.md`
+- `scripts/r2/static_audit_allowlist.json` (R2 static audit allowlist for R5 probe cleanup)
 
 ## Wrapper API + Outcome Strategy
 
