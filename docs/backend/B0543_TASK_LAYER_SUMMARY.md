@@ -4,7 +4,7 @@
 
 89f2400191fe72274bb8c7bf69075dde59c869c4
 
-## CI Evidence (to be filled post-run)
+## CI Evidence
 
 - CI_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20645831499
 - CI_JOB_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20645831499/job/59283452787
