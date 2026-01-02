@@ -201,32 +201,32 @@ tables:
         default: "now()"
         invariant: null
         
-      constraints:
-        - name: uq_attribution_events_tenant_idempotency_key
-          type: UNIQUE
-          columns: [tenant_id, idempotency_key]
-        - name: ck_attribution_events_revenue_positive
-          type: CHECK
-          definition: "conversion_value_cents IS NULL OR conversion_value_cents >= 0"
+    constraints:
+      - name: uq_attribution_events_tenant_idempotency_key
+        type: UNIQUE
+        columns: [tenant_id, idempotency_key]
+      - name: ck_attribution_events_revenue_positive
+        type: CHECK
+        definition: "conversion_value_cents IS NULL OR conversion_value_cents >= 0"
 
-        - name: ck_attribution_events_processing_status_valid
-          type: CHECK
-          definition: "processing_status IN ('pending', 'processed', 'failed')"
+      - name: ck_attribution_events_processing_status_valid
+        type: CHECK
+        definition: "processing_status IN ('pending', 'processed', 'failed')"
 
-      indexes:
-        - name: idx_events_tenant_timestamp
-          columns: [tenant_id, event_timestamp]
-          unique: false
-          ops: {event_timestamp: DESC}
-        - name: idx_events_processing_status
-          columns: [processing_status, processed_at]
-          unique: false
-          where: "processing_status = 'pending'"
+    indexes:
+      - name: idx_events_tenant_timestamp
+        columns: [tenant_id, event_timestamp]
+        unique: false
+        ops: {event_timestamp: DESC}
+      - name: idx_events_processing_status
+        columns: [processing_status, processed_at]
+        unique: false
+        where: "processing_status = 'pending'"
 
-        - name: idx_attribution_events_session_id
-          columns: [session_id]
-          unique: false
-          where: "session_id IS NOT NULL"
+      - name: idx_attribution_events_session_id
+        columns: [session_id]
+        unique: false
+        where: "session_id IS NOT NULL"
         
     rls_policy:
       name: tenant_isolation_policy
