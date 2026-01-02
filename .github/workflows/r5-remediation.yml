@@ -42,18 +42,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 40
-          -c shared_buffers=1GB
-          -c work_mem=32MB
-          -c maintenance_work_mem=256MB
-          -c max_wal_size=4GB
-          -c checkpoint_timeout=30min
-          -c checkpoint_completion_target=0.9
-          -c wal_compression=on
-          -c fsync=off
-          -c synchronous_commit=off
-          -c full_page_writes=off
-          -c max_wal_senders=0
-          -c wal_level=minimal
 
     env:
       CI: "true"
