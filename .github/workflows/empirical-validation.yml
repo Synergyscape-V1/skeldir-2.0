@@ -370,7 +370,8 @@ jobs:
         run: |
           mkdir -p evidence_registry/statistics
           
-          python - << 'PYEOF' > evidence_registry/statistics/imports_raw.txt 2>&1
+          set +e
+          python - << 'PYEOF' 2>&1 | tee evidence_registry/statistics/imports_raw.txt
           try:
               import numpy
               import pandas
@@ -390,6 +391,9 @@ jobs:
               import sys
               sys.exit(1)
           PYEOF
+          PY_EXIT=$?
+          set -e
+          echo "python_exit_code=$PY_EXIT" >> evidence_registry/statistics/imports_raw.txt
           
           if grep -q "OK: imports succeeded" evidence_registry/statistics/imports_raw.txt; then
             echo "✓ Direct imports: PASS" > evidence_registry/statistics/phase_3_status.txt
