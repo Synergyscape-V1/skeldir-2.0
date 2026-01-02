@@ -885,8 +885,30 @@ jobs:
       - name: Start mock servers
         run: |
           # Native mock servers using Prism (Architecture Guide compliant)
-          npx @stoplight/prism-cli mock contracts/attribution/v1/attribution.yaml --port 4011 &
-          npx @stoplight/prism-cli mock contracts/health/v1/health.yaml --port 4014 &
+          npx @stoplight/prism-cli mock contracts/attribution/v1/attribution.yaml --host 127.0.0.1 --port 4011 &
+          npx @stoplight/prism-cli mock contracts/health/v1/health.yaml --host 127.0.0.1 --port 4014 &
+
+      - name: Wait for mock servers
+        run: |
+          python - <<'PY'
+          import socket
+          import time
+
+          def wait_for_port(host, port, timeout_s=30):
+              deadline = time.time() + timeout_s
+              while time.time() < deadline:
+                  try:
+                      with socket.create_connection((host, port), timeout=2):
+                          return True
+                  except OSError:
+                      time.sleep(1)
+              return False
+
+          for host, port in (("127.0.0.1", 4011), ("127.0.0.1", 4014)):
+              ok = wait_for_port(host, port)
+              if not ok:
+                  raise SystemExit(f"Mock server not reachable on {host}:{port}")
+          PY
 
       - name: Run Playwright tests
         run: |
