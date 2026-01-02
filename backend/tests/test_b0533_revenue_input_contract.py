@@ -319,14 +319,26 @@ class TestRevenueInputContract:
             await conn.execute(
                 text("""
                     INSERT INTO revenue_ledger (
-                        id, tenant_id, revenue_cents, is_verified, verified_at
+                        id,
+                        tenant_id,
+                        revenue_cents,
+                        is_verified,
+                        verified_at,
+                        transaction_id,
+                        state,
+                        amount_cents,
+                        currency,
+                        verification_source,
+                        verification_timestamp
                     ) VALUES
-                        (:id1, :tenant_id, 5000, true, '2025-06-01T09:00:00Z'::timestamptz),
-                        (:id2, :tenant_id, 7000, true, '2025-06-01T14:00:00Z'::timestamptz)
+                        (:id1, :tenant_id, 5000, true, '2025-06-01T09:00:00Z'::timestamptz, :transaction_id_1, 'captured', 5000, 'USD', 'test_fixture', '2025-06-01T09:00:00Z'::timestamptz),
+                        (:id2, :tenant_id, 7000, true, '2025-06-01T14:00:00Z'::timestamptz, :transaction_id_2, 'captured', 7000, 'USD', 'test_fixture', '2025-06-01T14:00:00Z'::timestamptz)
                 """),
                 {
                     "id1": ledger_row_1_id,
                     "id2": ledger_row_2_id,
+                    "transaction_id_1": f"txn_{ledger_row_1_id}",
+                    "transaction_id_2": f"txn_{ledger_row_2_id}",
                     "tenant_id": test_tenant_id,
                 }
             )
