@@ -363,7 +363,8 @@ jobs:
       - name: Install scientific stack
         run: |
           cd backend
-          pip install -q -r requirements-science.txt || pip install numpy pandas scipy matplotlib pymc arviz
+          pip install -r requirements-science.txt
+          pip install numpy==1.26.4 scipy==1.11.4 pymc==5.10.0 arviz==0.17.0
       
       - name: Phase 3.1 - Direct Import Test
         run: |
