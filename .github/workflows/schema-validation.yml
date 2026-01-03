@@ -79,19 +79,19 @@ jobs:
         env:
           DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
         run: |
-          python scripts/validate-schema-compliance.py --output /tmp/validation.json
+          python scripts/validate-schema-compliance.py --output /tmp/validation.json || true
           EXIT_CODE=$(python -c "import json; print(json.load(open('/tmp/validation.json'))['exit_code'])")
           
           if [ "$EXIT_CODE" -eq 1 ]; then
-            echo "❌ FAIL: BLOCKING schema divergences detected"
+            echo "FAIL: BLOCKING schema divergences detected"
             echo "Review validation_results.json artifact for details"
             exit 1
           elif [ "$EXIT_CODE" -eq 2 ]; then
-            echo "⚠️  WARN: HIGH severity divergences detected (non-blocking)"
+            echo "WARN: HIGH severity divergences detected (non-blocking)"
             echo "Review validation_results.json artifact for details"
             exit 0
           else
-            echo "✅ PASS: Schema is compliant with canonical specification"
+            echo "PASS: Schema is compliant with canonical specification"
             exit 0
           fi
 
