@@ -216,7 +216,7 @@ jobs:
           echo "R2_CANARY_WINDOW_ID=canary-$(date -u +%Y%m%d%H%M%S)-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
 
       # ====================================================================
-      # EG-R2-FIX-2 — DB Capture Enablement Proof
+      # EG-R2-FIX-2 - DB Capture Enablement Proof
       # ====================================================================
       - name: "EG-R2-FIX-2: DB capture enablement proof"
         id: eg_r2_fix_2
@@ -354,7 +354,7 @@ jobs:
           echo "END_VERDICT"
 
       # ====================================================================
-      # EG-R2-FIX-7 — Static Behavioral Innocence (latent paths)
+      # EG-R2-FIX-7 - Static Behavioral Innocence (latent paths)
       # ====================================================================
       - name: "EG-R2-FIX-7: Static behavioral innocence"
         id: eg_r2_fix_7
@@ -368,7 +368,7 @@ jobs:
             | tee "$ARTIFACTS_DIR/STATIC_AUDIT/verdict.log"
 
       # ====================================================================
-      # EG-R2-FIX-8 — Canary Integrity (anti-theater)
+      # EG-R2-FIX-8 - Canary Integrity (anti-theater)
       # ====================================================================
       - name: "EG-R2-FIX-8: Canary integrity (DB parser + static detector)"
         id: eg_r2_fix_8
@@ -437,7 +437,7 @@ jobs:
           python scripts/r2/static_behavioral_audit.py --repo-root . --artifact-json "$ARTIFACTS_DIR/CANARY/static_pass_verdict.json" > "$ARTIFACTS_DIR/CANARY/static_pass.log" 2>&1
 
       # ====================================================================
-      # EG-R2-FIX-1 — Scenario Suite Hard Gate
+      # EG-R2-FIX-1 - Scenario Suite Hard Gate
       # ====================================================================
       - name: "EG-R2-FIX-1: Runtime scenario suite (hard gate)"
         id: eg_r2_fix_1
@@ -458,7 +458,7 @@ jobs:
             | tee "$ARTIFACTS_DIR/SCENARIO_SUITE/scenario_suite.log"
 
       # ====================================================================
-      # EG-R2-FIX-3 — DB Window Binding + Per-Scenario Activity
+      # EG-R2-FIX-3 - DB Window Binding + Per-Scenario Activity
       # ====================================================================
       - name: "EG-R2-FIX-3: DB window binding + per-scenario DB activity"
         id: eg_r2_fix_3
@@ -484,7 +484,7 @@ jobs:
             | tee "$ARTIFACTS_DIR/DB_CAPTURE/window_verdict.log"
 
       # ====================================================================
-      # EG-R2-FIX-4 — DB Runtime Innocence (AUTHORITATIVE)
+      # EG-R2-FIX-4 - DB Runtime Innocence (AUTHORITATIVE)
       # ====================================================================
       - name: "EG-R2-FIX-4: DB runtime innocence (authoritative)"
         id: eg_r2_fix_4
@@ -512,7 +512,7 @@ jobs:
           PY
 
       # ====================================================================
-      # EG-R2-FIX-5 — ORM Runtime Innocence (MANDATORY secondary)
+      # EG-R2-FIX-5 - ORM Runtime Innocence (MANDATORY secondary)
       # ====================================================================
       - name: "EG-R2-FIX-5: ORM runtime innocence (mandatory cross-check)"
         id: eg_r2_fix_5
@@ -529,7 +529,7 @@ jobs:
             | tee "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_gate.log"
 
       # ====================================================================
-      # EG-R2-FIX-6 — Instrument Consistency (DB vs ORM)
+      # EG-R2-FIX-6 - Instrument Consistency (DB vs ORM)
       # ====================================================================
       - name: "EG-R2-FIX-6: Instrument consistency (DB vs ORM)"
         id: eg_r2_fix_6
@@ -551,7 +551,7 @@ jobs:
             | tee "$ARTIFACTS_DIR/DB_CAPTURE/instrument_consistency.log"
 
       # ====================================================================
-      # EG-R2-FIX-9 — Truth Record (browser-visible)
+      # EG-R2-FIX-9 - Truth Record (browser-visible)
       # ====================================================================
       - name: "EG-R2-FIX-9: Truth record (browser-visible)"
         id: eg_r2_fix_9
