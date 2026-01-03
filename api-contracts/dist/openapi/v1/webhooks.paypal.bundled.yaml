@@ -12,11 +12,13 @@ info:
 servers:
   - url: http://localhost:4018
     description: Prism Mock Server (PayPal Webhooks)
+security:
+  - tenantKeyAuth: []
 tags:
   - name: PayPal Webhooks
     description: PayPal webhook endpoints for payment events
 paths:
-  /webhooks/paypal/payment/sale/completed:
+  /api/webhooks/paypal/sale_completed:
     post:
       summary: PayPal sale completed webhook
       description: Triggered when a PayPal payment sale is completed
@@ -251,7 +253,7 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
-  /webhooks/paypal/payment/capture/completed:
+  /api/webhooks/paypal/payment/capture/completed:
     post:
       summary: PayPal payment capture completed webhook
       description: Triggered when a PayPal payment capture is completed
@@ -298,7 +300,7 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
-  /webhooks/paypal/payment/sale/refunded:
+  /api/webhooks/paypal/payment/sale/refunded:
     post:
       summary: PayPal sale refunded webhook
       description: Triggered when a PayPal payment is refunded
@@ -335,6 +337,12 @@ paths:
           description: Webhook processed successfully
           content: *ref_4
 components:
+  securitySchemes:
+    tenantKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Skeldir-Tenant-Key
+      description: Tenant API key required for webhook ingestion
   responses:
     WebhookAccepted:
       description: Webhook processed successfully

@@ -18,6 +18,9 @@ tags:
   - name: WooCommerce Webhooks
     description: WooCommerce webhook endpoints for order events
 
+security:
+  - tenantKeyAuth: []
+
 paths:
   /api/webhooks/woocommerce/order/created:
     post:
@@ -121,7 +124,7 @@ paths:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
 
-  /api/webhooks/woocommerce/order/completed:
+  /api/webhooks/woocommerce/order_completed:
     post:
       summary: WooCommerce order completed webhook
       description: Triggered when an order is marked as completed
@@ -207,6 +210,12 @@ paths:
           $ref: '#/components/responses/WebhookAccepted'
 
 components:
+  securitySchemes:
+    tenantKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Skeldir-Tenant-Key
+      description: Tenant API key required for webhook ingestion
   responses:
     WebhookAccepted:
       description: Webhook processed successfully

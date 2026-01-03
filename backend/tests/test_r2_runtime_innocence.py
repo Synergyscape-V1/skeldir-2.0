@@ -141,7 +141,7 @@ class TestR2RuntimeInnocence:
         Code Path:
             RevenueReconciliationService.reconcile_order()
             -> _upsert_ledger_row()
-            -> INSERT INTO revenue_ledger
+            -> write rows to revenue_ledger
         """
         from app.services.revenue_reconciliation import (
             RevenueReconciliationService,

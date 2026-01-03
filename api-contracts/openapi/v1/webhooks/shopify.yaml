@@ -18,8 +18,11 @@ tags:
   - name: Shopify Webhooks
     description: Shopify webhook endpoints for order and checkout events
 
+security:
+  - tenantKeyAuth: []
+
 paths:
-  /api/webhooks/shopify/orders/create:
+  /api/webhooks/shopify/order_create:
     post:
       summary: Shopify order created webhook
       description: Triggered when a new order is created in Shopify
@@ -197,6 +200,12 @@ paths:
           $ref: '#/components/responses/WebhookAccepted'
 
 components:
+  securitySchemes:
+    tenantKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Skeldir-Tenant-Key
+      description: Tenant API key required for webhook ingestion
   responses:
     WebhookAccepted:
       description: Webhook processed successfully

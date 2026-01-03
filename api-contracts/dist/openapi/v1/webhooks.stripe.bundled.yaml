@@ -12,11 +12,13 @@ info:
 servers:
   - url: http://localhost:4017
     description: Prism Mock Server (Stripe Webhooks)
+security:
+  - tenantKeyAuth: []
 tags:
   - name: Stripe Webhooks
     description: Stripe webhook endpoints for payment events
 paths:
-  /webhooks/stripe/charge/succeeded:
+  /api/webhooks/stripe/charge/succeeded:
     post:
       summary: Stripe charge succeeded webhook
       description: Triggered when a charge is successfully completed
@@ -67,12 +69,12 @@ paths:
                   properties:
                     object:
                       type: object
-                      required: &ref_9
+                      required: &ref_11
                         - id
                         - amount
                         - currency
                         - status
-                      properties: &ref_10
+                      properties: &ref_12
                         id:
                           type: string
                           description: Charge ID
@@ -142,10 +144,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_11
+                required: &ref_13
                   - success
                   - correlation_id
-                properties: &ref_12
+                properties: &ref_14
                   success:
                     type: boolean
                   correlation_id:
@@ -225,13 +227,14 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
-        '500':
-          description: Internal server error
+        '401':
+          description: Unauthorized - invalid or missing authentication
           headers: &ref_7
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
+              description: Request correlation ID for distributed tracing
           content: &ref_8
             application/problem+json:
               schema:
@@ -239,7 +242,70 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
-  /webhooks/stripe/payment_intent/succeeded:
+        '500':
+          description: Internal server error
+          headers: &ref_9
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_10
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+  /api/webhooks/stripe/payment_intent_succeeded:
+    post:
+      summary: Stripe payment intent succeeded webhook (legacy path)
+      description: Triggered when a payment intent is successfully completed (legacy endpoint)
+      operationId: stripePaymentIntentSucceededLegacy
+      tags:
+        - Stripe Webhooks
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: *ref_2
+              properties: *ref_3
+            example:
+              id: evt_paymentintent_1234567890
+              type: payment_intent.succeeded
+              created: 1732631500
+              data:
+                object:
+                  id: pi_1234567890
+                  amount: 19999
+                  currency: usd
+                  status: succeeded
+                  metadata:
+                    skeldir_session_id: sess_refund123
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content: *ref_4
+        '400':
+          description: Bad Request - validation failed
+          headers: *ref_5
+          content: *ref_6
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_7
+          content: *ref_8
+        '500':
+          description: Internal server error
+          headers: *ref_9
+          content: *ref_10
+  /api/webhooks/stripe/payment_intent/succeeded:
     post:
       summary: Stripe payment intent succeeded webhook
       description: Triggered when a payment intent is successfully completed
@@ -276,7 +342,7 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
-  /webhooks/stripe/charge/refunded:
+  /api/webhooks/stripe/charge/refunded:
     post:
       summary: Stripe charge refunded webhook
       description: Triggered when a charge is refunded
@@ -314,6 +380,12 @@ paths:
           description: Webhook processed successfully
           content: *ref_4
 components:
+  securitySchemes:
+    tenantKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Skeldir-Tenant-Key
+      description: Tenant API key required for webhook ingestion
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
@@ -322,10 +394,14 @@ components:
       description: Bad Request - validation failed
       headers: *ref_5
       content: *ref_6
-    ServerError:
-      description: Internal server error
+    UnauthorizedError:
+      description: Unauthorized - invalid or missing authentication
       headers: *ref_7
       content: *ref_8
+    ServerError:
+      description: Internal server error
+      headers: *ref_9
+      content: *ref_10
   schemas:
     StripeEvent:
       type: object
@@ -333,12 +409,12 @@ components:
       properties: *ref_3
     StripeCharge:
       type: object
-      required: *ref_9
-      properties: *ref_10
-    SuccessResponse:
-      type: object
       required: *ref_11
       properties: *ref_12
+    SuccessResponse:
+      type: object
+      required: *ref_13
+      properties: *ref_14
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions

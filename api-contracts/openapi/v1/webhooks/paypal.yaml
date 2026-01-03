@@ -18,8 +18,11 @@ tags:
   - name: PayPal Webhooks
     description: PayPal webhook endpoints for payment events
 
+security:
+  - tenantKeyAuth: []
+
 paths:
-  /api/webhooks/paypal/payment/sale/completed:
+  /api/webhooks/paypal/sale_completed:
     post:
       summary: PayPal sale completed webhook
       description: Triggered when a PayPal payment sale is completed
@@ -151,6 +154,12 @@ paths:
           $ref: '#/components/responses/WebhookAccepted'
 
 components:
+  securitySchemes:
+    tenantKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Skeldir-Tenant-Key
+      description: Tenant API key required for webhook ingestion
   responses:
     WebhookAccepted:
       description: Webhook processed successfully

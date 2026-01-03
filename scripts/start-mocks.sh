@@ -19,8 +19,8 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Contract directory
-CONTRACT_DIR="api-contracts/openapi/v1"
+# Contract directory (bundled artifacts)
+CONTRACT_DIR="api-contracts/dist/openapi/v1"
 
 # PID file directory
 PID_DIR="/tmp/skeldir-mocks"
@@ -103,19 +103,19 @@ echo ""
 # Start Frontend-Facing Mock Servers (ports 4010-4014)
 echo "Starting Frontend-Facing Services:"
 echo "-----------------------------------"
-start_prism_server "$CONTRACT_DIR/auth.yaml" 4010 "Auth Service"
-start_prism_server "$CONTRACT_DIR/attribution.yaml" 4011 "Attribution Service"
-start_prism_server "$CONTRACT_DIR/reconciliation.yaml" 4012 "Reconciliation Service"
-start_prism_server "$CONTRACT_DIR/export.yaml" 4013 "Export Service"
-start_prism_server "$CONTRACT_DIR/health.yaml" 4014 "Health Service"
+start_prism_server "$CONTRACT_DIR/auth.bundled.yaml" 4010 "Auth Service"
+start_prism_server "$CONTRACT_DIR/attribution.bundled.yaml" 4011 "Attribution Service"
+start_prism_server "$CONTRACT_DIR/reconciliation.bundled.yaml" 4012 "Reconciliation Service"
+start_prism_server "$CONTRACT_DIR/export.bundled.yaml" 4013 "Export Service"
+start_prism_server "$CONTRACT_DIR/health.bundled.yaml" 4014 "Health Service"
 
 # Start Backend-Only Webhook Mock Servers (ports 4015-4018)
 echo "Starting Webhook Services (Backend-Only):"
 echo "------------------------------------------"
-start_prism_server "$CONTRACT_DIR/webhooks/shopify.yaml" 4015 "Shopify Webhooks"
-start_prism_server "$CONTRACT_DIR/webhooks/woocommerce.yaml" 4016 "WooCommerce Webhooks"
-start_prism_server "$CONTRACT_DIR/webhooks/stripe.yaml" 4017 "Stripe Webhooks"
-start_prism_server "$CONTRACT_DIR/webhooks/paypal.yaml" 4018 "PayPal Webhooks"
+start_prism_server "$CONTRACT_DIR/webhooks.shopify.bundled.yaml" 4015 "Shopify Webhooks"
+start_prism_server "$CONTRACT_DIR/webhooks.woocommerce.bundled.yaml" 4016 "WooCommerce Webhooks"
+start_prism_server "$CONTRACT_DIR/webhooks.stripe.bundled.yaml" 4017 "Stripe Webhooks"
+start_prism_server "$CONTRACT_DIR/webhooks.paypal.bundled.yaml" 4018 "PayPal Webhooks"
 
 echo "=============================================="
 echo -e "${GREEN}✓ All Prism mock servers started!${NC}"

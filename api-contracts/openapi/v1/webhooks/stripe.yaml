@@ -18,6 +18,9 @@ tags:
   - name: Stripe Webhooks
     description: Stripe webhook endpoints for payment events
 
+security:
+  - tenantKeyAuth: []
+
 paths:
   /api/webhooks/stripe/charge/succeeded:
     post:
@@ -57,6 +60,8 @@ paths:
           $ref: '#/components/responses/WebhookAccepted'
         '400':
           $ref: '../_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
         '500':
           $ref: '../_common/base.yaml#/components/responses/ServerError'
 
@@ -96,6 +101,8 @@ paths:
           $ref: '#/components/responses/WebhookAccepted'
         '400':
           $ref: '../_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
         '500':
           $ref: '../_common/base.yaml#/components/responses/ServerError'
 
@@ -170,6 +177,12 @@ paths:
           $ref: '#/components/responses/WebhookAccepted'
 
 components:
+  securitySchemes:
+    tenantKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Skeldir-Tenant-Key
+      description: Tenant API key required for webhook ingestion
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
