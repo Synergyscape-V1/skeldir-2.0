@@ -336,6 +336,9 @@ jobs:
     name: Validate Generated Model Structures
     runs-on: ubuntu-latest
     needs: generate-models
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
