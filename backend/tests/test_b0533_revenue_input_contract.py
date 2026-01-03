@@ -5,11 +5,10 @@ Purpose: Prove that the attribution worker adheres to Contract B (ignores revenu
 regardless of ledger state (empty vs populated).
 
 Schema Context:
-- Tests target skeldir_foundation@head schema (migration 202512151410)
-- revenue_ledger has 8 columns: id, tenant_id, created_at, updated_at, revenue_cents,
-  is_verified, verified_at, reconciliation_run_id
-- NO allocation_id FK (deferred to future 003_data_governance branch)
-- NO canonical revenue columns (transaction_id, order_id, etc.) in current schema
+- Tests target skeldir_foundation@head schema (post realign)
+- revenue_ledger requires transaction_id, state, amount_cents, currency,
+  verification_source, and verification_timestamp
+- allocation_id may be NULL for reconciliation rows (non-allocation path)
 
 Test Coverage:
 1. Empty Ledger Scenario - Worker computes allocations deterministically from events only
@@ -384,19 +383,41 @@ class TestRevenueInputContract:
             # - tenant_id, revenue_cents, is_verified, verified_at, reconciliation_run_id
             ledger_row_1_id = uuid4()
             ledger_row_2_id = uuid4()
+            ledger_row_1_txn = f"txn_{ledger_row_1_id}"
+            ledger_row_2_txn = f"txn_{ledger_row_2_id}"
+            ledger_row_1_order = f"order_{ledger_row_1_id}"
+            ledger_row_2_order = f"order_{ledger_row_2_id}"
+            verification_source = "unit_test"
+            verification_ts_1 = datetime(2025, 6, 1, 9, 0, tzinfo=timezone.utc)
+            verification_ts_2 = datetime(2025, 6, 1, 14, 0, tzinfo=timezone.utc)
 
             # RAW_SQL_ALLOWLIST: simulate pre-existing ledger rows for contract test
             await conn.execute(
                 text("""
                     INSERT INTO revenue_ledger (
-                        id, tenant_id, revenue_cents, is_verified, verified_at
+                        id, tenant_id, transaction_id, order_id, state,
+                        amount_cents, currency, verification_source, verification_timestamp,
+                        revenue_cents, is_verified, verified_at
                     ) VALUES
-                        (:id1, :tenant_id, 5000, true, '2025-06-01T09:00:00Z'::timestamptz),
-                        (:id2, :tenant_id, 7000, true, '2025-06-01T14:00:00Z'::timestamptz)
+                        (:id1, :tenant_id, :txn1, :order1, 'captured',
+                         5000, 'USD', :verification_source, :verification_ts_1,
+                         5000, true, :verified_at_1),
+                        (:id2, :tenant_id, :txn2, :order2, 'captured',
+                         7000, 'USD', :verification_source, :verification_ts_2,
+                         7000, true, :verified_at_2)
                 """),
                 {
                     "id1": ledger_row_1_id,
                     "id2": ledger_row_2_id,
+                    "txn1": ledger_row_1_txn,
+                    "txn2": ledger_row_2_txn,
+                    "order1": ledger_row_1_order,
+                    "order2": ledger_row_2_order,
+                    "verification_source": verification_source,
+                    "verification_ts_1": verification_ts_1,
+                    "verification_ts_2": verification_ts_2,
+                    "verified_at_1": verification_ts_1,
+                    "verified_at_2": verification_ts_2,
                     "tenant_id": test_tenant_id,
                 }
             )
