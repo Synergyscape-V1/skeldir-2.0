@@ -224,8 +224,8 @@ jobs:
       - name: Validate Coverage Manifest
         run: |
           echo "Validating coverage manifest..."
-          chmod +x scripts/governance/validate-coverage.py
-          python scripts/governance/validate-coverage.py --verbose
+          chmod +x scripts/governance/validate_coverage.py
+          python scripts/governance/validate_coverage.py --verbose
 
       - name: Validate Invariants
         run: |
@@ -484,7 +484,7 @@ jobs:
 
       - name: Validate coverage manifest
         run: |
-          python scripts/governance/validate-coverage.py
+          python scripts/governance/validate_coverage.py
 
   validate-integration-mappings:
     name: Validate Integration Mappings (C3)
