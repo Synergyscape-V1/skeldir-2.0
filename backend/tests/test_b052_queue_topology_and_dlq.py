@@ -53,12 +53,14 @@ class TestQueueTopology:
         # Verify routing patterns
         assert "app.tasks.housekeeping.*" in routes
         assert "app.tasks.maintenance.*" in routes
+        assert "app.tasks.matviews.*" in routes
         assert "app.tasks.llm.*" in routes
         assert "app.tasks.attribution.*" in routes, "B0.5.3.1: attribution routing rule must exist"
 
         # Verify queue assignments
         assert routes["app.tasks.housekeeping.*"]["queue"] == "housekeeping"
         assert routes["app.tasks.maintenance.*"]["queue"] == "maintenance"
+        assert routes["app.tasks.matviews.*"]["queue"] == "maintenance"
         assert routes["app.tasks.llm.*"]["queue"] == "llm"
         assert routes["app.tasks.attribution.*"]["queue"] == "attribution", "B0.5.3.1: attribution tasks must route to attribution queue"
 
@@ -71,6 +73,8 @@ class TestQueueTopology:
             "app.tasks.housekeeping.ping",
             "app.tasks.maintenance.refresh_all_matviews_global_legacy",
             "app.tasks.maintenance.refresh_matview_for_tenant",
+            "app.tasks.matviews.refresh_single",
+            "app.tasks.matviews.refresh_all_for_tenant",
             "app.tasks.maintenance.scan_for_pii_contamination",
             "app.tasks.maintenance.enforce_data_retention",
             "app.tasks.llm.route",
@@ -88,6 +92,7 @@ class TestQueueTopology:
         # Get routing info for sample tasks
         housekeeping_route = celery_app.tasks["app.tasks.housekeeping.ping"].routing_key
         maintenance_route = celery_app.tasks["app.tasks.maintenance.refresh_all_matviews_global_legacy"].routing_key
+        matviews_route = celery_app.tasks["app.tasks.matviews.refresh_single"].routing_key
         llm_route = celery_app.tasks["app.tasks.llm.route"].routing_key
         attribution_route = celery_app.tasks["app.tasks.attribution.recompute_window"].routing_key
 
@@ -98,6 +103,7 @@ class TestQueueTopology:
 
         assert routes["app.tasks.housekeeping.*"]["routing_key"] == "housekeeping.task"
         assert routes["app.tasks.maintenance.*"]["routing_key"] == "maintenance.task"
+        assert routes["app.tasks.matviews.*"]["routing_key"] == "maintenance.task"
         assert routes["app.tasks.llm.*"]["routing_key"] == "llm.task"
         assert routes["app.tasks.attribution.*"]["routing_key"] == "attribution.task", "B0.5.3.1: attribution routing key must be attribution.task"
 

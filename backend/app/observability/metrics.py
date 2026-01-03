@@ -51,3 +51,22 @@ celery_task_duration_seconds = Histogram(
     ["task_name"],
     buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
 )
+
+matview_refresh_total = Counter(
+    "matview_refresh_total",
+    "Total materialized view refresh attempts",
+    ["view_name", "outcome", "strategy"],
+)
+
+matview_refresh_duration_seconds = Histogram(
+    "matview_refresh_duration_seconds",
+    "Materialized view refresh duration in seconds",
+    ["view_name", "outcome"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60),
+)
+
+matview_refresh_failures_total = Counter(
+    "matview_refresh_failures_total",
+    "Materialized view refresh failures",
+    ["view_name", "error_type"],
+)

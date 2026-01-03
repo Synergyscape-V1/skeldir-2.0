@@ -320,6 +320,8 @@ def test_registered_tasks_include_stubs():
     assert "app.tasks.housekeeping.ping" in registered
     assert "app.tasks.maintenance.refresh_all_matviews_global_legacy" in registered
     assert "app.tasks.maintenance.refresh_matview_for_tenant" in registered
+    assert "app.tasks.matviews.refresh_single" in registered
+    assert "app.tasks.matviews.refresh_all_for_tenant" in registered
     assert "app.tasks.llm.route" in registered
     assert "app.tasks.llm.explanation" in registered
     assert "app.tasks.llm.investigation" in registered

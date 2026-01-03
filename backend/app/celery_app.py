@@ -163,6 +163,7 @@ def _ensure_celery_configured():
         include=[
             "app.tasks.housekeeping",
             "app.tasks.maintenance",
+            "app.tasks.matviews",
             "app.tasks.llm",
             "app.tasks.attribution",
             "app.tasks.r4_failure_semantics",
@@ -179,6 +180,7 @@ def _ensure_celery_configured():
         task_routes={
             'app.tasks.housekeeping.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
             'app.tasks.maintenance.*': {'queue': 'maintenance', 'routing_key': 'maintenance.task'},
+            'app.tasks.matviews.*': {'queue': 'maintenance', 'routing_key': 'maintenance.task'},
             'app.tasks.llm.*': {'queue': 'llm', 'routing_key': 'llm.task'},
             'app.tasks.attribution.*': {'queue': 'attribution', 'routing_key': 'attribution.task'},
             'app.tasks.r4_failure_semantics.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
