@@ -167,10 +167,10 @@ class TestWorkerTenantIsolation:
                 alloc_a = await conn.execute(
                     text(
                         """
-                        SELECT event_id, channel, allocation_ratio, allocated_revenue_cents
+                        SELECT event_id, channel_code AS channel, allocation_ratio, allocated_revenue_cents
                         FROM attribution_allocations
                         WHERE tenant_id = :tenant_id
-                        ORDER BY event_id, channel
+                        ORDER BY event_id, channel_code
                         """
                     ),
                     {"tenant_id": tenant_a},
@@ -278,7 +278,7 @@ class TestWorkerTenantIsolation:
                     text(
                         """
                         SELECT COUNT(*) FROM (
-                            SELECT DISTINCT event_id, channel, model_version
+                            SELECT DISTINCT event_id, channel_code AS channel, model_version
                             FROM attribution_allocations
                             WHERE tenant_id = :tenant_id AND model_version = :model_version
                         ) AS distinct_rows
@@ -369,7 +369,7 @@ class TestWorkerTenantIsolation:
                     text(
                         """
                         SELECT COUNT(*) FROM (
-                            SELECT DISTINCT event_id, channel, model_version
+                            SELECT DISTINCT event_id, channel_code AS channel, model_version
                             FROM attribution_allocations
                             WHERE tenant_id = :tenant_id
                         ) AS distinct_rows

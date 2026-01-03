@@ -188,12 +188,12 @@ class TestRevenueInputContract:
 
             allocations_result = await conn.execute(
                 text("""
-                    SELECT event_id, channel, allocation_ratio, allocated_revenue_cents
+                    SELECT event_id, channel_code AS channel, allocation_ratio, allocated_revenue_cents
                     FROM attribution_allocations
                     WHERE tenant_id = :tenant_id
                       AND model_version = :model_version
                       AND event_id IN (:event_id_1, :event_id_2)
-                    ORDER BY event_id, channel
+                    ORDER BY event_id, channel_code
                 """),
                 {
                     "tenant_id": test_tenant_id,
@@ -350,12 +350,12 @@ class TestRevenueInputContract:
 
             baseline_result = await conn.execute(
                 text("""
-                    SELECT id, event_id, channel, allocation_ratio, allocated_revenue_cents
+                    SELECT id, event_id, channel_code AS channel, allocation_ratio, allocated_revenue_cents
                     FROM attribution_allocations
                     WHERE tenant_id = :tenant_id
                       AND model_version = :model_version
                       AND event_id IN (:event_id_1, :event_id_2)
-                    ORDER BY event_id, channel
+                    ORDER BY event_id, channel_code
                 """),
                 {
                     "tenant_id": test_tenant_id,
@@ -443,12 +443,12 @@ class TestRevenueInputContract:
 
             populated_result = await conn.execute(
                 text("""
-                    SELECT id, event_id, channel, allocation_ratio, allocated_revenue_cents
+                    SELECT id, event_id, channel_code AS channel, allocation_ratio, allocated_revenue_cents
                     FROM attribution_allocations
                     WHERE tenant_id = :tenant_id
                       AND model_version = :model_version
                       AND event_id IN (:event_id_1, :event_id_2)
-                    ORDER BY event_id, channel
+                    ORDER BY event_id, channel_code
                 """),
                 {
                     "tenant_id": test_tenant_id,

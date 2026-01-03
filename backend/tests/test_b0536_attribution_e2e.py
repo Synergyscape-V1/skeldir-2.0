@@ -129,12 +129,12 @@ async def _fetch_allocations():
         rows = await conn.execute(
             text(
                 """
-                SELECT event_id, channel, allocation_ratio, allocated_revenue_cents, model_version
+                SELECT event_id, channel_code AS channel, allocation_ratio, allocated_revenue_cents, model_version
                 FROM attribution_allocations
                 WHERE tenant_id = :tenant_id
                   AND event_id IN (:event_a, :event_b)
                   AND model_version = :model_version
-                ORDER BY event_id, channel
+                ORDER BY event_id, channel_code
                 """
             ),
             {

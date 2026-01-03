@@ -292,11 +292,11 @@ class TestWindowIdempotency:
                 allocations_first_result = await conn.execute(
                     text(
                         """
-                        SELECT event_id, channel, allocation_ratio, allocated_revenue_cents
+                        SELECT event_id, channel_code AS channel, allocation_ratio, allocated_revenue_cents
                         FROM attribution_allocations
                         WHERE tenant_id = :tenant_id
                           AND model_version = :model_version
-                        ORDER BY event_id, channel
+                        ORDER BY event_id, channel_code
                         """
                     ),
                     {"tenant_id": test_tenant_id, "model_version": model_version},
@@ -333,11 +333,11 @@ class TestWindowIdempotency:
                 allocations_second_result = await conn.execute(
                     text(
                         """
-                        SELECT event_id, channel, allocation_ratio, allocated_revenue_cents
+                        SELECT event_id, channel_code AS channel, allocation_ratio, allocated_revenue_cents
                         FROM attribution_allocations
                         WHERE tenant_id = :tenant_id
                           AND model_version = :model_version
-                        ORDER BY event_id, channel
+                        ORDER BY event_id, channel_code
                         """
                     ),
                     {"tenant_id": test_tenant_id, "model_version": model_version},
