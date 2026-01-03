@@ -159,13 +159,13 @@ paths:
                 message: Webhook received
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: &ref_7
+          headers: &ref_5
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
               description: Request correlation ID for distributed tracing
-          content: &ref_8
+          content: &ref_6
             application/problem+json:
               schema:
                 type: object
@@ -228,12 +228,12 @@ paths:
                           example: INVALID_FORMAT
         '422':
           description: Bad Request - validation failed
-          headers: &ref_5
+          headers: &ref_7
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_6
+          content: &ref_8
             application/problem+json:
               schema:
                 type: object
@@ -301,10 +301,14 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
-        '422':
-          description: Bad Request - validation failed
+        '401':
+          description: Unauthorized - invalid or missing authentication
           headers: *ref_5
           content: *ref_6
+        '422':
+          description: Bad Request - validation failed
+          headers: *ref_7
+          content: *ref_8
   /api/webhooks/shopify/refunds/create:
     post:
       summary: Shopify refund created webhook
@@ -387,10 +391,14 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
-        '422':
-          description: Bad Request - validation failed
+        '401':
+          description: Unauthorized - invalid or missing authentication
           headers: *ref_5
           content: *ref_6
+        '422':
+          description: Bad Request - validation failed
+          headers: *ref_7
+          content: *ref_8
   /api/webhooks/shopify/checkouts/update:
     post:
       summary: Shopify checkout updated webhook
@@ -466,12 +474,12 @@ components:
       content: *ref_4
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers: *ref_7
-      content: *ref_8
-    ValidationError:
-      description: Bad Request - validation failed
       headers: *ref_5
       content: *ref_6
+    ValidationError:
+      description: Bad Request - validation failed
+      headers: *ref_7
+      content: *ref_8
     ServerError:
       description: Internal server error
       headers: *ref_9

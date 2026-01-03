@@ -68,10 +68,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
-        '422':
-          $ref: '../_common/base.yaml#/components/responses/ValidationError'
         '401':
           $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '../_common/base.yaml#/components/responses/ValidationError'
         '500':
           $ref: '../_common/base.yaml#/components/responses/ServerError'
 
@@ -118,6 +118,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
         '422':
           $ref: '../_common/base.yaml#/components/responses/ValidationError'
 
@@ -162,6 +164,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
         '422':
           $ref: '../_common/base.yaml#/components/responses/ValidationError'
 

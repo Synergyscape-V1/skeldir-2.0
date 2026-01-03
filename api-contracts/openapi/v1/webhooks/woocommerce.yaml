@@ -123,6 +123,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
 
   /api/webhooks/woocommerce/order_completed:
     post:
@@ -158,6 +160,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
 
   /api/webhooks/woocommerce/order/refunded:
     post:

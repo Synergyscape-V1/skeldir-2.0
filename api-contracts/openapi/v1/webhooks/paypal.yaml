@@ -71,6 +71,8 @@ paths:
           $ref: '#/components/responses/WebhookAccepted'
         '400':
           $ref: '../_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
         '500':
           $ref: '../_common/base.yaml#/components/responses/ServerError'
 
@@ -118,6 +120,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
 
   /api/webhooks/paypal/payment/sale/refunded:
     post:
@@ -152,6 +156,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
 
 components:
   securitySchemes:

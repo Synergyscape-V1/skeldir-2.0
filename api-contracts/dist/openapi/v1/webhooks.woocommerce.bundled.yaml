@@ -331,6 +331,10 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
   /api/webhooks/woocommerce/order_completed:
     post:
       summary: WooCommerce order completed webhook
@@ -370,6 +374,10 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
   /api/webhooks/woocommerce/order/refunded:
     post:
       summary: WooCommerce order refunded webhook
