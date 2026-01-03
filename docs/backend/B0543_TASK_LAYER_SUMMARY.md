@@ -2,13 +2,13 @@
 
 ## Candidate Completion SHA (C)
 
-89f2400191fe72274bb8c7bf69075dde59c869c4
+edd965bb9c3801da44f7f53fd31551c80626a848
 
 ## CI Evidence
 
-- CI_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20645831499
-- CI_JOB_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20645831499/job/59283452787
-- R7_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20645851495
+- CI_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20681544928
+- CI_JOB_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20681544928/job/59376449091
+- R7_RUN_URL: not run for edd965bb9c3801da44f7f53fd31551c80626a848
 
 ## Pre-Remediation Hypothesis Verdict
 
