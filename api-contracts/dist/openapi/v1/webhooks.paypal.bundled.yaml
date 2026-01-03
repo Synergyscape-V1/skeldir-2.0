@@ -169,6 +169,34 @@ paths:
                 success: true
                 correlation_id: 00000000-0000-0000-0000-000000000000
                 message: Webhook received
+        '401':
+          description: Unauthorized - invalid tenant key or signature
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - detail
+                    properties:
+                      detail:
+                        type: object
+                        required:
+                          - status
+                        properties:
+                          status:
+                            type: string
+                            example: invalid_tenant_key
+                  - type: object
+                    required:
+                      - status
+                    properties:
+                      status:
+                        type: string
+                        example: invalid_signature
+                      vendor:
+                        type: string
+                        example: paypal
         '400':
           description: Bad Request - validation failed
           headers: &ref_5
@@ -298,6 +326,62 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
+        '401':
+          description: Unauthorized - invalid tenant key or signature
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - detail
+                    properties:
+                      detail:
+                        type: object
+                        required:
+                          - status
+                        properties:
+                          status:
+                            type: string
+                            example: invalid_tenant_key
+                  - type: object
+                    required:
+                      - status
+                    properties:
+                      status:
+                        type: string
+                        example: invalid_signature
+                      vendor:
+                        type: string
+                        example: paypal
+        '401':
+          description: Unauthorized - invalid tenant key or signature
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - detail
+                    properties:
+                      detail:
+                        type: object
+                        required:
+                          - status
+                        properties:
+                          status:
+                            type: string
+                            example: invalid_tenant_key
+                  - type: object
+                    required:
+                      - status
+                    properties:
+                      status:
+                        type: string
+                        example: invalid_signature
+                      vendor:
+                        type: string
+                        example: paypal
   /api/webhooks/paypal/payment/sale/refunded:
     post:
       summary: PayPal sale refunded webhook

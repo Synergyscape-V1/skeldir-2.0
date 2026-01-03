@@ -55,6 +55,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '#/components/responses/WebhookUnauthorized'
         '400':
           $ref: '../_common/base.yaml#/components/responses/ValidationError'
         '500':
@@ -94,6 +96,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '#/components/responses/WebhookUnauthorized'
 
   /api/webhooks/stripe/payment_intent_succeeded:
     post:
@@ -129,6 +133,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '#/components/responses/WebhookUnauthorized'
 
   /api/webhooks/stripe/charge/refunded:
     post:
@@ -164,6 +170,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
+        '401':
+          $ref: '#/components/responses/WebhookUnauthorized'
 
 components:
   responses:
@@ -177,6 +185,34 @@ components:
             success: true
             correlation_id: 00000000-0000-0000-0000-000000000000
             message: Webhook received
+    WebhookUnauthorized:
+      description: Unauthorized - invalid tenant key or signature
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                required:
+                  - detail
+                properties:
+                  detail:
+                    type: object
+                    required:
+                      - status
+                    properties:
+                      status:
+                        type: string
+                        example: invalid_tenant_key
+              - type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    example: invalid_signature
+                  vendor:
+                    type: string
+                    example: stripe
 
   schemas:
     StripeEvent:
