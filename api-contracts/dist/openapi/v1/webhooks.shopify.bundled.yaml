@@ -140,10 +140,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_15
+                required: &ref_14
                   - success
                   - correlation_id
-                properties: &ref_16
+                properties: &ref_15
                   success:
                     type: boolean
                   correlation_id:
@@ -157,7 +157,7 @@ paths:
                 message: Webhook received
         '401':
           description: Unauthorized - invalid tenant key or signature
-          content:
+          content: &ref_5
             application/json:
               schema:
                 oneOf:
@@ -185,26 +185,80 @@ paths:
                         example: shopify
         '422':
           description: Bad Request - validation failed
-          headers: &ref_5
+          headers: &ref_6
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_6
+          content: &ref_7
             application/problem+json:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: *ref_0
-                properties: *ref_1
+                required: &ref_0
+                  - type
+                  - title
+                  - status
+                  - detail
+                  - instance
+                  - correlation_id
+                  - timestamp
+                properties: &ref_1
+                  type:
+                    type: string
+                    format: uri
+                    description: URI reference identifying the problem type
+                    example: https://api.skeldir.com/problems/authentication-failed
+                  title:
+                    type: string
+                    description: Short, human-readable summary of the problem
+                    example: Authentication Failed
+                  status:
+                    type: integer
+                    description: HTTP status code
+                    example: 401
+                  detail:
+                    type: string
+                    description: Human-readable explanation specific to this occurrence
+                    example: The provided JWT token has expired. Please refresh your authentication token.
+                  instance:
+                    type: string
+                    format: uri
+                    description: URI reference identifying this specific occurrence
+                    example: https://api.skeldir.com/api/attribution/revenue/realtime
+                  correlation_id:
+                    type: string
+                    format: uuid
+                    description: Request correlation ID for distributed tracing
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp when the error occurred
+                    example: '2025-11-11T14:32:00Z'
+                  errors:
+                    type: array
+                    description: Optional array of specific validation errors
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          example: email
+                        message:
+                          type: string
+                          example: Invalid email format
+                        code:
+                          type: string
+                          example: INVALID_FORMAT
         '500':
           description: Internal server error
-          headers: &ref_9
+          headers: &ref_8
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_10
+          content: &ref_9
             application/problem+json:
               schema:
                 type: object
@@ -260,64 +314,11 @@ paths:
           content: *ref_4
         '401':
           description: Unauthorized - invalid tenant key or signature
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    required:
-                      - detail
-                    properties:
-                      detail:
-                        type: object
-                        required:
-                          - status
-                        properties:
-                          status:
-                            type: string
-                            example: invalid_tenant_key
-                  - type: object
-                    required:
-                      - status
-                    properties:
-                      status:
-                        type: string
-                        example: invalid_signature
-                      vendor:
-                        type: string
-                        example: shopify
-        '401':
-          description: Unauthorized - invalid tenant key or signature
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    required:
-                      - detail
-                    properties:
-                      detail:
-                        type: object
-                        required:
-                          - status
-                        properties:
-                          status:
-                            type: string
-                            example: invalid_tenant_key
-                  - type: object
-                    required:
-                      - status
-                    properties:
-                      status:
-                        type: string
-                        example: invalid_signature
-                      vendor:
-                        type: string
-                        example: shopify
+          content: *ref_5
         '422':
           description: Bad Request - validation failed
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_6
+          content: *ref_7
   /api/webhooks/shopify/refunds/create:
     post:
       summary: Shopify refund created webhook
@@ -349,11 +350,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_13
+              required: &ref_12
                 - id
                 - order_id
                 - transactions
-              properties: &ref_14
+              properties: &ref_13
                 id:
                   type: integer
                   format: int64
@@ -402,36 +403,11 @@ paths:
           content: *ref_4
         '401':
           description: Unauthorized - invalid tenant key or signature
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    required:
-                      - detail
-                    properties:
-                      detail:
-                        type: object
-                        required:
-                          - status
-                        properties:
-                          status:
-                            type: string
-                            example: invalid_tenant_key
-                  - type: object
-                    required:
-                      - status
-                    properties:
-                      status:
-                        type: string
-                        example: invalid_signature
-                      vendor:
-                        type: string
-                        example: shopify
+          content: *ref_5
         '422':
           description: Bad Request - validation failed
-          headers: *ref_5
-          content: *ref_6
+          headers: *ref_6
+          content: *ref_7
   /api/webhooks/shopify/checkouts/update:
     post:
       summary: Shopify checkout updated webhook
@@ -463,10 +439,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_11
+              required: &ref_10
                 - token
                 - total_price
-              properties: &ref_12
+              properties: &ref_11
                 token:
                   type: string
                   description: Checkout token
@@ -494,19 +470,25 @@ paths:
         '200':
           description: Webhook processed successfully
           content: *ref_4
+        '401':
+          description: Unauthorized - invalid tenant key or signature
+          content: *ref_5
 components:
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
       content: *ref_4
+    WebhookUnauthorized:
+      description: Unauthorized - invalid tenant key or signature
+      content: *ref_5
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_5
-      content: *ref_6
+      headers: *ref_6
+      content: *ref_7
     ServerError:
       description: Internal server error
-      headers: *ref_9
-      content: *ref_10
+      headers: *ref_8
+      content: *ref_9
   schemas:
     ShopifyOrder:
       type: object
@@ -514,16 +496,16 @@ components:
       properties: *ref_3
     ShopifyCheckout:
       type: object
-      required: *ref_11
-      properties: *ref_12
+      required: *ref_10
+      properties: *ref_11
     ShopifyRefund:
       type: object
-      required: *ref_13
-      properties: *ref_14
+      required: *ref_12
+      properties: *ref_13
     SuccessResponse:
       type: object
-      required: *ref_15
-      properties: *ref_16
+      required: *ref_14
+      properties: *ref_15
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions

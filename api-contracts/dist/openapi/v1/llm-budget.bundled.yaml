@@ -286,10 +286,12 @@ paths:
                 status: complete
                 allocations:
                   - channel: meta
-                    allocation_cents: 2200000
+                    current_budget: 20000
+                    recommended_budget: 22000
                     expected_roas: 3.1
                   - channel: google
-                    allocation_cents: 1800000
+                    current_budget: 20000
+                    recommended_budget: 18000
                     expected_roas: 2.7
                 synthesis: Allocate +20% to Meta due to higher ROAS; reduce Google spend until CPA stabilizes.
                 metrics:

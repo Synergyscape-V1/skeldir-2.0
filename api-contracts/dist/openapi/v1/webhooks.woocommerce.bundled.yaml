@@ -51,12 +51,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_2
+              required: &ref_0
                 - id
                 - order_key
                 - total
                 - date_created
-              properties: &ref_3
+              properties: &ref_1
                 id:
                   type: integer
                   description: WooCommerce order ID
@@ -177,14 +177,14 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content: &ref_4
+          content: &ref_2
             application/json:
               schema:
                 type: object
-                required: &ref_9
+                required: &ref_6
                   - success
                   - correlation_id
-                properties: &ref_10
+                properties: &ref_7
                   success:
                     type: boolean
                   correlation_id:
@@ -198,7 +198,7 @@ paths:
                 message: Webhook received
         '401':
           description: Unauthorized - invalid tenant key or signature
-          content:
+          content: &ref_3
             application/json:
               schema:
                 oneOf:
@@ -226,18 +226,72 @@ paths:
                         example: woocommerce
         '500':
           description: Internal server error
-          headers: &ref_7
+          headers: &ref_4
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_8
+          content: &ref_5
             application/problem+json:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: *ref_0
-                properties: *ref_1
+                required: &ref_8
+                  - type
+                  - title
+                  - status
+                  - detail
+                  - instance
+                  - correlation_id
+                  - timestamp
+                properties: &ref_9
+                  type:
+                    type: string
+                    format: uri
+                    description: URI reference identifying the problem type
+                    example: https://api.skeldir.com/problems/authentication-failed
+                  title:
+                    type: string
+                    description: Short, human-readable summary of the problem
+                    example: Authentication Failed
+                  status:
+                    type: integer
+                    description: HTTP status code
+                    example: 401
+                  detail:
+                    type: string
+                    description: Human-readable explanation specific to this occurrence
+                    example: The provided JWT token has expired. Please refresh your authentication token.
+                  instance:
+                    type: string
+                    format: uri
+                    description: URI reference identifying this specific occurrence
+                    example: https://api.skeldir.com/api/attribution/revenue/realtime
+                  correlation_id:
+                    type: string
+                    format: uuid
+                    description: Request correlation ID for distributed tracing
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp when the error occurred
+                    example: '2025-11-11T14:32:00Z'
+                  errors:
+                    type: array
+                    description: Optional array of specific validation errors
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          example: email
+                        message:
+                          type: string
+                          example: Invalid email format
+                        code:
+                          type: string
+                          example: INVALID_FORMAT
   /api/webhooks/woocommerce/order/updated:
     post:
       summary: WooCommerce order updated webhook
@@ -271,8 +325,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: *ref_2
-              properties: *ref_3
+              required: *ref_0
+              properties: *ref_1
             example:
               id: 12345
               order_key: wc_order_update_12345
@@ -287,63 +341,10 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content: *ref_4
+          content: *ref_2
         '401':
           description: Unauthorized - invalid tenant key or signature
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    required:
-                      - detail
-                    properties:
-                      detail:
-                        type: object
-                        required:
-                          - status
-                        properties:
-                          status:
-                            type: string
-                            example: invalid_tenant_key
-                  - type: object
-                    required:
-                      - status
-                    properties:
-                      status:
-                        type: string
-                        example: invalid_signature
-                      vendor:
-                        type: string
-                        example: woocommerce
-        '401':
-          description: Unauthorized - invalid tenant key or signature
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    required:
-                      - detail
-                    properties:
-                      detail:
-                        type: object
-                        required:
-                          - status
-                        properties:
-                          status:
-                            type: string
-                            example: invalid_tenant_key
-                  - type: object
-                    required:
-                      - status
-                    properties:
-                      status:
-                        type: string
-                        example: invalid_signature
-                      vendor:
-                        type: string
-                        example: woocommerce
+          content: *ref_3
   /api/webhooks/woocommerce/order_completed:
     post:
       summary: WooCommerce order completed webhook
@@ -377,40 +378,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: *ref_2
-              properties: *ref_3
+              required: *ref_0
+              properties: *ref_1
       responses:
         '200':
           description: Webhook processed successfully
-          content: *ref_4
+          content: *ref_2
         '401':
           description: Unauthorized - invalid tenant key or signature
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    required:
-                      - detail
-                    properties:
-                      detail:
-                        type: object
-                        required:
-                          - status
-                        properties:
-                          status:
-                            type: string
-                            example: invalid_tenant_key
-                  - type: object
-                    required:
-                      - status
-                    properties:
-                      status:
-                        type: string
-                        example: invalid_signature
-                      vendor:
-                        type: string
-                        example: woocommerce
+          content: *ref_3
   /api/webhooks/woocommerce/order/refunded:
     post:
       summary: WooCommerce order refunded webhook
@@ -444,8 +420,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: *ref_2
-              properties: *ref_3
+              required: *ref_0
+              properties: *ref_1
             example:
               id: 12345
               order_key: wc_order_ref_12345
@@ -464,31 +440,33 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content: *ref_4
+          content: *ref_2
+        '401':
+          description: Unauthorized - invalid tenant key or signature
+          content: *ref_3
 components:
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
-      content: *ref_4
-    UnauthorizedError:
-      description: Unauthorized - invalid or missing authentication
-      headers: *ref_5
-      content: *ref_6
+      content: *ref_2
+    WebhookUnauthorized:
+      description: Unauthorized - invalid tenant key or signature
+      content: *ref_3
     ServerError:
       description: Internal server error
-      headers: *ref_7
-      content: *ref_8
+      headers: *ref_4
+      content: *ref_5
   schemas:
     WooCommerceOrder:
       type: object
-      required: *ref_2
-      properties: *ref_3
+      required: *ref_0
+      properties: *ref_1
     SuccessResponse:
       type: object
-      required: *ref_9
-      properties: *ref_10
+      required: *ref_6
+      properties: *ref_7
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required: *ref_0
-      properties: *ref_1
+      required: *ref_8
+      properties: *ref_9
