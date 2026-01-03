@@ -1990,17 +1990,17 @@ CREATE INDEX IF NOT EXISTS idx_attribution_allocations_tenant_created_at ON publ
 
 
 --
--- Name: idx_attribution_allocations_tenant_event_model_channel; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_attribution_allocations_event_model_channel; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_attribution_allocations_tenant_event_model_channel ON public.attribution_allocations USING btree (tenant_id, event_id, model_version, channel_code) WHERE (model_version IS NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_attribution_allocations_event_model_channel ON public.attribution_allocations USING btree (tenant_id, event_id, model_version, channel_code) WHERE (model_version IS NOT NULL);
 
 
 --
--- Name: INDEX idx_attribution_allocations_tenant_event_model_channel; Type: COMMENT; Schema: public; Owner: -
+-- Name: INDEX idx_attribution_allocations_event_model_channel; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON INDEX public.idx_attribution_allocations_tenant_event_model_channel IS 'Unique index ensuring idempotency per (tenant_id, event_id, model_version, channel). Purpose: Prevent duplicate allocations for the same event/model/channel combination. Supports sum-equality validation.';
+COMMENT ON INDEX public.idx_attribution_allocations_event_model_channel IS 'Unique index ensuring idempotency per (tenant_id, event_id, model_version, channel). Purpose: Prevent duplicate allocations for the same event/model/channel combination. Supports sum-equality validation.';
 
 
 --
@@ -2109,17 +2109,18 @@ CREATE INDEX IF NOT EXISTS idx_dead_events_tenant_ingested_at ON public.dead_eve
 
 
 --
--- Name: idx_events_idempotency; Type: INDEX; Schema: public; Owner: -
+-- Name: uq_attribution_events_tenant_idempotency_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency ON public.attribution_events USING btree (idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_attribution_events_tenant_idempotency_key
+  ON public.attribution_events USING btree (tenant_id, idempotency_key);
 
 
 --
--- Name: INDEX idx_events_idempotency; Type: COMMENT; Schema: public; Owner: -
+-- Name: INDEX uq_attribution_events_tenant_idempotency_key; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON INDEX public.idx_events_idempotency IS 'Ensures idempotency_key uniqueness for deduplication. Purpose: Prevent duplicate event ingestion. Required for: B0.4 ingestion.';
+COMMENT ON INDEX public.uq_attribution_events_tenant_idempotency_key IS 'Ensures tenant-scoped idempotency_key uniqueness for deduplication. Purpose: Prevent cross-tenant collisions. Required for: R3 ingestion.';
 
 
 --
@@ -3020,4 +3021,3 @@ COMMENT ON POLICY tenant_isolation_policy ON public.revenue_state_transitions IS
 --
 
 -- \unrestrict JXmJ9vpbHedQC3t57G5CXyIKuMKTry5LxMMu3pxsznvpvf5OKEo13QqtCgXaTGc
-

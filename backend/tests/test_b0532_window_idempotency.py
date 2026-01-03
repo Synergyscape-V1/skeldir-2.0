@@ -211,6 +211,10 @@ class TestWindowIdempotency:
         event_id_2 = uuid4()
         session_id_1 = uuid4()
         session_id_2 = uuid4()
+        idempotency_key_1 = f"window:{event_id_1}"
+        idempotency_key_2 = f"window:{event_id_2}"
+        event_type = "conversion"
+        channel = "direct"
 
         try:
             async with engine.begin() as conn:
@@ -225,10 +229,41 @@ class TestWindowIdempotency:
                     text(
                         """
                         INSERT INTO attribution_events (
-                            id, tenant_id, session_id, occurred_at, revenue_cents, raw_payload
+                            id,
+                            tenant_id,
+                            session_id,
+                            occurred_at,
+                            event_timestamp,
+                            idempotency_key,
+                            event_type,
+                            channel,
+                            revenue_cents,
+                            raw_payload
                         ) VALUES
-                            (:id1, :tenant_id, :session_id_1, '2025-02-01T10:00:00Z'::timestamptz, 10000, '{}'::jsonb),
-                            (:id2, :tenant_id, :session_id_2, '2025-02-01T15:00:00Z'::timestamptz, 20000, '{}'::jsonb)
+                            (
+                                :id1,
+                                :tenant_id,
+                                :session_id_1,
+                                '2025-02-01T10:00:00Z'::timestamptz,
+                                '2025-02-01T10:00:00Z'::timestamptz,
+                                :idempotency_key_1,
+                                :event_type,
+                                :channel,
+                                10000,
+                                '{}'::jsonb
+                            ),
+                            (
+                                :id2,
+                                :tenant_id,
+                                :session_id_2,
+                                '2025-02-01T15:00:00Z'::timestamptz,
+                                '2025-02-01T15:00:00Z'::timestamptz,
+                                :idempotency_key_2,
+                                :event_type,
+                                :channel,
+                                20000,
+                                '{}'::jsonb
+                            )
                         ON CONFLICT DO NOTHING
                         """
                     ),
@@ -237,6 +272,10 @@ class TestWindowIdempotency:
                         "id2": event_id_2,
                         "session_id_1": session_id_1,
                         "session_id_2": session_id_2,
+                        "idempotency_key_1": idempotency_key_1,
+                        "idempotency_key_2": idempotency_key_2,
+                        "event_type": event_type,
+                        "channel": channel,
                         "tenant_id": test_tenant_id,
                     },
                 )

@@ -85,17 +85,36 @@ class TestPIIGuardrailAttributionEvents:
         # Attempt INSERT with PII key
         # RAW_SQL_ALLOWLIST: intentional PII injection to assert trigger enforcement
         with pytest.raises((IntegrityError, InternalError)) as exc_info:
+            idempotency_key = f"pii-email:{uuid4()}"
             db_session.execute(
                 text("""
                     INSERT INTO attribution_events (
-                        tenant_id, session_id, occurred_at, raw_payload
+                        tenant_id,
+                        session_id,
+                        occurred_at,
+                        event_timestamp,
+                        idempotency_key,
+                        event_type,
+                        channel,
+                        raw_payload
                     ) VALUES (
-                        :tenant_id, :session_id,
+                        :tenant_id,
+                        :session_id,
                         NOW(),
+                        NOW(),
+                        :idempotency_key,
+                        :event_type,
+                        :channel,
                         '{"email": "test@example.com"}'::jsonb
                     )
                 """),
-                {"tenant_id": test_tenant_id, "session_id": uuid4()}
+                {
+                    "tenant_id": test_tenant_id,
+                    "session_id": uuid4(),
+                    "idempotency_key": idempotency_key,
+                    "event_type": "page_view",
+                    "channel": "direct",
+                }
             )
             db_session.commit()
         
@@ -108,17 +127,36 @@ class TestPIIGuardrailAttributionEvents:
         """Test that phone number in raw_payload is blocked."""
         # RAW_SQL_ALLOWLIST: intentional PII injection to assert trigger enforcement
         with pytest.raises((IntegrityError, InternalError)) as exc_info:
+            idempotency_key = f"pii-phone:{uuid4()}"
             db_session.execute(
                 text("""
                     INSERT INTO attribution_events (
-                        tenant_id, session_id, occurred_at, raw_payload
+                        tenant_id,
+                        session_id,
+                        occurred_at,
+                        event_timestamp,
+                        idempotency_key,
+                        event_type,
+                        channel,
+                        raw_payload
                     ) VALUES (
-                        :tenant_id, :session_id,
+                        :tenant_id,
+                        :session_id,
                         NOW(),
+                        NOW(),
+                        :idempotency_key,
+                        :event_type,
+                        :channel,
                         '{"phone": "555-1234"}'::jsonb
                     )
                 """),
-                {"tenant_id": test_tenant_id, "session_id": uuid4()}
+                {
+                    "tenant_id": test_tenant_id,
+                    "session_id": uuid4(),
+                    "idempotency_key": idempotency_key,
+                    "event_type": "page_view",
+                    "channel": "direct",
+                }
             )
             db_session.commit()
         
@@ -135,12 +173,28 @@ class TestPIIGuardrailAttributionEvents:
         
         # INSERT with clean payload
         # RAW_SQL_ALLOWLIST: controlled clean payload insert to validate allow path
+        idempotency_key = f"pii-clean:{event_id}"
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, session_id, occurred_at, raw_payload
+                    id,
+                    tenant_id,
+                    session_id,
+                    occurred_at,
+                    event_timestamp,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, :session_id, NOW(),
+                    :event_id,
+                    :tenant_id,
+                    :session_id,
+                    NOW(),
+                    NOW(),
+                    :idempotency_key,
+                    :event_type,
+                    :channel,
                     '{"channel": "google_search_paid", "utm_source": "google"}'::jsonb
                 )
             """),
@@ -148,6 +202,9 @@ class TestPIIGuardrailAttributionEvents:
                 "event_id": event_id,
                 "tenant_id": test_tenant_id,
                 "session_id": uuid4(),
+                "idempotency_key": idempotency_key,
+                "event_type": "page_view",
+                "channel": "direct",
             }
         )
         db_session.commit()
@@ -204,18 +261,42 @@ class TestPIIGuardrailRevenueLedger:
         """Create a test allocation for revenue_ledger FK requirement."""
         allocation_id = uuid4()
         event_id = uuid4()
+        idempotency_key = f"pii-alloc:{event_id}"
         
         # Create event first
         # RAW_SQL_ALLOWLIST: seed event for FK prerequisite in PII guardrail test
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, session_id, occurred_at, raw_payload
+                    id,
+                    tenant_id,
+                    session_id,
+                    occurred_at,
+                    event_timestamp,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, :session_id, NOW(), '{"channel": "google"}'::jsonb
+                    :event_id,
+                    :tenant_id,
+                    :session_id,
+                    NOW(),
+                    NOW(),
+                    :idempotency_key,
+                    :event_type,
+                    :channel,
+                    '{"channel": "google"}'::jsonb
                 )
             """),
-            {"event_id": event_id, "tenant_id": test_tenant_id, "session_id": uuid4()}
+            {
+                "event_id": event_id,
+                "tenant_id": test_tenant_id,
+                "session_id": uuid4(),
+                "idempotency_key": idempotency_key,
+                "event_type": "page_view",
+                "channel": "direct",
+            }
         )
         
         # Create allocation
@@ -310,15 +391,36 @@ class TestPIIGuardrailAdditionalKeys:
         for name_key in ["first_name", "last_name", "full_name"]:
             with pytest.raises((IntegrityError, InternalError)):
                 # RAW_SQL_ALLOWLIST: intentional name PII injection to trigger guard
+                idempotency_key = f"pii-name:{name_key}:{uuid4()}"
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, session_id, occurred_at, raw_payload
+                            tenant_id,
+                            session_id,
+                            occurred_at,
+                            event_timestamp,
+                            idempotency_key,
+                            event_type,
+                            channel,
+                            raw_payload
                         ) VALUES (
-                            :tenant_id, :session_id, NOW(), '{{"{name_key}": "John Doe"}}'::jsonb
+                            :tenant_id,
+                            :session_id,
+                            NOW(),
+                            NOW(),
+                            :idempotency_key,
+                            :event_type,
+                            :channel,
+                            '{{"{name_key}": "John Doe"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
+                    {
+                        "tenant_id": test_tenant_id,
+                        "session_id": uuid4(),
+                        "idempotency_key": idempotency_key,
+                        "event_type": "page_view",
+                        "channel": "direct",
+                    }
                 )
                 db_session.commit()
     
@@ -327,15 +429,36 @@ class TestPIIGuardrailAdditionalKeys:
         for addr_key in ["address", "street_address"]:
             with pytest.raises((IntegrityError, InternalError)):
                 # RAW_SQL_ALLOWLIST: intentional address PII injection to trigger guard
+                idempotency_key = f"pii-address:{addr_key}:{uuid4()}"
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, session_id, occurred_at, raw_payload
+                            tenant_id,
+                            session_id,
+                            occurred_at,
+                            event_timestamp,
+                            idempotency_key,
+                            event_type,
+                            channel,
+                            raw_payload
                         ) VALUES (
-                            :tenant_id, :session_id, NOW(), '{{"{addr_key}": "123 Main St"}}'::jsonb
+                            :tenant_id,
+                            :session_id,
+                            NOW(),
+                            NOW(),
+                            :idempotency_key,
+                            :event_type,
+                            :channel,
+                            '{{"{addr_key}": "123 Main St"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
+                    {
+                        "tenant_id": test_tenant_id,
+                        "session_id": uuid4(),
+                        "idempotency_key": idempotency_key,
+                        "event_type": "page_view",
+                        "channel": "direct",
+                    }
                 )
                 db_session.commit()
     
@@ -344,15 +467,36 @@ class TestPIIGuardrailAdditionalKeys:
         for ip_key in ["ip_address", "ip"]:
             with pytest.raises((IntegrityError, InternalError)):
                 # RAW_SQL_ALLOWLIST: intentional IP PII injection to trigger guard
+                idempotency_key = f"pii-ip:{ip_key}:{uuid4()}"
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, session_id, occurred_at, raw_payload
+                            tenant_id,
+                            session_id,
+                            occurred_at,
+                            event_timestamp,
+                            idempotency_key,
+                            event_type,
+                            channel,
+                            raw_payload
                         ) VALUES (
-                            :tenant_id, :session_id, NOW(), '{{"{ip_key}": "192.168.1.1"}}'::jsonb
+                            :tenant_id,
+                            :session_id,
+                            NOW(),
+                            NOW(),
+                            :idempotency_key,
+                            :event_type,
+                            :channel,
+                            '{{"{ip_key}": "192.168.1.1"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
+                    {
+                        "tenant_id": test_tenant_id,
+                        "session_id": uuid4(),
+                        "idempotency_key": idempotency_key,
+                        "event_type": "page_view",
+                        "channel": "direct",
+                    }
                 )
                 db_session.commit()
     
@@ -361,15 +505,36 @@ class TestPIIGuardrailAdditionalKeys:
         for ssn_key in ["ssn", "social_security_number"]:
             with pytest.raises((IntegrityError, InternalError)):
                 # RAW_SQL_ALLOWLIST: intentional SSN PII injection to trigger guard
+                idempotency_key = f"pii-ssn:{ssn_key}:{uuid4()}"
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, session_id, occurred_at, raw_payload
+                            tenant_id,
+                            session_id,
+                            occurred_at,
+                            event_timestamp,
+                            idempotency_key,
+                            event_type,
+                            channel,
+                            raw_payload
                         ) VALUES (
-                            :tenant_id, :session_id, NOW(), '{{"{ssn_key}": "123-45-6789"}}'::jsonb
+                            :tenant_id,
+                            :session_id,
+                            NOW(),
+                            NOW(),
+                            :idempotency_key,
+                            :event_type,
+                            :channel,
+                            '{{"{ssn_key}": "123-45-6789"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
+                    {
+                        "tenant_id": test_tenant_id,
+                        "session_id": uuid4(),
+                        "idempotency_key": idempotency_key,
+                        "event_type": "page_view",
+                        "channel": "direct",
+                    }
                 )
                 db_session.commit()
 

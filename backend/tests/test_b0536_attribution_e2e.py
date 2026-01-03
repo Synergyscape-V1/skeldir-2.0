@@ -34,6 +34,10 @@ EVENT_A_ID = UUID("00000000-0000-0000-0000-0000000000a1")
 EVENT_B_ID = UUID("00000000-0000-0000-0000-0000000000b2")
 EVENT_A_SESSION_ID = UUID("00000000-0000-0000-0000-00000000a0a1")
 EVENT_B_SESSION_ID = UUID("00000000-0000-0000-0000-00000000b0b2")
+EVENT_A_IDEMPOTENCY_KEY = f"e2e:{EVENT_A_ID}"
+EVENT_B_IDEMPOTENCY_KEY = f"e2e:{EVENT_B_ID}"
+EVENT_TYPE = "conversion"
+EVENT_CHANNEL = "direct"
 WINDOW_START = "2025-06-01T00:00:00Z"
 WINDOW_END = "2025-06-01T23:59:59.999999Z"
 MODEL_VERSION = "1.0.0"
@@ -61,10 +65,43 @@ async def _prepare_facts():
         await conn.execute(
             text(
                 """
-                INSERT INTO attribution_events (id, tenant_id, session_id, occurred_at, revenue_cents, raw_payload)
+                INSERT INTO attribution_events (
+                    id,
+                    tenant_id,
+                    session_id,
+                    occurred_at,
+                    event_timestamp,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    revenue_cents,
+                    raw_payload
+                )
                 VALUES
-                    (:id1, :tenant_id, :session_id_1, CAST(:ts1 AS timestamptz), :rev1, '{}'::jsonb),
-                    (:id2, :tenant_id, :session_id_2, CAST(:ts2 AS timestamptz), :rev2, '{}'::jsonb)
+                    (
+                        :id1,
+                        :tenant_id,
+                        :session_id_1,
+                        CAST(:ts1 AS timestamptz),
+                        CAST(:ts1 AS timestamptz),
+                        :idempotency_key_1,
+                        :event_type,
+                        :channel,
+                        :rev1,
+                        '{}'::jsonb
+                    ),
+                    (
+                        :id2,
+                        :tenant_id,
+                        :session_id_2,
+                        CAST(:ts2 AS timestamptz),
+                        CAST(:ts2 AS timestamptz),
+                        :idempotency_key_2,
+                        :event_type,
+                        :channel,
+                        :rev2,
+                        '{}'::jsonb
+                    )
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -73,6 +110,10 @@ async def _prepare_facts():
                 "id2": EVENT_B_ID,
                 "session_id_1": EVENT_A_SESSION_ID,
                 "session_id_2": EVENT_B_SESSION_ID,
+                "idempotency_key_1": EVENT_A_IDEMPOTENCY_KEY,
+                "idempotency_key_2": EVENT_B_IDEMPOTENCY_KEY,
+                "event_type": EVENT_TYPE,
+                "channel": EVENT_CHANNEL,
                 "tenant_id": TENANT_ID,
                 "ts1": EVENT_A_OCCURRED_AT,
                 "ts2": EVENT_B_OCCURRED_AT,

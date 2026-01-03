@@ -44,10 +44,43 @@ async def _insert_events(conn, tenant_id, events):
     await conn.execute(
         text(
             """
-            INSERT INTO attribution_events (id, tenant_id, session_id, occurred_at, revenue_cents, raw_payload)
+            INSERT INTO attribution_events (
+                id,
+                tenant_id,
+                session_id,
+                occurred_at,
+                event_timestamp,
+                idempotency_key,
+                event_type,
+                channel,
+                revenue_cents,
+                raw_payload
+            )
             VALUES
-                (:id1, :tenant_id, :session_id_1, CAST(:ts1 AS timestamptz), :rev1, '{}'::jsonb),
-                (:id2, :tenant_id, :session_id_2, CAST(:ts2 AS timestamptz), :rev2, '{}'::jsonb)
+                (
+                    :id1,
+                    :tenant_id,
+                    :session_id_1,
+                    CAST(:ts1 AS timestamptz),
+                    CAST(:ts1 AS timestamptz),
+                    :idempotency_key_1,
+                    :event_type,
+                    :channel,
+                    :rev1,
+                    '{}'::jsonb
+                ),
+                (
+                    :id2,
+                    :tenant_id,
+                    :session_id_2,
+                    CAST(:ts2 AS timestamptz),
+                    CAST(:ts2 AS timestamptz),
+                    :idempotency_key_2,
+                    :event_type,
+                    :channel,
+                    :rev2,
+                    '{}'::jsonb
+                )
             ON CONFLICT DO NOTHING
             """
         ),
@@ -57,6 +90,10 @@ async def _insert_events(conn, tenant_id, events):
             "tenant_id": tenant_id,
             "session_id_1": session_id_1,
             "session_id_2": session_id_2,
+            "idempotency_key_1": f"worker:{events[0][0]}",
+            "idempotency_key_2": f"worker:{events[1][0]}",
+            "event_type": "conversion",
+            "channel": "direct",
             "ts1": ts1,
             "ts2": ts2,
             "rev1": events[0][2],
