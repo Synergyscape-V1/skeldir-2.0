@@ -78,6 +78,12 @@ class TestDataRetentionEnforcement:
         from app.tasks.maintenance import enforce_data_retention_task
         
         event_id = uuid4()
+        idempotency_key = f"retention-new:{event_id}"
+        event_type = "page_view"
+        channel = "direct"
+        idempotency_key = f"retention-old:{event_id}"
+        event_type = "page_view"
+        channel = "direct"
         
         # Create event with timestamp 100 days ago
         old_timestamp = datetime.now(timezone.utc) - timedelta(days=100)
@@ -86,9 +92,24 @@ class TestDataRetentionEnforcement:
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, session_id, occurred_at, raw_payload
+                    id,
+                    tenant_id,
+                    session_id,
+                    occurred_at,
+                    event_timestamp,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, :session_id, :occurred_at,
+                    :event_id,
+                    :tenant_id,
+                    :session_id,
+                    :occurred_at,
+                    :event_timestamp,
+                    :idempotency_key,
+                    :event_type,
+                    :channel,
                     '{"channel": "google"}'::jsonb
                 )
             """),
@@ -96,7 +117,11 @@ class TestDataRetentionEnforcement:
                 "event_id": event_id,
                 "tenant_id": test_tenant_id,
                 "session_id": uuid4(),
-                "occurred_at": old_timestamp
+                "occurred_at": old_timestamp,
+                "event_timestamp": old_timestamp,
+                "idempotency_key": idempotency_key,
+                "event_type": event_type,
+                "channel": channel,
             }
         )
         db_session.commit()
@@ -139,9 +164,24 @@ class TestDataRetentionEnforcement:
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, session_id, occurred_at, raw_payload
+                    id,
+                    tenant_id,
+                    session_id,
+                    occurred_at,
+                    event_timestamp,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, :session_id, :occurred_at,
+                    :event_id,
+                    :tenant_id,
+                    :session_id,
+                    :occurred_at,
+                    :event_timestamp,
+                    :idempotency_key,
+                    :event_type,
+                    :channel,
                     '{"channel": "google"}'::jsonb
                 )
             """),
@@ -149,7 +189,11 @@ class TestDataRetentionEnforcement:
                 "event_id": event_id,
                 "tenant_id": test_tenant_id,
                 "session_id": uuid4(),
-                "occurred_at": new_timestamp
+                "occurred_at": new_timestamp,
+                "event_timestamp": new_timestamp,
+                "idempotency_key": idempotency_key,
+                "event_type": event_type,
+                "channel": channel,
             }
         )
         db_session.commit()
@@ -178,18 +222,44 @@ class TestDataRetentionEnforcement:
         allocation_id = uuid4()
         event_id = uuid4()
         ledger_id = uuid4()
+        idempotency_key = f"retention-fin:{event_id}"
+        event_type = "page_view"
+        channel = "direct"
         
         # Create prerequisite data
         # RAW_SQL_ALLOWLIST: seed event for retention financial preservation test
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, session_id, occurred_at, raw_payload
+                    id,
+                    tenant_id,
+                    session_id,
+                    occurred_at,
+                    event_timestamp,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, :session_id, NOW(), '{"channel": "google"}'::jsonb
+                    :event_id,
+                    :tenant_id,
+                    :session_id,
+                    NOW(),
+                    NOW(),
+                    :idempotency_key,
+                    :event_type,
+                    :channel,
+                    '{"channel": "google"}'::jsonb
                 )
             """),
-            {"event_id": event_id, "tenant_id": test_tenant_id, "session_id": uuid4()}
+            {
+                "event_id": event_id,
+                "tenant_id": test_tenant_id,
+                "session_id": uuid4(),
+                "idempotency_key": idempotency_key,
+                "event_type": event_type,
+                "channel": channel,
+            }
         )
         
         # RAW_SQL_ALLOWLIST: seed allocation for financial retention test
@@ -341,4 +411,3 @@ class TestDataRetentionEnforcement:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-

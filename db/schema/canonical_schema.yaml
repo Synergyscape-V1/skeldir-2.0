@@ -222,8 +222,8 @@ tables:
         unique: false
         where: "processing_status = 'pending'"
         
-      - name: idx_events_idempotency
-        columns: [idempotency_key]
+      - name: uq_attribution_events_tenant_idempotency_key
+        columns: [tenant_id, idempotency_key]
         unique: true
         
       - name: idx_attribution_events_session_id

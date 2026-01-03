@@ -110,17 +110,47 @@ async def test_tenants_and_events_celery():
             await conn.execute(
                 text("""
                     INSERT INTO attribution_events
-                    (event_id, tenant_id, session_id, event_timestamp, event_type, source_url, attribution_model, created_at)
-                    VALUES (:event_id, :tenant_id, :session_id, :ts, :event_type, :url, :model, :created_at)
+                    (
+                        event_id,
+                        tenant_id,
+                        session_id,
+                        occurred_at,
+                        event_timestamp,
+                        idempotency_key,
+                        event_type,
+                        channel,
+                        source_url,
+                        attribution_model,
+                        raw_payload,
+                        created_at
+                    )
+                    VALUES
+                    (
+                        :event_id,
+                        :tenant_id,
+                        :session_id,
+                        :ts,
+                        :ts,
+                        :idempotency_key,
+                        :event_type,
+                        :channel,
+                        :url,
+                        :model,
+                        :raw_payload::jsonb,
+                        :created_at
+                    )
                 """),
                 {
                     "event_id": f"{test_marker}_A_{i}_{tenant_a}",
                     "tenant_id": str(tenant_a),
                     "session_id": str(uuid4()),
+                    "idempotency_key": f"rls-celery-a:{i}:{tenant_a}",
                     "ts": datetime.now(timezone.utc),
                     "event_type": "page_view",
+                    "channel": "direct",
                     "url": f"https://tenant-a.test/{i}",
                     "model": "last_touch",
+                    "raw_payload": "{}",
                     "created_at": datetime.now(timezone.utc),
                 }
             )
@@ -131,17 +161,47 @@ async def test_tenants_and_events_celery():
             await conn.execute(
                 text("""
                     INSERT INTO attribution_events
-                    (event_id, tenant_id, session_id, event_timestamp, event_type, source_url, attribution_model, created_at)
-                    VALUES (:event_id, :tenant_id, :session_id, :ts, :event_type, :url, :model, :created_at)
+                    (
+                        event_id,
+                        tenant_id,
+                        session_id,
+                        occurred_at,
+                        event_timestamp,
+                        idempotency_key,
+                        event_type,
+                        channel,
+                        source_url,
+                        attribution_model,
+                        raw_payload,
+                        created_at
+                    )
+                    VALUES
+                    (
+                        :event_id,
+                        :tenant_id,
+                        :session_id,
+                        :ts,
+                        :ts,
+                        :idempotency_key,
+                        :event_type,
+                        :channel,
+                        :url,
+                        :model,
+                        :raw_payload::jsonb,
+                        :created_at
+                    )
                 """),
                 {
                     "event_id": f"{test_marker}_B_{i}_{tenant_b}",
                     "tenant_id": str(tenant_b),
                     "session_id": str(uuid4()),
+                    "idempotency_key": f"rls-celery-b:{i}:{tenant_b}",
                     "ts": datetime.now(timezone.utc),
                     "event_type": "page_view",
+                    "channel": "direct",
                     "url": f"https://tenant-b.test/{i}",
                     "model": "last_touch",
+                    "raw_payload": "{}",
                     "created_at": datetime.now(timezone.utc),
                 }
             )
