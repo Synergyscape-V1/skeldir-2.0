@@ -4,9 +4,9 @@
 
 R3 = **COMPLETE** as of:
 
-- **Candidate SHA:** `d4b10b66135e77dcefed91d732c84690419f23d3`
-- **CI run:** https://github.com/Muk223/skeldir-2.0/actions/runs/20545539639
-- **Generated at:** `2025-12-27T23:06:04.263861+00:00`
+- **Candidate SHA:** `edd965bb9c3801da44f7f53fd31551c80626a848`
+- **CI run:** https://github.com/Muk223/skeldir-2.0/actions/runs/20681971119
+- **Generated at:** `2026-01-03T19:38:20.856550+00:00`
 
 ## Run Configuration (from harness log)
 
@@ -14,7 +14,7 @@ R3 = **COMPLETE** as of:
 - `R3_LADDER` = `[50, 250, 1000]`
 - `R3_CONCURRENCY` = `200`
 - `R3_TIMEOUT_S` = `10.0`
-- `RUN_START_UTC` = `2025-12-27T23:05:20.845907+00:00`
+- `RUN_START_UTC` = `2026-01-03T19:37:04.888713+00:00`
 
 ## Exit Gates (Pass Matrix)
 
@@ -45,6 +45,7 @@ Max ladder step detected: `N=1000`
   "CANONICAL_ROWS_FOR_KEY": 1,
   "DLQ_ROWS_FOR_KEY": 0,
   "HTTP_5XX_COUNT": 0,
+  "HTTP_CONNECTION_ERRORS": 0,
   "HTTP_TIMEOUT_COUNT": 0,
   "http_status_counts": {
     "200": 1000
@@ -57,6 +58,7 @@ Max ladder step detected: `N=1000`
 ```json
 {
   "HTTP_5XX_COUNT": 0,
+  "HTTP_CONNECTION_ERRORS": 0,
   "HTTP_TIMEOUT_COUNT": 0,
   "TENANT_A_CANONICAL_ROWS_FOR_KEY": 1,
   "TENANT_B_CANONICAL_ROWS_FOR_KEY": 1,
@@ -73,6 +75,7 @@ Max ladder step detected: `N=1000`
   "CANONICAL_ROWS_CREATED": 0,
   "DLQ_ROWS_CREATED": 1000,
   "HTTP_5XX_COUNT": 0,
+  "HTTP_CONNECTION_ERRORS": 0,
   "HTTP_TIMEOUT_COUNT": 0,
   "http_status_counts": {
     "200": 1000
@@ -87,6 +90,7 @@ Max ladder step detected: `N=1000`
   "CANONICAL_ROWS_CREATED": 0,
   "DLQ_ROWS_CREATED": 1000,
   "HTTP_5XX_COUNT": 0,
+  "HTTP_CONNECTION_ERRORS": 0,
   "HTTP_TIMEOUT_COUNT": 0,
   "PII_KEY_HIT_COUNT_IN_DB": 0,
   "attribution_events_raw_payload_hits": 0,
@@ -102,6 +106,7 @@ Max ladder step detected: `N=1000`
 ```json
 {
   "HTTP_5XX_COUNT": 0,
+  "HTTP_CONNECTION_ERRORS": 0,
   "HTTP_TIMEOUT_COUNT": 0,
   "MALFORMED_DLQ_ROWS_CREATED": 100,
   "REPLAY_CANONICAL_ROWS_FOR_KEY": 1,
