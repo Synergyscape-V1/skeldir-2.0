@@ -126,9 +126,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove model versioning from attribution_allocations."""
 
-    # Drop constraint first
+    # Remove index first (downgrade rollback)
     op.execute("DROP INDEX IF EXISTS idx_attribution_allocations_event_model_channel")  # CI:DESTRUCTIVE_OK - Downgrade rollback
 
-    # Drop columns
+    # Remove columns (downgrade rollback)
     op.execute("ALTER TABLE attribution_allocations DROP COLUMN IF EXISTS model_version")  # CI:DESTRUCTIVE_OK - Downgrade rollback
     op.execute("ALTER TABLE attribution_allocations DROP COLUMN IF EXISTS allocation_ratio")  # CI:DESTRUCTIVE_OK - Downgrade rollback

@@ -1,99 +1,11 @@
-# Schema Drift Detection Workflow
-# 
-# NOTE: This workflow is currently commented/disabled.
-# It will be activated once the migration system is fully operational.
-#
-# Purpose: Detect schema drift by comparing actual database schema
-# against schema generated from migrations.
+name: Schema Drift Detection (Disabled)
 
-# name: Schema Drift Detection
-#
-# on:
-#   pull_request:
-#     paths:
-#       - 'alembic/versions/**'
-#       - 'db/migrations/**'
-#   push:
-#     branches:
-#       - main
-#     paths:
-#       - 'alembic/versions/**'
-#       - 'db/migrations/**'
-#
-# jobs:
-#   detect-drift:
-#     runs-on: ubuntu-latest
-#     
-#     services:
-#       postgres:
-#         image: postgres:15
-#         env:
-#           POSTGRES_DB: skeldir_test
-#           POSTGRES_USER: test_user
-#           POSTGRES_PASSWORD: test_password
-#         options: >-
-#           --health-cmd pg_isready
-#           --health-interval 10s
-#           --health-timeout 5s
-#           --health-retries 5
-#     
-#     steps:
-#       - uses: actions/checkout@v3
-#       
-#       - name: Set up Python
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.11'
-#       
-#       - name: Install dependencies
-#         run: |
-#           pip install alembic sqlalchemy psycopg2-binary
-#       
-#       - name: Apply migrations
-#         env:
-#           DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
-#         run: |
-#           alembic upgrade head
-#       
-#       - name: Generate snapshot from migrations
-#         env:
-#           DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
-#         run: |
-#           pg_dump --schema-only --no-owner --no-privileges \
-#             -h localhost -U test_user -d skeldir_test \
-#             > schema_from_migrations.sql
-#       
-#       - name: Get last blessed snapshot
-#         run: |
-#           # Get most recent blessed snapshot
-#           LAST_SNAPSHOT=$(ls -t db/snapshots/schema_*.sql | head -1)
-#           echo "LAST_SNAPSHOT=$LAST_SNAPSHOT" >> $GITHUB_ENV
-#       
-#       - name: Compare snapshots
-#         run: |
-#           # Compare snapshots (using diff or sqldef)
-#           if [ -f "$LAST_SNAPSHOT" ]; then
-#             diff -u "$LAST_SNAPSHOT" schema_from_migrations.sql || true
-#             # Fail if unexpected differences (not from migrations)
-#           fi
-#       
-#       - name: Fail on drift
-#         run: |
-#           # Analyze diff output
-#           # Fail if drift detected (differences not explained by migrations)
-#           echo "Drift detection complete"
+on:
+  workflow_dispatch:
 
-# Workflow is disabled until migration system is operational.
-# To enable:
-# 1. Uncomment the workflow
-# 2. Configure PostgreSQL service
-# 3. Test workflow in staging
-# 4. Enable for production
-
-
-
-
-
-
-
-
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disabled
+        run: echo "Schema drift detection is disabled until migrations are operational."
