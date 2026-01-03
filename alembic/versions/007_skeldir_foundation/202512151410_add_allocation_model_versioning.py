@@ -61,11 +61,50 @@ def upgrade() -> None:
     # Add UNIQUE constraint for event-scoped overwrite strategy - skip if index already exists
     # NOTE: 202511131232 creates idx_attribution_allocations_tenant_event_model_channel
     # This migration creates idx_attribution_allocations_event_model_channel (different name)
-    # Both serve the same purpose, so we skip if either exists
-    # IMPORTANT: Uses channel_code (renamed from channel by migration 202511141311)
+    # Both serve the same purpose, so we skip if either exists.
+    # IMPORTANT: Use channel_code when present (post-rename), fall back to channel when not yet renamed.
     op.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribution_allocations_event_model_channel
-        ON attribution_allocations (tenant_id, event_id, model_version, channel_code)
+        DO $$
+        DECLARE
+            has_channel_code boolean;
+            has_channel boolean;
+            existing_index boolean;
+        BEGIN
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public'
+                AND indexname IN (
+                    'idx_attribution_allocations_event_model_channel',
+                    'idx_attribution_allocations_tenant_event_model_channel'
+                )
+            ) INTO existing_index;
+
+            IF existing_index THEN
+                RETURN;
+            END IF;
+
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'attribution_allocations'
+                  AND column_name = 'channel_code'
+            ) INTO has_channel_code;
+
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'attribution_allocations'
+                  AND column_name = 'channel'
+            ) INTO has_channel;
+
+            IF has_channel_code THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_attribution_allocations_event_model_channel ON attribution_allocations (tenant_id, event_id, model_version, channel_code)';
+            ELSIF has_channel THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_attribution_allocations_event_model_channel ON attribution_allocations (tenant_id, event_id, model_version, channel)';
+            ELSE
+                RAISE EXCEPTION 'Cannot create allocation uniqueness index: neither channel_code nor channel exists on attribution_allocations';
+            END IF;
+        END $$;
     """)
 
     # Add comment only if our index was created (idempotent)
