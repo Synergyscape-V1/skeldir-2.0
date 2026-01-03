@@ -88,14 +88,14 @@ class TestPIIGuardrailAttributionEvents:
             db_session.execute(
                 text("""
                     INSERT INTO attribution_events (
-                        tenant_id, occurred_at, raw_payload
+                        tenant_id, session_id, occurred_at, raw_payload
                     ) VALUES (
-                        :tenant_id,
+                        :tenant_id, :session_id,
                         NOW(),
                         '{"email": "test@example.com"}'::jsonb
                     )
                 """),
-                {"tenant_id": test_tenant_id}
+                {"tenant_id": test_tenant_id, "session_id": uuid4()}
             )
             db_session.commit()
         
@@ -111,14 +111,14 @@ class TestPIIGuardrailAttributionEvents:
             db_session.execute(
                 text("""
                     INSERT INTO attribution_events (
-                        tenant_id, occurred_at, raw_payload
+                        tenant_id, session_id, occurred_at, raw_payload
                     ) VALUES (
-                        :tenant_id,
+                        :tenant_id, :session_id,
                         NOW(),
                         '{"phone": "555-1234"}'::jsonb
                     )
                 """),
-                {"tenant_id": test_tenant_id}
+                {"tenant_id": test_tenant_id, "session_id": uuid4()}
             )
             db_session.commit()
         
@@ -138,15 +138,16 @@ class TestPIIGuardrailAttributionEvents:
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, occurred_at, raw_payload
+                    id, tenant_id, session_id, occurred_at, raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, NOW(),
+                    :event_id, :tenant_id, :session_id, NOW(),
                     '{"channel": "google_search_paid", "utm_source": "google"}'::jsonb
                 )
             """),
             {
                 "event_id": event_id,
-                "tenant_id": test_tenant_id
+                "tenant_id": test_tenant_id,
+                "session_id": uuid4(),
             }
         )
         db_session.commit()
@@ -209,12 +210,12 @@ class TestPIIGuardrailRevenueLedger:
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, occurred_at, raw_payload
+                    id, tenant_id, session_id, occurred_at, raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, NOW(), '{"channel": "google"}'::jsonb
+                    :event_id, :tenant_id, :session_id, NOW(), '{"channel": "google"}'::jsonb
                 )
             """),
-            {"event_id": event_id, "tenant_id": test_tenant_id}
+            {"event_id": event_id, "tenant_id": test_tenant_id, "session_id": uuid4()}
         )
         
         # Create allocation
@@ -312,12 +313,12 @@ class TestPIIGuardrailAdditionalKeys:
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, occurred_at, raw_payload
+                            tenant_id, session_id, occurred_at, raw_payload
                         ) VALUES (
-                            :tenant_id, NOW(), '{{"{name_key}": "John Doe"}}'::jsonb
+                            :tenant_id, :session_id, NOW(), '{{"{name_key}": "John Doe"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id}
+                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
                 )
                 db_session.commit()
     
@@ -329,12 +330,12 @@ class TestPIIGuardrailAdditionalKeys:
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, occurred_at, raw_payload
+                            tenant_id, session_id, occurred_at, raw_payload
                         ) VALUES (
-                            :tenant_id, NOW(), '{{"{addr_key}": "123 Main St"}}'::jsonb
+                            :tenant_id, :session_id, NOW(), '{{"{addr_key}": "123 Main St"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id}
+                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
                 )
                 db_session.commit()
     
@@ -346,12 +347,12 @@ class TestPIIGuardrailAdditionalKeys:
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, occurred_at, raw_payload
+                            tenant_id, session_id, occurred_at, raw_payload
                         ) VALUES (
-                            :tenant_id, NOW(), '{{"{ip_key}": "192.168.1.1"}}'::jsonb
+                            :tenant_id, :session_id, NOW(), '{{"{ip_key}": "192.168.1.1"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id}
+                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
                 )
                 db_session.commit()
     
@@ -363,12 +364,12 @@ class TestPIIGuardrailAdditionalKeys:
                 db_session.execute(
                     text(f"""
                         INSERT INTO attribution_events (
-                            tenant_id, occurred_at, raw_payload
+                            tenant_id, session_id, occurred_at, raw_payload
                         ) VALUES (
-                            :tenant_id, NOW(), '{{"{ssn_key}": "123-45-6789"}}'::jsonb
+                            :tenant_id, :session_id, NOW(), '{{"{ssn_key}": "123-45-6789"}}'::jsonb
                         )
                     """),
-                    {"tenant_id": test_tenant_id}
+                    {"tenant_id": test_tenant_id, "session_id": uuid4()}
                 )
                 db_session.commit()
 

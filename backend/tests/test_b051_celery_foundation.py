@@ -34,6 +34,7 @@ from app.celery_app import (
 )  # noqa: E402
 from app.tasks.housekeeping import ping  # noqa: E402
 from app.tasks.maintenance import scan_for_pii_contamination_task  # noqa: E402
+from app.tasks import matviews  # noqa: E402,F401
 from app.tasks.llm import llm_routing_worker  # noqa: E402
 from app.main import app  # noqa: E402
 from app.db.session import engine  # noqa: E402

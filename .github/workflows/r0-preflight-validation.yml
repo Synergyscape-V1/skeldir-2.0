@@ -20,7 +20,7 @@ on:
       - 'scripts/r0/**'
       - '.github/workflows/r0-preflight-validation.yml'
       - 'backend/requirements*.txt'
-      - 'docker-compose*.yml'
+      - 'podman-compose*.yml'
 
 concurrency:
   group: r0-${{ github.sha }}
@@ -56,6 +56,11 @@ jobs:
           echo "Status: $(git status --porcelain | wc -l) untracked files" | tee -a $GITHUB_STEP_SUMMARY
           git log -1 --format="%H %an %ae %cd" | tee -a $GITHUB_STEP_SUMMARY
 
+      - name: "EG-R0-0: Install container runtime"
+        run: |
+          chmod +x scripts/ci/install_container_runtime.sh
+          scripts/ci/install_container_runtime.sh
+
       # ====================================================================
       # EG-R0-9: Immutable CI Environment Fingerprint (MANDATORY)
       # ====================================================================
@@ -65,12 +70,12 @@ jobs:
           mkdir -p "$ARTIFACTS_DIR"
 
           # Capture container digests being used
-          docker pull $POSTGRES_DIGEST
-          POSTGRES_ACTUAL_DIGEST=$(docker inspect $POSTGRES_DIGEST --format='{{index .RepoDigests 0}}')
+          podman pull $POSTGRES_DIGEST
+          POSTGRES_ACTUAL_DIGEST=$(podman inspect $POSTGRES_DIGEST --format='{{index .RepoDigests 0}}')
 
           # Capture Alpine digest for network probe
-          docker pull alpine:3.18
-          ALPINE_DIGEST=$(docker inspect alpine:3.18 --format='{{index .RepoDigests 0}}')
+          podman pull alpine:3.18
+          ALPINE_DIGEST=$(podman inspect alpine:3.18 --format='{{index .RepoDigests 0}}')
 
           # Generate comprehensive fingerprint
           cat > "$ARTIFACTS_DIR/CI_ENV_FINGERPRINT.json" <<EOF
@@ -106,10 +111,10 @@ jobs:
                 "version": "$(node --version 2>&1 || echo 'not installed')",
                 "npm_version": "$(npm --version 2>&1 || echo 'not installed')"
               },
-              "docker": {
-                "client_version": "$(docker version --format '{{.Client.Version}}')",
-                "server_version": "$(docker version --format '{{.Server.Version}}')",
-                "compose_version": "$(docker compose version)"
+              "container_runtime": {
+                "client_version": "$(podman version --format '{{.Client.Version}}')",
+                "server_version": "$(podman version --format '{{.Server.Version}}')",
+                "compose_version": "$(podman compose version)"
               }
             },
             "container_digests": {
@@ -199,10 +204,10 @@ jobs:
           echo "=== Container Digest Enforcement ===" | tee -a $GITHUB_STEP_SUMMARY
 
           # Pull by digest and verify
-          docker pull $POSTGRES_DIGEST
-          POSTGRES_ACTUAL=$(docker inspect $POSTGRES_DIGEST --format='{{index .RepoDigests 0}}')
+          podman pull $POSTGRES_DIGEST
+          POSTGRES_ACTUAL=$(podman inspect $POSTGRES_DIGEST --format='{{index .RepoDigests 0}}')
 
-          cat > "$ARTIFACTS_DIR/DOCKER_IMAGE_DIGESTS.json" <<EOF
+          cat > "$ARTIFACTS_DIR/CONTAINER_IMAGE_DIGESTS.json" <<EOF
           {
             "postgres": {
               "env_reference": "$POSTGRES_DIGEST",
@@ -221,8 +226,8 @@ jobs:
       # ====================================================================
       - name: "EG-R0-6: Enforce network isolation with proof"
         run: |
-          # Create isolated Docker network (--internal = no internet route)
-          docker network create --internal skeldir-r0-isolated
+          # Create isolated podman network (--internal = no internet route)
+          podman network create --internal skeldir-r0-isolated
 
           # Verify isolation with probe (MUST FAIL to prove isolation)
           echo "Running egress probe (MUST FAIL)..." | tee -a $GITHUB_STEP_SUMMARY
@@ -230,7 +235,7 @@ jobs:
           mkdir -p "$ARTIFACTS_DIR/NETWORK_ISOLATION_PROOF"
 
           # Probe public internet from isolated network
-          if docker run --rm --network skeldir-r0-isolated alpine:3.18 \
+          if podman run --rm --network skeldir-r0-isolated alpine:3.18 \
             sh -c "wget --timeout=2 --tries=1 https://www.google.com -O /dev/null" \
             > "$ARTIFACTS_DIR/NETWORK_ISOLATION_PROOF/egress_probe_output.txt" 2>&1; then
             # Probe succeeded = isolation FAILED
@@ -244,7 +249,7 @@ jobs:
           fi
 
           # Capture network configuration
-          docker network inspect skeldir-r0-isolated > "$ARTIFACTS_DIR/NETWORK_ISOLATION_PROOF/network_config.json"
+          podman network inspect skeldir-r0-isolated > "$ARTIFACTS_DIR/NETWORK_ISOLATION_PROOF/network_config.json"
 
           cat > "$ARTIFACTS_DIR/NETWORK_ISOLATION_PROOF/summary.txt" <<EOF
           Network Isolation Proof
@@ -264,7 +269,7 @@ jobs:
           mkdir -p "$ARTIFACTS_DIR/DB_DETERMINISM/RUN1"
 
           # Start Postgres on isolated network (by digest)
-          docker run -d \
+          podman run -d \
             --name skeldir-r0-postgres-run1 \
             --network skeldir-r0-isolated \
             -e POSTGRES_USER=postgres \
@@ -274,14 +279,14 @@ jobs:
 
           # Wait for ready
           sleep 10
-          docker exec skeldir-r0-postgres-run1 pg_isready -U postgres
+          podman exec skeldir-r0-postgres-run1 pg_isready -U postgres
 
           # Run Alembic migrations if available
           if [ -f backend/alembic.ini ]; then
             echo "Running Alembic migrations..." | tee -a $GITHUB_STEP_SUMMARY
             cd backend
-            docker cp alembic.ini skeldir-r0-postgres-run1:/tmp/
-            docker cp alembic skeldir-r0-postgres-run1:/tmp/
+            podman cp alembic.ini skeldir-r0-postgres-run1:/tmp/
+            podman cp alembic skeldir-r0-postgres-run1:/tmp/
             # Note: Alembic would need connection string - this is a placeholder
             # For now, just note migration availability
             cd ..
@@ -289,7 +294,7 @@ jobs:
           fi
 
           # Capture schema with canonical pg_dump flags (no owner, no privileges)
-          docker exec skeldir-r0-postgres-run1 \
+          podman exec skeldir-r0-postgres-run1 \
             pg_dump --schema-only --no-owner --no-privileges --no-comments \
             -U postgres skeldir_test \
             > "$ARTIFACTS_DIR/DB_DETERMINISM/RUN1/schema_raw.sql"
@@ -313,8 +318,8 @@ jobs:
           fi
 
           # Teardown
-          docker stop skeldir-r0-postgres-run1
-          docker rm skeldir-r0-postgres-run1
+          podman stop skeldir-r0-postgres-run1
+          podman rm skeldir-r0-postgres-run1
 
       - name: "EG-R0-8: DB determinism test (Run2)"
         run: |
@@ -324,7 +329,7 @@ jobs:
           SCHEMA_HASH_RUN1=$(cat "$ARTIFACTS_DIR/DB_DETERMINISM/RUN1/schema_hash.txt")
 
           # Repeat: fresh container, no volumes (full teardown between runs)
-          docker run -d \
+          podman run -d \
             --name skeldir-r0-postgres-run2 \
             --network skeldir-r0-isolated \
             -e POSTGRES_USER=postgres \
@@ -333,10 +338,10 @@ jobs:
             $POSTGRES_DIGEST
 
           sleep 10
-          docker exec skeldir-r0-postgres-run2 pg_isready -U postgres
+          podman exec skeldir-r0-postgres-run2 pg_isready -U postgres
 
           # Capture schema with same canonical flags
-          docker exec skeldir-r0-postgres-run2 \
+          podman exec skeldir-r0-postgres-run2 \
             pg_dump --schema-only --no-owner --no-privileges --no-comments \
             -U postgres skeldir_test \
             > "$ARTIFACTS_DIR/DB_DETERMINISM/RUN2/schema_raw.sql"
@@ -372,8 +377,8 @@ jobs:
           fi
 
           # Teardown
-          docker stop skeldir-r0-postgres-run2
-          docker rm skeldir-r0-postgres-run2
+          podman stop skeldir-r0-postgres-run2
+          podman rm skeldir-r0-postgres-run2
 
       # ====================================================================
       # EG-R0-9: Preflight Apparatus Determinism (Two-Pass Normalized Output)

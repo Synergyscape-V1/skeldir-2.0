@@ -55,8 +55,8 @@ jobs:
             "node_version": "$(node --version)",
             "npm_version": "$(npm --version)",
             "python_version": "$(python3 --version)",
-            "docker_version": "$(docker --version)",
-            "docker_compose_version": "$(docker-compose --version)"
+            "container_runtime_version": "$(podman --version 2>&1 || echo 'not installed')",
+            "compose_version": "$(podman-compose --version 2>&1 || echo 'not installed')"
           }
           EOF
           cat $ARTIFACT_DIR/ENV_SNAPSHOT.json
@@ -514,13 +514,14 @@ jobs:
 
       - name: Start Prism mocks
         run: |
-          docker-compose -f docker-compose.mock.yml up -d 2>&1 | tee $ARTIFACT_DIR/prism_compose_up.log
+          chmod +x scripts/start-mocks.sh scripts/stop-mocks-prism.sh scripts/health-check-mocks.sh
+          scripts/start-mocks.sh 2>&1 | tee $ARTIFACT_DIR/prism_start.log
 
           # Wait for services to be healthy
           echo "Waiting for mock services to be healthy..."
           sleep 10
 
-          docker-compose -f docker-compose.mock.yml ps > $ARTIFACT_DIR/prism_health_ps.log
+          scripts/health-check-mocks.sh 2>&1 | tee $ARTIFACT_DIR/prism_health_ps.log
 
           # Check health
           if grep -q "healthy" $ARTIFACT_DIR/prism_health_ps.log; then
@@ -551,7 +552,7 @@ jobs:
       - name: Cleanup mocks
         if: always()
         run: |
-          docker-compose -f docker-compose.mock.yml down || true
+          scripts/stop-mocks-prism.sh 2>/dev/null || true
 
       - name: Upload EG-R1-2 artifacts
         uses: actions/upload-artifact@v4
@@ -813,7 +814,7 @@ jobs:
           psql <DATABASE_URL> -c "SELECT * FROM <table>" # DB interaction proof
 
           # EG-R1-2: Prism Mocks
-          docker-compose -f docker-compose.mock.yml up -d
+          podman-compose -f podman-compose.mock.yml up -d
           curl http://localhost:4010/auth/health
           ```
 
@@ -822,7 +823,7 @@ jobs:
           All artifacts are stored in `artifacts/runtime_r1/<date>_<sha>/` and include:
 
           ### EG-R1-0
-          - `ENV_SNAPSHOT.json` - Environment configuration (OS, Node, Python, Docker versions)
+          - `ENV_SNAPSHOT.json` - Environment configuration (OS, Node, Python, podman versions)
           - `COMMAND_LOG.txt` - Candidate SHA and git status verification
 
           ### EG-R1-1

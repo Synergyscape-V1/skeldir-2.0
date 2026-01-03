@@ -65,6 +65,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install container runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/install_container_runtime.sh
+
       - name: Install dependencies
         shell: bash
         run: |
@@ -78,8 +84,8 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/r7_results
           echo "R7_PHASE_START=R0 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${GITHUB_SHA}"
-          docker pull "${R7_PG_IMAGE}"
-          POSTGRES_DIGEST="$(docker inspect "${R7_PG_IMAGE}" --format '{{index .RepoDigests 0}}')"
+          podman pull "${R7_PG_IMAGE}"
+          POSTGRES_DIGEST="$(podman inspect "${R7_PG_IMAGE}" --format '{{index .RepoDigests 0}}')"
           echo "POSTGRES_DIGEST=${POSTGRES_DIGEST}" >> "${GITHUB_ENV}"
           WORKFLOW_HASH="$(sha256sum .github/workflows/r7-final-winning-state.yml | cut -d' ' -f1)"
           python - <<'PY' > /tmp/r7_results/r0.json
@@ -109,7 +115,7 @@ jobs:
                   "python": _cmd(["python", "--version"]),
                   "node": _cmd(["bash", "-lc", "node --version || echo not_installed"]),
                   "npm": _cmd(["bash", "-lc", "npm --version || echo not_installed"]),
-                  "docker": _cmd(["docker", "--version"]),
+                  "container_runtime": _cmd(["podman", "--version"]),
               },
               "images": {
                   "postgres": os.environ.get("POSTGRES_DIGEST"),
@@ -127,7 +133,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d --name "${R7_PG_CONTAINER}" \
+          podman run -d --name "${R7_PG_CONTAINER}" \
             -p "${R7_PG_PORT}:5432" \
             --shm-size=1g \
             -e POSTGRES_USER="${R7_PG_ADMIN_USER}" \
@@ -151,14 +157,14 @@ jobs:
               -c wal_level=minimal
 
           for i in $(seq 1 60); do
-            status="$(docker inspect -f '{{.State.Health.Status}}' "${R7_PG_CONTAINER}" 2>/dev/null || true)"
+            status="$(podman inspect -f '{{.State.Health.Status}}' "${R7_PG_CONTAINER}" 2>/dev/null || true)"
             if [ "$status" = "healthy" ]; then
               break
             fi
             sleep 2
           done
 
-          docker exec "${R7_PG_CONTAINER}" psql -U "${R7_PG_ADMIN_USER}" -d postgres -c "SELECT 1" >/dev/null
+          podman exec "${R7_PG_CONTAINER}" psql -U "${R7_PG_ADMIN_USER}" -d postgres -c "SELECT 1" >/dev/null
 
       - name: Bootstrap databases and roles
         shell: bash
@@ -303,7 +309,7 @@ jobs:
             --orm-verdict-json /tmp/r2_orm.json | tee /tmp/r2_scenario.log
 
           sleep 2
-          docker logs --since "${LOG_SINCE}" "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1
+          podman logs --since "${LOG_SINCE}" "${R7_PG_CONTAINER}" > /tmp/r7_postgres.log 2>&1
 
           python scripts/r2/db_log_window_audit.py \
             --log-file /tmp/r7_postgres.log \

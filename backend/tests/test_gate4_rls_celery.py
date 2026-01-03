@@ -110,12 +110,13 @@ async def test_tenants_and_events_celery():
             await conn.execute(
                 text("""
                     INSERT INTO attribution_events
-                    (event_id, tenant_id, event_timestamp, event_type, source_url, attribution_model, created_at)
-                    VALUES (:event_id, :tenant_id, :ts, :event_type, :url, :model, :created_at)
+                    (event_id, tenant_id, session_id, event_timestamp, event_type, source_url, attribution_model, created_at)
+                    VALUES (:event_id, :tenant_id, :session_id, :ts, :event_type, :url, :model, :created_at)
                 """),
                 {
                     "event_id": f"{test_marker}_A_{i}_{tenant_a}",
                     "tenant_id": str(tenant_a),
+                    "session_id": str(uuid4()),
                     "ts": datetime.now(timezone.utc),
                     "event_type": "page_view",
                     "url": f"https://tenant-a.test/{i}",
@@ -130,12 +131,13 @@ async def test_tenants_and_events_celery():
             await conn.execute(
                 text("""
                     INSERT INTO attribution_events
-                    (event_id, tenant_id, event_timestamp, event_type, source_url, attribution_model, created_at)
-                    VALUES (:event_id, :tenant_id, :ts, :event_type, :url, :model, :created_at)
+                    (event_id, tenant_id, session_id, event_timestamp, event_type, source_url, attribution_model, created_at)
+                    VALUES (:event_id, :tenant_id, :session_id, :ts, :event_type, :url, :model, :created_at)
                 """),
                 {
                     "event_id": f"{test_marker}_B_{i}_{tenant_b}",
                     "tenant_id": str(tenant_b),
+                    "session_id": str(uuid4()),
                     "ts": datetime.now(timezone.utc),
                     "event_type": "page_view",
                     "url": f"https://tenant-b.test/{i}",

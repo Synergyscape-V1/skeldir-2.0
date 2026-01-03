@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d --name r5-postgres \
+          podman run -d --name r5-postgres \
             -p 5432:5432 \
             --shm-size=1g \
             -e POSTGRES_USER=r5_admin \
@@ -80,7 +80,7 @@ jobs:
               -c wal_level=minimal
 
           for i in $(seq 1 60); do
-            status="$(docker inspect -f '{{.State.Health.Status}}' r5-postgres 2>/dev/null || true)"
+            status="$(podman inspect -f '{{.State.Health.Status}}' r5-postgres 2>/dev/null || true)"
             if [ "$status" = "healthy" ]; then
               echo "postgres_healthy=1"
               exit 0
@@ -89,13 +89,19 @@ jobs:
           done
 
           echo "postgres_healthy=0"
-          docker logs r5-postgres || true
+          podman logs r5-postgres || true
           exit 1
 
       - name: Setup Python
         uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
         with:
           python-version: "3.11"
+
+      - name: Install container runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ci/install_container_runtime.sh
 
       - name: Install dependencies
         shell: bash
@@ -169,5 +175,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker logs r5-postgres || true
-          docker rm -f r5-postgres || true
+          podman logs r5-postgres || true
+          podman rm -f r5-postgres || true

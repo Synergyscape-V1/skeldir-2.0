@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Skeldir 2.0 - Native Prism Mock Server Startup Script
-# Process-based approach (NO DOCKER)
+# Process-based approach (no container runtime)
 # Starts all 9 Prism mock servers on ports 4010-4018
 
 set -e
 
 echo "=============================================="
 echo "  Skeldir 2.0 - Prism Mock Server Startup"
-echo "  Process-Based Approach (No Docker)"
+echo "  Process-Based Approach (No containers)"
 echo "=============================================="
 echo ""
 

@@ -2,7 +2,7 @@
 """
 R2 DB Statement Capture (AUTHORITATIVE)
 
-Parses Postgres logs (docker logs output) and produces a window-delimited,
+Parses Postgres logs (container log output) and produces a window-delimited,
 per-scenario verdict:
 
 Hard FAIL conditions:

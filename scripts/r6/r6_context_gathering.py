@@ -533,7 +533,7 @@ def main() -> int:
         "os": {"platform": platform.platform(), "machine": platform.machine()},
         "python": {"version": sys.version.split()[0], "full": sys.version},
         "celery": {"version": celery_version},
-        "docker_version": _run_command(["docker", "--version"]).strip(),
+        "container_runtime_version": _run_command(["podman", "--version"]).strip(),
         "postgres_image": os.getenv("R6_POSTGRES_IMAGE", "unknown"),
     }
     _write_json(output_dir / "R6_ENV_SNAPSHOT.json", env_snapshot, sha=sha, timestamp=timestamp)

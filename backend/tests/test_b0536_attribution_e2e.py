@@ -32,6 +32,8 @@ os.environ.setdefault("CELERY_RESULT_BACKEND", f"db+{DEFAULT_SYNC_DSN}")
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 EVENT_A_ID = UUID("00000000-0000-0000-0000-0000000000a1")
 EVENT_B_ID = UUID("00000000-0000-0000-0000-0000000000b2")
+EVENT_A_SESSION_ID = UUID("00000000-0000-0000-0000-00000000a0a1")
+EVENT_B_SESSION_ID = UUID("00000000-0000-0000-0000-00000000b0b2")
 WINDOW_START = "2025-06-01T00:00:00Z"
 WINDOW_END = "2025-06-01T23:59:59.999999Z"
 MODEL_VERSION = "1.0.0"
@@ -59,16 +61,18 @@ async def _prepare_facts():
         await conn.execute(
             text(
                 """
-                INSERT INTO attribution_events (id, tenant_id, occurred_at, revenue_cents, raw_payload)
+                INSERT INTO attribution_events (id, tenant_id, session_id, occurred_at, revenue_cents, raw_payload)
                 VALUES
-                    (:id1, :tenant_id, CAST(:ts1 AS timestamptz), :rev1, '{}'::jsonb),
-                    (:id2, :tenant_id, CAST(:ts2 AS timestamptz), :rev2, '{}'::jsonb)
+                    (:id1, :tenant_id, :session_id_1, CAST(:ts1 AS timestamptz), :rev1, '{}'::jsonb),
+                    (:id2, :tenant_id, :session_id_2, CAST(:ts2 AS timestamptz), :rev2, '{}'::jsonb)
                 ON CONFLICT DO NOTHING
                 """
             ),
             {
                 "id1": EVENT_A_ID,
                 "id2": EVENT_B_ID,
+                "session_id_1": EVENT_A_SESSION_ID,
+                "session_id_2": EVENT_B_SESSION_ID,
                 "tenant_id": TENANT_ID,
                 "ts1": EVENT_A_OCCURRED_AT,
                 "ts2": EVENT_B_OCCURRED_AT,

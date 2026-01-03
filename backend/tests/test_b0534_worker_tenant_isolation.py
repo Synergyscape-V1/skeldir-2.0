@@ -38,14 +38,16 @@ async def _insert_events(conn, tenant_id, events):
     )
     ts1 = _to_dt(events[0][1])
     ts2 = _to_dt(events[1][1])
+    session_id_1 = uuid4()
+    session_id_2 = uuid4()
     # RAW_SQL_ALLOWLIST: seed cross-tenant events to validate RLS enforcement
     await conn.execute(
         text(
             """
-            INSERT INTO attribution_events (id, tenant_id, occurred_at, revenue_cents, raw_payload)
+            INSERT INTO attribution_events (id, tenant_id, session_id, occurred_at, revenue_cents, raw_payload)
             VALUES
-                (:id1, :tenant_id, CAST(:ts1 AS timestamptz), :rev1, '{}'::jsonb),
-                (:id2, :tenant_id, CAST(:ts2 AS timestamptz), :rev2, '{}'::jsonb)
+                (:id1, :tenant_id, :session_id_1, CAST(:ts1 AS timestamptz), :rev1, '{}'::jsonb),
+                (:id2, :tenant_id, :session_id_2, CAST(:ts2 AS timestamptz), :rev2, '{}'::jsonb)
             ON CONFLICT DO NOTHING
             """
         ),
@@ -53,6 +55,8 @@ async def _insert_events(conn, tenant_id, events):
             "id1": events[0][0],
             "id2": events[1][0],
             "tenant_id": tenant_id,
+            "session_id_1": session_id_1,
+            "session_id_2": session_id_2,
             "ts1": ts1,
             "ts2": ts2,
             "rev1": events[0][2],

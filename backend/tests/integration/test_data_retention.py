@@ -86,15 +86,16 @@ class TestDataRetentionEnforcement:
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, occurred_at, raw_payload
+                    id, tenant_id, session_id, occurred_at, raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, :occurred_at,
+                    :event_id, :tenant_id, :session_id, :occurred_at,
                     '{"channel": "google"}'::jsonb
                 )
             """),
             {
                 "event_id": event_id,
                 "tenant_id": test_tenant_id,
+                "session_id": uuid4(),
                 "occurred_at": old_timestamp
             }
         )
@@ -138,15 +139,16 @@ class TestDataRetentionEnforcement:
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, occurred_at, raw_payload
+                    id, tenant_id, session_id, occurred_at, raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, :occurred_at,
+                    :event_id, :tenant_id, :session_id, :occurred_at,
                     '{"channel": "google"}'::jsonb
                 )
             """),
             {
                 "event_id": event_id,
                 "tenant_id": test_tenant_id,
+                "session_id": uuid4(),
                 "occurred_at": new_timestamp
             }
         )
@@ -182,12 +184,12 @@ class TestDataRetentionEnforcement:
         db_session.execute(
             text("""
                 INSERT INTO attribution_events (
-                    id, tenant_id, occurred_at, raw_payload
+                    id, tenant_id, session_id, occurred_at, raw_payload
                 ) VALUES (
-                    :event_id, :tenant_id, NOW(), '{"channel": "google"}'::jsonb
+                    :event_id, :tenant_id, :session_id, NOW(), '{"channel": "google"}'::jsonb
                 )
             """),
-            {"event_id": event_id, "tenant_id": test_tenant_id}
+            {"event_id": event_id, "tenant_id": test_tenant_id, "session_id": uuid4()}
         )
         
         # RAW_SQL_ALLOWLIST: seed allocation for financial retention test
@@ -339,5 +341,4 @@ class TestDataRetentionEnforcement:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-
 

@@ -46,6 +46,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: "Install container runtime"
+        run: |
+          chmod +x scripts/ci/install_container_runtime.sh
+          scripts/ci/install_container_runtime.sh
+
       # ====================================================================
       # EG-R1-0: Evidence Anchor & Provenance
       # ====================================================================
@@ -79,7 +84,7 @@ jobs:
             "substrate": "ubuntu-22.04",
             "os_version": "$(cat /etc/os-release | grep VERSION= | cut -d'=' -f2 | tr -d '\"')",
             "kernel": "$(uname -r)",
-            "docker_version": "$(docker --version | awk '{print $3}' | tr -d ',')",
+            "container_runtime_version": "$(podman --version | awk '{print $3}' | tr -d ',')",
             "node_version": "$(node --version)",
             "python_version": "$(python3 --version | awk '{print $2}')"
           }
@@ -151,12 +156,12 @@ jobs:
       # ====================================================================
       # EG-R1-3: Fresh DB Schema Apply (Zero → Head) + Idempotency
       # ====================================================================
-      - name: "Create Docker network for R1"
+      - name: "Create podman network for R1"
         run: |
           # NOTE: Do NOT use --internal flag as it blocks host access to published ports
           # The API runs on the host and needs to connect to Postgres via localhost:5432
-          docker network create skeldir-r1-isolated || true
-          echo "docker network create skeldir-r1-isolated" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
+          podman network create skeldir-r1-isolated || true
+          echo "podman network create skeldir-r1-isolated" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
 
       - name: "EG-R1-3: Fresh DB schema apply + idempotency test"
         run: |
@@ -164,7 +169,7 @@ jobs:
           mkdir -p "$ARTIFACTS_DIR/DB_SCHEMA"
 
           # Start fresh Postgres instance
-          docker run -d \
+          podman run -d \
             --name skeldir-r1-postgres \
             --network skeldir-r1-isolated \
             -e POSTGRES_USER=$POSTGRES_USER \
@@ -173,14 +178,14 @@ jobs:
             -p 5432:5432 \
             $POSTGRES_DIGEST
 
-          echo "docker run postgres (digest pinned)" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
+          echo "podman run postgres (digest pinned)" >> "$ARTIFACTS_DIR/COMMAND_LOG.txt"
 
           # Wait for Postgres to be ready with robust verification
           echo "Waiting for Postgres to be ready..."
           for i in {1..60}; do
-            if docker exec skeldir-r1-postgres pg_isready -U $POSTGRES_USER 2>/dev/null; then
+            if podman exec skeldir-r1-postgres pg_isready -U $POSTGRES_USER 2>/dev/null; then
               # pg_isready can report true before fully stable, verify with actual query
-              if docker exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1" >/dev/null 2>&1; then
+              if podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1" >/dev/null 2>&1; then
                 echo "Postgres is fully ready after $i seconds"
                 break
               fi
@@ -192,27 +197,27 @@ jobs:
 
           # Apply canonical schema (Run 1)
           echo "Applying canonical schema (Run 1)..." | tee -a $GITHUB_STEP_SUMMARY
-          if docker exec -i skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB < db/schema/canonical_schema.sql 2>&1 | tee "$ARTIFACTS_DIR/DB_SCHEMA/schema_apply_run1.log"; then
+          if podman exec -i skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB < db/schema/canonical_schema.sql 2>&1 | tee "$ARTIFACTS_DIR/DB_SCHEMA/schema_apply_run1.log"; then
             echo "✅ Schema apply Run 1 succeeded" | tee -a $GITHUB_STEP_SUMMARY
           else
             echo "⚠️ Schema apply Run 1 had warnings (may be expected for CREATE IF NOT EXISTS)" | tee -a $GITHUB_STEP_SUMMARY
           fi
 
           # Capture schema state after Run 1
-          docker exec skeldir-r1-postgres pg_dump --schema-only --no-owner --no-privileges -U $POSTGRES_USER $POSTGRES_DB > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.sql"
+          podman exec skeldir-r1-postgres pg_dump --schema-only --no-owner --no-privileges -U $POSTGRES_USER $POSTGRES_DB > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.sql"
           SCHEMA_HASH_RUN1=$(sha256sum "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.sql" | cut -d' ' -f1)
           echo "**Schema hash after Run 1:** \`$SCHEMA_HASH_RUN1\`" | tee -a $GITHUB_STEP_SUMMARY
 
           # Apply canonical schema again (Run 2 - idempotency test)
           echo "Applying canonical schema (Run 2 - idempotency)..." | tee -a $GITHUB_STEP_SUMMARY
-          if docker exec -i skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB < db/schema/canonical_schema.sql 2>&1 | tee "$ARTIFACTS_DIR/DB_SCHEMA/schema_apply_run2.log"; then
+          if podman exec -i skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB < db/schema/canonical_schema.sql 2>&1 | tee "$ARTIFACTS_DIR/DB_SCHEMA/schema_apply_run2.log"; then
             echo "✅ Schema apply Run 2 succeeded" | tee -a $GITHUB_STEP_SUMMARY
           else
             echo "⚠️ Schema apply Run 2 had warnings" | tee -a $GITHUB_STEP_SUMMARY
           fi
 
           # Capture schema state after Run 2
-          docker exec skeldir-r1-postgres pg_dump --schema-only --no-owner --no-privileges -U $POSTGRES_USER $POSTGRES_DB > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.sql"
+          podman exec skeldir-r1-postgres pg_dump --schema-only --no-owner --no-privileges -U $POSTGRES_USER $POSTGRES_DB > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.sql"
           SCHEMA_HASH_RUN2=$(sha256sum "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.sql" | cut -d' ' -f1)
           echo "**Schema hash after Run 2:** \`$SCHEMA_HASH_RUN2\`" | tee -a $GITHUB_STEP_SUMMARY
 
@@ -228,7 +233,7 @@ jobs:
 
           # Verify RLS is enabled on attribution_events
           echo "Verifying RLS configuration..." | tee -a $GITHUB_STEP_SUMMARY
-          RLS_CHECK=$(docker exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'attribution_events';" 2>/dev/null || echo "table_not_found")
+          RLS_CHECK=$(podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'attribution_events';" 2>/dev/null || echo "table_not_found")
           echo "**RLS status for attribution_events:** $RLS_CHECK" | tee -a $GITHUB_STEP_SUMMARY
 
           echo "✅ **EG-R1-3 PASS:** Schema applied and idempotency verified" | tee -a $GITHUB_STEP_SUMMARY
@@ -345,7 +350,7 @@ jobs:
 
           # Get DB identity from psql
           echo "**psql DB identity query:**" | tee -a $GITHUB_STEP_SUMMARY
-          DB_IDENTITY=$(docker exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
+          DB_IDENTITY=$(podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
             SELECT
               inet_server_addr() as server_addr,
               inet_server_port() as server_port,
@@ -415,7 +420,7 @@ jobs:
           # Prove the same queries work from psql (same DB instance)
           echo "**Replicating queries via psql (same DB):**" | tee -a $GITHUB_STEP_SUMMARY
 
-          PSQL_PROOF=$(docker exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
+          PSQL_PROOF=$(podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "
             -- Query 1: Basic connectivity
             SELECT 'SELECT_1_OK' as test1 WHERE 1=1;
             -- Query 2: RLS check (same as /health/ready)
@@ -563,21 +568,15 @@ jobs:
           echo "=== EG-R1-2: Prism Mock Boot (Prerequisite) ===" | tee -a $GITHUB_STEP_SUMMARY
           mkdir -p "$ARTIFACTS_DIR/PRISM_MOCKS"
 
-          # Note: Prism mocks use source specs, not bundled (per docker-compose.mock.yml)
-          echo "Starting Prism mocks with docker-compose..." | tee -a $GITHUB_STEP_SUMMARY
-
-          if docker compose -f docker-compose.mock.yml up -d 2>&1 | tee "$ARTIFACTS_DIR/PRISM_MOCKS/prism_compose_up.log"; then
-            echo "✅ docker compose up succeeded" | tee -a $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ docker compose up had issues" | tee -a $GITHUB_STEP_SUMMARY
-          fi
+          echo "Starting Prism mocks with process runner..." | tee -a $GITHUB_STEP_SUMMARY
+          chmod +x scripts/start-mocks.sh scripts/stop-mocks-prism.sh
+          scripts/start-mocks.sh 2>&1 | tee "$ARTIFACTS_DIR/PRISM_MOCKS/prism_start.log"
 
           # Wait for services to start
           sleep 15
 
           # Check health status
-          docker compose -f docker-compose.mock.yml ps 2>&1 | tee "$ARTIFACTS_DIR/PRISM_MOCKS/prism_health_ps.log"
-          docker compose -f docker-compose.mock.yml ps | tee -a $GITHUB_STEP_SUMMARY
+          scripts/health-check-mocks.sh 2>&1 | tee "$ARTIFACTS_DIR/PRISM_MOCKS/prism_health_check.log"
 
           # Sample requests to mocks
           echo "Sample mock requests:" | tee -a $GITHUB_STEP_SUMMARY
@@ -608,7 +607,7 @@ jobs:
           fi
 
           # Cleanup mocks
-          docker compose -f docker-compose.mock.yml down 2>/dev/null || true
+          scripts/stop-mocks-prism.sh 2>/dev/null || true
 
       # ====================================================================
       # Cleanup and Artifact Generation
@@ -622,11 +621,11 @@ jobs:
           fi
 
           # Stop postgres
-          docker stop skeldir-r1-postgres 2>/dev/null || true
-          docker rm skeldir-r1-postgres 2>/dev/null || true
+          podman stop skeldir-r1-postgres 2>/dev/null || true
+          podman rm skeldir-r1-postgres 2>/dev/null || true
 
           # Remove network
-          docker network rm skeldir-r1-isolated 2>/dev/null || true
+          podman network rm skeldir-r1-isolated 2>/dev/null || true
 
       - name: "Generate artifact manifest"
         if: always()
