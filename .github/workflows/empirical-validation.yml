@@ -284,6 +284,7 @@ jobs:
           cd backend
           pip install -q -r requirements.txt
           
+          set +e
           python - << 'PYEOF' > ../evidence_registry/contracts/backend_routes_raw.txt 2>&1
           import sys
           sys.path.insert(0, '.')
@@ -306,11 +307,21 @@ jobs:
               import traceback
               traceback.print_exc()
           PYEOF
+          PY_EXIT=$?
+          set -e
+
+          echo "BACKEND_ROUTES_RAW_BEGIN"
+          cat ../evidence_registry/contracts/backend_routes_raw.txt
+          echo "BACKEND_ROUTES_RAW_END"
+          if [ "$PY_EXIT" -ne 0 ]; then
+            echo "Backend route extraction python exit: $PY_EXIT"
+          fi
           
           if grep -q " -> " ../evidence_registry/contracts/backend_routes_raw.txt; then
             echo "✓ Backend routes extracted" >> ../evidence_registry/contracts/phase_2_status.txt
           else
             echo "✗ Backend route extraction failed" >> ../evidence_registry/contracts/phase_2_status.txt
+            exit 1
           fi
       
       - name: Phase 2.3 - Contract Operations Extraction
