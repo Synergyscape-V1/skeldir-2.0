@@ -8,7 +8,7 @@ git rev-parse HEAD
 ```
 Output:
 ```
-ee7de3f85a816fc5c42382eaceb9744e2f4d4cb5
+00f3c3f54a47bf684ef50b9b04f96f94338567ac
 ```
 
 Command:
@@ -17,7 +17,7 @@ git status --porcelain
 ```
 Output:
 ```
-?? B0544_REMEDIATION_EVIDENCE_PACK_local_windows_v2.md
+(clean)
 ```
 
 ## EG-2 Registration Determinism (report + inspect registered + worker startup log)
@@ -160,6 +160,32 @@ Worker log excerpt:
 {"level": "INFO", "logger": "celery.worker.strategy", "message": "Task app.tasks.matviews.pulse_matviews_global[f4c9b0a4-5c9e-4f20-b973-eaf296eca40f] received"}
 {"level": "INFO", "logger": "celery.app.trace", "message": "Task app.tasks.matviews.pulse_matviews_global[f4c9b0a4-5c9e-4f20-b973-eaf296eca40f] succeeded in 0.21899999998277053s: {'status': 'ok', 'tenant_count': 1, 'correlation_id': '30232e89-5c91-45af-ba73-08f0eda2b3ca'}"}
 {"level": "INFO", "logger": "celery.worker.strategy", "message": "Task app.tasks.matviews.refresh_all_for_tenant[3aa52204-9798-4229-98aa-9772b85d957a] received"}
+```
+
+## Worker Survival Regression Test (local)
+
+Command:
+```
+$env:TEST_ASYNC_DSN="postgresql+asyncpg://postgres@localhost:5432/skeldir_validation";
+$env:DATABASE_URL="postgresql+asyncpg://postgres@localhost:5432/skeldir_validation";
+$env:CELERY_RESULT_BACKEND="db+postgresql://postgres@localhost:5432/skeldir_validation";
+$env:CELERY_BROKER_URL="sqla+postgresql://postgres@localhost:5432/skeldir_validation";
+pytest backend/tests/test_b0543_matview_task_layer.py -k worker_survives_matview_failure -vv
+```
+
+Output:
+```
+backend/tests/test_b0543_matview_task_layer.py::test_worker_survives_matview_failure
+INFO     app.tasks.matviews:matviews.py:124 matview_refresh_task_start
+ERROR    app.tasks.matviews:matviews.py:154 matview_refresh_view_failed
+ERROR    app.tasks.matviews:matviews.py:178 matview_refresh_task_failed
+ERROR    app.celery_app:celery_app.py:371 celery_task_failed
+ERROR    celery.app.trace:trace.py:285 Task app.tasks.matviews.refresh_single[...] raised unexpected: MatviewTaskFailure('matview refresh failed: view=mv_allocation_summary outcome=FAILED')
+INFO     app.tasks.matviews:matviews.py:124 matview_refresh_task_start
+INFO     app.tasks.matviews:matviews.py:156 matview_refresh_view_completed
+INFO     app.tasks.matviews:matviews.py:180 matview_refresh_task_completed
+INFO     celery.app.trace:trace.py:128 Task app.tasks.matviews.refresh_single[...] succeeded in 0.0s: {'status': 'ok', 'result': {...}, 'strategy': 'SUCCESS'}
+PASSED
 ```
 
 ## EG-5 Governance Schedule Preservation

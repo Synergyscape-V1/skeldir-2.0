@@ -2,19 +2,20 @@
 
 ## Candidate Completion SHA
 
-- candidate_sha: ee7de3f85a816fc5c42382eaceb9744e2f4d4cb5
+- candidate_sha: 00f3c3f54a47bf684ef50b9b04f96f94338567ac
 
 ## Status
 
-- CI_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20698785263
-- CI_JOB_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20698785263/job/59417973028
-- R7_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20698786714
+- CI_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20699750227
+- CI_JOB_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20699750227/job/59420341072
+- R7_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20699751733
 
 ## Files Changed
 
 - backend/app/tasks/matviews.py
 - backend/app/tasks/beat_schedule.py
 - Procfile
+- backend/tests/test_b0543_matview_task_layer.py
 - B0544_CONTEXT_DUMP.md
 - B0544_EVIDENCE_PACK_local_windows.md
 
@@ -24,11 +25,13 @@
 - Repointed the existing `refresh-matviews-every-5-min` schedule key to the pulse adapter (no new schedule keys added).
 - Preserved governance schedules (`pii-audit-scanner`, `enforce-data-retention`) unchanged.
 - Added a single beat entrypoint in Procfile to avoid split-brain scheduler behavior.
+- Added a worker survival regression test that proves failure → DLQ/metrics → subsequent task success.
 
 ## Evidence Summary
 
 - Pre/post schedule dumps, adapter registration, and runtime entrypoint proof are captured in `B0544_EVIDENCE_PACK_local_windows.md`.
 - Local beat + worker logs show Beat dispatching the pulse task and workers receiving the adapter and tenant refresh tasks.
+- Local survival test output (worker failure then success) is captured in `B0544_REMEDIATION_EVIDENCE_PACK_local_windows_v2.md`.
 - R6 fuses remain global in celery_app configuration; adapter does not override them.
 
 ## Atomic Replacement Statement
