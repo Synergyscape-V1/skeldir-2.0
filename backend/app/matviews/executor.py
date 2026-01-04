@@ -16,9 +16,10 @@ from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
-from app.core.pg_locks import RefreshLockKey, try_acquire_refresh_xact_lock
+from app.core.pg_locks import RefreshLockKey, build_refresh_lock_key, try_acquire_refresh_xact_lock
 from app.db.session import engine, set_tenant_guc
 from app.matviews import registry
 
@@ -67,6 +68,30 @@ def _qualified_matview_identifier(view_name: str) -> str:
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _build_sync_dsn() -> str:
+    from app.core.config import settings
+    url = make_url(settings.DATABASE_URL.unicode_string())
+    query = dict(url.query)
+    query.pop("channel_binding", None)
+    url = url.set(query=query)
+    if url.drivername.startswith("postgresql+"):
+        url = url.set(drivername="postgresql")
+
+    dsn_parts = ["postgresql://"]
+    if url.username:
+        dsn_parts.append(url.username)
+        if url.password:
+            dsn_parts.append(":")
+            dsn_parts.append(url.password)
+        dsn_parts.append("@")
+    dsn_parts.append(url.host or "localhost")
+    if url.port:
+        dsn_parts.append(f":{url.port}")
+    if url.database:
+        dsn_parts.append(f"/{url.database}")
+    return "".join(dsn_parts)
 
 
 def _topological_order(entries: Iterable[registry.MatviewRegistryEntry]) -> list[registry.MatviewRegistryEntry]:
@@ -174,11 +199,95 @@ def refresh_single(
     """
     Synchronous wrapper for refresh_single_async.
     """
+    import psycopg2
+
+    entry = registry.get_entry(view_name)
+    started_at = _now_utc()
+    lock_key: Optional[RefreshLockKey] = None
+
     try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(refresh_single_async(view_name, tenant_id, correlation_id))
-    raise RuntimeError("refresh_single cannot run inside an active event loop")
+        qualified_view = _qualified_matview_identifier(view_name)
+        dsn = _build_sync_dsn()
+        conn = psycopg2.connect(dsn)
+        try:
+            cur = conn.cursor()
+            if tenant_id:
+                cur.execute(
+                    "SELECT set_config('app.current_tenant_id', %s, true)",
+                    (str(tenant_id),),
+                )
+            cur.execute(
+                "SELECT set_config('app.execution_context', 'worker', true)"
+            )
+
+            lock_key = build_refresh_lock_key(view_name, tenant_id)
+            cur.execute(
+                "SELECT pg_try_advisory_xact_lock(%s, %s)",
+                (lock_key.view_key, lock_key.tenant_key),
+            )
+            acquired = bool(cur.fetchone()[0])
+            if not acquired:
+                conn.rollback()
+                return RefreshResult(
+                    view_name=view_name,
+                    tenant_id=tenant_id,
+                    correlation_id=correlation_id,
+                    outcome=RefreshOutcome.SKIPPED_LOCK_HELD,
+                    started_at=started_at,
+                    duration_ms=int((_now_utc() - started_at).total_seconds() * 1000),
+                    error_type=None,
+                    error_message=None,
+                    lock_key_debug=lock_key,
+                )
+
+            if entry.refresh_fn:
+                result = entry.refresh_fn()
+                if asyncio.iscoroutine(result):
+                    raise RuntimeError("refresh_fn returned coroutine in sync executor")
+            else:
+                if not entry.refresh_sql:
+                    raise ValueError(f"View '{view_name}' missing refresh_sql")
+                refresh_sql = entry.refresh_sql.format(qualified_name=qualified_view)
+                cur.execute(refresh_sql)
+
+            conn.commit()
+        finally:
+            conn.close()
+
+        duration_ms = int((_now_utc() - started_at).total_seconds() * 1000)
+        return RefreshResult(
+            view_name=view_name,
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            outcome=RefreshOutcome.SUCCESS,
+            started_at=started_at,
+            duration_ms=duration_ms,
+            error_type=None,
+            error_message=None,
+            lock_key_debug=lock_key,
+        )
+    except Exception as exc:
+        duration_ms = int((_now_utc() - started_at).total_seconds() * 1000)
+        logger.error(
+            "matview_refresh_executor_failed",
+            exc_info=exc,
+            extra={
+                "view_name": view_name,
+                "tenant_id": str(tenant_id) if tenant_id else None,
+                "correlation_id": correlation_id,
+            },
+        )
+        return RefreshResult(
+            view_name=view_name,
+            tenant_id=tenant_id,
+            correlation_id=correlation_id,
+            outcome=RefreshOutcome.FAILED,
+            started_at=started_at,
+            duration_ms=duration_ms,
+            error_type=exc.__class__.__name__,
+            error_message=str(exc),
+            lock_key_debug=lock_key,
+        )
 
 
 async def refresh_all_for_tenant_async(
@@ -199,8 +308,8 @@ def refresh_all_for_tenant(
     """
     Synchronous wrapper to refresh all matviews for a tenant.
     """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(refresh_all_for_tenant_async(tenant_id, correlation_id))
-    raise RuntimeError("refresh_all_for_tenant cannot run inside an active event loop")
+    entries = _topological_order(registry.list_entries())
+    results: list[RefreshResult] = []
+    for entry in entries:
+        results.append(refresh_single(entry.name, tenant_id, correlation_id))
+    return results

@@ -16,8 +16,7 @@ from sqlalchemy.engine.url import make_url
 from app.celery_app import celery_app
 from app.matviews.executor import RefreshOutcome, RefreshResult, refresh_all_for_tenant, refresh_single
 from app.observability import metrics
-from app.observability.context import set_request_correlation_id
-from app.tasks.context import tenant_task
+from app.observability.context import set_request_correlation_id, set_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +67,12 @@ def _record_metrics(result: RefreshResult, strategy: TaskOutcomeStrategy) -> Non
             view_name=result.view_name,
             error_type=result.error_type or "unknown",
         ).inc()
+
+
+def _normalize_tenant_id(value: UUID | str) -> UUID:
+    if isinstance(value, UUID):
+        return value
+    return UUID(str(value))
 
 
 def _build_sync_dsn() -> str:
@@ -129,7 +134,7 @@ def _log_start(
     )
 
 
-def _log_result(
+def _log_view_result(
     *,
     task_id: str,
     result: RefreshResult,
@@ -146,6 +151,30 @@ def _log_result(
         "result": result.to_log_dict(),
     }
     if result.outcome == RefreshOutcome.FAILED:
+        logger.error("matview_refresh_view_failed", extra=payload)
+    else:
+        logger.info("matview_refresh_view_completed", extra=payload)
+
+
+def _log_task_summary(
+    *,
+    task_id: str,
+    result: RefreshResult,
+    strategy: TaskOutcomeStrategy,
+    schedule_class: Optional[str],
+    view_count: int,
+) -> None:
+    payload = {
+        "task_id": task_id,
+        "view_name": result.view_name,
+        "tenant_id": str(result.tenant_id) if result.tenant_id else None,
+        "correlation_id": result.correlation_id,
+        "schedule_class": schedule_class,
+        "strategy": strategy.value,
+        "view_count": view_count,
+        "result": result.to_log_dict(),
+    }
+    if strategy in (TaskOutcomeStrategy.DEAD_LETTER, TaskOutcomeStrategy.RETRY):
         logger.error("matview_refresh_task_failed", extra=payload)
     else:
         logger.info("matview_refresh_task_completed", extra=payload)
@@ -178,7 +207,6 @@ def _apply_strategy(
     max_retries=3,
     default_retry_delay=60,
 )
-@tenant_task
 def matview_refresh_single(
     self,
     *,
@@ -188,25 +216,39 @@ def matview_refresh_single(
     schedule_class: Optional[str] = None,
     force: bool = False,
 ) -> dict:
+    tenant_uuid = _normalize_tenant_id(tenant_id)
     correlation_id = correlation_id or str(uuid4())
+    set_tenant_id(tenant_uuid)
+    set_request_correlation_id(correlation_id)
     _log_start(
         task_id=self.request.id,
         view_name=view_name,
-        tenant_id=tenant_id,
+        tenant_id=tenant_uuid,
         correlation_id=correlation_id,
         schedule_class=schedule_class,
         force=force,
     )
-    result = refresh_single(view_name, tenant_id, correlation_id)
+    result = refresh_single(view_name, tenant_uuid, correlation_id)
     strategy = strategy_for_refresh_result(result)
     _record_metrics(result, strategy)
-    _log_result(
+    _log_view_result(
         task_id=self.request.id,
         result=result,
         strategy=strategy,
         schedule_class=schedule_class,
     )
-    return _apply_strategy(task=self, result=result, strategy=strategy)
+    _log_task_summary(
+        task_id=self.request.id,
+        result=result,
+        strategy=strategy,
+        schedule_class=schedule_class,
+        view_count=1,
+    )
+    try:
+        return _apply_strategy(task=self, result=result, strategy=strategy)
+    finally:
+        set_tenant_id(None)
+        set_request_correlation_id(None)
 
 
 @celery_app.task(
@@ -216,7 +258,6 @@ def matview_refresh_single(
     max_retries=3,
     default_retry_delay=60,
 )
-@tenant_task
 def matview_refresh_all_for_tenant(
     self,
     *,
@@ -224,23 +265,26 @@ def matview_refresh_all_for_tenant(
     correlation_id: Optional[str] = None,
     schedule_class: Optional[str] = None,
 ) -> dict:
+    tenant_uuid = _normalize_tenant_id(tenant_id)
     correlation_id = correlation_id or str(uuid4())
+    set_tenant_id(tenant_uuid)
+    set_request_correlation_id(correlation_id)
     logger.info(
         "matview_refresh_all_task_start",
         extra={
             "task_id": self.request.id,
-            "tenant_id": str(tenant_id),
+            "tenant_id": str(tenant_uuid),
             "correlation_id": correlation_id,
             "schedule_class": schedule_class,
         },
     )
-    results = refresh_all_for_tenant(tenant_id, correlation_id)
+    results = refresh_all_for_tenant(tenant_uuid, correlation_id)
     strategies: list[TaskOutcomeStrategy] = []
     for result in results:
         strategy = strategy_for_refresh_result(result)
         strategies.append(strategy)
         _record_metrics(result, strategy)
-        _log_result(
+        _log_view_result(
             task_id=self.request.id,
             result=result,
             strategy=strategy,
@@ -256,15 +300,30 @@ def matview_refresh_all_for_tenant(
     else:
         overall = TaskOutcomeStrategy.SUCCESS
 
+    failed = next((r for r in results if r.outcome == RefreshOutcome.FAILED), results[0])
+    _log_task_summary(
+        task_id=self.request.id,
+        result=failed,
+        strategy=overall,
+        schedule_class=schedule_class,
+        view_count=len(results),
+    )
     if overall in (TaskOutcomeStrategy.DEAD_LETTER, TaskOutcomeStrategy.RETRY):
-        failed = next((r for r in results if r.outcome == RefreshOutcome.FAILED), results[0])
-        return _apply_strategy(task=self, result=failed, strategy=overall)
+        try:
+            return _apply_strategy(task=self, result=failed, strategy=overall)
+        finally:
+            set_tenant_id(None)
+            set_request_correlation_id(None)
 
-    return {
-        "status": "skipped" if overall == TaskOutcomeStrategy.SILENT_SKIP else "ok",
-        "results": [r.to_log_dict() for r in results],
-        "strategy": overall.value,
-    }
+    try:
+        return {
+            "status": "skipped" if overall == TaskOutcomeStrategy.SILENT_SKIP else "ok",
+            "results": [r.to_log_dict() for r in results],
+            "strategy": overall.value,
+        }
+    finally:
+        set_tenant_id(None)
+        set_request_correlation_id(None)
 
 
 @celery_app.task(
