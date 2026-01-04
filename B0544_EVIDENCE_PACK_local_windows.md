@@ -2,8 +2,8 @@
 
 ## Repo Identity
 
-- sha: 2c924f7ffcc16075c4e6a3fe1d5614ad2f43c1af
-- timestamp_utc: 2026-01-03T22:10:38.5779288Z
+- sha: 65dc2115b2ff5f33f4258e72dcf1b214ebfcebbb
+- timestamp_utc: 2026-01-04T03:10:36.1863377Z
 - env note: DATABASE_URL set to postgresql://app_user:app_user@localhost:5432/skeldir_validation for beat_schedule dump
 
 ## Hypothesis Validation Evidence
@@ -1282,7 +1282,7 @@ Output:
 ## Preliminary Conclusions
 
 - Beat schedule exists and is loaded in celery_app; schedule keys and tasks are shown in the beat_schedule dump.
-- No global no-arg adapter task exists for tenant fan-out; only refresh_all_for_tenant exists and requires tenant_id.
+- Global beat-safe adapter task exists for tenant fan-out; refresh_all_for_tenant still requires tenant_id.
 - Beat entrypoint appears only in CI harness (scripts/ci/zero_drift_v3_2.sh); Procfile/compose do not run beat.
 - Competing schedulers (cron/APScheduler/database schedulers) are not present in code.
 - R6 fuses are configured globally in backend/app/core/config.py and applied in backend/app/celery_app.py.
@@ -1309,14 +1309,21 @@ Output:
 Command:
 
 ```
-$env:DATABASE_URL='postgresql://app_user:app_user@localhost:5432/skeldir_validation'; python -c "import sys; sys.path.append('backend'); from app.celery_app import celery_app; print('app.tasks.matviews.pulse_matviews_global' in celery_app.tasks); print(sorted([name for name in celery_app.tasks.keys() if name.startswith('app.tasks.matviews.')]))"
+$env:DATABASE_URL='postgresql://app_user:app_user@localhost:5432/skeldir_validation'; @'
+import sys
+sys.path.append('backend')
+from app.celery_app import celery_app
+celery_app.loader.import_default_modules()
+print('app.tasks.matviews.pulse_matviews_global' in celery_app.tasks)
+print(sorted([name for name in celery_app.tasks.keys() if name.startswith('app.tasks.matviews.')]))
+'@ | python -
 ```
 
 Output:
 
 ```
-False
-[]
+True
+['app.tasks.matviews.pulse_matviews_global', 'app.tasks.matviews.refresh_all_for_tenant', 'app.tasks.matviews.refresh_single']
 ```
 
 ### Beat runtime entrypoint (Procfile)

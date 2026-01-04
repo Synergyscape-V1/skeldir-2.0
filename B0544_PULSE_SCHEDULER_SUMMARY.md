@@ -2,13 +2,13 @@
 
 ## Candidate Completion SHA
 
-- candidate_sha: 92a0d5a80fdea4fc57e5409cee080bab86690831
+- candidate_sha: 65dc2115b2ff5f33f4258e72dcf1b214ebfcebbb
 
 ## Status
 
-- CI_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20686051379
-- CI_JOB_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20686051379/job/59386839837
-- R7_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20686109639
+- CI_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20685720181
+- CI_JOB_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20685720181/job/59386035744
+- R7_RUN_URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20685720199
 
 ## Files Changed
 
