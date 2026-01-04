@@ -322,9 +322,26 @@ def _start_kombu_visibility_recovery_thread() -> None:
     _kombu_visibility_recovery_started = True
 
 
+
+
+def _log_registered_tasks() -> None:
+    tasks = sorted(celery_app.tasks.keys())
+    matview_tasks = [task for task in tasks if task.startswith("app.tasks.matviews.")]
+    logger.info(
+        "celery_worker_registered_tasks",
+        extra={
+            "task_count": len(tasks),
+            "matview_tasks": matview_tasks,
+            "has_pulse_matviews_global": "app.tasks.matviews.pulse_matviews_global" in tasks,
+            "has_refresh_all_for_tenant": "app.tasks.matviews.refresh_all_for_tenant" in tasks,
+        },
+    )
+
+
 @signals.worker_ready.connect
 def _on_worker_ready(**kwargs):
     _ensure_celery_configured()
+    _log_registered_tasks()
     _start_kombu_visibility_recovery_thread()
 
 
