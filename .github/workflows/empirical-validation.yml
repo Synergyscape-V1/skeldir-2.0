@@ -282,7 +282,7 @@ jobs:
       - name: Phase 2.2 - Backend Route Extraction
         run: |
           cd backend
-          pip install -q fastapi uvicorn
+          pip install -q -r requirements.txt
           
           python - << 'PYEOF' > ../evidence_registry/contracts/backend_routes_raw.txt 2>&1
           import sys
@@ -297,10 +297,10 @@ jobs:
               
               for route in app.routes:
                   if hasattr(route, 'methods') and hasattr(route, 'path'):
-            methods = ",".join(sorted(route.methods - {'HEAD', 'OPTIONS'}))
-            path = route.path
-            name = getattr(route, 'name', 'unknown')
-            print(f"{methods:10} {path:50} -> {name}")
+                      methods = ",".join(sorted(route.methods - {'HEAD', 'OPTIONS'}))
+                      path = route.path
+                      name = getattr(route, 'name', 'unknown')
+                      print(f"{methods:10} {path:50} -> {name}")
           except Exception as e:
               print(f"Error extracting routes: {e}")
               import traceback
