@@ -98,13 +98,15 @@ jobs:
           psql "${DATABASE_URL}" -c "select count(*) from worker_failed_jobs;" > "${EVIDENCE_DIR}/worker_failed_jobs_before.txt"
           psql "${DATABASE_URL}" -c "select count(*) from kombu_message;" > "${EVIDENCE_DIR}/kombu_message_before.txt"
 
-          stdbuf -oL -eL celery -A app.celery_app.celery_app worker -P solo -c 1 --loglevel=INFO \
+          WORKER_NODE="b0545@$(hostname)"
+          stdbuf -oL -eL celery -A app.celery_app.celery_app worker -n "${WORKER_NODE}" -P solo -c 1 --loglevel=INFO \
             > "${EVIDENCE_DIR}/worker.log" 2>&1 &
           echo $! > "${EVIDENCE_DIR}/worker.pid"
 
           for i in $(seq 1 20); do
-            celery -A app.celery_app.celery_app inspect ping > "${EVIDENCE_DIR}/inspect_ping.txt" 2>&1 || true
-            if grep -q "pong" "${EVIDENCE_DIR}/inspect_ping.txt"; then
+            celery -A app.celery_app.celery_app inspect ping --timeout=10 --destination "${WORKER_NODE}" \
+              > "${EVIDENCE_DIR}/inspect_ping.txt" 2>&1 || true
+            if grep -E -q "(pong|OK)" "${EVIDENCE_DIR}/inspect_ping.txt"; then
               break
             fi
             sleep 2
