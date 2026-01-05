@@ -98,8 +98,8 @@ jobs:
           psql "${DATABASE_URL}" -c "select count(*) from worker_failed_jobs;" > "${EVIDENCE_DIR}/worker_failed_jobs_before.txt"
           psql "${DATABASE_URL}" -c "select count(*) from kombu_message;" > "${EVIDENCE_DIR}/kombu_message_before.txt"
 
-          celery -A app.celery_app.celery_app worker -P solo -c 1 --loglevel=INFO \
-            --logfile "${EVIDENCE_DIR}/worker.log" &
+          stdbuf -oL -eL celery -A app.celery_app.celery_app worker -P solo -c 1 --loglevel=INFO \
+            > "${EVIDENCE_DIR}/worker.log" 2>&1 &
           echo $! > "${EVIDENCE_DIR}/worker.pid"
 
           for i in $(seq 1 20); do
@@ -111,8 +111,8 @@ jobs:
           done
           cat "${EVIDENCE_DIR}/inspect_ping.txt" || true
 
-          celery -A app.celery_app.celery_app beat --loglevel=INFO \
-            --logfile "${EVIDENCE_DIR}/beat.log" &
+          stdbuf -oL -eL celery -A app.celery_app.celery_app beat --loglevel=INFO \
+            > "${EVIDENCE_DIR}/beat.log" 2>&1 &
           echo $! > "${EVIDENCE_DIR}/beat.pid"
 
           for i in $(seq 1 30); do
