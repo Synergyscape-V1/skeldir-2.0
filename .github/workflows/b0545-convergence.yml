@@ -181,11 +181,18 @@ jobs:
           PY
           )
           celery -A app.celery_app.celery_app call app.tasks.matviews.refresh_single \
-            --kwargs "${KWARGS}" > "${EVIDENCE_DIR}/force_failure_call.txt" 2>&1 || true
+            --kwargs "${KWARGS}" 2>&1 | tee "${EVIDENCE_DIR}/force_failure_call.txt" | tail -n 1 || true
+
+          FORCE_TASK_ID=""
+          FORCE_TASK_ID="$(grep -Eo "[0-9a-fA-F-]{36}" "${EVIDENCE_DIR}/force_failure_call.txt" | tail -n 1 || true)"
 
           sleep 5
           psql "${DATABASE_URL}" -c "select count(*) from worker_failed_jobs;" > "${EVIDENCE_DIR}/worker_failed_jobs_after.txt"
-          psql "${DATABASE_URL}" -c "select task_name, correlation_id, error_type, error_message from worker_failed_jobs where correlation_id='${CORRELATION_ID}' order by failed_at desc limit 5;" > "${EVIDENCE_DIR}/worker_failed_jobs_row.txt"
+          if [ -n "${FORCE_TASK_ID}" ]; then
+            psql "${DATABASE_URL}" -c "select task_name, correlation_id, error_type, error_message from worker_failed_jobs where task_id='${FORCE_TASK_ID}' order by failed_at desc limit 5;" > "${EVIDENCE_DIR}/worker_failed_jobs_row.txt"
+          else
+            psql "${DATABASE_URL}" -c "select task_name, correlation_id, error_type, error_message from worker_failed_jobs order by failed_at desc limit 5;" > "${EVIDENCE_DIR}/worker_failed_jobs_row.txt"
+          fi
           psql "${DATABASE_URL}" -c "select count(*) from kombu_message;" > "${EVIDENCE_DIR}/kombu_message_after.txt"
 
           if [ -f "${EVIDENCE_DIR}/beat.pid" ]; then
