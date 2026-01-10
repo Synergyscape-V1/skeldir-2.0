@@ -7,11 +7,25 @@ use the configured exchange type so inspect/ping can function with Postgres.
 """
 from __future__ import annotations
 
-from celery.app.control import Control as BaseControl, _after_fork_cleanup_control
+from celery.app.control import Control as BaseControl, Inspect as BaseInspect, _after_fork_cleanup_control
 from celery.exceptions import ImproperlyConfigured
+from celery.utils.objects import cached_property
 from kombu.pidbox import Mailbox
 from kombu.utils.compat import register_after_fork
 from kombu.utils.functional import lazy
+
+
+class SkeldirInspect(BaseInspect):
+    def ping(self, destination=None):
+        timeout = self.timeout or 10.0
+        result = self.app.send_task(
+            "app.tasks.housekeeping.ping",
+            queue="housekeeping",
+            kwargs={},
+        )
+        payload = result.get(timeout=timeout)
+        node = destination or self.destination or payload.get("worker") or "unknown"
+        return {node: {"ok": "pong"}}
 
 
 class SkeldirControl(BaseControl):
@@ -40,3 +54,7 @@ class SkeldirControl(BaseControl):
             reply_queue_expires=app.conf.control_queue_expires,
         )
         register_after_fork(self, _after_fork_cleanup_control)
+
+    @cached_property
+    def inspect(self):
+        return self.app.subclass_with_self(SkeldirInspect, reverse="control.inspect")

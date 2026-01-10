@@ -130,7 +130,12 @@ def ping(self, fail: bool = False, tenant_id: Optional[str] = None) -> dict:
         except Exception:
             db_user = _run_coro(_fetch_db_user(tenant_uuid))
         now = datetime.now(timezone.utc).isoformat()
-        payload = {"status": "ok", "timestamp": now, "db_user": db_user}
+        payload = {
+            "status": "ok",
+            "timestamp": now,
+            "db_user": db_user,
+            "worker": getattr(self.request, "hostname", None),
+        }
         logger.info(
             "celery_task_success",
             extra={
