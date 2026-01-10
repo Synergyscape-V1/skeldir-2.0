@@ -16,16 +16,24 @@ from kombu.utils.functional import lazy
 
 
 class SkeldirInspect(BaseInspect):
-    def ping(self, destination=None):
-        timeout = self.timeout or 10.0
-        result = self.app.send_task(
-            "app.tasks.housekeeping.ping",
-            queue="housekeeping",
-            kwargs={},
-        )
-        payload = result.get(timeout=timeout)
-        node = destination or self.destination or payload.get("worker") or "unknown"
-        return {node: {"ok": "pong"}}
+    def _request(self, command, **kwargs):
+        if command == "ping":
+            timeout = self.timeout or 10.0
+            result = self.app.send_task(
+                "app.tasks.housekeeping.ping",
+                queue="housekeeping",
+                kwargs={},
+            )
+            payload = result.get(timeout=timeout)
+            destination = self.destination
+            if isinstance(destination, (list, tuple)):
+                destination = destination[0] if destination else None
+            node = destination or payload.get("worker") or "unknown"
+            reply = {node: {"ok": "pong"}}
+            if self.callback:
+                self.callback(reply)
+            return reply
+        return super()._request(command, **kwargs)
 
 
 class SkeldirControl(BaseControl):
