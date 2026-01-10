@@ -189,7 +189,11 @@ def _ensure_celery_configured():
         task_default_queue='housekeeping',
         task_default_exchange='tasks',
         task_default_routing_key='housekeeping.task',
+        control_exchange="celery.control",
+        control_exchange_type="direct",
     )
+
+    celery_app.control_cls = "app.celery_control:SkeldirControl"
 
     # B0.5.4.0: Load Beat schedule (closes G11 drift - beat not deployed)
     from app.tasks.beat_schedule import BEAT_SCHEDULE
