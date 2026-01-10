@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from celery.app.control import Control as BaseControl, Inspect as BaseInspect, _after_fork_cleanup_control
 from celery.exceptions import ImproperlyConfigured
-from celery.utils.objects import cached_property
+from functools import cached_property
 from kombu.pidbox import Mailbox
 from kombu.utils.compat import register_after_fork
 from kombu.utils.functional import lazy
