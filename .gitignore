@@ -64,6 +64,7 @@ app/schemas/*.py
 !app/schemas/__init__.py
 backend/app/schemas/*.py
 !backend/app/schemas/__init__.py
+!backend/app/schemas/llm_payloads.py
 
 # Bundled OpenAPI artifacts
 api-contracts/dist/

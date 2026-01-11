@@ -1,0 +1,52 @@
+{
+  "properties": {
+    "correlation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Correlation for observability",
+      "title": "Correlation Id"
+    },
+    "max_cost_cents": {
+      "default": 0,
+      "description": "Budget cap in cents",
+      "title": "Max Cost Cents",
+      "type": "integer"
+    },
+    "prompt": {
+      "additionalProperties": true,
+      "description": "Opaque prompt/payload structure",
+      "title": "Prompt",
+      "type": "object"
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Idempotency/trace id",
+      "title": "Request Id"
+    },
+    "tenant_id": {
+      "description": "Tenant context for RLS",
+      "format": "uuid",
+      "title": "Tenant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tenant_id"
+  ],
+  "title": "LLMTaskPayload",
+  "type": "object"
+}

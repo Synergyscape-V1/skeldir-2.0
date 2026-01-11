@@ -28,6 +28,7 @@ env/
 # Generated artifacts
 app/schemas/*.py
 !app/schemas/__init__.py
+!app/schemas/llm_payloads.py
 
 # Build artifacts
 *.pyc

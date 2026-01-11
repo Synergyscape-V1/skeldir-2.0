@@ -6,24 +6,18 @@ for routing/explanation/investigation/budget workflows without invoking LLMs.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Optional
 from uuid import UUID, uuid4
-
-from pydantic import BaseModel, Field
 
 from app.celery_app import celery_app
 from app.observability.context import set_request_correlation_id, set_tenant_id
+try:
+    from backend.app.schemas.llm_payloads import LLMTaskPayload
+except ModuleNotFoundError:  # pragma: no cover - runtime may only expose `app` on PYTHONPATH
+    from app.schemas.llm_payloads import LLMTaskPayload
 from app.tasks.context import tenant_task
 
 logger = logging.getLogger(__name__)
-
-
-class LLMTaskPayload(BaseModel):
-    tenant_id: UUID = Field(..., description="Tenant context for RLS")
-    correlation_id: Optional[str] = Field(None, description="Correlation for observability")
-    request_id: Optional[str] = Field(default_factory=lambda: str(uuid4()), description="Idempotency/trace id")
-    prompt: Dict[str, Any] = Field(default_factory=dict, description="Opaque prompt/payload structure")
-    max_cost_cents: int = Field(0, description="Budget cap in cents")
 
 
 def _prepare_context(model: LLMTaskPayload) -> str:

@@ -4,6 +4,8 @@ Pytest fixtures for B0.4.3 tests.
 Provides tenant creation/cleanup fixtures to satisfy FK constraints.
 """
 import os
+import sys
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -11,6 +13,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
 os.environ["TESTING"] = "1"
+
+# Ensure backend package path is on sys.path for local runs.
+backend_dir = Path(__file__).resolve().parents[1]
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 # B0.5.3.3 Gate C: CI-first credential coherence (MUST execute before any imports)
 # In CI, DATABASE_URL MUST be provided by step env vars - no fallbacks, no defaults.
