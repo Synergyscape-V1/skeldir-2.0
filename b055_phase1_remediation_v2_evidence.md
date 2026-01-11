@@ -1,4 +1,4 @@
-# B0.5.5 Phase 1 Remediation v2 Evidence
+ï»¿# B0.5.5 Phase 1 Remediation v2 Evidence
 
 ## Repo Pin
 ```
@@ -97,7 +97,7 @@ Note: frontend modifications and untracked artifacts pre-existed; no frontend fi
 
 ## Hypothesis Adjudication (H1-H4)
 
-### H1 — Mixed packaging roots caused fallback import
+### H1 - Mixed packaging roots caused fallback import
 Evidence (prior state):
 ```
 git show 722bc32a6260f08978e8908f175779b8b824557e:backend/app/tasks/llm.py | Select-String -Pattern "llm_payloads" -Context 1,1
@@ -120,7 +120,7 @@ C:\Users\ayewhy\II SKELDIR II\backend
 ```
 Verdict: TRUE. The fallback import was present; it is now removed in the remediation commit.
 
-### H2 — conftest sys.path injection masked config issues
+### H2 - conftest sys.path injection masked config issues
 Evidence (prior state):
 ```
 git show 722bc32a6260f08978e8908f175779b8b824557e:backend/tests/conftest.py | Select-String -Pattern "sys.path" -Context 2,2
@@ -136,7 +136,7 @@ git show 722bc32a6260f08978e8908f175779b8b824557e:backend/tests/conftest.py | Se
 ```
 Verdict: TRUE. The global sys.path mutation existed and is removed.
 
-### H3 — CI “Test Backend” skipped due to PR condition
+### H3 - CI "Test Backend" skipped due to PR condition
 Evidence (prior state):
 ```
 git show 722bc32a6260f08978e8908f175779b8b824557e:.github/workflows/ci.yml | Select-String -Pattern "test-backend|Test Backend|if:" -Context 0,2
@@ -149,7 +149,7 @@ git show 722bc32a6260f08978e8908f175779b8b824557e:.github/workflows/ci.yml | Sel
 ```
 Verdict: TRUE. The condition relied on head_commit fields not present in PR events.
 
-### H4 — Integration pipeline cleanup deletes schemas
+### H4 - Integration pipeline cleanup deletes schemas
 Evidence (prior state):
 ```
 git show 722bc32a6260f08978e8908f175779b8b824557e:scripts/integration_test_pipeline.sh | Select-String -Pattern "schemas" -Context 1,1
@@ -177,7 +177,7 @@ M	pytest.ini
 M	scripts/integration_test_pipeline.sh
 ```
 
-### EG1-C2 — Deterministic Import Gate
+### EG1-C2 - Deterministic Import Gate
 ```
 rg -n "try:|except ModuleNotFoundError|backend\.app\.schemas\.llm_payloads" backend/app/tasks/llm.py
 # no matches
@@ -193,31 +193,31 @@ rg -n "LLMTaskPayload" backend/app/tasks/llm.py
 72:    model = LLMTaskPayload(...)
 ```
 
-### EG1-H2 — Harness Safety Gate
+### EG1-H2 - Harness Safety Gate
 ```
 rg -n "sys\.path\.insert|sys\.path\.append" backend/tests/conftest.py
 # no matches
 ```
-Declarative config (root `pytest.ini`):
+Declarative config (root pytest.ini):
 ```
 [pytest]
 ...
 pythonpath = backend
 ```
 
-### EG1-PATH — Packaging Consistency Gate
+### EG1-PATH - Packaging Consistency Gate
 ```
 rg -n "backend\.app" backend/app backend/tests
 # no matches
 ```
 
-### EG1-PIPE — Integration Pipeline Survival Gate
+### EG1-PIPE - Integration Pipeline Survival Gate
 ```
 rg -n "backend/app/schemas/.*\.py|schemas/\*\.py|rm .*schemas|generated_.*\.py" scripts/integration_test_pipeline.sh
 11:find backend/app/schemas -maxdepth 1 -type f -name "generated_*.py" -delete
 ```
 
-### EG1-CI — CI Enforcement Gate (workflow change)
+### EG1-CI - CI Enforcement Gate (workflow change)
 ```
 # .github/workflows/ci.yml (Test Backend job)
 if: github.event_name == 'pull_request' || (github.event_name == 'push' && (contains(github.event.head_commit.modified, 'backend/') || contains(github.event.head_commit.added, 'backend/')))
@@ -225,7 +225,7 @@ if: github.event_name == 'pull_request' || (github.event_name == 'push' && (cont
 pytest tests/test_llm_payload_contract.py -q
 ```
 
-### EG1-SNAP — Snapshot/Validation Gate (local)
+### EG1-SNAP - Snapshot/Validation Gate (local)
 ```
 $env:DATABASE_URL="postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation"; $env:CELERY_BROKER_URL="sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation"; $env:CELERY_RESULT_BACKEND="db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation"; pytest -q backend/tests/test_llm_payload_contract.py
 
@@ -242,4 +242,24 @@ backend/tests/test_llm_payload_contract.py::test_llm_payload_invalid_rejected[pa
 ```
 
 ## CI Run Reference
-- Pending: PR checks must be re-queried after push to confirm Test Backend executed (not skipped). This will be updated once CI completes.
+Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20902464575
+
+```
+gh run view 20902464575
+
+* b055-phase1-payload-contract CI Muk223/skeldir-2.0#14 Â· 20902464575
+Triggered via pull_request about 2 minutes ago
+
+JOBS
+âœ“ Checkout Code in 6s (ID 60050446297)
+âœ“ B0.5.3.3 Revenue Contract Tests in 1m11s (ID 60050450619)
+âœ“ Validate Migrations in 5s (ID 60050450622)
+âœ“ Test Backend in 17s (ID 60050450623)
+âœ“ Validate Phase Manifest in 10s (ID 60050450625)
+âœ“ Celery Foundation B0.5.1 in 1m30s (ID 60050450627)
+âœ“ Validate Contracts in 1m34s (ID 60050450628)
+âœ“ Integration Tests in 30s (ID 60050450629)
+âœ“ Zero-Drift v3.2 CI Truth Layer in 1m23s (ID 60050450639)
+```
+
+Note: gh run view --job 60050450623 --log is not yet available until the overall run completes. The job itself has executed (not skipped).
