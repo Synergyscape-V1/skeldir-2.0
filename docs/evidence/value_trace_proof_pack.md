@@ -11,7 +11,7 @@ The authoritative EG-5 proof pack is generated inside GitHub Actions and uploade
 - **Artifact name**: `value-trace-proof-pack`
 - **Contents**:
   - `backend/validation/evidence/proof_pack/value_trace_proof_pack.json` (machine-verifiable)
-  - `backend/validation/evidence/proof_pack/value_trace_proof_pack.md` (human-readable)
+  - `docs/forensics/proof_pack/value_trace_proof_pack.md` (human-readable)
 
 ## What it contains (required fields)
 

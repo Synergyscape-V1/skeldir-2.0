@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generates backend/validation/evidence/EMPIRICAL_CHAIN.md using recorded ACKs.
+Generates docs/forensics/backend/validation/EMPIRICAL_CHAIN.md using recorded ACKs.
 """
 
 from __future__ import annotations
@@ -33,12 +33,13 @@ def load_ack_files(ack_dir: Path) -> list[dict]:
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
-    evidence_dir = repo_root / "backend" / "validation" / "evidence"
-    ack_dir = evidence_dir / "phase_ack"
+    ack_dir = repo_root / "backend" / "validation" / "evidence" / "phase_ack"
     ack_dir.mkdir(parents=True, exist_ok=True)
 
     records = load_ack_files(ack_dir)
-    output_path = evidence_dir / "EMPIRICAL_CHAIN.md"
+    output_dir = repo_root / "docs" / "forensics" / "backend" / "validation"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "EMPIRICAL_CHAIN.md"
 
     lines: list[str] = []
     lines.append("# Empirical Chain - Phase Gate Status")
