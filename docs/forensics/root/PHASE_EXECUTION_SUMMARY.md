@@ -158,11 +158,11 @@ Python scripts in scripts/governance/ renamed to snake_case:
 ```
 backend/app/tasks/maintenance.py
   OLD: - B0.3_FORENSIC_ANALYSIS_RESPONSE.md
-  NEW: - docs/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_RESPONSE.md
+  NEW: - docs/forensics/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_RESPONSE.md
 
 backend/tests/integration/test_data_retention.py
   OLD: - B0.3_FORENSIC_ANALYSIS_RESPONSE.md
-  NEW: - docs/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_RESPONSE.md
+  NEW: - docs/forensics/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_RESPONSE.md
 ```
 
 **Impact**: References to archived docs remain valid
@@ -174,7 +174,7 @@ backend/tests/integration/test_data_retention.py
 
 **Archive Structure**:
 ```
-docs/archive/
+docs/forensics/archive/
 ├── completed-phases/
 │   ├── b0.1/              [3 B0.1 analysis files]
 │   ├── b0.2/              [placeholder]
@@ -185,10 +185,10 @@ docs/archive/
 ```
 
 **Files Moved** (24 total):
-- B0.1_* (3 files) → docs/archive/completed-phases/b0.1/
-- B0.3_* (4 files) → docs/archive/completed-phases/b0.3/
-- General analysis (15 files) → docs/archive/
-- Supporting docs (2 files) → docs/archive/
+- B0.1_* (3 files) → docs/forensics/archive/completed-phases/b0.1/
+- B0.3_* (4 files) → docs/forensics/archive/completed-phases/b0.3/
+- General analysis (15 files) → docs/forensics/archive/
+- Supporting docs (2 files) → docs/forensics/archive/
 
 **Root Directory Before**: 30+ analysis .md files
 **Root Directory After**: 9 essential files (README, AGENTS, CONTRIBUTING, LICENSE, SECURITY, PRIVACY-NOTES, CHANGELOG + 3 new validation docs)
@@ -245,7 +245,7 @@ docs/archive/
 1. ✅ `docs/GOVERNANCE_INDEX.md` - Central governance navigation (264 lines)
 2. ✅ `docs/PHASE_MIGRATION_MAPPING.md` - Phase numbering guide (237 lines)
 3. ✅ `scripts/README.md` - Script organization guide (354 lines)
-4. ✅ `docs/archive/README.md` - Archive explanation (80 lines)
+4. ✅ `docs/forensics/archive/README.md` - Archive explanation (80 lines)
 
 ### Files Modified
 1. ✅ `.github/workflows/mock-contract-validation.yml` (2 references)

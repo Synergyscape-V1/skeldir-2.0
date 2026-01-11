@@ -86,7 +86,7 @@ The contract-first enforcement system is **fully operational** and prevents Fast
 
 ### Documentation (3 files)
 - `docs/implementation/contract-enforcement.md`
-- `docs/implementation/contract-enforcement-validation-report.md`
+- `docs/forensics/implementation/contract-enforcement-validation-report.md`
 - `CONTRACT_ENFORCEMENT_SUMMARY.md` (this file)
 
 ### Dependencies Updated (1 file)
@@ -185,7 +185,7 @@ Shows which operations are tested.
 
 ### All 20 Investigatory Questions Answered
 
-The forensic validation report (`docs/implementation/contract-enforcement-validation-report.md`) provides empirical evidence for:
+The forensic validation report (`docs/forensics/implementation/contract-enforcement-validation-report.md`) provides empirical evidence for:
 
 #### Category 1: Scope & Governance (3/3)
 - ✅ Machine-readable route classification
@@ -313,7 +313,7 @@ Runs on changes to:
    - Development workflows
    - Troubleshooting
 
-2. **[Forensic Validation Report](docs/implementation/contract-enforcement-validation-report.md)**
+2. **[Forensic Validation Report](docs/forensics/implementation/contract-enforcement-validation-report.md)**
    - Answers all 20 investigatory questions
    - Empirical evidence for each validation category
    - Full traceability examples
@@ -378,7 +378,7 @@ Runs on changes to:
 ### Getting Help
 
 1. Check [Implementation Guide](docs/implementation/contract-enforcement.md)
-2. Review [Forensic Validation Report](docs/implementation/contract-enforcement-validation-report.md)
+2. Review [Forensic Validation Report](docs/forensics/implementation/contract-enforcement-validation-report.md)
 3. Consult negative test scenarios
 4. Run diagnostics:
    ```bash

@@ -23,11 +23,11 @@ echo "Gate 1.1: Path Consistency Verification"
 echo "----------------------------------------"
 
 # Check for old contract paths
-OLD_CONTRACT_PATHS=$(grep -r "contracts/openapi/v1" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.sh" --include="*.py" --include="*.json" . 2>/dev/null | grep -v "docs/archive" | grep -v "node_modules" | wc -l || echo "0")
+OLD_CONTRACT_PATHS=$(grep -r "contracts/openapi/v1" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.sh" --include="*.py" --include="*.json" . 2>/dev/null | grep -v "docs/forensics/archive" | grep -v "node_modules" | wc -l || echo "0")
 
 if [ "$OLD_CONTRACT_PATHS" -gt 0 ]; then
     echo -e "${RED}✗ Found $OLD_CONTRACT_PATHS references to old contract paths${NC}"
-    grep -r "contracts/openapi/v1" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.sh" --include="*.py" --include="*.json" . 2>/dev/null | grep -v "docs/archive" | grep -v "node_modules" || true
+    grep -r "contracts/openapi/v1" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.sh" --include="*.py" --include="*.json" . 2>/dev/null | grep -v "docs/forensics/archive" | grep -v "node_modules" || true
     ERRORS=$((ERRORS + 1))
 else
     echo -e "${GREEN}✓ No references to old contract paths found${NC}"

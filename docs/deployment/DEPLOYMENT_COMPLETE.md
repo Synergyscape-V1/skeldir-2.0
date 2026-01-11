@@ -114,8 +114,8 @@ If issues discovered, see:
 ## Related Documentation
 
 - **Deployment Procedure**: `docs/deployment/DEPLOYMENT_PROCEDURE.md`
-- **Empirical Validation**: `docs/archive/implementation-phases/b0.3/EMPIRICAL_VALIDATION_REPORT.md`
-- **Exit Gate Evidence**: `docs/archive/implementation-phases/b0.3/PHASE*_EXIT_GATE_EVIDENCE.md`
+- **Empirical Validation**: `docs/forensics/archive/implementation-phases/b0.3/EMPIRICAL_VALIDATION_REPORT.md`
+- **Exit Gate Evidence**: `docs/forensics/archive/implementation-phases/b0.3/PHASE*_EXIT_GATE_EVIDENCE.md`
 
 ---
 

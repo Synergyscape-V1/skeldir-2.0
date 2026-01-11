@@ -2,7 +2,7 @@
 
 This file is intentionally **NOT** the authoritative proof pack.
 
-Why: see `docs/evidence/EG5_TEMPORAL_PARADOX.md` (EG-5 temporal incoherence).
+Why: see `docs/forensics/evidence/EG5_TEMPORAL_PARADOX.md` (EG-5 temporal incoherence).
 
 ## Where the authoritative proof pack lives
 

@@ -206,7 +206,7 @@ contract-full                # Complete pipeline
 **Evidence:**
 - **File:** `/scripts/phase_gates/run_chain.py` (master orchestrator)
 - **Spec:** 17 B0-phase tests in `/backend/tests/` (test_b041_*.py through test_b0536_*.py)
-- **Phase documentation:** `/docs/archive/PHASE_EXIT_GATE_STATUS_MATRIX.md`
+- **Phase documentation:** `/docs/forensics/archive/PHASE_EXIT_GATE_STATUS_MATRIX.md`
 - **CI integration:** 8 GitHub Actions workflows (`.github/workflows/`) orchestrating phases
 - **Implementation status:** B0.1–B0.3 complete; B0.4–B0.5 in progress (tests passing)
 
@@ -1002,7 +1002,7 @@ FALSIFIABLE TEST:
 4. Reconcile Windows path spaces issue (move to cross-platform path structure if needed)
 
 **Delivered Artifacts:**
-- This summary markdown: `docs/validation/runtime/context_gathering_summary.md`
+- This summary markdown: `docs/forensics/validation/runtime/context_gathering_summary.md`
 - Environment snapshot: `artifacts/runtime_context_gathering/2025-12-24_7650d094/ENV_SNAPSHOT.json`
 - Manifest (generated): `artifacts/runtime_context_gathering/2025-12-24_7650d094/ARTIFACT_MANIFEST.json`
 - Zip package: `runtime_context_gathering_2025-12-24_7650d094.zip`

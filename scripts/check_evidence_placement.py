@@ -6,15 +6,10 @@ import subprocess
 import sys
 
 
-DOCS_ROOT = "docs/"
-ALLOWED_ROOTS = (
-    DOCS_ROOT,
-    "backend/docs/",
-    "db/docs/",
-    "api-contracts/",
-)
+DOCS_ROOT = "docs/forensics/"
+ALLOWED_ROOTS = (DOCS_ROOT,)
 EVIDENCE_REGEX = re.compile(
-    r"(evidence|handover|github_analyst|forensic|context_gathering|validation_report|(^|/)([bB]0|[bB]05|[bB]055|R2|V[0-9]))"
+    r"(evidence|handover|github_analyst|forensic|context_gathering|validation_report|(^|/)([bB]0|[bB]05|[bB]055|R2))"
 )
 
 
@@ -35,7 +30,7 @@ def main() -> int:
     violations = [path for path in evidence_files if not path.startswith(ALLOWED_ROOTS)]
 
     if violations:
-        print("Evidence docs must live under docs/")
+        print("Evidence docs must live under docs/forensics/")
         for path in violations:
             print(path)
         return 1

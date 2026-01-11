@@ -24,5 +24,5 @@ This file is intentionally short and points to the single authoritative R2 run a
 
 ## Canonical Truth Record
 
-See `docs/validation/runtime/r2_summary.md` for the complete, repo-resident summary.
+See `docs/forensics/validation/runtime/r2_summary.md` for the complete, repo-resident summary.
 

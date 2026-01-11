@@ -18,7 +18,7 @@ from backend.tests.builders.core_builders import build_tenant
 from app.db.session import engine
 
 EVIDENCE_JSON = Path("backend/validation/evidence/value_traces/value_02_summary.json")
-EVIDENCE_MD = Path("docs/evidence/value_traces/value_02_constraint_trace.md")
+EVIDENCE_MD = Path("docs/forensics/evidence/value_traces/value_02_constraint_trace.md")
 
 
 @pytest.mark.asyncio

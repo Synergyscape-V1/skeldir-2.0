@@ -9,7 +9,7 @@
 - Log capture: `tmp/zero_drift_v3_2_run7.log` (local export of the Actions log for the run above)
 
 ### Canonical Inventory Contract (5)
-- Contract source: B0.5.4 approach intent + prior forensic ledger (`docs/evidence/b054-forensic-readiness-evidence.md`, G8).
+- Contract source: B0.5.4 approach intent + prior forensic ledger (`docs/forensics/evidence/b054-forensic-readiness-evidence.md`, G8).
 - Canonical matviews (registry-enforced): `mv_allocation_summary`, `mv_channel_performance`, `mv_daily_revenue_summary`, `mv_realtime_revenue`, `mv_reconciliation_status`.
 
 ### Gate Ledger (GATE-0A..0D, binary/falsifiable)

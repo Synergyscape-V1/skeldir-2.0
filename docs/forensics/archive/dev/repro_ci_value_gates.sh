@@ -2,13 +2,13 @@
 #
 # ARCHIVED: CI-like reproduction harness for VALUE gates (local debugging only).
 #
-# NOTE: This file is intentionally located under docs/archive/** so it does not
+# NOTE: This file is intentionally located under docs/forensics/archive/** so it does not
 # violate the Zero Container Doctrine enforcement in CI.
 #
 # Usage:
-#   bash docs/archive/dev/repro_ci_value_gates.sh VALUE_01
-#   bash docs/archive/dev/repro_ci_value_gates.sh VALUE_03
-#   bash docs/archive/dev/repro_ci_value_gates.sh VALUE_05
+#   bash docs/forensics/archive/dev/repro_ci_value_gates.sh VALUE_01
+#   bash docs/forensics/archive/dev/repro_ci_value_gates.sh VALUE_03
+#   bash docs/forensics/archive/dev/repro_ci_value_gates.sh VALUE_05
 #
 
 set -euo pipefail

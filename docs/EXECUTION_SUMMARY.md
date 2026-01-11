@@ -9,7 +9,7 @@ This document provides a comprehensive record of hypothesis adjudication and imp
 
 **Final Artifact Locations:**
 - Implementation: Commits `e49dac2` → `8604f8d` → `adc5cb4` on `main`
-- Evidence: [value_trace_proof_pack.md](docs/evidence/value_trace_proof_pack.md)
+- Evidence: [value_trace_proof_pack.md](docs/forensics/evidence/value_trace_proof_pack.md)
 - CI: https://github.com/Muk223/skeldir-2.0/actions
 
 ---
@@ -176,7 +176,7 @@ The test runs reconciliation twice and verifies identical results, proving the s
 **Evidence Emission (lines 206-250):**
 Test emits JSON summary and Markdown report to:
 - `backend/validation/evidence/value_traces/value_01_summary.json`
-- `docs/evidence/value_traces/value_01_revenue_trace.md`
+- `docs/forensics/evidence/value_traces/value_01_revenue_trace.md`
 
 **Money Type Safety:**
 Service uses `MoneyCents` (integer type) throughout:
@@ -689,7 +689,7 @@ assert service.get_job(...).status == READY_FOR_REVIEW
 
 ### Proof Pack Location
 
-[docs/evidence/value_trace_proof_pack.md](docs/evidence/value_trace_proof_pack.md)
+[docs/forensics/evidence/value_trace_proof_pack.md](docs/forensics/evidence/value_trace_proof_pack.md)
 
 **Current State:**
 - Commit: `adc5cb4` (latest)
@@ -705,7 +705,7 @@ Each VALUE gate will emit:
 - Contains test results, invariants proven, tenant IDs
 
 **Markdown Report:**
-- `docs/evidence/value_traces/value_XX_report.md`
+- `docs/forensics/evidence/value_traces/value_XX_report.md`
 - Human-readable test scenario and results
 
 **Gate Enforcement:**
@@ -730,7 +730,7 @@ File: `docs/phases/phase_manifest.yaml`
     command: ["python", "scripts/phase_gates/value_01_gate.py"]
     artifacts:
       - backend/validation/evidence/value_traces/value_01_summary.json
-      - docs/evidence/value_traces/value_01_revenue_trace.md
+      - docs/forensics/evidence/value_traces/value_01_revenue_trace.md
 
 - id: VALUE_03
   intent: "Value Trace 03-WIN - Budget-kill circuit breaker..."
@@ -740,7 +740,7 @@ File: `docs/phases/phase_manifest.yaml`
     command: ["python", "scripts/phase_gates/value_03_gate.py"]
     artifacts:
       - backend/validation/evidence/value_traces/value_03_summary.json
-      - docs/evidence/value_traces/value_03_provider_handshake.md
+      - docs/forensics/evidence/value_traces/value_03_provider_handshake.md
 
 - id: VALUE_05
   intent: "Value Trace 05-WIN - Centaur friction (review/approve + min pending)..."
@@ -750,7 +750,7 @@ File: `docs/phases/phase_manifest.yaml`
     command: ["python", "scripts/phase_gates/value_05_gate.py"]
     artifacts:
       - backend/validation/evidence/value_traces/value_05_summary.json
-      - docs/evidence/value_traces/value_05_centaur_enforcement.md
+      - docs/forensics/evidence/value_traces/value_05_centaur_enforcement.md
 ```
 
 ### Phase Gate Runners
@@ -903,12 +903,12 @@ cat backend/validation/evidence/phases/value_05_summary.json
 
 # Check evidence outputs
 ls -la backend/validation/evidence/value_traces/value_0*.json
-ls -la docs/evidence/value_traces/value_0*.md
+ls -la docs/forensics/evidence/value_traces/value_0*.md
 
 # Read human-readable reports
-cat docs/evidence/value_traces/value_01_revenue_trace.md
-cat docs/evidence/value_traces/value_03_provider_handshake.md
-cat docs/evidence/value_traces/value_05_centaur_enforcement.md
+cat docs/forensics/evidence/value_traces/value_01_revenue_trace.md
+cat docs/forensics/evidence/value_traces/value_03_provider_handshake.md
+cat docs/forensics/evidence/value_traces/value_05_centaur_enforcement.md
 ```
 
 ---

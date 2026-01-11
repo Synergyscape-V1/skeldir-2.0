@@ -16,7 +16,7 @@ from app.matviews.registry import list_names
 from app.db.session import engine
 
 EVIDENCE_JSON = Path("backend/validation/evidence/value_traces/value_04_summary.json")
-EVIDENCE_MD = Path("docs/evidence/value_traces/value_04_registry_trace.md")
+EVIDENCE_MD = Path("docs/forensics/evidence/value_traces/value_04_registry_trace.md")
 
 REGISTRY = list_names()
 

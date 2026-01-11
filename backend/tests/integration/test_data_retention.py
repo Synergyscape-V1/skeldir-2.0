@@ -14,7 +14,7 @@ especially the critical distinction between analytics deletion and financial pre
 
 Related Documents:
 - docs/governance/PRIVACY_LIFECYCLE_IMPLEMENTATION.md (Phase 5)
-- docs/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_RESPONSE.md (retention gap identified)
+- docs/forensics/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_RESPONSE.md (retention gap identified)
 """
 
 import pytest

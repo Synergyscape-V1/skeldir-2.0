@@ -297,9 +297,9 @@ NO violations found:
 **Time: 1 hour**
 
 8. ✅ **Archive root analysis docs** (45 min)
-   - Move 20 files to `docs/archive/completed-phases/`
+   - Move 20 files to `docs/forensics/archive/completed-phases/`
    - Update 3 code comments to point to new location
-   - Create index: `docs/archive/README.md`
+   - Create index: `docs/forensics/archive/README.md`
 
 ---
 

@@ -198,8 +198,8 @@ Test-Path "docs/deployment/DEPLOYMENT_COMPLETE.md"
 ## Related Documentation
 
 - **Deployment Procedure**: `docs/deployment/DEPLOYMENT_PROCEDURE.md`
-- **Deployment Summary**: `docs/deployment/GITHUB_DEPLOYMENT_SUMMARY.md`
-- **Empirical Validation**: `docs/archive/implementation-phases/b0.3/EMPIRICAL_VALIDATION_REPORT.md`
+- **Deployment Summary**: `docs/forensics/deployment/GITHUB_DEPLOYMENT_SUMMARY.md`
+- **Empirical Validation**: `docs/forensics/archive/implementation-phases/b0.3/EMPIRICAL_VALIDATION_REPORT.md`
 
 ---
 

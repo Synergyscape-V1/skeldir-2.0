@@ -54,7 +54,7 @@ echo ""
 # Group 3: Documentation Consolidation
 echo "Group 3: Documentation Consolidation"
 git add docs/database/ docs/architecture/ docs/operations/
-git add docs/archive/implementation-phases/b0.3/
+git add docs/forensics/archive/implementation-phases/b0.3/
 echo "✓ Staged documentation consolidation"
 echo ""
 

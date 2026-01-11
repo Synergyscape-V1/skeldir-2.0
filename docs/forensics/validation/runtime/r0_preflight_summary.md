@@ -106,7 +106,7 @@ HEAD SHA: 7650d094a7d440d1f3707c306c4752d40f047587
 Branch: main
 Remote: https://github.com/Muk223/skeldir-2.0.git
 Last commit: Wed Dec 24 14:48:14 2025 -0600
-Status: Clean (except untracked deliverables: artifacts/, docs/validation/)
+Status: Clean (except untracked deliverables: artifacts/, docs/forensics/validation/)
 ```
 
 **Caveat:** Untracked files are R0 deliverables themselves (not contamination)

@@ -175,7 +175,7 @@
 - **Deployment Procedure**: `docs/deployment/DEPLOYMENT_PROCEDURE.md`
 - **Deployment Checklist**: `docs/deployment/DEPLOYMENT_CHECKLIST.md`
 - **Rollback Procedure**: `docs/deployment/ROLLBACK_PROCEDURE.md`
-- **Empirical Validation**: `docs/archive/implementation-phases/b0.3/EMPIRICAL_VALIDATION_REPORT.md`
+- **Empirical Validation**: `docs/forensics/archive/implementation-phases/b0.3/EMPIRICAL_VALIDATION_REPORT.md`
 
 
 

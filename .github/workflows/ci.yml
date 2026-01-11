@@ -222,7 +222,7 @@ jobs:
           name: phase-${{ matrix.phase }}-evidence
           path: |
             backend/validation/evidence/**
-            docs/evidence/value_traces/**
+            docs/forensics/evidence/value_traces/**
           retention-days: 7
 
   phase-chain:
@@ -297,7 +297,7 @@ jobs:
           name: phase-chain-evidence
           path: |
             backend/validation/evidence/**
-            docs/evidence/value_traces/**
+            docs/forensics/evidence/value_traces/**
           retention-days: 7
 
   proof-pack:

@@ -13,7 +13,7 @@
 2. Inspect actual exports and TypeScript types
 3. Update this mapping with verified API structure
 
-**See:** `docs/PRE_EXECUTION_VALIDATION.md` → Section 4: "Verify Service Method Signatures"
+**See:** `docs/forensics/root/PRE_EXECUTION_VALIDATION.md` → Section 4: "Verify Service Method Signatures"
 
 ---
 

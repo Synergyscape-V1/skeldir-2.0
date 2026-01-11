@@ -48,7 +48,7 @@ cd backend && celery -A app.celery_app.celery_app worker -P solo -c 1 -Q houseke
 ```
 
 **Evidence Pointers:**
-- API command: docs/archive/completed-phases/b0.1/B0.1_PHASE_FORENSIC_EVALUATION_RESPONSE.md:43
+- API command: docs/forensics/archive/completed-phases/b0.1/B0.1_PHASE_FORENSIC_EVALUATION_RESPONSE.md:43
 - Worker command: .github/workflows/ci.yml:164
 - Beat reference: backend/app/tasks/maintenance.py:169-186 (BEAT_SCHEDULE defined but not deployed)
 
@@ -472,7 +472,7 @@ Working Dir:   c:\Users\ayewhy\II SKELDIR II
      5. `mv_reconciliation_status`
 
 6. **Migration Evidence**
-   - **File:** db/docs/B0.4 BASELINE CONTEXT SYNTHESIS.md:90-91
+   - **File:** docs/forensics/db/B0.4_BASELINE_CONTEXT_SYNTHESIS.md:90-91
    - **Migrations:**
      - `003_data_governance/202511151500_add_mv_channel_performance.py`
      - `003_data_governance/202511151510_add_mv_daily_revenue_summary.py`

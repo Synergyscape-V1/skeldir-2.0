@@ -16,7 +16,7 @@ This migration guide contains **UNVERIFIED ASSUMPTIONS** about the published SDK
 3. ✅ Completed **PRE_EXECUTION_VALIDATION.md** checklist
 4. ✅ Updated this guide with verified API structure
 
-**See:** `docs/PRE_EXECUTION_VALIDATION.md` for required validation steps.
+**See:** `docs/forensics/root/PRE_EXECUTION_VALIDATION.md` for required validation steps.
 
 ---
 

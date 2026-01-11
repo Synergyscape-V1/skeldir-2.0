@@ -240,7 +240,7 @@ OK
 **Commit:** `0cd6cfe`
 **Files Changed:**
 - `.github/workflows/ci.yml` (2 occurrences)
-- `docs/archive/dev/repro_ci_value_gates.sh` (archived repro harness; excluded from Zero Container Doctrine scan)
+- `docs/forensics/archive/dev/repro_ci_value_gates.sh` (archived repro harness; excluded from Zero Container Doctrine scan)
 
 **Problem:**
 - VALUE tests import `app.*` and require `backend/` to be importable.
@@ -290,14 +290,14 @@ Runner scripts import a local `_bootstrap` module at process start to inject bot
 
 **Bonus - Local Reproduction Harness (C1-REPRO-HARNESS):**
 
-Created an archived reproduction harness at `docs/archive/dev/repro_ci_value_gates.sh` for forensic reference.
+Created an archived reproduction harness at `docs/forensics/archive/dev/repro_ci_value_gates.sh` for forensic reference.
 
-**Note:** It was moved under `docs/archive/**` to comply with the Zero Container Doctrine enforcement, because the original version referenced Docker.
+**Note:** It was moved under `docs/forensics/archive/**` to comply with the Zero Container Doctrine enforcement, because the original version referenced Docker.
 
 Usage:
 ```bash
-$ bash docs/archive/dev/repro_ci_value_gates.sh VALUE_01
-$ bash docs/archive/dev/repro_ci_value_gates.sh VALUE_03
+$ bash docs/forensics/archive/dev/repro_ci_value_gates.sh VALUE_01
+$ bash docs/forensics/archive/dev/repro_ci_value_gates.sh VALUE_03
 ```
 
 ---
@@ -354,7 +354,7 @@ When GitHub Actions run #212+ executes on commit `0cd6cfe`, we expect:
    → 1 passed
 ✅ Evidence artifacts uploaded:
    - backend/validation/evidence/value_traces/value_01_summary.json
-   - docs/evidence/value_traces/value_01_revenue_trace.md
+   - docs/forensics/evidence/value_traces/value_01_revenue_trace.md
 ```
 
 **Phase Gates (VALUE_03):**
@@ -364,7 +364,7 @@ When GitHub Actions run #212+ executes on commit `0cd6cfe`, we expect:
    → 1 passed
 ✅ Evidence artifacts uploaded:
    - backend/validation/evidence/value_traces/value_03_summary.json
-   - docs/evidence/value_traces/value_03_provider_handshake.md
+   - docs/forensics/evidence/value_traces/value_03_provider_handshake.md
 ```
 
 **Phase Gates (VALUE_05):**
@@ -374,7 +374,7 @@ When GitHub Actions run #212+ executes on commit `0cd6cfe`, we expect:
    → 2 passed
 ✅ Evidence artifacts uploaded:
    - backend/validation/evidence/value_traces/value_05_summary.json
-   - docs/evidence/value_traces/value_05_centaur_enforcement.md
+   - docs/forensics/evidence/value_traces/value_05_centaur_enforcement.md
 ```
 
 ### CI Run URLs (To Be Updated)
@@ -532,7 +532,7 @@ Waiting for CI run on commit `0cd6cfe` to complete successfully.
 
 1. **Monitor CI:** Check https://github.com/Muk223/skeldir-2.0/actions for run #212+
 2. **If CI passes:**
-   - Update [value_trace_proof_pack.md](docs/evidence/value_trace_proof_pack.md) with CI URLs
+   - Update [value_trace_proof_pack.md](docs/forensics/evidence/value_trace_proof_pack.md) with CI URLs
    - Mark B0.5.4.1 as AUTHORIZED
 3. **If CI fails:**
    - Download artifact logs from GitHub Actions

@@ -39,7 +39,7 @@ from app.services.investigation import (
 )
 
 EVIDENCE_JSON = Path("backend/validation/evidence/value_traces/value_05_summary.json")
-EVIDENCE_MD = Path("docs/evidence/value_traces/value_05_centaur_enforcement.md")
+EVIDENCE_MD = Path("docs/forensics/evidence/value_traces/value_05_centaur_enforcement.md")
 
 
 @pytest.mark.asyncio

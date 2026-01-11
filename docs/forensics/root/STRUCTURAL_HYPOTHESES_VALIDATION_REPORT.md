@@ -96,7 +96,7 @@
 - ✓ `FORENSIC_ANALYSIS_EXECUTIVE_BRIEF.md` - Currently in use (just created)
 - ✓ `STRUCTURAL_INVENTORY_INDEX.md` - Currently in use (just created)
 
-**Step 2** - Move to `docs/archive/completed-phases/` (historical):
+**Step 2** - Move to `docs/forensics/archive/completed-phases/` (historical):
 ```
 ARCHITECTURAL_GAPS_REMEDIATION.md
 B0.1-B0.3_EVALUATION_ANSWERS.md
@@ -124,7 +124,7 @@ REPLIT_BASELINE_VALIDATION.md
 ```
 
 **Step 3** - Before archiving B0.3_FORENSIC_ANALYSIS_RESPONSE.md:
-1. Update 3 code comments to reference `docs/archive/completed-phases/B0.3_FORENSIC_ANALYSIS_RESPONSE.md`
+1. Update 3 code comments to reference `docs/forensics/archive/completed-phases/B0.3_FORENSIC_ANALYSIS_RESPONSE.md`
 2. Or replace reference with `docs/governance/B0.3_PHASE_SUMMARY.md` (new synthesis)
 
 ---
@@ -959,7 +959,7 @@ tasks/maintenance.py
 
 ### 🟡 MEDIUM (Fix this iteration)
 6. **Archive root-level .md files**
-   - Move 20 files to docs/archive/completed-phases/
+   - Move 20 files to docs/forensics/archive/completed-phases/
    - Update 3 code references
    - Fix effort: 45 minutes
 

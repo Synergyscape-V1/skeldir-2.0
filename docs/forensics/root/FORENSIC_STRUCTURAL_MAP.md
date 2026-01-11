@@ -223,7 +223,7 @@ c:\Users\ayewhy\II SKELDIR II\
 ├── PHASE_EXECUTION_SUMMARY.md        [Execution summary]
 │
 ├── scripts/README.md                 [NEW - Script organization]
-└── [ARCHIVED - 24 analysis files moved to docs/archive/]
+└── [ARCHIVED - 24 analysis files moved to docs/forensics/archive/]
 ```
 
 ---

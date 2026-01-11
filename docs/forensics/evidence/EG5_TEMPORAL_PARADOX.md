@@ -33,7 +33,7 @@ This makes EG-5 satisfiable because:
 ### Optional archives (honest, but not the candidate)
 
 If you want a repo history of proof packs, archive them in a **separate bot commit** (triggered only after success) under:
-`docs/evidence/proof_packs/<candidate_sha>.{json,md}`
+`docs/forensics/evidence/proof_packs/<candidate_sha>.{json,md}`
 
 That archive commit must be explicitly labeled as an archive of `<candidate_sha>`, not presented as the candidate itself.
 

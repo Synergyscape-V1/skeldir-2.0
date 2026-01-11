@@ -14,7 +14,7 @@ This guide presents **THREE POSSIBLE SCENARIOS** but the actual backend structur
 - Remove unused scenarios from this guide
 - Update environment variables to match confirmed structure
 
-**See:** `docs/PRE_EXECUTION_VALIDATION.md` → Section 6: "Confirm Backend URL Structure"
+**See:** `docs/forensics/root/PRE_EXECUTION_VALIDATION.md` → Section 6: "Confirm Backend URL Structure"
 
 ---
 

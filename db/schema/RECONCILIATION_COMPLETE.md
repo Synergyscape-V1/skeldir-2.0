@@ -138,11 +138,11 @@ db/schema/canonical_schema.sql | 2931 insertions(+), 389 deletions(-)
    ```
 
 2. **Archive Gap Catalogue**:
-   - Move `schema_gap_catalogue.md` to `docs/archive/`
+   - Move `schema_gap_catalogue.md` to `docs/forensics/archive/`
    - Mark as RESOLVED
 
 3. **Revoke Fraudulent Sign-Off**:
-   - Move `ENGINEER_REVIEW_SIGNOFF.md` to `docs/archive/`
+   - Move `ENGINEER_REVIEW_SIGNOFF.md` to `docs/forensics/archive/`
    - Mark as INVALID (based on incomplete canonical)
 
 4. **Update Governance Documentation**:
