@@ -242,24 +242,25 @@ backend/tests/test_llm_payload_contract.py::test_llm_payload_invalid_rejected[pa
 ```
 
 ## CI Run Reference
-Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20902464575
+Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/20902518066
 
 ```
-gh run view 20902464575
+gh run view 20902518066
 
-* b055-phase1-payload-contract CI Muk223/skeldir-2.0#14 · 20902464575
-Triggered via pull_request about 2 minutes ago
+✓ b055-phase1-payload-contract CI Muk223/skeldir-2.0#14 · 20902518066
+Triggered via pull_request about 11 minutes ago
 
 JOBS
-✓ Checkout Code in 6s (ID 60050446297)
-✓ B0.5.3.3 Revenue Contract Tests in 1m11s (ID 60050450619)
-✓ Validate Migrations in 5s (ID 60050450622)
-✓ Test Backend in 17s (ID 60050450623)
-✓ Validate Phase Manifest in 10s (ID 60050450625)
-✓ Celery Foundation B0.5.1 in 1m30s (ID 60050450627)
-✓ Validate Contracts in 1m34s (ID 60050450628)
-✓ Integration Tests in 30s (ID 60050450629)
-✓ Zero-Drift v3.2 CI Truth Layer in 1m23s (ID 60050450639)
+✓ Test Backend in 18s (ID 60050581833)
 ```
 
-Note: gh run view --job 60050450623 --log is not yet available until the overall run completes. The job itself has executed (not skipped).
+### Test Backend Log Excerpt (EG1-CI)
+```
+gh run view --job 60050581833 --log
+
+Test Backend	Run tests	2026-01-11T21:57:40.6948848Z pytest tests/test_llm_payload_contract.py -q
+Test Backend	Run tests	2026-01-11T21:57:41.7580259Z tests/test_llm_payload_contract.py::test_llm_payload_schema_matches_snapshot PASSED [ 33%]
+Test Backend	Run tests	2026-01-11T21:57:41.7589958Z tests/test_llm_payload_contract.py::test_llm_payload_invalid_rejected[payload0] PASSED [ 66%]
+Test Backend	Run tests	2026-01-11T21:57:41.8445690Z tests/test_llm_payload_contract.py::test_llm_payload_invalid_rejected[payload1] PASSED [100%]
+Test Backend	Run tests	2026-01-11T21:57:41.8450663Z ======================= 3 passed, 129 warnings in 0.11s ========================
+```
