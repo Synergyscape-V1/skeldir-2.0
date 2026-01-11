@@ -7,7 +7,8 @@ echo "=== Integration Test: OpenAPI → Pydantic Pipeline ==="
 
 # Clean slate
 rm -rf api-contracts/dist
-rm -f backend/app/schemas/*.py
+# Preserve hand-written schemas; only remove generated stubs if present.
+find backend/app/schemas -maxdepth 1 -type f -name "generated_*.py" -delete
 
 # Step 1: Bundle contracts
 echo -e "\n[1/5] Bundling contracts..."

@@ -11,10 +11,7 @@ from uuid import UUID, uuid4
 
 from app.celery_app import celery_app
 from app.observability.context import set_request_correlation_id, set_tenant_id
-try:
-    from backend.app.schemas.llm_payloads import LLMTaskPayload
-except ModuleNotFoundError:  # pragma: no cover - runtime may only expose `app` on PYTHONPATH
-    from app.schemas.llm_payloads import LLMTaskPayload
+from app.schemas.llm_payloads import LLMTaskPayload
 from app.tasks.context import tenant_task
 
 logger = logging.getLogger(__name__)

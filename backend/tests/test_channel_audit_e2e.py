@@ -14,7 +14,7 @@ import pytest
 from uuid import UUID, uuid4
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from backend.app.core.channel_service import (
+from app.core.channel_service import (
     transition_taxonomy_state,
     correct_assignment,
     ChannelNotFoundError,
@@ -102,7 +102,6 @@ class TestChannelAssignmentCorrections:
 # - Test data fixtures (tenants, channels, allocations)
 # - Proper session management
 # - Assertion helpers for querying audit tables
-
 
 
 
