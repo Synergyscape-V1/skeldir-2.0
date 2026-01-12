@@ -300,5 +300,4 @@ backend/tests/test_b055_llm_model_parity.py::test_llm_models_reflection_parity P
 ## PR/CI
 - PR: https://github.com/Muk223/skeldir-2.0/pull/17
 - Code commit: 93b58beb442798c217ba1a03c80bb280ab806a0e
-- Evidence commit: 4fb4d5ed0d4e1e94c1c95633f9543d278a35ecbf
 - CI run: pending (not available locally)
