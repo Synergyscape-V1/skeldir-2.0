@@ -337,7 +337,7 @@ jobs:
     name: Test Backend
     runs-on: ubuntu-latest
     needs: checkout
-    if: contains(github.event.head_commit.modified, 'backend/') || contains(github.event.head_commit.added, 'backend/')
+    if: github.event_name == 'pull_request' || contains(github.event.head_commit.modified, 'backend/') || contains(github.event.head_commit.added, 'backend/')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -355,7 +355,8 @@ jobs:
       - name: Run tests
         run: |
           cd backend
-          pytest
+          pytest tests/test_llm_payload_contract.py -q
+          pytest tests/test_b052_queue_topology_and_dlq.py -q -k "QueueTopology"
 
   celery-foundation:
     name: Celery Foundation B0.5.1

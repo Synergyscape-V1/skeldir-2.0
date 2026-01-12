@@ -22,6 +22,7 @@ DEFAULT_ASYNC_DSN = os.environ.get("TEST_ASYNC_DSN", "postgresql+asyncpg://app_u
 os.environ.setdefault("DATABASE_URL", DEFAULT_ASYNC_DSN)
 
 from app.celery_app import celery_app
+from app.core.queues import QUEUE_LLM
 from app.tasks.housekeeping import ping
 from app.tasks.maintenance import refresh_all_matviews_global_legacy
 from app.tasks import matviews  # noqa: F401
@@ -42,7 +43,7 @@ class TestQueueTopology:
         queue_names = {q.name for q in queues}
         assert "housekeeping" in queue_names
         assert "maintenance" in queue_names
-        assert "llm" in queue_names
+        assert QUEUE_LLM in queue_names
         assert "attribution" in queue_names, "B0.5.3.1: attribution queue must exist"
 
     def test_task_routing_rules_defined(self):
@@ -61,8 +62,16 @@ class TestQueueTopology:
         assert routes["app.tasks.housekeeping.*"]["queue"] == "housekeeping"
         assert routes["app.tasks.maintenance.*"]["queue"] == "maintenance"
         assert routes["app.tasks.matviews.*"]["queue"] == "maintenance"
-        assert routes["app.tasks.llm.*"]["queue"] == "llm"
+        assert routes["app.tasks.llm.*"]["queue"] == QUEUE_LLM
         assert routes["app.tasks.attribution.*"]["queue"] == "attribution", "B0.5.3.1: attribution tasks must route to attribution queue"
+
+    def test_llm_task_routes_via_router(self):
+        """Validate router resolves LLM tasks to the LLM queue (behavioral proof)."""
+        route = celery_app.amqp.router.route({}, "app.tasks.llm.explanation", args=(), kwargs={})
+        assert route, "Celery router should return a route for LLM tasks"
+        queue = route.get("queue")
+        queue_name = queue.name if hasattr(queue, "name") else queue
+        assert queue_name == QUEUE_LLM
 
     def test_task_names_stable(self):
         """Validate task names remain stable (prevent accidental renames)."""
