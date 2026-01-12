@@ -32,6 +32,7 @@ from app.celery_app import (
     _build_result_backend,
     _ensure_celery_configured,
 )  # noqa: E402
+from app.core.queues import QUEUE_LLM  # noqa: E402
 from app.tasks.housekeeping import ping  # noqa: E402
 from app.tasks.maintenance import scan_for_pii_contamination_task  # noqa: E402
 from app.tasks import matviews  # noqa: E402,F401
@@ -176,6 +177,7 @@ def celery_worker_proc():
     env["PYTHONPATH"] = str(backend_dir.parent)
     env.setdefault("CELERY_METRICS_PORT", os.environ["CELERY_METRICS_PORT"])
     env.setdefault("CELERY_METRICS_ADDR", os.environ["CELERY_METRICS_ADDR"])
+    queue_list = ",".join(["housekeeping", "maintenance", QUEUE_LLM, "attribution"])
     cmd = [
         sys.executable,
         "-m",
@@ -188,7 +190,7 @@ def celery_worker_proc():
         "-c",
         "1",
         "-Q",
-        "housekeeping,maintenance,llm,attribution",
+        queue_list,
         "--loglevel=INFO",
     ]
     proc = subprocess.Popen(

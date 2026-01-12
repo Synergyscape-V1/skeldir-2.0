@@ -17,6 +17,7 @@ from sqlalchemy.engine.url import make_url
 # Import settings ONLY when Celery config is actually built, not at module load time
 # from app.core.config import settings  # REMOVED - now imported in _get_settings()
 
+from app.core.queues import QUEUE_LLM
 from app.observability import metrics
 from app.observability.logging_config import configure_logging
 from app.observability.worker_monitoring import start_worker_http_server
@@ -174,14 +175,14 @@ def _ensure_celery_configured():
         task_queues=[
             Queue('housekeeping', routing_key='housekeeping.#'),
             Queue('maintenance', routing_key='maintenance.#'),
-            Queue('llm', routing_key='llm.#'),
+            Queue(QUEUE_LLM, routing_key='llm.#'),
             Queue('attribution', routing_key='attribution.#'),
         ],
         task_routes={
             'app.tasks.housekeeping.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
             'app.tasks.maintenance.*': {'queue': 'maintenance', 'routing_key': 'maintenance.task'},
             'app.tasks.matviews.*': {'queue': 'maintenance', 'routing_key': 'maintenance.task'},
-            'app.tasks.llm.*': {'queue': 'llm', 'routing_key': 'llm.task'},
+            'app.tasks.llm.*': {'queue': QUEUE_LLM, 'routing_key': 'llm.task'},
             'app.tasks.attribution.*': {'queue': 'attribution', 'routing_key': 'attribution.task'},
             'app.tasks.r4_failure_semantics.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
             'app.tasks.r6_resource_governance.*': {'queue': 'housekeeping', 'routing_key': 'housekeeping.task'},
