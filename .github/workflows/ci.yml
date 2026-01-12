@@ -485,7 +485,12 @@ jobs:
           CELERY_RESULT_BACKEND: ${{ env.CELERY_RESULT_BACKEND }}
         run: |
           cd backend
-          pytest tests/test_b051_celery_foundation.py tests/test_b052_queue_topology_and_dlq.py tests/test_b0532_window_idempotency.py -q
+            pytest \
+              tests/test_b051_celery_foundation.py \
+              tests/test_b052_queue_topology_and_dlq.py \
+              tests/test_b0532_window_idempotency.py \
+              tests/test_b055_llm_worker_stubs.py \
+              tests/test_b055_llm_model_parity.py -q
 
       - name: Upload observability evidence artifacts
         if: always()

@@ -9,6 +9,10 @@ Models:
     - AttributionEvent: Revenue-generating attribution events (RLS enabled)
     - DeadEvent: Dead-letter queue for failed ingestion (RLS enabled)
     - ChannelTaxonomy: Marketing channel reference data (no RLS)
+    - LLMApiCall: LLM API audit rows (RLS enabled)
+    - LLMMonthlyCost: LLM monthly cost aggregates (RLS enabled)
+    - Investigation: LLM investigation jobs (RLS enabled)
+    - BudgetOptimizationJob: LLM budget optimization jobs (RLS enabled)
 
 Usage:
     from app.models import AttributionEvent, DeadEvent, ChannelTaxonomy
@@ -24,6 +28,12 @@ from app.models.attribution_event import AttributionEvent
 from app.models.base import Base, TenantMixin
 from app.models.channel_taxonomy import ChannelTaxonomy
 from app.models.dead_event import DeadEvent
+from app.models.llm import (
+    BudgetOptimizationJob,
+    Investigation,
+    LLMApiCall,
+    LLMMonthlyCost,
+)
 
 __all__ = [
     "Base",
@@ -31,4 +41,8 @@ __all__ = [
     "AttributionEvent",
     "DeadEvent",
     "ChannelTaxonomy",
+    "LLMApiCall",
+    "LLMMonthlyCost",
+    "Investigation",
+    "BudgetOptimizationJob",
 ]
