@@ -126,22 +126,24 @@ M	backend/app/celery_app.py
 A	backend/app/core/queues.py
 M	backend/tests/test_b051_celery_foundation.py
 M	backend/tests/test_b052_queue_topology_and_dlq.py
+A	docs/forensics/evidence/b055/b055_phase2_queue_constantization_evidence.md
 ```
 
 ## Chain of Custody
 ```
 git rev-parse HEAD
-d464730b5cae8446dc27f3465509783dd610dacb
+8343f58fd4f38d8e349b9944cd181f842803ee18
 
-git log --oneline --decorate -n 5
-d464730 (HEAD -> b055-phase2-queue-constantization) B055 Phase2: introduce QUEUE_LLM constant + routing proof
+git log --oneline --decorate -n 6
+8343f58 (HEAD -> b055-phase2-queue-constantization) B055 Phase2: add queue constantization evidence
+d464730 B055 Phase2: introduce QUEUE_LLM constant + routing proof
 0066937 (origin/main, origin/HEAD, main) Merge pull request #15 from Muk223/docs-evidence-hygiene
 756e141 (origin/docs-evidence-hygiene, docs-evidence-hygiene-fix) CI: bump upload-artifact to v4
 4697637 Hygiene: refresh chain-of-custody outputs
 fa5d30c Hygiene: finalize evidence pack outputs
 
 git status --porcelain
-# docs/forensics/evidence/b055/b055_phase2_queue_constantization_evidence.md untracked at this stage
+# clean
 ```
 
 ## PR / CI
