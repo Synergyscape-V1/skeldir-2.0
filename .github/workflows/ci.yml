@@ -338,6 +338,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: checkout
     if: github.event_name == 'pull_request' || contains(github.event.head_commit.modified, 'backend/') || contains(github.event.head_commit.added, 'backend/')
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
