@@ -5,7 +5,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 ## Hygiene
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
 | --- | --- | --- | --- | --- |
-| Hygiene | docs/forensics/evidence_hygiene_remediation_evidence.md | Evidence hygiene remediation proof pack | PR #15 / ade4a21 | pending |
+| Hygiene | docs/forensics/evidence_hygiene_remediation_evidence.md | Evidence hygiene remediation proof pack | PR #15 / fa5d30c | pending |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
@@ -196,5 +196,6 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
 | --- | --- | --- | --- | --- |
 | EG-5 | docs/forensics/proof_pack/value_trace_proof_pack.md | CI-generated proof pack (human-readable) | CI-generated | CI-generated |
+
 
 
