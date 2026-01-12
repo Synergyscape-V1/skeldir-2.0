@@ -76,7 +76,7 @@ phases:
       command: ["python", "scripts/phase_gates/value_01_gate.py"]
       artifacts:
         - backend/validation/evidence/value_traces/value_01_summary.json
-        - docs/evidence/value_traces/value_01_revenue_trace.md
+        - docs/forensics/evidence/value_traces/value_01_revenue_trace.md
     exit_gates:
       - ghost_revenue_detection
       - idempotent_reconciliation
@@ -90,7 +90,7 @@ phases:
       command: ["python", "scripts/phase_gates/value_02_gate.py"]
       artifacts:
         - backend/validation/evidence/value_traces/value_02_summary.json
-        - docs/evidence/value_traces/value_02_constraint_trace.md
+        - docs/forensics/evidence/value_traces/value_02_constraint_trace.md
     exit_gates:
       - constraint_trace
 
@@ -102,7 +102,7 @@ phases:
       command: ["python", "scripts/phase_gates/value_03_gate.py"]
       artifacts:
         - backend/validation/evidence/value_traces/value_03_summary.json
-        - docs/evidence/value_traces/value_03_provider_handshake.md
+        - docs/forensics/evidence/value_traces/value_03_provider_handshake.md
     exit_gates:
       - contract_fields_present
       - budget_enforcement
@@ -116,7 +116,7 @@ phases:
       command: ["python", "scripts/phase_gates/value_04_gate.py"]
       artifacts:
         - backend/validation/evidence/value_traces/value_04_summary.json
-        - docs/evidence/value_traces/value_04_registry_trace.md
+        - docs/forensics/evidence/value_traces/value_04_registry_trace.md
     exit_gates:
       - registry_parity
 
@@ -128,7 +128,7 @@ phases:
       command: ["python", "scripts/phase_gates/value_05_gate.py"]
       artifacts:
         - backend/validation/evidence/value_traces/value_05_summary.json
-        - docs/evidence/value_traces/value_05_centaur_enforcement.md
+        - docs/forensics/evidence/value_traces/value_05_centaur_enforcement.md
     exit_gates:
       - min_hold_enforced
       - approval_gate_enforced

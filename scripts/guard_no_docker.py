@@ -4,7 +4,7 @@ Guard script that enforces the Zero Docker Doctrine.
 
 It scans source/workflow directories for forbidden Docker references in both
 file names and file contents. Only the archival documentation tree
-(docs/archive/**) is ignored.
+(docs/forensics/archive/**) is ignored.
 """
 
 from __future__ import annotations
@@ -128,7 +128,7 @@ def main() -> int:
             print(f"  - {violation}", file=sys.stderr)
         print(
             "\nAll references to Docker or container tooling must be removed "
-            "or moved to docs/archive/**.",
+            "or moved to docs/forensics/archive/**.",
             file=sys.stderr,
         )
         return 1

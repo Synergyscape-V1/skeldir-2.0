@@ -331,7 +331,7 @@ bash scripts/generate-models.sh
 
 - [Schemathesis Documentation](https://schemathesis.readthedocs.io/)
 - [Contract Enforcement Guide](../../docs/implementation/contract-enforcement.md)
-- [Forensic Validation Report](../../docs/implementation/contract-enforcement-validation-report.md)
+- [Forensic Validation Report](../../docs/forensics/implementation/contract-enforcement-validation-report.md)
 - [Negative Test Scenarios - Dynamic](./negative_tests_dynamic.md)
 - [Negative Test Scenarios - Static](./negative_tests_static.md)
 

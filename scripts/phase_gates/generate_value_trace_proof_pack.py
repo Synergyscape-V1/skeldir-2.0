@@ -4,7 +4,7 @@ Generate an authoritative EG-5 proof pack for VALUE_01..VALUE_05 inside CI.
 
 This script is intended to run inside GitHub Actions and produces:
 - backend/validation/evidence/proof_pack/value_trace_proof_pack.json
-- backend/validation/evidence/proof_pack/value_trace_proof_pack.md
+- docs/forensics/proof_pack/value_trace_proof_pack.md
 
 It queries GitHub's API for the CURRENT run to bind:
 - candidate_sha == GITHUB_SHA
@@ -155,10 +155,12 @@ def main() -> int:
             raise RuntimeError(f"EG-5 FAIL: expected 5 VALUE gate records, got {len(records)}")
 
         out_dir = Path("backend/validation/evidence/proof_pack")
+        doc_dir = Path("docs/forensics/proof_pack")
         out_dir.mkdir(parents=True, exist_ok=True)
+        doc_dir.mkdir(parents=True, exist_ok=True)
 
         json_path = out_dir / "value_trace_proof_pack.json"
-        md_path = out_dir / "value_trace_proof_pack.md"
+        md_path = doc_dir / "value_trace_proof_pack.md"
 
         payload = {
             "candidate_sha": candidate_sha,

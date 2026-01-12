@@ -241,7 +241,7 @@ def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, ou
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", required=True, help="Path to harness log file")
-    ap.add_argument("--out", required=True, help="Path to write docs/validation/runtime/r3_summary.md")
+    ap.add_argument("--out", required=True, help="Path to write docs/forensics/validation/runtime/r3_summary.md")
     ap.add_argument("--candidate-sha", required=True)
     ap.add_argument("--run-url", required=True)
     args = ap.parse_args()

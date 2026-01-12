@@ -125,7 +125,7 @@ jobs:
           RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           python scripts/r3/render_r3_summary.py \
             --log r3_harness.log \
-            --out docs/validation/runtime/r3_summary.md \
+            --out docs/forensics/validation/runtime/r3_summary.md \
             --candidate-sha "${GITHUB_SHA}" \
             --run-url "${RUN_URL}" | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -157,7 +157,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- docs/validation/runtime/r3_summary.md; then
+          if git diff --quiet -- docs/forensics/validation/runtime/r3_summary.md; then
             echo "No r3_summary changes to commit."
             exit 0
           fi
@@ -166,7 +166,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "${BRANCH}"
-          git add docs/validation/runtime/r3_summary.md
+          git add docs/forensics/validation/runtime/r3_summary.md
           git commit -m "docs: anchor R3 proof for ${GITHUB_SHA}"
 
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"

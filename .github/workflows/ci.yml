@@ -17,6 +17,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for versioning
+      - name: Evidence placement check
+        run: |
+          python3 scripts/check_evidence_placement.py
 
   # Contract validation
 
@@ -219,7 +222,7 @@ jobs:
           name: phase-${{ matrix.phase }}-evidence
           path: |
             backend/validation/evidence/**
-            docs/evidence/value_traces/**
+            docs/forensics/evidence/value_traces/**
           retention-days: 7
 
   phase-chain:
@@ -294,7 +297,7 @@ jobs:
           name: phase-chain-evidence
           path: |
             backend/validation/evidence/**
-            docs/evidence/value_traces/**
+            docs/forensics/evidence/value_traces/**
           retention-days: 7
 
   proof-pack:

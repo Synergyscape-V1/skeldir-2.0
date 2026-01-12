@@ -143,6 +143,9 @@ Videos/
 
 # Local-only artifacts
 tmp/
+.tmp/
+artifacts/
+.hypothesis/
 backend/celerybeat-schedule.*
 docs/NUL
 NUL

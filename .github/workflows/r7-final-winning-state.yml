@@ -819,7 +819,7 @@ jobs:
 
           python scripts/r6/r6_context_gathering.py
 
-          base="docs/validation/runtime/R6_context_gathering/${GITHUB_SHA}"
+          base="docs/forensics/validation/runtime/R6_context_gathering/${GITHUB_SHA}"
           echo "R6_RUNTIME_SNAPSHOT_JSON_BEGIN"
           cat "$base/R6_CELERY_INSPECT_CONF.json"
           echo "R6_RUNTIME_SNAPSHOT_JSON_END"
@@ -844,7 +844,7 @@ jobs:
           import os
           from pathlib import Path
 
-          base = Path("docs/validation/runtime/R6_context_gathering") / os.environ["GITHUB_SHA"]
+          base = Path("docs/forensics/validation/runtime/R6_context_gathering") / os.environ["GITHUB_SHA"]
           env = json.loads((base / "R6_ENV_SNAPSHOT.json").read_text())
           conf = json.loads((base / "R6_CELERY_INSPECT_CONF.json").read_text())
           timeout = json.loads((base / "R6_PROBE_TIMEOUT.json").read_text())

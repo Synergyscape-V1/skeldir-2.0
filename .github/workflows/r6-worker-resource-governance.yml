@@ -138,7 +138,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base="docs/validation/runtime/R6_context_gathering/${{ github.sha }}"
+          base="docs/forensics/validation/runtime/R6_context_gathering/${{ github.sha }}"
           echo "R6_CELERY_REPORT_LOG_BEGIN"
           cat "$base/R6_CELERY_REPORT.log" || true
           echo "R6_CELERY_REPORT_LOG_END"
@@ -189,7 +189,7 @@ jobs:
           import sys
           from pathlib import Path
           sha = os.environ.get("GITHUB_SHA") or ""
-          base = Path("docs/validation/runtime/R6_context_gathering") / sha
+          base = Path("docs/forensics/validation/runtime/R6_context_gathering") / sha
           def read_json(name):
               path = base / name
               if not path.exists():
@@ -313,4 +313,4 @@ jobs:
           path: |
             r6_worker.log
             r6_probe.log
-            docs/validation/runtime/R6_context_gathering/${{ github.sha }}/
+            docs/forensics/validation/runtime/R6_context_gathering/${{ github.sha }}/

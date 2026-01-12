@@ -39,7 +39,7 @@ from app.services.revenue_reconciliation import (
 )
 
 EVIDENCE_JSON = Path("backend/validation/evidence/value_traces/value_01_summary.json")
-EVIDENCE_MD = Path("docs/evidence/value_traces/value_01_revenue_trace.md")
+EVIDENCE_MD = Path("docs/forensics/evidence/value_traces/value_01_revenue_trace.md")
 
 
 @pytest.mark.asyncio

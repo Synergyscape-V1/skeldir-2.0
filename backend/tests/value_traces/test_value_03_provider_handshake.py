@@ -44,7 +44,7 @@ from app.llm.budget_policy import (
 from app.core.money import MoneyCents
 
 EVIDENCE_JSON = Path("backend/validation/evidence/value_traces/value_03_summary.json")
-EVIDENCE_MD = Path("docs/evidence/value_traces/value_03_provider_handshake.md")
+EVIDENCE_MD = Path("docs/forensics/evidence/value_traces/value_03_provider_handshake.md")
 CONTRACT_PATH = Path("api-contracts/dist/openapi/v1/llm-explanations.bundled.yaml")
 ENDPOINT_PATH = "/api/v1/explain/{entity_type}/{entity_id}"
 

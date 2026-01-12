@@ -55,7 +55,7 @@
     "Authoritative artifact package generation"
   ],
   "deliverables_created": {
-    "summary_report": "docs/validation/runtime/r0_preflight_summary.md",
+    "summary_report": "docs/forensics/validation/runtime/r0_preflight_summary.md",
     "network_isolation_script": "scripts/r0/enforce_network_isolation.sh",
     "ci_workflow": ".github/workflows/r0-preflight-validation.yml",
     "artifacts_directory": "artifacts/runtime_preflight/2025-12-24_7650d094/"

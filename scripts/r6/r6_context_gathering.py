@@ -508,7 +508,7 @@ def main() -> int:
     if github_sha:
         print(f"R6_GITHUB_SHA={github_sha}")
     timestamp = _utc_now()
-    output_root = Path("docs/validation/runtime/R6_context_gathering")
+    output_root = Path("docs/forensics/validation/runtime/R6_context_gathering")
     output_dir = _ensure_output_dir(output_root, sha)
 
     worker_log_path = Path(os.getenv(WORKER_LOG_ENV, "r6_worker.log"))

@@ -1,0 +1,201 @@
+﻿# Forensics Evidence Index
+
+This index enumerates evidence packs stored under `docs/forensics/`.
+
+## Hygiene
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Hygiene | docs/forensics/evidence_hygiene_remediation_evidence.md | Evidence hygiene remediation proof pack | PR #15 / fa5d30c | pending |
+
+## Root evidence packs
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Pre-exec | docs/forensics/root/PRE_EXECUTION_VALIDATION.md | Pre-execution validation snapshot | unknown (legacy) | unknown |
+| B0.5.2 | docs/forensics/root/B0.5.2_Context_Inventory_Baseline.md | Context inventory baseline snapshot | unknown (legacy) | unknown |
+| B0.5.2 | docs/forensics/root/B0.5.2_REMEDIATION_EXECUTION_SUMMARY.md | Remediation execution summary | unknown (legacy) | unknown |
+| B0542 | docs/forensics/root/B0542_EVIDENCE_CLOSURE_PACK.md | Evidence closure pack | unknown (legacy) | unknown |
+| B0543 | docs/forensics/root/B0543_REMEDIATION_EVIDENCE_PACK.md | Remediation evidence pack | unknown (legacy) | unknown |
+| B0543 | docs/forensics/root/B0543_REMEDIATION_EVIDENCE_PACK_local_windows.md | Local Windows evidence pack | unknown (legacy) | unknown |
+| B0544 | docs/forensics/root/B0544_CONTEXT_DUMP.md | Context dump | unknown (legacy) | unknown |
+| B0544 | docs/forensics/root/B0544_EVIDENCE_PACK_local_windows.md | Local Windows evidence pack | unknown (legacy) | unknown |
+| B0544 | docs/forensics/root/B0544_PULSE_SCHEDULER_SUMMARY.md | Pulse scheduler summary | unknown (legacy) | unknown |
+| B0544 | docs/forensics/root/B0544_REMEDIATION_EVIDENCE_PACK_local_windows_v2.md | Local Windows evidence pack v2 | unknown (legacy) | unknown |
+| B0545 | docs/forensics/root/B0545_REMEDIATION_EVIDENCE_v2.md | Remediation evidence v2 | unknown (legacy) | unknown |
+| B0 | docs/forensics/root/B0_Implementation_Landscape_Local_Windows.md | Implementation landscape snapshot (Windows) | unknown (legacy) | unknown |
+| Briefing | docs/forensics/root/DIRECTOR_BRIEFING_VALIDATION_RESULTS.md | Director briefing validation results | unknown (legacy) | unknown |
+| Structural | docs/forensics/root/FORENSIC_STRUCTURAL_MAP.md | Structural map | unknown (legacy) | unknown |
+| Phase | docs/forensics/root/PHASE_EXECUTION_SUMMARY.md | Phase execution summary | unknown (legacy) | unknown |
+| Structural | docs/forensics/root/STRUCTURAL_HYPOTHESES_VALIDATION_REPORT.md | Hypotheses validation report | unknown (legacy) | unknown |
+| Structural | docs/forensics/root/STRUCTURAL_INVENTORY_INDEX.md | Structural inventory index | unknown (legacy) | unknown |
+
+## Evidence packs (docs/forensics/evidence)
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| EG-5 | docs/forensics/evidence/EG5_TEMPORAL_PARADOX.md | Temporal paradox gate evidence | unknown (legacy) | unknown |
+| B054 | docs/forensics/evidence/b054-forensic-readiness-evidence.md | Forensic readiness evidence | unknown (legacy) | unknown |
+| B0540 | docs/forensics/evidence/b0540-drift-remediation-preflight-evidence.md | Drift remediation preflight evidence | unknown (legacy) | unknown |
+| B0540 | docs/forensics/evidence/b0540_ci_truthlayer_evidence.md | CI truth layer evidence | unknown (legacy) | unknown |
+| B0541 | docs/forensics/evidence/b0541_soundness_readiness_evidence.md | Soundness readiness evidence | unknown (legacy) | unknown |
+| B0 | docs/forensics/evidence/b0_foundation_chain_green_state.md | Foundation chain green state | unknown (legacy) | unknown |
+| B0 | docs/forensics/evidence/b0_system_phase_soundness_audit.md | System phase soundness audit | unknown (legacy) | unknown |
+| Contract | docs/forensics/evidence/schema_contract_guard_evidence.md | Schema contract guard evidence | unknown (legacy) | unknown |
+| Proof pack | docs/forensics/evidence/value_trace_proof_pack.md | Value trace proof pack | unknown (legacy) | unknown |
+
+## Evidence value traces
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| VALUE_01 | docs/forensics/evidence/value_traces/value_01_revenue_trace.md | Value trace report | unknown (legacy) | unknown |
+| VALUE_02 | docs/forensics/evidence/value_traces/value_02_constraint_trace.md | Value trace report | unknown (legacy) | unknown |
+| VALUE_03 | docs/forensics/evidence/value_traces/value_03_provider_handshake.md | Value trace report | unknown (legacy) | unknown |
+| VALUE_04 | docs/forensics/evidence/value_traces/value_04_registry_trace.md | Value trace report | unknown (legacy) | unknown |
+
+## Backend evidence packs
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Backend B0.4 | docs/forensics/backend/B0.4 Local Codebase Context Report - Backend Engineer.md | Backend context report | unknown (legacy) | unknown |
+| Backend B0.5.1 | docs/forensics/backend/B0.5.1_Celery_Foundation_Execution_Summary.md | Celery foundation execution summary | unknown (legacy) | unknown |
+| Backend B0.5.1 | docs/forensics/backend/B0.5.1_Celery_Runbook.md | Celery runbook | unknown (legacy) | unknown |
+| Backend B0.5.1 | docs/forensics/backend/B0.5.1_EMPIRICAL_COMPLETION_EVIDENCE.md | Empirical completion evidence | unknown (legacy) | unknown |
+| Backend B0.5.1 | docs/forensics/backend/B0.5.1_EXECUTION_SUMMARY.md | Execution summary | unknown (legacy) | unknown |
+| Backend B0.5.1 | docs/forensics/backend/B0.5.1_Foundation_Forensic_Assessment.md | Foundation forensic assessment | unknown (legacy) | unknown |
+| Backend B0.5.1 | docs/forensics/backend/B0.5.1_VALIDATION_STATUS_REPORT.md | Validation status report | unknown (legacy) | unknown |
+| Backend B0.5.3 | docs/forensics/backend/B0.5.3.3_EXECUTIVE_SUMMARY.md | Executive summary | unknown (legacy) | unknown |
+| Backend B0.5.3 | docs/forensics/backend/B0.5.3_attribution_worker_notes.md | Attribution worker notes | unknown (legacy) | unknown |
+| Backend B0431 | docs/forensics/backend/B0431_REMEDIATION_SUMMARY.md | Remediation summary | unknown (legacy) | unknown |
+| Backend B0431 | docs/forensics/backend/B0431_REMEDIATION_SUMMARY_FINAL.md | Remediation summary (final) | unknown (legacy) | unknown |
+| Backend B043 | docs/forensics/backend/B043_COMPLETE_TECHNICAL_SUMMARY.md | Technical summary | unknown (legacy) | unknown |
+| Backend B043 | docs/forensics/backend/B043_EXECUTION_SUMMARY.md | Execution summary | unknown (legacy) | unknown |
+| Backend B044 | docs/forensics/backend/B044_EXECUTION_SUMMARY.md | Execution summary | unknown (legacy) | unknown |
+| Backend B046 | docs/forensics/backend/B046_EXECUTION_SUMMARY.md | Execution summary | unknown (legacy) | unknown |
+| Backend B0531 | docs/forensics/backend/b0531-queue-routing-dlq-evidence.md | Queue routing evidence | unknown (legacy) | unknown |
+| Backend B0531 | docs/forensics/backend/B0531_GAP_CLOSURE_EXECUTION_SUMMARY.md | Gap closure execution summary | unknown (legacy) | unknown |
+| Backend B0533 | docs/forensics/backend/B0533_EXECUTION_SUMMARY.md | Execution summary | unknown (legacy) | unknown |
+| Backend B0533 | docs/forensics/backend/b0533_revenue_input_evidence.md | Revenue input evidence | unknown (legacy) | unknown |
+| Backend B0533 | docs/forensics/backend/b0533_revenue_ledger_schema_ground_truth.md | Revenue ledger schema ground truth | unknown (legacy) | unknown |
+| Backend B0534 | docs/forensics/backend/B0534_WORKER_TENANT_ISOLATION_EVIDENCE.md | Worker tenant isolation evidence | unknown (legacy) | unknown |
+| Backend B0535 | docs/forensics/backend/B0535_1_CELERY_FORENSICS_BASELINE.md | Celery forensics baseline | unknown (legacy) | unknown |
+| Backend B0535 | docs/forensics/backend/B0535_1_CELERY_FORENSICS_BINARY_QUESTIONS.md | Celery forensics binary questions | unknown (legacy) | unknown |
+| Backend B0535 | docs/forensics/backend/B0535_1_CELERY_FORENSICS_FAILURE_TAXONOMY.md | Celery forensics failure taxonomy | unknown (legacy) | unknown |
+| Backend B0535 | docs/forensics/backend/B0535_1_CELERY_FORENSICS_IMPACT.md | Celery forensics impact | unknown (legacy) | unknown |
+| Backend B0535 | docs/forensics/backend/B0535_1_CELERY_FORENSICS_LOCAL_REPRO.md | Celery forensics local repro | unknown (legacy) | unknown |
+| Backend B0535 | docs/forensics/backend/B0535_1_CELERY_FORENSICS_RUN_INVENTORY.md | Celery forensics run inventory | unknown (legacy) | unknown |
+| Backend B0535 | docs/forensics/backend/B0535_READONLY_INGESTION_EVIDENCE.md | Readonly ingestion evidence | unknown (legacy) | unknown |
+| Backend B0536 | docs/forensics/backend/B0536_1_ASYNC_GUC_FIX_EVIDENCE.md | Async GUC fix evidence | unknown (legacy) | unknown |
+| Backend B0536 | docs/forensics/backend/B0536_1_FOUNDATION_RECOVERY_EVIDENCE.md | Foundation recovery evidence | unknown (legacy) | unknown |
+| Backend B0536 | docs/forensics/backend/B0536_DETERMINISTIC_TEST_VECTOR.md | Deterministic test vector | unknown (legacy) | unknown |
+| Backend B0536 | docs/forensics/backend/B0536_E2E_EVIDENCE.md | E2E evidence | unknown (legacy) | unknown |
+| Backend B0536 | docs/forensics/backend/B0536_E2E_HARNESS_TOPOLOGY.md | E2E harness topology | unknown (legacy) | unknown |
+| Backend B0536 | docs/forensics/backend/B0536_IDEMPOTENCY_BASELINE.md | Idempotency baseline | unknown (legacy) | unknown |
+| Backend B0536 | docs/forensics/backend/B0536_PIPELINE_TRACE.md | Pipeline trace | unknown (legacy) | unknown |
+| Backend B0541 | docs/forensics/backend/B0541_VIEW_REGISTRY_SUMMARY.md | View registry summary | unknown (legacy) | unknown |
+| Backend B0542 | docs/forensics/backend/B0542_REFRESH_EXECUTOR_SUMMARY.md | Refresh executor summary | unknown (legacy) | unknown |
+| Backend B0543 | docs/forensics/backend/B0543_TASK_LAYER_SUMMARY.md | Task layer summary | unknown (legacy) | unknown |
+| Backend B0543 | docs/forensics/backend/GH_ANALYSIS_B0543_VALIDATION.md | GH analysis validation | unknown (legacy) | unknown |
+
+## Backend API + runbooks
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Backend B0.4 | docs/forensics/backend/api/B0.4_INGESTION_SERVICE.md | Ingestion service reference | unknown (legacy) | unknown |
+| Backend B0.4 | docs/forensics/backend/runbooks/B0.4_INGESTION_TROUBLESHOOTING.md | Ingestion troubleshooting runbook | unknown (legacy) | unknown |
+
+## Backend validation evidence packs
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Validation | docs/forensics/backend/validation/EMPIRICAL_CHAIN.md | Phase gate chain snapshot | unknown (legacy) | unknown |
+| Validation | docs/forensics/backend/validation/EMPIRICAL_VALIDATION_STATUS.md | Validation status | unknown (legacy) | unknown |
+| Validation | docs/forensics/backend/validation/MANIFEST.md | Evidence manifest | unknown (legacy) | unknown |
+| Validation | docs/forensics/backend/validation/REMEDIATION_FINAL_STATUS.md | Remediation final status | unknown (legacy) | unknown |
+
+## Convergence evidence
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Convergence B0.2 | docs/forensics/convergence/B0.2/backend_evidence.md | Convergence backend evidence | unknown (legacy) | unknown |
+| Convergence B0.2 | docs/forensics/convergence/B0.2/CI_ORCHESTRATOR_STATUS.md | CI orchestrator status | unknown (legacy) | unknown |
+
+## Validation runtime evidence
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Runtime | docs/forensics/validation/runtime/context_gathering_summary.md | Runtime context gathering summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r0_preflight_summary.md | R0 preflight summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r1_summary.md | R1 summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/R2_EXECUTION_SUMMARY.md | R2 execution summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r2_summary.md | R2 summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r3_summary.md | R3 summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r4_summary.md | R4 summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r5_context_gathering_summary.md | R5 context gathering summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r5_summary.md | R5 summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r6_summary.md | R6 summary | unknown (legacy) | unknown |
+| Runtime | docs/forensics/validation/runtime/r7_summary.md | R7 summary | unknown (legacy) | unknown |
+| Runtime R6 | docs/forensics/validation/runtime/R6_context_gathering/2b0236c802b0017a50c93903c330e23d49078013/R6_GAP_REPORT.md | R6 gap report | unknown (legacy) | unknown |
+| Runtime R6 | docs/forensics/validation/runtime/R6_context_gathering/2b0236c802b0017a50c93903c330e23d49078013/R6_TASK_GOVERNANCE_MATRIX.md | R6 task governance matrix | unknown (legacy) | unknown |
+| Runtime R6 | docs/forensics/validation/runtime/R6_context_gathering/540b1eab47622080a2d4447e674af8d7b3c6b0b6/R6_GAP_REPORT.md | R6 gap report | unknown (legacy) | unknown |
+| Runtime R6 | docs/forensics/validation/runtime/R6_context_gathering/540b1eab47622080a2d4447e674af8d7b3c6b0b6/R6_TASK_GOVERNANCE_MATRIX.md | R6 task governance matrix | unknown (legacy) | unknown |
+| Runtime R6 | docs/forensics/validation/runtime/R6_context_gathering/c7abcf220dc96f0029baa701341b1e6def10cbb5/R6_GAP_REPORT.md | R6 gap report | unknown (legacy) | unknown |
+| Runtime R6 | docs/forensics/validation/runtime/R6_context_gathering/c7abcf220dc96f0029baa701341b1e6def10cbb5/R6_TASK_GOVERNANCE_MATRIX.md | R6 task governance matrix | unknown (legacy) | unknown |
+
+## Archive evidence
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Archive | docs/forensics/archive/ARCHITECTURAL_GAPS_REMEDIATION.md | Legacy remediation record | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/BUNDLING_MANIFEST_FIX.md | Bundling manifest fix | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/CONTRACT_ARTIFACTS_README.md | Contract artifacts archive | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/CONTRACT_ENFORCEMENT_SUMMARY.md | Contract enforcement summary | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/EMPIRICAL_VALIDATION_ACTION_PLAN.md | Empirical validation action plan | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/FRONTEND_IMPLEMENTATION_SPECIFICATION.md | Frontend implementation specification | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/FUNCTIONAL_REQUIREMENTS_FORENSIC_ANALYSIS.md | Functional requirements forensic analysis | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/IMPLEMENTATION_COMPLETE.md | Implementation complete record | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/INVESTIGATORY_ANSWERS.md | Investigatory answers | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/OPERATIONAL_GATES_IMPLEMENTATION_COMPLETE.md | Operational gates implementation complete | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/OPERATIONAL_VALIDATION_REPORT.md | Operational validation report | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/PHASE_EXIT_GATE_STATUS_MATRIX.md | Phase exit gate status matrix | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/PYDANTIC_PIPELINE_IMPLEMENTATION_SUMMARY.md | Pydantic pipeline implementation summary | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/README.md | Archive index | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/REMEDIATION_EXECUTIVE_SUMMARY.md | Remediation executive summary | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/REPLIT_BASELINE_VALIDATION.md | Replit baseline validation | unknown (legacy) | unknown |
+| Archive | docs/forensics/archive/completed-phases/B0.1-B0.3_EVALUATION_ANSWERS.md | Completed phase evaluation answers | unknown (legacy) | unknown |
+| Archive B0.1 | docs/forensics/archive/completed-phases/b0.1/B0.1_API_CONTRACT_DEFINITION_EVALUATION.md | API contract definition evaluation | unknown (legacy) | unknown |
+| Archive B0.1 | docs/forensics/archive/completed-phases/b0.1/B0.1_EMPIRICAL_SUBSTANTIATION_RESPONSE.md | Empirical substantiation response | unknown (legacy) | unknown |
+| Archive B0.1 | docs/forensics/archive/completed-phases/b0.1/B0.1_PHASE_FORENSIC_EVALUATION_RESPONSE.md | Phase forensic evaluation response | unknown (legacy) | unknown |
+| Archive B0.3 | docs/forensics/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_ANSWERS.md | Forensic analysis answers | unknown (legacy) | unknown |
+| Archive B0.3 | docs/forensics/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_BILLY_ALEX.md | Forensic analysis (Billy/Alex) | unknown (legacy) | unknown |
+| Archive B0.3 | docs/forensics/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_COMPLETE.md | Forensic analysis complete | unknown (legacy) | unknown |
+| Archive B0.3 | docs/forensics/archive/completed-phases/b0.3/B0.3_FORENSIC_ANALYSIS_RESPONSE.md | Forensic analysis response | unknown (legacy) | unknown |
+
+## Deployment + implementation evidence
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| Deployment | docs/forensics/deployment/GITHUB_DEPLOYMENT_SUMMARY.md | Deployment summary | unknown (legacy) | unknown |
+| Implementation | docs/forensics/implementation/contract-enforcement-validation-report.md | Contract enforcement validation report | unknown (legacy) | unknown |
+
+## DB evidence
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| DB B0.4 | docs/forensics/db/B0.4_BASELINE_CONTEXT_SYNTHESIS.md | DB baseline context synthesis | unknown (legacy) | unknown |
+
+## Legacy artifact evidence (artifacts_vt_run3)
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| VALUE_01 | docs/forensics/artifacts_vt_run3/phase-VALUE_01/EMPIRICAL_CHAIN.md | Empirical chain snapshot | unknown (legacy) | unknown |
+| VALUE_01 | docs/forensics/artifacts_vt_run3/phase-VALUE_01/EMPIRICAL_VALIDATION_STATUS.md | Validation status | unknown (legacy) | unknown |
+| VALUE_01 | docs/forensics/artifacts_vt_run3/phase-VALUE_01/MANIFEST.md | Evidence manifest | unknown (legacy) | unknown |
+| VALUE_01 | docs/forensics/artifacts_vt_run3/phase-VALUE_01/REMEDIATION_FINAL_STATUS.md | Remediation final status | unknown (legacy) | unknown |
+| VALUE_02 | docs/forensics/artifacts_vt_run3/phase-VALUE_02/EMPIRICAL_CHAIN.md | Empirical chain snapshot | unknown (legacy) | unknown |
+| VALUE_02 | docs/forensics/artifacts_vt_run3/phase-VALUE_02/EMPIRICAL_VALIDATION_STATUS.md | Validation status | unknown (legacy) | unknown |
+| VALUE_02 | docs/forensics/artifacts_vt_run3/phase-VALUE_02/MANIFEST.md | Evidence manifest | unknown (legacy) | unknown |
+| VALUE_02 | docs/forensics/artifacts_vt_run3/phase-VALUE_02/REMEDIATION_FINAL_STATUS.md | Remediation final status | unknown (legacy) | unknown |
+| VALUE_03 | docs/forensics/artifacts_vt_run3/phase-VALUE_03/EMPIRICAL_CHAIN.md | Empirical chain snapshot | unknown (legacy) | unknown |
+| VALUE_03 | docs/forensics/artifacts_vt_run3/phase-VALUE_03/EMPIRICAL_VALIDATION_STATUS.md | Validation status | unknown (legacy) | unknown |
+| VALUE_03 | docs/forensics/artifacts_vt_run3/phase-VALUE_03/MANIFEST.md | Evidence manifest | unknown (legacy) | unknown |
+| VALUE_03 | docs/forensics/artifacts_vt_run3/phase-VALUE_03/REMEDIATION_FINAL_STATUS.md | Remediation final status | unknown (legacy) | unknown |
+| VALUE_04 | docs/forensics/artifacts_vt_run3/phase-VALUE_04/EMPIRICAL_CHAIN.md | Empirical chain snapshot | unknown (legacy) | unknown |
+| VALUE_04 | docs/forensics/artifacts_vt_run3/phase-VALUE_04/EMPIRICAL_VALIDATION_STATUS.md | Validation status | unknown (legacy) | unknown |
+| VALUE_04 | docs/forensics/artifacts_vt_run3/phase-VALUE_04/MANIFEST.md | Evidence manifest | unknown (legacy) | unknown |
+| VALUE_04 | docs/forensics/artifacts_vt_run3/phase-VALUE_04/REMEDIATION_FINAL_STATUS.md | Remediation final status | unknown (legacy) | unknown |
+
+## Proof pack (CI-generated)
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| EG-5 | docs/forensics/proof_pack/value_trace_proof_pack.md | CI-generated proof pack (human-readable) | CI-generated | CI-generated |
+
+
+
