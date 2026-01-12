@@ -2,7 +2,7 @@
 
 ## Repo Pin
 ```text
-f03b8bc2a881fe8d102e40e190793ca7c9b10af2
+7e54364a4fc327085de91ad6b013b6ede5446628
 b055-phase3-worker-stubs
 ```
 
@@ -248,7 +248,7 @@ C:\Python311\Lib\asyncio\windows_events.py:854: in _poll
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x0000019C24EFC4B0>
+trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x00000286F166C4B0>
 
     def finish_connect(trans, key, ov):
 >       ov.getresult()
@@ -374,7 +374,7 @@ C:\Python311\Lib\asyncio\windows_events.py:854: in _poll
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x0000019C24DCC330>
+trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x00000286F153C330>
 
     def finish_connect(trans, key, ov):
 >       ov.getresult()
@@ -500,7 +500,7 @@ C:\Python311\Lib\asyncio\windows_events.py:854: in _poll
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x0000019C24EFC9F0>
+trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x00000286F166C9F0>
 
     def finish_connect(trans, key, ov):
 >       ov.getresult()
@@ -626,7 +626,7 @@ C:\Python311\Lib\asyncio\windows_events.py:854: in _poll
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x0000019C24C731B0>
+trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x00000286F13E31B0>
 
     def finish_connect(trans, key, ov):
 >       ov.getresult()
@@ -752,7 +752,7 @@ C:\Python311\Lib\asyncio\windows_events.py:854: in _poll
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x0000019C24EFC630>
+trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x00000286F166C630>
 
     def finish_connect(trans, key, ov):
 >       ov.getresult()
@@ -859,7 +859,7 @@ C:\Python311\Lib\asyncio\windows_events.py:854: in _poll
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
-trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x0000019C24EFC9F0>
+trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x00000286F166C9F0>
 
     def finish_connect(trans, key, ov):
 >       ov.getresult()
@@ -878,7 +878,7 @@ ERROR tests\test_b055_llm_worker_stubs.py::test_llm_investigation_stub_writes_jo
 ERROR tests\test_b055_llm_worker_stubs.py::test_llm_budget_stub_writes_job - ...
 ERROR tests\test_b055_llm_worker_stubs.py::test_llm_stub_rls_blocks_cross_tenant_reads
 ERROR tests\test_b055_llm_worker_stubs.py::test_llm_explanation_stub_writes_api_call
-================= 1 failed, 129 warnings, 5 errors in 15.42s ==================
+================= 1 failed, 129 warnings, 5 errors in 14.76s ==================
 ```
 
 ## Diff Summary
@@ -894,12 +894,15 @@ A	backend/app/workers/__init__.py
 A	backend/app/workers/llm.py
 A	backend/tests/test_b055_llm_model_parity.py
 A	backend/tests/test_b055_llm_worker_stubs.py
+M	docs/forensics/INDEX.md
+A	docs/forensics/evidence/b055/b055_phase3_worker_stubs_evidence.md
 ```
 
 ## Chain of Custody
 ```text
 git log --oneline --decorate -n 10
-f03b8bc (HEAD -> b055-phase3-worker-stubs, origin/b055-phase3-worker-stubs) B055 Phase3: add LLM worker stubs, ORM models, and tests
+7e54364 (HEAD -> b055-phase3-worker-stubs, origin/b055-phase3-worker-stubs) B055 Phase3: add evidence pack
+f03b8bc B055 Phase3: add LLM worker stubs, ORM models, and tests
 7e313c8 (origin/main, origin/HEAD, main) Merge pull request #16 from Muk223/b055-phase2-queue-constantization
 aface84 (origin/b055-phase2-queue-constantization, b055-phase2-queue-constantization) B055 Phase2: record CI run + PR link
 9490dca CI: guard missing LLM payload contract test
@@ -918,6 +921,7 @@ origin	https://github.com/Muk223/skeldir-2.0.git (push)
 ```text
 PR: https://github.com/Muk223/skeldir-2.0/pull/17
 Branch: b055-phase3-worker-stubs
-Commit: f03b8bc2a881fe8d102e40e190793ca7c9b10af2
+Commit (HEAD): 7e54364a4fc327085de91ad6b013b6ede5446628
+Commit (code): f03b8bc2a881fe8d102e40e190793ca7c9b10af2
 CI: pending (not visible locally)
 ```
