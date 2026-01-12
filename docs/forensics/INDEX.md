@@ -7,6 +7,11 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | --- | --- | --- | --- | --- |
 | Hygiene | docs/forensics/evidence_hygiene_remediation_evidence.md | Evidence hygiene remediation proof pack | PR #15 / fa5d30c | pending |
 
+## Phase remediation evidence
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| B055 Phase 3 v2 | docs/forensics/b055_phase3_remediation_v2_integrity_evidence.md | Phase 3 integrity remediation evidence pack | PR #17 / 93b58be | pending |
+
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
 | --- | --- | --- | --- | --- |
