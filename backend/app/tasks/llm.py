@@ -44,11 +44,13 @@ def _run_async(coro_factory, *args, **kwargs):
 @tenant_task
 def llm_routing_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
     correlation = correlation_id or str(uuid4())
-    model = LLMTaskPayload(
-        tenant_id=tenant_id,
-        correlation_id=correlation,
-        prompt=payload,
-        max_cost_cents=max_cost_cents,
+    model = LLMTaskPayload.model_validate(
+        {
+            "tenant_id": tenant_id,
+            "correlation_id": correlation,
+            "prompt": payload,
+            "max_cost_cents": max_cost_cents,
+        }
     )
     correlation = _prepare_context(model)
     logger.info(
@@ -62,11 +64,13 @@ def llm_routing_worker(self, payload: dict, tenant_id: UUID, correlation_id: Opt
 @tenant_task
 def llm_explanation_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
     correlation = correlation_id or str(uuid4())
-    model = LLMTaskPayload(
-        tenant_id=tenant_id,
-        correlation_id=correlation,
-        prompt=payload,
-        max_cost_cents=max_cost_cents,
+    model = LLMTaskPayload.model_validate(
+        {
+            "tenant_id": tenant_id,
+            "correlation_id": correlation,
+            "prompt": payload,
+            "max_cost_cents": max_cost_cents,
+        }
     )
     correlation = _prepare_context(model)
     logger.info(
@@ -80,11 +84,13 @@ def llm_explanation_worker(self, payload: dict, tenant_id: UUID, correlation_id:
 @tenant_task
 def llm_investigation_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
     correlation = correlation_id or str(uuid4())
-    model = LLMTaskPayload(
-        tenant_id=tenant_id,
-        correlation_id=correlation,
-        prompt=payload,
-        max_cost_cents=max_cost_cents,
+    model = LLMTaskPayload.model_validate(
+        {
+            "tenant_id": tenant_id,
+            "correlation_id": correlation,
+            "prompt": payload,
+            "max_cost_cents": max_cost_cents,
+        }
     )
     correlation = _prepare_context(model)
     logger.info(
@@ -98,11 +104,13 @@ def llm_investigation_worker(self, payload: dict, tenant_id: UUID, correlation_i
 @tenant_task
 def llm_budget_optimization_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
     correlation = correlation_id or str(uuid4())
-    model = LLMTaskPayload(
-        tenant_id=tenant_id,
-        correlation_id=correlation,
-        prompt=payload,
-        max_cost_cents=max_cost_cents,
+    model = LLMTaskPayload.model_validate(
+        {
+            "tenant_id": tenant_id,
+            "correlation_id": correlation,
+            "prompt": payload,
+            "max_cost_cents": max_cost_cents,
+        }
     )
     correlation = _prepare_context(model)
     logger.info(
