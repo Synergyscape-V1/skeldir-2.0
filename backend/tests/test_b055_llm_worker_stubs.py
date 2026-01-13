@@ -165,6 +165,43 @@ async def test_llm_explanation_stub_writes_api_call(test_tenant):
 
 
 @pytest.mark.asyncio
+async def test_llm_explanation_idempotency_prevents_duplicate_audit_rows(test_tenant):
+    _assert_postgres_engine()
+    request_id = str(uuid4())
+    payload = LLMTaskPayload(
+        tenant_id=test_tenant,
+        correlation_id=str(uuid4()),
+        request_id=request_id,
+        prompt={"stub": True},
+        max_cost_cents=0,
+    )
+
+    async with get_session(tenant_id=test_tenant) as session:
+        await generate_explanation(payload, session=session)
+    async with get_session(tenant_id=test_tenant) as session:
+        await generate_explanation(payload, session=session)
+
+    async with get_session(tenant_id=test_tenant) as session:
+        api_calls = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == request_id,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().all()
+        assert len(api_calls) == 1, "Idempotency failed: duplicate llm_api_calls rows"
+
+        monthly = (
+            await session.execute(
+                select(LLMMonthlyCost).where(LLMMonthlyCost.tenant_id == test_tenant)
+            )
+        ).scalars().one()
+        assert monthly.total_calls == 1, "Idempotency failed: monthly costs double-counted"
+
+
+@pytest.mark.asyncio
 async def test_llm_monthly_costs_concurrent_updates_are_atomic(test_tenant):
     _assert_postgres_engine()
     increment = 7

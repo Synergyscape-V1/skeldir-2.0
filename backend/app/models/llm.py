@@ -62,6 +62,12 @@ class LLMApiCall(Base):
         CheckConstraint("output_tokens >= 0", name="ck_llm_api_calls_output_tokens_positive"),
         CheckConstraint("cost_cents >= 0", name="ck_llm_api_calls_cost_cents_positive"),
         CheckConstraint("latency_ms >= 0", name="ck_llm_api_calls_latency_ms_positive"),
+        UniqueConstraint(
+            "tenant_id",
+            "request_id",
+            "endpoint",
+            name="uq_llm_api_calls_tenant_request_endpoint",
+        ),
     )
 
 
