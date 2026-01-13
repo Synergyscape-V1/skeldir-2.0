@@ -157,6 +157,7 @@ Covered by the same Phase 3 test suite output above (atomicity, concurrency, RLS
 - PR: https://github.com/Muk223/skeldir-2.0/pull/18
 - CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/20966812220
 - CI jobs: CI + R5: Determinism + Scaling Proof (green)
+- Post-merge main CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/20967066505
 
 ## EG-G Scope/Hygiene
 ```
