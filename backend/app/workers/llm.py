@@ -11,11 +11,10 @@ from datetime import date, datetime, timezone
 from typing import Any, Dict
 from uuid import UUID, uuid4
 
-from sqlalchemy import Integer, Text, cast, func, literal
+from sqlalchemy import Integer, Text, cast, func, literal, select
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_session
 from app.models.llm import (
     BudgetOptimizationJob,
     Investigation,
@@ -42,32 +41,54 @@ def _month_start_utc() -> date:
     return date(now.year, now.month, 1)
 
 
-async def _record_api_call(
+async def _claim_api_call(
     session: AsyncSession,
     *,
     model: LLMTaskPayload,
     endpoint: str,
     request_id: str,
     correlation_id: str,
-) -> LLMApiCall:
-    api_call = LLMApiCall(
-        tenant_id=model.tenant_id,
-        endpoint=endpoint,
-        model=_STUB_MODEL,
-        input_tokens=0,
-        output_tokens=0,
-        cost_cents=0,
-        latency_ms=0,
-        was_cached=False,
-        request_metadata={
-            "stubbed": True,
-            "request_id": request_id,
-            "correlation_id": correlation_id,
-        },
+) -> tuple[UUID, bool]:
+    insert_stmt = (
+        insert(LLMApiCall)
+        .values(
+            tenant_id=model.tenant_id,
+            endpoint=endpoint,
+            request_id=request_id,
+            model=_STUB_MODEL,
+            input_tokens=0,
+            output_tokens=0,
+            cost_cents=0,
+            latency_ms=0,
+            was_cached=False,
+            request_metadata={
+                "stubbed": True,
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+            },
+        )
+        .on_conflict_do_nothing(
+            index_elements=["tenant_id", "request_id", "endpoint"]
+        )
+        .returning(LLMApiCall.id)
     )
-    session.add(api_call)
-    await session.flush()
-    return api_call
+    result = await session.execute(insert_stmt)
+    inserted_id = result.scalar_one_or_none()
+    if inserted_id is not None:
+        return inserted_id, True
+
+    existing_id = (
+        await session.execute(
+            select(LLMApiCall.id).where(
+                LLMApiCall.tenant_id == model.tenant_id,
+                LLMApiCall.request_id == request_id,
+                LLMApiCall.endpoint == endpoint,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_id is None:
+        raise RuntimeError("idempotency guard failed to locate existing llm_api_calls row")
+    return existing_id, False
 
 
 def _build_model_breakdown_update(
@@ -132,29 +153,37 @@ async def record_monthly_costs(
 
 async def route_request(
     model: LLMTaskPayload,
+    session: AsyncSession,
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
     request_id = _resolve_request_id(model)
     correlation_id = _resolve_correlation_id(model)
-    async with get_session(tenant_id=model.tenant_id) as session:
-        async with session.begin_nested():
-            api_call = await _record_api_call(
-                session,
-                model=model,
-                endpoint="app.tasks.llm.route",
-                request_id=request_id,
-                correlation_id=correlation_id,
-            )
-            if force_failure:
-                raise RuntimeError("forced failure after api call")
-            await record_monthly_costs(
-                session,
-                tenant_id=model.tenant_id,
-                model_label=_STUB_MODEL,
-                cost_cents=0,
-                calls=1,
-            )
+    async with session.begin_nested():
+        api_call_id, claimed = await _claim_api_call(
+            session,
+            model=model,
+            endpoint="app.tasks.llm.route",
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
+        if not claimed:
+            return {
+                "status": "accepted",
+                "route": "noop",
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+                "api_call_id": str(api_call_id),
+            }
+        if force_failure:
+            raise RuntimeError("forced failure after api call")
+        await record_monthly_costs(
+            session,
+            tenant_id=model.tenant_id,
+            model_label=_STUB_MODEL,
+            cost_cents=0,
+            calls=1,
+        )
 
     logger.info(
         "llm_route_stubbed",
@@ -171,35 +200,43 @@ async def route_request(
         "route": "noop",
         "request_id": request_id,
         "correlation_id": correlation_id,
-        "api_call_id": str(api_call.id),
+        "api_call_id": str(api_call_id),
     }
 
 
 async def generate_explanation(
     model: LLMTaskPayload,
+    session: AsyncSession,
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
     request_id = _resolve_request_id(model)
     correlation_id = _resolve_correlation_id(model)
-    async with get_session(tenant_id=model.tenant_id) as session:
-        async with session.begin_nested():
-            api_call = await _record_api_call(
-                session,
-                model=model,
-                endpoint="app.tasks.llm.explanation",
-                request_id=request_id,
-                correlation_id=correlation_id,
-            )
-            if force_failure:
-                raise RuntimeError("forced failure after api call")
-            await record_monthly_costs(
-                session,
-                tenant_id=model.tenant_id,
-                model_label=_STUB_MODEL,
-                cost_cents=0,
-                calls=1,
-            )
+    async with session.begin_nested():
+        api_call_id, claimed = await _claim_api_call(
+            session,
+            model=model,
+            endpoint="app.tasks.llm.explanation",
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
+        if not claimed:
+            return {
+                "status": "accepted",
+                "explanation": "not-implemented",
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+                "api_call_id": str(api_call_id),
+            }
+        if force_failure:
+            raise RuntimeError("forced failure after api call")
+        await record_monthly_costs(
+            session,
+            tenant_id=model.tenant_id,
+            model_label=_STUB_MODEL,
+            cost_cents=0,
+            calls=1,
+        )
 
     logger.info(
         "llm_explanation_stubbed",
@@ -216,44 +253,61 @@ async def generate_explanation(
         "explanation": "not-implemented",
         "request_id": request_id,
         "correlation_id": correlation_id,
-        "api_call_id": str(api_call.id),
+        "api_call_id": str(api_call_id),
     }
 
 
 async def run_investigation(
     model: LLMTaskPayload,
+    session: AsyncSession,
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
     request_id = _resolve_request_id(model)
     correlation_id = _resolve_correlation_id(model)
-    async with get_session(tenant_id=model.tenant_id) as session:
-        async with session.begin_nested():
-            api_call = await _record_api_call(
-                session,
-                model=model,
-                endpoint="app.tasks.llm.investigation",
-                request_id=request_id,
-                correlation_id=correlation_id,
-            )
-            if force_failure:
-                raise RuntimeError("forced failure after api call")
-            investigation = Investigation(
-                tenant_id=model.tenant_id,
-                query=f"stubbed:{request_id}",
-                status="completed",
-                result={"status": "stubbed", "request_id": request_id},
-                cost_cents=0,
-            )
-            session.add(investigation)
-            await session.flush()
-            await record_monthly_costs(
-                session,
-                tenant_id=model.tenant_id,
-                model_label=_STUB_MODEL,
-                cost_cents=0,
-                calls=1,
-            )
+    async with session.begin_nested():
+        api_call_id, claimed = await _claim_api_call(
+            session,
+            model=model,
+            endpoint="app.tasks.llm.investigation",
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
+        if not claimed:
+            existing_id = (
+                await session.execute(
+                    select(Investigation.id).where(
+                        Investigation.tenant_id == model.tenant_id,
+                        Investigation.query == f"stubbed:{request_id}",
+                    )
+                )
+            ).scalar_one_or_none()
+            return {
+                "status": "accepted",
+                "investigation": "queued",
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+                "api_call_id": str(api_call_id),
+                "investigation_id": str(existing_id) if existing_id else None,
+            }
+        if force_failure:
+            raise RuntimeError("forced failure after api call")
+        investigation = Investigation(
+            tenant_id=model.tenant_id,
+            query=f"stubbed:{request_id}",
+            status="completed",
+            result={"status": "stubbed", "request_id": request_id},
+            cost_cents=0,
+        )
+        session.add(investigation)
+        await session.flush()
+        await record_monthly_costs(
+            session,
+            tenant_id=model.tenant_id,
+            model_label=_STUB_MODEL,
+            cost_cents=0,
+            calls=1,
+        )
 
     logger.info(
         "llm_investigation_stubbed",
@@ -270,44 +324,61 @@ async def run_investigation(
         "investigation": "queued",
         "request_id": request_id,
         "correlation_id": correlation_id,
-        "api_call_id": str(api_call.id),
+        "api_call_id": str(api_call_id),
         "investigation_id": str(investigation.id),
     }
 
 
 async def optimize_budget(
     model: LLMTaskPayload,
+    session: AsyncSession,
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
     request_id = _resolve_request_id(model)
     correlation_id = _resolve_correlation_id(model)
-    async with get_session(tenant_id=model.tenant_id) as session:
-        async with session.begin_nested():
-            api_call = await _record_api_call(
-                session,
-                model=model,
-                endpoint="app.tasks.llm.budget_optimization",
-                request_id=request_id,
-                correlation_id=correlation_id,
-            )
-            if force_failure:
-                raise RuntimeError("forced failure after api call")
-            job = BudgetOptimizationJob(
-                tenant_id=model.tenant_id,
-                status="completed",
-                recommendations={"status": "stubbed", "request_id": request_id},
-                cost_cents=0,
-            )
-            session.add(job)
-            await session.flush()
-            await record_monthly_costs(
-                session,
-                tenant_id=model.tenant_id,
-                model_label=_STUB_MODEL,
-                cost_cents=0,
-                calls=1,
-            )
+    async with session.begin_nested():
+        api_call_id, claimed = await _claim_api_call(
+            session,
+            model=model,
+            endpoint="app.tasks.llm.budget_optimization",
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
+        if not claimed:
+            existing_id = (
+                await session.execute(
+                    select(BudgetOptimizationJob.id).where(
+                        BudgetOptimizationJob.tenant_id == model.tenant_id,
+                        BudgetOptimizationJob.recommendations["request_id"].astext == request_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            return {
+                "status": "accepted",
+                "budget_action": "noop",
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+                "api_call_id": str(api_call_id),
+                "budget_job_id": str(existing_id) if existing_id else None,
+            }
+        if force_failure:
+            raise RuntimeError("forced failure after api call")
+        job = BudgetOptimizationJob(
+            tenant_id=model.tenant_id,
+            status="completed",
+            recommendations={"status": "stubbed", "request_id": request_id},
+            cost_cents=0,
+        )
+        session.add(job)
+        await session.flush()
+        await record_monthly_costs(
+            session,
+            tenant_id=model.tenant_id,
+            model_label=_STUB_MODEL,
+            cost_cents=0,
+            calls=1,
+        )
 
     logger.info(
         "llm_budget_stubbed",
@@ -324,6 +395,6 @@ async def optimize_budget(
         "budget_action": "noop",
         "request_id": request_id,
         "correlation_id": correlation_id,
-        "api_call_id": str(api_call.id),
+        "api_call_id": str(api_call_id),
         "budget_job_id": str(job.id),
     }

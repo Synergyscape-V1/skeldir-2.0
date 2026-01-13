@@ -10,6 +10,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from app.celery_app import celery_app
+from app.db.session import get_session
 from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.tasks.context import run_in_worker_loop, tenant_task
@@ -42,12 +43,21 @@ def _run_async(coro_factory, *args, **kwargs):
     default_retry_delay=30,
 )
 @tenant_task
-def llm_routing_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
+def llm_routing_worker(
+    self,
+    payload: dict,
+    tenant_id: UUID,
+    correlation_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    max_cost_cents: int = 0,
+):
     correlation = correlation_id or str(uuid4())
+    request_id = request_id or self.request.id or str(uuid4())
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
             "correlation_id": correlation,
+            "request_id": request_id,
             "prompt": payload,
             "max_cost_cents": max_cost_cents,
         }
@@ -57,17 +67,30 @@ def llm_routing_worker(self, payload: dict, tenant_id: UUID, correlation_id: Opt
         "llm_routing_stub",
         extra={"task_id": self.request.id, "tenant_id": str(model.tenant_id), "correlation_id": correlation, "max_cost_cents": model.max_cost_cents},
     )
-    return _run_async(route_request, model)
+    async def _execute():
+        async with get_session(tenant_id=model.tenant_id) as session:
+            return await route_request(model, session=session)
+
+    return _run_async(_execute)
 
 
 @celery_app.task(bind=True, name="app.tasks.llm.explanation", max_retries=3, default_retry_delay=30)
 @tenant_task
-def llm_explanation_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
+def llm_explanation_worker(
+    self,
+    payload: dict,
+    tenant_id: UUID,
+    correlation_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    max_cost_cents: int = 0,
+):
     correlation = correlation_id or str(uuid4())
+    request_id = request_id or self.request.id or str(uuid4())
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
             "correlation_id": correlation,
+            "request_id": request_id,
             "prompt": payload,
             "max_cost_cents": max_cost_cents,
         }
@@ -77,17 +100,30 @@ def llm_explanation_worker(self, payload: dict, tenant_id: UUID, correlation_id:
         "llm_explanation_stub",
         extra={"task_id": self.request.id, "tenant_id": str(model.tenant_id), "correlation_id": correlation, "max_cost_cents": model.max_cost_cents},
     )
-    return _run_async(generate_explanation, model)
+    async def _execute():
+        async with get_session(tenant_id=model.tenant_id) as session:
+            return await generate_explanation(model, session=session)
+
+    return _run_async(_execute)
 
 
 @celery_app.task(bind=True, name="app.tasks.llm.investigation", max_retries=3, default_retry_delay=30)
 @tenant_task
-def llm_investigation_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
+def llm_investigation_worker(
+    self,
+    payload: dict,
+    tenant_id: UUID,
+    correlation_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    max_cost_cents: int = 0,
+):
     correlation = correlation_id or str(uuid4())
+    request_id = request_id or self.request.id or str(uuid4())
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
             "correlation_id": correlation,
+            "request_id": request_id,
             "prompt": payload,
             "max_cost_cents": max_cost_cents,
         }
@@ -97,17 +133,30 @@ def llm_investigation_worker(self, payload: dict, tenant_id: UUID, correlation_i
         "llm_investigation_stub",
         extra={"task_id": self.request.id, "tenant_id": str(model.tenant_id), "correlation_id": correlation, "max_cost_cents": model.max_cost_cents},
     )
-    return _run_async(run_investigation, model)
+    async def _execute():
+        async with get_session(tenant_id=model.tenant_id) as session:
+            return await run_investigation(model, session=session)
+
+    return _run_async(_execute)
 
 
 @celery_app.task(bind=True, name="app.tasks.llm.budget_optimization", max_retries=3, default_retry_delay=30)
 @tenant_task
-def llm_budget_optimization_worker(self, payload: dict, tenant_id: UUID, correlation_id: Optional[str] = None, max_cost_cents: int = 0):
+def llm_budget_optimization_worker(
+    self,
+    payload: dict,
+    tenant_id: UUID,
+    correlation_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    max_cost_cents: int = 0,
+):
     correlation = correlation_id or str(uuid4())
+    request_id = request_id or self.request.id or str(uuid4())
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
             "correlation_id": correlation,
+            "request_id": request_id,
             "prompt": payload,
             "max_cost_cents": max_cost_cents,
         }
@@ -117,4 +166,8 @@ def llm_budget_optimization_worker(self, payload: dict, tenant_id: UUID, correla
         "llm_budget_stub",
         extra={"task_id": self.request.id, "tenant_id": str(model.tenant_id), "correlation_id": correlation, "max_cost_cents": model.max_cost_cents},
     )
-    return _run_async(optimize_budget, model)
+    async def _execute():
+        async with get_session(tenant_id=model.tenant_id) as session:
+            return await optimize_budget(model, session=session)
+
+    return _run_async(_execute)

@@ -79,10 +79,14 @@ jobs:
               -c max_wal_senders=0 \
               -c wal_level=minimal
 
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             status="$(podman inspect -f '{{.State.Health.Status}}' r5-postgres 2>/dev/null || true)"
             if [ "$status" = "healthy" ]; then
               echo "postgres_healthy=1"
+              exit 0
+            fi
+            if podman exec r5-postgres pg_isready -U r5_admin -d r5 >/dev/null 2>&1; then
+              echo "postgres_ready=1"
               exit 0
             fi
             sleep 2

@@ -44,14 +44,13 @@ async def test_llm_stub_atomic_writes_roll_back_on_failure(test_tenant):
     )
 
     with pytest.raises(RuntimeError, match="forced failure"):
-        await route_request(payload, force_failure=True)
+        async with get_session(tenant_id=test_tenant) as session:
+            await route_request(payload, session=session, force_failure=True)
 
     async with get_session(tenant_id=test_tenant) as session:
         api_calls = (
             await session.execute(
-                select(LLMApiCall).where(
-                    LLMApiCall.request_metadata["request_id"].astext == request_id
-                )
+                select(LLMApiCall).where(LLMApiCall.request_id == request_id)
             )
         ).scalars().all()
         assert not api_calls, "Atomicity failed: api call persisted after failure"
@@ -67,7 +66,8 @@ async def test_llm_stub_atomic_writes_roll_back_on_failure(test_tenant):
 @pytest.mark.asyncio
 async def test_llm_route_stub_writes_audit_rows(test_tenant):
     payload = _build_payload(test_tenant)
-    result = await route_request(payload)
+    async with get_session(tenant_id=test_tenant) as session:
+        result = await route_request(payload, session=session)
 
     async with get_session(tenant_id=test_tenant) as session:
         api_call = await session.get(LLMApiCall, UUID(result["api_call_id"]))
@@ -87,7 +87,8 @@ async def test_llm_route_stub_writes_audit_rows(test_tenant):
 @pytest.mark.asyncio
 async def test_llm_investigation_stub_writes_job(test_tenant):
     payload = _build_payload(test_tenant)
-    result = await run_investigation(payload)
+    async with get_session(tenant_id=test_tenant) as session:
+        result = await run_investigation(payload, session=session)
 
     async with get_session(tenant_id=test_tenant) as session:
         investigation = await session.get(Investigation, UUID(result["investigation_id"]))
@@ -99,7 +100,8 @@ async def test_llm_investigation_stub_writes_job(test_tenant):
 @pytest.mark.asyncio
 async def test_llm_budget_stub_writes_job(test_tenant):
     payload = _build_payload(test_tenant)
-    result = await optimize_budget(payload)
+    async with get_session(tenant_id=test_tenant) as session:
+        result = await optimize_budget(payload, session=session)
 
     async with get_session(tenant_id=test_tenant) as session:
         job = await session.get(BudgetOptimizationJob, UUID(result["budget_job_id"]))
@@ -113,7 +115,8 @@ async def test_llm_stub_rls_blocks_cross_tenant_reads(test_tenant_pair):
     _assert_postgres_engine()
     tenant_a, tenant_b = test_tenant_pair
     payload = _build_payload(tenant_a)
-    result = await run_investigation(payload)
+    async with get_session(tenant_id=tenant_a) as session:
+        result = await run_investigation(payload, session=session)
     investigation_id = UUID(result["investigation_id"])
 
     async with engine.begin() as conn:
@@ -152,7 +155,8 @@ async def test_llm_stub_rls_blocks_cross_tenant_reads(test_tenant_pair):
 @pytest.mark.asyncio
 async def test_llm_explanation_stub_writes_api_call(test_tenant):
     payload = _build_payload(test_tenant)
-    result = await generate_explanation(payload)
+    async with get_session(tenant_id=test_tenant) as session:
+        result = await generate_explanation(payload, session=session)
 
     async with get_session(tenant_id=test_tenant) as session:
         api_call = await session.get(LLMApiCall, UUID(result["api_call_id"]))
@@ -187,3 +191,40 @@ async def test_llm_monthly_costs_concurrent_updates_are_atomic(test_tenant):
         ).scalars().one()
         assert row.total_cost_cents == increment * calls
         assert row.total_calls == calls
+
+
+@pytest.mark.asyncio
+async def test_llm_route_idempotency_prevents_duplicate_audit_rows(test_tenant):
+    _assert_postgres_engine()
+    request_id = str(uuid4())
+    payload = LLMTaskPayload(
+        tenant_id=test_tenant,
+        correlation_id=str(uuid4()),
+        request_id=request_id,
+        prompt={"stub": True},
+        max_cost_cents=0,
+    )
+
+    async with get_session(tenant_id=test_tenant) as session:
+        await route_request(payload, session=session)
+    async with get_session(tenant_id=test_tenant) as session:
+        await route_request(payload, session=session)
+
+    async with get_session(tenant_id=test_tenant) as session:
+        api_calls = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == request_id,
+                    LLMApiCall.endpoint == "app.tasks.llm.route",
+                )
+            )
+        ).scalars().all()
+        assert len(api_calls) == 1, "Idempotency failed: duplicate llm_api_calls rows"
+
+        monthly = (
+            await session.execute(
+                select(LLMMonthlyCost).where(LLMMonthlyCost.tenant_id == test_tenant)
+            )
+        ).scalars().one()
+        assert monthly.total_calls == 1, "Idempotency failed: monthly costs double-counted"
