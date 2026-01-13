@@ -3,7 +3,7 @@
 ## Repo Pin
 ```
 branch: b055-phase3-eg9-topology-idempotency-remediation
-candidate_sha: ddf7e9990c95628e5f9d54cf305ea8b649b665ca
+candidate_sha: 214a98d3a1423ac3d1d3166097d8a6cbfef5a6de
 status:
 (clean)
 ```
@@ -64,17 +64,17 @@ backend/tests/test_b052_queue_topology_and_dlq.py::TestQueueTopology::test_queue
 ```
 
 ### CI topology proof (Test Backend job)
-Run: https://github.com/Muk223/skeldir-2.0/actions/runs/20966579788
+Run: https://github.com/Muk223/skeldir-2.0/actions/runs/20966812220
 ```
-Test Backend  Run tests  2026-01-13T17:40:01.8598814Z 
+Test Backend  Run tests  2026-01-13T17:48:04.1567801Z 
 tests/test_b052_queue_topology_and_dlq.py::TestQueueTopology::test_explicit_queues_defined PASSED [ 20%]
-Test Backend  Run tests  2026-01-13T17:40:01.8607742Z 
+Test Backend  Run tests  2026-01-13T17:48:04.1577032Z 
 tests/test_b052_queue_topology_and_dlq.py::TestQueueTopology::test_task_routing_rules_defined PASSED [ 40%]
-Test Backend  Run tests  2026-01-13T17:40:01.8638714Z 
+Test Backend  Run tests  2026-01-13T17:48:04.1609532Z 
 tests/test_b052_queue_topology_and_dlq.py::TestQueueTopology::test_llm_task_routes_via_router PASSED [ 60%]
-Test Backend  Run tests  2026-01-13T17:40:01.8688127Z 
+Test Backend  Run tests  2026-01-13T17:48:04.1662857Z 
 tests/test_b052_queue_topology_and_dlq.py::TestQueueTopology::test_task_names_stable PASSED [ 80%]
-Test Backend  Run tests  2026-01-13T17:40:02.0309400Z 
+Test Backend  Run tests  2026-01-13T17:48:04.3404648Z 
 tests/test_b052_queue_topology_and_dlq.py::TestQueueTopology::test_queue_routing_deterministic PASSED [100%]
 ```
 
@@ -136,17 +136,17 @@ backend/tests/test_b055_llm_model_parity.py::test_llm_models_reflection_parity P
 ```
 
 ### CI idempotency + integrity proof (Celery Foundation job)
-Run: https://github.com/Muk223/skeldir-2.0/actions/runs/20966579788
+Run: https://github.com/Muk223/skeldir-2.0/actions/runs/20966812220
 ```
-Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:41:11.3951606Z 
+Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:49:08.9130528Z 
 tests/test_b055_llm_worker_stubs.py::test_llm_stub_atomic_writes_roll_back_on_failure PASSED [ 73%]
-Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:41:12.0199563Z 
+Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:49:09.5463634Z 
 tests/test_b055_llm_worker_stubs.py::test_llm_stub_rls_blocks_cross_tenant_reads PASSED [ 86%]
-Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:41:12.4674295Z 
+Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:49:10.0039763Z 
 tests/test_b055_llm_worker_stubs.py::test_llm_monthly_costs_concurrent_updates_are_atomic PASSED [ 93%]
-Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:41:12.6419260Z 
+Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:49:10.1826194Z 
 tests/test_b055_llm_worker_stubs.py::test_llm_route_idempotency_prevents_duplicate_audit_rows PASSED [ 96%]
-Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:41:16.6712982Z 
+Celery Foundation B0.5.1  Run Celery foundation tests  2026-01-13T17:49:14.2483660Z 
 tests/test_b055_llm_model_parity.py::test_llm_models_reflection_parity PASSED [100%]
 ```
 
@@ -155,7 +155,7 @@ Covered by the same Phase 3 test suite output above (atomicity, concurrency, RLS
 
 ## EG-F CI Adjudication (pass)
 - PR: https://github.com/Muk223/skeldir-2.0/pull/18
-- CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/20966579788
+- CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/20966812220
 - CI jobs: CI + R5: Determinism + Scaling Proof (green)
 
 ## EG-G Scope/Hygiene

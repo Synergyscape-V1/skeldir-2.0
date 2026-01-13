@@ -11,8 +11,8 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
 | --- | --- | --- | --- | --- |
 | B055 Phase 3 v2 | docs/forensics/b055_phase3_remediation_v2_integrity_evidence.md | Phase 3 integrity remediation evidence pack | PR #17 / 93b58be | pending |
-| B055 Phase 3 EG9 context | docs/forensics/b055_phase3_eg9_topology_idempotency_context.md | Pre-remediation topology/DI/idempotency baseline | PR #18 / ddf7e99 | https://github.com/Muk223/skeldir-2.0/actions/runs/20966579788 |
-| B055 Phase 3 EG9 remediation | docs/forensics/b055_phase3_eg9_topology_idempotency_remediation_evidence.md | EG9/Topology/Idempotency remediation evidence | PR #18 / ddf7e99 | https://github.com/Muk223/skeldir-2.0/actions/runs/20966579788 |
+| B055 Phase 3 EG9 context | docs/forensics/b055_phase3_eg9_topology_idempotency_context.md | Pre-remediation topology/DI/idempotency baseline | PR #18 / 214a98d | https://github.com/Muk223/skeldir-2.0/actions/runs/20966812220 |
+| B055 Phase 3 EG9 remediation | docs/forensics/b055_phase3_eg9_topology_idempotency_remediation_evidence.md | EG9/Topology/Idempotency remediation evidence | PR #18 / 214a98d | https://github.com/Muk223/skeldir-2.0/actions/runs/20966812220 |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
@@ -204,6 +204,5 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
 | --- | --- | --- | --- | --- |
 | EG-5 | docs/forensics/proof_pack/value_trace_proof_pack.md | CI-generated proof pack (human-readable) | CI-generated | CI-generated |
-
 
 
