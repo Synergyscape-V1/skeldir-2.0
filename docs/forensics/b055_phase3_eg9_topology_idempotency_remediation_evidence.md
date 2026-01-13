@@ -3,11 +3,9 @@
 ## Repo Pin
 ```
 branch: b055-phase3-eg9-topology-idempotency-remediation
-HEAD: eb423d9a624ab2f9ef429d56a69d683e8db0d23a
+HEAD: a6cbff9aa0c9f6fdc3595c421c93f2c1a09c7c41
 status:
- M docs/forensics/INDEX.md
-?? docs/forensics/b055_phase3_eg9_topology_idempotency_context.md
-?? docs/forensics/b055_phase3_eg9_topology_idempotency_remediation_evidence.md
+(clean)
 ```
 
 ## EG-A Worker Purity (no get_session in workers)
@@ -133,9 +131,12 @@ Covered by the same Phase 3 test suite output above (atomicity, concurrency, RLS
 ## EG-G Scope/Hygiene
 ```
 git diff --name-status origin/main...HEAD
-M	alembic/versions/004_llm_subsystem/202601131610_add_llm_api_call_idempotency.py
+A	alembic/versions/004_llm_subsystem/202601131610_add_llm_api_call_idempotency.py
 M	backend/app/models/llm.py
 M	backend/app/tasks/llm.py
 M	backend/app/workers/llm.py
 M	backend/tests/test_b055_llm_worker_stubs.py
+M	docs/forensics/INDEX.md
+A	docs/forensics/b055_phase3_eg9_topology_idempotency_context.md
+A	docs/forensics/b055_phase3_eg9_topology_idempotency_remediation_evidence.md
 ```
