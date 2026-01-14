@@ -433,6 +433,8 @@ jobs:
           # Two-step approach: first core_schema parent, then skeldir_foundation merge
           alembic upgrade 202511131121
           alembic upgrade skeldir_foundation@head
+          # Phase 3 requires full migrated DB state for constraints/idempotency proofs
+          alembic upgrade head
 
       - name: Start Celery worker
         run: |

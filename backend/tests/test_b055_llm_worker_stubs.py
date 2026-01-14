@@ -37,6 +37,34 @@ class RetryCapture(RuntimeError):
 
 
 @pytest.mark.asyncio
+async def test_llm_api_calls_unique_constraint_present():
+    _assert_postgres_engine()
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT
+                    con.conname AS name,
+                    array_agg(att.attname ORDER BY att.attname) AS columns
+                FROM pg_constraint con
+                JOIN pg_class rel ON rel.oid = con.conrelid
+                JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+                JOIN unnest(con.conkey) WITH ORDINALITY AS cols(attnum, ord) ON true
+                JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = cols.attnum
+                WHERE con.contype = 'u'
+                  AND con.conname = 'uq_llm_api_calls_tenant_request_endpoint'
+                  AND rel.relname = 'llm_api_calls'
+                  AND nsp.nspname = 'public'
+                GROUP BY con.conname
+                """
+            )
+        )
+        row = result.mappings().first()
+        assert row is not None, "Missing unique constraint uq_llm_api_calls_tenant_request_endpoint"
+        assert set(row["columns"]) == {"tenant_id", "request_id", "endpoint"}
+
+
+@pytest.mark.asyncio
 async def test_llm_stub_atomic_writes_roll_back_on_failure(test_tenant):
     _assert_postgres_engine()
     request_id = str(uuid4())
@@ -78,7 +106,11 @@ async def test_llm_route_stub_writes_audit_rows(test_tenant):
         api_call = await session.get(LLMApiCall, UUID(result["api_call_id"]))
         assert api_call is not None
         assert api_call.tenant_id == test_tenant
+        assert api_call.endpoint == "app.tasks.llm.route"
+        assert api_call.model == "llm_stub"
         assert api_call.cost_cents == 0
+        assert api_call.request_metadata is not None
+        assert api_call.request_metadata.get("stubbed") is True
 
         monthly = (
             await session.execute(
@@ -167,6 +199,11 @@ async def test_llm_explanation_stub_writes_api_call(test_tenant):
         api_call = await session.get(LLMApiCall, UUID(result["api_call_id"]))
         assert api_call is not None
         assert api_call.tenant_id == test_tenant
+        assert api_call.endpoint == "app.tasks.llm.explanation"
+        assert api_call.model == "llm_stub"
+        assert api_call.request_metadata is not None
+        assert api_call.request_metadata.get("stubbed") is True
+
 
 
 @pytest.mark.asyncio
