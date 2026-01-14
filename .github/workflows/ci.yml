@@ -388,6 +388,8 @@ jobs:
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_METRICS_PORT: 9546
       CELERY_METRICS_ADDR: 127.0.0.1
+      B055_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/b055_evidence_bundle
+      B055_PR_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -412,6 +414,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      - name: Initialize B055 evidence bundle directory
+        run: |
+          mkdir -p "$B055_EVIDENCE_DIR/LOGS"
+
       - name: Prepare database and role
         run: |
           echo "Creating database roles and skeldir_validation database..."
@@ -429,12 +435,18 @@ jobs:
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
         run: |
-          # B0.5.3.2: Upgrade to skeldir_foundation (core attribution schema + celery foundation)
-          # Two-step approach: first core_schema parent, then skeldir_foundation merge
-          alembic upgrade 202511131121
-          alembic upgrade skeldir_foundation@head
-          # Phase 3 requires full migrated DB state for constraints/idempotency proofs
-          alembic upgrade head
+          set -euo pipefail
+          {
+            # B0.5.3.2: Upgrade to skeldir_foundation (core attribution schema + celery foundation)
+            # Two-step approach: first core_schema parent, then skeldir_foundation merge
+            echo "[B055] Alembic upgrade 202511131121"
+            alembic upgrade 202511131121
+            echo "[B055] Alembic upgrade skeldir_foundation@head"
+            alembic upgrade skeldir_foundation@head
+            # Phase 3 requires full migrated DB state for constraints/idempotency proofs
+            echo "[B055] Alembic upgrade head"
+            alembic upgrade head
+          } | tee "$B055_EVIDENCE_DIR/LOGS/migrations.log"
 
       - name: Start Celery worker
         run: |
@@ -487,12 +499,13 @@ jobs:
           CELERY_RESULT_BACKEND: ${{ env.CELERY_RESULT_BACKEND }}
         run: |
           cd backend
-            pytest \
-              tests/test_b051_celery_foundation.py \
-              tests/test_b052_queue_topology_and_dlq.py \
-              tests/test_b0532_window_idempotency.py \
-              tests/test_b055_llm_worker_stubs.py \
-              tests/test_b055_llm_model_parity.py -q
+          set -euo pipefail
+          pytest \
+            tests/test_b051_celery_foundation.py \
+            tests/test_b052_queue_topology_and_dlq.py \
+            tests/test_b0532_window_idempotency.py \
+            tests/test_b055_llm_worker_stubs.py \
+            tests/test_b055_llm_model_parity.py -q | tee "$B055_EVIDENCE_DIR/LOGS/pytest_b055.log"
 
       - name: Upload observability evidence artifacts
         if: always()
@@ -500,6 +513,27 @@ jobs:
         with:
           name: b052-observability-evidence
           path: evidence/
+          retention-days: 90
+
+      - name: Generate B055 evidence bundle
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          python scripts/ci/b055_evidence_bundle.py generate --bundle-dir "$B055_EVIDENCE_DIR"
+
+      - name: Validate B055 evidence manifest
+        run: |
+          python scripts/ci/b055_evidence_bundle.py validate --bundle-dir "$B055_EVIDENCE_DIR"
+
+      - name: List B055 evidence bundle contents
+        run: |
+          find "$B055_EVIDENCE_DIR" -type f | sort
+
+      - name: Upload B055 evidence bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: b055-evidence-bundle-${{ env.B055_PR_HEAD_SHA }}
+          path: ${{ env.B055_EVIDENCE_DIR }}
           retention-days: 90
 
       - name: Stop Celery worker
