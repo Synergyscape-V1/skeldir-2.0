@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 from app.db.session import engine, get_session
 from app.models.llm import BudgetOptimizationJob, Investigation, LLMApiCall, LLMMonthlyCost
 from app.schemas.llm_payloads import LLMTaskPayload
+from app.tasks.llm import llm_explanation_worker
 from app.workers.llm import (
     generate_explanation,
     optimize_budget,
@@ -29,6 +30,38 @@ def _build_payload(tenant_id: UUID) -> LLMTaskPayload:
 
 def _assert_postgres_engine() -> None:
     assert engine.dialect.name == "postgresql", "RLS tests must run on Postgres"
+
+
+class RetryCapture(RuntimeError):
+    pass
+
+
+@pytest.mark.asyncio
+async def test_llm_api_calls_unique_constraint_present():
+    _assert_postgres_engine()
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT
+                    con.conname AS name,
+                    array_agg(att.attname ORDER BY att.attname) AS columns
+                FROM pg_constraint con
+                JOIN pg_class rel ON rel.oid = con.conrelid
+                JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+                JOIN unnest(con.conkey) WITH ORDINALITY AS cols(attnum, ord) ON true
+                JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = cols.attnum
+                WHERE con.contype = 'u'
+                  AND con.conname = 'uq_llm_api_calls_tenant_request_endpoint'
+                  AND rel.relname = 'llm_api_calls'
+                  AND nsp.nspname = 'public'
+                GROUP BY con.conname
+                """
+            )
+        )
+        row = result.mappings().first()
+        assert row is not None, "Missing unique constraint uq_llm_api_calls_tenant_request_endpoint"
+        assert set(row["columns"]) == {"tenant_id", "request_id", "endpoint"}
 
 
 @pytest.mark.asyncio
@@ -73,7 +106,11 @@ async def test_llm_route_stub_writes_audit_rows(test_tenant):
         api_call = await session.get(LLMApiCall, UUID(result["api_call_id"]))
         assert api_call is not None
         assert api_call.tenant_id == test_tenant
+        assert api_call.endpoint == "app.tasks.llm.route"
+        assert api_call.model == "llm_stub"
         assert api_call.cost_cents == 0
+        assert api_call.request_metadata is not None
+        assert api_call.request_metadata.get("stubbed") is True
 
         monthly = (
             await session.execute(
@@ -162,6 +199,95 @@ async def test_llm_explanation_stub_writes_api_call(test_tenant):
         api_call = await session.get(LLMApiCall, UUID(result["api_call_id"]))
         assert api_call is not None
         assert api_call.tenant_id == test_tenant
+        assert api_call.endpoint == "app.tasks.llm.explanation"
+        assert api_call.model == "llm_stub"
+        assert api_call.request_metadata is not None
+        assert api_call.request_metadata.get("stubbed") is True
+
+
+
+@pytest.mark.asyncio
+async def test_llm_explanation_idempotency_prevents_duplicate_audit_rows(test_tenant):
+    _assert_postgres_engine()
+    request_id = str(uuid4())
+    payload = LLMTaskPayload(
+        tenant_id=test_tenant,
+        correlation_id=str(uuid4()),
+        request_id=request_id,
+        prompt={"stub": True},
+        max_cost_cents=0,
+    )
+
+    async with get_session(tenant_id=test_tenant) as session:
+        await generate_explanation(payload, session=session)
+    async with get_session(tenant_id=test_tenant) as session:
+        await generate_explanation(payload, session=session)
+
+    async with get_session(tenant_id=test_tenant) as session:
+        api_calls = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == request_id,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().all()
+        assert len(api_calls) == 1, "Idempotency failed: duplicate llm_api_calls rows"
+
+        monthly = (
+            await session.execute(
+                select(LLMMonthlyCost).where(LLMMonthlyCost.tenant_id == test_tenant)
+            )
+        ).scalars().one()
+        assert monthly.total_calls == 1, "Idempotency failed: monthly costs double-counted"
+
+
+@pytest.mark.asyncio
+async def test_llm_explanation_retry_preserves_request_id_when_omitted(test_tenant, monkeypatch):
+    _assert_postgres_engine()
+    payload = {"stub": True}
+    captured = {}
+
+    def _fake_retry(*, kwargs=None, **_):
+        captured["kwargs"] = kwargs or {}
+        raise RetryCapture("retry")
+
+    monkeypatch.setattr(llm_explanation_worker, "retry", _fake_retry, raising=True)
+
+    with pytest.raises(RetryCapture, match="retry"):
+        llm_explanation_worker.run(
+            payload,
+            tenant_id=test_tenant,
+            max_cost_cents=0,
+            force_failure=True,
+        )
+
+    retry_kwargs = captured["kwargs"]
+    assert retry_kwargs.get("request_id"), "Retry kwargs missing request_id"
+    assert retry_kwargs.get("correlation_id"), "Retry kwargs missing correlation_id"
+
+    llm_explanation_worker.run(**retry_kwargs)
+    llm_explanation_worker.run(**retry_kwargs)
+
+    async with get_session(tenant_id=test_tenant) as session:
+        api_calls = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == retry_kwargs["request_id"],
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().all()
+        assert len(api_calls) == 1, "Retry idempotency failed: duplicate llm_api_calls rows"
+
+        monthly = (
+            await session.execute(
+                select(LLMMonthlyCost).where(LLMMonthlyCost.tenant_id == test_tenant)
+            )
+        ).scalars().one()
+        assert monthly.total_calls == 1, "Retry idempotency failed: monthly costs double-counted"
 
 
 @pytest.mark.asyncio

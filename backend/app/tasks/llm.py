@@ -5,6 +5,7 @@ These tasks are deterministic, enforce tenant context, and record basic metadata
 for routing/explanation/investigation/budget workflows without invoking LLMs.
 """
 
+import hashlib
 import logging
 from typing import Optional
 from uuid import UUID, uuid4
@@ -35,6 +36,40 @@ def _run_async(coro_factory, *args, **kwargs):
     return run_in_worker_loop(coro_factory(*args, **kwargs))
 
 
+def _stable_request_id(tenant_id: UUID, endpoint: str, correlation_id: str) -> str:
+    seed = f"{tenant_id}:{endpoint}:{correlation_id}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+
+def _resolve_request_context(
+    *,
+    tenant_id: UUID,
+    endpoint: str,
+    correlation_id: Optional[str],
+    request_id: Optional[str],
+) -> tuple[str, str]:
+    correlation = correlation_id or str(uuid4())
+    request = request_id or _stable_request_id(tenant_id, endpoint, correlation)
+    return correlation, request
+
+
+def _retry_kwargs(
+    *,
+    payload: dict,
+    tenant_id: UUID,
+    correlation_id: str,
+    request_id: str,
+    max_cost_cents: int,
+) -> dict:
+    return {
+        "payload": payload,
+        "tenant_id": tenant_id,
+        "correlation_id": correlation_id,
+        "request_id": request_id,
+        "max_cost_cents": max_cost_cents,
+    }
+
+
 @celery_app.task(
     bind=True,
     name="app.tasks.llm.route",
@@ -50,9 +85,14 @@ def llm_routing_worker(
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
+    force_failure: bool = False,
 ):
-    correlation = correlation_id or str(uuid4())
-    request_id = request_id or self.request.id or str(uuid4())
+    correlation, request_id = _resolve_request_context(
+        tenant_id=tenant_id,
+        endpoint="app.tasks.llm.route",
+        correlation_id=correlation_id,
+        request_id=request_id,
+    )
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
@@ -69,9 +109,21 @@ def llm_routing_worker(
     )
     async def _execute():
         async with get_session(tenant_id=model.tenant_id) as session:
-            return await route_request(model, session=session)
+            return await route_request(model, session=session, force_failure=force_failure)
 
-    return _run_async(_execute)
+    try:
+        return _run_async(_execute)
+    except Exception as exc:
+        raise self.retry(
+            exc=exc,
+            kwargs=_retry_kwargs(
+                payload=payload,
+                tenant_id=tenant_id,
+                correlation_id=correlation,
+                request_id=request_id,
+                max_cost_cents=max_cost_cents,
+            ),
+        )
 
 
 @celery_app.task(bind=True, name="app.tasks.llm.explanation", max_retries=3, default_retry_delay=30)
@@ -83,9 +135,14 @@ def llm_explanation_worker(
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
+    force_failure: bool = False,
 ):
-    correlation = correlation_id or str(uuid4())
-    request_id = request_id or self.request.id or str(uuid4())
+    correlation, request_id = _resolve_request_context(
+        tenant_id=tenant_id,
+        endpoint="app.tasks.llm.explanation",
+        correlation_id=correlation_id,
+        request_id=request_id,
+    )
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
@@ -102,9 +159,25 @@ def llm_explanation_worker(
     )
     async def _execute():
         async with get_session(tenant_id=model.tenant_id) as session:
-            return await generate_explanation(model, session=session)
+            return await generate_explanation(
+                model,
+                session=session,
+                force_failure=force_failure,
+            )
 
-    return _run_async(_execute)
+    try:
+        return _run_async(_execute)
+    except Exception as exc:
+        raise self.retry(
+            exc=exc,
+            kwargs=_retry_kwargs(
+                payload=payload,
+                tenant_id=tenant_id,
+                correlation_id=correlation,
+                request_id=request_id,
+                max_cost_cents=max_cost_cents,
+            ),
+        )
 
 
 @celery_app.task(bind=True, name="app.tasks.llm.investigation", max_retries=3, default_retry_delay=30)
@@ -116,9 +189,14 @@ def llm_investigation_worker(
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
+    force_failure: bool = False,
 ):
-    correlation = correlation_id or str(uuid4())
-    request_id = request_id or self.request.id or str(uuid4())
+    correlation, request_id = _resolve_request_context(
+        tenant_id=tenant_id,
+        endpoint="app.tasks.llm.investigation",
+        correlation_id=correlation_id,
+        request_id=request_id,
+    )
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
@@ -135,9 +213,25 @@ def llm_investigation_worker(
     )
     async def _execute():
         async with get_session(tenant_id=model.tenant_id) as session:
-            return await run_investigation(model, session=session)
+            return await run_investigation(
+                model,
+                session=session,
+                force_failure=force_failure,
+            )
 
-    return _run_async(_execute)
+    try:
+        return _run_async(_execute)
+    except Exception as exc:
+        raise self.retry(
+            exc=exc,
+            kwargs=_retry_kwargs(
+                payload=payload,
+                tenant_id=tenant_id,
+                correlation_id=correlation,
+                request_id=request_id,
+                max_cost_cents=max_cost_cents,
+            ),
+        )
 
 
 @celery_app.task(bind=True, name="app.tasks.llm.budget_optimization", max_retries=3, default_retry_delay=30)
@@ -149,9 +243,14 @@ def llm_budget_optimization_worker(
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
+    force_failure: bool = False,
 ):
-    correlation = correlation_id or str(uuid4())
-    request_id = request_id or self.request.id or str(uuid4())
+    correlation, request_id = _resolve_request_context(
+        tenant_id=tenant_id,
+        endpoint="app.tasks.llm.budget_optimization",
+        correlation_id=correlation_id,
+        request_id=request_id,
+    )
     model = LLMTaskPayload.model_validate(
         {
             "tenant_id": tenant_id,
@@ -168,6 +267,22 @@ def llm_budget_optimization_worker(
     )
     async def _execute():
         async with get_session(tenant_id=model.tenant_id) as session:
-            return await optimize_budget(model, session=session)
+            return await optimize_budget(
+                model,
+                session=session,
+                force_failure=force_failure,
+            )
 
-    return _run_async(_execute)
+    try:
+        return _run_async(_execute)
+    except Exception as exc:
+        raise self.retry(
+            exc=exc,
+            kwargs=_retry_kwargs(
+                payload=payload,
+                tenant_id=tenant_id,
+                correlation_id=correlation,
+                request_id=request_id,
+                max_cost_cents=max_cost_cents,
+            ),
+        )
