@@ -7,9 +7,11 @@ These workers write tenant-scoped records with cost=0 and never call providers.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
+import hashlib
+import json
 from typing import Any, Dict
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import Integer, Text, cast, func, literal, select
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, insert
@@ -28,17 +30,37 @@ logger = logging.getLogger(__name__)
 _STUB_MODEL = "llm_stub"
 
 
-def _resolve_request_id(model: LLMTaskPayload) -> str:
-    return model.request_id or str(uuid4())
+def _stable_fallback_id(model: LLMTaskPayload, endpoint: str, label: str) -> str:
+    payload = {
+        "tenant_id": str(model.tenant_id),
+        "endpoint": endpoint,
+        "correlation_id": model.correlation_id,
+        "request_id": model.request_id,
+        "prompt": model.prompt,
+    }
+    seed = json.dumps(payload, sort_keys=True, default=str)
+    digest = hashlib.sha256(f"{label}:{seed}".encode("utf-8")).hexdigest()
+    return digest
 
 
-def _resolve_correlation_id(model: LLMTaskPayload) -> str:
-    return model.correlation_id or str(uuid4())
+def _resolve_request_id(model: LLMTaskPayload, endpoint: str) -> str:
+    if model.request_id:
+        return model.request_id
+    if model.correlation_id:
+        return model.correlation_id
+    return _stable_fallback_id(model, endpoint, "request_id")
+
+
+def _resolve_correlation_id(model: LLMTaskPayload, endpoint: str) -> str:
+    if model.correlation_id:
+        return model.correlation_id
+    if model.request_id:
+        return model.request_id
+    return _stable_fallback_id(model, endpoint, "correlation_id")
 
 
 def _month_start_utc() -> date:
-    now = datetime.now(timezone.utc)
-    return date(now.year, now.month, 1)
+    return date(1970, 1, 1)
 
 
 async def _claim_api_call(
@@ -157,8 +179,8 @@ async def route_request(
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
-    request_id = _resolve_request_id(model)
-    correlation_id = _resolve_correlation_id(model)
+    request_id = _resolve_request_id(model, "app.tasks.llm.route")
+    correlation_id = _resolve_correlation_id(model, "app.tasks.llm.route")
     async with session.begin_nested():
         api_call_id, claimed = await _claim_api_call(
             session,
@@ -210,8 +232,8 @@ async def generate_explanation(
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
-    request_id = _resolve_request_id(model)
-    correlation_id = _resolve_correlation_id(model)
+    request_id = _resolve_request_id(model, "app.tasks.llm.explanation")
+    correlation_id = _resolve_correlation_id(model, "app.tasks.llm.explanation")
     async with session.begin_nested():
         api_call_id, claimed = await _claim_api_call(
             session,
@@ -263,8 +285,8 @@ async def run_investigation(
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
-    request_id = _resolve_request_id(model)
-    correlation_id = _resolve_correlation_id(model)
+    request_id = _resolve_request_id(model, "app.tasks.llm.investigation")
+    correlation_id = _resolve_correlation_id(model, "app.tasks.llm.investigation")
     async with session.begin_nested():
         api_call_id, claimed = await _claim_api_call(
             session,
@@ -335,8 +357,8 @@ async def optimize_budget(
     *,
     force_failure: bool = False,
 ) -> Dict[str, Any]:
-    request_id = _resolve_request_id(model)
-    correlation_id = _resolve_correlation_id(model)
+    request_id = _resolve_request_id(model, "app.tasks.llm.budget_optimization")
+    correlation_id = _resolve_correlation_id(model, "app.tasks.llm.budget_optimization")
     async with session.begin_nested():
         api_call_id, claimed = await _claim_api_call(
             session,

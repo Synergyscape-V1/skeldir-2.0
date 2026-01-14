@@ -10,7 +10,6 @@ import functools
 import logging
 import threading
 import time
-import uuid
 from typing import Any, Awaitable, Callable, Optional
 from uuid import UUID
 
@@ -117,7 +116,7 @@ def tenant_task(task_fn: Callable) -> Callable:
             raise ValueError("tenant_id is required for tenant-scoped tasks")
 
         tenant_uuid = _normalize_tenant_id(tenant_id_value)
-        correlation_id = kwargs.get("correlation_id") or str(uuid.uuid4())
+        correlation_id = kwargs.get("correlation_id") or getattr(self.request, "id", None) or "unknown"
 
         set_tenant_id(tenant_uuid)
         set_request_correlation_id(correlation_id)

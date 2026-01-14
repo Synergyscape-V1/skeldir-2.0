@@ -8,7 +8,7 @@ for routing/explanation/investigation/budget workflows without invoking LLMs.
 import hashlib
 import logging
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from app.celery_app import celery_app
 from app.db.session import get_session
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def _prepare_context(model: LLMTaskPayload) -> str:
-    correlation = model.correlation_id or str(uuid4())
+    correlation = model.correlation_id or model.request_id or "unknown"
     set_request_correlation_id(correlation)
     set_tenant_id(model.tenant_id)
     return correlation
@@ -47,8 +47,9 @@ def _resolve_request_context(
     endpoint: str,
     correlation_id: Optional[str],
     request_id: Optional[str],
+    task_id: Optional[str],
 ) -> tuple[str, str]:
-    correlation = correlation_id or str(uuid4())
+    correlation = correlation_id or request_id or task_id or "unknown"
     request = request_id or _stable_request_id(tenant_id, endpoint, correlation)
     return correlation, request
 
@@ -92,6 +93,7 @@ def llm_routing_worker(
         endpoint="app.tasks.llm.route",
         correlation_id=correlation_id,
         request_id=request_id,
+        task_id=getattr(self.request, "id", None),
     )
     model = LLMTaskPayload.model_validate(
         {
@@ -142,6 +144,7 @@ def llm_explanation_worker(
         endpoint="app.tasks.llm.explanation",
         correlation_id=correlation_id,
         request_id=request_id,
+        task_id=getattr(self.request, "id", None),
     )
     model = LLMTaskPayload.model_validate(
         {
@@ -196,6 +199,7 @@ def llm_investigation_worker(
         endpoint="app.tasks.llm.investigation",
         correlation_id=correlation_id,
         request_id=request_id,
+        task_id=getattr(self.request, "id", None),
     )
     model = LLMTaskPayload.model_validate(
         {
@@ -250,6 +254,7 @@ def llm_budget_optimization_worker(
         endpoint="app.tasks.llm.budget_optimization",
         correlation_id=correlation_id,
         request_id=request_id,
+        task_id=getattr(self.request, "id", None),
     )
     model = LLMTaskPayload.model_validate(
         {

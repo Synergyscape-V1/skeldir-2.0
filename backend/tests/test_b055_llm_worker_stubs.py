@@ -135,6 +135,37 @@ async def test_llm_investigation_stub_writes_job(test_tenant):
 
 
 @pytest.mark.asyncio
+async def test_llm_investigation_repeat_is_idempotent(test_tenant):
+    _assert_postgres_engine()
+    request_id = str(uuid4())
+    payload = LLMTaskPayload(
+        tenant_id=test_tenant,
+        correlation_id=str(uuid4()),
+        request_id=request_id,
+        prompt={"stub": True},
+        max_cost_cents=0,
+    )
+
+    async with get_session(tenant_id=test_tenant) as session:
+        first = await run_investigation(payload, session=session)
+    async with get_session(tenant_id=test_tenant) as session:
+        second = await run_investigation(payload, session=session)
+
+    assert first["investigation_id"] == second["investigation_id"]
+
+    async with get_session(tenant_id=test_tenant) as session:
+        investigations = (
+            await session.execute(
+                select(Investigation).where(
+                    Investigation.tenant_id == test_tenant,
+                    Investigation.query == f"stubbed:{request_id}",
+                )
+            )
+        ).scalars().all()
+        assert len(investigations) == 1
+
+
+@pytest.mark.asyncio
 async def test_llm_budget_stub_writes_job(test_tenant):
     payload = _build_payload(test_tenant)
     async with get_session(tenant_id=test_tenant) as session:

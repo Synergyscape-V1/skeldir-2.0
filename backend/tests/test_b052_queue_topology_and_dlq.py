@@ -8,8 +8,11 @@ Tests empirically validate:
 4. DLQ schema alignment with B0.4 patterns
 """
 
+import asyncio
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,7 +24,7 @@ from sqlalchemy import text
 DEFAULT_ASYNC_DSN = os.environ.get("TEST_ASYNC_DSN", "postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation")
 os.environ.setdefault("DATABASE_URL", DEFAULT_ASYNC_DSN)
 
-from app.celery_app import celery_app
+from app.celery_app import _on_task_failure, celery_app
 from app.core.queues import QUEUE_LLM
 from app.tasks.housekeeping import ping
 from app.tasks.maintenance import refresh_all_matviews_global_legacy
@@ -115,6 +118,31 @@ class TestQueueTopology:
         assert routes["app.tasks.matviews.*"]["routing_key"] == "maintenance.task"
         assert routes["app.tasks.llm.*"]["routing_key"] == "llm.task"
         assert routes["app.tasks.attribution.*"]["routing_key"] == "attribution.task", "B0.5.3.1: attribution routing key must be attribution.task"
+
+    def test_queue_routing_deterministic_under_concurrency(self):
+        """Validate routing remains deterministic under concurrent access."""
+        cases = [
+            ("app.tasks.housekeeping.ping", "housekeeping", "housekeeping.task"),
+            ("app.tasks.maintenance.refresh_all_matviews_global_legacy", "maintenance", "maintenance.task"),
+            ("app.tasks.matviews.refresh_single", "maintenance", "maintenance.task"),
+            ("app.tasks.llm.explanation", QUEUE_LLM, "llm.task"),
+            ("app.tasks.attribution.recompute_window", "attribution", "attribution.task"),
+        ]
+        tasks = cases * 25
+
+        def _route(task_name: str):
+            route = celery_app.amqp.router.route({}, task_name, args=(), kwargs={})
+            queue = route.get("queue")
+            queue_name = queue.name if hasattr(queue, "name") else queue
+            return queue_name, route.get("routing_key")
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(lambda item: _route(item[0]), tasks))
+
+        for (task_name, expected_queue, expected_routing_key), result in zip(tasks, results):
+            queue_name, routing_key = result
+            assert queue_name == expected_queue, f"{task_name} routed to {queue_name}, expected {expected_queue}"
+            assert routing_key == expected_routing_key, f"{task_name} routing_key {routing_key}, expected {expected_routing_key}"
 
 
 class TestWorkerDLQ:
@@ -307,6 +335,71 @@ class TestWorkerDLQ:
             policies = result.fetchall()
 
             assert len(policies) > 0, "tenant_isolation_policy must exist on worker_failed_jobs"
+
+    @pytest.mark.asyncio
+    async def test_dlq_failure_handler_concurrent(self):
+        """Validate DLQ handler is stable under concurrent failures."""
+        assert engine.dialect.name == "postgresql", "DLQ concurrency test must run on Postgres"
+
+        tenant_id = uuid4()
+        correlation_id = uuid4()
+        task_ids = [str(uuid4()) for _ in range(6)]
+
+        class _Req:
+            def __init__(self, task_id: str):
+                self.id = task_id
+                self.delivery_info = {"routing_key": "housekeeping.task"}
+                self.hostname = "test-worker"
+                self.retries = 0
+
+        class _Task:
+            name = "app.tasks.housekeeping.ping"
+
+            def __init__(self, task_id: str):
+                self.request = _Req(task_id)
+
+        def _invoke(task_id: str) -> None:
+            _on_task_failure(
+                task_id=task_id,
+                exception=ValueError("dlq concurrency test"),
+                args=(),
+                kwargs={
+                    "tenant_id": str(tenant_id),
+                    "correlation_id": str(correlation_id),
+                },
+                einfo="traceback",
+                sender=_Task(task_id),
+            )
+
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            await asyncio.gather(
+                *[loop.run_in_executor(executor, partial(_invoke, task_id)) for task_id in task_ids]
+            )
+
+        placeholders = ", ".join(f":task_id_{idx}" for idx in range(len(task_ids)))
+        params = {f"task_id_{idx}": task_id for idx, task_id in enumerate(task_ids)}
+
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM worker_failed_jobs
+                    WHERE task_id IN ({placeholders})
+                    """
+                ),
+                params,
+            )
+            count = result.scalar() or 0
+
+            for task_id in task_ids:
+                await conn.execute(
+                    text("DELETE FROM worker_failed_jobs WHERE task_id = :task_id"),
+                    {"task_id": task_id},
+                )
+
+        assert count == len(task_ids)
 
 
 class TestObservabilityOperability:

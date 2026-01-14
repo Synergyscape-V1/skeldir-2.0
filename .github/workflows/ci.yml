@@ -418,6 +418,14 @@ jobs:
         run: |
           mkdir -p "$B055_EVIDENCE_DIR/LOGS"
 
+      - name: Enforce hermetic runtime imports (Phase 5)
+        run: |
+          python scripts/ci/enforce_runtime_hermeticity.py --output "$B055_EVIDENCE_DIR/LOGS/hermeticity_scan.log"
+
+      - name: Enforce runtime determinism (Phase 5)
+        run: |
+          python scripts/ci/enforce_runtime_determinism.py --output "$B055_EVIDENCE_DIR/LOGS/determinism_scan.log"
+
       - name: Prepare database and role
         run: |
           echo "Creating database roles and skeldir_validation database..."
@@ -505,7 +513,10 @@ jobs:
             tests/test_b052_queue_topology_and_dlq.py \
             tests/test_b0532_window_idempotency.py \
             tests/test_b055_llm_worker_stubs.py \
-            tests/test_b055_llm_model_parity.py -q | tee "$B055_EVIDENCE_DIR/LOGS/pytest_b055.log"
+            tests/test_b055_llm_model_parity.py \
+            tests/test_b055_llm_payload_fidelity.py \
+            tests/test_b055_matview_boundary.py \
+            tests/test_b055_tenant_propagation.py -q | tee "$B055_EVIDENCE_DIR/LOGS/pytest_b055.log"
 
       - name: Upload observability evidence artifacts
         if: always()

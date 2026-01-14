@@ -24,6 +24,8 @@ REQUIRED_FILES = [
     "ALEMBIC/history.txt",
     "LOGS/pytest_b055.log",
     "LOGS/migrations.log",
+    "LOGS/hermeticity_scan.log",
+    "LOGS/determinism_scan.log",
     "ENV/git_sha.txt",
     "ENV/python_version.txt",
     "ENV/pip_freeze.txt",
@@ -95,6 +97,17 @@ def generate(bundle_dir: Path, db_url: str) -> None:
     pip_freeze = run_cmd([sys.executable, "-m", "pip", "freeze"], cwd=repo)
     write_text(bundle_dir / "ENV/pip_freeze.txt", pip_freeze)
 
+    hermeticity_log = bundle_dir / "LOGS" / "hermeticity_scan.log"
+    run_cmd(
+        [sys.executable, "scripts/ci/enforce_runtime_hermeticity.py", "--output", str(hermeticity_log)],
+        cwd=repo,
+    )
+    determinism_log = bundle_dir / "LOGS" / "determinism_scan.log"
+    run_cmd(
+        [sys.executable, "scripts/ci/enforce_runtime_determinism.py", "--output", str(determinism_log)],
+        cwd=repo,
+    )
+
     ci_context = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "github_sha": os.environ.get("GITHUB_SHA"),
@@ -162,7 +175,13 @@ def generate(bundle_dir: Path, db_url: str) -> None:
     )
 
     missing_logs = [
-        path for path in ("LOGS/migrations.log", "LOGS/pytest_b055.log")
+        path
+        for path in (
+            "LOGS/migrations.log",
+            "LOGS/pytest_b055.log",
+            "LOGS/hermeticity_scan.log",
+            "LOGS/determinism_scan.log",
+        )
         if not (bundle_dir / path).exists()
     ]
     if missing_logs:

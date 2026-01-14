@@ -387,7 +387,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         import os
         import psycopg2
         import psycopg2.extras
-        from uuid import UUID, uuid4
+        from uuid import UUID, uuid5, NAMESPACE_URL
         from sqlalchemy.engine.url import make_url
 
         # B0.5.3.3 Gate C: Lazy settings access in DLQ handler
@@ -563,6 +563,12 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
                     (str(correlation_id),),
                 )
 
+            dlq_id = None
+            if task_id and task_name:
+                dlq_id = str(uuid5(NAMESPACE_URL, f"{task_id}:{task_name}"))
+            else:
+                dlq_id = str(uuid5(NAMESPACE_URL, "unknown:unknown"))
+
             cur.execute("""
                 INSERT INTO worker_failed_jobs (
                     id, task_id, task_name, queue, worker,
@@ -576,7 +582,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
                     %s, %s, %s, CURRENT_TIMESTAMP
                 )
             """, (
-                str(uuid4()),
+                dlq_id,
                 task_id,
                 task_name,
                 queue,
