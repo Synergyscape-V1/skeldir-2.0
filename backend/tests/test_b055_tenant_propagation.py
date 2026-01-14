@@ -9,12 +9,13 @@ from sqlalchemy import text
 from app.db.session import engine
 from app.tasks import attribution
 from app.tasks.maintenance import scan_for_pii_contamination_task
+from tests.builders.core_builders import build_tenant
 
 
 
 
 def test_maintenance_task_sets_tenant_guc():
-    tenant_id = uuid4()
+    tenant_id = asyncio.run(build_tenant())["tenant_id"]
     correlation_id = str(uuid4())
     result = scan_for_pii_contamination_task.run(
         tenant_id=tenant_id,
@@ -35,7 +36,7 @@ def test_attribution_task_sets_tenant_guc(monkeypatch):
 
     monkeypatch.setattr(attribution, "set_tenant_guc", _spy_set_tenant_guc)
 
-    tenant_id = uuid4()
+    tenant_id = asyncio.run(build_tenant())["tenant_id"]
     correlation_id = str(uuid4())
     now = datetime.now(timezone.utc)
     window_start = (now - timedelta(days=1)).isoformat().replace("+00:00", "Z")
