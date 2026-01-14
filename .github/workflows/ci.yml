@@ -524,6 +524,10 @@ jobs:
         run: |
           python scripts/ci/b055_evidence_bundle.py validate --bundle-dir "$B055_EVIDENCE_DIR"
 
+      - name: List B055 evidence bundle contents
+        run: |
+          find "$B055_EVIDENCE_DIR" -type f | sort
+
       - name: Upload B055 evidence bundle
         uses: actions/upload-artifact@v4
         with:

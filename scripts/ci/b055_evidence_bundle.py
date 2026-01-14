@@ -231,6 +231,8 @@ def validate(bundle_dir: Path) -> None:
         if expected_sha != actual_sha:
             raise RuntimeError(f"SHA mismatch for {rel_path}: expected {expected_sha}, got {actual_sha}")
 
+    print("B055 evidence manifest validation OK")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="B055 evidence bundle generator/validator")
