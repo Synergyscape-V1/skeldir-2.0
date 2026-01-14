@@ -388,7 +388,7 @@ jobs:
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_METRICS_PORT: 9546
       CELERY_METRICS_ADDR: 127.0.0.1
-      B055_EVIDENCE_DIR: artifacts/b055_evidence_bundle
+      B055_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/b055_evidence_bundle
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
