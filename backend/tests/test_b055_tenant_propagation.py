@@ -11,21 +11,15 @@ from app.tasks import attribution
 from app.tasks.maintenance import scan_for_pii_contamination_task
 
 
-class _DummyRequest:
-    def __init__(self, task_id: str):
-        self.id = task_id
-
-
-def _attach_request(task, task_id: str):
-    task.request = _DummyRequest(task_id)
-    return task
 
 
 def test_maintenance_task_sets_tenant_guc():
     tenant_id = uuid4()
     correlation_id = str(uuid4())
-    task = _attach_request(scan_for_pii_contamination_task, "tenant-prop-maintenance")
-    result = task.run(tenant_id=tenant_id, correlation_id=correlation_id)
+    result = scan_for_pii_contamination_task.run(
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+    )
 
     assert result["guc"] == str(tenant_id)
 
@@ -47,8 +41,7 @@ def test_attribution_task_sets_tenant_guc(monkeypatch):
     window_start = (now - timedelta(days=1)).isoformat().replace("+00:00", "Z")
     window_end = now.isoformat().replace("+00:00", "Z")
 
-    task = _attach_request(attribution.recompute_window, "tenant-prop-attribution")
-    result = task.run(
+    result = attribution.recompute_window.run(
         tenant_id=tenant_id,
         window_start=window_start,
         window_end=window_end,
