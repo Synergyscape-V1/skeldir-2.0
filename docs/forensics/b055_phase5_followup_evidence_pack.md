@@ -2,15 +2,15 @@
 
 ## PR / CI Adjudication
 - PR: https://github.com/Muk223/skeldir-2.0/pull/22
-- PR head SHA: `3b2e317ad775af72dd4008953f838cd1f0b85ec4`
-- CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/21036800370
-- Evidence bundle: `b055-evidence-bundle-3b2e317ad775af72dd4008953f838cd1f0b85ec4`
+- PR head SHA: `d70e64eeadc99d0fcca2960a12c6ea0f21a5f577`
+- CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/21037165121
+- Evidence bundle: `b055-evidence-bundle-d70e64eeadc99d0fcca2960a12c6ea0f21a5f577`
 
 ## MANIFEST Binding (bundle `MANIFEST.json`)
-- `adjudicated_sha`: `3b2e317ad775af72dd4008953f838cd1f0b85ec4`
-- `pr_head_sha`: `3b2e317ad775af72dd4008953f838cd1f0b85ec4`
-- `github_sha`: `7928f84d39541cf20322bf68a6fb09f352d5cd6d`
-- `workflow_run_id`: `21036800370`
+- `adjudicated_sha`: `d70e64eeadc99d0fcca2960a12c6ea0f21a5f577`
+- `pr_head_sha`: `d70e64eeadc99d0fcca2960a12c6ea0f21a5f577`
+- `github_sha`: `8a02095671c58df50c752b33d727cd692b42436a`
+- `workflow_run_id`: `21037165121`
 - `run_attempt`: `1`
 
 ## H1 — Production Config Lock (Falsified & Fixed)
