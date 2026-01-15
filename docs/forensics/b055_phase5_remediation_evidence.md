@@ -33,3 +33,22 @@
   - `LOGS/determinism_scan.log`
   - `LOGS/pytest_b055.log`
   - `LOGS/migrations.log`
+
+## Adjudication Proof (Latest)
+- PR link: https://github.com/Muk223/skeldir-2.0/pull/22
+- ADJUDICATED_SHA: `cfac454d4fc7d20eccfaba4acb6f1087030b3e66`
+- Artifact name: `b055-evidence-bundle-cfac454d4fc7d20eccfaba4acb6f1087030b3e66`
+- Manifest binding (from bundle `MANIFEST.json`):
+  - `adjudicated_sha`: `cfac454d4fc7d20eccfaba4acb6f1087030b3e66`
+  - `pr_head_sha`: `cfac454d4fc7d20eccfaba4acb6f1087030b3e66`
+  - `github_sha`: `ce2957a1fd0c30f4b25e2ca7bdcfc300237b6c96`
+  - `workflow_run_id`: `21011865546`
+  - `run_attempt`: `1`
+- Adjudicated checkout log (CI job `Checkout Code`):
+  ```
+  PR_HEAD_SHA=cfac454d4fc7d20eccfaba4acb6f1087030b3e66
+  MERGE_SHA=30198ea9a8b7950d38c24966946c835af4dfa8bc
+  GITHUB_SHA=ce2957a1fd0c30f4b25e2ca7bdcfc300237b6c96
+  ADJUDICATED_SHA=cfac454d4fc7d20eccfaba4acb6f1087030b3e66
+  HEAD_SHA=$(git rev-parse HEAD)
+  ```
