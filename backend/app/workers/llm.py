@@ -7,7 +7,7 @@ These workers write tenant-scoped records with cost=0 and never call providers.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 import hashlib
 import json
 from typing import Any, Dict
@@ -58,8 +58,12 @@ def _resolve_correlation_id(model: LLMTaskPayload, endpoint: str) -> str:
     return _stable_fallback_id(model, endpoint, "correlation_id")
 
 
-def _month_start_utc() -> date:
-    return date(1970, 1, 1)
+def _month_start_utc(occurred_at: datetime) -> date:
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    else:
+        occurred_at = occurred_at.astimezone(timezone.utc)
+    return date(occurred_at.year, occurred_at.month, 1)
 
 
 async def _claim_api_call(
@@ -69,7 +73,7 @@ async def _claim_api_call(
     endpoint: str,
     request_id: str,
     correlation_id: str,
-) -> tuple[UUID, bool]:
+) -> tuple[UUID, datetime, bool]:
     insert_stmt = (
         insert(LLMApiCall)
         .values(
@@ -91,25 +95,27 @@ async def _claim_api_call(
         .on_conflict_do_nothing(
             index_elements=["tenant_id", "request_id", "endpoint"]
         )
-        .returning(LLMApiCall.id)
+        .returning(LLMApiCall.id, LLMApiCall.created_at)
     )
     result = await session.execute(insert_stmt)
-    inserted_id = result.scalar_one_or_none()
-    if inserted_id is not None:
-        return inserted_id, True
+    inserted_row = result.first()
+    if inserted_row is not None:
+        inserted_id, created_at = inserted_row
+        return inserted_id, created_at, True
 
-    existing_id = (
+    existing_row = (
         await session.execute(
-            select(LLMApiCall.id).where(
+            select(LLMApiCall.id, LLMApiCall.created_at).where(
                 LLMApiCall.tenant_id == model.tenant_id,
                 LLMApiCall.request_id == request_id,
                 LLMApiCall.endpoint == endpoint,
             )
         )
-    ).scalar_one_or_none()
-    if existing_id is None:
+    ).first()
+    if existing_row is None:
         raise RuntimeError("idempotency guard failed to locate existing llm_api_calls row")
-    return existing_id, False
+    existing_id, created_at = existing_row
+    return existing_id, created_at, False
 
 
 def _build_model_breakdown_update(
@@ -144,8 +150,9 @@ async def record_monthly_costs(
     model_label: str,
     cost_cents: int,
     calls: int,
+    occurred_at: datetime,
 ) -> None:
-    month = _month_start_utc()
+    month = _month_start_utc(occurred_at)
     insert_stmt = (
         insert(LLMMonthlyCost)
         .values(
@@ -181,7 +188,7 @@ async def route_request(
     request_id = _resolve_request_id(model, "app.tasks.llm.route")
     correlation_id = _resolve_correlation_id(model, "app.tasks.llm.route")
     async with session.begin_nested():
-        api_call_id, claimed = await _claim_api_call(
+        api_call_id, created_at, claimed = await _claim_api_call(
             session,
             model=model,
             endpoint="app.tasks.llm.route",
@@ -204,6 +211,7 @@ async def route_request(
             model_label=_STUB_MODEL,
             cost_cents=0,
             calls=1,
+            occurred_at=created_at,
         )
 
     logger.info(
@@ -234,7 +242,7 @@ async def generate_explanation(
     request_id = _resolve_request_id(model, "app.tasks.llm.explanation")
     correlation_id = _resolve_correlation_id(model, "app.tasks.llm.explanation")
     async with session.begin_nested():
-        api_call_id, claimed = await _claim_api_call(
+        api_call_id, created_at, claimed = await _claim_api_call(
             session,
             model=model,
             endpoint="app.tasks.llm.explanation",
@@ -257,6 +265,7 @@ async def generate_explanation(
             model_label=_STUB_MODEL,
             cost_cents=0,
             calls=1,
+            occurred_at=created_at,
         )
 
     logger.info(
@@ -287,7 +296,7 @@ async def run_investigation(
     request_id = _resolve_request_id(model, "app.tasks.llm.investigation")
     correlation_id = _resolve_correlation_id(model, "app.tasks.llm.investigation")
     async with session.begin_nested():
-        api_call_id, claimed = await _claim_api_call(
+        api_call_id, created_at, claimed = await _claim_api_call(
             session,
             model=model,
             endpoint="app.tasks.llm.investigation",
@@ -328,6 +337,7 @@ async def run_investigation(
             model_label=_STUB_MODEL,
             cost_cents=0,
             calls=1,
+            occurred_at=created_at,
         )
 
     logger.info(
@@ -359,7 +369,7 @@ async def optimize_budget(
     request_id = _resolve_request_id(model, "app.tasks.llm.budget_optimization")
     correlation_id = _resolve_correlation_id(model, "app.tasks.llm.budget_optimization")
     async with session.begin_nested():
-        api_call_id, claimed = await _claim_api_call(
+        api_call_id, created_at, claimed = await _claim_api_call(
             session,
             model=model,
             endpoint="app.tasks.llm.budget_optimization",
@@ -399,6 +409,7 @@ async def optimize_budget(
             model_label=_STUB_MODEL,
             cost_cents=0,
             calls=1,
+            occurred_at=created_at,
         )
 
     logger.info(

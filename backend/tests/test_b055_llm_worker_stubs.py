@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from app.models.llm import BudgetOptimizationJob, Investigation, LLMApiCall, LLM
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.tasks.llm import llm_explanation_worker
 from app.workers.llm import (
+    _month_start_utc,
     _resolve_request_id,
     generate_explanation,
     optimize_budget,
@@ -57,6 +59,54 @@ def test_llm_fallback_id_ignores_prompt_variation():
     fallback_b = _resolve_request_id(payload_b, "app.tasks.llm.route")
 
     assert fallback_a == fallback_b
+
+
+def test_month_start_utc_mid_month():
+    occurred_at = datetime(2025, 2, 15, 12, 30, tzinfo=timezone.utc)
+    assert _month_start_utc(occurred_at).isoformat() == "2025-02-01"
+
+
+def test_month_start_utc_boundary():
+    occurred_at = datetime(2025, 3, 1, 0, 0, tzinfo=timezone.utc)
+    assert _month_start_utc(occurred_at).isoformat() == "2025-03-01"
+
+
+def test_month_start_utc_timezone_normalizes_to_utc():
+    occurred_at = datetime(2025, 4, 1, 0, 30, tzinfo=timezone(timedelta(hours=-5)))
+    assert _month_start_utc(occurred_at).isoformat() == "2025-04-01"
+
+
+@pytest.mark.asyncio
+async def test_monthly_costs_use_api_call_timestamp(test_tenant, monkeypatch):
+    captured = {}
+    async def _fake_record_monthly_costs(
+        session,
+        *,
+        tenant_id,
+        model_label,
+        cost_cents,
+        calls,
+        occurred_at,
+    ):
+        captured["occurred_at"] = occurred_at
+
+    monkeypatch.setattr("app.workers.llm.record_monthly_costs", _fake_record_monthly_costs)
+
+    payload = LLMTaskPayload(
+        tenant_id=test_tenant,
+        correlation_id=str(uuid4()),
+        request_id=str(uuid4()),
+        prompt={"stub": True},
+        max_cost_cents=0,
+    )
+
+    async with get_session(tenant_id=test_tenant) as session:
+        result = await route_request(payload, session=session)
+
+    async with get_session(tenant_id=test_tenant) as session:
+        api_call = await session.get(LLMApiCall, UUID(result["api_call_id"]))
+
+    assert captured.get("occurred_at") == api_call.created_at
 
 
 @pytest.mark.asyncio
