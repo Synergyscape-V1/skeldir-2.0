@@ -2,7 +2,7 @@
 
 ## PR / CI Adjudication (Authority Model)
 - PR: https://github.com/Muk223/skeldir-2.0/pull/22
-- PR head SHA: `21cce3b398a92bd7135818c29705359fafd01f8e`
+- PR head SHA: `6458199fcf8c93858805bce07829e8bb8e157f69`
 - Evidence bundle rule: `b055-evidence-bundle-${ADJUDICATED_SHA}`
 - Authority: `MANIFEST.json` in the CI artifact is the source of truth for
   adjudicated binding (do not hardcode CI run IDs in source-controlled docs).
