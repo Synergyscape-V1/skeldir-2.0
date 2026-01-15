@@ -409,6 +409,7 @@ async def test_llm_monthly_costs_concurrent_updates_are_atomic(test_tenant):
                     model_label="concurrency",
                     cost_cents=increment,
                     calls=1,
+                    occurred_at=datetime(2025, 1, 15, 12, 0, tzinfo=timezone.utc),
                 )
 
     await asyncio.gather(*[_apply_increment() for _ in range(calls)])
