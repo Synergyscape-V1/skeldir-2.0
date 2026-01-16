@@ -18,20 +18,21 @@ rg -n "(/health|health/ready|include_router\(health|APIRouter\(|def health|def r
 ```
 backend/app\main.py
 52:app.include_router(health.router, tags=["Health"])
-56:# - /health/live: Pure liveness (no deps)
-57:# - /health/ready: Readiness (DB + RLS + GUC)
-58:# - /health/worker: Worker capability (data-plane probe)
-59:# No /health endpoint exists to avoid semantic ambiguity (B0.5.6.2).
+56:# - /health: Legacy alias for liveness only
+57:# - /health/live: Pure liveness (no deps)
+58:# - /health/ready: Readiness (DB + RLS + GUC)
+59:# - /health/worker: Worker capability (data-plane probe)
 
 backend/app\api\health.py
-5:- /health/live: Pure liveness (process responds, no dependency checks)
-6:- /health/ready: Readiness (DB + RLS + tenant GUC validation)
-7:- /health/worker: Worker capability (data-plane probe via Celery)
-9:No /health endpoint exists to avoid semantic ambiguity.
+5:- /health: Legacy alias for liveness only (process responds, no dependency checks)
+6:- /health/live: Pure liveness (process responds, no dependency checks)
+7:- /health/ready: Readiness (DB + RLS + tenant GUC validation)
+8:- /health/worker: Worker capability (data-plane probe via Celery)
 24:router = APIRouter()
 182:@router.get("/health/live")
-196:@router.get("/health/ready")
-267:@router.get("/health/worker")
+197:@router.get("/health")
+204:@router.get("/health/ready")
+275:@router.get("/health/worker")
 ```
 
 ### 1.2 Runtime route truth (OpenAPI)
@@ -43,12 +44,13 @@ python -c "import json; data=json.load(open('.tmp/b056_openapi.json', encoding='
 
 **Output**
 ```
+/health
 /health/live
 /health/ready
 /health/worker
 ```
 
-### 1.3 `/health` response (route exists?)
+### 1.3 `/health` response (alias)
 **Command**
 ```
 curl.exe -s -i http://127.0.0.1:8001/health
@@ -56,21 +58,22 @@ curl.exe -s -i http://127.0.0.1:8001/health
 
 **Output**
 ```
-HTTP/1.1 404 Not Found
+HTTP/1.1 200 OK
 content-type: application/json
 
-{"detail":"Not Found"}
+{"status":"ok"}
 ```
 
-**Finding**: Hypothesis H-C0.2 (duplicate `/health`) is **falsified** on current `main`. No `/health` route exists.
+**Finding**: Hypothesis H-C0.2 (duplicate `/health`) is **falsified** on current `main`. `/health` is a strict alias of `/health/live`.
 
 ---
 
 ## 2) Remediation Summary
 
-No code changes required in this phase. The required three-endpoint health surface and tests already exist:
+No code changes required in this phase. The required health surface and tests already exist:
 
-- `backend/app/api/health.py` implements `/health/live`, `/health/ready`, `/health/worker` with explicit semantics.
+- `backend/app/api/health.py` implements `/health` (alias), `/health/live`, `/health/ready`, `/health/worker` with explicit semantics.
+- `backend/app/tasks/health.py` implements `app.tasks.health.probe` for the data-plane probe.
 - `backend/tests/test_b0562_health_semantics.py` covers EG1–EG6 gates.
 
 ---
@@ -86,6 +89,7 @@ python -c "import json; data=json.load(open('.tmp/b056_openapi.json', encoding='
 
 **Output**
 ```
+/health
 /health/live
 /health/ready
 /health/worker

@@ -53,10 +53,10 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(webhooks.router, prefix="/api", tags=["Webhooks"])
 
 # Health endpoints are now exclusively in app.api.health with explicit semantics:
+# - /health: Legacy alias for liveness only
 # - /health/live: Pure liveness (no deps)
 # - /health/ready: Readiness (DB + RLS + GUC)
 # - /health/worker: Worker capability (data-plane probe)
-# No /health endpoint exists to avoid semantic ambiguity (B0.5.6.2).
 
 
 @app.get("/")

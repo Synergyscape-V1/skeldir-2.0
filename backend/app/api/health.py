@@ -193,6 +193,14 @@ async def liveness() -> dict:
     return {"status": "ok"}
 
 
+@router.get("/health")
+async def health_alias() -> dict:
+    """
+    Legacy health alias: strict liveness only (no dependency checks).
+    """
+    return {"status": "ok"}
+
+
 @router.get("/health/ready")
 async def readiness(response: Response) -> dict:
     """
