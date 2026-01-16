@@ -226,9 +226,10 @@ PASS: No worker HTTP server primitives detected.
 
 | Field | Value |
 |-------|-------|
-| PR Number | TBD (pending commit) |
-| Commit SHA | TBD (pending commit) |
-| CI Run Link | TBD (pending CI execution) |
+| Commit SHA (remediation) | `c2fefa4` |
+| Commit SHA (CI workflow) | `deee625` |
+| CI Run Link | https://github.com/Muk223/skeldir-2.0/actions (CI #524) |
+| CI Status | ✅ All workflows passing |
 | Evidence Pack | `docs/forensics/b056_phase1_drift_eradication_remediation_evidence.md` |
 | Guardrail Script | `scripts/ci/enforce_no_worker_http_server.py` |
 
