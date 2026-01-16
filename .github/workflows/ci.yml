@@ -410,8 +410,7 @@ jobs:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
-      CELERY_METRICS_PORT: 9546
-      CELERY_METRICS_ADDR: 127.0.0.1
+      # B0.5.6.1: CELERY_METRICS_PORT/ADDR removed - worker HTTP server eradicated
       B055_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/b055_evidence_bundle
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
@@ -501,37 +500,11 @@ jobs:
           sleep 10
           echo "Worker should be ready"
 
-      - name: Capture observability evidence (B0.5.2)
+      - name: B0.5.6.1 Guardrail - No Worker HTTP Server
         run: |
-          echo "=== B0.5.2 Observability Evidence Capture ==="
-          mkdir -p evidence
-
-          # Wait for monitoring server to be ready
-          sleep 5
-
-          # Capture /health endpoint
-          echo "Capturing /health endpoint..."
-          curl -f http://127.0.0.1:9546/health > evidence/worker_health.json 2>&1 || echo "Health check failed"
-          cat evidence/worker_health.json
-
-          # Capture /metrics endpoint
-          echo ""
-          echo "Capturing /metrics endpoint..."
-          curl -f http://127.0.0.1:9546/metrics > evidence/worker_metrics.txt 2>&1 || echo "Metrics scrape failed"
-          head -30 evidence/worker_metrics.txt
-
-          # Validate expected content
-          echo ""
-          echo "Validating health response..."
-          grep -q "broker" evidence/worker_health.json && echo "✓ Health endpoint contains broker status"
-          grep -q "database" evidence/worker_health.json && echo "✓ Health endpoint contains database status"
-
-          echo ""
-          echo "Validating metrics response..."
-          grep -q "celery_task_started_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_started_total"
-          grep -q "celery_task_success_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_success_total"
-          grep -q "celery_task_failure_total" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_failure_total"
-          grep -q "celery_task_duration_seconds" evidence/worker_metrics.txt && echo "✓ Metrics contain celery_task_duration_seconds"
+          echo "=== B0.5.6.1 Worker HTTP Server Guardrail ==="
+          python scripts/ci/enforce_no_worker_http_server.py --scan-path backend/app --output "$B055_EVIDENCE_DIR/LOGS/worker_http_guardrail.log"
+          echo "✓ B0.5.6.1 guardrail passed: No worker HTTP server primitives detected"
 
       - name: Run Celery foundation tests
         env:
@@ -551,14 +524,6 @@ jobs:
             tests/test_b055_llm_payload_fidelity.py \
             tests/test_b055_matview_boundary.py \
             tests/test_b055_tenant_propagation.py -q | tee "$B055_EVIDENCE_DIR/LOGS/pytest_b055.log"
-
-      - name: Upload observability evidence artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: b052-observability-evidence
-          path: evidence/
-          retention-days: 90
 
       - name: Generate B055 evidence bundle
         env:
