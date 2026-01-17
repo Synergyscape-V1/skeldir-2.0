@@ -578,6 +578,17 @@ jobs:
             tests/test_b055_matview_boundary.py \
             tests/test_b055_tenant_propagation.py -q | tee "$B055_EVIDENCE_DIR/LOGS/pytest_b055.log"
 
+      - name: Upload health probe logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b0562-health-probe-logs-${{ env.ADJUDICATED_SHA }}
+          path: |
+            ${{ env.B055_EVIDENCE_DIR }}/LOGS/health_worker_probe.log
+            /tmp/health_worker_probe_stdout.log
+            /tmp/health_probe_api.log
+            /tmp/celery.log
+
       - name: Generate B055 evidence bundle
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
