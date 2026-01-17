@@ -532,38 +532,38 @@ jobs:
             exit 1
           fi
           : > "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
-          for attempt in $(seq 1 5); do
-            response="$(curl -s -w "\n%{http_code}" http://127.0.0.1:8000/health/worker)"
-            body="$(echo "$response" | sed '$d')"
-            code="$(echo "$response" | tail -n1)"
-            echo "health_worker_probe_attempt_${attempt}_response_begin"
-            echo "$response"
-            echo "health_worker_probe_attempt_${attempt}_response_end"
-            echo "ATTEMPT=${attempt}" >> "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
-            echo "HTTP_CODE=${code}" >> "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
-            echo "$body" >> "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
-            if [ "$code" = "200" ]; then
-              break
-            fi
-            sleep 2
-          done
-          echo "health_worker_probe_log_begin"
-          cat "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" || true
-          echo "health_worker_probe_log_end"
           if ! python - <<'PY'
           import json
           import os
           import sys
+          import time
 
-          path = os.environ.get("B055_EVIDENCE_DIR", "") + "/LOGS/health_worker_probe.log"
-          with open(path, "r", encoding="utf-8") as handle:
-            lines = [line.strip() for line in handle if line.strip()]
-          code_lines = [line for line in lines if line.startswith("HTTP_CODE=")]
-          code = int(code_lines[-1].split("=", 1)[1]) if code_lines else 0
-          body_line = next((line for line in reversed(lines) if line.startswith("{")), "{}")
-          body = json.loads(body_line)
-          if code != 200 or body.get("worker") != "ok" or body.get("broker") != "ok":
-            raise SystemExit(f"health/worker probe failed: code={code} body={body}")
+          import requests
+
+          log_path = os.environ.get("B055_EVIDENCE_DIR", "") + "/LOGS/health_worker_probe.log"
+          url = "http://127.0.0.1:8000/health/worker"
+          last_code = 0
+          last_body = {}
+          for attempt in range(1, 6):
+            resp = requests.get(url, timeout=20)
+            last_code = resp.status_code
+            try:
+              last_body = resp.json()
+            except Exception:
+              last_body = {"raw": resp.text}
+            print(f"health_worker_probe_attempt_{attempt}_response_begin")
+            print(resp.status_code)
+            print(resp.text)
+            print(f"health_worker_probe_attempt_{attempt}_response_end")
+            with open(log_path, "a", encoding="utf-8") as handle:
+              handle.write(f"ATTEMPT={attempt}\n")
+              handle.write(f"HTTP_CODE={resp.status_code}\n")
+              handle.write(resp.text + "\n")
+            if resp.status_code == 200:
+              break
+            time.sleep(2)
+          if last_code != 200 or last_body.get("worker") != "ok" or last_body.get("broker") != "ok":
+            raise SystemExit(f"health/worker probe failed: code={last_code} body={last_body}")
           PY
           then
             echo "health_probe_api_log_begin"
@@ -574,6 +574,9 @@ jobs:
             echo "health_probe_worker_log_end"
             exit 1
           fi
+          echo "health_worker_probe_log_begin"
+          cat "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" || true
+          echo "health_worker_probe_log_end"
           echo "health_probe_log_begin"
           grep -n "health_probe_task_complete" /tmp/celery.log || true
           echo "health_probe_log_end"
