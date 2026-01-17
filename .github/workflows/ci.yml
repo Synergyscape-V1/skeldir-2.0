@@ -523,6 +523,12 @@ jobs:
           export DATABASE_URL="${DATABASE_URL/postgresql:\/\//postgresql+asyncpg://}"
           nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/health_probe_api.log 2>&1 &
           API_PID=$!
+          sleep 1
+          if ! kill -0 "${API_PID}" 2>/dev/null; then
+            echo "API process exited early"
+            tail -n 200 /tmp/health_probe_api.log || true
+            exit 1
+          fi
           ready_ok=false
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8000/health/ready >/dev/null; then
@@ -533,6 +539,7 @@ jobs:
           done
           if [ "${ready_ok}" != "true" ]; then
             echo "health/ready never returned 200; dumping API log"
+            curl -s -i http://127.0.0.1:8000/health/ready || true
             tail -n 200 /tmp/health_probe_api.log || true
             kill "${API_PID}" || true
             exit 1
