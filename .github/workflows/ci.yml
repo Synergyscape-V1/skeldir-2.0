@@ -532,40 +532,9 @@ jobs:
             exit 1
           fi
           : > "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
-          python - <<'PY'
-          import json
-          import os
-          import sys
-          import time
-
-          import requests
-
-          log_path = os.environ.get("B055_EVIDENCE_DIR", "") + "/LOGS/health_worker_probe.log"
-          url = "http://127.0.0.1:8000/health/worker"
-          last_code = 0
-          last_body = {}
-          for attempt in range(1, 6):
-            resp = requests.get(url, timeout=20)
-            last_code = resp.status_code
-            try:
-              last_body = resp.json()
-            except Exception:
-              last_body = {"raw": resp.text}
-            print(f"health_worker_probe_attempt_{attempt}_response_begin", flush=True)
-            print(resp.status_code, flush=True)
-            print(resp.text, flush=True)
-            print(f"health_worker_probe_attempt_{attempt}_response_end", flush=True)
-            with open(log_path, "a", encoding="utf-8") as handle:
-              handle.write(f"ATTEMPT={attempt}\n")
-              handle.write(f"HTTP_CODE={resp.status_code}\n")
-              handle.write(resp.text + "\n")
-            if resp.status_code == 200:
-              break
-            time.sleep(2)
-          if last_code != 200 or last_body.get("worker") != "ok" or last_body.get("broker") != "ok":
-            print(f"health_worker_probe_failed code={last_code} body={last_body}", file=sys.stderr, flush=True)
-            raise SystemExit(f"health/worker probe failed: code={last_code} body={last_body}")
-          PY
+          python scripts/ci/health_worker_probe.py \
+            --url "http://127.0.0.1:8000/health/worker" \
+            --log-path "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
           probe_exit=$?
           echo "health_worker_probe_log_begin"
           cat "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" || true
