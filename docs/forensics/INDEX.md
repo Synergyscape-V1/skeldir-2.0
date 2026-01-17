@@ -22,8 +22,9 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.6 Phase 0 | docs/forensics/b056_phase0_worker_observability_drift_inventory_evidence.md | Worker observability drift inventory (context-gathering) | pending | pending |
 | B0.5.6 Phase 1 | docs/forensics/b056_phase1_drift_eradication_remediation_evidence.md | Worker HTTP sidecar eradication + guardrail | c2fefa4 / deee625 | CI #524 ✅ |
 | B0.5.6 Phase 2 | docs/forensics/b056_phase2_health_semantics_remediation_evidence.md | Health semantics remediation evidence (live/ready/worker) | 96f605a | https://github.com/Muk223/skeldir-2.0/actions/runs/21100492747 |
-| B0.5.6 Phase 2 EG5 | docs/forensics/b056_phase2_eg5_probe_safety_ci_proof_evidence.md | EG5 probe safety CI proof (HTTP cache) | 96f605a | https://github.com/Muk223/skeldir-2.0/actions/runs/21100492747 |
-| B0.5.6 Phase 2 CI ledger | docs/forensics/b056_phase2_health_semantics_ci_ledger_remediation_evidence.md | CI remediation ledger (health semantics) | 4123168 | https://github.com/Muk223/skeldir-2.0/actions/runs/21099463882 |
+| B0.5.6 Phase 2 EG5 (supporting proof) | docs/forensics/b056_phase2_eg5_probe_safety_ci_proof_evidence.md | Supporting EG5 HTTP cache proof; NOT acceptance authority. See "B0.5.6 Phase 2" row. | 96f605a | https://github.com/Muk223/skeldir-2.0/actions/runs/21100492747 |
+| B0.5.6 Phase 2 CI ledger (historical — superseded) | docs/forensics/b056_phase2_health_semantics_ci_ledger_remediation_evidence.md | Historical CI remediation cycle; NOT acceptance authority. See "B0.5.6 Phase 2" row. | 4123168 | https://github.com/Muk223/skeldir-2.0/actions/runs/21099463882 |
+| B0.5.6 Phase 2 ledger convergence | docs/forensics/b056_phase2_ledger_closure_convergence_evidence.md | EG7 ledger convergence proof (authoritative INDEX + metadata alignment). | 96f605a | https://github.com/Muk223/skeldir-2.0/actions/runs/21100492747 |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

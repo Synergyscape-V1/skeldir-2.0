@@ -222,8 +222,8 @@ PASS: No worker HTTP server primitives detected.
 
 ## 4) Adjudication Metadata
 
-- **Commit SHA**: pending (post-commit update)
-- **CI Run URL**: pending (CI not run yet)
+- **Commit SHA**: 96f605a
+- **CI Run URL**: https://github.com/Muk223/skeldir-2.0/actions/runs/21100492747
 
 ---
 
