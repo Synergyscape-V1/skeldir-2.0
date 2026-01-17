@@ -546,6 +546,10 @@ jobs:
             kill "${API_PID}" || true
             exit 1
           fi
+          python -u ../scripts/ci/eg5_cache_validation.py \
+            --url "http://127.0.0.1:8000/health/worker" \
+            --delay-seconds 0.1 \
+            --timeout-seconds 20
           : > /tmp/health_worker_probe.log
           set +e
           python -u ../scripts/ci/health_worker_probe.py \
@@ -577,10 +581,6 @@ jobs:
           echo "health_probe_log_begin"
           grep -n "health_probe_task_complete" /tmp/celery.log || true
           echo "health_probe_log_end"
-          python -u ../scripts/ci/eg5_cache_validation.py \
-            --url "http://127.0.0.1:8000/health/worker" \
-            --delay-seconds 0.1 \
-            --timeout-seconds 20
           echo "health_probe_api_log_tail_begin"
           tail -n 50 /tmp/health_probe_api.log || true
           echo "health_probe_api_log_tail_end"
