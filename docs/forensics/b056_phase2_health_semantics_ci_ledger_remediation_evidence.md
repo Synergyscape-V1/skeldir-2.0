@@ -79,7 +79,8 @@ Result:
 Log: `docs/forensics/evidence/b056_phase2_worker_http_guardrail.log`
 
 ## Status
-- CI remediation applied; CI rerun required to close ledger.
+- CI remediation verified GREEN.
+- CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/21099463882 (success)
 - B0.5.6.2 tests are now explicitly included in CI.
 - `/health` alias remains explicitly documented and implemented as liveness-only.
 
