@@ -54,15 +54,13 @@ async def test_eg1_openapi_route_uniqueness():
     paths = openapi.get("paths", {})
     
     # Verify expected health paths exist
+    assert "/health" in paths, "/health alias missing from OpenAPI"
     assert "/health/live" in paths, "/health/live missing from OpenAPI"
     assert "/health/ready" in paths, "/health/ready missing from OpenAPI"
     assert "/health/worker" in paths, "/health/worker missing from OpenAPI"
-    
-    # Verify NO bare /health route exists (eliminated in B0.5.6.2)
-    assert "/health" not in paths, "/health should not exist (route ambiguity eliminated)"
-    
+
     # Verify each path has exactly one GET operation
-    for path in ["/health/live", "/health/ready", "/health/worker"]:
+    for path in ["/health", "/health/live", "/health/ready", "/health/worker"]:
         assert "get" in paths[path], f"{path} missing GET operation"
         # FastAPI only allows one handler per method+path, so no duplicates possible
         # This assertion documents the invariant
@@ -94,10 +92,13 @@ async def test_eg2_liveness_no_db_calls():
     with patch.object(health_module, "engine") as mock_engine:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/health/live")
-    
-    assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+            live_resp = await client.get("/health/live")
+            alias_resp = await client.get("/health")
+
+    assert live_resp.status_code == 200
+    assert live_resp.json() == {"status": "ok"}
+    assert alias_resp.status_code == 200
+    assert alias_resp.json() == {"status": "ok"}
     # The engine should NOT be called at all for liveness
     mock_engine.begin.assert_not_called()
 
@@ -112,9 +113,11 @@ async def test_eg2_liveness_no_celery_calls():
     with patch("app.celery_app.celery_app") as mock_celery:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/health/live")
-    
-    assert resp.status_code == 200
+            live_resp = await client.get("/health/live")
+            alias_resp = await client.get("/health")
+
+    assert live_resp.status_code == 200
+    assert alias_resp.status_code == 200
     mock_celery.send_task.assert_not_called()
 
 
@@ -391,16 +394,16 @@ async def test_eg5_cache_expiry():
 # ============================================================================
 
 @pytest.mark.asyncio
-async def test_no_bare_health_endpoint():
+async def test_health_alias_returns_ok():
     """
-    Verify /health endpoint no longer exists (B0.5.6.2 eliminated it).
+    Verify /health alias exists and returns liveness-only payload.
     """
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/health")
-    
-    # Should return 404 since /health was removed
-    assert resp.status_code == 404
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
 
 
 @pytest.mark.asyncio

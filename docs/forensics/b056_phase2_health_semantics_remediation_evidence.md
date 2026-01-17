@@ -18,20 +18,21 @@ rg -n "(/health|health/ready|include_router\(health|APIRouter\(|def health|def r
 ```
 backend/app\main.py
 52:app.include_router(health.router, tags=["Health"])
-56:# - /health/live: Pure liveness (no deps)
-57:# - /health/ready: Readiness (DB + RLS + GUC)
-58:# - /health/worker: Worker capability (data-plane probe)
-59:# No /health endpoint exists to avoid semantic ambiguity (B0.5.6.2).
+56:# - /health: Legacy alias for liveness only
+57:# - /health/live: Pure liveness (no deps)
+58:# - /health/ready: Readiness (DB + RLS + GUC)
+59:# - /health/worker: Worker capability (data-plane probe)
 
 backend/app\api\health.py
 5:- /health/live: Pure liveness (process responds, no dependency checks)
 6:- /health/ready: Readiness (DB + RLS + tenant GUC validation)
 7:- /health/worker: Worker capability (data-plane probe via Celery)
-9:No /health endpoint exists to avoid semantic ambiguity.
+9:- /health: Strict liveness only (alias of /health/live)
 24:router = APIRouter()
 182:@router.get("/health/live")
-196:@router.get("/health/ready")
-267:@router.get("/health/worker")
+196:@router.get("/health")
+210:@router.get("/health/ready")
+281:@router.get("/health/worker")
 ```
 
 ### 1.2 Runtime route truth (OpenAPI)
@@ -43,6 +44,7 @@ python -c "import json; data=json.load(open('.tmp/b056_openapi.json', encoding='
 
 **Output**
 ```
+/health
 /health/live
 /health/ready
 /health/worker
@@ -56,13 +58,13 @@ curl.exe -s -i http://127.0.0.1:8001/health
 
 **Output**
 ```
-HTTP/1.1 404 Not Found
+HTTP/1.1 200 OK
 content-type: application/json
 
-{"detail":"Not Found"}
+{"status":"ok"}
 ```
 
-**Finding**: Hypothesis H-C0.2 (duplicate `/health`) is **falsified** on current `main`. No `/health` route exists.
+**Finding**: Hypothesis H-C0.2 (duplicate `/health`) is **falsified** on current `main`. `/health` exists as a strict liveness alias only.
 
 ---
 
@@ -88,6 +90,7 @@ python -c "import json; data=json.load(open('.tmp/b056_openapi.json', encoding='
 
 **Output**
 ```
+/health
 /health/live
 /health/ready
 /health/worker

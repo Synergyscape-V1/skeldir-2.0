@@ -6,7 +6,8 @@ Three endpoints with rigid, non-overlapping responsibilities:
 - /health/ready: Readiness (DB + RLS + tenant GUC validation)
 - /health/worker: Worker capability (data-plane probe via Celery)
 
-No /health endpoint exists to avoid semantic ambiguity.
+Legacy alias:
+- /health: Strict liveness only (alias of /health/live)
 """
 import logging
 import time
@@ -189,6 +190,14 @@ async def liveness() -> dict:
     Constant-time response.
     
     Use for: Kubernetes liveness probe, load balancer health.
+    """
+    return {"status": "ok"}
+
+
+@router.get("/health")
+async def health_alias() -> dict:
+    """
+    Legacy health alias: strict liveness only (no dependency checks).
     """
     return {"status": "ok"}
 
