@@ -498,6 +498,11 @@ jobs:
           echo $! > /tmp/celery.pid
           echo "Waiting for worker to be ready..."
           sleep 10
+          if ! kill -0 "$(cat /tmp/celery.pid)" 2>/dev/null; then
+            echo "Celery worker failed to start"
+            tail -n 200 /tmp/celery.log || true
+            exit 1
+          fi
           echo "Worker should be ready"
 
       - name: B0.5.6.1 Guardrail - No Worker HTTP Server
