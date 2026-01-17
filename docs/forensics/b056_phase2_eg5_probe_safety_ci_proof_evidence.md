@@ -158,6 +158,12 @@ result = {
 
 ---
 
+## Root cause (H-BLOCK-1 / H-RC-3)
+Initial EG5 validation failed because the EG5 step ran **after** the
+`health_worker_probe` call, so the first EG5 request hit a pre-warmed cache and
+returned `"cached": true`. Reordering EG5 **before** the worker probe restored
+the expected uncached-first behavior.
+
 ## Remediation — EG5 CI validation script
 Script: `scripts/ci/eg5_cache_validation.py`
 ```
@@ -181,11 +187,17 @@ if cached_values != expected:
 
 CI workflow step (runs after worker probe, same API process):
 ```
-565:585:.github/workflows/ci.yml
+514:587:.github/workflows/ci.yml
           python -u ../scripts/ci/eg5_cache_validation.py \
             --url "http://127.0.0.1:8000/health/worker" \
             --delay-seconds 0.1 \
             --timeout-seconds 20
+          : > /tmp/health_worker_probe.log
+          set +e
+          python -u ../scripts/ci/health_worker_probe.py \
+            --url "http://127.0.0.1:8000/health/worker" \
+            --log-path /tmp/health_worker_probe.log \
+            2>&1 | tee /tmp/health_worker_probe_stdout.log
           echo "health_probe_api_log_tail_begin"
           tail -n 50 /tmp/health_probe_api.log || true
           echo "health_probe_api_log_tail_end"
@@ -201,11 +213,29 @@ The CI guardrail step remains unchanged and still executes before probes:
 ---
 
 ## CI Run (EG5 gate)
-- CI run URL: **TBD after push**
-- Expected: EG5 validation step runs and passes; fails if cache absent.
+- CI run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21100492747
+- Result: EG5 validation step ran and passed (cached false → true → true).
+
+Excerpt:
+```
+3470:3482:artifacts/ci_eg5_run_21100492747.log
+eg5_cache_validation_attempt_1_begin
+200
+{"status":"ok","broker":"ok","database":"ok","worker":"ok","probe_latency_ms":1129,"cached":false,"cache_scope":"process"}
+eg5_cache_validation_attempt_1_end
+eg5_cache_validation_attempt_2_begin
+200
+{"status":"ok","broker":"ok","database":"ok","worker":"ok","probe_latency_ms":1129,"cached":true,"cache_scope":"process"}
+eg5_cache_validation_attempt_2_end
+eg5_cache_validation_attempt_3_begin
+200
+{"status":"ok","broker":"ok","database":"ok","worker":"ok","probe_latency_ms":1129,"cached":true,"cache_scope":"process"}
+eg5_cache_validation_attempt_3_end
+eg5_cache_validation_passed
+```
 
 ---
 
 ## INDEX update
-Phase 2 row must reference the adjudicated commit SHA and green CI run URL.
-Update `docs/forensics/INDEX.md` once CI is green.
+Phase 2 row must reference commit `96f605a` and the green CI URL above.
+Update `docs/forensics/INDEX.md` accordingly.
