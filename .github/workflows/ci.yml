@@ -536,24 +536,24 @@ jobs:
             kill "${API_PID}" || true
             exit 1
           fi
-          : > "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
+          : > /tmp/health_worker_probe.log
           set +e
           python -u scripts/ci/health_worker_probe.py \
             --url "http://127.0.0.1:8000/health/worker" \
-            --log-path "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" \
+            --log-path /tmp/health_worker_probe.log \
             2>&1 | tee /tmp/health_worker_probe_stdout.log
           probe_exit=${PIPESTATUS[0]}
           set -e
-          if [ ! -f "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" ]; then
-            echo "probe_log_missing" > "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
+          if [ ! -f /tmp/health_worker_probe.log ]; then
+            echo "probe_log_missing" > /tmp/health_worker_probe.log
           fi
-          echo "probe_exit=${probe_exit}" >> "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
-          cat /tmp/health_worker_probe_stdout.log >> "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" || true
+          echo "probe_exit=${probe_exit}" >> /tmp/health_worker_probe.log
+          cat /tmp/health_worker_probe_stdout.log >> /tmp/health_worker_probe.log || true
           echo "health_worker_probe_stdout_begin"
           cat /tmp/health_worker_probe_stdout.log || true
           echo "health_worker_probe_stdout_end"
           echo "health_worker_probe_log_begin"
-          cat "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" || true
+          cat /tmp/health_worker_probe.log || true
           echo "health_worker_probe_log_end"
           if [ "$probe_exit" -ne 0 ]; then
             echo "health_probe_api_log_begin"
@@ -594,7 +594,7 @@ jobs:
         with:
           name: b0562-health-probe-logs-${{ env.ADJUDICATED_SHA }}
           path: |
-            ${{ env.B055_EVIDENCE_DIR }}/LOGS/health_worker_probe.log
+            /tmp/health_worker_probe.log
             /tmp/health_worker_probe_stdout.log
             /tmp/health_probe_api.log
             /tmp/celery.log
