@@ -532,7 +532,7 @@ jobs:
             exit 1
           fi
           : > "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log"
-          if ! python - <<'PY'
+          python - <<'PY'
           import json
           import os
           import sys
@@ -566,18 +566,19 @@ jobs:
             print(f"health_worker_probe_failed code={last_code} body={last_body}", file=sys.stderr, flush=True)
             raise SystemExit(f"health/worker probe failed: code={last_code} body={last_body}")
           PY
-          then
+          probe_exit=$?
+          echo "health_worker_probe_log_begin"
+          cat "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" || true
+          echo "health_worker_probe_log_end"
+          if [ "$probe_exit" -ne 0 ]; then
             echo "health_probe_api_log_begin"
             tail -n 200 /tmp/health_probe_api.log || true
             echo "health_probe_api_log_end"
             echo "health_probe_worker_log_begin"
             tail -n 200 /tmp/celery.log || true
             echo "health_probe_worker_log_end"
-            exit 1
+            exit "$probe_exit"
           fi
-          echo "health_worker_probe_log_begin"
-          cat "$B055_EVIDENCE_DIR/LOGS/health_worker_probe.log" || true
-          echo "health_worker_probe_log_end"
           echo "health_probe_log_begin"
           grep -n "health_probe_task_complete" /tmp/celery.log || true
           echo "health_probe_log_end"
