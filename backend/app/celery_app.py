@@ -384,7 +384,8 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
     logger.error(
         "celery_task_failed",
         extra={
-            "task_name": task_name,
+            "task_name": normalized_name,
+            "raw_task_name": raw_task_name,
             "task_id": task_id,
             "error": str(exception),
         },

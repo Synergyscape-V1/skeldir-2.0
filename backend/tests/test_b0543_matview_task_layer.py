@@ -72,8 +72,7 @@ def test_matview_metrics_emitted(monkeypatch):
 
         counter = metrics.matview_refresh_total.labels(
             view_name=result.view_name,
-            outcome=result.outcome.value,
-            strategy=matview_tasks.TaskOutcomeStrategy.SUCCESS.value,
+            outcome="success",
         )
         before = counter._value.get()
 
@@ -169,7 +168,7 @@ async def test_worker_survives_matview_failure(monkeypatch):
 
         failure_counter = metrics.matview_refresh_failures_total.labels(
             view_name="mv_allocation_summary",
-            error_type="unit_test",
+            outcome="failure",
         )
         failures_before = failure_counter._value.get()
 
