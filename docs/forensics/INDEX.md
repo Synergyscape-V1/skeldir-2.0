@@ -27,6 +27,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.6 Phase 2 ledger convergence | docs/forensics/b056_phase2_ledger_closure_convergence_evidence.md | EG7 ledger convergence proof (authoritative INDEX + metadata alignment). | 96f605a | https://github.com/Muk223/skeldir-2.0/actions/runs/21100492747 |
 | B0.5.6 Phase 3 | docs/forensics/b056_phase3_metrics_hardening_remediation_evidence.md | Metrics hardening: cardinality/privacy enforcement as tests | 3afd141 | https://github.com/Muk223/skeldir-2.0/actions/runs/21116761325 |
 | B0.5.6 Phase 3 CI enforcement | docs/forensics/b056_phase3_ci_enforcement_remediation_evidence.md | Proof that Phase 3 gates execute in CI (selection + logs) | 3afd141 | https://github.com/Muk223/skeldir-2.0/actions/runs/21116761325 |
+| B0.5.6 Phase 4 | docs/forensics/b056_phase4_queue_depth_max_age_broker_truth_evidence.md | Queue depth + max age gauges from broker truth (cached) | pending | pending |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

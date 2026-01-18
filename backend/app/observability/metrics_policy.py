@@ -26,6 +26,7 @@ from app.core.queues import ALLOWED_QUEUES
 # Prometheus internals (le, quantile, etc.) are excluded from enforcement.
 ALLOWED_LABEL_KEYS: frozenset[str] = frozenset({
     "queue",
+    "state",
     "task_name",
     "outcome",
     "view_name",
@@ -52,6 +53,21 @@ ALLOWED_OUTCOMES: frozenset[str] = frozenset({
     OUTCOME_TIMEOUT,
     OUTCOME_REJECTED,
     OUTCOME_SKIPPED,
+})
+
+
+# =============================================================================
+# Allowed Queue State Values (B0.5.6.4)
+# =============================================================================
+
+QUEUE_STATE_VISIBLE = "visible"
+QUEUE_STATE_INVISIBLE = "invisible"
+QUEUE_STATE_TOTAL = "total"
+
+ALLOWED_QUEUE_STATES: frozenset[str] = frozenset({
+    QUEUE_STATE_VISIBLE,
+    QUEUE_STATE_INVISIBLE,
+    QUEUE_STATE_TOTAL,
 })
 
 
@@ -150,6 +166,17 @@ def normalize_queue(raw: Optional[str]) -> str:
     return "unknown"
 
 
+def normalize_queue_state(raw: Optional[str]) -> str:
+    """
+    Normalize a queue state to a bounded value.
+
+    Returns the raw value if it's in ALLOWED_QUEUE_STATES, otherwise 'total'.
+    """
+    if raw and raw in ALLOWED_QUEUE_STATES:
+        return raw
+    return QUEUE_STATE_TOTAL
+
+
 def normalize_view_name(raw: Optional[str]) -> str:
     """
     Normalize a materialized view name to a bounded value.
@@ -175,6 +202,7 @@ def compute_series_budget() -> dict[str, int | dict[str, int]]:
     - total_upper_bound: sum of all metric family budgets
     """
     dim_queues = len(ALLOWED_QUEUES) + 1  # +1 for 'unknown'
+    dim_queue_states = len(ALLOWED_QUEUE_STATES)
     dim_task_names = len(ALLOWED_TASK_NAMES) + 1  # +1 for 'unknown'
     dim_outcomes = len(ALLOWED_OUTCOMES)
     dim_view_names = len(ALLOWED_VIEW_NAMES) + 1  # +1 for 'unknown'
@@ -183,10 +211,14 @@ def compute_series_budget() -> dict[str, int | dict[str, int]]:
     # - events_* metrics: no labels (aggregate only, tenant_id removed)
     # - celery_task_* metrics: task_name only
     # - matview_refresh_* metrics: view_name, outcome
+    # - celery_queue_* metrics: queue,state and queue
     
     events_series = 1  # No labels after B0.5.6.3
     celery_task_series = dim_task_names  # task_name only
     matview_series = dim_view_names * dim_outcomes  # view_name × outcome
+    celery_queue_messages_series = dim_queues * dim_queue_states  # queue × state
+    celery_queue_max_age_series = dim_queues  # queue
+    celery_queue_ops_series = 1  # no labels
     
     # Number of metric families per category (counters + histograms)
     # Events: 4 families (ingested, duplicate, dlq, duration)
@@ -196,10 +228,16 @@ def compute_series_budget() -> dict[str, int | dict[str, int]]:
     events_total = 4 * events_series
     celery_total = 4 * celery_task_series
     matview_total = 3 * matview_series
+    celery_queue_total = (
+        1 * celery_queue_messages_series
+        + 1 * celery_queue_max_age_series
+        + 2 * celery_queue_ops_series
+    )
     
     return {
         "dimension_sizes": {
             "queues": dim_queues,
+            "queue_states": dim_queue_states,
             "task_names": dim_task_names,
             "outcomes": dim_outcomes,
             "view_names": dim_view_names,
@@ -208,12 +246,13 @@ def compute_series_budget() -> dict[str, int | dict[str, int]]:
             "events": events_total,
             "celery_task": celery_total,
             "matview_refresh": matview_total,
+            "celery_queue": celery_queue_total,
         },
-        "total_upper_bound": events_total + celery_total + matview_total,
+        "total_upper_bound": events_total + celery_total + matview_total + celery_queue_total,
     }
 
 
-# Series budget threshold (conservative limit for alerting)
-# Based on: 4 + 4*25 + 3*6*6 = 4 + 100 + 108 = 212 series
-# Adding headroom: 500 series max
+# Series budget threshold (conservative limit for alerting).
+# This bound is validated in CI via compute_series_budget().
+# Adding headroom: 500 series max.
 SERIES_BUDGET_THRESHOLD = 500

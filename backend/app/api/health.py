@@ -338,12 +338,16 @@ def _get_metrics_data() -> bytes:
         # Multiprocess mode: aggregate from all workers
         from prometheus_client import CollectorRegistry, CONTENT_TYPE_LATEST
         from prometheus_client.multiprocess import MultiProcessCollector
-        
+        from app.observability import broker_queue_stats
+
         registry = CollectorRegistry()
         MultiProcessCollector(registry)
+        broker_queue_stats.register_collector(registry)
         return generate_latest(registry)
     else:
         # Single-process mode: use default registry
+        from app.observability import broker_queue_stats
+        broker_queue_stats.ensure_default_registry_registered()
         return generate_latest()
 
 
@@ -361,5 +365,8 @@ async def metrics():
         PROMETHEUS_MULTIPROC_DIR: Directory for multiprocess metric files.
                                   Must be set before any prometheus_client imports.
     """
+    from app.observability import broker_queue_stats
+    broker_queue_stats.ensure_default_registry_registered()
+    await broker_queue_stats.maybe_refresh_broker_queue_stats()
     data = _get_metrics_data()
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)

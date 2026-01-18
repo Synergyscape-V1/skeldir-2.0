@@ -23,6 +23,7 @@ from app.observability.metrics_policy import (
     ALLOWED_LABEL_KEYS,
     ALLOWED_OUTCOMES,
     ALLOWED_QUEUES,
+    ALLOWED_QUEUE_STATES,
     ALLOWED_TASK_NAMES,
     ALLOWED_VIEW_NAMES,
     SERIES_BUDGET_THRESHOLD,
@@ -67,6 +68,7 @@ PROMETHEUS_INTERNAL_LABELS = frozenset({"le", "quantile"})
 APPLICATION_METRIC_PREFIXES = (
     "events_",
     "celery_task_",
+    "celery_queue_",
     "matview_refresh_",
     "ingestion_",
 )
@@ -266,6 +268,29 @@ async def test_eg32_queue_values_bounded(metrics_text: str):
 
 
 @pytest.mark.asyncio
+async def test_eg32_state_values_bounded(metrics_text: str):
+    """
+    EG3.2: state label values are bounded to ALLOWED_QUEUE_STATES.
+    """
+    parsed = _parse_metrics_exposition(metrics_text)
+    violations = []
+
+    for metric in parsed:
+        state = metric["labels"].get("state")
+        if state is not None and state not in ALLOWED_QUEUE_STATES:
+            violations.append({
+                "metric": metric["metric_name"],
+                "state": state,
+            })
+
+    assert not violations, (
+        f"EG3.2 FAILED: Unbounded state values found:\n"
+        f"Allowed: {ALLOWED_QUEUE_STATES}\n"
+        f"Violations: {violations}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_eg32_outcome_values_bounded(metrics_text: str):
     """
     EG3.2: outcome label values are bounded to ALLOWED_OUTCOMES.
@@ -353,6 +378,7 @@ def test_eg33_all_dimensions_are_closed_sets():
     """
     dimensions = {
         "ALLOWED_QUEUES": ALLOWED_QUEUES,
+        "ALLOWED_QUEUE_STATES": ALLOWED_QUEUE_STATES,
         "ALLOWED_TASK_NAMES": ALLOWED_TASK_NAMES,
         "ALLOWED_OUTCOMES": ALLOWED_OUTCOMES,
         "ALLOWED_VIEW_NAMES": ALLOWED_VIEW_NAMES,
@@ -395,6 +421,10 @@ async def test_metrics_contains_expected_families(metrics_text: str):
         "celery_task_success_total",
         "celery_task_failure_total",
         "celery_task_duration_seconds",
+        "celery_queue_messages",
+        "celery_queue_max_age_seconds",
+        "celery_queue_stats_last_refresh_timestamp_seconds",
+        "celery_queue_stats_refresh_errors_total",
         "matview_refresh_total",
         "matview_refresh_duration_seconds",
         "matview_refresh_failures_total",
