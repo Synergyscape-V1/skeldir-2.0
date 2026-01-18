@@ -573,8 +573,8 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
                 )
 
             dlq_id = None
-            if task_id and task_name:
-                dlq_id = str(uuid5(NAMESPACE_URL, f"{task_id}:{task_name}"))
+            if task_id and raw_task_name:
+                dlq_id = str(uuid5(NAMESPACE_URL, f"{task_id}:{raw_task_name}"))
             else:
                 dlq_id = str(uuid5(NAMESPACE_URL, "unknown:unknown"))
 
@@ -593,7 +593,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
             """, (
                 dlq_id,
                 task_id,
-                task_name,
+                raw_task_name,
                 queue,
                 worker_name,
                 psycopg2.extras.Json(serialized_args),  # G4-JSON: Explicit JSONB encoding with UUID serialization
@@ -613,7 +613,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
             if os.getenv("CI") == "true":
                 logger.info(
                     "[G4-AUTH] DB CONNECT OK - DLQ row persisted",
-                    extra={"task_id": task_id, "task_name": task_name}
+                    extra={"task_id": task_id, "task_name": raw_task_name}
                 )
         finally:
             conn.close()
@@ -623,7 +623,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         logger.error(
             "celery_dlq_persist_failed",
             exc_info=dlq_error,
-            extra={"task_id": task_id, "task_name": task_name},
+            extra={"task_id": task_id, "task_name": raw_task_name},
         )
 
 
