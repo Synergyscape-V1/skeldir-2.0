@@ -78,6 +78,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
+      - name: Provision PROMETHEUS_MULTIPROC_DIR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mp="${RUNNER_TEMP}/prom_multiproc"
+          mkdir -p "$mp"
+          chmod 700 "$mp"
+          echo "PROMETHEUS_MULTIPROC_DIR=$mp" >> "$GITHUB_ENV"
+
       - name: "R7 Phase R0: Immutable fingerprint"
         shell: bash
         run: |
