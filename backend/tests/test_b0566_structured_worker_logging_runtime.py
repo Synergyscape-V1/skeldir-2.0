@@ -27,6 +27,7 @@ from app.celery_app import celery_app  # noqa: E402
 
 REQUIRED_KEYS = {"tenant_id", "correlation_id", "task_name", "queue_name", "status", "error_type"}
 ALLOWED_KEYS = REQUIRED_KEYS | {"task_id", "duration_ms", "retry", "retries", "exc_message_trunc"}
+TEST_QUEUE = "b0566_runtime"
 
 
 def _start_worker(*, tmp_path: Path) -> tuple[subprocess.Popen[str], list[str]]:
@@ -56,7 +57,7 @@ def _start_worker(*, tmp_path: Path) -> tuple[subprocess.Popen[str], list[str]]:
         "-c",
         "1",
         "-Q",
-        "housekeeping",
+        TEST_QUEUE,
         "--without-gossip",
         "--without-mingle",
         "--without-heartbeat",
@@ -146,12 +147,12 @@ def test_b0566_worker_runtime_emits_canonical_lifecycle_logs(tmp_path: Path):
 
         ok = celery_app.send_task(
             "app.tasks.observability_test.success",
-            queue="housekeeping",
+            queue=TEST_QUEUE,
             kwargs={"tenant_id": tenant_id, "correlation_id": correlation_success},
         )
         fail = celery_app.send_task(
             "app.tasks.observability_test.failure",
-            queue="housekeeping",
+            queue=TEST_QUEUE,
             kwargs={"tenant_id": tenant_id, "correlation_id": correlation_failure},
         )
 
@@ -173,7 +174,7 @@ def test_b0566_worker_runtime_emits_canonical_lifecycle_logs(tmp_path: Path):
             assert set(rec.keys()).issubset(ALLOWED_KEYS)
             assert REQUIRED_KEYS.issubset(rec.keys())
             assert rec["tenant_id"] == tenant_id
-            assert rec["queue_name"] == "housekeeping"
+            assert rec["queue_name"] == TEST_QUEUE
             assert isinstance(rec.get("task_name"), str) and rec["task_name"]
             assert isinstance(rec.get("correlation_id"), str) and rec["correlation_id"]
             assert "args" not in rec and "kwargs" not in rec and "payload" not in rec

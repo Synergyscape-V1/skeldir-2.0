@@ -31,6 +31,71 @@ from app.observability.metrics import (
 
 logger = logging.getLogger(__name__)
 
+_IDEMPOTENCY_UNIQUE_CONSTRAINT = "uq_attribution_events_tenant_idempotency_key"
+
+
+def _integrity_error_sqlstate(error: IntegrityError) -> str | None:
+    orig = getattr(error, "orig", None)
+    if orig is None:
+        return None
+    for attr in ("pgcode", "sqlstate"):
+        value = getattr(orig, attr, None)
+        if value:
+            return str(value)
+    return None
+
+
+def _integrity_error_constraint_name(error: IntegrityError) -> str | None:
+    orig = getattr(error, "orig", None)
+    if orig is None:
+        return None
+
+    diag = getattr(orig, "diag", None)
+    if diag is not None:
+        name = getattr(diag, "constraint_name", None)
+        if name:
+            return str(name)
+
+    name = getattr(orig, "constraint_name", None)
+    if name:
+        return str(name)
+
+    return None
+
+
+def _is_idempotency_duplicate_integrity_error(error: IntegrityError) -> bool:
+    """
+    Detect tenant-scoped idempotency races deterministically.
+
+    We prefer SQLSTATE/constraint-name detection over fragile string matching.
+    Fallback to message matching covers older driver variants.
+    """
+    constraint = _integrity_error_constraint_name(error)
+    if constraint and _IDEMPOTENCY_UNIQUE_CONSTRAINT in constraint:
+        return True
+
+    sqlstate = _integrity_error_sqlstate(error)
+    if sqlstate == "23505" and constraint and "idempotency" in constraint:
+        return True
+
+    msg = str(error).lower()
+    return (
+        "duplicate key value violates unique constraint" in msg
+        and ("idempotency" in msg or _IDEMPOTENCY_UNIQUE_CONSTRAINT in msg)
+    )
+
+
+async def _fetch_existing_event_for_key(
+    session: AsyncSession, *, tenant_id: UUID, idempotency_key: str
+) -> Optional[AttributionEvent]:
+    res = await session.execute(
+        select(AttributionEvent).where(
+            AttributionEvent.tenant_id == tenant_id,
+            AttributionEvent.idempotency_key == idempotency_key,
+        )
+    )
+    return res.scalar_one_or_none()
+
 
 class ValidationError(Exception):
     """Raised when event data fails validation"""
@@ -201,16 +266,13 @@ class EventIngestionService:
 
         except IntegrityError as e:
             # Idempotency races: concurrent inserts may bypass the pre-check.
-            msg = str(e).lower()
-            is_duplicate = (
-                "duplicate key value violates unique constraint" in msg
-                and ("idempotency" in msg or "uq_attribution_events_tenant_idempotency_key" in msg)
-            )
-            if not is_duplicate:
+            if not _is_idempotency_duplicate_integrity_error(e):
                 raise
 
             await session.rollback()
-            existing_after_race = await self._check_duplicate(session, tenant_id, idempotency_key)
+            existing_after_race = await _fetch_existing_event_for_key(
+                session, tenant_id=tenant_id, idempotency_key=idempotency_key
+            )
             if existing_after_race:
                 logger.info(
                     "duplicate_event_detected_race",
@@ -458,21 +520,11 @@ async def ingest_with_transaction(
 
         except IntegrityError as e:
             # Idempotency races can surface here if callers bypass service-level handling.
-            msg = str(e).lower()
-            is_duplicate = (
-                "duplicate key value violates unique constraint" in msg
-                and ("idempotency" in msg or "uq_attribution_events_tenant_idempotency_key" in msg)
-            )
-            if is_duplicate:
+            if _is_idempotency_duplicate_integrity_error(e):
                 await session.rollback()
-                from sqlalchemy import select
-                res = await session.execute(
-                    select(AttributionEvent).where(
-                        AttributionEvent.tenant_id == tenant_id,
-                        AttributionEvent.idempotency_key == idempotency_key,
-                    )
+                existing = await _fetch_existing_event_for_key(
+                    session, tenant_id=tenant_id, idempotency_key=idempotency_key
                 )
-                existing = res.scalar_one_or_none()
                 if existing:
                     return {
                         "status": "success",
