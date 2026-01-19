@@ -23,11 +23,22 @@ def pick_free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def wait_for_substring(lines: list[str], substring: str, *, timeout_s: float = 60.0) -> None:
+def wait_for_substring(
+    lines: list[str],
+    substring: str,
+    *,
+    timeout_s: float = 60.0,
+    proc: subprocess.Popen[str] | None = None,
+) -> None:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         if any(substring in line for line in lines):
             return
+        if proc is not None and proc.poll() is not None:
+            raise AssertionError(
+                f"Process exited before emitting {substring!r}. Last output:\n"
+                + "\n".join(lines[-50:])
+            )
         time.sleep(0.1)
     raise AssertionError(f"Timed out waiting for process output containing {substring!r}")
 
@@ -74,21 +85,32 @@ def _start_process(
     threading.Thread(target=_reader, name=f"proc-reader-{cmd[0]}", daemon=True).start()
 
     if ready_substring:
-        wait_for_substring(lines, ready_substring, timeout_s=ready_timeout_s)
+        wait_for_substring(lines, ready_substring, timeout_s=ready_timeout_s, proc=proc)
 
     return ProcHandle(proc=proc, output_lines=lines)
 
 
 def terminate_process(proc: subprocess.Popen[str], *, timeout_s: float = 20.0) -> None:
-    proc.terminate()
+    if proc.poll() is not None:
+        return
+
+    try:
+        proc.terminate()
+    except Exception:
+        # Process may have already exited between poll() and terminate(), or may
+        # not support terminate on this platform.
+        pass
     try:
         proc.wait(timeout=timeout_s)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        try:
+            proc.kill()
+        except Exception:
+            pass
         proc.wait(timeout=timeout_s)
 
 
-@dataclass(frozen=True)
+@dataclass
 class MetricsTopology:
     api_url: str
     exporter_url: str
@@ -99,7 +121,12 @@ class MetricsTopology:
     exporter: ProcHandle
 
 
-def start_metrics_topology(*, tmp_path: Path, worker_queue: str) -> MetricsTopology:
+def start_metrics_topology(
+    *,
+    tmp_path: Path,
+    worker_queue: str,
+    api_env_overrides: dict[str, str] | None = None,
+) -> MetricsTopology:
     backend_dir = Path(__file__).resolve().parents[1]
 
     multiproc_dir = tmp_path / "prom_multiproc"
@@ -132,7 +159,7 @@ def start_metrics_topology(*, tmp_path: Path, worker_queue: str) -> MetricsTopol
         "-c",
         "1",
         "-Q",
-        worker_queue,
+        f"{worker_queue},housekeeping",
         "--without-gossip",
         "--without-mingle",
         "--without-heartbeat",
@@ -162,6 +189,8 @@ def start_metrics_topology(*, tmp_path: Path, worker_queue: str) -> MetricsTopol
             "BROKER_QUEUE_STATS_CACHE_TTL_SECONDS": "0",
         }
     )
+    if api_env_overrides:
+        api_env.update(api_env_overrides)
     api_cmd = [
         sys.executable,
         "-m",
@@ -193,3 +222,42 @@ def stop_metrics_topology(topology: MetricsTopology) -> None:
     for handle in (topology.api, topology.exporter, topology.worker):
         terminate_process(handle.proc, timeout_s=30.0)
 
+
+def ensure_worker_running(topology: MetricsTopology) -> None:
+    if topology.worker.proc.poll() is None:
+        return
+
+    backend_dir = Path(__file__).resolve().parents[1]
+
+    base_env = dict(os.environ)
+    base_env.setdefault("PYTHONUNBUFFERED", "1")
+    base_env.setdefault("TESTING", "1")
+
+    worker_env = dict(base_env)
+    worker_env.update(
+        {
+            "PROMETHEUS_MULTIPROC_DIR": str(topology.multiproc_dir),
+        }
+    )
+
+    pool = "prefork" if os.name != "nt" else "solo"
+    worker_cmd = [
+        sys.executable,
+        "-m",
+        "celery",
+        "-A",
+        "app.celery_app.celery_app",
+        "worker",
+        "-P",
+        pool,
+        "-c",
+        "1",
+        "-Q",
+        f"{topology.worker_queue},housekeeping",
+        "--without-gossip",
+        "--without-mingle",
+        "--without-heartbeat",
+        "--loglevel=INFO",
+    ]
+
+    topology.worker = _start_process(cmd=worker_cmd, cwd=backend_dir, env=worker_env, ready_substring="ready.", ready_timeout_s=120)

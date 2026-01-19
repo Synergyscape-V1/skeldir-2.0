@@ -10,6 +10,7 @@ Legacy alias:
 - /health: Strict liveness only (alias of /health/live)
 """
 import logging
+import os
 import time
 import threading
 from dataclasses import dataclass
@@ -31,8 +32,18 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 # Probe result cache: per-process, TTL-based
-_PROBE_CACHE_TTL_SECONDS = 10.0
-_PROBE_TIMEOUT_SECONDS = 15.0  # Max time to wait for worker response
+def _get_env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except Exception:
+        return default
+
+
+_PROBE_CACHE_TTL_SECONDS = max(0.0, _get_env_float("WORKER_PROBE_CACHE_TTL_SECONDS", 10.0))
+_PROBE_TIMEOUT_SECONDS = max(0.1, _get_env_float("WORKER_PROBE_TIMEOUT_SECONDS", 15.0))  # Max time to wait for worker response
 
 
 @dataclass

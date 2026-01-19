@@ -10,11 +10,13 @@ Runtime topology truth encoded in CI:
 from __future__ import annotations
 
 import math
+import json
 import os
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import urlopen
 from uuid import uuid4
 
@@ -23,7 +25,7 @@ from sqlalchemy import create_engine, text
 
 from app.celery_app import celery_app
 from app.observability.metrics_policy import normalize_queue
-from tests.metrics_topology_harness import start_metrics_topology, stop_metrics_topology
+from tests.metrics_topology_harness import ensure_worker_running, start_metrics_topology, stop_metrics_topology, terminate_process
 
 
 PING_TASK_NAME = "app.tasks.housekeeping.ping"
@@ -33,6 +35,29 @@ def _scrape_text(url: str) -> str:
     with urlopen(url, timeout=5) as resp:  # noqa: S310 - local test server only
         assert resp.status == 200
         return resp.read().decode("utf-8", errors="replace")
+
+
+def _http_get_text(url: str) -> tuple[int, str]:
+    try:
+        with urlopen(url, timeout=10) as resp:  # noqa: S310 - local test server only
+            return resp.status, resp.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace") if getattr(exc, "fp", None) is not None else ""
+        return int(exc.code), body
+
+
+def _wait_for_http_status(url: str, expected_status: int, *, timeout_s: float) -> str:
+    deadline = time.time() + timeout_s
+    last_status: int | None = None
+    last_body: str = ""
+    while time.time() < deadline:
+        status_code, body = _http_get_text(url)
+        last_status = status_code
+        last_body = body
+        if status_code == expected_status:
+            return body
+        time.sleep(0.2)
+    raise AssertionError(f"Timed out waiting for HTTP {expected_status} from {url}; last={last_status} body={last_body[:500]!r}")
 
 
 _SAMPLE_RE = re.compile(
@@ -112,7 +137,17 @@ def _fetch_broker_truth_normalized() -> BrokerTruthNormalized:
 @pytest.fixture(scope="module")
 def metrics_topology(tmp_path_factory):
     tmp_path: Path = tmp_path_factory.mktemp("b0567_metrics_topology")
-    topology = start_metrics_topology(tmp_path=tmp_path, worker_queue="b0567_runtime")
+    topology = start_metrics_topology(
+        tmp_path=tmp_path,
+        worker_queue="b0567_runtime",
+        api_env_overrides={
+            # Disable /health/worker caching so worker-down assertions don't get
+            # false positives from the probe cache.
+            "WORKER_PROBE_CACHE_TTL_SECONDS": "0",
+            # Keep worker-down probes bounded; tests use retries to handle races.
+            "WORKER_PROBE_TIMEOUT_SECONDS": "2",
+        },
+    )
     try:
         yield topology
     finally:
@@ -223,3 +258,34 @@ def test_t74_forbidden_labels_absent_on_both_scrape_surfaces(metrics_topology):
 
     for text_body in (api_text, exporter_text):
         assert "tenant_id" not in text_body
+
+
+def test_t75_health_semantics_live_ready_worker_capability(metrics_topology):
+    api_url = metrics_topology.api_url
+
+    # Baseline (worker running): live OK, ready OK, worker capability OK.
+    assert _wait_for_http_status(f"{api_url}/health/live", 200, timeout_s=10.0)
+    assert _wait_for_http_status(f"{api_url}/health/ready", 200, timeout_s=30.0)
+
+    worker_ok_body = _wait_for_http_status(f"{api_url}/health/worker", 200, timeout_s=30.0)
+    worker_ok = json.loads(worker_ok_body) if worker_ok_body else {}
+    assert worker_ok.get("status") == "ok"
+    assert worker_ok.get("worker") == "ok"
+
+    try:
+        # Failure mode (worker terminated): live remains OK, ready remains OK,
+        # but worker capability must fail truthfully.
+        terminate_process(metrics_topology.worker.proc, timeout_s=30.0)
+        assert metrics_topology.worker.proc.poll() is not None
+
+        assert _wait_for_http_status(f"{api_url}/health/live", 200, timeout_s=10.0)
+        assert _wait_for_http_status(f"{api_url}/health/ready", 200, timeout_s=30.0)
+
+        worker_bad_body = _wait_for_http_status(f"{api_url}/health/worker", 503, timeout_s=30.0)
+        worker_bad = json.loads(worker_bad_body) if worker_bad_body else {}
+        assert worker_bad.get("status") == "unhealthy"
+        assert worker_bad.get("worker") == "error"
+    finally:
+        # Avoid cascading failures in subsequent Phase 7 tests by bringing the
+        # worker back if this test stopped it.
+        ensure_worker_running(metrics_topology)
