@@ -617,7 +617,6 @@ jobs:
             tests/test_b0563_metrics_hardening.py \
             tests/test_b0565_task_metrics_topology.py \
             tests/test_b0566_structured_worker_logging_runtime.py \
-            tests/test_b0567_integration_truthful_scrape_targets.py \
             tests/test_b0564_queue_depth_max_age_broker_truth.py -q | tee "$B055_EVIDENCE_DIR/LOGS/pytest_b055.log"
 
       - name: Upload health probe logs
@@ -658,6 +657,89 @@ jobs:
           if [ -f /tmp/celery.pid ]; then
             kill $(cat /tmp/celery.pid) || true
           fi
+
+  b0567-backend-integration:
+    name: Backend Integration (B0567)
+    runs-on: ubuntu-latest
+    needs: checkout
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      PYTHONPATH: ${{ github.workspace }}/backend
+      CI: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Prepare database and role
+        run: |
+          echo "Creating database roles and skeldir_validation database..."
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_rw WITH PASSWORD 'app_rw';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE USER app_ro WITH PASSWORD 'app_ro';"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE skeldir_validation OWNER app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE skeldir_validation TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_user;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT ALL ON SCHEMA public TO app_rw;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d skeldir_validation -c "GRANT USAGE ON SCHEMA public TO app_ro;"
+          echo "Database setup complete"
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          # B0.5.3.2: Upgrade to skeldir_foundation (core attribution schema + celery foundation)
+          echo "[B0567] Alembic upgrade 202511131121"
+          alembic upgrade 202511131121
+          echo "[B0567] Alembic upgrade skeldir_foundation@head"
+          alembic upgrade skeldir_foundation@head
+          echo "[B0567] Alembic upgrade head"
+          alembic upgrade head
+
+      - name: Run Phase 7 integration tests (explicit)
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          CELERY_BROKER_URL: ${{ env.CELERY_BROKER_URL }}
+          CELERY_RESULT_BACKEND: ${{ env.CELERY_RESULT_BACKEND }}
+          PYTHONPATH: ${{ env.PYTHONPATH }}
+        run: |
+          cd backend
+          set -euo pipefail
+          pytest -vv tests/test_b0567_integration_truthful_scrape_targets.py
 
   # B0.5.3.3 Revenue Contract Tests (independent of B0.5.1 failures)
   b0533-revenue-contract:
@@ -1038,7 +1120,7 @@ jobs:
 
   # Integration tests
   test-integration:
-    name: Integration Tests
+    name: Frontend E2E (Playwright)
     runs-on: ubuntu-latest
     needs: checkout
     steps:
