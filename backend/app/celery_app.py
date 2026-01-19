@@ -424,7 +424,15 @@ def _get_worker_pool_pids(worker) -> set[int]:
     if not processes:
         return set()
     pids: set[int] = set()
-    for proc in processes:
+    try:
+        proc_iter = iter(processes)
+    except TypeError:
+        nested = getattr(processes, "_pool", None)
+        try:
+            proc_iter = iter(nested) if nested is not None else iter(())
+        except TypeError:
+            proc_iter = iter(())
+    for proc in proc_iter:
         pid = getattr(proc, "pid", None)
         if isinstance(pid, int) and pid > 0:
             pids.add(pid)
@@ -757,7 +765,8 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
         correlation_id = None
         retry_count = 0
         if task and hasattr(task, 'request'):
-            queue = getattr(task.request, 'delivery_info', {}).get('routing_key', None)
+            delivery_info = getattr(task.request, "delivery_info", None) or {}
+            queue = delivery_info.get("routing_key", None) if isinstance(delivery_info, dict) else None
             worker_name = getattr(task.request, 'hostname', None)
             correlation_id_val = getattr(task.request, 'correlation_id', None)
             if correlation_id_val:
