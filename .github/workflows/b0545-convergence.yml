@@ -95,6 +95,11 @@ jobs:
 
           export PYTHONPATH="${GITHUB_WORKSPACE}/backend:${PYTHONPATH}"
 
+          PROM_DIR="${EVIDENCE_DIR}/prom_multiproc"
+          mkdir -p "${PROM_DIR}"
+          chmod 700 "${PROM_DIR}"
+          export PROMETHEUS_MULTIPROC_DIR="${PROM_DIR}"
+
           python - <<'PY' > "${EVIDENCE_DIR}/celery_config.json"
           import json
           from sqlalchemy.engine.url import make_url
