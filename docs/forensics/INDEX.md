@@ -31,6 +31,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.6 Phase 5 | docs/forensics/b056_phase5_task_metrics_topology_no_db_sink_evidence.md | Task metrics topology: exporter-only scrape, no DB sink, parent-owned pruning | 7ffb4e7 | https://github.com/Muk223/skeldir-2.0/actions/runs/21120122342 |
 | B0.5.6 Phase 6 | docs/forensics/b056_phase6_structured_worker_logging_remediation_evidence.md | Structured worker lifecycle JSON logs (tenant_id in logs; metrics bounded; runtime proof via subprocess) | 1ce2016 | https://github.com/Muk223/skeldir-2.0/actions/runs/21146810238 |
 | B0.5.6 Phase 7 | docs/forensics/b056_phase7_integration_tests_truthful_scrape_targets_evidence.md | Integration tests: truthful scrape targets (exporter vs API) + anti split-brain + privacy labels + health semantics | 829a300 | https://github.com/Muk223/skeldir-2.0/actions/runs/21153690592 |
+| B0.5.6 Phase 8 | docs/forensics/b056_phase8_grafana_dashboard_template_evidence.md | Grafana dashboard template (worker throughput/error/latency + broker-truth backlog) + evidence closure | pending | pending |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

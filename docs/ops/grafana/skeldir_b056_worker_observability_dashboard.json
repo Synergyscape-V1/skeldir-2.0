@@ -1,0 +1,276 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "skeldir-b056-worker-observability",
+    "title": "Skeldir B056 — Worker Observability",
+    "tags": ["skeldir", "b056", "celery", "worker", "observability"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "time": { "from": "now-6h", "to": "now" },
+    "templating": {
+      "list": [
+        {
+          "type": "datasource",
+          "name": "datasource",
+          "label": "Datasource",
+          "query": "prometheus",
+          "refresh": 1,
+          "hide": 0,
+          "options": [],
+          "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" }
+        },
+        {
+          "type": "query",
+          "name": "api_job",
+          "label": "API job",
+          "datasource": "$datasource",
+          "query": "label_values(up, job)",
+          "definition": "label_values(up, job)",
+          "refresh": 2,
+          "hide": 0,
+          "multi": false,
+          "includeAll": true,
+          "allValue": ".*",
+          "options": [],
+          "current": { "selected": true, "text": ".*", "value": ".*" }
+        },
+        {
+          "type": "query",
+          "name": "worker_job",
+          "label": "Worker exporter job",
+          "datasource": "$datasource",
+          "query": "label_values(up, job)",
+          "definition": "label_values(up, job)",
+          "refresh": 2,
+          "hide": 0,
+          "multi": false,
+          "includeAll": true,
+          "allValue": ".*",
+          "options": [],
+          "current": { "selected": true, "text": ".*", "value": ".*" }
+        },
+        {
+          "type": "query",
+          "name": "queue",
+          "label": "Queue",
+          "datasource": "$datasource",
+          "query": "label_values(celery_queue_messages{job=~\"$api_job\"}, queue)",
+          "definition": "label_values(celery_queue_messages{job=~\"$api_job\"}, queue)",
+          "refresh": 2,
+          "hide": 0,
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*",
+          "options": [],
+          "current": { "selected": true, "text": "All", "value": ".*" }
+        },
+        {
+          "type": "query",
+          "name": "task_name",
+          "label": "Task name (bounded allowlist)",
+          "datasource": "$datasource",
+          "query": "label_values(celery_task_started_total{job=~\"$worker_job\"}, task_name)",
+          "definition": "label_values(celery_task_started_total{job=~\"$worker_job\"}, task_name)",
+          "refresh": 2,
+          "hide": 0,
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*",
+          "options": [],
+          "current": { "selected": true, "text": "All", "value": ".*" }
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 10,
+        "type": "row",
+        "title": "Row A — Worker Health of Observability",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }
+      },
+      {
+        "id": 11,
+        "type": "timeseries",
+        "title": "Worker exporter scrape up",
+        "datasource": "$datasource",
+        "gridPos": { "x": 0, "y": 1, "w": 12, "h": 7 },
+        "targets": [
+          {
+            "expr": "up{job=~\"$worker_job\"}",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "type": "timeseries",
+        "title": "API scrape up",
+        "datasource": "$datasource",
+        "gridPos": { "x": 12, "y": 1, "w": 12, "h": 7 },
+        "targets": [
+          {
+            "expr": "up{job=~\"$api_job\"}",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "type": "row",
+        "title": "Row B — Throughput",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 8, "w": 24, "h": 1 }
+      },
+      {
+        "id": 21,
+        "type": "timeseries",
+        "title": "Task started rate (per task)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 0, "y": 9, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "expr": "sum by (task_name) (rate(celery_task_started_total{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m]))",
+            "legendFormat": "{{task_name}}"
+          }
+        ]
+      },
+      {
+        "id": 22,
+        "type": "timeseries",
+        "title": "Task success rate (per task)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 8, "y": 9, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "expr": "sum by (task_name) (rate(celery_task_success_total{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m]))",
+            "legendFormat": "{{task_name}}"
+          }
+        ]
+      },
+      {
+        "id": 23,
+        "type": "timeseries",
+        "title": "Task failure rate (per task)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 16, "y": 9, "w": 8, "h": 7 },
+        "targets": [
+          {
+            "expr": "sum by (task_name) (rate(celery_task_failure_total{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m]))",
+            "legendFormat": "{{task_name}}"
+          }
+        ]
+      },
+      {
+        "id": 30,
+        "type": "row",
+        "title": "Row C — Error Rate",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 16, "w": 24, "h": 1 }
+      },
+      {
+        "id": 31,
+        "type": "timeseries",
+        "title": "Failure rate / Started rate (%)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 0, "y": 17, "w": 24, "h": 7 },
+        "fieldConfig": {
+          "defaults": { "unit": "percentunit" },
+          "overrides": []
+        },
+        "targets": [
+          {
+            "expr": "100 * (sum(rate(celery_task_failure_total{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m])) / clamp_min(sum(rate(celery_task_started_total{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m])), 1e-9))",
+            "legendFormat": "error_rate"
+          }
+        ]
+      },
+      {
+        "id": 40,
+        "type": "row",
+        "title": "Row D — Latency",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 24, "w": 24, "h": 1 }
+      },
+      {
+        "id": 41,
+        "type": "timeseries",
+        "title": "Task duration p50 (seconds)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 0, "y": 25, "w": 8, "h": 7 },
+        "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum by (le) (rate(celery_task_duration_seconds_bucket{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m])))",
+            "legendFormat": "p50"
+          }
+        ]
+      },
+      {
+        "id": 42,
+        "type": "timeseries",
+        "title": "Task duration p90 (seconds)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 8, "y": 25, "w": 8, "h": 7 },
+        "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.90, sum by (le) (rate(celery_task_duration_seconds_bucket{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m])))",
+            "legendFormat": "p90"
+          }
+        ]
+      },
+      {
+        "id": 43,
+        "type": "timeseries",
+        "title": "Task duration p99 (seconds)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 16, "y": 25, "w": 8, "h": 7 },
+        "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, sum by (le) (rate(celery_task_duration_seconds_bucket{job=~\"$worker_job\",task_name=~\"$task_name\"}[5m])))",
+            "legendFormat": "p99"
+          }
+        ]
+      },
+      {
+        "id": 50,
+        "type": "row",
+        "title": "Row E — Backlog (Broker Truth)",
+        "collapsed": false,
+        "gridPos": { "x": 0, "y": 32, "w": 24, "h": 1 }
+      },
+      {
+        "id": 51,
+        "type": "timeseries",
+        "title": "Queue depth (visible messages)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 0, "y": 33, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (queue) (celery_queue_messages{job=~\"$api_job\",queue=~\"$queue\",state=\"visible\"})",
+            "legendFormat": "{{queue}}"
+          }
+        ]
+      },
+      {
+        "id": 52,
+        "type": "timeseries",
+        "title": "Queue max age (seconds, oldest visible message)",
+        "datasource": "$datasource",
+        "gridPos": { "x": 12, "y": 33, "w": 12, "h": 8 },
+        "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+        "targets": [
+          {
+            "expr": "max by (queue) (celery_queue_max_age_seconds{job=~\"$api_job\",queue=~\"$queue\"})",
+            "legendFormat": "{{queue}}"
+          }
+        ]
+      }
+    ]
+  },
+  "overwrite": false
+}
