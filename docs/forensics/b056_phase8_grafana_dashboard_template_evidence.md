@@ -3,8 +3,8 @@
 **Date**: 2026-01-20  
 **Phase**: B0.5.6.8  
 **Status**: COMPLETE  
-**Commit SHA**: 70c9240d1b762ddf0dbe2e21a8f8f4753a240bcf  
-**CI Run (primary)**: https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899  
+**Commit SHA**: 70c9240  
+**CI Run**: https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899  
 
 ---
 
