@@ -14,6 +14,7 @@ Timestamp (local): `2026-01-20T14:06:41-06:00`
 
 - Branch (work): `b057-p1-canonical-e2e-bringup`
 - Pre-remediation anchor (this branch, before P1 changes): `0a31d08e18acc97c630b0a97d65b3664837d2ce4`
+- Remediation commit (this pack): `9dd08fa461301b6daa192fc48d664ffe303c7dfc`
 - `main` at time of work (per branch history): `f083d23` (`b056: phase8 ledger closure`)
 
 Commands:
@@ -305,9 +306,8 @@ Remediation in harness defaults:
 
 ## PR / push gate (EG-P1.7)
 
-Pending in this evidence pack until branch is pushed and PR is opened.
+Branch push + PR:
 
-- Branch push: pending
-- PR URL: pending
+- Branch push: `origin/b057-p1-canonical-e2e-bringup`
+- PR URL: https://github.com/Muk223/skeldir-2.0/pull/24
 - CI run(s): pending
-
