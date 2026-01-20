@@ -15,6 +15,7 @@ Timestamp (local): `2026-01-20T14:06:41-06:00`
 - Branch (work): `b057-p1-canonical-e2e-bringup`
 - Pre-remediation anchor (this branch, before P1 changes): `0a31d08e18acc97c630b0a97d65b3664837d2ce4`
 - Remediation implementation commit (compose + scripts + runbook): `9dd08fa461301b6daa192fc48d664ffe303c7dfc`
+- PR head SHA (CI-validated): `b4d3f788e12ac732f72b9d61bdbfa4d73223f2d8`
 - `main` at time of work (per branch history): `f083d23` (`b056: phase8 ledger closure`)
 
 Commands:
@@ -32,7 +33,9 @@ b057-p1-canonical-e2e-bringup
 0a31d08e18acc97c630b0a97d65b3664837d2ce4
 0a31d08 docs: add B0.5.7 context gathering evidence
 f083d23 b056: phase8 ledger closure
-...
+732233c b056: phase8 evidence finalize
+70c9240 b056: phase8 grafana dashboard + evidence closure
+676ee30 B0567: update Phase 7 evidence for EG7.4
 ```
 
 ---
@@ -109,7 +112,7 @@ docker compose -f docker-compose.component-dev.yml build
 Output (trimmed):
 
 ```text
-resolve : CreateFile ...\backend\app\attribution: The system cannot find the file specified.
+resolve : CreateFile C:\Users\ayewhy\II SKELDIR II\backend\app\attribution: The system cannot find the file specified.
 ```
 
 ---
@@ -156,7 +159,7 @@ Output:
 server_encoding
 UTF8
 
-PostgreSQL 16.11 (Debian 16.11-1.pgdg13+1) ...
+PostgreSQL 16.11 (Debian 16.11-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
 ```
 
 ---
@@ -174,8 +177,8 @@ docker compose -f docker-compose.e2e.yml build
 
 Observed:
 
-- `docker compose ... config` exits `0`
-- `docker compose ... build` exits `0`
+- `docker compose -f docker-compose.e2e.yml config` exits `0`
+- `docker compose -f docker-compose.e2e.yml build` exits `0`
 
 ### EG-P1.2 — Topology bring-up
 
@@ -191,11 +194,11 @@ Output (`docker compose ps -a`):
 
 ```text
 NAME                     SERVICE    STATUS                     PORTS
-skeldir-e2e-api-1         api        Up ... (healthy)            0.0.0.0:18000->8000/tcp
-skeldir-e2e-db-1          db         Up ... (healthy)            0.0.0.0:15432->5432/tcp
-skeldir-e2e-exporter-1    exporter   Up ... (healthy)            0.0.0.0:9108->9108/tcp
-skeldir-e2e-migrate-1     migrate    Exited (0) ...
-skeldir-e2e-worker-1      worker     Up ...
+skeldir-e2e-api-1         api        Up 2 hours (healthy)        0.0.0.0:18000->8000/tcp, [::]:18000->8000/tcp
+skeldir-e2e-db-1          db         Up 2 hours (healthy)        0.0.0.0:15432->5432/tcp, [::]:15432->5432/tcp
+skeldir-e2e-exporter-1    exporter   Up 2 hours (healthy)        0.0.0.0:9108->9108/tcp, [::]:9108->9108/tcp
+skeldir-e2e-migrate-1     migrate    Exited (0) 18 seconds ago
+skeldir-e2e-worker-1      worker     Up 2 hours
 ```
 
 ### EG-P1.3 — Health truth gate
@@ -218,7 +221,7 @@ HTTP/1.1 200 OK
 {"status":"ok","database":"ok","rls":"ok","tenant_guc":"ok"}
 
 HTTP/1.1 200 OK
-{"status":"ok","broker":"ok","database":"ok","worker":"ok",...}
+{"status":"ok","broker":"ok","database":"ok","worker":"ok","probe_latency_ms":707,"cached":false,"cache_scope":"process"}
 ```
 
 ### EG-P1.4 — Scrape target truth gate (anti split-brain)
@@ -234,9 +237,14 @@ $apiMetrics = curl.exe -sS http://127.0.0.1:18000/metrics
 Output (trimmed):
 
 ```text
-# HELP celery_queue_messages ...
-celery_queue_messages{queue="housekeeping",state="total"} 1.0
-...
+# HELP celery_queue_messages Celery queue depth derived from kombu tables (broker truth)
+# TYPE celery_queue_messages gauge
+celery_queue_messages{queue="attribution",state="visible"} 0.0
+celery_queue_messages{queue="attribution",state="invisible"} 0.0
+celery_queue_messages{queue="attribution",state="total"} 0.0
+celery_queue_messages{queue="housekeeping",state="visible"} 0.0
+celery_queue_messages{queue="housekeeping",state="invisible"} 4.0
+celery_queue_messages{queue="housekeeping",state="total"} 4.0
 0
 ```
 
@@ -251,12 +259,16 @@ $expMetrics = curl.exe -sS http://127.0.0.1:9108/metrics
 Output (trimmed):
 
 ```text
-# HELP celery_task_duration_seconds ...
-celery_task_duration_seconds_sum{task_name="app.tasks.health.probe"} ...
+# HELP celery_task_started_total Total Celery tasks started
+# TYPE celery_task_started_total counter
+celery_task_started_total{task_name="app.tasks.matviews.refresh_single"} 3.0
+celery_task_started_total{task_name="app.tasks.health.probe"} 10.0
+# HELP celery_task_success_total Total Celery tasks succeeded
+# TYPE celery_task_success_total counter
 
-# HELP matview_refresh_total ...
-matview_refresh_total{outcome="success",view_name="mv_realtime_revenue"} 1.0
-...
+# HELP matview_refresh_total Total materialized view refresh attempts
+# TYPE matview_refresh_total counter
+matview_refresh_total{outcome="success",view_name="mv_realtime_revenue"} 3.0
 ```
 
 How `matview_refresh_*` was forced to exist (task invocation):
@@ -285,8 +297,12 @@ python -m pytest -vv tests/test_b0567_integration_truthful_scrape_targets.py
 Output (trimmed):
 
 ```text
-collecting ... collected 5 items
-... PASSED [100%]
+============================= test session starts =============================
+tests\test_b0567_integration_truthful_scrape_targets.py::test_t71_task_metrics_delta_on_exporter PASSED [ 20%]
+tests\test_b0567_integration_truthful_scrape_targets.py::test_t72_api_queue_gauges_match_broker_truth PASSED [ 40%]
+tests\test_b0567_integration_truthful_scrape_targets.py::test_t73_api_metrics_do_not_include_worker_task_metrics PASSED [ 60%]
+tests\test_b0567_integration_truthful_scrape_targets.py::test_t74_forbidden_labels_absent_on_both_scrape_surfaces PASSED [ 80%]
+tests\test_b0567_integration_truthful_scrape_targets.py::test_t75_health_semantics_live_ready_worker_capability PASSED [100%]
 ============================= 5 passed in 12.13s ==============================
 ```
 
@@ -310,4 +326,5 @@ Branch push + PR:
 
 - Branch push: `origin/b057-p1-canonical-e2e-bringup`
 - PR URL: https://github.com/Muk223/skeldir-2.0/pull/24
-- CI run(s): pending
+- CI run (compose topology validation): https://github.com/Muk223/skeldir-2.0/actions/runs/21188871350
+- CI run (main CI): https://github.com/Muk223/skeldir-2.0/actions/runs/21188871380
