@@ -14,7 +14,7 @@ Timestamp (local): `2026-01-20T14:06:41-06:00`
 
 - Branch (work): `b057-p1-canonical-e2e-bringup`
 - Pre-remediation anchor (this branch, before P1 changes): `0a31d08e18acc97c630b0a97d65b3664837d2ce4`
-- Remediation commit (this pack): `105c2f2f98fc1a060922b09f950d548ed289f1c9`
+- Remediation implementation commit (compose + scripts + runbook): `9dd08fa461301b6daa192fc48d664ffe303c7dfc`
 - `main` at time of work (per branch history): `f083d23` (`b056: phase8 ledger closure`)
 
 Commands:
