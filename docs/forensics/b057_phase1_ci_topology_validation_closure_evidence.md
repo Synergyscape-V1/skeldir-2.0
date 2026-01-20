@@ -6,7 +6,7 @@ PR: https://github.com/Muk223/skeldir-2.0/pull/24
 
 ---
 
-## Ground truth (PR head)
+## Ground truth (CI proof commit; PR head at time of proof)
 
 Commands:
 
@@ -18,7 +18,7 @@ git status --porcelain=v1
 Output:
 
 ```text
-e0cc39d70280e4278c53919ca4f166082fce254d
+da19f564d32c93b0529d171bad89aa9dc39aa5a8
 # git status --porcelain=v1: (no output; working tree clean)
 ```
 
@@ -53,22 +53,22 @@ FATAL:  role "root" does not exist
 
 ### After (CI proves compose topology and assertions executed)
 
-Compose topology validation run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189296243
+Compose topology validation run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189584586
 
-Main CI run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189295977
+Main CI run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189584540
 
-Empirical Validation run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189296053
+Empirical Validation run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189584575
 
-`b0545-convergence` run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189296275
+`b0545-convergence` run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21189584565
 
 PR checks (all pass at head SHA):
 
 ```text
-B0.5.7-P1 Compose E2E Topology  pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189296243/job/60951906377
-Checkout Code                  pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189295977/job/60951881178
-Proof Pack (EG-5)              pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189295977/job/60952393264
-b0545-convergence              pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189296275/job/60951883024
-Backend Integration (B0567)    pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189295977/job/60951935071
+B0.5.7-P1 Compose E2E Topology  pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189584586/job/60952775590
+Checkout Code                  pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189584540/job/60952775561
+Proof Pack (EG-5)              pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189584540/job/60953062777
+b0545-convergence              pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189584565/job/60952775510
+Backend Integration (B0567)    pass  https://github.com/Muk223/skeldir-2.0/actions/runs/21189584540/job/60952788070
 ```
 
 Full check listing is reproducible via:
@@ -101,9 +101,9 @@ Remediation: added workflow `/.github/workflows/b057-p1-compose-e2e.yml` that ru
 
 Evidence: compose topology job log (step: `Assert scrape target separation (anti split-brain)`):
 
-Run: https://github.com/Muk223/skeldir-2.0/actions/runs/21189296243
+Run: https://github.com/Muk223/skeldir-2.0/actions/runs/21189584586
 
-Job: https://github.com/Muk223/skeldir-2.0/actions/runs/21189296243/job/60951906377
+Job: https://github.com/Muk223/skeldir-2.0/actions/runs/21189584586/job/60952775590
 
 Log excerpt (command-level assertions):
 
@@ -118,7 +118,7 @@ if ! grep -q "celery_task_" /tmp/b057_exporter_metrics.txt; then exit 1; fi
 Repro command (local workstation) to view logs:
 
 ```powershell
-gh run view 21189296243 --job 60951906377 --log
+gh run view 21189584586 --job 60952775590 --log
 ```
 
 ---

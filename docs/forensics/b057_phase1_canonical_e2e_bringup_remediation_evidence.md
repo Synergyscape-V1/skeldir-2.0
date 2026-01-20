@@ -15,7 +15,7 @@ Timestamp (local): `2026-01-20T14:06:41-06:00`
 - Branch (work): `b057-p1-canonical-e2e-bringup`
 - Pre-remediation anchor (this branch, before P1 changes): `0a31d08e18acc97c630b0a97d65b3664837d2ce4`
 - Remediation implementation commit (compose + scripts + runbook): `9dd08fa461301b6daa192fc48d664ffe303c7dfc`
-- PR head SHA (CI-validated): `e0cc39d70280e4278c53919ca4f166082fce254d`
+- PR head SHA (CI-validated): `da19f564d32c93b0529d171bad89aa9dc39aa5a8`
 - `main` at time of work (per branch history): `f083d23` (`b056: phase8 ledger closure`)
 
 Commands:
@@ -326,5 +326,5 @@ Branch push + PR:
 
 - Branch push: `origin/b057-p1-canonical-e2e-bringup`
 - PR URL: https://github.com/Muk223/skeldir-2.0/pull/24
-- CI run (compose topology validation): https://github.com/Muk223/skeldir-2.0/actions/runs/21189296243
-- CI run (main CI): https://github.com/Muk223/skeldir-2.0/actions/runs/21189295977
+- CI run (compose topology validation): https://github.com/Muk223/skeldir-2.0/actions/runs/21189584586
+- CI run (main CI): https://github.com/Muk223/skeldir-2.0/actions/runs/21189584540
