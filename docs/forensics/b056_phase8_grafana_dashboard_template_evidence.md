@@ -2,9 +2,9 @@
 
 **Date**: 2026-01-20  
 **Phase**: B0.5.6.8  
-**Status**: COMPLETE (pending push/CI link fill-in)  
-**Commit SHA**: pending  
-**CI Run**: pending  
+**Status**: COMPLETE  
+**Commit SHA**: 70c9240d1b762ddf0dbe2e21a8f8f4753a240bcf  
+**CI Run (primary)**: https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899  
 
 ---
 
@@ -176,8 +176,19 @@ This document includes verbatim command outputs for:
 
 Remaining fill-ins required for closure (after push):
 
-- `Commit SHA` and `CI Run` at top of this file
-- Replace the Phase 8 row in `docs/forensics/INDEX.md` from `pending` → actual commit/CI URL
+- None.
+
+CI status for `70c9240d1b762ddf0dbe2e21a8f8f4753a240bcf`:
+
+```text
+ databaseId workflowName                                status    conclusion url                                                           
+ ---------- ------------                                ------    ---------- ---                                                           
+21178399832 B0.5.4.1 View Registry Gates                completed success    https://github.com/Muk223/skeldir-2.0/actions/runs/21178399832
+21178399807 B0.5.4.2 Refresh Executor Gates             completed success    https://github.com/Muk223/skeldir-2.0/actions/runs/21178399807
+21178399822 B0.5.4.3 Matview Task Layer Gates           completed success    https://github.com/Muk223/skeldir-2.0/actions/runs/21178399822
+21178399899 CI                                          completed success    https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899
+21178399867 Empirical Validation - Directive Compliance completed success    https://github.com/Muk223/skeldir-2.0/actions/runs/21178399867
+```
 
 ---
 
@@ -188,7 +199,7 @@ rg -n "b056_phase8_.*evidence\\.md" docs/forensics/INDEX.md
 ```
 
 ```text
-34:| B0.5.6 Phase 8 | docs/forensics/b056_phase8_grafana_dashboard_template_evidence.md | Grafana dashboard template (worker throughput/error/latency + broker-truth backlog) + evidence closure | pending | pending |
+34:| B0.5.6 Phase 8 | docs/forensics/b056_phase8_grafana_dashboard_template_evidence.md | Grafana dashboard template (worker throughput/error/latency + broker-truth backlog) + evidence closure | 70c9240 | https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899 |
 ```
 
 ---
