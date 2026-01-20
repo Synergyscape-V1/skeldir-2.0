@@ -32,6 +32,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.6 Phase 6 | docs/forensics/b056_phase6_structured_worker_logging_remediation_evidence.md | Structured worker lifecycle JSON logs (tenant_id in logs; metrics bounded; runtime proof via subprocess) | 1ce2016 | https://github.com/Muk223/skeldir-2.0/actions/runs/21146810238 |
 | B0.5.6 Phase 7 | docs/forensics/b056_phase7_integration_tests_truthful_scrape_targets_evidence.md | Integration tests: truthful scrape targets (exporter vs API) + anti split-brain + privacy labels + health semantics | 829a300 | https://github.com/Muk223/skeldir-2.0/actions/runs/21153690592 |
 | B0.5.6 Phase 8 | docs/forensics/b056_phase8_grafana_dashboard_template_evidence.md | Grafana dashboard template (worker throughput/error/latency + broker-truth backlog) + evidence closure | 70c9240 | https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899 |
+| B0.5.7 Context Gathering | docs/forensics/b057_context_gathering_inventory_evidence.md | Forensic inventory baseline: static repo truth + runtime audit (health/metrics/failure semantics) + hypothesis truth table | f083d23 | local (Windows) |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
