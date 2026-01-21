@@ -239,3 +239,28 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
         timeout=10.0,
     )
     assert res2.status_code == 401
+
+    # Missing tenant key -> deterministic 401 (never 500)
+    res3 = httpx.post(
+        f"{api_base_url}/api/webhooks/stripe/payment_intent/succeeded",
+        headers={
+            "Content-Type": "application/json",
+            "Stripe-Signature": "t=0,v1=deadbeef",
+        },
+        content=body.encode(),
+        timeout=10.0,
+    )
+    assert res3.status_code == 401
+
+    # Unknown tenant key -> deterministic 401 (never 500)
+    res4 = httpx.post(
+        f"{api_base_url}/api/webhooks/stripe/payment_intent/succeeded",
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": "unknown_tenant_key",
+            "Stripe-Signature": "t=0,v1=deadbeef",
+        },
+        content=body.encode(),
+        timeout=10.0,
+    )
+    assert res4.status_code == 401
