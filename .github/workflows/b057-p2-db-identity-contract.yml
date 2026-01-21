@@ -1,6 +1,9 @@
 name: B0.5.7-P2 — DB Identity Contract (Canonical Compose)
 
 on:
+  push:
+    branches:
+      - b057-p2-db-identity-contract
   pull_request:
   workflow_dispatch:
 
@@ -96,4 +99,3 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.e2e.yml down -v --remove-orphans
-
