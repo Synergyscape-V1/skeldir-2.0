@@ -48,6 +48,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0544 | docs/forensics/root/B0544_PULSE_SCHEDULER_SUMMARY.md | Pulse scheduler summary | unknown (legacy) | unknown |
 | B0544 | docs/forensics/root/B0544_REMEDIATION_EVIDENCE_PACK_local_windows_v2.md | Local Windows evidence pack v2 | unknown (legacy) | unknown |
 | B0545 | docs/forensics/root/B0545_REMEDIATION_EVIDENCE_v2.md | Remediation evidence v2 | unknown (legacy) | unknown |
+| B0.5.7 Archive | docs/forensics/b057_context_gathering_inventory_evidence.md | Restored context-gathering inventory snapshot (pre-remediation). | 0a31d08e | archived |
 | B0 | docs/forensics/root/B0_Implementation_Landscape_Local_Windows.md | Implementation landscape snapshot (Windows) | unknown (legacy) | unknown |
 | Briefing | docs/forensics/root/DIRECTOR_BRIEFING_VALIDATION_RESULTS.md | Director briefing validation results | unknown (legacy) | unknown |
 | Structural | docs/forensics/root/FORENSIC_STRUCTURAL_MAP.md | Structural map | unknown (legacy) | unknown |
