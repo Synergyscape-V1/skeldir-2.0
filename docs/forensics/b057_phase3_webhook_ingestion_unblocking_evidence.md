@@ -6,7 +6,8 @@ This evidence pack treats prior docs/specs/plans as hypotheses and substantiates
 
 ## Change reference
 
-- Commit: `4a00100`
+- Implementation commit: `4a00100`
+- Ledger update commit: `8bb3c7f`
 - Workflow: `.github/workflows/b057-p3-webhook-ingestion-least-privilege.yml` (runs on PRs + pushes to `main`)
 
 ## Objective (P3)
