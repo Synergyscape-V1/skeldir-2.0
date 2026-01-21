@@ -139,7 +139,7 @@ Dedicated workflow + test:
 
 This boots Postgres, applies migrations as `migration_owner`, runs API under `app_user` (no `SELECT` on `public.tenants`), submits a real HTTP webhook request, and asserts persistence and 4xx semantics.
 
-CI run URL: pending after merge/push (workflow is configured to run on `push` to `main` and on `pull_request`).
+CI run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21221972452
 
 ## Artifacts (local repro)
 
