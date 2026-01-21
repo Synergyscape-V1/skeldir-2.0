@@ -4,6 +4,11 @@
 
 This evidence pack treats prior docs/specs/plans as hypotheses and substantiates only what was reproduced from the `main` code + a locally booted DB topology that matches the P3 failure mode (runtime identity cannot `SELECT public.tenants`).
 
+## Change reference
+
+- Commit: `4a00100`
+- Workflow: `.github/workflows/b057-p3-webhook-ingestion-least-privilege.yml` (runs on PRs + pushes to `main`)
+
 ## Objective (P3)
 
 Eliminate the hard-stop where webhook ingestion returns HTTP 500 under least-privilege runtime DB identity because tenant secret resolution performs a direct `SELECT ... FROM public.tenants`.
@@ -139,4 +144,3 @@ CI run URL: pending after merge/push (workflow is configured to run on `push` to
 ## Artifacts (local repro)
 
 Local repro logs captured under `artifacts/b057p3/` (pre-fix + post-fix HTTP responses and API stderr traces).
-
