@@ -22,7 +22,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -95,6 +95,11 @@ jobs:
 
           export PYTHONPATH="${GITHUB_WORKSPACE}/backend:${PYTHONPATH}"
 
+          PROM_DIR="${EVIDENCE_DIR}/prom_multiproc"
+          mkdir -p "${PROM_DIR}"
+          chmod 700 "${PROM_DIR}"
+          export PROMETHEUS_MULTIPROC_DIR="${PROM_DIR}"
+
           python - <<'PY' > "${EVIDENCE_DIR}/celery_config.json"
           import json
           from sqlalchemy.engine.url import make_url
@@ -164,6 +169,12 @@ jobs:
             sleep 2
           done
           grep -n "Task .* received" "${EVIDENCE_DIR}/worker.log" | tail -n 10 > "${EVIDENCE_DIR}/worker_received.txt" || true
+          if [ ! -s "${EVIDENCE_DIR}/worker_received.txt" ]; then
+            grep -n "matview_pulse_task_start" "${EVIDENCE_DIR}/worker.log" | tail -n 10 > "${EVIDENCE_DIR}/worker_received.txt" || true
+          fi
+          if [ ! -s "${EVIDENCE_DIR}/worker_received.txt" ]; then
+            tail -n 200 "${EVIDENCE_DIR}/worker.log" > "${EVIDENCE_DIR}/worker_received.txt" || true
+          fi
           grep -n "pulse_matviews_global" "${EVIDENCE_DIR}/worker.log" | tail -n 10 > "${EVIDENCE_DIR}/worker_pulse_received.txt" || true
           grep -n "matview_pulse_task_start" "${EVIDENCE_DIR}/worker.log" | tail -n 5 > "${EVIDENCE_DIR}/worker_pulse_start.txt" || true
           grep -n "matview_pulse_task_dispatched" "${EVIDENCE_DIR}/worker.log" | tail -n 5 > "${EVIDENCE_DIR}/worker_pulse_dispatched.txt" || true

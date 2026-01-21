@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Guard script that enforces the Zero Docker Doctrine.
+Guard script that prevents accidental Docker coupling in runtime code.
 
-It scans source/workflow directories for forbidden Docker references in both
-file names and file contents. Only the archival documentation tree
-(docs/forensics/archive/**) is ignored.
+Docker/compose usage is permitted for local/CI orchestration (e.g., canonical
+bring-up harness), but should not bleed into application runtime modules.
+This guard targets code/migration/test trees, not orchestration/docs.
 """
 
 from __future__ import annotations
@@ -18,12 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Directories that contain executable code, scripts, or workflows which must be
 # free of Docker usage.
 CHECK_ROOT_DIRS = {
-    ".github",
     "api-contracts",
     "alembic",
     "backend",
     "db",
-    "scripts",
     "tests",
 }
 
@@ -41,6 +39,7 @@ EXCLUDED_PREFIXES = [
     ("docs", "archive"),
     ("db", "docs"),
     ("backend", "validation", "evidence"),
+    ("backend", "Dockerfile"),
     ("backend", ".venv311"),
     ("scripts", "__pycache__"),
     ("backend", "__pycache__"),

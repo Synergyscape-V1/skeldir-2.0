@@ -60,6 +60,45 @@ def _wait_for_http_status(url: str, expected_status: int, *, timeout_s: float) -
     raise AssertionError(f"Timed out waiting for HTTP {expected_status} from {url}; last={last_status} body={last_body[:500]!r}")
 
 
+def _wait_for_task_metrics_deltas(
+    *,
+    exporter_url: str,
+    task_name: str,
+    before_success: float,
+    before_failure: float,
+    before_duration_count: float,
+    timeout_s: float,
+) -> tuple[float, float, float]:
+    labels = {"task_name": task_name}
+    deadline = time.time() + timeout_s
+
+    last_success = before_success
+    last_failure = before_failure
+    last_duration_count = before_duration_count
+
+    while time.time() < deadline:
+        text_body = _scrape_text(f"{exporter_url}/metrics")
+        last_success = _get_sample_value(text_body, metric_name="celery_task_success_total", labels=labels)
+        last_failure = _get_sample_value(text_body, metric_name="celery_task_failure_total", labels=labels)
+        last_duration_count = _get_sample_value(text_body, metric_name="celery_task_duration_seconds_count", labels=labels)
+
+        if (
+            last_success - before_success >= 1.0
+            and last_failure - before_failure >= 1.0
+            and last_duration_count - before_duration_count >= 2.0
+        ):
+            return last_success, last_failure, last_duration_count
+
+        time.sleep(0.2)
+
+    raise AssertionError(
+        "Timed out waiting for exporter task metric deltas "
+        f"(success>=1 failure>=1 duration_count>=2) for task_name={task_name!r}; "
+        f"got success={last_success - before_success} failure={last_failure - before_failure} "
+        f"duration_count={last_duration_count - before_duration_count}"
+    )
+
+
 _SAMPLE_RE = re.compile(
     r'^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(?P<labels>[^}]*)\})?\s+(?P<value>[0-9.eE+-]+|NaN|[+-]Inf)\s*$'
 )
@@ -156,7 +195,6 @@ def metrics_topology(tmp_path_factory):
 
 def test_t71_task_metrics_delta_on_exporter(metrics_topology):
     before = _scrape_text(f"{metrics_topology.exporter_url}/metrics")
-
     labels = {"task_name": PING_TASK_NAME}
     before_success = _get_sample_value(before, metric_name="celery_task_success_total", labels=labels)
     before_failure = _get_sample_value(before, metric_name="celery_task_failure_total", labels=labels)
@@ -179,10 +217,14 @@ def test_t71_task_metrics_delta_on_exporter(metrics_topology):
     with pytest.raises(Exception):
         fail.get(timeout=60, propagate=True)
 
-    after = _scrape_text(f"{metrics_topology.exporter_url}/metrics")
-    after_success = _get_sample_value(after, metric_name="celery_task_success_total", labels=labels)
-    after_failure = _get_sample_value(after, metric_name="celery_task_failure_total", labels=labels)
-    after_duration_count = _get_sample_value(after, metric_name="celery_task_duration_seconds_count", labels=labels)
+    after_success, after_failure, after_duration_count = _wait_for_task_metrics_deltas(
+        exporter_url=metrics_topology.exporter_url,
+        task_name=PING_TASK_NAME,
+        before_success=before_success,
+        before_failure=before_failure,
+        before_duration_count=before_duration_count,
+        timeout_s=10.0,
+    )
 
     assert after_success - before_success >= 1.0
     assert after_failure - before_failure >= 1.0

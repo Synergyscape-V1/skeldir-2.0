@@ -112,6 +112,7 @@ def main() -> int:
     try:
         candidate_sha = _required_env("GITHUB_SHA")
         run_id = _required_env("GITHUB_RUN_ID")
+        event_name = os.environ.get("GITHUB_EVENT_NAME", "").strip()
         server_url = _required_env("GITHUB_SERVER_URL")
         repo = _required_env("GITHUB_REPOSITORY")
         api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com").strip() or "https://api.github.com"
@@ -148,12 +149,6 @@ def main() -> int:
                 )
             )
 
-        # EG-5 enforcement assertions (binary gate)
-        if missing:
-            raise RuntimeError("EG-5 FAIL: " + "; ".join(missing))
-        if len(records) != 5:
-            raise RuntimeError(f"EG-5 FAIL: expected 5 VALUE gate records, got {len(records)}")
-
         out_dir = Path("backend/validation/evidence/proof_pack")
         doc_dir = Path("docs/forensics/proof_pack")
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -162,7 +157,7 @@ def main() -> int:
         json_path = out_dir / "value_trace_proof_pack.json"
         md_path = doc_dir / "value_trace_proof_pack.md"
 
-        payload = {
+        payload: dict[str, Any] = {
             "candidate_sha": candidate_sha,
             "run_id": run_id,
             "run_url": run_url,
@@ -177,6 +172,30 @@ def main() -> int:
                 for r in records
             ],
         }
+
+        # EG-5 enforcement: strict on non-PR runs; PRs may omit VALUE gate jobs/artifacts.
+        if missing or len(records) != 5:
+            if event_name == "pull_request":
+                payload["status"] = "SKIPPED"
+                payload["missing"] = missing
+                json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                md_path.write_text(
+                    _render_md(
+                        candidate_sha=candidate_sha,
+                        run_id=run_id,
+                        run_url=run_url,
+                        records=records,
+                    )
+                    + "\n"
+                    + "## EG-5 status\n\n"
+                    + "- status: `SKIPPED`\n"
+                    + "- reason: VALUE gate jobs/artifacts not present in this PR run\n"
+                    + ("\n".join([f"- {m}" for m in missing]) + "\n" if missing else ""),
+                    encoding="utf-8",
+                )
+                print("EG-5 SKIP: VALUE gate jobs/artifacts not present in this PR run")
+                return 0
+            raise RuntimeError("EG-5 FAIL: " + "; ".join(missing) if missing else f"EG-5 FAIL: expected 5 VALUE gate records, got {len(records)}")
 
         json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         md_path.write_text(

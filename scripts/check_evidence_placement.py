@@ -7,7 +7,8 @@ import sys
 
 
 DOCS_ROOT = "docs/forensics/"
-ALLOWED_ROOTS = (DOCS_ROOT,)
+RUNBOOKS_ROOT = "docs/runbooks/"
+ALLOWED_ROOTS = (DOCS_ROOT, RUNBOOKS_ROOT)
 EVIDENCE_REGEX = re.compile(
     r"(evidence|handover|github_analyst|forensic|context_gathering|validation_report|(^|/)([bB]0|[bB]05|[bB]055|R2))"
 )

@@ -1,0 +1,137 @@
+name: B0.5.7-P1 — Compose E2E Topology (Canonical)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: b057-p1-compose-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-e2e-topology:
+    name: B0.5.7-P1 Compose E2E Topology
+    runs-on: ubuntu-latest
+    env:
+      SKELDIR_API_PORT: "18000"
+      SKELDIR_DB_PORT: "15432"
+      SKELDIR_EXPORTER_PORT: "9108"
+      SKELDIR_DB_NAME: "skeldir_e2e"
+      SKELDIR_DB_SUPERUSER: "postgres"
+      SKELDIR_DB_SUPERPASS: "postgres"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Docker versions
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+
+      - name: Build canonical topology (docker-compose.e2e.yml)
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.e2e.yml build
+
+      - name: Bring up canonical topology
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.e2e.yml up -d
+          docker compose -f docker-compose.e2e.yml ps -a
+
+      - name: Wait for /health/ready (deterministic gate)
+        run: |
+          set -euo pipefail
+          url="http://127.0.0.1:${SKELDIR_API_PORT}/health/ready"
+          deadline=$((SECONDS + 120))
+          until curl -fsS "$url" >/dev/null; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Timed out waiting for 200 from $url"
+              curl -sS -i "$url" || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Assert health truth
+        run: |
+          set -euo pipefail
+          curl -fsS -i "http://127.0.0.1:${SKELDIR_API_PORT}/health/live" | tee /tmp/b057_health_live.txt
+          curl -fsS -i "http://127.0.0.1:${SKELDIR_API_PORT}/health/ready" | tee /tmp/b057_health_ready.txt
+          curl -fsS -i "http://127.0.0.1:${SKELDIR_API_PORT}/health/worker" | tee /tmp/b057_health_worker.txt
+
+      - name: Assert scrape target separation (anti split-brain)
+        run: |
+          set -euo pipefail
+
+          curl -fsS "http://127.0.0.1:${SKELDIR_API_PORT}/metrics" | tee /tmp/b057_api_metrics.txt
+          if ! grep -q "celery_queue_" /tmp/b057_api_metrics.txt; then
+            echo "API /metrics missing celery_queue_ broker-truth metrics"
+            exit 1
+          fi
+          if grep -q "celery_task_" /tmp/b057_api_metrics.txt; then
+            echo "API /metrics leaked celery_task_ worker metrics (split-brain violation)"
+            exit 1
+          fi
+
+          curl -fsS "http://127.0.0.1:${SKELDIR_EXPORTER_PORT}/metrics" | tee /tmp/b057_exporter_metrics.txt
+          if ! grep -q "celery_task_" /tmp/b057_exporter_metrics.txt; then
+            echo "Exporter /metrics missing celery_task_ worker/task metrics"
+            exit 1
+          fi
+
+      - name: Stop compose worker/api/exporter before pytest
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.e2e.yml stop api worker exporter
+          docker compose -f docker-compose.e2e.yml ps -a
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps (for backend integration test)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Regression guard (B0.5.6.7)
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:15432/skeldir_e2e
+          CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:15432/skeldir_e2e
+          CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:15432/skeldir_e2e
+        run: |
+          set -euo pipefail
+          cd backend
+          python -m pytest -vv tests/test_b0567_integration_truthful_scrape_targets.py | tee /tmp/b057_pytest_b0567.txt
+
+      - name: Capture compose logs
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b057_p1_compose_e2e
+          docker compose -f docker-compose.e2e.yml ps -a > artifacts/b057_p1_compose_e2e/compose_ps.txt || true
+          docker compose -f docker-compose.e2e.yml logs --no-color > artifacts/b057_p1_compose_e2e/compose_logs.txt || true
+          cp -f /tmp/b057_health_live.txt artifacts/b057_p1_compose_e2e/health_live.txt || true
+          cp -f /tmp/b057_health_ready.txt artifacts/b057_p1_compose_e2e/health_ready.txt || true
+          cp -f /tmp/b057_health_worker.txt artifacts/b057_p1_compose_e2e/health_worker.txt || true
+          cp -f /tmp/b057_api_metrics.txt artifacts/b057_p1_compose_e2e/api_metrics.txt || true
+          cp -f /tmp/b057_exporter_metrics.txt artifacts/b057_p1_compose_e2e/exporter_metrics.txt || true
+          cp -f /tmp/b057_pytest_b0567.txt artifacts/b057_p1_compose_e2e/pytest_b0567.txt || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b057-p1-compose-e2e-${{ github.sha }}
+          path: artifacts/b057_p1_compose_e2e/
+          retention-days: 14
+
+      - name: Teardown compose (always)
+        if: always()
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.e2e.yml down -v --remove-orphans

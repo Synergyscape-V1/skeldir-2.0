@@ -1,0 +1,148 @@
+name: skeldir-e2e
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${SKELDIR_DB_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${SKELDIR_DB_SUPERPASS:-postgres}
+      POSTGRES_DB: ${SKELDIR_DB_NAME:-skeldir_e2e}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "${SKELDIR_DB_PORT:-15432}:5432"
+    volumes:
+      - skeldir_e2e_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SKELDIR_DB_SUPERUSER:-postgres} -d ${SKELDIR_DB_NAME:-skeldir_e2e}"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CI: "true"
+      PYTHONPATH: /app/backend
+      MIGRATION_DATABASE_URL: postgresql://${SKELDIR_DB_SUPERUSER:-postgres}:${SKELDIR_DB_SUPERPASS:-postgres}@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+
+        echo '[e2e] provisioning roles'
+        psql "$$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+        DO $$$$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+            CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+          END IF;
+        END$$$$;
+        SQL
+
+        echo '[e2e] running alembic migrations'
+        alembic upgrade heads
+
+        echo '[e2e] granting app_user membership + schema usage'
+        psql "$$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+        DO $$$$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw') THEN
+            GRANT app_rw TO app_user;
+          END IF;
+        END$$$$;
+        REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+        GRANT USAGE ON SCHEMA public TO app_user;
+        SQL
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      CI: "true"
+      PYTHONPATH: /app/backend
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+      WORKER_PROBE_CACHE_TTL_SECONDS: ${WORKER_PROBE_CACHE_TTL_SECONDS:-0}
+    ports:
+      - "${SKELDIR_API_PORT:-18000}:8000"
+    command: ["bash", "-lc", "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2).read(); print('ok')",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      CI: "true"
+      PYTHONPATH: /app/backend
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@db:5432/${SKELDIR_DB_NAME:-skeldir_e2e}
+      PROMETHEUS_MULTIPROC_DIR: /prometheus_multiproc
+    volumes:
+      - skeldir_e2e_prom_multiproc:/prometheus_multiproc
+    command:
+      [
+        "bash",
+        "-lc",
+        "mkdir -p /prometheus_multiproc && chmod 700 /prometheus_multiproc && python -m celery -A app.celery_app.celery_app worker --loglevel=INFO -Q housekeeping,maintenance,llm,attribution -c ${SKELDIR_WORKER_CONCURRENCY:-2}",
+      ]
+
+  exporter:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      worker:
+        condition: service_started
+    environment:
+      PYTHONPATH: /app/backend
+      PROMETHEUS_MULTIPROC_DIR: /prometheus_multiproc
+      WORKER_METRICS_EXPORTER_HOST: 0.0.0.0
+      WORKER_METRICS_EXPORTER_PORT: "9108"
+    volumes:
+      - skeldir_e2e_prom_multiproc:/prometheus_multiproc
+    ports:
+      - "${SKELDIR_EXPORTER_PORT:-9108}:9108"
+    command: ["bash", "-lc", "python -m app.observability.worker_metrics_exporter"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9108/metrics', timeout=2).read(); print('ok')",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  skeldir_e2e_db:
+  skeldir_e2e_prom_multiproc:
