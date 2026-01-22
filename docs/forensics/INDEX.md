@@ -33,7 +33,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.6 Phase 7 | docs/forensics/b056_phase7_integration_tests_truthful_scrape_targets_evidence.md | Integration tests: truthful scrape targets (exporter vs API) + anti split-brain + privacy labels + health semantics | 829a300 | https://github.com/Muk223/skeldir-2.0/actions/runs/21153690592 |
 | B0.5.6 Phase 8 | docs/forensics/b056_phase8_grafana_dashboard_template_evidence.md | Grafana dashboard template (worker throughput/error/latency + broker-truth backlog) + evidence closure | 70c9240 | https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899 |
 | B0.5.7 Phase 3 | docs/forensics/b057_phase3_webhook_ingestion_unblocking_evidence.md | Webhook ingestion unblocked under least-privilege runtime DB identity (mediated tenant secrets + CI gate) | 4a00100 | https://github.com/Muk223/skeldir-2.0/actions/runs/21221972452 |
-| B0.5.7 Phase 4 | docs/forensics/b057_phase4_llm_audit_persistence_evidence.md | LLM stub audit persistence under RLS (least-privilege runtime) + DLQ failure capture + CI gate | local-uncommitted | ci-pending |
+| B0.5.7 Phase 4 | docs/forensics/b057_phase4_llm_audit_persistence_evidence.md | LLM stub audit persistence under RLS (least-privilege runtime) + DLQ failure capture + CI gate | 2da2074 | https://github.com/Muk223/skeldir-2.0/actions/runs/21254496176 |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

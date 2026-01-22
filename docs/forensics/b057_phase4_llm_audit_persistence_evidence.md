@@ -132,4 +132,4 @@ Workflow added:
 - `.github/workflows/b057-p4-llm-audit-persistence.yml`
 
 Status:
-- Local evidence collected. CI run URL to be recorded after push.
+- CI run queued: https://github.com/Muk223/skeldir-2.0/actions/runs/21254496176
