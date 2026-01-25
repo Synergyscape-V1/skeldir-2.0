@@ -3,7 +3,7 @@
 #
 # Service Architecture:
 #   - db: PostgreSQL database (port 5432, unix socket)
-#   - queue: Redis task queue (port 6379)
+#   - queue: Postgres-backed Celery broker (no external queue service)
 #   - web: FastAPI application (port 8000)
 #   - worker: Celery background worker
 #   - mocks: Prism contract mock servers (ports 4010+)
@@ -15,7 +15,6 @@
 
 # Core Services
 db: postgres -D $PGDATA -k $PGSOCKET -h localhost -p 5432
-queue: redis-server --port 6379 --bind 127.0.0.1
 web: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 worker: cd backend && celery -A app.tasks worker --loglevel=info
 beat: cd backend && celery -A app.celery_app.celery_app beat --loglevel=info

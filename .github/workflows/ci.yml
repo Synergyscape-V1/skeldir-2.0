@@ -33,6 +33,29 @@ jobs:
         run: |
           python3 scripts/check_evidence_placement.py
 
+  governance-guardrails:
+    name: Governance Guardrails
+    runs-on: ubuntu-latest
+    needs: checkout
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Enforce Postgres-only dependencies
+        run: |
+          python scripts/ci/enforce_postgres_only.py
+
+      - name: Enforce forensics INDEX governance
+        run: |
+          python scripts/ci/enforce_forensics_index.py
+
   # Contract validation
 
   validate-contracts:
@@ -393,6 +416,117 @@ jobs:
             echo "Skipping test_llm_payload_contract.py (file not present)"
           fi
           pytest tests/test_b052_queue_topology_and_dlq.py -q -k "QueueTopology"
+
+  b057-p6-e2e:
+    name: B0.5.7 P6 E2E (Least-Privilege)
+    runs-on: ubuntu-latest
+    needs: checkout
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI: "true"
+      DB_NAME: skeldir_b057_p6
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_SUPERUSER: postgres
+      DB_SUPERPASS: postgres
+
+      MIGRATION_USER: migration_owner
+      MIGRATION_PASS: migration_owner
+      RUNTIME_USER: app_user
+      RUNTIME_PASS: app_user
+
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b057_p6
+      B057_P5_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b057_p6
+      B057_P5_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p6
+      B057_P5_ARTIFACT_DIR: artifacts/b057-p6
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Remove repo .env for CI isolation
+        run: |
+          rm -f .env
+
+      - name: Provision roles and database (least-privilege runtime)
+        env:
+          PGPASSWORD: ${{ env.DB_SUPERPASS }}
+        run: |
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_rw NOLOGIN;"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_ro NOLOGIN;"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${RUNTIME_USER} WITH PASSWORD '${RUNTIME_PASS}';"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Assert runtime identity (least-privilege)
+        env:
+          PGPASSWORD: ${{ env.RUNTIME_PASS }}
+        run: |
+          CURRENT_USER=$(psql -h "${DB_HOST}" -U "${RUNTIME_USER}" -d "${DB_NAME}" -t -c "SELECT current_user;" | xargs)
+          SUPER_FLAG=$(psql -h "${DB_HOST}" -U "${RUNTIME_USER}" -d "${DB_NAME}" -t -c "SELECT rolsuper FROM pg_roles WHERE rolname = current_user;" | xargs)
+          echo "Runtime DB current_user=${CURRENT_USER}"
+          echo "Runtime DB rolsuper=${SUPER_FLAG}"
+          if [ "${CURRENT_USER}" != "${RUNTIME_USER}" ]; then
+            echo "ERROR: Runtime DB identity mismatch (expected ${RUNTIME_USER})"
+            exit 1
+          fi
+          if [ "${CURRENT_USER}" = "${MIGRATION_USER}" ] || [ "${CURRENT_USER}" = "${DB_SUPERUSER}" ]; then
+            echo "ERROR: Runtime DB identity is privileged (${CURRENT_USER})"
+            exit 1
+          fi
+          if [ "${SUPER_FLAG}" != "f" ]; then
+            echo "ERROR: Runtime DB identity has superuser privileges"
+            exit 1
+          fi
+
+      - name: Apply migrations (admin identity)
+        run: |
+          python -m alembic upgrade head
+
+      - name: Run B0.5.7-P5 full-chain integration test (P6 enforcement)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b057-p6
+          pytest -q backend/tests/integration/test_b057_p5_full_chain_e2e.py | tee artifacts/b057-p6/pytest.log
+
+      - name: Upload B0.5.7-P6 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b057-p6-full-chain-artifacts
+          path: artifacts/b057-p6
 
   celery-foundation:
     name: Celery Foundation B0.5.1

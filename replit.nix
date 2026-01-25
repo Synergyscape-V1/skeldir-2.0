@@ -7,7 +7,6 @@
     pkgs.python311Packages.pymc
     pkgs.python311Packages.arviz
     pkgs.postgresql_15
-    pkgs.redis
     pkgs.bash
     pkgs.git
   ];
@@ -19,7 +18,7 @@
       pkgs.blas
       pkgs.lapack
     ];
-    PATH = "${pkgs.nodejs-20_x}/bin:${pkgs.python311}/bin:${pkgs.postgresql_15}/bin:${pkgs.redis}/bin:$PATH";
+    PATH = "${pkgs.nodejs-20_x}/bin:${pkgs.python311}/bin:${pkgs.postgresql_15}/bin:$PATH";
     PGDATA = "$REPL_HOME/pgdata";
     PGSOCKET = "$REPL_HOME/.s.PGSQL";
   };
