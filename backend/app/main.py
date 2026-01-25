@@ -19,6 +19,11 @@ os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Structured logging for API process (JSON with tenant/correlation context).
+from app.observability.logging_config import configure_logging
+
+configure_logging(os.getenv("LOG_LEVEL", "INFO"))
+
 # Import routers
 from app.api import auth, attribution, health, webhooks
 
