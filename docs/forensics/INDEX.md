@@ -34,6 +34,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.6 Phase 8 | docs/forensics/b056_phase8_grafana_dashboard_template_evidence.md | Grafana dashboard template (worker throughput/error/latency + broker-truth backlog) + evidence closure | 70c9240 | https://github.com/Muk223/skeldir-2.0/actions/runs/21178399899 |
 | B0.5.7 Phase 3 | docs/forensics/b057_phase3_webhook_ingestion_unblocking_evidence.md | Webhook ingestion unblocked under least-privilege runtime DB identity (mediated tenant secrets + CI gate) | 4a00100 | https://github.com/Muk223/skeldir-2.0/actions/runs/21221972452 |
 | B0.5.7 Phase 4 | docs/forensics/b057_phase4_llm_audit_persistence_evidence.md | LLM stub audit persistence under RLS (least-privilege runtime) + DLQ failure capture + CI gate | 1a85b87 | https://github.com/Muk223/skeldir-2.0/actions/runs/21254559288 |
+| B0.5.7 Phase 5 | docs/forensics/b057_phase5_full_chain_e2e_integration_evidence.md | Full-chain E2E webhook -> tasks -> matview refresh under least-privilege + RLS | pending | pending |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

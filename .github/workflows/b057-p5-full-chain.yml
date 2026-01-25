@@ -1,0 +1,91 @@
+name: b057-p5-full-chain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  b057_p5_full_chain_e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CI: "true"
+      DB_NAME: skeldir_b057_p5
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_SUPERUSER: postgres
+      DB_SUPERPASS: postgres
+
+      MIGRATION_USER: migration_owner
+      MIGRATION_PASS: migration_owner
+      RUNTIME_USER: app_user
+      RUNTIME_PASS: app_user
+
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b057_p5
+      B057_P5_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b057_p5
+      B057_P5_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p5
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b057_p5
+      B057_P5_ARTIFACT_DIR: artifacts/b057-p5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Provision roles and database (least-privilege runtime)
+        env:
+          PGPASSWORD: ${{ env.DB_SUPERPASS }}
+        run: |
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_rw NOLOGIN;"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_ro NOLOGIN;"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${RUNTIME_USER} WITH PASSWORD '${RUNTIME_PASS}';"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Apply migrations (admin identity)
+        run: |
+          python -m alembic upgrade head
+
+      - name: Run B0.5.7-P5 full-chain integration test
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b057-p5
+          pytest -q backend/tests/integration/test_b057_p5_full_chain_e2e.py | tee artifacts/b057-p5/pytest.log
+
+      - name: Upload B0.5.7-P5 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b057-p5-full-chain-artifacts
+          path: artifacts/b057-p5
