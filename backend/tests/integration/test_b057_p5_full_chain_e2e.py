@@ -869,15 +869,30 @@ def test_b057_p5_full_chain_webhook_to_matview():
                 str(tenant_a.tenant_id),
             ],
         )
-        _assert_log_contains(
+        _assert_log_contains_any(
             worker_log,
             [
                 '"task_name": "app.tasks.attribution.recompute_window"',
                 '"task_name":"app.tasks.attribution.recompute_window"',
+            ],
+        )
+        _assert_log_contains_any(
+            worker_log,
+            [
                 '"task_name": "app.tasks.matviews.refresh_all_for_tenant"',
                 '"task_name":"app.tasks.matviews.refresh_all_for_tenant"',
+            ],
+        )
+        _assert_log_contains_any(
+            worker_log,
+            [
                 '"status": "success"',
                 '"status":"success"',
+            ],
+        )
+        _assert_log_contains(
+            worker_log,
+            [
                 str(tenant_a.tenant_id),
             ],
         )
