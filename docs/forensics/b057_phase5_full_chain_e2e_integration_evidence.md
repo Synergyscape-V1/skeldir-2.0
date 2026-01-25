@@ -92,13 +92,13 @@ Expected CI artifacts uploaded by workflow:
 - `artifacts/b057-p5/timeout_diagnostics.json` (on failure)
 
 ## CI Evidence (Final)
-- Commit SHA: 88f9aa0034f2550cc1a47e776c142b0181e7369d
-- GitHub Actions run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21337908292
+- Commit SHA: 97264f05f5d87f668e5d4c916da5364c539a833c
+- GitHub Actions run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21339028148
 - Workflow: `b057-p5-full-chain`
 
 ## Empirical Results
 Test status:
-- `backend/tests/integration/test_b057_p5_full_chain_e2e.py` PASSED (1 test, 7.70s)
+- `backend/tests/integration/test_b057_p5_full_chain_e2e.py` PASSED (1 test, 7.75s)
 
 DB probe (artifact `db_probe.json`):
 - attribution_recompute_jobs: status=succeeded, run_count=1
@@ -107,11 +107,37 @@ DB probe (artifact `db_probe.json`):
   - tenant-scoped counts: events=1, allocations=3
   - no-tenant counts: events=0, allocations=0
 
+Metrics deltas (artifact `metrics_delta.json`):
+- events_ingested_total: +1
+- celery_task_success_total (recompute_window): +1
+- celery_task_success_total (refresh_all_for_tenant): +1
+- matview_refresh_total (mv_allocation_summary, success): +1
+
+Truthful scrape targets:
+- API metrics surface contains API + broker-truth gauges (no `celery_task_success_total`).
+- Worker metrics surface contains task metrics (`celery_task_success_total` present).
+
+Cardinality/privacy lint (artifact `metrics_lint.json`):
+- API label keys: queue, state, le (no violations)
+- Worker label keys: task_name, view_name, outcome, le (no violations)
+- No tenant_id labels, no UUID-like values detected.
+
+Structured log validation:
+- `api.log` contains `event_ingested` and `ingestion_followup_tasks_enqueued` with tenant_id.
+- `worker.log` contains lifecycle records for recompute + matview tasks and matview refresh markers.
+
 Artifacts captured:
 - `api.log`
 - `worker.log`
+- `exporter.log`
 - `pytest.log`
 - `db_probe.json`
+- `metrics_api_before.txt`
+- `metrics_api_after.txt`
+- `metrics_worker_before.txt`
+- `metrics_worker_after.txt`
+- `metrics_delta.json`
+- `metrics_lint.json`
 
 ## Notes
 - No claims of local execution.
