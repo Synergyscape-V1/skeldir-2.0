@@ -7,7 +7,8 @@ Responsibilities:
 - Apply PII stripping (handled by middleware) and ingest via EventIngestionService
 - Return 200 for success and DLQ-routed validation failures; 401 for signature/tenant failures
 """
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
@@ -40,6 +41,7 @@ from app.webhooks.signatures import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class WebhookResponse(BaseModel):
@@ -81,6 +83,70 @@ def _pii_redacted_paths(request: Request) -> list[str]:
     return []
 
 
+def _coerce_event_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _compute_recompute_window(event_timestamp: str) -> tuple[str, str]:
+    """
+    Normalize an event timestamp into a UTC day window (start inclusive, end exclusive).
+    """
+    event_dt = _coerce_event_timestamp(event_timestamp)
+    window_start = event_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    window_end = window_start + timedelta(days=1)
+    return (
+        window_start.isoformat().replace("+00:00", "Z"),
+        window_end.isoformat().replace("+00:00", "Z"),
+    )
+
+
+def _schedule_downstream_tasks(
+    *, tenant_id, event_timestamp: str, correlation_id: str
+) -> None:
+    try:
+        from celery import chain
+
+        from app.tasks.attribution import recompute_window
+        from app.tasks.matviews import matview_refresh_all_for_tenant
+
+        window_start, window_end = _compute_recompute_window(event_timestamp)
+        chain(
+            recompute_window.s(
+                tenant_id=tenant_id,
+                window_start=window_start,
+                window_end=window_end,
+                correlation_id=correlation_id,
+                model_version="1.0.0",
+            ).set(correlation_id=correlation_id),
+            matview_refresh_all_for_tenant.si(
+                tenant_id=tenant_id,
+                correlation_id=correlation_id,
+                schedule_class="realtime",
+            ).set(correlation_id=correlation_id),
+        ).apply_async()
+        logger.info(
+            "ingestion_followup_tasks_enqueued",
+            extra={
+                "tenant_id": str(tenant_id),
+                "correlation_id": correlation_id,
+                "window_start": window_start,
+                "window_end": window_end,
+            },
+        )
+    except Exception:
+        logger.exception(
+            "ingestion_followup_tasks_failed",
+            extra={
+                "tenant_id": str(tenant_id),
+                "correlation_id": correlation_id,
+                "event_timestamp": event_timestamp,
+            },
+        )
+
+
 async def _route_to_dlq_direct(
     tenant_id,
     source: str,
@@ -118,6 +184,14 @@ async def _handle_ingestion(tenant_id, event_data: dict, idempotency_key: str, s
         source=source,
     )
     if result.get("status") == "success":
+        correlation_id = get_request_correlation_id() or idempotency_key
+        event_timestamp = event_data.get("event_timestamp")
+        if event_timestamp:
+            _schedule_downstream_tasks(
+                tenant_id=tenant_id,
+                event_timestamp=str(event_timestamp),
+                correlation_id=str(correlation_id),
+            )
         return {
             "status": "success",
             "event_id": result.get("event_id"),
