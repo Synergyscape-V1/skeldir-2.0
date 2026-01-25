@@ -1,6 +1,6 @@
 # B0.5.7-P6 CI Enforcement + Governance Cleanup Evidence
 
-Status: DRAFT (requires CI run link update after merge)
+Status: FINAL
 
 ## Objective
 Enforce production-truth constraints in CI for B0.5.7:
