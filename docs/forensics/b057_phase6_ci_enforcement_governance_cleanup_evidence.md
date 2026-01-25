@@ -153,8 +153,8 @@ Finding: placeholders exist outside B0.5.7 scope. B0.5.7 Phase 3–5 rows already 
 - Added Phase 6 evidence pack and INDEX row (commit + CI run link to be updated post-merge).
 
 ## CI Evidence (EG-P6.1/EG-P6.2/EG-P6.3)
-- Commit SHA: 81071444e2a9a4ffa4dfad5f1d89a307ee1fb343
-- CI Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21340252849
+- Commit SHA: 0a470df0f7b7d480ded10060cd4457955284e8ad
+- CI Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21340267507
 - Workflow: `CI` (`b057-p6-e2e` job)
 
 ## Branch Protection Note
