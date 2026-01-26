@@ -69,7 +69,7 @@ def main():
             for m in missing:
                 print(f"  - {m}")
         else:
-            print("\n✓ All bundles present")
+            print("\nOK: All bundles present")
 
     sys.exit(0 if len(missing) == 0 else 1)
 

@@ -69,7 +69,6 @@ components:
         - currency
         - revenue_total
         - verified
-        - data_as_of
       properties:
         tenant_id:
           type: string

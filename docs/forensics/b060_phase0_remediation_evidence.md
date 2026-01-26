@@ -7,8 +7,8 @@ Scope: Phase 0 only (canonical contract + route + schema alignment)
 Establish a canonical, versioned API surface for realtime revenue (`GET /api/v1/revenue/realtime`) with a truthful contract and implementation alignment, while preserving the legacy `/api/attribution/revenue/realtime` path as a deprecated alias to avoid breaking existing dependencies.
 
 ## Repo State (Post-Remediation)
-- Commit SHA: cc35d09 (main)
-- CI run URL (G0.5): https://github.com/Muk223/skeldir-2.0/actions/runs/21372639645
+- Commit SHA: 82c31a2 (main)
+- CI run URL (G0.5): https://github.com/Muk223/skeldir-2.0/actions/runs/21372795356
 
 ## Summary of Implementations (What Changed)
 
@@ -132,7 +132,7 @@ Establish a canonical, versioned API surface for realtime revenue (`GET /api/v1/
 - **G0.2 Schema gate:** PASS. Response contains `tenant_id`, `interval`, `currency`, `revenue_total`, `verified`, `data_as_of`, `sources` (ASGI request).
 - **G0.3 OpenAPI alignment gate:** PASS for revenue + attribution bundles (openapi-generator-cli validate).
 - **G0.4 Drift gate:** PASS as **legacy retained and deprecated**; references remain intentionally.
-- **G0.5 CI gate:** PASS. https://github.com/Muk223/skeldir-2.0/actions/runs/21372639645
+- **G0.5 CI gate:** PASS. https://github.com/Muk223/skeldir-2.0/actions/runs/21372795356
 
 ## Files Added / Modified
 **Added**

@@ -57,7 +57,6 @@ paths:
                   - currency
                   - revenue_total
                   - verified
-                  - data_as_of
                 properties: &ref_3
                   tenant_id:
                     type: string

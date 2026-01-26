@@ -37,7 +37,93 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StripeEvent'
+              type: object
+              required: &ref_2
+                - id
+                - type
+                - data
+                - created
+              properties: &ref_3
+                id:
+                  type: string
+                  description: Unique event identifier
+                  example: evt_1234567890
+                type:
+                  type: string
+                  enum:
+                    - charge.succeeded
+                    - charge.refunded
+                    - payment_intent.succeeded
+                    - payment_intent.payment_failed
+                  description: Event type
+                created:
+                  type: integer
+                  description: Unix timestamp of event creation
+                livemode:
+                  type: boolean
+                  description: Whether this is a live mode event
+                data:
+                  type: object
+                  required:
+                    - object
+                  properties:
+                    object:
+                      type: object
+                      required: &ref_11
+                        - id
+                        - amount
+                        - currency
+                        - status
+                      properties: &ref_12
+                        id:
+                          type: string
+                          description: Charge ID
+                          example: ch_1234567890
+                        amount:
+                          type: integer
+                          description: Amount in cents
+                          example: 19999
+                        amount_refunded:
+                          type: integer
+                          description: Amount refunded in cents
+                          example: 0
+                        currency:
+                          type: string
+                          pattern: ^[a-z]{3}$
+                          description: Three-letter currency code
+                          example: usd
+                        status:
+                          type: string
+                          enum:
+                            - succeeded
+                            - pending
+                            - failed
+                            - refunded
+                        paid:
+                          type: boolean
+                          description: Whether the charge was paid
+                        refunded:
+                          type: boolean
+                          description: Whether the charge was fully refunded
+                        metadata:
+                          type: object
+                          description: Custom metadata including attribution data
+                          additionalProperties:
+                            type: string
+                          example:
+                            skeldir_session_id: sess_abc123
+                            order_id: ord_12345
+                        receipt_email:
+                          type: string
+                          format: email
+                        billing_details:
+                          type: object
+                          properties:
+                            email:
+                              type: string
+                              format: email
+                            name:
+                              type: string
             example:
               id: evt_1234567890
               type: charge.succeeded
@@ -53,13 +139,123 @@ paths:
                     order_id: ord_12345
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: &ref_4
+            application/json:
+              schema:
+                type: object
+                required: &ref_13
+                  - success
+                  - correlation_id
+                properties: &ref_14
+                  success:
+                    type: boolean
+                  correlation_id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                message: Webhook received
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: &ref_5
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_6
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: &ref_0
+                  - type
+                  - title
+                  - status
+                  - detail
+                  - instance
+                  - correlation_id
+                  - timestamp
+                properties: &ref_1
+                  type:
+                    type: string
+                    format: uri
+                    description: URI reference identifying the problem type
+                    example: https://api.skeldir.com/problems/authentication-failed
+                  title:
+                    type: string
+                    description: Short, human-readable summary of the problem
+                    example: Authentication Failed
+                  status:
+                    type: integer
+                    description: HTTP status code
+                    example: 401
+                  detail:
+                    type: string
+                    description: Human-readable explanation specific to this occurrence
+                    example: The provided JWT token has expired. Please refresh your authentication token.
+                  instance:
+                    type: string
+                    format: uri
+                    description: URI reference identifying this specific occurrence
+                    example: https://api.skeldir.com/api/attribution/revenue/realtime
+                  correlation_id:
+                    type: string
+                    format: uuid
+                    description: Request correlation ID for distributed tracing
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp when the error occurred
+                    example: '2025-11-11T14:32:00Z'
+                  errors:
+                    type: array
+                    description: Optional array of specific validation errors
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          example: email
+                        message:
+                          type: string
+                          example: Invalid email format
+                        code:
+                          type: string
+                          example: INVALID_FORMAT
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_7
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID for distributed tracing
+          content: &ref_8
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: &ref_9
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_10
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
   /api/webhooks/stripe/payment_intent_succeeded:
     post:
       summary: Stripe payment intent succeeded webhook (legacy path)
@@ -78,7 +274,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StripeEvent'
+              type: object
+              required: *ref_2
+              properties: *ref_3
             example:
               id: evt_paymentintent_1234567890
               type: payment_intent.succeeded
@@ -93,13 +291,20 @@ paths:
                     skeldir_session_id: sess_refund123
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: *ref_4
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_5
+          content: *ref_6
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_7
+          content: *ref_8
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: *ref_9
+          content: *ref_10
   /api/webhooks/stripe/payment_intent/succeeded:
     post:
       summary: Stripe payment intent succeeded webhook
@@ -118,7 +323,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StripeEvent'
+              type: object
+              required: *ref_2
+              properties: *ref_3
             example:
               id: evt_paymentintent_1234567890
               type: payment_intent.succeeded
@@ -133,13 +340,20 @@ paths:
                     skeldir_session_id: sess_refund123
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: *ref_4
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_5
+          content: *ref_6
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_7
+          content: *ref_8
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: *ref_9
+          content: *ref_10
   /api/webhooks/stripe/charge/refunded:
     post:
       summary: Stripe charge refunded webhook
@@ -158,7 +372,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StripeEvent'
+              type: object
+              required: *ref_2
+              properties: *ref_3
             example:
               id: evt_refund_1234567890
               type: charge.refunded
@@ -173,13 +389,20 @@ paths:
                     skeldir_session_id: sess_refund123
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: *ref_4
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_5
+          content: *ref_6
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_7
+          content: *ref_8
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: *ref_9
+          content: *ref_10
 components:
   securitySchemes:
     tenantKeyAuth:
@@ -190,208 +413,34 @@ components:
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/SuccessResponse'
-          example:
-            success: true
-            correlation_id: 00000000-0000-0000-0000-000000000000
-            message: Webhook received
+      content: *ref_4
     ValidationError:
       description: Bad Request - validation failed
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_5
+      content: *ref_6
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-          description: Request correlation ID for distributed tracing
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_7
+      content: *ref_8
     ServerError:
       description: Internal server error
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_9
+      content: *ref_10
   schemas:
     StripeEvent:
       type: object
-      required:
-        - id
-        - type
-        - data
-        - created
-      properties:
-        id:
-          type: string
-          description: Unique event identifier
-          example: evt_1234567890
-        type:
-          type: string
-          enum:
-            - charge.succeeded
-            - charge.refunded
-            - payment_intent.succeeded
-            - payment_intent.payment_failed
-          description: Event type
-        created:
-          type: integer
-          description: Unix timestamp of event creation
-        livemode:
-          type: boolean
-          description: Whether this is a live mode event
-        data:
-          type: object
-          required:
-            - object
-          properties:
-            object:
-              $ref: '#/components/schemas/StripeCharge'
+      required: *ref_2
+      properties: *ref_3
     StripeCharge:
       type: object
-      required:
-        - id
-        - amount
-        - currency
-        - status
-      properties:
-        id:
-          type: string
-          description: Charge ID
-          example: ch_1234567890
-        amount:
-          type: integer
-          description: Amount in cents
-          example: 19999
-        amount_refunded:
-          type: integer
-          description: Amount refunded in cents
-          example: 0
-        currency:
-          type: string
-          pattern: ^[a-z]{3}$
-          description: Three-letter currency code
-          example: usd
-        status:
-          type: string
-          enum:
-            - succeeded
-            - pending
-            - failed
-            - refunded
-        paid:
-          type: boolean
-          description: Whether the charge was paid
-        refunded:
-          type: boolean
-          description: Whether the charge was fully refunded
-        metadata:
-          type: object
-          description: Custom metadata including attribution data
-          additionalProperties:
-            type: string
-          example:
-            skeldir_session_id: sess_abc123
-            order_id: ord_12345
-        receipt_email:
-          type: string
-          format: email
-        billing_details:
-          type: object
-          properties:
-            email:
-              type: string
-              format: email
-            name:
-              type: string
+      required: *ref_11
+      properties: *ref_12
     SuccessResponse:
       type: object
-      required:
-        - success
-        - correlation_id
-      properties:
-        success:
-          type: boolean
-        correlation_id:
-          type: string
-          format: uuid
-        message:
-          type: string
+      required: *ref_13
+      properties: *ref_14
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required:
-        - type
-        - title
-        - status
-        - detail
-        - instance
-        - correlation_id
-        - timestamp
-      properties:
-        type:
-          type: string
-          format: uri
-          description: URI reference identifying the problem type
-          example: https://api.skeldir.com/problems/authentication-failed
-        title:
-          type: string
-          description: Short, human-readable summary of the problem
-          example: Authentication Failed
-        status:
-          type: integer
-          description: HTTP status code
-          example: 401
-        detail:
-          type: string
-          description: Human-readable explanation specific to this occurrence
-          example: The provided JWT token has expired. Please refresh your authentication token.
-        instance:
-          type: string
-          format: uri
-          description: URI reference identifying this specific occurrence
-          example: https://api.skeldir.com/api/attribution/revenue/realtime
-        correlation_id:
-          type: string
-          format: uuid
-          description: Request correlation ID for distributed tracing
-          example: 550e8400-e29b-41d4-a716-446655440000
-        timestamp:
-          type: string
-          format: date-time
-          description: ISO 8601 timestamp when the error occurred
-          example: '2025-11-11T14:32:00Z'
-        errors:
-          type: array
-          description: Optional array of specific validation errors
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-                example: email
-              message:
-                type: string
-                example: Invalid email format
-              code:
-                type: string
-                example: INVALID_FORMAT
+      required: *ref_0
+      properties: *ref_1

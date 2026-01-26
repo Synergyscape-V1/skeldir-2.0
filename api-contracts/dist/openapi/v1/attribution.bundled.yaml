@@ -26,6 +26,7 @@ paths:
       description: |
         Polls realtime revenue metrics with 30-second cache TTL.
         Supports ETag-based caching with If-None-Match header for bandwidth optimization.
+      deprecated: true
       operationId: getRealtimeRevenue
       tags:
         - Attribution

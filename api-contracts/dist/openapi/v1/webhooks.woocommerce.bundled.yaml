@@ -52,7 +52,115 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WooCommerceOrder'
+              type: object
+              required: &ref_2
+                - id
+                - order_key
+                - total
+                - date_created
+              properties: &ref_3
+                id:
+                  type: integer
+                  description: WooCommerce order ID
+                order_key:
+                  type: string
+                  description: Unique order key
+                number:
+                  type: string
+                  description: Order number
+                status:
+                  type: string
+                  enum:
+                    - pending
+                    - processing
+                    - on-hold
+                    - completed
+                    - cancelled
+                    - refunded
+                    - failed
+                  description: Order status
+                total:
+                  type: string
+                  description: Order total as string
+                subtotal:
+                  type: string
+                  description: Order subtotal
+                total_tax:
+                  type: string
+                  description: Total tax amount
+                currency:
+                  type: string
+                  pattern: ^[A-Z]{3}$
+                  description: Currency code
+                  example: USD
+                date_created:
+                  type: string
+                  format: date-time
+                date_modified:
+                  type: string
+                  format: date-time
+                date_completed:
+                  type: string
+                  format: date-time
+                date_paid:
+                  type: string
+                  format: date-time
+                payment_method:
+                  type: string
+                  description: Payment method ID
+                payment_method_title:
+                  type: string
+                  description: Payment method display name
+                customer_id:
+                  type: integer
+                  description: Customer ID (0 for guests)
+                billing:
+                  type: object
+                  properties:
+                    first_name:
+                      type: string
+                    last_name:
+                      type: string
+                    email:
+                      type: string
+                      format: email
+                line_items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      quantity:
+                        type: integer
+                      total:
+                        type: string
+                meta_data:
+                  type: array
+                  description: Order metadata including attribution data
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      key:
+                        type: string
+                      value:
+                        type: string
+                refunds:
+                  type: array
+                  description: Refund entries for the order
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      amount:
+                        type: string
+                      reason:
+                        type: string
             example:
               id: 12345
               order_key: wc_order_abc123
@@ -70,11 +178,109 @@ paths:
                   value: google
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: &ref_4
+            application/json:
+              schema:
+                type: object
+                required: &ref_9
+                  - success
+                  - correlation_id
+                properties: &ref_10
+                  success:
+                    type: boolean
+                  correlation_id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                message: Webhook received
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_5
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID for distributed tracing
+          content: &ref_6
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: &ref_0
+                  - type
+                  - title
+                  - status
+                  - detail
+                  - instance
+                  - correlation_id
+                  - timestamp
+                properties: &ref_1
+                  type:
+                    type: string
+                    format: uri
+                    description: URI reference identifying the problem type
+                    example: https://api.skeldir.com/problems/authentication-failed
+                  title:
+                    type: string
+                    description: Short, human-readable summary of the problem
+                    example: Authentication Failed
+                  status:
+                    type: integer
+                    description: HTTP status code
+                    example: 401
+                  detail:
+                    type: string
+                    description: Human-readable explanation specific to this occurrence
+                    example: The provided JWT token has expired. Please refresh your authentication token.
+                  instance:
+                    type: string
+                    format: uri
+                    description: URI reference identifying this specific occurrence
+                    example: https://api.skeldir.com/api/attribution/revenue/realtime
+                  correlation_id:
+                    type: string
+                    format: uuid
+                    description: Request correlation ID for distributed tracing
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp when the error occurred
+                    example: '2025-11-11T14:32:00Z'
+                  errors:
+                    type: array
+                    description: Optional array of specific validation errors
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          example: email
+                        message:
+                          type: string
+                          example: Invalid email format
+                        code:
+                          type: string
+                          example: INVALID_FORMAT
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: &ref_7
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_8
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
   /api/webhooks/woocommerce/order/updated:
     post:
       summary: WooCommerce order updated webhook
@@ -107,7 +313,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WooCommerceOrder'
+              type: object
+              required: *ref_2
+              properties: *ref_3
             example:
               id: 12345
               order_key: wc_order_update_12345
@@ -121,9 +329,12 @@ paths:
                   value: sess_update123
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: *ref_4
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
   /api/webhooks/woocommerce/order_completed:
     post:
       summary: WooCommerce order completed webhook
@@ -156,12 +367,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WooCommerceOrder'
+              type: object
+              required: *ref_2
+              properties: *ref_3
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: *ref_4
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
   /api/webhooks/woocommerce/order/refunded:
     post:
       summary: WooCommerce order refunded webhook
@@ -194,7 +410,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WooCommerceOrder'
+              type: object
+              required: *ref_2
+              properties: *ref_3
             example:
               id: 12345
               order_key: wc_order_ref_12345
@@ -212,9 +430,12 @@ paths:
                   value: sess_refund123
       responses:
         '200':
-          $ref: '#/components/responses/WebhookAccepted'
+          description: Webhook processed successfully
+          content: *ref_4
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
 components:
   securitySchemes:
     tenantKeyAuth:
@@ -225,217 +446,26 @@ components:
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/SuccessResponse'
-          example:
-            success: true
-            correlation_id: 00000000-0000-0000-0000-000000000000
-            message: Webhook received
+      content: *ref_4
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-          description: Request correlation ID for distributed tracing
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_5
+      content: *ref_6
     ServerError:
       description: Internal server error
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_7
+      content: *ref_8
   schemas:
     WooCommerceOrder:
       type: object
-      required:
-        - id
-        - order_key
-        - total
-        - date_created
-      properties:
-        id:
-          type: integer
-          description: WooCommerce order ID
-        order_key:
-          type: string
-          description: Unique order key
-        number:
-          type: string
-          description: Order number
-        status:
-          type: string
-          enum:
-            - pending
-            - processing
-            - on-hold
-            - completed
-            - cancelled
-            - refunded
-            - failed
-          description: Order status
-        total:
-          type: string
-          description: Order total as string
-        subtotal:
-          type: string
-          description: Order subtotal
-        total_tax:
-          type: string
-          description: Total tax amount
-        currency:
-          type: string
-          pattern: ^[A-Z]{3}$
-          description: Currency code
-          example: USD
-        date_created:
-          type: string
-          format: date-time
-        date_modified:
-          type: string
-          format: date-time
-        date_completed:
-          type: string
-          format: date-time
-        date_paid:
-          type: string
-          format: date-time
-        payment_method:
-          type: string
-          description: Payment method ID
-        payment_method_title:
-          type: string
-          description: Payment method display name
-        customer_id:
-          type: integer
-          description: Customer ID (0 for guests)
-        billing:
-          type: object
-          properties:
-            first_name:
-              type: string
-            last_name:
-              type: string
-            email:
-              type: string
-              format: email
-        line_items:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: integer
-              name:
-                type: string
-              quantity:
-                type: integer
-              total:
-                type: string
-        meta_data:
-          type: array
-          description: Order metadata including attribution data
-          items:
-            type: object
-            properties:
-              id:
-                type: integer
-              key:
-                type: string
-              value:
-                type: string
-        refunds:
-          type: array
-          description: Refund entries for the order
-          items:
-            type: object
-            properties:
-              id:
-                type: integer
-              amount:
-                type: string
-              reason:
-                type: string
+      required: *ref_2
+      properties: *ref_3
     SuccessResponse:
       type: object
-      required:
-        - success
-        - correlation_id
-      properties:
-        success:
-          type: boolean
-        correlation_id:
-          type: string
-          format: uuid
-        message:
-          type: string
+      required: *ref_9
+      properties: *ref_10
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required:
-        - type
-        - title
-        - status
-        - detail
-        - instance
-        - correlation_id
-        - timestamp
-      properties:
-        type:
-          type: string
-          format: uri
-          description: URI reference identifying the problem type
-          example: https://api.skeldir.com/problems/authentication-failed
-        title:
-          type: string
-          description: Short, human-readable summary of the problem
-          example: Authentication Failed
-        status:
-          type: integer
-          description: HTTP status code
-          example: 401
-        detail:
-          type: string
-          description: Human-readable explanation specific to this occurrence
-          example: The provided JWT token has expired. Please refresh your authentication token.
-        instance:
-          type: string
-          format: uri
-          description: URI reference identifying this specific occurrence
-          example: https://api.skeldir.com/api/attribution/revenue/realtime
-        correlation_id:
-          type: string
-          format: uuid
-          description: Request correlation ID for distributed tracing
-          example: 550e8400-e29b-41d4-a716-446655440000
-        timestamp:
-          type: string
-          format: date-time
-          description: ISO 8601 timestamp when the error occurred
-          example: '2025-11-11T14:32:00Z'
-        errors:
-          type: array
-          description: Optional array of specific validation errors
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-                example: email
-              message:
-                type: string
-                example: Invalid email format
-              code:
-                type: string
-                example: INVALID_FORMAT
+      required: *ref_0
+      properties: *ref_1
