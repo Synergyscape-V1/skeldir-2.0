@@ -100,20 +100,20 @@ Output:
 
 Phase 7 row updated with concrete CI run URL:
 ```
-| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | Operational readiness closure pack + governance durability proof | 5ce5d50062ab982dab4abed88e8a2632be2b450d | https://github.com/Muk223/skeldir-2.0/actions/runs/21344062583 |
+| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | Operational readiness closure pack + governance durability proof | ca485f1db918a5d8764c927189626d17e3093bf2 | https://github.com/Muk223/skeldir-2.0/actions/runs/21363064948 |
 ```
 
 CI run confirmation (canonical CI workflow):
 ```powershell
-$ProgressPreference='SilentlyContinue'; Invoke-RestMethod -Uri "https://api.github.com/repos/Muk223/skeldir-2.0/actions/runs/21344062583" -Headers @{"Accept"="application/vnd.github+json"} | Select-Object head_sha, html_url, status, conclusion, created_at, updated_at | ConvertTo-Json -Depth 3
+$ProgressPreference='SilentlyContinue'; Invoke-RestMethod -Uri "https://api.github.com/repos/Muk223/skeldir-2.0/actions/runs/21363064948" -Headers @{"Accept"="application/vnd.github+json"} | Select-Object head_sha, html_url, status, conclusion, created_at, updated_at | ConvertTo-Json -Depth 3
 ```
 ```json
 {
-    "head_sha": "5ce5d50062ab982dab4abed88e8a2632be2b450d",
-    "html_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21344062583",
+    "head_sha": "ca485f1db918a5d8764c927189626d17e3093bf2",
+    "html_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21363064948",
     "status": "completed",
     "conclusion": "success",
-    "created_at": "2026-01-26T02:15:32Z",
-    "updated_at": "2026-01-26T02:18:56Z"
+    "created_at": "2026-01-26T15:21:37Z",
+    "updated_at": "2026-01-26T15:24:55Z"
 }
 ```
