@@ -6,6 +6,10 @@ Scope: Phase 0 only (canonical contract + route + schema alignment)
 ## Objective
 Establish a canonical, versioned API surface for realtime revenue (`GET /api/v1/revenue/realtime`) with a truthful contract and implementation alignment, while preserving the legacy `/api/attribution/revenue/realtime` path as a deprecated alias to avoid breaking existing dependencies.
 
+## Repo State (Post-Remediation)
+- Commit SHA: cc35d09 (main)
+- CI run URL (G0.5): https://github.com/Muk223/skeldir-2.0/actions/runs/21372639645
+
 ## Summary of Implementations (What Changed)
 
 ### 1) Canonical v1 revenue API (new)
@@ -128,7 +132,7 @@ Establish a canonical, versioned API surface for realtime revenue (`GET /api/v1/
 - **G0.2 Schema gate:** PASS. Response contains `tenant_id`, `interval`, `currency`, `revenue_total`, `verified`, `data_as_of`, `sources` (ASGI request).
 - **G0.3 OpenAPI alignment gate:** PASS for revenue + attribution bundles (openapi-generator-cli validate).
 - **G0.4 Drift gate:** PASS as **legacy retained and deprecated**; references remain intentionally.
-- **G0.5 CI gate:** NOT RUN (no push/CI in this environment).
+- **G0.5 CI gate:** PASS. https://github.com/Muk223/skeldir-2.0/actions/runs/21372639645
 
 ## Files Added / Modified
 **Added**
@@ -136,6 +140,7 @@ Establish a canonical, versioned API surface for realtime revenue (`GET /api/v1/
 - `backend/app/api/revenue.py`
 - `backend/app/schemas/revenue.py`
 - `api-contracts/openapi/v1/revenue.yaml`
+- `api-contracts/dist/openapi/v1/revenue.bundled.yaml`
 - `backend/tests/test_b06_realtime_revenue_v1.py`
 
 **Modified**
@@ -147,16 +152,17 @@ Establish a canonical, versioned API surface for realtime revenue (`GET /api/v1/
 - `api-contracts/redocly.yaml`
 - `scripts/contracts/bundle.sh`
 - `scripts/contracts/check_dist_complete.py`
+- `scripts/generate-models.sh`
 - `scripts/integration_test_pipeline.sh`
 - `.github/workflows/contracts.yml`
+- `.github/workflows/mock-contract-validation.yml`
 - `tests/contract/test_contract_semantics.py`
 
 ## Known Limitations / Non-Goals (Phase 0)
 - No JWT validation, tenant derivation, or RLS enforcement added (minimal auth presence only).
 - No platform fetch or Postgres caching for realtime revenue.
 - No runtime for 429/500 paths added (contract already defines them).
-- CI not executed; no commit/push performed.
-- `api-contracts/dist/` is ignored by git; bundles were generated locally only for validation.
+- Only the new revenue bundle was added under `api-contracts/dist/` to satisfy phase gates; other bundles remain as previously tracked artifacts.
 
 ## Compatibility Decision
 - Legacy endpoint `/api/attribution/revenue/realtime` kept to avoid breaking existing code/tests. It is explicitly marked `deprecated: true` in the attribution contract.
