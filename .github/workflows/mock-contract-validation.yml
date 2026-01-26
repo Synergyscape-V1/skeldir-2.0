@@ -39,6 +39,7 @@ jobs:
           mkdir -p dist/openapi/v1
           npx @redocly/cli bundle auth --config=redocly.yaml --output=dist/openapi/v1/auth.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle attribution --config=redocly.yaml --output=dist/openapi/v1/attribution.bundled.yaml --ext yaml --dereferenced
+          npx @redocly/cli bundle revenue --config=redocly.yaml --output=dist/openapi/v1/revenue.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle reconciliation --config=redocly.yaml --output=dist/openapi/v1/reconciliation.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle export --config=redocly.yaml --output=dist/openapi/v1/export.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle health --config=redocly.yaml --output=dist/openapi/v1/health.bundled.yaml --ext yaml --dereferenced
