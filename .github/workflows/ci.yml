@@ -1221,7 +1221,9 @@ jobs:
           echo "DATABASE_URL (async): postgresql+asyncpg://app_user:***@127.0.0.1:5432/skeldir_validation"
           echo "Expected: 2 passed (test_empty_ledger_deterministic_allocations, test_populated_ledger_ignored_identical_results)"
 
+          export DATABASE_URL="$DATABASE_URL_ASYNC"
           pytest tests/test_b0533_revenue_input_contract.py -v --tb=short
+          pytest tests/test_b06_realtime_revenue_v1.py -v --tb=short
 
           echo "✓ R5-5 MET / G5 PASSED: Contract tests executed (see pytest output above for pass/fail status)"
 
