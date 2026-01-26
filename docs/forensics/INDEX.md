@@ -36,7 +36,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.7 Phase 4 | docs/forensics/b057_phase4_llm_audit_persistence_evidence.md | LLM stub audit persistence under RLS (least-privilege runtime) + DLQ failure capture + CI gate | 1a85b87 | https://github.com/Muk223/skeldir-2.0/actions/runs/21254559288 |
 | B0.5.7 Phase 5 | docs/forensics/b057_phase5_full_chain_e2e_integration_evidence.md | Full-chain E2E webhook -> tasks -> matview refresh under least-privilege + RLS | 1a7f136 | https://github.com/Muk223/skeldir-2.0/actions/runs/21339065403 |
 | B0.5.7 Phase 6 | docs/forensics/b057_phase6_ci_enforcement_governance_cleanup_evidence.md | CI enforcement + governance cleanup (least-privilege E2E, Postgres-only guardrails, INDEX enforcement) | 0a470df0f7b7d480ded10060cd4457955284e8ad | https://github.com/Muk223/skeldir-2.0/actions/runs/21340267507 |
-| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | Operational readiness closure pack + governance durability proof | 72cc598b1bf55670a0b6aa67287d3d1ce02c508f | https://github.com/Muk223/skeldir-2.0/actions/workflows/ci.yml?query=branch:main+event:push+sha:72cc598b1bf55670a0b6aa67287d3d1ce02c508f |
+| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | Operational readiness closure pack + governance durability proof | 5ce5d50062ab982dab4abed88e8a2632be2b450d | https://github.com/Muk223/skeldir-2.0/actions/runs/21344062583 |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

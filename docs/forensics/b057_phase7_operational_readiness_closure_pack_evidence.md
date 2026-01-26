@@ -1,6 +1,6 @@
 # B0.5.7 Phase 7 - Operational Readiness Closure Pack Evidence
 
-Status: DRAFT (requires CI run on this commit for final anchoring)
+Status: FINAL (CI anchor resolved)
 Collected: 2026-01-25T19:56:22.2733383-06:00
 
 ## A) P6 Drift Check (INDEX vs CI run)
@@ -96,13 +96,24 @@ Output:
 ?? docs/forensics/root/B057_OPERATIONAL_READINESS_CLOSURE_PACK.md
 ```
 
-## G) INDEX Phase 7 row (query-based CI anchor)
+## G) INDEX Phase 7 row (final CI anchor)
 
-Phase 7 row added with commit SHA and a query-based CI workflow URL (resolves to the run for this SHA once CI completes):
+Phase 7 row updated with concrete CI run URL:
 ```
-| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | Operational readiness closure pack + governance durability proof | 72cc598b1bf55670a0b6aa67287d3d1ce02c508f | https://github.com/Muk223/skeldir-2.0/actions/workflows/ci.yml?query=branch:main+event:push+sha:72cc598b1bf55670a0b6aa67287d3d1ce02c508f |
+| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | Operational readiness closure pack + governance durability proof | 5ce5d50062ab982dab4abed88e8a2632be2b450d | https://github.com/Muk223/skeldir-2.0/actions/runs/21344062583 |
 ```
 
-## H) Next required anchors (blocking)
-
-- CI run on commit 72cc598b1bf55670a0b6aa67287d3d1ce02c508f must complete; replace the query URL with the concrete run URL after completion.
+CI run confirmation (canonical CI workflow):
+```powershell
+$ProgressPreference='SilentlyContinue'; Invoke-RestMethod -Uri "https://api.github.com/repos/Muk223/skeldir-2.0/actions/runs/21344062583" -Headers @{"Accept"="application/vnd.github+json"} | Select-Object head_sha, html_url, status, conclusion, created_at, updated_at | ConvertTo-Json -Depth 3
+```
+```json
+{
+    "head_sha": "5ce5d50062ab982dab4abed88e8a2632be2b450d",
+    "html_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21344062583",
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-01-26T02:15:32Z",
+    "updated_at": "2026-01-26T02:18:56Z"
+}
+```

@@ -1,6 +1,6 @@
 # B0.5.7 Operational Readiness Closure Pack
 
-Status: DRAFT (requires CI run on this commit for final anchoring)
+Status: FINAL
 
 ## 1) Scope and Definition of Operational Readiness
 Operational readiness for B0.5.7 means the system is proven in canonical CI to:
@@ -65,8 +65,7 @@ Allocation invariant (Phase 5):
 | B0.5.7 Phase 4 | docs/forensics/b057_phase4_llm_audit_persistence_evidence.md | 1a85b87 | https://github.com/Muk223/skeldir-2.0/actions/runs/21254559288 | LLM audit persistence under RLS + DLQ failure capture |
 | B0.5.7 Phase 5 | docs/forensics/b057_phase5_full_chain_e2e_integration_evidence.md | 1a7f136 | https://github.com/Muk223/skeldir-2.0/actions/runs/21339065403 | Full-chain E2E webhook -> tasks -> matview refresh under least-privilege + RLS |
 | B0.5.7 Phase 6 | docs/forensics/b057_phase6_ci_enforcement_governance_cleanup_evidence.md | 0a470df0f7b7d480ded10060cd4457955284e8ad | https://github.com/Muk223/skeldir-2.0/actions/runs/21340267507 | CI enforcement of least-privilege E2E, Postgres-only guardrails, and INDEX governance |
-| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | 72cc598b1bf55670a0b6aa67287d3d1ce02c508f | https://github.com/Muk223/skeldir-2.0/actions/workflows/ci.yml?query=branch:main+event:push+sha:72cc598b1bf55670a0b6aa67287d3d1ce02c508f | Closure pack + governance durability check (CI run must resolve for this SHA) |
+| B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | 5ce5d50062ab982dab4abed88e8a2632be2b450d | https://github.com/Muk223/skeldir-2.0/actions/runs/21344062583 | Closure pack + governance durability check |
 
 ## 8) Open Risks / Non-goals
 - Branch protection required checks are not provable in-code; must be verified in GitHub settings (see P7 evidence pack).
-- P7 requires the CI run for commit 72cc598b1bf55670a0b6aa67287d3d1ce02c508f to complete; update the Phase 7 CI Run URL to the run page once available.
