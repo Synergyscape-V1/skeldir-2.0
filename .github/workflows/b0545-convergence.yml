@@ -164,6 +164,9 @@ jobs:
             sleep 2
           done
           grep -n "Task .* received" "${EVIDENCE_DIR}/worker.log" | tail -n 10 > "${EVIDENCE_DIR}/worker_received.txt" || true
+          if [ ! -s "${EVIDENCE_DIR}/worker_received.txt" ]; then
+            grep -n "matview_pulse_task_start" "${EVIDENCE_DIR}/worker.log" | tail -n 10 > "${EVIDENCE_DIR}/worker_received.txt" || true
+          fi
           grep -n "pulse_matviews_global" "${EVIDENCE_DIR}/worker.log" | tail -n 10 > "${EVIDENCE_DIR}/worker_pulse_received.txt" || true
           grep -n "matview_pulse_task_start" "${EVIDENCE_DIR}/worker.log" | tail -n 5 > "${EVIDENCE_DIR}/worker_pulse_start.txt" || true
           grep -n "matview_pulse_task_dispatched" "${EVIDENCE_DIR}/worker.log" | tail -n 5 > "${EVIDENCE_DIR}/worker_pulse_dispatched.txt" || true
