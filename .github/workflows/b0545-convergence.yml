@@ -88,6 +88,9 @@ jobs:
           set -euo pipefail
           EVIDENCE_DIR="${GITHUB_WORKSPACE}/evidence/b0545_ci"
           mkdir -p "${EVIDENCE_DIR}"
+          PROM_DIR="${GITHUB_WORKSPACE}/.prometheus_multiproc"
+          mkdir -p "${PROM_DIR}"
+          export PROMETHEUS_MULTIPROC_DIR="${PROM_DIR}"
           printf "sha=%s\nworkflow=%s\n" "${GITHUB_SHA}" "${GITHUB_WORKFLOW}" > "${EVIDENCE_DIR}/metadata.txt"
           printf "database_url=%s\ncelery_broker_url=%s\ncelery_result_backend=%s\n" \
             "${DATABASE_URL}" "${CELERY_BROKER_URL}" "${CELERY_RESULT_BACKEND}" \
