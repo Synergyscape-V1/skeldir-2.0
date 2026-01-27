@@ -148,11 +148,10 @@ def test_contract_semantic_conformance(spec_path: Path):
         )
     
     if not operations_tested:
-    if skipped_due_to_missing:
-        pytest.skip(f"All operations returned 404 (not implemented) in {spec_path.name}")
-    if not is_revenue_spec:
-        pytest.skip(f"No operations without security requirements in {spec_path.name}")
-    if executed_in_scope == 0:
+        if skipped_due_to_missing:
+            pytest.skip(f"All operations returned 404 (not implemented) in {spec_path.name}")
+        if not is_revenue_spec:
+            pytest.skip(f"No operations without security requirements in {spec_path.name}")
         pytest.fail(f"No in-scope operations executed for {spec_path.name}")
 
 
