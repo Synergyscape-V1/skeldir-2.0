@@ -37,6 +37,8 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.5.7 Phase 5 | docs/forensics/b057_phase5_full_chain_e2e_integration_evidence.md | Full-chain E2E webhook -> tasks -> matview refresh under least-privilege + RLS | 1a7f136 | https://github.com/Muk223/skeldir-2.0/actions/runs/21339065403 |
 | B0.5.7 Phase 6 | docs/forensics/b057_phase6_ci_enforcement_governance_cleanup_evidence.md | CI enforcement + governance cleanup (least-privilege E2E, Postgres-only guardrails, INDEX enforcement) | 0a470df0f7b7d480ded10060cd4457955284e8ad | https://github.com/Muk223/skeldir-2.0/actions/runs/21340267507 |
 | B0.5.7 Phase 7 | docs/forensics/b057_phase7_operational_readiness_closure_pack_evidence.md | Operational readiness closure pack + governance durability proof | ca485f1db918a5d8764c927189626d17e3093bf2 | https://github.com/Muk223/skeldir-2.0/actions/runs/21363064948 |
+| B0.6 Phase 1 context delta | docs/forensics/phase1_context_delta_notes.md | Phase 1 re-validation context delta notes (pre-remediation) | PR #29 / pending | pending |
+| B0.6 Phase 1 remediation | docs/forensics/b060_phase1_remediation_evidence.md | Phase 1 remediation evidence pack (auth + tenant boundary) | PR #29 / pending | pending |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
