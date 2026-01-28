@@ -482,6 +482,8 @@ components:
         token_type:
           type: string
           nullable: true
+          enum:
+            - Bearer
 
     PlatformCredentialStatus:
       type: string
