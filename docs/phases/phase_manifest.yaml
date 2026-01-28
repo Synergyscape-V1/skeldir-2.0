@@ -68,6 +68,19 @@ phases:
       - migrations
       - ingestion_soundness
 
+  - id: B0.6
+    intent: "Realtime revenue cache + stampede prevention (Postgres-only)."
+    prerequisites: ["B0.4"]
+    ci_gate:
+      job_name: gate-b0_6
+      command: ["python", "scripts/phase_gates/b0_6_gate.py"]
+      artifacts:
+        - backend/validation/evidence/phases/b0_6_summary.json
+    exit_gates:
+      - revenue_cache
+      - stampede_prevention
+      - failure_cooldown
+
   - id: VALUE_01
     intent: "Value Trace 01-WIN - Ghost revenue reconciliation (adversarial double-counting detection)."
     prerequisites: ["B0.4"]

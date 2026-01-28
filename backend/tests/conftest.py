@@ -11,6 +11,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
 os.environ["TESTING"] = "1"
+os.environ.setdefault("AUTH_JWT_SECRET", "test-secret")
+os.environ.setdefault("AUTH_JWT_ALGORITHM", "HS256")
+os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
+os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 
 # B0.5.3.3 Gate C: CI-first credential coherence (MUST execute before any imports)
 # In CI, DATABASE_URL MUST be provided by step env vars - no fallbacks, no defaults.
