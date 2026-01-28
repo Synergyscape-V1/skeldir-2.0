@@ -41,8 +41,9 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.6 Phase 1 remediation | docs/forensics/b060_phase1_remediation_evidence_v2.md | Phase 1 remediation evidence pack (auth + tenant boundary) | PR #29 / d95d0fb | https://github.com/Muk223/skeldir-2.0/actions/runs/21411787347 |
 | B0.6 Phase 1 remediation (superseded) | docs/forensics/b060_phase1_remediation_evidence.md | Superseded by v2 evidence pack. | PR #29 / d95d0fb | https://github.com/Muk223/skeldir-2.0/actions/runs/21411787347 |
 | B0.6 Phase 2 context delta | docs/forensics/phase2_context_delta_notes.md | Phase 2 re-validation context delta notes (pre-remediation) | PR #31 / da40ccd | https://github.com/Muk223/skeldir-2.0/actions/runs/21445442097 |
-| B0.6 Phase 2 remediation | docs/forensics/b060_phase2_remediation_evidence_v2.md | Phase 2 remediation evidence pack (platform substrate + tests + CI) | PR #31 / da40ccd | https://github.com/Muk223/skeldir-2.0/actions/runs/21445442097 |
-| B0.6 Phase 2 remediation (superseded) | docs/forensics/b060_phase2_remediation_evidence.md | Superseded by v2 evidence pack. | PR #31 / da40ccd | https://github.com/Muk223/skeldir-2.0/actions/runs/21445442097 |
+| B0.6 Phase 2 remediation | docs/forensics/b060_phase2_remediation_evidence_v3.md | Phase 2 remediation evidence pack (mainline merge + required adjudication) | PR #31 / 32c9d17 | https://github.com/Muk223/skeldir-2.0/actions/runs/21449343218 |
+| B0.6 Phase 2 remediation (superseded) | docs/forensics/b060_phase2_remediation_evidence_v2.md | Superseded by v3 evidence pack. | PR #31 / da40ccd | https://github.com/Muk223/skeldir-2.0/actions/runs/21445442097 |
+| B0.6 Phase 2 remediation (superseded) | docs/forensics/b060_phase2_remediation_evidence.md | Superseded by v3 evidence pack. | PR #31 / da40ccd | https://github.com/Muk223/skeldir-2.0/actions/runs/21445442097 |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
