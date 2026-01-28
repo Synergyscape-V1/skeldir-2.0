@@ -41,8 +41,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
+      - name: Apply migrations
+        env:
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          alembic upgrade head
+
       - name: B0.6 Phase 0 adjudication tests
         run: |
           pytest -q tests/test_b06_realtime_revenue_v1.py
           pytest -v --tb=short tests/test_b060_phase1_auth_tenant.py
+          pytest -v --tb=short tests/test_b060_phase2_platform_connections.py
           pytest -q tests/contract/test_contract_semantics.py

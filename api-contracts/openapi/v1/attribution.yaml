@@ -269,6 +269,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformConnectionResponse'
+              example:
+                id: 11111111-1111-1111-1111-111111111111
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: google_ads
+                platform_account_id: '123-456-7890'
+                status: active
+                created_at: '2026-01-28T12:00:00Z'
+                updated_at: '2026-01-28T12:05:00Z'
         '400':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
         '401':
@@ -313,6 +321,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformConnectionResponse'
+              example:
+                id: 11111111-1111-1111-1111-111111111111
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: google_ads
+                platform_account_id: '123-456-7890'
+                status: active
+                created_at: '2026-01-28T12:00:00Z'
+                updated_at: '2026-01-28T12:05:00Z'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '404':
@@ -352,6 +368,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformCredentialStatusResponse'
+              example:
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: google_ads
+                platform_account_id: '123-456-7890'
+                status: stored
+                expires_at: '2026-02-28T12:00:00Z'
+                updated_at: '2026-01-28T12:05:00Z'
         '400':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
         '401':

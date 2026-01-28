@@ -140,4 +140,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table_name in ("platform_credentials", "platform_connections"):
-        op.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+        op.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")  # CI:DESTRUCTIVE_OK - Downgrade rollback
