@@ -2,7 +2,7 @@
 
 ## Repo state
 - Branch: main (from `git branch --show-current`)
-- Commit: e79a89e6a59648bd0c9414b75d2001d8a1485214 (from `git rev-parse HEAD`)
+- Commit: 09048cb1af81886c7138cf898ed0f4d765756fb6 (from `git rev-parse HEAD`)
 - Dirty: clean (from `git status --porcelain=v1` produced no output)
 
 Command outputs:
@@ -11,7 +11,7 @@ git status --porcelain=v1
 (no output)
 
 git rev-parse HEAD
-e79a89e6a59648bd0c9414b75d2001d8a1485214
+09048cb1af81886c7138cf898ed0f4d765756fb6
 
 git branch --show-current
 main
@@ -41,6 +41,12 @@ main
 | H15: data_as_of reflects successful platform fetch time | REFUTED | `backend/app/api/attribution.py:64`, `backend/app/schemas/attribution.py:22` | No `data_as_of` field; `last_updated` set to `datetime.utcnow()` at request time. |
 | H16: Logs do not leak tokens/PII; metrics cardinality bounded | INCONCLUSIVE | `backend/app/middleware/observability.py:15`, `backend/app/middleware/pii_stripping.py:61`, `backend/app/observability/celery_task_lifecycle.py:144` | API handler does not log, and PII stripping only applies to `/api/webhooks`. Celery logging allowlist exists, but no explicit guarantee for this API path. |
 | H17: Request/trace correlation exists | SUPPORTED | `backend/app/middleware/observability.py:21`, `backend/app/api/attribution.py:31`, `backend/app/main.py:48` | Middleware sets `X-Correlation-ID` and handler requires it. |
+
+## Phase 3 update (post-remediation)
+- H04/H05 (Auth + tenant derivation): **SUPPORTED** — attribution and v1 endpoints now depend on `get_auth_context` and `get_db_session` to derive tenant_id and set RLS GUC. Evidence: `backend/app/api/attribution.py`, `backend/app/api/revenue.py`, `backend/app/db/deps.py`.
+- H10/H11/H13 (Postgres cache + tenant-safe RLS): **SUPPORTED** — new `revenue_cache_entries` table with RLS policy and grants; request path reads/writes via shared service. Evidence: `alembic/versions/007_skeldir_foundation/202601281230_b060_phase3_realtime_revenue_cache.py`, `backend/app/services/realtime_revenue_cache.py`.
+- H12 (stampede prevention): **SUPPORTED** — advisory-lock singleflight with follower polling implemented in service layer. Evidence: `backend/app/services/realtime_revenue_cache.py`.
+- H14 (failure semantics): **SUPPORTED** — endpoints return 503 with `Retry-After` on refresh failure or cooldown. Evidence: `backend/app/api/attribution.py`, `backend/app/api/revenue.py`.
 
 Command output (H08 evidence):
 ```text

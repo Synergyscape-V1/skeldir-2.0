@@ -44,6 +44,9 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.6 Phase 2 remediation | docs/forensics/b060_phase2_remediation_evidence_v3.md | Phase 2 remediation evidence pack (mainline merge + required adjudication) | PR #31 / 32c9d17 | https://github.com/Muk223/skeldir-2.0/actions/runs/21449343218 |
 | B0.6 Phase 2 remediation (superseded) | docs/forensics/b060_phase2_remediation_evidence_v2.md | Superseded by v3 evidence pack. | PR #31 / da40ccd | https://github.com/Muk223/skeldir-2.0/actions/runs/21445442097 |
 | B0.6 Phase 2 remediation (superseded) | docs/forensics/b060_phase2_remediation_evidence.md | Superseded by v3 evidence pack. | PR #31 / da40ccd | https://github.com/Muk223/skeldir-2.0/actions/runs/21445442097 |
+| B0.6 Phase 3 context delta | docs/forensics/b060_phase3_context_delta_notes.md | Phase 3 re-validation context delta notes (pre-remediation) | PR #33 / pending | pending |
+| B0.6 Phase 3 context pack | docs/forensics/b06_realtime_revenue_context_pack.md | Realtime revenue baseline + hypotheses + gate status (updated) | PR #33 / pending | pending |
+| B0.6 Phase 3 remediation | docs/forensics/b060_phase3_remediation_evidence.md | Phase 3 remediation evidence pack (cache + singleflight + CI gate) | PR #33 / pending | pending |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

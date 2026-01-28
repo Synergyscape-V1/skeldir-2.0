@@ -36,6 +36,7 @@ from app.models.llm import (
 )
 from app.models.platform_connection import PlatformConnection
 from app.models.platform_credential import PlatformCredential
+from app.models.revenue_cache import RevenueCacheEntry
 
 __all__ = [
     "Base",
@@ -49,4 +50,5 @@ __all__ = [
     "BudgetOptimizationJob",
     "PlatformConnection",
     "PlatformCredential",
+    "RevenueCacheEntry",
 ]

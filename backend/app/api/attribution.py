@@ -9,13 +9,20 @@ Contract Operations:
 All routes use generated Pydantic models from backend/app/schemas/attribution.py
 """
 
-from fastapi import APIRouter, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 from uuid import UUID
 from typing import Annotated
 
 # Import generated Pydantic models
 from app.schemas.attribution import RealtimeRevenueResponse
 from app.api.problem_details import problem_details_response
+from app.db.deps import get_db_session
+from app.security.auth import AuthContext, get_auth_context
+from app.services.realtime_revenue_cache import (
+    RealtimeRevenueUnavailable,
+    get_realtime_revenue_snapshot,
+)
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -32,14 +39,14 @@ async def get_realtime_revenue(
     request: Request,
     response: Response,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
     if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
 ):
     """
     Get realtime revenue attribution data.
     
-    Phase F: Interim Semantics Implementation
-    Returns unverified revenue data with upgrade notice during B0.1 phase.
+    Phase B0.6: Cached realtime revenue semantics (interim, unverified).
     
     Contract: GET /api/attribution/revenue/realtime
     Spec: api-contracts/dist/openapi/v1/attribution.bundled.yaml
@@ -47,49 +54,45 @@ async def get_realtime_revenue(
     Returns:
         RealtimeRevenueResponse: Revenue data with verification status
     """
-    # Phase B0.1: Return unverified data with upgrade notice
-    # Semantic alignment: verified=false reflects actual system capabilities
-    # upgrade_notice guides users about data limitations
+    # Phase B0.6: Cached interim data with unverified semantics.
     
-    import os
     from datetime import datetime
 
-    # Minimal auth guard to align with contract (no JWT verification in B0.1).
-    if not _has_bearer_token(authorization):
-        return problem_details_response(
-            request,
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            title="Authentication Failed",
-            detail="Missing or invalid Authorization header.",
-            correlation_id=x_correlation_id,
-            type_url="https://api.skeldir.com/problems/authentication-failed",
+    tenant_id = auth_context.tenant_id
+    try:
+        snapshot, etag, _ = await get_realtime_revenue_snapshot(
+            db_session,
+            tenant_id,
         )
+    except RealtimeRevenueUnavailable as exc:
+        error_response = problem_details_response(
+            request,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            title="Upstream Unavailable",
+            detail="Realtime revenue refresh unavailable. Retry later.",
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/realtime-revenue-unavailable",
+        )
+        error_response.headers["Retry-After"] = str(exc.retry_after_seconds)
+        error_response.headers["Cache-Control"] = "no-store"
+        return error_response
 
-    # System phase determines verification status
-    system_phase = os.getenv('SYSTEM_PHASE', 'B0.1')
-    tenant_id = os.getenv('TEST_TENANT_ID', '00000000-0000-0000-0000-000000000000')
+    now = datetime.now(tz=snapshot.data_as_of.tzinfo)
+    data_freshness_seconds = max(
+        0, int((now - snapshot.data_as_of).total_seconds())
+    )
 
-    # In B0.1: Revenue data is NOT verified (no reconciliation pipeline yet)
-    verified = False if system_phase == 'B0.1' else True
-
-    # Construct response with proper semantics
     response_data = {
-        "total_revenue": 125000.50,
-        "event_count": 0,  # Stub value for B0.1 (no event tracking yet)
-        "last_updated": datetime.utcnow().isoformat() + "Z",
-        "data_freshness_seconds": 45,
-        "verified": verified,
-        "tenant_id": tenant_id,
+        "total_revenue": snapshot.revenue_total_cents / 100.0,
+        "event_count": snapshot.event_count,
+        "last_updated": snapshot.data_as_of,
+        "data_freshness_seconds": data_freshness_seconds,
+        "verified": snapshot.verified,
+        "tenant_id": str(tenant_id),
+        "confidence_score": snapshot.confidence_score,
+        "upgrade_notice": snapshot.upgrade_notice,
     }
 
-    # Add upgrade_notice when data is unverified (interim state)
-    if not verified:
-        response_data["upgrade_notice"] = (
-            "Revenue data pending reconciliation. "
-            "Full statistical verification available in Phase B2.6."
-        )
-
-    etag = _compute_etag(response_data)
     if if_none_match and if_none_match.strip() == etag:
         return Response(
             status_code=status.HTTP_304_NOT_MODIFIED,
@@ -102,19 +105,4 @@ async def get_realtime_revenue(
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "max-age=30"
     return response_data
-
-
-def _has_bearer_token(value: str | None) -> bool:
-    if not value:
-        return False
-    return value.strip().lower().startswith("bearer ")
-
-
-def _compute_etag(payload: dict) -> str:
-    import hashlib
-    import json
-
-    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    return f"\"{digest}\""
 
