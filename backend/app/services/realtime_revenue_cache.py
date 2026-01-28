@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import set_tenant_guc_async
@@ -233,19 +234,22 @@ async def _refresh_snapshot(
     now = _utcnow()
     ttl_seconds = _cache_ttl_seconds()
     expires_at = now + timedelta(seconds=ttl_seconds)
-    await _upsert_cache_row(
-        session,
-        tenant_id,
-        cache_key,
-        payload,
-        snapshot.data_as_of,
-        expires_at,
-        etag=etag,
-        error_cooldown_until=None,
-        last_error_at=None,
-        last_error_message=None,
-    )
-    await session.commit()
+    try:
+        await _upsert_cache_row(
+            session,
+            tenant_id,
+            cache_key,
+            payload,
+            snapshot.data_as_of,
+            expires_at,
+            etag=etag,
+            error_cooldown_until=None,
+            last_error_at=None,
+            last_error_message=None,
+        )
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
     return snapshot, etag
 
 
@@ -274,19 +278,22 @@ async def _record_failure(
         "upgrade_notice": None,
     }
     data_as_of = existing_data_as_of or now
-    await _upsert_cache_row(
-        session,
-        tenant_id,
-        cache_key,
-        payload,
-        data_as_of,
-        now,
-        etag=None,
-        error_cooldown_until=cooldown,
-        last_error_at=now,
-        last_error_message=error_message,
-    )
-    await session.commit()
+    try:
+        await _upsert_cache_row(
+            session,
+            tenant_id,
+            cache_key,
+            payload,
+            data_as_of,
+            now,
+            etag=None,
+            error_cooldown_until=cooldown,
+            last_error_at=now,
+            last_error_message=error_message,
+        )
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
 
 
 async def get_realtime_revenue_snapshot(
