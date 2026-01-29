@@ -159,5 +159,26 @@
       text-size-adjust: 100%;
     }
   }
+
+  /* Desktop viewport overflow fix */
+@media (min-width: 768px) {
+  html, body {
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+  }
+  
+  /* Ensure all containers respect viewport width */
+  * {
+    max-width: 100vw;
+  }
+  
+  /* Fix for elements using viewport units */
+  [class*="w-screen"],
+  [class*="min-w-screen"],
+  [class*="max-w-screen"] {
+    max-width: 100% !important;
+  }
+}
 }
 
