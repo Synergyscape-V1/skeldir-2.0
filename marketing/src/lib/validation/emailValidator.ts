@@ -2,11 +2,19 @@
  * Email validation utility for business email addresses
  */
 
-export function validateBusinessEmail(email: string): boolean {
+export interface ValidationResult {
+  isValid: boolean;
+  error: string | null;
+}
+
+export function validateBusinessEmail(email: string): ValidationResult {
   // Basic email format validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
-    return false;
+    return {
+      isValid: false,
+      error: 'Please enter a valid email address'
+    };
   }
 
   // List of common free email providers to reject
@@ -25,10 +33,16 @@ export function validateBusinessEmail(email: string): boolean {
   
   // Reject free email providers
   if (freeEmailProviders.includes(domain)) {
-    return false;
+    return {
+      isValid: false,
+      error: 'Please use a business email address'
+    };
   }
 
-  return true;
+  return {
+    isValid: true,
+    error: null
+  };
 }
 
 export function getEmailDomain(email: string): string | null {
