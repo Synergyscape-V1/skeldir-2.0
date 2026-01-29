@@ -28,10 +28,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />      </head>
       <body className={`${dmSans.variable} ${playfairDisplay.variable} font-sans antialiased`}>
+                <style dangerouslySetInnerHTML={{__html: `body{opacity:0}`}} />
         {children}
+                <script dangerouslySetInnerHTML={{__html: `!function(){document.body.style.opacity='1'}()`}} />
       </body>
     </html>
   );
