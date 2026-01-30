@@ -43,6 +43,7 @@ export function AgenciesHeroSection() {
           className="agencies-hero-grid"
         >
           {/* Left Column: Text Content */}
+          {/* Left column: no negative margin — negative X pushes content past viewport (x<0) and causes clipping */}
           <div
             className="agencies-hero-text"
             style={{
@@ -51,7 +52,7 @@ export function AgenciesHeroSection() {
               justifyContent: 'center',
               textAlign: 'center',
               marginTop: '-200px',
-              marginLeft: '-10%',
+              marginLeft: 0,
             }}
           >
           <h1
@@ -205,7 +206,7 @@ export function AgenciesHeroSection() {
         </div>
 
           {/* Right Column: Product Visual */}
-          <div className="relative mx-auto w-full max-w-[1600px] lg:ml-[45%] agencies-hero-visual" style={{ marginTop: '-250px' }}>
+          <div className="relative mx-auto w-full max-w-[1600px] agencies-hero-visual" style={{ marginTop: '-250px' }}>
             <div 
               className="relative rounded-2xl overflow-visible agencies-hero-image-glass"
               style={{
@@ -309,7 +310,7 @@ export function AgenciesHeroSection() {
           transform: scale(1.1);
         }
 
-        /* Desktop: 1024px+ — two columns with overlap like home page */
+        /* Desktop: 1024px+ — two columns; text stays in viewport (no negative margin), overlap via image pull only */
         @media (min-width: 1024px) {
           .agencies-hero-container {
             padding: 0 24px !important;
@@ -321,7 +322,7 @@ export function AgenciesHeroSection() {
           .agencies-hero-text {
             text-align: left !important;
             padding-right: 32px !important;
-            margin-left: -35% !important;
+            margin-left: 0 !important;
             margin-top: -200px !important;
           }
           .agencies-hero-headline {
@@ -339,9 +340,12 @@ export function AgenciesHeroSection() {
             align-items: flex-start !important;
           }
           .agencies-hero-visual {
-            margin-left: 45% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
             margin-top: -250px !important;
             max-width: 1600px !important;
+            justify-self: end !important;
+            transform: translateX(120px) !important;
           }
           .agencies-hero-image-glass {
             transform: scale(1.4) !important;
