@@ -31,25 +31,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Bypass backend adjudication when only marketing (or other non-backend) paths change.
+      - name: Detect backend/tests/contract changes
+        id: paths
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend_or_contracts:
+              - 'backend/**'
+              - 'tests/**'
+              - 'alembic/**'
+              - 'contracts/**'
+              - 'api-contracts/**'
+
       - name: Set up Python
+        if: steps.paths.outputs.backend_or_contracts == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install dependencies
+        if: steps.paths.outputs.backend_or_contracts == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
       - name: Apply migrations
+        if: steps.paths.outputs.backend_or_contracts == 'true'
         env:
           MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
         run: |
           alembic upgrade head
 
       - name: B0.6 Phase 0 adjudication tests
+        if: steps.paths.outputs.backend_or_contracts == 'true'
         run: |
           pytest -q tests/test_b06_realtime_revenue_v1.py
           pytest -v --tb=short tests/test_b060_phase1_auth_tenant.py
           pytest -v --tb=short tests/test_b060_phase2_platform_connections.py
           pytest -q tests/contract/test_contract_semantics.py
+
+      - name: Skip (marketing / non-backend change only)
+        if: steps.paths.outputs.backend_or_contracts != 'true'
+        run: |
+          echo "B0.6 Phase 0 Adjudication skipped by policy: no backend/tests/contract changes (e.g. marketing-only)."
