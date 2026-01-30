@@ -6,24 +6,50 @@ import Image from "next/image";
 export function AgenciesHeroSection() {
   return (
     <section
-      className="agencies-hero agencies-hero-reveal"
+      className="agencies-hero agencies-hero-section agencies-hero-reveal"
       aria-labelledby="agencies-hero-heading"
       style={{
         position: 'relative',
         width: '100%',
         minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        // Use a quoted URL so the space in the filename is valid CSS
-        backgroundImage: 'url(\"/images/Background 2 Agencies.png\")',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
         overflow: 'hidden',
+        margin: 0,
         paddingTop: '96px',
         paddingBottom: '48px',
       }}
     >
+      {/* Responsive hero background (replaces CSS background for instant LCP) */}
+      <img
+        src="/assets/images/agencies-hero/agencies-hero-800w.jpg"
+        srcSet="/assets/images/agencies-hero/agencies-hero-400w.jpg 400w, /assets/images/agencies-hero/agencies-hero-800w.jpg 800w, /assets/images/agencies-hero/agencies-hero-1200w.jpg 1200w"
+        sizes="(max-width: 767px) 100vw, (max-width: 1023px) 80vw, 1200px"
+        alt="Abstract green and gold gradient wave background"
+        width={1200}
+        height={661}
+        loading="eager"
+        fetchPriority="high"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          objectPosition: 'center',
+          display: 'block',
+          zIndex: 0,
+        }}
+      />
+      {/* Overlay content — preserved z-index above image */}
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          minHeight: '100vh',
+        }}
+      >
       <div
         className="agencies-hero-container"
         style={{
@@ -231,6 +257,7 @@ export function AgenciesHeroSection() {
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       {/* Bottom gradient overlay for transition feel */}

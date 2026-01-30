@@ -9,7 +9,15 @@ import { Footer } from "@/components/layout/Footer";
 export const metadata: Metadata = {
   title: "Skeldir for Agencies – Enterprise Attribution Intelligence",
   description:
-    "Skeldir delivers Bayesian confidence ranges for multi-client portfolios. White-label dashboards, REST API access, and deployment in days–not months.",
+    "Skeldir delivers Bayesian confidence ranges for multi-client portfolios. White-label dashboards, REST API access, and deployment in days—not months.",
+  link: [
+    {
+      rel: "preload",
+      as: "image",
+      href: "/assets/images/agencies-hero/agencies-hero-800w.jpg",
+      fetchPriority: "high",
+    },
+  ],
 };
 
 export default function AgenciesPage() {

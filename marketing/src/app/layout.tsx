@@ -29,6 +29,16 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link
+          rel="preload"
+          as="image"
+          href="/assets/images/hero/hero-800w.jpg"
+          // @ts-expect-error - imagesrcset/imagesizes are valid for preload but not in React types
+          imagesrcset="/assets/images/hero/hero-400w.jpg 400w, /assets/images/hero/hero-800w.jpg 800w, /assets/images/hero/hero-1200w.jpg 1200w"
+          // @ts-expect-error - imagesizes is valid for preload
+          imagesizes="(max-width: 767px) 100vw, (max-width: 1023px) 80vw, 1200px"
+          fetchPriority="high"
+        />
       </head>
       <body className={`${dmSans.variable} ${playfairDisplay.variable} font-sans antialiased`}>
         {children}
