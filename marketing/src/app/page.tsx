@@ -12,10 +12,7 @@ import { FinalCTA } from "@/components/layout/FinalCTA";
 import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
-  link: [
-    { rel: "preload", as: "image", href: "/images/Background-2.png" },
-  ],
-};
+  };
 
 export default function Home() {
   return (
