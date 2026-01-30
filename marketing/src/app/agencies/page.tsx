@@ -7,18 +7,15 @@ import { AgenciesSection4 } from "@/components/layout/AgenciesSection4";
 import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
-  title: "Skeldir for Agencies — Enterprise Attribution Intelligence",
+  title: "Skeldir for Agencies – Enterprise Attribution Intelligence",
   description:
-    "Skeldir delivers Bayesian confidence ranges for multi-client portfolios. White-label dashboards, REST API access, and deployment in days—not months.",
-  link: [
-    { rel: "preload", as: "image", href: "/images/Background%202%20Agencies.png" },
-  ],
+    "Skeldir delivers Bayesian confidence ranges for multi-client portfolios. White-label dashboards, REST API access, and deployment in days–not months.",
 };
 
 export default function AgenciesPage() {
   return (
     <main className="min-h-screen flex flex-col font-sans">
-      {/* Navigation — same translucent behavior as homepage */}
+      {/* Navigation – same translucent behavior as homepage */}
       <Navigation />
 
       {/* Hero Section */}
