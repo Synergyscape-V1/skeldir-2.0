@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Navigation } from "@/components/layout/Navigation";
 import { HeroSection } from "@/components/layout/HeroSection";
 import { PartnerLogos } from "@/components/layout/PartnerLogos";
@@ -10,12 +11,18 @@ import { InteractiveDemo } from "@/components/layout/InteractiveDemo";
 import { FinalCTA } from "@/components/layout/FinalCTA";
 import { Footer } from "@/components/layout/Footer";
 
+export const metadata: Metadata = {
+  link: [
+    { rel: "preload", as: "image", href: "/images/Background-2.png" },
+  ],
+};
+
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col font-sans">
       {/* Hero Section with Background - includes navigation area */}
       <div
-        className="relative flex flex-col"
+        className="relative flex flex-col hero-background-reveal"
         style={{
           backgroundImage: 'url(/images/Background-2.png)',
           backgroundSize: 'cover',
@@ -24,14 +31,6 @@ export default function Home() {
           minHeight: '100vh'
         }}
       >
-        {/* Subtle overlay for text contrast (WCAG AA compliance) */}
-        <div
-          className="absolute inset-0 -z-10"
-          style={{
-            backgroundColor: 'rgba(0, 0, 0, 0.15)'
-          }}
-        />
-
         {/* Sticky Navigation */}
         <Navigation />
 
@@ -81,6 +80,13 @@ export default function Home() {
               .partner-logos-container {
                 margin-top: 0 !important;
               }
+            }
+            @keyframes hero-bg-reveal {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            .hero-background-reveal {
+              animation: hero-bg-reveal 0.55s ease-out 0.1s both;
             }
           `}</style>
         </section>

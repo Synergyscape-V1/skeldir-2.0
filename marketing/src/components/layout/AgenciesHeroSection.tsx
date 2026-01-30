@@ -6,7 +6,7 @@ import Image from "next/image";
 export function AgenciesHeroSection() {
   return (
     <section
-      className="agencies-hero"
+      className="agencies-hero agencies-hero-reveal"
       aria-labelledby="agencies-hero-heading"
       style={{
         position: 'relative',
@@ -308,6 +308,14 @@ export function AgenciesHeroSection() {
           filter: blur(16px);
           pointer-events: none;
           transform: scale(1.1);
+        }
+
+        @keyframes agencies-hero-reveal {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .agencies-hero-reveal {
+          animation: agencies-hero-reveal 0.55s ease-out 0.1s both;
         }
 
         /* Desktop: 1024px+ — two columns; text stays in viewport (no negative margin), overlap via image pull only */
