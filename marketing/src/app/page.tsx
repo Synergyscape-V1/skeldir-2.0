@@ -36,6 +36,7 @@ export default function Home() {
           width={1200}
           height={661}
           loading="eager"
+                  decoding="sync"
           fetchPriority="high"
           style={{
             position: "absolute",
@@ -45,7 +46,12 @@ export default function Home() {
             height: "100%",
             objectFit: "cover",
             objectPosition: "center",
-            display: "block",
+            48
+                        38
+            ,
+                      willChange: "transform",
+                      opacity: 1,
+            ,
             zIndex: 0,
           }}
         />
