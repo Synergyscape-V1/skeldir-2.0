@@ -7,7 +7,7 @@ import { AgenciesSection4 } from "@/components/layout/AgenciesSection4";
 import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
-  title: "Skeldir for Agencies – Enterprise Attribution Intelligence",
+  title: "Skeldir for Agencies — Enterprise Attribution Intelligence",
   description:
     "Skeldir delivers Bayesian confidence ranges for multi-client portfolios. White-label dashboards, REST API access, and deployment in days—not months.",
 };
