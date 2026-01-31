@@ -4,9 +4,14 @@ import { useState, useRef, useCallback } from "react";
 
 // ============================================================================
 // INTERACTIVE PRODUCT DEMO COMPONENT
-// Reference: Combat-Grade Implementation Directive v1.0
+// YouTube embed: plays in-page so users are not sent to youtube.com
 // State Machine: READY_TO_PLAY → PLAYING → ERROR
 // ============================================================================
+
+const YOUTUBE_VIDEO_ID = "DHEyowvZ_9E";
+const YOUTUBE_EMBED_URL = `https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}`;
+const YOUTUBE_THUMBNAIL_URL = `https://img.youtube.com/vi/${YOUTUBE_VIDEO_ID}/maxresdefault.jpg`;
+const YOUTUBE_THUMBNAIL_FALLBACK = `https://img.youtube.com/vi/${YOUTUBE_VIDEO_ID}/hqdefault.jpg`;
 
 type DemoState = "READY_TO_PLAY" | "PLAYING" | "ERROR";
 
@@ -129,117 +134,28 @@ function Tooltip({
 // =============================================================================
 export function InteractiveDemo() {
   const [state, setState] = useState<DemoState>("READY_TO_PLAY");
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Tooltip visibility based on state
   const tooltipsVisible = state === "READY_TO_PLAY";
 
-  // Handle play click - transitions from READY_TO_PLAY → PLAYING
+  // Handle play click: show YouTube embed (plays in-page, no redirect)
   const handlePlayClick = useCallback(() => {
     if (state !== "READY_TO_PLAY") return;
-
-    const startTime = performance.now();
-    console.log("[Skeldir Demo] Play triggered - starting transition");
-
-    // Create video element
-    const video = document.createElement("video");
-    video.id = "demo-video-player";
-    video.src = "/videos/demo-video.mp4";
-    video.controls = false; // No user controls
-    video.autoplay = true;
-    video.loop = true; // Loop continuously
-    video.playsInline = true;
-    video.muted = true; // Muted for autoplay compliance
-    video.preload = "auto";
-
-    video.style.cssText = `
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      border-radius: 16px;
-      object-fit: cover;
-      background: #0F172A;
-      z-index: 5;
-      cursor: pointer;
-    `;
-
-    // Add click handler to pause/resume video
-    video.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (video.paused) {
-        video.play().catch((error) => {
-          console.error("[Skeldir Demo] Resume failed:", error);
-        });
-      } else {
-        video.pause();
-      }
-    });
-
-    videoRef.current = video;
-
-    // Append video to container
-    if (containerRef.current) {
-      containerRef.current.appendChild(video);
-    }
-
-    // Start playback (muted for autoplay compliance)
-    video
-      .play()
-      .then(() => {
-        const latency = performance.now() - startTime;
-        console.log(
-          `[Skeldir Demo] Video playing (${latency.toFixed(0)}ms latency)`
-        );
-        setState("PLAYING");
-      })
-      .catch((error) => {
-        console.error("[Skeldir Demo] Playback failed:", error);
-        transitionToErrorState(error);
-      });
+    setState("PLAYING");
   }, [state]);
 
-  // Handle video click - pause/resume when playing
-  const handleVideoClick = useCallback(() => {
-    if (state !== "PLAYING" || !videoRef.current) return;
+  // No-op for container click when playing (YouTube iframe has its own controls)
+  const handleVideoClick = useCallback(() => {}, []);
 
-    const video = videoRef.current;
-    if (video.paused) {
-      video.play().catch((error) => {
-        console.error("[Skeldir Demo] Resume failed:", error);
-      });
-    } else {
-      video.pause();
-    }
-  }, [state]);
-
-  // Transition to error state
+  // Transition to error state (e.g. if embed fails to load)
   const transitionToErrorState = useCallback((error: Error) => {
-    console.log("[Skeldir Demo] Entering error state:", error);
-
-    // Remove failed video
-    if (videoRef.current) {
-      videoRef.current.remove();
-      videoRef.current = null;
-    }
-
+    console.warn("[Skeldir Demo] Error state:", error);
     setState("ERROR");
   }, []);
 
   // Reset to ready state (from error)
   const resetToReadyState = useCallback(() => {
-    if (videoRef.current) {
-      videoRef.current.remove();
-      videoRef.current = null;
-    }
-
-    const existingVideo = document.getElementById("demo-video-player");
-    if (existingVideo) {
-      existingVideo.remove();
-    }
-
     setState("READY_TO_PLAY");
   }, []);
 
@@ -282,7 +198,7 @@ export function InteractiveDemo() {
           alignItems: "center",
           position: "relative",
           zIndex: 2,
-      }}
+        }}
     >
       {/* Section Title */}
       <h2
@@ -334,14 +250,20 @@ export function InteractiveDemo() {
           cursor: state === "PLAYING" ? "pointer" : "default",
         }}
       >
-        {/* Thumbnail Image */}
+        {/* Thumbnail: YouTube official image so it always matches the video */}
         <img
           id="demo-thumbnail-img"
-          src="/images/demo-thumbnail.png"
-          alt="Skeldir Channel Comparison dashboard preview"
+          src={YOUTUBE_THUMBNAIL_URL}
+          alt="Skeldir Channel Comparison dashboard preview — click to play"
           loading="eager"
           draggable={false}
           onClick={handlePlayClick}
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (target.src !== YOUTUBE_THUMBNAIL_FALLBACK) {
+              target.src = YOUTUBE_THUMBNAIL_FALLBACK;
+            }
+          }}
           style={{
             position: "absolute",
             top: 0,
@@ -356,6 +278,27 @@ export function InteractiveDemo() {
             display: state === "READY_TO_PLAY" ? "block" : "none",
           }}
         />
+
+        {/* YouTube embed: plays in-page so users are not sent to youtube.com */}
+        {state === "PLAYING" && (
+          <iframe
+            id="demo-youtube-embed"
+            src={`${YOUTUBE_EMBED_URL}?autoplay=1`}
+            title="Skeldir demo video"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              border: "none",
+              borderRadius: "16px",
+              zIndex: 5,
+            }}
+          />
+        )}
 
         {/* Play Button Overlay */}
         <button
