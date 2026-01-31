@@ -27,6 +27,7 @@ export function AgenciesHeroSection() {
         width={1200}
         height={661}
         loading="eager"
+                decoding="sync"
         fetchPriority="high"
         style={{
           position: 'absolute',
@@ -37,6 +38,8 @@ export function AgenciesHeroSection() {
           objectFit: 'cover',
           objectPosition: 'center',
           display: 'block',
+                    willChange: 'transform',
+                    opacity: 1,
           zIndex: 0,
         }}
       />
