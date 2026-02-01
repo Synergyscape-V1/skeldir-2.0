@@ -12,15 +12,7 @@ import { FinalCTA } from "@/components/layout/FinalCTA";
 import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
-  link: [
-    {
-      rel: "preload",
-      as: "image",
-      href: "/assets/images/hero/hero-800w.jpg",
-      fetchPriority: "high",
-    },
-  ],
-};
+  
 
 export default function Home() {
   return (
