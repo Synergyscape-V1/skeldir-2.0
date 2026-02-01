@@ -13,12 +13,14 @@
 // Stripe wordmark logo - grayscale
 function StripeLogo() {
   return (
-    <img 
-      src="/images/stripe-logo.png" 
-      alt="Stripe" 
-      style={{ 
-        width: "50px", 
-        height: "21px", 
+    <img
+      src="/images/stripe-logo.png"
+      alt="Stripe"
+      loading="lazy"
+      decoding="async"
+      style={{
+        width: "50px",
+        height: "21px",
         objectFit: "contain",
         display: "block",
         margin: 0,
@@ -45,8 +47,7 @@ function ShopifyLogo() {
         padding: 0,
         lineHeight: 0,
         flexShrink: 0
-      }}
-    />
+      }} loading="lazy" decoding="async" />
   );
 }
 
@@ -67,8 +68,7 @@ function GoogleAdsLogo() {
           padding: 0,
           lineHeight: 0,
           flexShrink: 0
-        }}
-      />
+        }} loading="lazy" decoding="async" />
       <span style={{
         fontFamily: "Inter, system-ui, sans-serif",
         fontSize: "13px",
@@ -99,8 +99,7 @@ function MetaLogo() {
           padding: 0,
           lineHeight: 0,
           flexShrink: 0
-        }}
-      />
+        }} loading="lazy" decoding="async" />
       <span style={{
         fontFamily: "Inter, system-ui, sans-serif",
         fontSize: "13px",
@@ -290,6 +289,7 @@ function TimelineStep({
 }) {
   return (
     <div
+      className="timeline-step-row"
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -343,8 +343,7 @@ function TimelineStep({
             objectFit: "contain",
             display: "block",
             flexShrink: 0,
-          }}
-        />
+          }} loading="lazy" decoding="async" />
       ) : step.id === 2 ? (
         <img 
           src="/images/timeline-2.png" 
@@ -355,8 +354,7 @@ function TimelineStep({
             objectFit: "contain",
             display: "block",
             flexShrink: 0,
-          }}
-        />
+          }} loading="lazy" decoding="async" />
       ) : step.id === 3 ? (
         <img 
           src="/images/timeline-3.png" 
@@ -367,8 +365,7 @@ function TimelineStep({
             objectFit: "contain",
             display: "block",
             flexShrink: 0,
-          }}
-        />
+          }} loading="lazy" decoding="async" />
       ) : (
         /* Card - 400px width per directive */
         <div
@@ -588,6 +585,7 @@ export function HowItWorks() {
 
           {/* Steps - 32px gap between cards */}
           <div
+            className="timeline-steps-wrapper"
             style={{
               display: "flex",
               flexDirection: "column",
@@ -647,6 +645,16 @@ export function HowItWorks() {
             padding-left: 0 !important;
             padding-right: 0 !important;
             overflow: visible !important;
+            justify-content: flex-start !important;
+            align-items: flex-start !important;
+            margin-left: -32px !important;
+            width: calc(100% + 32px) !important;
+          }
+
+          .timeline-container .timeline-steps-wrapper {
+            align-items: flex-start !important;
+            width: 100% !important;
+            max-width: 100% !important;
           }
 
           .timeline-segment,
@@ -675,19 +683,21 @@ export function HowItWorks() {
             max-width: 100% !important;
           }
 
-          /* Fix timeline step layout on mobile */
-          .how-it-works-section [style*="display: flex"][style*="alignItems: flex-start"] {
+          /* Fix timeline step layout on mobile — shift content left so it is not cut off */
+          .how-it-works-section .timeline-step-row {
             flex-direction: column !important;
             align-items: flex-start !important;
             width: 100% !important;
-            padding-left: 40px !important;
+            max-width: 100% !important;
+            padding-left: 24px !important;
+            box-sizing: border-box !important;
           }
 
-          .how-it-works-section [style*="width: 80px"] {
+          .how-it-works-section .timeline-step-row [style*="width: 80px"] {
             display: none !important;
           }
 
-          .how-it-works-section [style*="width: 32px"] {
+          .how-it-works-section .timeline-step-row [style*="width: 32px"] {
             display: none !important;
           }
         }
