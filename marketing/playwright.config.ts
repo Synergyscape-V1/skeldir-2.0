@@ -20,7 +20,6 @@ export default defineConfig({
         viewport: { width: 375, height: 667 },
         isMobile: true,
         hasTouch: true,
-        isLandscape: false,
       },
     },
   ],
