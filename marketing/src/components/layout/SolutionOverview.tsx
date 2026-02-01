@@ -87,8 +87,7 @@ function RevenueVerificationVisual() {
               <img 
                 src="/images/skeldir-logo-black.png" 
                 alt="Skeldir Logo" 
-                style={{ width: "32px", height: "32px", objectFit: "contain" }} 
-              />
+                style={{ width: "32px", height: "32px", objectFit: "contain" }} loading="lazy" decoding="async" />
               <div style={{ width: "16px", height: "16px", backgroundColor: "#E5E7EB", borderRadius: "3px" }} />
               <div style={{ width: "16px", height: "16px", backgroundColor: "#E5E7EB", borderRadius: "3px" }} />
         </div>
@@ -119,6 +118,7 @@ function RevenueVerificationVisual() {
 
               {/* Platform Claimed Row */}
             <div
+              className="revenue-comparison-row revenue-comparison-row-platform-claimed"
               style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -127,7 +127,7 @@ function RevenueVerificationVisual() {
                   borderBottom: "1px solid #F3F4F6",
               }}
             >
-                <span style={{ fontSize: "11px", color: "#6B7280", fontFamily: "Inter, sans-serif" }}>
+                <span className="revenue-comparison-label" style={{ fontSize: "11px", color: "#6B7280", fontFamily: "Inter, sans-serif" }}>
                 Platform Claimed
               </span>
                 <span style={{ fontSize: "16px", fontWeight: 700, color: "#111827", fontFamily: "Inter, sans-serif" }}>
@@ -137,6 +137,7 @@ function RevenueVerificationVisual() {
 
               {/* Verified Revenue Row */}
             <div
+              className="revenue-comparison-row"
               style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -145,7 +146,7 @@ function RevenueVerificationVisual() {
                   borderBottom: "1px solid #F3F4F6",
               }}
             >
-                <span style={{ fontSize: "11px", color: "#6B7280", fontFamily: "Inter, sans-serif" }}>
+                <span className="revenue-comparison-label" style={{ fontSize: "11px", color: "#6B7280", fontFamily: "Inter, sans-serif" }}>
                 Verified Revenue
               </span>
                 <span style={{ fontSize: "16px", fontWeight: 700, color: "#10B981", fontFamily: "Inter, sans-serif" }}>
@@ -171,6 +172,7 @@ function RevenueVerificationVisual() {
 
       {/* Arrow Annotation: "What Facebook Claims" - EXTERNAL, positioned in padding (F3 Fix) */}
       <div
+        className="revenue-verification-annotation"
         style={{
           position: "absolute",
           left: "-70px",
@@ -203,6 +205,7 @@ function RevenueVerificationVisual() {
 
       {/* Arrow Annotation: "What Stripe Verifies" - EXTERNAL, positioned in padding (F3 Fix) */}
       <div
+        className="revenue-verification-annotation"
         style={{
           position: "absolute",
           left: "-70px",
@@ -364,8 +367,7 @@ function ConfidenceRangesVisual() {
                   objectFit: "contain",
                   display: "block",
                   flexShrink: 0
-                }}
-              />
+                }} loading="lazy" decoding="async" />
               <span style={{ width: "90px", fontSize: "13px", color: "#374151", fontFamily: "Inter, sans-serif", fontWeight: 500, whiteSpace: "nowrap", marginRight: "4px" }}>
                 Meta Ads ROAS
               </span>
@@ -394,8 +396,7 @@ function ConfidenceRangesVisual() {
                   objectFit: "contain",
                   display: "block",
                   flexShrink: 0
-                }}
-              />
+                }} loading="lazy" decoding="async" />
               <span style={{ width: "90px", fontSize: "13px", color: "#374151", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
                 Google ROAS
               </span>
@@ -435,8 +436,7 @@ function ConfidenceRangesVisual() {
                     height: "100%", 
                     objectFit: "contain",
                     display: "block"
-                  }}
-                />
+                  }} loading="lazy" decoding="async" />
               </div>
               <span style={{ width: "90px", fontSize: "13px", color: "#374151", fontFamily: "Inter, sans-serif", fontWeight: 500 }}>
                 TikTok ROAS
@@ -845,13 +845,27 @@ export function SolutionOverview() {
               line-height: 1.6 !important;
             }
 
-            /* Hide external annotations on mobile */
-            .solution-card [style*="position: absolute"][style*="left: -"] {
+            /* Hide external annotations on mobile (except Revenue Verification annotations) */
+            .solution-card [style*="position: absolute"][style*="left: -"]:not(.revenue-verification-annotation) {
               display: none !important;
             }
 
             .solution-card [style*="position: absolute"][style*="right: -"] {
               display: none !important;
+            }
+
+            /* Revenue Verification card: position badges/SVGs on mobile (50px left of previous) */
+            .solution-card .revenue-verification-annotation {
+              left: -42px !important;
+            }
+
+            /* Revenue Comparison: nudge "Platform Claimed" / "Verified Revenue" labels slightly right on mobile */
+            .solution-card .revenue-comparison-label {
+              margin-left: 8px !important;
+            }
+            /* "Platform Claimed" label: 0.4x right of Verified Revenue alignment on mobile */
+            .solution-card .revenue-comparison-row-platform-claimed .revenue-comparison-label {
+              margin-left: 11px !important;
             }
           }
         `}
