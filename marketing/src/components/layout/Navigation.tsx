@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const navLinks = [
   { href: "/product", label: "Product" },
@@ -16,6 +16,12 @@ const navLinks = [
 export function Navigation({ forceVisible = false }: { forceVisible?: boolean }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+  const toggleHandledByPointer = useRef(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -26,6 +32,19 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // H01/H02: When mobile nav is open, prevent scroll on the page behind (overflow only — no position:fixed so the menu open tap is not blocked on mobile).
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, [mobileMenuOpen]);
 
   const isVisible = forceVisible || scrolled;
 
@@ -43,14 +62,19 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
       <nav className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2" style={{ transform: 'translateY(2px)' }}>
-          <Image
-            src="/images/logos/skeldir-logo.png"
-            alt="Skeldir"
-            width={140}
-            height={32}
-            className="h-[4.2rem] w-auto"
-            priority
-          />
+          <picture>
+            <source srcSet="/images/logos/skeldir-logo.webp" type="image/webp" />
+            <img
+              src="/images/logos/skeldir-logo.png"
+              alt="Skeldir"
+              width={140}
+              height={32}
+              className="h-[4.2rem] w-auto"
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+            />
+          </picture>
         </Link>
 
         {/* Desktop Navigation Links */}
@@ -232,7 +256,7 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
           </div>
         </div>
 
-        {/* Mobile Menu Button */}
+        {/* Mobile Menu Button — H03: pointer + click without double-toggle; portal ensures menu is never clipped by ancestors */}
         <button
           type="button"
           className="md:hidden mobile-menu-toggle"
@@ -245,8 +269,20 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
             alignItems: 'center',
             justifyContent: 'center',
             transition: 'color 200ms ease',
+            touchAction: 'manipulation',
+            cursor: 'pointer',
           }}
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          onPointerDown={() => {
+            toggleHandledByPointer.current = true;
+            setMobileMenuOpen((prev) => !prev);
+          }}
+          onClick={() => {
+            if (toggleHandledByPointer.current) {
+              toggleHandledByPointer.current = false;
+              return;
+            }
+            setMobileMenuOpen((prev) => !prev);
+          }}
           aria-label="Toggle menu"
           aria-expanded={mobileMenuOpen}
         >
@@ -254,101 +290,114 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
         </button>
       </nav>
 
-      {/* Mobile Menu Backdrop */}
-      <div 
-        className={`mobile-menu-backdrop ${mobileMenuOpen ? 'mobile-menu-backdrop-visible' : ''}`}
-        onClick={() => setMobileMenuOpen(false)}
-      />
-
-      {/* Mobile Menu */}
-      <div className={`md:hidden bg-white mobile-menu ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}>
-        {/* Menu Header with Close Button */}
-        <div className="mobile-menu-header">
-          <Link
-            href="/"
-            onClick={() => setMobileMenuOpen(false)}
-            style={{ display: 'flex', alignItems: 'center' }}
-          >
-            <Image
-              src="/images/logos/skeldir-logo.png"
-              alt="Skeldir"
-              width={140}
-              height={32}
-              className="h-[4.2rem] w-auto"
+      {/* H03: Mobile menu and backdrop rendered via portal into document.body so no ancestor can clip or stack-context them */}
+      {isClient &&
+        createPortal(
+          <>
+            <div
+              className={`mobile-menu-backdrop ${mobileMenuOpen ? 'mobile-menu-backdrop-visible' : ''}`}
+              onClick={() => setMobileMenuOpen(false)}
+              aria-hidden="true"
             />
-          </Link>
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(false)}
-            className="mobile-menu-close"
-            aria-label="Close menu"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-        <div className="mobile-menu-content">
-          <div className="space-y-4">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors hover:text-blue-600"
-                style={{
-                  minHeight: '44px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '8px 0',
-                }}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
-            <div className="pt-4 border-t border-gray-200 space-y-3 mt-4">
-              <Link
-                href="/Login"
-                className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors hover:text-blue-600"
-                style={{
-                  minHeight: '44px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '8px 0',
-                }}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Login
-              </Link>
-              <Link href="/signup" className="w-full" style={{ cursor: 'pointer' }} onClick={() => setMobileMenuOpen(false)}>
-                <Button
-                  className="w-full transition-all mobile-cta-button"
-                  style={{
-                    backgroundColor: '#2563EB',
-                    color: '#FFFFFF',
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: '16px',
-                    fontWeight: 700,
-                    minHeight: '48px',
-                    height: '48px',
-                    borderRadius: '8px',
-                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.2)',
-                    cursor: 'pointer',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#1E40AF';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.4)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#2563EB';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 99, 235, 0.2)';
-                  }}
+            <div
+              className={`md:hidden bg-white mobile-menu ${mobileMenuOpen ? 'mobile-menu-open' : ''}`}
+              aria-modal="true"
+              aria-hidden={!mobileMenuOpen}
+            >
+              <div className="mobile-menu-header">
+                <Link
+                  href="/"
+                  onClick={() => setMobileMenuOpen(false)}
+                  style={{ display: 'flex', alignItems: 'center' }}
                 >
-                  Get Started
-                </Button>
-              </Link>
+                  <picture>
+                    <source srcSet="/images/logos/skeldir-logo.webp" type="image/webp" />
+                    <img
+                      src="/images/logos/skeldir-logo.png"
+                      alt="Skeldir"
+                      width={140}
+                      height={32}
+                      className="h-[4.2rem] w-auto"
+                      loading="eager"
+                      decoding="async"
+                    />
+                  </picture>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="mobile-menu-close"
+                  aria-label="Close menu"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              <div className="mobile-menu-content">
+                <div className="space-y-4">
+                  {navLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors hover:text-blue-600"
+                      style={{
+                        minHeight: '44px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '8px 0',
+                      }}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                  <div className="pt-4 border-t border-gray-200 space-y-3 mt-4">
+                    <Link
+                      href="/Login"
+                      className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors hover:text-blue-600"
+                      style={{
+                        minHeight: '44px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '8px 0',
+                      }}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      Login
+                    </Link>
+                    <Link href="/signup" className="w-full" style={{ cursor: 'pointer' }} onClick={() => setMobileMenuOpen(false)}>
+                      <Button
+                        className="w-full transition-all mobile-cta-button"
+                        style={{
+                          backgroundColor: '#2563EB',
+                          color: '#FFFFFF',
+                          fontFamily: 'Inter, sans-serif',
+                          fontSize: '16px',
+                          fontWeight: 700,
+                          minHeight: '48px',
+                          height: '48px',
+                          borderRadius: '8px',
+                          boxShadow: '0 2px 8px rgba(37, 99, 235, 0.2)',
+                          cursor: 'pointer',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#1E40AF';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.4)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#2563EB';
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 99, 235, 0.2)';
+                        }}
+                      >
+                        Get Started
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
+          </>,
+          document.body
+        )}
 
       <style>{`
         /* Mobile Menu Backdrop */
@@ -380,15 +429,18 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
           }
         }
 
-        /* Mobile Menu Container */
+        /* Mobile Menu Container — H02: viewport-filling so menu is not clipped when user has scrolled */
         .mobile-menu {
           position: fixed;
+          inset: 0;
           top: 0;
           left: 0;
           right: 0;
           bottom: 0;
-          width: 100vw;
+          width: 100%;
+          min-width: 100vw;
           height: 100vh;
+          min-height: 100dvh;
           background: white;
           z-index: 9999;
           max-height: 0;
@@ -402,8 +454,15 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
 
         .mobile-menu-open {
           max-height: 100vh;
+          max-height: 100dvh;
           height: 100vh;
+          height: 100dvh;
+          min-height: 100vh;
+          min-height: 100dvh;
           opacity: 1;
+          overflow: visible;
+          visibility: visible;
+          pointer-events: auto;
           animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
 
@@ -450,6 +509,8 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
         .mobile-menu:not(.mobile-menu-open) {
           max-height: 0;
           opacity: 0;
+          visibility: hidden;
+          pointer-events: none;
         }
 
         @keyframes slideDown {
