@@ -6,8 +6,8 @@
 
 ## Provenance
 - PR: https://github.com/Muk223/skeldir-2.0/pull/45
-- PR Head SHA: e14452da364bec291534ae37fe64559a15312b8d
-- CI Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21602724263
+- PR Head SHA: 2b3b304c0d1b9e0ea77999fd2d71942e0e280c0b
+- CI Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21602853774
 
 ## CI execution proof (Phase 3 + Phase 4)
 ### Test invocation lines
