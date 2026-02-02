@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-"next build --webpack"    "start": "next start",
+    "build": "next build --webpack",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
-    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-slot": "^1.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
