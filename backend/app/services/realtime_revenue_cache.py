@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import set_tenant_guc_async
+from app.services.realtime_revenue_providers import ProviderFetchError
 
 DEFAULT_CACHE_KEY = "realtime_revenue:shared:v1"
 
@@ -261,10 +262,12 @@ async def _record_failure(
     existing_payload: dict[str, Any] | None,
     existing_data_as_of: datetime | None,
     error_message: str,
+    cooldown_seconds: int | None = None,
 ) -> None:
     now = _utcnow()
     await set_tenant_guc_async(session, tenant_id, local=False)
-    cooldown = now + timedelta(seconds=_error_cooldown_seconds())
+    cooldown_value = cooldown_seconds if cooldown_seconds is not None else _error_cooldown_seconds()
+    cooldown = now + timedelta(seconds=max(1, int(cooldown_value)))
     payload = existing_payload or {
         "tenant_id": str(tenant_id),
         "interval": "minute",
@@ -354,6 +357,9 @@ async def get_realtime_revenue_snapshot(
             await session.rollback()
             payload = row.get("payload") if row else None
             data_as_of = row.get("data_as_of") if row else None
+            cooldown_seconds = None
+            if isinstance(exc, ProviderFetchError):
+                cooldown_seconds = exc.retry_after_seconds or _error_cooldown_seconds()
             try:
                 await _record_failure(
                     session,
@@ -362,11 +368,13 @@ async def get_realtime_revenue_snapshot(
                     existing_payload=payload,
                     existing_data_as_of=data_as_of,
                     error_message=str(exc),
+                    cooldown_seconds=cooldown_seconds,
                 )
             except Exception:
                 await session.rollback()
+            retry_after = cooldown_seconds or _error_cooldown_seconds()
             raise RealtimeRevenueUnavailable(
-                _error_cooldown_seconds(), "upstream_fetch_failed"
+                retry_after, "upstream_fetch_failed"
             ) from exc
 
     timeout = _follower_wait_timeout_seconds()

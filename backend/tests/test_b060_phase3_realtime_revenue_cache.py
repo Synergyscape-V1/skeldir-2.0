@@ -13,14 +13,19 @@ os.environ.setdefault("AUTH_JWT_SECRET", "test-secret")
 os.environ.setdefault("AUTH_JWT_ALGORITHM", "HS256")
 os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
+os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
+os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
 
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.services import realtime_revenue_cache as cache
-from app.services.realtime_revenue_cache import RealtimeRevenueSnapshot
+from app.services import realtime_revenue_providers as providers
+from tests.builders.core_builders import (
+    build_platform_connection,
+    build_platform_credentials,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -54,23 +59,29 @@ async def _make_client_request(path: str, token: str, correlation_id: str) -> tu
 async def test_cache_hit_avoids_upstream_call(test_tenant, monkeypatch):
     counter = {"count": 0}
 
-    async def fetcher(tenant_id: UUID) -> RealtimeRevenueSnapshot:
-        counter["count"] += 1
-        await asyncio.sleep(0.05)
-        return RealtimeRevenueSnapshot(
-            tenant_id=tenant_id,
-            interval="minute",
-            currency="USD",
-            revenue_total_cents=12345,
-            event_count=7,
-            verified=False,
-            data_as_of=cache._utcnow(),
-            sources=[],
-            confidence_score=None,
-            upgrade_notice=None,
-        )
+    class CountingDummy(providers.DummyRevenueProvider):
+        async def fetch_realtime(self, ctx):
+            counter["count"] += 1
+            await asyncio.sleep(0.05)
+            return await super().fetch_realtime(ctx)
 
-    monkeypatch.setattr(cache, "_default_fetcher", fetcher)
+    connection = await build_platform_connection(
+        tenant_id=test_tenant,
+        platform="dummy",
+        platform_account_id="dummy",
+    )
+    await build_platform_credentials(
+        tenant_id=test_tenant,
+        platform="dummy",
+        platform_connection_id=connection["id"],
+        access_token="dummy-token",
+        encryption_key=os.environ["PLATFORM_TOKEN_ENCRYPTION_KEY"],
+    )
+
+    registry = providers.ProviderRegistry(
+        providers=[CountingDummy(raw_revenue_micros=1_234_500, event_count=7)]
+    )
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDER_REGISTRY", registry)
 
     token = _build_token(test_tenant)
     status1, body1, _ = await _make_client_request(
@@ -90,23 +101,29 @@ async def test_cache_hit_avoids_upstream_call(test_tenant, monkeypatch):
 async def test_stampede_prevention_singleflight(test_tenant, monkeypatch):
     counter = {"count": 0}
 
-    async def fetcher(tenant_id: UUID) -> RealtimeRevenueSnapshot:
-        counter["count"] += 1
-        await asyncio.sleep(0.2)
-        return RealtimeRevenueSnapshot(
-            tenant_id=tenant_id,
-            interval="minute",
-            currency="USD",
-            revenue_total_cents=55555,
-            event_count=1,
-            verified=False,
-            data_as_of=cache._utcnow(),
-            sources=[],
-            confidence_score=None,
-            upgrade_notice=None,
-        )
+    class CountingDummy(providers.DummyRevenueProvider):
+        async def fetch_realtime(self, ctx):
+            counter["count"] += 1
+            await asyncio.sleep(0.2)
+            return await super().fetch_realtime(ctx)
 
-    monkeypatch.setattr(cache, "_default_fetcher", fetcher)
+    connection = await build_platform_connection(
+        tenant_id=test_tenant,
+        platform="dummy",
+        platform_account_id="dummy",
+    )
+    await build_platform_credentials(
+        tenant_id=test_tenant,
+        platform="dummy",
+        platform_connection_id=connection["id"],
+        access_token="dummy-token",
+        encryption_key=os.environ["PLATFORM_TOKEN_ENCRYPTION_KEY"],
+    )
+
+    registry = providers.ProviderRegistry(
+        providers=[CountingDummy(raw_revenue_micros=5_555_500, event_count=1)]
+    )
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDER_REGISTRY", registry)
 
     token = _build_token(test_tenant)
     tasks = [
@@ -127,23 +144,30 @@ async def test_cross_tenant_isolation(test_tenant_pair, monkeypatch):
     tenant_a, tenant_b = test_tenant_pair
     counter = {"count": 0}
 
-    async def fetcher(tenant_id: UUID) -> RealtimeRevenueSnapshot:
-        counter["count"] += 1
-        await asyncio.sleep(0.1)
-        return RealtimeRevenueSnapshot(
+    class CountingDummy(providers.DummyRevenueProvider):
+        async def fetch_realtime(self, ctx):
+            counter["count"] += 1
+            await asyncio.sleep(0.1)
+            return await super().fetch_realtime(ctx)
+
+    for tenant_id in (tenant_a, tenant_b):
+        connection = await build_platform_connection(
             tenant_id=tenant_id,
-            interval="minute",
-            currency="USD",
-            revenue_total_cents=88888,
-            event_count=2,
-            verified=False,
-            data_as_of=cache._utcnow(),
-            sources=[],
-            confidence_score=None,
-            upgrade_notice=None,
+            platform="dummy",
+            platform_account_id="dummy",
+        )
+        await build_platform_credentials(
+            tenant_id=tenant_id,
+            platform="dummy",
+            platform_connection_id=connection["id"],
+            access_token="dummy-token",
+            encryption_key=os.environ["PLATFORM_TOKEN_ENCRYPTION_KEY"],
         )
 
-    monkeypatch.setattr(cache, "_default_fetcher", fetcher)
+    registry = providers.ProviderRegistry(
+        providers=[CountingDummy(raw_revenue_micros=8_888_800, event_count=2)]
+    )
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDER_REGISTRY", registry)
 
     token_a = _build_token(tenant_a)
     token_b = _build_token(tenant_b)
@@ -163,12 +187,32 @@ async def test_failure_stampede_cooldown(test_tenant, monkeypatch):
     monkeypatch.setenv("REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS", "5")
     monkeypatch.setenv("REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS", "2")
 
-    async def fetcher(tenant_id: UUID) -> RealtimeRevenueSnapshot:
-        counter["count"] += 1
-        await asyncio.sleep(0.1)
-        raise RuntimeError("upstream down")
+    class FailingDummy(providers.DummyRevenueProvider):
+        async def fetch_realtime(self, ctx):
+            counter["count"] += 1
+            await asyncio.sleep(0.1)
+            raise providers.ProviderFetchError(
+                "upstream down",
+                error_type="upstream",
+                retry_after_seconds=5,
+                provider_key="dummy",
+            )
 
-    monkeypatch.setattr(cache, "_default_fetcher", fetcher)
+    connection = await build_platform_connection(
+        tenant_id=test_tenant,
+        platform="dummy",
+        platform_account_id="dummy",
+    )
+    await build_platform_credentials(
+        tenant_id=test_tenant,
+        platform="dummy",
+        platform_connection_id=connection["id"],
+        access_token="dummy-token",
+        encryption_key=os.environ["PLATFORM_TOKEN_ENCRYPTION_KEY"],
+    )
+
+    registry = providers.ProviderRegistry(providers=[FailingDummy()])
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDER_REGISTRY", registry)
 
     token = _build_token(test_tenant)
     tasks = [

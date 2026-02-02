@@ -22,6 +22,7 @@ from app.services.realtime_revenue_cache import (
     RealtimeRevenueUnavailable,
     get_realtime_revenue_snapshot,
 )
+from app.services.realtime_revenue_providers import build_realtime_revenue_fetcher
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -63,6 +64,10 @@ async def get_realtime_revenue(
         snapshot, etag, _ = await get_realtime_revenue_snapshot(
             db_session,
             tenant_id,
+            fetcher=build_realtime_revenue_fetcher(
+                db_session,
+                x_correlation_id,
+            ),
         )
     except RealtimeRevenueUnavailable as exc:
         error_response = problem_details_response(
@@ -105,4 +110,3 @@ async def get_realtime_revenue(
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "max-age=30"
     return response_data
-
