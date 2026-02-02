@@ -301,3 +301,147 @@ async def build_revenue_ledger(tenant_id: UUID | None = None) -> Dict[str, UUID]
         ) from exc
 
     return {"id": ledger_id, "tenant_id": tenant_id}
+
+
+async def build_platform_connection(
+    *,
+    tenant_id: UUID | None = None,
+    platform: str = "stripe",
+    platform_account_id: str = "acct_test",
+    status: str = "active",
+    metadata: dict | None = None,
+) -> Dict[str, UUID]:
+    """Create a platform_connections row for the given tenant (or a new one)."""
+    if tenant_id is None:
+        tenant_result = await build_tenant()
+        tenant_id = tenant_result["tenant_id"]
+
+    required = await _required_columns("platform_connections")
+    columns = await _table_columns("platform_connections")
+    connection_id = uuid4()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "id": str(connection_id),
+        "tenant_id": str(tenant_id),
+        "platform": platform,
+        "platform_account_id": platform_account_id,
+        "status": status,
+        "connection_metadata": json.dumps(metadata) if metadata is not None else None,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    insert_cols = []
+    for col in required:
+        if col not in payload:
+            raise RuntimeError(
+                f"Missing payload value for required platform_connections column '{col}'"
+            )
+        insert_cols.append(col)
+    if "id" in columns and "id" not in insert_cols:
+        insert_cols.insert(0, "id")
+    if "connection_metadata" in columns and "connection_metadata" not in insert_cols:
+        insert_cols.append("connection_metadata")
+    if "created_at" in columns and "created_at" not in insert_cols:
+        insert_cols.append("created_at")
+    if "updated_at" in columns and "updated_at" not in insert_cols:
+        insert_cols.append("updated_at")
+
+    placeholders = ", ".join(f":{col}" for col in insert_cols)
+    sql = text(
+        # RAW_SQL_ALLOWLIST: approved builder insert into platform_connections
+        f"INSERT INTO platform_connections ({', '.join(insert_cols)}) "
+        f"VALUES ({placeholders})"
+    )
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            await conn.execute(sql, payload)
+    except IntegrityError as exc:
+        raise RuntimeError(
+            f"Platform connection builder failed. Required columns: {sorted(required)}"
+        ) from exc
+
+    return {"id": connection_id, "tenant_id": tenant_id}
+
+
+async def build_platform_credentials(
+    *,
+    tenant_id: UUID,
+    platform: str = "stripe",
+    platform_connection_id: UUID,
+    access_token: str = "test-access-token",
+    refresh_token: str | None = None,
+    expires_at: datetime | None = None,
+    scope: str | None = None,
+    token_type: str | None = None,
+    key_id: str = "test-key",
+    encryption_key: str = "test-platform-key",
+) -> Dict[str, UUID]:
+    """Create a platform_credentials row for the given connection."""
+    columns = await _table_columns("platform_credentials")
+    credential_id = uuid4()
+    now = datetime.now(timezone.utc)
+
+    insert_cols: list[str] = []
+    value_exprs: list[str] = []
+    params: Dict[str, object] = {
+        "id": str(credential_id),
+        "tenant_id": str(tenant_id),
+        "platform_connection_id": str(platform_connection_id),
+        "platform": platform,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at,
+        "scope": scope,
+        "token_type": token_type,
+        "key_id": key_id,
+        "created_at": now,
+        "updated_at": now,
+        "encryption_key": encryption_key,
+    }
+
+    def add(col: str, expr: str) -> None:
+        if col in columns:
+            insert_cols.append(col)
+            value_exprs.append(expr)
+
+    add("id", ":id")
+    add("tenant_id", ":tenant_id")
+    add("platform_connection_id", ":platform_connection_id")
+    add("platform", ":platform")
+    add(
+        "encrypted_access_token",
+        "pgp_sym_encrypt(CAST(:access_token AS text), :encryption_key)",
+    )
+    add(
+        "encrypted_refresh_token",
+        "CASE WHEN CAST(:refresh_token AS text) IS NULL THEN NULL::bytea "
+        "ELSE pgp_sym_encrypt(CAST(:refresh_token AS text), :encryption_key) END",
+    )
+    add("expires_at", ":expires_at")
+    add("scope", ":scope")
+    add("token_type", ":token_type")
+    add("key_id", ":key_id")
+    add("created_at", ":created_at")
+    add("updated_at", ":updated_at")
+
+    sql = text(
+        # RAW_SQL_ALLOWLIST: approved builder insert into platform_credentials
+        f"INSERT INTO platform_credentials ({', '.join(insert_cols)}) "
+        f"VALUES ({', '.join(value_exprs)})"
+    )
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            await conn.execute(sql, params)
+    except IntegrityError as exc:
+        raise RuntimeError("Platform credential builder failed.") from exc
+
+    return {"id": credential_id, "tenant_id": tenant_id}

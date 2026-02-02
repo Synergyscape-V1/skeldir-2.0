@@ -52,4 +52,6 @@ jobs:
           pytest -q tests/test_b06_realtime_revenue_v1.py
           pytest -v --tb=short tests/test_b060_phase1_auth_tenant.py
           pytest -v --tb=short tests/test_b060_phase2_platform_connections.py
+          pytest -v --tb=short backend/tests/test_b060_phase3_realtime_revenue_cache.py
+          pytest -v --tb=short tests/test_b060_phase4_realtime_revenue_providers.py
           pytest -q tests/contract/test_contract_semantics.py

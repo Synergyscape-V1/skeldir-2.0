@@ -20,6 +20,7 @@ from app.services.realtime_revenue_cache import (
     RealtimeRevenueUnavailable,
     get_realtime_revenue_snapshot,
 )
+from app.services.realtime_revenue_providers import build_realtime_revenue_fetcher
 from app.api.problem_details import problem_details_response
 
 router = APIRouter()
@@ -48,7 +49,14 @@ async def get_realtime_revenue_v1(
     """
     tenant_id = auth_context.tenant_id
     try:
-        snapshot, _, _ = await get_realtime_revenue_snapshot(db_session, tenant_id)
+        snapshot, _, _ = await get_realtime_revenue_snapshot(
+            db_session,
+            tenant_id,
+            fetcher=build_realtime_revenue_fetcher(
+                db_session,
+                x_correlation_id,
+            ),
+        )
     except RealtimeRevenueUnavailable as exc:
         error_response = problem_details_response(
             request,
