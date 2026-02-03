@@ -1,11 +1,13 @@
 name: B0.6 Phase 2 Adjudication
 
 on:
-  push:
-    branches:
-      - main
-      - "b060-phase2-*"
   pull_request:
+    paths:
+      - ".github/workflows/b060_phase2_adjudication.yml"
+      - "backend/**"
+      - "alembic/**"
+      - "scripts/**"
+  workflow_dispatch:
 
 jobs:
   b060-phase2-adjudication:

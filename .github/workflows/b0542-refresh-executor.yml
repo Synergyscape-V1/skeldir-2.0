@@ -1,10 +1,12 @@
 name: B0.5.4.2 Refresh Executor Gates
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    paths:
+      - ".github/workflows/b0542-refresh-executor.yml"
+      - "backend/**"
+      - "alembic/**"
+      - "scripts/**"
   workflow_dispatch:
 
 jobs:
