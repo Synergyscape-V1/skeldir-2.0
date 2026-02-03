@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 from typing import Iterable, Protocol
 from uuid import UUID
 
-import httpx
+import asyncio
+import json
+import http.client
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,6 +71,63 @@ class ProviderRevenueResult:
     rate_limit_retry_after_seconds: int | None = None
 
 
+@dataclass(frozen=True)
+class HttpResponse:
+    status_code: int
+    headers: dict[str, str]
+    json_body: dict
+
+    def json(self) -> dict:
+        return self.json_body
+
+
+class AsyncHttpClient(Protocol):
+    async def get(
+        self, path: str, *, headers: dict[str, str], params: dict[str, str]
+    ) -> HttpResponse:
+        raise NotImplementedError
+
+
+class DefaultHttpClient:
+    def __init__(self, base_url: str, *, timeout_seconds: float = 5.0) -> None:
+        self._base_url = base_url
+        self._timeout_seconds = max(0.1, float(timeout_seconds))
+
+    async def get(
+        self, path: str, *, headers: dict[str, str], params: dict[str, str]
+    ) -> HttpResponse:
+        return await asyncio.to_thread(self._get_sync, path, headers, params)
+
+    def _get_sync(
+        self, path: str, headers: dict[str, str], params: dict[str, str]
+    ) -> HttpResponse:
+        full_url = urljoin(self._base_url, path)
+        parsed = urlsplit(full_url)
+        query_params = dict(parse_qsl(parsed.query))
+        query_params.update(params)
+        query = urlencode(query_params)
+        target = urlunsplit(("", "", parsed.path, query, ""))
+
+        connection_cls = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        connection = connection_cls(parsed.netloc, timeout=self._timeout_seconds)
+        try:
+            connection.request("GET", target, headers=headers)
+            response = connection.getresponse()
+            raw = response.read()
+            try:
+                body = json.loads(raw.decode("utf-8")) if raw else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                body = {}
+            headers_map = {key: value for key, value in response.getheaders()}
+            return HttpResponse(
+                status_code=int(response.status),
+                headers=headers_map,
+                json_body=body if isinstance(body, dict) else {},
+            )
+        finally:
+            connection.close()
+
+
 class ProviderFetchError(RuntimeError):
     def __init__(
         self,
@@ -120,13 +180,13 @@ class StripeRevenueProvider:
         self,
         *,
         base_url: str | None = None,
-        timeout: httpx.Timeout | None = None,
-        transport: httpx.AsyncBaseTransport | None = None,
+        timeout_seconds: float | None = None,
+        client: AsyncHttpClient | None = None,
         max_attempts: int = 2,
     ) -> None:
         self._base_url = base_url or "https://api.stripe.com"
-        self._timeout = timeout or httpx.Timeout(5.0, connect=2.0)
-        self._transport = transport
+        self._timeout_seconds = float(timeout_seconds) if timeout_seconds is not None else 5.0
+        self._client = client
         self._max_attempts = max(1, int(max_attempts))
 
     async def fetch_realtime(self, ctx: ProviderContext) -> ProviderRevenueResult:
@@ -138,87 +198,85 @@ class StripeRevenueProvider:
             headers["Stripe-Account"] = ctx.platform_connection.platform_account_id
 
         params = {"limit": "100"}
+        client = self._client or DefaultHttpClient(
+            self._base_url, timeout_seconds=self._timeout_seconds
+        )
 
-        async with httpx.AsyncClient(
-            base_url=self._base_url,
-            timeout=self._timeout,
-            transport=self._transport,
-        ) as client:
-            for attempt in range(1, self._max_attempts + 1):
-                try:
-                    response = await client.get(
-                        "/v1/balance_transactions",
-                        headers=headers,
-                        params=params,
-                    )
-                except (httpx.TimeoutException, httpx.RequestError) as exc:
-                    if attempt < self._max_attempts:
-                        continue
-                    raise ProviderFetchError(
-                        "stripe_request_failed",
-                        error_type="network",
-                        provider_key=self.provider_key,
-                    ) from exc
-
-                if response.status_code in (401, 403):
-                    raise ProviderFetchError(
-                        "stripe_auth_failed",
-                        error_type="auth",
-                        provider_key=self.provider_key,
-                    )
-
-                if response.status_code == 429:
-                    retry_after = _parse_retry_after(response)
-                    raise ProviderFetchError(
-                        "stripe_rate_limited",
-                        error_type="rate_limit",
-                        retry_after_seconds=retry_after,
-                        provider_key=self.provider_key,
-                    )
-
-                if 500 <= response.status_code:
-                    if attempt < self._max_attempts:
-                        continue
-                    raise ProviderFetchError(
-                        f"stripe_upstream_{response.status_code}",
-                        error_type="upstream",
-                        provider_key=self.provider_key,
-                    )
-
-                if response.status_code >= 400:
-                    raise ProviderFetchError(
-                        f"stripe_http_{response.status_code}",
-                        error_type="upstream",
-                        provider_key=self.provider_key,
-                    )
-
-                payload = response.json()
-                data = payload.get("data") or []
-                total_cents = 0
-                event_count = 0
-                for entry in data:
-                    if not isinstance(entry, dict):
-                        continue
-                    amount = entry.get("amount")
-                    if amount is None:
-                        continue
-                    if entry.get("type") != "charge":
-                        continue
-                    try:
-                        amount_int = int(amount)
-                    except (TypeError, ValueError):
-                        continue
-                    if amount_int <= 0:
-                        continue
-                    total_cents += amount_int
-                    event_count += 1
-
-                return ProviderRevenueResult(
-                    total_revenue_cents=total_cents,
-                    event_count=event_count,
-                    data_as_of=ctx.now,
-                    source=self.provider_key,
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                response = await client.get(
+                    "/v1/balance_transactions",
+                    headers=headers,
+                    params=params,
                 )
+            except Exception as exc:
+                if attempt < self._max_attempts:
+                    continue
+                raise ProviderFetchError(
+                    "stripe_request_failed",
+                    error_type="network",
+                    provider_key=self.provider_key,
+                ) from exc
+
+            if response.status_code in (401, 403):
+                raise ProviderFetchError(
+                    "stripe_auth_failed",
+                    error_type="auth",
+                    provider_key=self.provider_key,
+                )
+
+            if response.status_code == 429:
+                retry_after = _parse_retry_after(response.headers)
+                raise ProviderFetchError(
+                    "stripe_rate_limited",
+                    error_type="rate_limit",
+                    retry_after_seconds=retry_after,
+                    provider_key=self.provider_key,
+                )
+
+            if 500 <= response.status_code:
+                if attempt < self._max_attempts:
+                    continue
+                raise ProviderFetchError(
+                    f"stripe_upstream_{response.status_code}",
+                    error_type="upstream",
+                    provider_key=self.provider_key,
+                )
+
+            if response.status_code >= 400:
+                raise ProviderFetchError(
+                    f"stripe_http_{response.status_code}",
+                    error_type="upstream",
+                    provider_key=self.provider_key,
+                )
+
+            payload = response.json()
+            data = payload.get("data") or []
+            total_cents = 0
+            event_count = 0
+            for entry in data:
+                if not isinstance(entry, dict):
+                    continue
+                amount = entry.get("amount")
+                if amount is None:
+                    continue
+                if entry.get("type") != "charge":
+                    continue
+                try:
+                    amount_int = int(amount)
+                except (TypeError, ValueError):
+                    continue
+                if amount_int <= 0:
+                    continue
+                total_cents += amount_int
+                event_count += 1
+
+            return ProviderRevenueResult(
+                total_revenue_cents=total_cents,
+                event_count=event_count,
+                data_as_of=ctx.now,
+                source=self.provider_key,
+            )
 
         raise ProviderFetchError(
             "stripe_unreachable",
@@ -264,8 +322,8 @@ def _utcnow() -> datetime:
     return clock_module.utcnow()
 
 
-def _parse_retry_after(response: httpx.Response) -> int | None:
-    value = response.headers.get("Retry-After")
+def _parse_retry_after(headers: dict[str, str]) -> int | None:
+    value = headers.get("Retry-After")
     if not value:
         return None
     try:

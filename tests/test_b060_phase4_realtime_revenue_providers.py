@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 import jwt
 import pytest
 from fastapi import FastAPI, Request
-from httpx import ASGITransport, AsyncClient, MockTransport, Response
+from httpx import ASGITransport, AsyncClient, MockTransport, Response, Timeout
 from sqlalchemy import text
 
 os.environ["TESTING"] = "1"
@@ -70,6 +70,26 @@ def _build_token(tenant_id: UUID) -> str:
     )
 
 
+class HttpxClientAdapter:
+    def __init__(self, base_url: str, transport) -> None:
+        self._base_url = base_url
+        self._transport = transport
+        self._timeout = Timeout(5.0, connect=2.0)
+
+    async def get(self, path: str, *, headers: dict[str, str], params: dict[str, str]):
+        async with AsyncClient(
+            base_url=self._base_url,
+            timeout=self._timeout,
+            transport=self._transport,
+        ) as client:
+            resp = await client.get(path, headers=headers, params=params)
+        return providers.HttpResponse(
+            status_code=resp.status_code,
+            headers=dict(resp.headers),
+            json_body=resp.json() if resp.content else {},
+        )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _apply_migrations():
     config = Config(str(Path(__file__).parent.parent / "alembic.ini"))
@@ -118,7 +138,7 @@ async def test_stripe_adapter_request_and_parsing():
 
     provider = providers.StripeRevenueProvider(
         base_url="https://stripe.test",
-        transport=MockTransport(handler),
+        client=HttpxClientAdapter("https://stripe.test", MockTransport(handler)),
     )
     ctx = providers.ProviderContext(
         tenant_id=uuid4(),
@@ -155,7 +175,7 @@ async def test_stripe_adapter_error_mapping():
 
         provider = providers.StripeRevenueProvider(
             base_url="https://stripe.test",
-            transport=MockTransport(handler),
+            client=HttpxClientAdapter("https://stripe.test", MockTransport(handler)),
             max_attempts=1,
         )
         ctx = providers.ProviderContext(
@@ -251,7 +271,7 @@ async def test_system_integration_realtime_revenue_refresh(monkeypatch):
         providers=[
             providers.StripeRevenueProvider(
                 base_url="http://stripe.test",
-                transport=ASGITransport(app=fake_stripe),
+                client=HttpxClientAdapter("http://stripe.test", ASGITransport(app=fake_stripe)),
             )
         ]
     )
@@ -323,7 +343,7 @@ async def test_polymorphism_registry_dispatch_and_aggregation(monkeypatch):
         providers=[
             providers.StripeRevenueProvider(
                 base_url="http://stripe.test",
-                transport=ASGITransport(app=fake_stripe),
+                client=HttpxClientAdapter("http://stripe.test", ASGITransport(app=fake_stripe)),
             ),
             providers.DummyRevenueProvider(raw_revenue_micros=250_000, event_count=2),
         ]
@@ -401,7 +421,7 @@ async def test_stampede_singleflight_per_provider(monkeypatch):
         providers=[
             CountingStripe(
                 base_url="http://stripe.test",
-                transport=ASGITransport(app=fake_stripe),
+                client=HttpxClientAdapter("http://stripe.test", ASGITransport(app=fake_stripe)),
             ),
             CountingDummy(raw_revenue_micros=100_000, event_count=1),
         ]
