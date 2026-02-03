@@ -180,7 +180,7 @@ async def test_follower_reports_leader_fetch_time(test_tenant, monkeypatch):
 
 async def test_failure_does_not_mutate_fetch_time(test_tenant, monkeypatch):
     t0 = datetime(2026, 2, 2, 15, 0, 0, tzinfo=timezone.utc)
-    t1 = t0 + timedelta(seconds=30)
+    t1 = t0 + timedelta(seconds=61)
     frozen = FrozenClock(t0)
     monkeypatch.setattr(clock_module, "utcnow", frozen.utcnow)
     monkeypatch.setenv("REALTIME_REVENUE_CACHE_TTL_SECONDS", "60")
