@@ -45,6 +45,10 @@ class FrozenClock:
         return self._now
 
 
+def _parse_iso_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def _build_token(tenant_id: UUID) -> str:
     now = int(time.time())
     payload = {
@@ -135,14 +139,14 @@ async def test_last_updated_equals_fetch_time_not_request_time(test_tenant, monk
         "/api/attribution/revenue/realtime", token, str(uuid4())
     )
     assert status == 200
-    assert body["last_updated"] == t0.isoformat()
+    assert _parse_iso_datetime(body["last_updated"]) == t0
 
     frozen.set(t1)
     status, body, _ = await _make_client_request(
         "/api/attribution/revenue/realtime", token, str(uuid4())
     )
     assert status == 200
-    assert body["last_updated"] == t0.isoformat()
+    assert _parse_iso_datetime(body["last_updated"]) == t0
     assert body["data_freshness_seconds"] == int((t1 - t0).total_seconds())
 
 
@@ -168,10 +172,10 @@ async def test_follower_reports_leader_fetch_time(test_tenant, monkeypatch):
         for _ in range(5)
     ]
     results = await asyncio.gather(*tasks)
-    last_updated_values = {body["last_updated"] for _, body, _ in results}
+    last_updated_values = {_parse_iso_datetime(body["last_updated"]) for _, body, _ in results}
 
     assert all(status == 200 for status, _, _ in results)
-    assert last_updated_values == {t0.isoformat()}
+    assert last_updated_values == {t0}
 
 
 async def test_failure_does_not_mutate_fetch_time(test_tenant, monkeypatch):
@@ -191,7 +195,7 @@ async def test_failure_does_not_mutate_fetch_time(test_tenant, monkeypatch):
         "/api/attribution/revenue/realtime", token, str(uuid4())
     )
     assert status == 200
-    assert body["last_updated"] == t0.isoformat()
+    assert _parse_iso_datetime(body["last_updated"]) == t0
 
     class FailingDummy(providers.DummyRevenueProvider):
         async def fetch_realtime(self, ctx):
