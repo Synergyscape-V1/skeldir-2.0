@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: skeldir-postgres-e2e
+    environment:
+      POSTGRES_USER: skeldir
+      POSTGRES_PASSWORD: skeldir_e2e
+      POSTGRES_DB: skeldir_e2e
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skeldir"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mock_platform:
+    build:
+      context: .
+      dockerfile: backend/mock_platform/Dockerfile
+    container_name: skeldir-mock-platform-e2e
+    environment:
+      MOCK_PLATFORM_MODE: success
+      MOCK_PLATFORM_DELAY_MS: 100
+      MOCK_PLATFORM_RETRY_AFTER_SECONDS: 5
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: skeldir-api-e2e
+    environment:
+      CI: "true"
+      ENVIRONMENT: test
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e
+      AUTH_JWT_SECRET: e2e-secret
+      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_ISSUER: https://issuer.skeldir.test
+      AUTH_JWT_AUDIENCE: skeldir-api
+      PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
+      PLATFORM_TOKEN_KEY_ID: e2e-key
+      STRIPE_BASE_URL: http://mock_platform:8080
+      REALTIME_REVENUE_CACHE_TTL_SECONDS: 3
+      REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS: 5
+      REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS: 2
+      REALTIME_REVENUE_SINGLEFLIGHT_POLL_SECONDS: 0.05
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock_platform:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

@@ -1,0 +1,15 @@
+# Token Exports Directory
+
+This directory will contain the exported design token JSON files:
+
+- skeldir-tokens-color.json (47 color tokens)
+- skeldir-tokens-spacing.json (12 spacing tokens)
+- skeldir-tokens-typography.json (11 typography tokens)
+- skeldir-tokens-effects.json (19 effect tokens)
+
+These files are generated during D0-P1 through D0-P4 phases and are referenced by:
+- frontend/src/index.css (CSS custom properties)
+- frontend/tailwind.config.js (Tailwind theme configuration)
+- CI validation pipeline (schema and naming validation)
+
+See docs/design/D0_PHASE_CONTRACT.md for details.

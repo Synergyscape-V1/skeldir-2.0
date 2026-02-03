@@ -68,6 +68,10 @@ class Settings(BaseSettings):
         "google_ads,meta_ads,tiktok_ads,linkedin_ads,stripe,paypal,shopify,woocommerce",
         description="Comma-separated list of supported platform identifiers.",
     )
+    STRIPE_BASE_URL: Optional[str] = Field(
+        None,
+        description="Override base URL for Stripe API calls (useful for E2E mocks).",
+    )
 
     # Application
     ENVIRONMENT: str = Field("development", description="Deployment environment")
@@ -203,6 +207,7 @@ class Settings(BaseSettings):
         "AUTH_JWT_JWKS_URL",
         "PLATFORM_TOKEN_ENCRYPTION_KEY",
         "PLATFORM_TOKEN_KEY_ID",
+        "STRIPE_BASE_URL",
     )
     @classmethod
     def validate_optional_strings(cls, value: Optional[str]) -> Optional[str]:

@@ -184,7 +184,7 @@ class StripeRevenueProvider:
         client: AsyncHttpClient | None = None,
         max_attempts: int = 2,
     ) -> None:
-        self._base_url = base_url or "https://api.stripe.com"
+        self._base_url = base_url or settings.STRIPE_BASE_URL or "https://api.stripe.com"
         self._timeout_seconds = float(timeout_seconds) if timeout_seconds is not None else 5.0
         self._client = client
         self._max_attempts = max(1, int(max_attempts))
