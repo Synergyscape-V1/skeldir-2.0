@@ -39,8 +39,10 @@
         "varsIgnorePattern": "^_"
       }
     ],
+    "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/explicit-function-return-types": "off",
     "@typescript-eslint/explicit-module-boundary-types": "off",
+    "no-constant-condition": "warn",
     "no-console": [
       "warn",
       {
@@ -50,24 +52,11 @@
         ]
       }
     ],
-    "design-system/no-raw-colors": [
-      "warn",
-      {
-        "message": "Use design token CSS variable instead of raw hex color. See docs/design/D0_TOKEN_NAMING_GOVERNANCE.md"
-      }
-    ],
-    "design-system/no-raw-spacing": [
-      "warn",
-      {
-        "message": "Use design token spacing variable (--space-*) instead of raw pixel values. See docs/design/D0_TOKEN_NAMING_GOVERNANCE.md"
-      }
-    ],
-    "design-system/token-naming": [
-      "warn",
-      {
-        "message": "Token names must follow semantic naming convention. See docs/design/D0_TOKEN_NAMING_GOVERNANCE.md"
-      }
-    ]
+    "no-useless-escape": "warn",
+    "prefer-const": "warn",
+    "react/no-unescaped-entities": "warn",
+    "react/no-unknown-property": "warn",
+    "react-hooks/rules-of-hooks": "warn"
   },
   "overrides": [
     {

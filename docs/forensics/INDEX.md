@@ -49,7 +49,14 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.6 Phase 3 remediation | docs/forensics/b060_phase3_remediation_evidence.md | Phase 3 remediation evidence pack (cache + singleflight + CI gate) | PR #34 / de72347 | https://github.com/Muk223/skeldir-2.0/actions/runs/21452800838 |
 | B0.6 Phase 4 remediation | docs/forensics/b060_phase4_remediation_evidence_v2.md | Phase 4 remediation evidence pack (providers + cache regression + CI gate) | PR #45 / 2b3b304 | https://github.com/Muk223/skeldir-2.0/actions/runs/21602853774 |
 | B0.6 Phase 5 remediation | docs/forensics/b060_phase5_remediation_evidence.md | Phase 5 response semantics lock (fetch-time freshness + verified=false + CI gate) | PR pending / 5e1b26c | https://github.com/Muk223/skeldir-2.0/commit/5e1b26c86f941c97d11a9c905fa1efc224af4cce/checks |
+| B0.6 Phase 6 context delta | docs/forensics/phase6_context_delta_notes.md | Phase 6 re-validation context delta notes (pre-remediation) | PR #48 / c1a0e3b | https://github.com/Muk223/skeldir-2.0/commit/c1a0e3bbd50895442278a2d0c0df4d8deff0ce1e/checks |
 | B0.6 Phase 6 closure | docs/forensics/b060_phase6_closure_evidence.md | Phase 6 E2E integration + operational readiness closure (job-level pass; global CI pending). | 614e1b147eff91dd448cd5708f25b0be90d98aed | https://github.com/Muk223/skeldir-2.0/commit/614e1b147eff91dd448cd5708f25b0be90d98aed/checks |
+
+## Design governance evidence
+| Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
+| --- | --- | --- | --- | --- |
+| D0 P0 evidence | docs/forensics/D0_P0_EVIDENCE.md | Design system investigation evidence (token naming governance baseline). | PR #48 / c1a0e3b | https://github.com/Muk223/skeldir-2.0/commit/c1a0e3bbd50895442278a2d0c0df4d8deff0ce1e/checks |
+| D0 P0 enforcement evidence | docs/forensics/D0_P0_ENFORCEMENT_EVIDENCE.md | Design system enforcement evidence (lint + token validation). | PR #48 / c1a0e3b | https://github.com/Muk223/skeldir-2.0/commit/c1a0e3bbd50895442278a2d0c0df4d8deff0ce1e/checks |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |

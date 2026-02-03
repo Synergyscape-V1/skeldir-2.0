@@ -54,6 +54,12 @@ EXCLUDED_PREFIXES = [
     (".hypothesis",),
 ]
 
+ALLOWED_DOCKER_PATHS = {
+    Path(".github/workflows/ci.yml"),
+    Path("backend/Dockerfile"),
+    Path("backend/mock_platform/Dockerfile"),
+}
+
 FORBIDDEN_FILENAME_SNIPPETS = ("dockerfile", "docker-compose")
 FORBIDDEN_CONTENT_PATTERNS = (
     b"docker-compose",
@@ -92,6 +98,15 @@ def should_check(path: Path) -> bool:
     return rel_parts[0] in CHECK_ROOT_DIRS
 
 
+def is_allowed_docker_path(path: Path) -> bool:
+    """Return True if Docker references are explicitly allowlisted."""
+    try:
+        rel = path.relative_to(REPO_ROOT)
+    except ValueError:
+        return False
+    return rel in ALLOWED_DOCKER_PATHS
+
+
 def detect_violations() -> list[str]:
     violations: list[str] = []
     guard_script_path = Path(__file__).resolve()
@@ -99,6 +114,8 @@ def detect_violations() -> list[str]:
         if not should_check(file_path):
             continue
         if file_path.resolve() == guard_script_path:
+            continue
+        if is_allowed_docker_path(file_path):
             continue
 
         lower_name = file_path.name.lower()

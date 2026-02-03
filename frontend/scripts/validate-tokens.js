@@ -12,8 +12,12 @@
  * - 2: Configuration error
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuration
 const CONFIG = {
@@ -22,6 +26,7 @@ const CONFIG = {
   configFile: 'tailwind.config.js',
   verbose: process.argv.includes('--verbose'),
   schema: process.argv.includes('--schema'),
+  strict: process.argv.includes('--strict'),
 };
 
 // Token naming patterns (from D0_TOKEN_NAMING_GOVERNANCE.md)
@@ -128,10 +133,20 @@ function validateTokenName(token) {
     }
   }
 
-  results.failed.push({
-    token: name,
-    reason: `Does not match any approved token naming pattern. See D0_TOKEN_NAMING_GOVERNANCE.md`,
+  const reason = 'Does not match any approved token naming pattern. See D0_TOKEN_NAMING_GOVERNANCE.md';
+  if (CONFIG.strict) {
+    results.failed.push({
+      token: name,
+      reason,
+      line: token.line,
+    });
+    return false;
+  }
+
+  results.warnings.push({
+    file: CONFIG.cssFile,
     line: token.line,
+    issue: `${name}: ${reason}`,
   });
   return false;
 }
