@@ -48,6 +48,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.6 Phase 3 context pack | docs/forensics/b06_realtime_revenue_context_pack.md | Realtime revenue baseline + hypotheses + gate status (updated) | PR #33 / 60f4f6e | https://github.com/Muk223/skeldir-2.0/actions/runs/21452308598 |
 | B0.6 Phase 3 remediation | docs/forensics/b060_phase3_remediation_evidence.md | Phase 3 remediation evidence pack (cache + singleflight + CI gate) | PR #34 / de72347 | https://github.com/Muk223/skeldir-2.0/actions/runs/21452800838 |
 | B0.6 Phase 4 remediation | docs/forensics/b060_phase4_remediation_evidence_v2.md | Phase 4 remediation evidence pack (providers + cache regression + CI gate) | PR #45 / 2b3b304 | https://github.com/Muk223/skeldir-2.0/actions/runs/21602853774 |
+| B0.6 Phase 5 remediation | docs/forensics/b060_phase5_remediation_evidence.md | Phase 5 response semantics lock (fetch-time freshness + verified=false + CI gate) | PR pending / 5e1b26c | https://github.com/Muk223/skeldir-2.0/commit/5e1b26c58bcd7dfb6b7c9bc0f6e6efc9f32a2a7d/checks |
 
 ## Root evidence packs
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
