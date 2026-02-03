@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skeldir.com/schemas/tokens/typography.json",
+  "title": "Skeldir Design System Typography Tokens",
+  "version": "1.0.0",
+  "description": "Canonical typography tokens for Skeldir design system (D0-P1)",
+  "tokens": {
+    "fontFamilies": {
+      "--font-family-display": {
+        "value": "Plus Jakarta Sans, system-ui, sans-serif",
+        "type": "fontFamily",
+        "description": "Display font for headings and emphasis",
+        "fallback": "system-ui"
+      },
+      "--font-family-body": {
+        "value": "Inter, system-ui, sans-serif",
+        "type": "fontFamily",
+        "description": "Body font for UI and text",
+        "fallback": "system-ui"
+      }
+    },
+    "textStyles": {
+      "--text-display-lg": {
+        "fontSize": "48px",
+        "fontWeight": 600,
+        "lineHeight": 1.2,
+        "fontFamily": "var(--font-family-display)",
+        "type": "textStyle",
+        "description": "Page title, hero headings"
+      },
+      "--text-display-md": {
+        "fontSize": "36px",
+        "fontWeight": 600,
+        "lineHeight": 1.3,
+        "fontFamily": "var(--font-family-display)",
+        "type": "textStyle",
+        "description": "Section header, major headings"
+      },
+      "--text-heading-lg": {
+        "fontSize": "24px",
+        "fontWeight": 600,
+        "lineHeight": 1.4,
+        "fontFamily": "var(--font-family-display)",
+        "type": "textStyle",
+        "description": "Card title, subsection header"
+      },
+      "--text-heading-md": {
+        "fontSize": "20px",
+        "fontWeight": 600,
+        "lineHeight": 1.4,
+        "fontFamily": "var(--font-family-display)",
+        "type": "textStyle",
+        "description": "Subsection, card header"
+      },
+      "--text-heading-sm": {
+        "fontSize": "16px",
+        "fontWeight": 600,
+        "lineHeight": 1.5,
+        "fontFamily": "var(--font-family-display)",
+        "type": "textStyle",
+        "description": "Label emphasis, small heading"
+      },
+      "--text-body-lg": {
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": 1.6,
+        "fontFamily": "var(--font-family-body)",
+        "type": "textStyle",
+        "description": "Primary body text, main content"
+      },
+      "--text-body-md": {
+        "fontSize": "14px",
+        "fontWeight": 400,
+        "lineHeight": 1.5,
+        "fontFamily": "var(--font-family-body)",
+        "type": "textStyle",
+        "description": "Secondary body text, UI text"
+      },
+      "--text-body-sm": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "lineHeight": 1.4,
+        "fontFamily": "var(--font-family-body)",
+        "type": "textStyle",
+        "description": "Metadata, caption, small text"
+      },
+      "--text-label-lg": {
+        "fontSize": "14px",
+        "fontWeight": 500,
+        "lineHeight": 1.4,
+        "fontFamily": "var(--font-family-body)",
+        "type": "textStyle",
+        "description": "Form label, button text"
+      },
+      "--text-label-md": {
+        "fontSize": "12px",
+        "fontWeight": 500,
+        "lineHeight": 1.4,
+        "fontFamily": "var(--font-family-body)",
+        "type": "textStyle",
+        "description": "Small label, input label"
+      },
+      "--text-mono": {
+        "fontSize": "14px",
+        "fontWeight": 400,
+        "lineHeight": 1.5,
+        "fontFamily": "Menlo, Monaco, Consolas, monospace",
+        "type": "textStyle",
+        "description": "Code, data, monospace text"
+      }
+    }
+  },
+  "metadata": {
+    "total_tokens": 13,
+    "font_families": 2,
+    "text_styles": 11,
+    "created": "2026-02-03",
+    "author": "Skeldir Design System",
+    "governance": "docs/design/D0_TOKEN_NAMING_GOVERNANCE.md",
+    "notes": "Text styles include font-size, font-weight, line-height, and font-family"
+  }
+}

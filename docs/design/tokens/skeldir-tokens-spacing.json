@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skeldir.com/schemas/tokens/spacing.json",
+  "title": "Skeldir Design System Spacing Tokens",
+  "version": "1.0.0",
+  "description": "Canonical spacing tokens for Skeldir design system (D0-P1) - 8-point grid system",
+  "tokens": {
+    "--space-1": {
+      "value": "4px",
+      "rem": "0.25rem",
+      "type": "spacing",
+      "description": "Tight inline spacing, micro UI"
+    },
+    "--space-2": {
+      "value": "8px",
+      "rem": "0.5rem",
+      "type": "spacing",
+      "description": "Compact spacing between elements"
+    },
+    "--space-3": {
+      "value": "12px",
+      "rem": "0.75rem",
+      "type": "spacing",
+      "description": "Small spacing"
+    },
+    "--space-4": {
+      "value": "16px",
+      "rem": "1rem",
+      "type": "spacing",
+      "description": "Standard spacing (most common)"
+    },
+    "--space-5": {
+      "value": "20px",
+      "rem": "1.25rem",
+      "type": "spacing",
+      "description": "Medium spacing"
+    },
+    "--space-6": {
+      "value": "24px",
+      "rem": "1.5rem",
+      "type": "spacing",
+      "description": "Larger spacing between components"
+    },
+    "--space-8": {
+      "value": "32px",
+      "rem": "2rem",
+      "type": "spacing",
+      "description": "Section-level spacing"
+    },
+    "--space-10": {
+      "value": "40px",
+      "rem": "2.5rem",
+      "type": "spacing",
+      "description": "Major section breaks"
+    },
+    "--space-12": {
+      "value": "48px",
+      "rem": "3rem",
+      "type": "spacing",
+      "description": "Page-level divisions"
+    },
+    "--space-16": {
+      "value": "64px",
+      "rem": "4rem",
+      "type": "spacing",
+      "description": "Full page sections"
+    },
+    "--space-20": {
+      "value": "80px",
+      "rem": "5rem",
+      "type": "spacing",
+      "description": "Major page breaks"
+    },
+    "--space-24": {
+      "value": "96px",
+      "rem": "6rem",
+      "type": "spacing",
+      "description": "Largest spacing value"
+    }
+  },
+  "metadata": {
+    "total_tokens": 12,
+    "scale_system": "8-point grid",
+    "base_unit": "4px",
+    "created": "2026-02-03",
+    "author": "Skeldir Design System",
+    "governance": "docs/design/D0_TOKEN_NAMING_GOVERNANCE.md"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skeldir.com/schemas/tokens/effects.json",
+  "title": "Skeldir Design System Effects Tokens",
+  "version": "1.0.0",
+  "description": "Canonical effect tokens for Skeldir design system (D0-P1) - shadows, radius, animations",
+  "tokens": {
+    "shadows": {
+      "--shadow-sm": {
+        "value": "0 1px 2px rgba(0, 0, 0, 0.05)",
+        "type": "shadow",
+        "elevation": "1dp",
+        "description": "Subtle elevation, hover states"
+      },
+      "--shadow-md": {
+        "value": "0 4px 6px rgba(0, 0, 0, 0.07)",
+        "type": "shadow",
+        "elevation": "2dp",
+        "description": "Standard card shadow"
+      },
+      "--shadow-lg": {
+        "value": "0 10px 15px rgba(0, 0, 0, 0.10)",
+        "type": "shadow",
+        "elevation": "3dp",
+        "description": "Elevated cards, modals"
+      },
+      "--shadow-xl": {
+        "value": "0 20px 25px rgba(0, 0, 0, 0.15)",
+        "type": "shadow",
+        "elevation": "4dp",
+        "description": "High elevation, dialogs"
+      },
+      "--shadow-focus": {
+        "value": "0 0 0 3px rgba(59, 130, 246, 0.3)",
+        "type": "shadow",
+        "accessibility": "WCAG 2.1 AA focus indicator",
+        "description": "Focus ring for keyboard navigation"
+      }
+    },
+    "borderRadius": {
+      "--radius-none": {
+        "value": "0",
+        "type": "borderRadius",
+        "description": "No rounding (square corners)"
+      },
+      "--radius-sm": {
+        "value": "4px",
+        "type": "borderRadius",
+        "description": "Subtle rounding, small elements"
+      },
+      "--radius-md": {
+        "value": "8px",
+        "type": "borderRadius",
+        "description": "Standard rounding (most common)"
+      },
+      "--radius-lg": {
+        "value": "12px",
+        "type": "borderRadius",
+        "description": "Larger rounding, cards"
+      },
+      "--radius-xl": {
+        "value": "16px",
+        "type": "borderRadius",
+        "description": "Very rounded corners"
+      },
+      "--radius-full": {
+        "value": "9999px",
+        "type": "borderRadius",
+        "description": "Fully rounded (pills, circles)"
+      }
+    },
+    "animationDuration": {
+      "--duration-instant": {
+        "value": "100ms",
+        "type": "duration",
+        "description": "Immediate feedback, micro-interactions"
+      },
+      "--duration-fast": {
+        "value": "150ms",
+        "type": "duration",
+        "description": "Quick transitions"
+      },
+      "--duration-normal": {
+        "value": "250ms",
+        "type": "duration",
+        "description": "Standard animation speed (most common)"
+      },
+      "--duration-slow": {
+        "value": "400ms",
+        "type": "duration",
+        "description": "Deliberate transitions, modals"
+      },
+      "--duration-slower": {
+        "value": "600ms",
+        "type": "duration",
+        "description": "Slow animations, page transitions"
+      }
+    },
+    "easingFunctions": {
+      "--ease-default": {
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "type": "easing",
+        "description": "Default easing (standard ease-in-out)",
+        "alias": "ease-in-out"
+      },
+      "--ease-in": {
+        "value": "cubic-bezier(0.4, 0, 1, 1)",
+        "type": "easing",
+        "description": "Ease-in (accelerating)"
+      },
+      "--ease-out": {
+        "value": "cubic-bezier(0, 0, 0.2, 1)",
+        "type": "easing",
+        "description": "Ease-out (decelerating)"
+      }
+    }
+  },
+  "metadata": {
+    "total_tokens": 19,
+    "shadows": 5,
+    "border_radius": 6,
+    "animation_duration": 5,
+    "easing_functions": 3,
+    "created": "2026-02-03",
+    "author": "Skeldir Design System",
+    "governance": "docs/design/D0_TOKEN_NAMING_GOVERNANCE.md",
+    "accessibility": "Focus shadow meets WCAG 2.1 AA requirements for focus indicators"
+  }
+}

@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skeldir.com/schemas/tokens/color.json",
+  "title": "Skeldir Design System Color Tokens",
+  "version": "1.0.0",
+  "description": "Canonical color tokens for Skeldir design system (D0-P1)",
+  "tokens": {
+    "background": {
+      "--color-background": {
+        "value": "hsl(0, 0%, 100%)",
+        "type": "color",
+        "description": "Primary background color",
+        "wcag": {
+          "contrast_with": ["--color-text-primary"],
+          "ratio": 21.0
+        }
+      },
+      "--color-background-muted": {
+        "value": "hsl(215, 20%, 97%)",
+        "type": "color",
+        "description": "Muted background variant"
+      },
+      "--color-background-card": {
+        "value": "hsl(0, 0%, 100%)",
+        "type": "color",
+        "description": "Card background"
+      },
+      "--color-background-popover": {
+        "value": "hsl(0, 0%, 100%)",
+        "type": "color",
+        "description": "Popover background"
+      },
+      "--color-background-sidebar": {
+        "value": "hsl(215, 20%, 97%)",
+        "type": "color",
+        "description": "Sidebar background"
+      },
+      "--color-background-accent": {
+        "value": "hsl(215, 15%, 92%)",
+        "type": "color",
+        "description": "Accent background"
+      }
+    },
+    "text": {
+      "--color-text-primary": {
+        "value": "hsl(215, 25%, 15%)",
+        "type": "color",
+        "description": "Primary text color",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 15.45
+        }
+      },
+      "--color-text-secondary": {
+        "value": "hsl(215, 20%, 35%)",
+        "type": "color",
+        "description": "Secondary text color",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 7.8
+        }
+      },
+      "--color-text-muted": {
+        "value": "hsl(215, 15%, 45%)",
+        "type": "color",
+        "description": "Muted text color",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 5.04
+        }
+      },
+      "--color-text-disabled": {
+        "value": "hsl(215, 10%, 60%)",
+        "type": "color",
+        "description": "Disabled text color",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 3.2
+        }
+      },
+      "--color-text-inverse": {
+        "value": "hsl(0, 0%, 100%)",
+        "type": "color",
+        "description": "Text color on dark backgrounds"
+      }
+    },
+    "status": {
+      "--color-success": {
+        "value": "hsl(142, 76%, 36%)",
+        "type": "color",
+        "description": "Success indicator",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 4.6
+        }
+      },
+      "--color-success-light": {
+        "value": "hsl(142, 76%, 95%)",
+        "type": "color",
+        "description": "Success background"
+      },
+      "--color-warning": {
+        "value": "hsl(38, 92%, 38%)",
+        "type": "color",
+        "description": "Warning indicator",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 5.1
+        }
+      },
+      "--color-warning-light": {
+        "value": "hsl(38, 92%, 95%)",
+        "type": "color",
+        "description": "Warning background"
+      },
+      "--color-error": {
+        "value": "hsl(0, 84%, 43%)",
+        "type": "color",
+        "description": "Error indicator",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 5.8
+        }
+      },
+      "--color-error-light": {
+        "value": "hsl(0, 84%, 95%)",
+        "type": "color",
+        "description": "Error background"
+      },
+      "--color-info": {
+        "value": "hsl(213, 74%, 40%)",
+        "type": "color",
+        "description": "Info indicator",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 5.2
+        }
+      },
+      "--color-info-light": {
+        "value": "hsl(213, 74%, 95%)",
+        "type": "color",
+        "description": "Info background"
+      }
+    },
+    "confidence": {
+      "--color-confidence-high": {
+        "value": "hsl(142, 76%, 36%)",
+        "type": "color",
+        "description": "High confidence indicator (>80%)",
+        "skeldir_semantic": "AI/ML confidence visualization"
+      },
+      "--color-confidence-high-bg": {
+        "value": "hsl(142, 76%, 95%)",
+        "type": "color",
+        "description": "High confidence background"
+      },
+      "--color-confidence-medium": {
+        "value": "hsl(38, 92%, 38%)",
+        "type": "color",
+        "description": "Medium confidence indicator (50-80%)",
+        "skeldir_semantic": "AI/ML confidence visualization"
+      },
+      "--color-confidence-medium-bg": {
+        "value": "hsl(38, 92%, 95%)",
+        "type": "color",
+        "description": "Medium confidence background"
+      },
+      "--color-confidence-low": {
+        "value": "hsl(0, 84%, 43%)",
+        "type": "color",
+        "description": "Low confidence indicator (<50%)",
+        "skeldir_semantic": "AI/ML confidence visualization"
+      },
+      "--color-confidence-low-bg": {
+        "value": "hsl(0, 84%, 95%)",
+        "type": "color",
+        "description": "Low confidence background"
+      }
+    },
+    "chart": {
+      "--color-chart-1": {
+        "value": "hsl(213, 74%, 63%)",
+        "type": "color",
+        "description": "Chart color 1 (Tufts Blue - Skeldir brand)"
+      },
+      "--color-chart-2": {
+        "value": "hsl(142, 76%, 45%)",
+        "type": "color",
+        "description": "Chart color 2 (Green)"
+      },
+      "--color-chart-3": {
+        "value": "hsl(282, 87%, 65%)",
+        "type": "color",
+        "description": "Chart color 3 (Purple)"
+      },
+      "--color-chart-4": {
+        "value": "hsl(38, 92%, 50%)",
+        "type": "color",
+        "description": "Chart color 4 (Amber)"
+      },
+      "--color-chart-5": {
+        "value": "hsl(0, 84%, 60%)",
+        "type": "color",
+        "description": "Chart color 5 (Red)"
+      },
+      "--color-chart-6": {
+        "value": "hsl(180, 60%, 50%)",
+        "type": "color",
+        "description": "Chart color 6 (Cyan)"
+      }
+    },
+    "interactive": {
+      "--color-primary": {
+        "value": "hsl(213, 74%, 63%)",
+        "type": "color",
+        "description": "Primary action color (Tufts Blue - Skeldir brand)",
+        "skeldir_semantic": "Brand primary color"
+      },
+      "--color-primary-hover": {
+        "value": "hsl(213, 74%, 55%)",
+        "type": "color",
+        "description": "Primary hover state"
+      },
+      "--color-primary-active": {
+        "value": "hsl(213, 74%, 48%)",
+        "type": "color",
+        "description": "Primary active state"
+      },
+      "--color-primary-disabled": {
+        "value": "hsl(213, 30%, 80%)",
+        "type": "color",
+        "description": "Primary disabled state"
+      },
+      "--color-primary-foreground": {
+        "value": "hsl(0, 0%, 100%)",
+        "type": "color",
+        "description": "Text on primary backgrounds",
+        "wcag": {
+          "contrast_with": ["--color-primary"],
+          "ratio": 4.8
+        }
+      },
+      "--color-secondary": {
+        "value": "hsl(215, 15%, 92%)",
+        "type": "color",
+        "description": "Secondary action color"
+      },
+      "--color-secondary-hover": {
+        "value": "hsl(215, 15%, 85%)",
+        "type": "color",
+        "description": "Secondary hover state"
+      },
+      "--color-secondary-disabled": {
+        "value": "hsl(215, 10%, 95%)",
+        "type": "color",
+        "description": "Secondary disabled state"
+      },
+      "--color-secondary-foreground": {
+        "value": "hsl(215, 25%, 15%)",
+        "type": "color",
+        "description": "Text on secondary backgrounds"
+      },
+      "--color-destructive": {
+        "value": "hsl(0, 84%, 60%)",
+        "type": "color",
+        "description": "Destructive action color"
+      },
+      "--color-destructive-hover": {
+        "value": "hsl(0, 84%, 52%)",
+        "type": "color",
+        "description": "Destructive hover state"
+      },
+      "--color-destructive-foreground": {
+        "value": "hsl(0, 0%, 100%)",
+        "type": "color",
+        "description": "Text on destructive backgrounds",
+        "wcag": {
+          "contrast_with": ["--color-destructive"],
+          "ratio": 3.6
+        }
+      },
+      "--color-link": {
+        "value": "hsl(213, 74%, 50%)",
+        "type": "color",
+        "description": "Link color",
+        "wcag": {
+          "contrast_with": ["--color-background"],
+          "ratio": 5.5
+        }
+      },
+      "--color-link-hover": {
+        "value": "hsl(213, 74%, 42%)",
+        "type": "color",
+        "description": "Link hover state"
+      }
+    },
+    "border": {
+      "--color-border": {
+        "value": "hsl(215, 15%, 85%)",
+        "type": "color",
+        "description": "Primary border color"
+      },
+      "--color-border-muted": {
+        "value": "hsl(215, 15%, 92%)",
+        "type": "color",
+        "description": "Muted border color"
+      }
+    }
+  },
+  "metadata": {
+    "total_tokens": 47,
+    "categories": ["background", "text", "status", "confidence", "chart", "interactive", "border"],
+    "wcag_validated": true,
+    "created": "2026-02-03",
+    "author": "Skeldir Design System",
+    "governance": "docs/design/D0_TOKEN_NAMING_GOVERNANCE.md"
+  }
+}
