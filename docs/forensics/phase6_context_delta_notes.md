@@ -1,7 +1,7 @@
 # Phase 6 Context Delta Notes (B0.6)
 
 Date: 2026-02-03
-Repo: C:\Users\ayewhy\II SKELDIR II
+Repo: <repo-root>
 
 ## Step A - Runtime topology + start command
 
@@ -69,6 +69,7 @@ Findings:
 
 Conclusion:
 - There is no existing workflow that runs B0.6 E2E. The merge-blocking candidate to extend is `.github/workflows/ci.yml` (and optionally the B0.6 adjudication workflow if it is required in branch protection; this cannot be verified from repo files).
+
 
 ## Stop condition check
 - Exact DB rows/conditions for provider fetch are identified. (Step B complete.)

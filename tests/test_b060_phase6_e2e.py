@@ -29,7 +29,21 @@ TENANT_B = UUID("00000000-0000-0000-0000-0000000000b1")
 
 CACHE_KEY = "realtime_revenue:shared:v1"
 
-pytestmark = pytest.mark.asyncio
+pytestmark = (pytest.mark.asyncio, pytest.mark.serial)
+
+
+def _get_env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+P95_LATENCY_THRESHOLD = _get_env_float("P95_LATENCY_THRESHOLD", 2.0)
+STAMPEDE_TIMEOUT_S = _get_env_float("STAMPEDE_TIMEOUT_S", 10.0)
 
 
 def _build_token(tenant_id: UUID) -> str:
@@ -47,7 +61,7 @@ def _build_token(tenant_id: UUID) -> str:
 
 def _wait_for_db(timeout_s: int = 60) -> None:
     deadline = time.time() + timeout_s
-    last_error = None
+    last_error: Exception | None = None
     while time.time() < deadline:
         try:
             conn = psycopg2.connect(ADMIN_DB_URL)
@@ -58,33 +72,37 @@ def _wait_for_db(timeout_s: int = 60) -> None:
                 return
             finally:
                 conn.close()
-        except Exception as exc:
+        except psycopg2.Error as exc:
             last_error = exc
             time.sleep(1)
-    raise RuntimeError(f"DB not ready after {timeout_s}s: {last_error}")
+    raise TimeoutError("DB not ready before timeout") from last_error
 
 
 def _wait_for_http(url: str, timeout_s: int = 60) -> None:
     deadline = time.time() + timeout_s
-    last_error = None
+    last_error: Exception | None = None
     while time.time() < deadline:
         try:
             res = httpx.get(url, timeout=2.0)
+            res.raise_for_status()
             if res.status_code == 200:
                 return
-        except Exception as exc:
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
             last_error = exc
         time.sleep(0.5)
-    raise RuntimeError(f"HTTP not ready after {timeout_s}s: {url} ({last_error})")
+    raise TimeoutError("HTTP not ready before timeout") from last_error
 
 
-def _db_fetch_one(query: str, params: tuple[Any, ...]) -> Any:
+def _db_fetch_one(query: str, params: tuple[Any, ...]) -> tuple[Any, ...]:
     conn = psycopg2.connect(ADMIN_DB_URL)
     try:
         with conn.cursor() as cur:
             cur.execute("SET row_security = off")
             cur.execute(query, params)
-            return cur.fetchone()
+            row = cur.fetchone()
+            if row is None:
+                raise AssertionError("Expected query to return a row")
+            return row
     finally:
         conn.close()
 
@@ -139,7 +157,8 @@ def _assert_seeded() -> None:
 
 async def _mock_reset_calls() -> None:
     async with httpx.AsyncClient(base_url=MOCK_BASE_URL, timeout=5.0) as client:
-        await client.post("/calls/reset")
+        response = await client.post("/calls/reset")
+        response.raise_for_status()
 
 
 async def _mock_set_mode(mode: str, *, delay_ms: int | None = None) -> None:
@@ -147,12 +166,14 @@ async def _mock_set_mode(mode: str, *, delay_ms: int | None = None) -> None:
     if delay_ms is not None:
         payload["delay_ms"] = delay_ms
     async with httpx.AsyncClient(base_url=MOCK_BASE_URL, timeout=5.0) as client:
-        await client.post("/mode", json=payload)
+        response = await client.post("/mode", json=payload)
+        response.raise_for_status()
 
 
 async def _mock_calls() -> dict[str, int]:
     async with httpx.AsyncClient(base_url=MOCK_BASE_URL, timeout=5.0) as client:
         resp = await client.get("/calls")
+        resp.raise_for_status()
         return resp.json()
 
 
@@ -277,7 +298,10 @@ async def test_03_stampede_singleflight_p95_latency() -> None:
             assert res.status_code == 200
             return elapsed, res.json()
 
-        results = await asyncio.gather(*[_fetch_one() for _ in range(10)])
+        results = await asyncio.wait_for(
+            asyncio.gather(*[_fetch_one() for _ in range(10)]),
+            timeout=STAMPEDE_TIMEOUT_S,
+        )
     latencies = [item[0] for item in results]
     payloads = [item[1] for item in results]
 
@@ -290,7 +314,7 @@ async def test_03_stampede_singleflight_p95_latency() -> None:
     latencies_sorted = sorted(latencies)
     p95_index = max(0, math.ceil(0.95 * len(latencies_sorted)) - 1)
     p95_latency = latencies_sorted[p95_index]
-    assert p95_latency < 2.0
+    assert p95_latency < P95_LATENCY_THRESHOLD
 
 
 async def test_04_cache_hit_invariance() -> None:

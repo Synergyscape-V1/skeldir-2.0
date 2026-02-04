@@ -102,6 +102,7 @@ INSERT INTO public.platform_credentials (
     created_at,
     updated_at
 ) VALUES
+    -- Note: E2E requires PLATFORM_TOKEN_ENCRYPTION_KEY=e2e-platform-key to decrypt tokens at runtime.
     (
         '20000000-0000-0000-0000-0000000000a1',
         '00000000-0000-0000-0000-0000000000a1',

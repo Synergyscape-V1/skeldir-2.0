@@ -1,7 +1,7 @@
 # B0.6 Phase 6 Closure Evidence (E2E Integration + Operational Readiness)
 
 Date: 2026-02-03
-Repo: C:\Users\ayewhy\II SKELDIR II
+Repo: <repo-root>
 
 ## Adjudicated SHA
 - 614e1b147eff91dd448cd5708f25b0be90d98aed

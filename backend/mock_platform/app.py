@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 app = FastAPI()
+logger = logging.getLogger("mock_platform")
 
 _calls = {"stripe": 0, "dummy": 0}
 _state = {
@@ -108,9 +110,20 @@ async def dummy_revenue() -> dict:
         _calls["dummy"] += 1
 
     await _maybe_delay()
-    revenue_micros = int(os.getenv("DUMMY_REVENUE_MICROS", "12340000"))
-    event_count = int(os.getenv("DUMMY_EVENT_COUNT", "3"))
+    revenue_micros = _parse_int_env("DUMMY_REVENUE_MICROS", 12340000)
+    event_count = _parse_int_env("DUMMY_EVENT_COUNT", 3)
     return {
         "revenue_micros": revenue_micros,
         "event_count": event_count,
     }
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %s", name, value, default)
+        return default
