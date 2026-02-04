@@ -29,7 +29,7 @@ TENANT_B = UUID("00000000-0000-0000-0000-0000000000b1")
 
 CACHE_KEY = "realtime_revenue:shared:v1"
 
-pytestmark = (pytest.mark.asyncio, pytest.mark.serial)
+pytestmark = [pytest.mark.asyncio, pytest.mark.serial]
 
 
 def _get_env_float(name: str, default: float) -> float:
