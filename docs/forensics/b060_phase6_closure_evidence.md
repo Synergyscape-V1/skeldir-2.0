@@ -4,17 +4,17 @@ Date: 2026-02-03
 Repo: <repo-root>
 
 ## Adjudicated SHA
-- 614e1b147eff91dd448cd5708f25b0be90d98aed
-- Commit checks: https://github.com/Muk223/skeldir-2.0/commit/614e1b147eff91dd448cd5708f25b0be90d98aed/checks
+- e234319a1ce9f499ad11ee1c7c80694bb8657d41
+- Commit checks: https://github.com/Muk223/skeldir-2.0/commit/e234319a1ce9f499ad11ee1c7c80694bb8657d41/checks
 
 ## CI adjudication run
-- Workflow: CI (workflow_dispatch)
-- Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21643127955
-- Overall conclusion: **failure** (non-Phase-6 jobs failed)
+- Workflow: CI
+- Run URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21678415777
+- Overall conclusion: **success**
 
 ## Phase 6 E2E job evidence (runtime truth)
 - Job name: B0.6 Phase 6 E2E (Monolith + Mock Platform)
-- Job URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21643127955/job/62388032147
+- Job URL: https://github.com/Muk223/skeldir-2.0/actions/runs/21678415777/job/62505411221
 - Conclusion: **success**
 - Step highlights:
   - Compose stack booted: API + Postgres + mock_platform
@@ -30,13 +30,6 @@ Repo: <repo-root>
 - Runtime semantics: verified=false; fetch-time freshness boundary honored
 - Tenant isolation: distinct cache entries per tenant
 
-## What blocked full green CI
-The CI run failed due to unrelated jobs (not Phase 6):
-- Lint Frontend (Design System Compliance)
-- Validate Design Tokens
-- Phase Gates / Zero Container Doctrine
-
 ## Status
 - Phase 6 E2E evidence: **PASS** (job-level)
-- Global CI green requirement: **NOT MET** (workflow failure).
-- Closure pack + INDEX should be treated as **pending final green** if the program requires global CI green before acceptance.
+- Global CI green requirement: **MET** (workflow success on main).

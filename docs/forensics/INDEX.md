@@ -50,7 +50,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.6 Phase 4 remediation | docs/forensics/b060_phase4_remediation_evidence_v2.md | Phase 4 remediation evidence pack (providers + cache regression + CI gate) | PR #45 / 2b3b304 | https://github.com/Muk223/skeldir-2.0/actions/runs/21602853774 |
 | B0.6 Phase 5 remediation | docs/forensics/b060_phase5_remediation_evidence.md | Phase 5 response semantics lock (fetch-time freshness + verified=false + CI gate) | PR pending / 5e1b26c | https://github.com/Muk223/skeldir-2.0/commit/5e1b26c86f941c97d11a9c905fa1efc224af4cce/checks |
 | B0.6 Phase 6 context delta | docs/forensics/phase6_context_delta_notes.md | Phase 6 re-validation context delta notes (pre-remediation) | PR #48 / c1a0e3b | https://github.com/Muk223/skeldir-2.0/commit/c1a0e3bbd50895442278a2d0c0df4d8deff0ce1e/checks |
-| B0.6 Phase 6 closure | docs/forensics/b060_phase6_closure_evidence.md | Phase 6 E2E integration + operational readiness closure (job-level pass; global CI pending). | 614e1b147eff91dd448cd5708f25b0be90d98aed | https://github.com/Muk223/skeldir-2.0/commit/614e1b147eff91dd448cd5708f25b0be90d98aed/checks |
+| B0.6 Phase 6 closure | docs/forensics/b060_phase6_closure_evidence.md | Phase 6 E2E integration + operational readiness closure (global CI green). | e234319a1ce9f499ad11ee1c7c80694bb8657d41 | https://github.com/Muk223/skeldir-2.0/commit/e234319a1ce9f499ad11ee1c7c80694bb8657d41/checks |
 
 ## Design governance evidence
 | Phase/Topic | Evidence pack | Purpose | PR/Commit | CI Run |
