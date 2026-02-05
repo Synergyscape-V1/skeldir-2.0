@@ -9,6 +9,7 @@ on:
     paths:
       - 'alembic/versions/**'
       - 'db/schema/**'
+  workflow_dispatch:
   workflow_run:
     workflows: ["Schema Validation"]
     types:
