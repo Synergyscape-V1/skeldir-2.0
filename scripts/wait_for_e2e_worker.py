@@ -16,12 +16,16 @@ def wait_for_worker_probe() -> None:
         try:
             res = httpx.get(url, timeout=5.0)
             if res.status_code == 200:
-                body = res.json()
-                if body.get("worker") == "ok":
-                    return
+                try:
+                    body = res.json()
+                except ValueError as exc:
+                    last_error = f"invalid_json: {exc}"
+                else:
+                    if body.get("worker") == "ok":
+                        return
             last_error = f"status={res.status_code} body={res.text[:300]}"
-        except Exception as exc:
-            last_error = exc
+        except httpx.RequestError as exc:
+            last_error = str(exc)
         time.sleep(1)
     raise RuntimeError(f"Worker probe not ok after {TIMEOUT_S}s: {url} ({last_error})")
 
@@ -32,4 +36,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
