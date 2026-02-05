@@ -1,4 +1,4 @@
-# B0.7-P0 Evidence Note — Non-Vacuous Contracts + CI Runtime Proof Harness
+# B0.7-P0 Evidence Note - Non-Vacuous Contracts + CI Runtime Proof Harness
 
 ## Scope (what this phase added)
 
@@ -15,7 +15,7 @@ This phase adds **non-vacuous, falsifiable** guardrails so B0.7 provider work ca
    - Negative control: `backend/tests/fixtures/b07_p0_invalid_llm_write_contract.json`
    - Tests: `backend/tests/test_b07_p0_llm_write_contract_validation.py`
 
-3. **Non-vacuous “wrapper-only dependency” enforcement exists**
+3. **Non-vacuous "wrapper-only dependency" enforcement exists**
    - Scanner: `scripts/ci/enforce_llm_provider_boundary.py`
    - Negative control fixture (text -> temp .py in test): `backend/tests/fixtures/forbidden_provider_import_fixture.txt`
    - Tests: `backend/tests/test_b07_p0_provider_boundary_enforcement.py`
@@ -29,18 +29,35 @@ This phase adds **non-vacuous, falsifiable** guardrails so B0.7 provider work ca
      - Artifact: `b060-phase6-e2e-artifacts`
      - File: `artifacts/b060-phase6-e2e/compose.log`
 
-## CI proof run links (fill after merge)
+5. **DB parity scaffold distinguishes artifact validation vs runtime schema**
+   - Contract separates `current_row_shape` (enforced) vs `target_row_shape` (reported).
+   - DB parity checker: `scripts/ci/llm_contract_db_parity.py`
+   - Negative controls (non-vacuous): `backend/tests/test_b07_p0_llm_contract_db_parity.py`
+
+## CI proof run links (PR #51)
 
 Repository: `https://github.com/Muk223/skeldir-2.0`
 
 - EG-P0-3 (provider boundary scanner non-vacuous):
-  - CI run: `<ACTION_RUN_URL>`
+  - CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21722925971/job/62657346360`
   - Notes: `backend/tests/test_b07_p0_provider_boundary_enforcement.py` asserts scanner fails on a meaningful violation (temp file).
 
 - EG-P0-4 (compose substrate bring-up + worker proof):
-  - CI run: `<ACTION_RUN_URL>`
+  - CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21722925971/job/62657346403`
   - Notes: `scripts/wait_for_e2e_worker.py` must pass (200 + `"worker":"ok"` from `/health/worker`).
-  - Debug artifacts: `b060-phase6-e2e-artifacts` → `compose.log`
+  - Debug artifacts: `b060-phase6-e2e-artifacts` -> `compose.log`
+
+- EG-F1-4 (current schema parity enforced):
+  - CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21722925971/job/62657346403`
+  - Notes: `scripts/ci/llm_contract_db_parity.py --shape current_row_shape --mode enforce`
+
+- EG-F1-5 (target schema drift reported):
+  - CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21722925971/job/62657346403`
+  - Artifact: `b060-phase6-e2e-artifacts` -> `llm_contract_target_report.txt`
+
+- EG-F1-3 (non-vacuity / negative controls):
+  - CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21722925971/job/62657346360`
+  - Notes: `backend/tests/test_b07_p0_llm_contract_db_parity.py` forces mismatch and asserts non-zero exit in enforce mode.
 
 ## Local reproduction (Linux / CI-equivalent)
 
@@ -60,4 +77,3 @@ Teardown:
 ```bash
 docker compose -f docker-compose.e2e.yml down -v
 ```
-
