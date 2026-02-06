@@ -19,6 +19,7 @@ import time
 from typing import Any, Mapping, Optional, Sequence
 
 from app.observability.context import get_request_correlation_id, get_tenant_id
+from app.observability.logging_config import RedactionFilter
 
 
 LIFECYCLE_LOGGER_NAME = "app.worker.task_lifecycle"
@@ -91,6 +92,7 @@ def _configure_raw_json_logger(name: str, *, level: str) -> logging.Logger:
     handler = _StdoutFDHandler()
     handler.setLevel(resolved_level)
     handler.setFormatter(_RawMessageFormatter())
+    handler.addFilter(RedactionFilter())
     setattr(handler, "_skeldir_raw_json_handler", True)
     logger.addHandler(handler)
     return logger

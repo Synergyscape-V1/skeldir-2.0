@@ -9,7 +9,7 @@ import os
 from typing import Optional
 
 from dotenv import load_dotenv
-from pydantic import AliasChoices, Field, PostgresDsn, field_validator
+from pydantic import AliasChoices, Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load local .env without overriding explicit environment variables.
@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     # Application
     ENVIRONMENT: str = Field("development", description="Deployment environment")
     LOG_LEVEL: str = Field("INFO", description="Application log level")
+
+    # LLM Provider (future enablement)
+    LLM_PROVIDER_ENABLED: bool = Field(
+        False, description="Enable external LLM provider boundary (requires API key)."
+    )
+    LLM_PROVIDER_API_KEY: Optional[str] = Field(
+        None, description="API key for the configured LLM provider (required if enabled)."
+    )
 
     # Ingestion
     IDEMPOTENCY_CACHE_TTL: int = Field(
@@ -208,6 +216,7 @@ class Settings(BaseSettings):
         "PLATFORM_TOKEN_ENCRYPTION_KEY",
         "PLATFORM_TOKEN_KEY_ID",
         "STRIPE_BASE_URL",
+        "LLM_PROVIDER_API_KEY",
     )
     @classmethod
     def validate_optional_strings(cls, value: Optional[str]) -> Optional[str]:
@@ -294,6 +303,12 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError("CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S must be > 0")
         return value
+
+    @model_validator(mode="after")
+    def validate_llm_provider_config(self) -> "Settings":
+        if self.LLM_PROVIDER_ENABLED and not self.LLM_PROVIDER_API_KEY:
+            raise ValueError("LLM_PROVIDER_ENABLED requires LLM_PROVIDER_API_KEY")
+        return self
 
 
 settings = Settings()
