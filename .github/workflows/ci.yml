@@ -611,6 +611,8 @@ jobs:
           python -m alembic upgrade head
 
       - name: Run B0.7 P2 provider enablement unit gate
+        env:
+          LLM_PROVIDER_API_KEY: ""
         run: |
           pytest -q backend/tests/test_b07_p2_provider_enablement.py
 
@@ -619,6 +621,43 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/b07-p2
           pytest -q backend/tests/integration/test_b07_p2_runtime_chain_e2e.py | tee artifacts/b07-p2/pytest.log
+
+      - name: Verify B0.7 P2 artifact and log redaction hygiene
+        if: always()
+        run: |
+          set -euo pipefail
+
+          ARTIFACT_DIR="artifacts/b07-p2"
+          CANARY="${B07_P2_LOG_CANARY:?B07_P2_LOG_CANARY must be set}"
+
+          test -d "${ARTIFACT_DIR}" || { echo "Missing artifact directory: ${ARTIFACT_DIR}"; exit 1; }
+          test -f "${ARTIFACT_DIR}/worker.log" || { echo "Missing ${ARTIFACT_DIR}/worker.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/pytest.log" || { echo "Missing ${ARTIFACT_DIR}/pytest.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/runtime_db_probe.json" || { echo "Missing ${ARTIFACT_DIR}/runtime_db_probe.json"; exit 1; }
+          test -f "${ARTIFACT_DIR}/redaction_probe.json" || { echo "Missing ${ARTIFACT_DIR}/redaction_probe.json"; exit 1; }
+
+          # Fail on literal canary leakage anywhere in captured artifacts.
+          if grep -R --line-number --fixed-strings "${CANARY}" "${ARTIFACT_DIR}"; then
+            echo "Secret canary leaked into artifacts"
+            exit 1
+          fi
+
+          # Fail if obvious non-redacted key/bearer patterns appear.
+          if grep -R --line-number -P 'LLM_PROVIDER_API_KEY=(?!\*\*\*)' "${ARTIFACT_DIR}"; then
+            echo "Found non-redacted LLM_PROVIDER_API_KEY pattern in artifacts"
+            exit 1
+          fi
+
+          if grep -R --line-number -P 'Authorization:\s*Bearer\s+(?!\*\*\*)' "${ARTIFACT_DIR}"; then
+            echo "Found non-redacted Bearer token pattern in artifacts"
+            exit 1
+          fi
+
+          # Positive controls: prove redaction actually executed in worker logs.
+          grep -n 'LLM_PROVIDER_API_KEY=\*\*\*' "${ARTIFACT_DIR}/worker.log" >/dev/null
+          grep -n 'Authorization: Bearer \*\*\*' "${ARTIFACT_DIR}/worker.log" >/dev/null
+
+          echo "B0.7 P2 redaction hygiene scan passed"
 
       - name: Upload B0.7 P2 artifacts
         if: always()
