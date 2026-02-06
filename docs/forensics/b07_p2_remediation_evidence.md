@@ -128,3 +128,51 @@ Applied protection on `main` (admin token):
 
 ## Residual Note
 This evidence package proves B0.7-P2 controls on `main` for run `21760827869`. It does not claim global CI health beyond this scope.
+
+---
+
+## Follow-Up Corrective Action (Full CI Greenness on main)
+
+Date: 2026-02-06
+Objective: remediate separate failing jobs (`Phase Gates (SCHEMA_GUARD)`, `Phase Chain (B0.4 target)`) that prevented full CI greenness, while preserving B0.7-P2 runtime proof.
+
+### Root Cause (artifact and log backed)
+Run: `21768365281` (PR CI for SHA `07057d84e3a271064b58263fd50da50152352daf`)
+1. `Phase Gates (SCHEMA_GUARD)` failed because `backend/tests/test_no_raw_inserts_core_tables.py` detected a new raw core-table insert in `backend/tests/integration/test_b07_p2_runtime_chain_e2e.py` without `RAW_SQL_ALLOWLIST`.
+2. `Phase Chain (B0.4 target)` failed transitively because it depends on `SCHEMA_GUARD`.
+
+### Remediation Diff
+Commits merged to `main` in PR `#53`:
+1. `07057d84e3a271064b58263fd50da50152352daf` - `tests: suppress httpx info logs to avoid pytest format crash`
+2. `fdc6f2f2f2e1dafddfde7231ee99304572b1541c` - `tests: allowlist deterministic tenant seed in b07 p2 chain test`
+3. Merge commit on `main`: `e7ec668e23a1c9983dac95d58022c761a4f776f4`
+
+Targeted corrective file change:
+1. `backend/tests/integration/test_b07_p2_runtime_chain_e2e.py`
+2. Added marker comment: `RAW_SQL_ALLOWLIST: deterministic test-only tenant seed for runtime-chain proof.`
+
+### Mainline Verification (push-triggered, automatic)
+Run metadata:
+1. CI run ID: `21768773155`
+2. URL: `https://github.com/Muk223/skeldir-2.0/actions/runs/21768773155`
+3. Event: `push`
+4. Branch: `main`
+5. Head SHA: `e7ec668e23a1c9983dac95d58022c761a4f776f4`
+6. Conclusion: `success`
+
+Key corrected checks:
+1. `Phase Gates (SCHEMA_GUARD)` job `62811330123` -> `pass`
+2. `Phase Chain (B0.4 target)` job `62811330061` -> `pass`
+3. `B0.7 P2 Runtime Proof (LLM + Redaction)` job `62811304864` -> `pass`
+
+P2 artifact on this main push:
+1. Artifact name: `b07-p2-runtime-proof`
+2. Artifact ID: `5413230271`
+3. Digest: `sha256:29c89cadf64b4a020b8d0f58cf5d763efe16c1afb39f87fff80a7931c0e8159f`
+
+### Scientific Verdict on Hypothesis
+Hypothesis: "While b07p2 job infrastructure is correct, the presence of failing jobs means the system does not have continuous runtime proof on main."
+
+Verdict: **Refuted after remediation**.
+1. Before remediation: supported (CI run contained failing jobs despite P2 passing).
+2. After remediation: refuted by push-triggered `main` run `21768773155` with both corrected jobs and `B0.7 P2 Runtime Proof` passing in the same run.
