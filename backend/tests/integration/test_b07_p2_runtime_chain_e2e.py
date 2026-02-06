@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID, uuid4
@@ -126,6 +127,58 @@ def _stop_process(proc: subprocess.Popen[str]) -> None:
 
 def _with_engine(runtime_db_url: str):
     return create_engine(runtime_db_url)
+
+
+def _required_columns(engine, table_name: str) -> set[str]:
+    query = text(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = :table_name
+          AND is_nullable = 'NO'
+          AND column_default IS NULL
+          AND (is_identity IS NULL OR is_identity = 'NO')
+        """
+    )
+    with engine.begin() as conn:
+        result = conn.execute(query, {"table_name": table_name})
+    return set(result.scalars().all())
+
+
+def _seed_tenant(runtime_db_url: str, tenant_id: UUID) -> None:
+    engine = _with_engine(runtime_db_url)
+    required = _required_columns(engine, "tenants")
+    now = datetime.now(timezone.utc)
+    payload = {
+        "id": str(tenant_id),
+        "name": f"B07 P2 Tenant {tenant_id.hex[:8]}",
+        "api_key_hash": f"hash_{tenant_id.hex[:16]}",
+        "notification_email": f"{tenant_id.hex[:8]}@test.invalid",
+        "shopify_webhook_secret": "test_secret",
+        "created_at": now,
+        "updated_at": now,
+    }
+    insert_cols = []
+    for col in required:
+        if col not in payload:
+            raise RuntimeError(f"Missing payload value for required tenants column '{col}'")
+        insert_cols.append(col)
+    if "id" not in insert_cols:
+        insert_cols.insert(0, "id")
+    if "name" not in insert_cols:
+        insert_cols.append("name")
+
+    placeholders = ", ".join(f":{col}" for col in insert_cols)
+    sql = text(
+        f"INSERT INTO tenants ({', '.join(insert_cols)}) VALUES ({placeholders})"
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+            {"tenant_id": str(tenant_id)},
+        )
+        conn.execute(sql, payload)
 
 
 def _fetch_llm_api_call(
@@ -249,6 +302,7 @@ def test_b07_p2_runtime_llm_chain_with_redaction():
 
         tenant_id = uuid4()
         user_id = uuid4()
+        _seed_tenant(config.runtime_sync_url, tenant_id)
         request_id = f"b07-p2-{tenant_id.hex[:8]}"
         endpoint = "app.tasks.llm.explanation"
         payload = LLMTaskPayload(
