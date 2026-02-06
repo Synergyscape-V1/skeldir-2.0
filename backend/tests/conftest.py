@@ -4,6 +4,7 @@ Pytest fixtures for B0.4.3 tests.
 Provides tenant creation/cleanup fixtures to satisfy FK constraints.
 """
 import os
+import logging
 from uuid import uuid4
 
 import pytest
@@ -17,6 +18,11 @@ os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
 os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
+
+# httpx/httpcore may emit INFO records with incompatible %-format args under pytest capture.
+# Keep backend test logging deterministic and focused on app-level signals.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # B0.5.3.3 Gate C: CI-first credential coherence (MUST execute before any imports)
 # In CI, DATABASE_URL MUST be provided by step env vars - no fallbacks, no defaults.
