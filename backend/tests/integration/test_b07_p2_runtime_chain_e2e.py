@@ -22,6 +22,7 @@ from app.services.llm_dispatch import enqueue_llm_task
 class _RuntimeProofConfig:
     runtime_sync_url: str
     runtime_async_url: str
+    migration_sync_url: str
     artifact_dir: Path
     canary_secret: str
 
@@ -51,6 +52,13 @@ def _runtime_async_db_url(runtime_sync: str) -> str:
     if runtime_sync.startswith("postgresql+asyncpg://"):
         return runtime_sync
     return runtime_sync.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+
+def _migration_sync_db_url() -> str:
+    explicit = os.getenv("MIGRATION_DATABASE_URL")
+    if explicit:
+        return explicit
+    return _runtime_sync_db_url()
 
 
 def _artifact_dir() -> Path:
@@ -272,11 +280,13 @@ def _wait_for_log_contains(path: Path, substring: str, timeout_s: float) -> None
 def _runtime_config() -> _RuntimeProofConfig:
     runtime_sync = _runtime_sync_db_url()
     runtime_async = _runtime_async_db_url(runtime_sync)
+    migration_sync = _migration_sync_db_url()
     artifact_dir = _artifact_dir()
     canary = os.getenv("B07_P2_LOG_CANARY", "skeldir_test_secret_123")
     return _RuntimeProofConfig(
         runtime_sync_url=runtime_sync,
         runtime_async_url=runtime_async,
+        migration_sync_url=migration_sync,
         artifact_dir=artifact_dir,
         canary_secret=canary,
     )
@@ -302,7 +312,7 @@ def test_b07_p2_runtime_llm_chain_with_redaction():
 
         tenant_id = uuid4()
         user_id = uuid4()
-        _seed_tenant(config.runtime_sync_url, tenant_id)
+        _seed_tenant(config.migration_sync_url, tenant_id)
         request_id = f"b07-p2-{tenant_id.hex[:8]}"
         endpoint = "app.tasks.llm.explanation"
         payload = LLMTaskPayload(
