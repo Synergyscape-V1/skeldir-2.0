@@ -1,0 +1,111 @@
+name: b07-p4-e2e-operational-readiness
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  b07_p4_closure_pack:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      DATABASE_URL: postgresql+asyncpg://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
+      B07_P4_RUNTIME_DATABASE_URL: postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
+      MIGRATION_DATABASE_URL: postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
+      CELERY_BROKER_URL: sqla+postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
+      CELERY_RESULT_BACKEND: db+postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
+      B07_P4_ARTIFACT_DIR: artifacts/b07-p4
+      E2E_API_BASE_URL: http://127.0.0.1:8000
+      E2E_WAIT_TIMEOUT_S: "120"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Remove repo .env for CI isolation
+        run: |
+          rm -f .env
+
+      - name: Start compose substrate (Postgres + mock)
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --build postgres mock_platform
+
+      - name: Wait for Postgres readiness
+        env:
+          PGPASSWORD: skeldir_e2e
+        run: |
+          for i in $(seq 1 60); do
+            if psql -h 127.0.0.1 -U skeldir -d skeldir_e2e -c "SELECT 1" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Postgres not ready in time"
+          exit 1
+
+      - name: Apply migrations
+        run: |
+          python -m alembic upgrade head
+
+      - name: Start API + worker
+        env:
+          LLM_PROVIDER_KILL_SWITCH: "false"
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --build api worker
+
+      - name: Wait for API and worker readiness
+        run: |
+          python scripts/wait_for_e2e_health.py
+          python scripts/wait_for_e2e_worker.py
+
+      - name: Run B0.7-P4 full-chain E2E invariants
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p4
+          pytest -q backend/tests/integration/test_b07_p4_operational_readiness_e2e.py | tee artifacts/b07-p4/pytest.log
+
+      - name: Run operational SQL dashboards
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/run_b07_p4_operational_queries.sh
+          scripts/ci/run_b07_p4_operational_queries.sh \
+            "${B07_P4_RUNTIME_DATABASE_URL}" \
+            "${B07_P4_ARTIFACT_DIR}/runtime_db_probe.json" \
+            "${B07_P4_ARTIFACT_DIR}/sql"
+
+      - name: Capture compose logs
+        if: always()
+        run: |
+          mkdir -p artifacts/b07-p4
+          docker compose -f docker-compose.e2e.yml logs --no-color > artifacts/b07-p4/compose.log || true
+
+      - name: Upload B0.7-P4 closure artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b07-p4-operational-readiness
+          path: artifacts/b07-p4
+          retention-days: 14
+
+      - name: Teardown compose
+        if: always()
+        run: |
+          docker compose -f docker-compose.e2e.yml down -v
