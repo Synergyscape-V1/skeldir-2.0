@@ -23,6 +23,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.session import set_tenant_guc_async, set_user_guc_async
 from app.models.llm import (
     LLMBreakerState,
     LLMBudgetReservation,
@@ -94,6 +95,8 @@ class SkeldirLLMProvider:
         endpoint: str,
         force_failure: bool = False,
     ) -> ProviderBoundaryResult:
+        await self._ensure_rls_context(session, model.tenant_id, model.user_id)
+
         request_id = str(model.request_id or model.correlation_id or "")
         correlation_id = str(model.correlation_id or request_id or "")
         prompt = dict(model.prompt or {})
@@ -216,6 +219,7 @@ class SkeldirLLMProvider:
             usage["latency_ms"] = max(1, int((time.perf_counter() - started) * 1000))
             settled = min(max(0, int(usage["cost_cents"])), reservation)
             settled_at = datetime.now(timezone.utc)
+            await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._settle(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation, settled)
             await self._breaker_success(session, model.tenant_id, model.user_id)
             await self._hourly_record(session, model.tenant_id, model.user_id, settled_at, settled)
@@ -254,6 +258,7 @@ class SkeldirLLMProvider:
             )
         except TimeoutError:
             failed_at = datetime.now(timezone.utc)
+            await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._release(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation)
             await self._breaker_failure(session, model.tenant_id, model.user_id, failed_at)
             await self._finalize_failed(session, api_call_id, "provider_timeout")
@@ -273,6 +278,7 @@ class SkeldirLLMProvider:
             )
         except Exception as exc:
             failed_at = datetime.now(timezone.utc)
+            await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._release(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation)
             await self._breaker_failure(session, model.tenant_id, model.user_id, failed_at)
             await self._finalize_failed(session, api_call_id, f"provider_error:{type(exc).__name__}")
@@ -290,6 +296,10 @@ class SkeldirLLMProvider:
                 api_call_id=api_call_id,
                 failure_reason=f"provider_error:{type(exc).__name__}",
             )
+
+    async def _ensure_rls_context(self, session: AsyncSession, tenant_id: UUID, user_id: UUID) -> None:
+        await set_tenant_guc_async(session, tenant_id, local=False)
+        await set_user_guc_async(session, user_id, local=False)
 
     def _blocked_result(
         self,
