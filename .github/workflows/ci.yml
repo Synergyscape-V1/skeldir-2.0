@@ -617,6 +617,13 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${RUNTIME_USER};"
 
+      - name: Enforce llm_api_calls single write path
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2
+          python scripts/ci/enforce_llm_api_call_single_write_path.py --output artifacts/b07-p2/single_write_path_scan.log
+          pytest -q backend/tests/test_b07_p3_single_write_path_enforcement.py | tee artifacts/b07-p2/single_write_path_pytest.log
+
       - name: Run B0.7 P2 provider enablement unit gate
         env:
           LLM_PROVIDER_API_KEY: ""

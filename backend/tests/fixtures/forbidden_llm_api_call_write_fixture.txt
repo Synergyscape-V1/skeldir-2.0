@@ -1,0 +1,9 @@
+from app.models.llm import LLMApiCall
+from sqlalchemy.dialects.postgresql import insert
+
+
+def violating_write_path(session):
+    row = LLMApiCall()
+    session.add(row)
+    session.execute(insert(LLMApiCall))
+
