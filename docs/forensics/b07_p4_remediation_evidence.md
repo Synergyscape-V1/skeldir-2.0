@@ -4,10 +4,10 @@ Status at 2026-02-07 (UTC): implemented and CI-proven on PR branch `b07-p4-closu
 
 ## Canonical Evidence Links
 - PR: https://github.com/Muk223/skeldir-2.0/pull/59
-- P4 closure workflow (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788468203
-- P4 closure job (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788468203/job/62863643995
-- Required protection check `B0.7 P2 Runtime Proof (LLM + Redaction)` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788468172/job/62863653489
-- Required protection check `Celery Foundation B0.5.1` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788468172/job/62863653520
+- P4 closure workflow (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547016
+- P4 closure job (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547016/job/62863845002
+- Required protection check `B0.7 P2 Runtime Proof (LLM + Redaction)` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547015/job/62863853269
+- Required protection check `Celery Foundation B0.5.1` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547015/job/62863853281
 
 ## Hypothesis Validation Outcomes
 1. H-P4-01 (full-chain E2E missing): **refuted**
@@ -41,7 +41,7 @@ Status at 2026-02-07 (UTC): implemented and CI-proven on PR branch `b07-p4-closu
 3. Exit Gate 3: Kill-Switch + Fail-Safe Control: **PASS**
 - E2E asserts kill-switch outcome: `status=blocked`, `blocked_reason=provider_kill_switch`, `provider_attempted=false`, with persisted audit row.
 
-## Non-Vacuous SQL Artifact Snapshot (from run 21788468203)
+## Non-Vacuous SQL Artifact Snapshot (from run 21788547016)
 - `01_monthly_spend.csv`: one row with tenant/user monthly totals (`total_cost_cents=6`, `total_calls=6`).
 - `02_cache_hit_rate.csv`: includes `app.tasks.llm.explanation` with `cache_hits=1`.
 - `03_breaker_shutoff_state.csv`: includes one breaker row (`state=open`) and one hourly shutoff row (`state_value=true`).
