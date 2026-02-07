@@ -88,6 +88,10 @@ class Settings(BaseSettings):
         "openai:gpt-4o-mini",
         description="Provider/model route in '<provider>:<model>' format for aisuite dispatch.",
     )
+    LLM_PROVIDER_KILL_SWITCH: bool = Field(
+        False,
+        description="Emergency provider kill-switch. When enabled, all LLM requests are blocked before provider invocation.",
+    )
     LLM_MONTHLY_CAP_CENTS: int = Field(
         2500,
         description="Per-user monthly hard cap in cents for reservation gating ($25 default).",

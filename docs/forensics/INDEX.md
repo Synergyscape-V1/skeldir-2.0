@@ -13,6 +13,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.7 Context inventory | docs/forensics/b07_context_inventory_evidence.md | Evidence-backed baseline of B0.7 readiness (static + runtime where possible) | PR #50 / 4696a51 | pending |
 | B0.7 P0 CI harness | docs/forensics/b07_p0_ci_harness.md | Non-vacuous contracts + provider boundary + CI substrate proof (worker) | PR #51 / 8874821 | https://github.com/Muk223/skeldir-2.0/actions/runs/21723348773 |
 | B0.7 P2 remediation | docs/forensics/b07_p2_remediation_evidence.md | Continuous runtime proof + redaction/fail-fast remediation evidence (main push-run verified) | PR #54 / 34761ec | https://github.com/Muk223/skeldir-2.0/actions/runs/21768773155 |
+| B0.7 P4 remediation | docs/forensics/b07_p4_remediation_evidence.md | E2E distributed runtime proof + operational readiness closure pack (compose + SQL dashboards + runbooks) | pending | pending |
 | B055 Phase 3 v2 | docs/forensics/b055_phase3_remediation_v2_integrity_evidence.md | Phase 3 integrity remediation evidence pack | PR #17 / 93b58be | pending |
 | B055 Phase 3 EG9 context | docs/forensics/b055_phase3_eg9_topology_idempotency_context.md | Pre-remediation topology/DI/idempotency baseline | PR #18 / 214a98d | https://github.com/Muk223/skeldir-2.0/actions/runs/20967066505 |
 | B055 Phase 3 EG9 remediation | docs/forensics/b055_phase3_eg9_topology_idempotency_remediation_evidence.md | EG9/Topology/Idempotency remediation evidence | PR #18 / 214a98d | https://github.com/Muk223/skeldir-2.0/actions/runs/20967066505 |

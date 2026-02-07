@@ -134,6 +134,19 @@ class SkeldirLLMProvider:
                 correlation_id=correlation_id,
             )
 
+        # Emergency stop-path: block before reservation/cache/provider call while keeping
+        # an auditable llm_api_calls denial row for incident forensics.
+        if settings.LLM_PROVIDER_KILL_SWITCH or bool(prompt.get("kill_switch", False)):
+            await self._finalize_blocked(session, api_call_id, "provider_kill_switch")
+            await session.commit()
+            return self._blocked_result(
+                api_call_id,
+                request_id,
+                correlation_id,
+                requested_model,
+                "provider_kill_switch",
+            )
+
         month = _month_start_utc(created_at)
         now = await self._db_now(session)
         shutoff_reason = await self._hourly_block_reason(
