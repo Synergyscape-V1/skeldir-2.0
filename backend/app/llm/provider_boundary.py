@@ -469,9 +469,9 @@ class SkeldirLLMProvider:
                     """
                 ),
                 {
-                    "tenant_id": str(tenant_id),
-                    "user_id": str(user_id),
-                    "month": month.isoformat(),
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "month": month,
                     "cap_cents": cap_cents,
                     "reservation": reservation,
                 },
@@ -511,9 +511,9 @@ class SkeldirLLMProvider:
                 """
             ),
             {
-                "tenant_id": str(tenant_id),
-                "user_id": str(user_id),
-                "month": month.isoformat(),
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "month": month,
                 "reservation": reservation,
             },
         )
@@ -529,8 +529,8 @@ class SkeldirLLMProvider:
                 """
             ),
             {
-                "tenant_id": str(tenant_id),
-                "user_id": str(user_id),
+                "tenant_id": tenant_id,
+                "user_id": user_id,
                 "endpoint": endpoint,
                 "request_id": request_id,
             },
@@ -559,9 +559,9 @@ class SkeldirLLMProvider:
                 """
             ),
             {
-                "tenant_id": str(tenant_id),
-                "user_id": str(user_id),
-                "month": month.isoformat(),
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "month": month,
                 "reservation": reservation,
                 "settled": settled,
             },
