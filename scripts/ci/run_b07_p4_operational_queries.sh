@@ -66,9 +66,9 @@ for csv in "$OUT_DIR"/*.csv; do
   fi
 done
 
-grep -q "tenant_id,user_id,month,total_cost_cents,total_calls" "$OUT_DIR/01_monthly_spend.csv"
-grep -q "endpoint,total_calls,cache_hits,cache_hit_rate_pct" "$OUT_DIR/02_cache_hit_rate.csv"
-grep -q "state_type,tenant_id,user_id,state_key,state_value,failure_count,opened_at,updated_at" "$OUT_DIR/03_breaker_shutoff_state.csv"
-grep -q "provider,model,status,call_count,total_cost_cents,min_latency_ms,avg_latency_ms,max_latency_ms" "$OUT_DIR/04_provider_cost_latency_distribution.csv"
+head -n 1 "$OUT_DIR/01_monthly_spend.csv" | grep -q "tenant_id,user_id,month,total_cost_cents,total_calls"
+head -n 1 "$OUT_DIR/02_cache_hit_rate.csv" | grep -q "endpoint,total_calls,cache_hits,cache_hit_rate_pct"
+head -n 1 "$OUT_DIR/03_breaker_shutoff_state.csv" | grep -q "state_type,tenant_id,user_id,state_key,state_value,failure_count,opened_at,updated_at"
+head -n 1 "$OUT_DIR/04_provider_cost_latency_distribution.csv" | grep -q "provider,model,status,call_count,total_cost_cents,min_latency_ms,avg_latency_ms,max_latency_ms"
 
 echo "B0.7-P4 operational dashboard queries completed: $OUT_DIR"
