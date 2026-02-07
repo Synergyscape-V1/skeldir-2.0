@@ -20,22 +20,44 @@ fi
 
 TENANT_ID=$(python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['tenant_id'])" "$PROBE_JSON")
 USER_ID=$(python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['primary_user_id'])" "$PROBE_JSON")
+BREAKER_USER_ID=$(python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['breaker_user_id'])" "$PROBE_JSON")
+SHUTOFF_USER_ID=$(python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['shutoff_user_id'])" "$PROBE_JSON")
 
 run_query() {
   local sql_file="$1"
   local out_file="$2"
+  local user_id="$3"
+  local wrapper_file
+  wrapper_file="$(mktemp)"
+
+  cat > "$wrapper_file" <<SQL
+SET app.current_tenant_id = :'tenant_id';
+SET app.current_user_id = :'user_id';
+\i $sql_file
+SQL
+
   psql "$DB_URL" \
     -v ON_ERROR_STOP=1 \
     -v tenant_id="$TENANT_ID" \
-    -v user_id="$USER_ID" \
-    -f "$sql_file" \
+    -v user_id="$user_id" \
+    -f "$wrapper_file" \
     --csv > "$out_file"
+
+  rm -f "$wrapper_file"
 }
 
-run_query "$SQL_DIR/01_monthly_spend.sql" "$OUT_DIR/01_monthly_spend.csv"
-run_query "$SQL_DIR/02_cache_hit_rate.sql" "$OUT_DIR/02_cache_hit_rate.csv"
-run_query "$SQL_DIR/03_breaker_shutoff_state.sql" "$OUT_DIR/03_breaker_shutoff_state.csv"
-run_query "$SQL_DIR/04_provider_cost_latency_distribution.sql" "$OUT_DIR/04_provider_cost_latency_distribution.csv"
+run_query "$SQL_DIR/01_monthly_spend.sql" "$OUT_DIR/01_monthly_spend.csv" "$USER_ID"
+run_query "$SQL_DIR/02_cache_hit_rate.sql" "$OUT_DIR/02_cache_hit_rate.csv" "$USER_ID"
+run_query "$SQL_DIR/04_provider_cost_latency_distribution.sql" "$OUT_DIR/04_provider_cost_latency_distribution.csv" "$USER_ID"
+
+breaker_tmp="$(mktemp)"
+shutoff_tmp="$(mktemp)"
+run_query "$SQL_DIR/03_breaker_shutoff_state.sql" "$breaker_tmp" "$BREAKER_USER_ID"
+run_query "$SQL_DIR/03_breaker_shutoff_state.sql" "$shutoff_tmp" "$SHUTOFF_USER_ID"
+head -n 1 "$breaker_tmp" > "$OUT_DIR/03_breaker_shutoff_state.csv"
+tail -n +2 "$breaker_tmp" >> "$OUT_DIR/03_breaker_shutoff_state.csv"
+tail -n +2 "$shutoff_tmp" >> "$OUT_DIR/03_breaker_shutoff_state.csv"
+rm -f "$breaker_tmp" "$shutoff_tmp"
 
 for csv in "$OUT_DIR"/*.csv; do
   if [[ $(wc -l < "$csv") -le 1 ]]; then
