@@ -125,7 +125,44 @@ Observed:
 12. `backend/tests/test_b055_llm_model_parity.py`
 13. `docs/forensics/b07_p3_remediation_evidence.md`
 
-## CI Adjudication
-- Commit SHA: pending push in this evidence draft.
-- CI run URL: pending push in this evidence draft.
-- Required pass target: `backend/tests/test_b07_p3_provider_controls.py` on `main`.
+## CI Adjudication (Mainline Authority)
+
+### Main commit evidence
+1. Main merge commit: `4ffd6be4a4e1703df19c7770033c4bdf3a3cea76` (`Merge pull request #55 from Muk223/codex/b07-p3-remediation-20260207`).
+2. Primary remediation commit sequence:
+   - `309dbc6` (`feat: enforce b07 p3 provider controls at aisuite choke point`)
+   - `941f119` (`ci: execute b07 p3 provider controls in runtime proof job`)
+   - `9a53317` (`ci: grant runtime table privileges before b07 p3 gate`)
+   - `7cbdfe1` (`fix: pass typed month/uuid params in p3 budget sql`)
+   - `0f4a225` (`fix: reapply tenant/user guc across p3 tx boundaries`)
+   - `807e814` (`test: wait for terminal llm_api_calls status in b07 p2 chain`)
+
+### Main CI run
+1. Run ID: `21786102869`
+2. Run URL: `https://github.com/Muk223/skeldir-2.0/actions/runs/21786102869`
+3. Event/branch: `push` on `main`
+4. Head SHA: `4ffd6be4a4e1703df19c7770033c4bdf3a3cea76`
+5. Target job: `B0.7 P2 Runtime Proof (LLM + Redaction)` -> **success**
+6. Target job URL: `https://github.com/Muk223/skeldir-2.0/actions/runs/21786102869/job/62857781344`
+
+### Required P3 test proof from CI log
+1. Step executed: `pytest -q backend/tests/test_b07_p3_provider_controls.py`.
+2. Result: `10 passed, 136 warnings in 2.78s`.
+3. Gate-level outcomes in the same step:
+   - concurrency safety test passed
+   - hourly shutoff distinctness test passed
+   - retry idempotency/no double-debit test passed
+   - breaker and timeout tests passed
+   - cache invalidation test passed
+   - transaction separation test passed
+   - distillation capture test passed
+   - secret non-leak failure-path test passed
+
+### Artifact/redaction proof
+1. Artifact name: `b07-p2-runtime-proof`
+2. Artifact ID: `5418646754`
+3. Artifact URL: `https://github.com/Muk223/skeldir-2.0/actions/runs/21786102869/artifacts/5418646754`
+4. Redaction scanner output: `B0.7 P2 redaction hygiene scan passed`
+
+## Verdict
+B0.7-P3 exit criteria are satisfied on `main` with CI-backed execution proof for `backend/tests/test_b07_p3_provider_controls.py`.
