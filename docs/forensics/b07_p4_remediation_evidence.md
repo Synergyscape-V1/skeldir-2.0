@@ -1,13 +1,13 @@
 # B0.7-P4 Remediation Evidence (E2E Integration + Operational Closure)
 
-Status at 2026-02-07 (UTC): implemented and CI-proven on PR branch `b07-p4-closure-pack` (PR `#59`), awaiting merge to `main`.
+Status at 2026-02-07 (UTC): implemented, merged to `main` via PR `#59`, with runtime proof executed on `main`.
 
 ## Canonical Evidence Links
-- PR: https://github.com/Muk223/skeldir-2.0/pull/59
-- P4 closure workflow (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547016
-- P4 closure job (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547016/job/62863845002
-- Required protection check `B0.7 P2 Runtime Proof (LLM + Redaction)` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547015/job/62863853269
-- Required protection check `Celery Foundation B0.5.1` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788547015/job/62863853281
+- PR (merged): https://github.com/Muk223/skeldir-2.0/pull/59
+- P4 closure workflow on `main` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788634472
+- P4 closure job on `main` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788634472/job/62864059178
+- Required protection check `B0.7 P2 Runtime Proof (LLM + Redaction)` on `main` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788634474/job/62864096680
+- Required protection check `Celery Foundation B0.5.1` on `main` (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21788634474/job/62864096690
 
 ## Hypothesis Validation Outcomes
 1. H-P4-01 (full-chain E2E missing): **refuted**
