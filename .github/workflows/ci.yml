@@ -824,6 +824,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       # B0.5.6.1: CELERY_METRICS_PORT/ADDR removed - worker HTTP server eradicated
