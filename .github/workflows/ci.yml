@@ -588,12 +588,20 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Phase 0 API authority - Prism validate bundle-of-record
+      - name: Phase 0 API authority - Prism bundle-of-record preflight
         run: |
           set -euo pipefail
           mkdir -p artifacts/b07-p2
           test -f "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}"
-          npx -y @stoplight/prism-cli@5.14.2 validate "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" | tee artifacts/b07-p2/prism_validate.log
+          npx -y @stoplight/prism-cli@5.14.2 mock "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" -h 127.0.0.1 -p 4012 > artifacts/b07-p2/prism_preflight.log 2>&1 &
+          PRISM_PREFLIGHT_PID=$!
+          trap 'kill "${PRISM_PREFLIGHT_PID}" 2>/dev/null || true' EXIT
+          sleep 3
+          if ! kill -0 "${PRISM_PREFLIGHT_PID}" 2>/dev/null; then
+            echo "Prism preflight failed to start canonical bundle"
+            tail -n 200 artifacts/b07-p2/prism_preflight.log || true
+            exit 1
+          fi
 
       - name: Phase 0 API authority - Prism mock startability smoke
         run: |
@@ -623,17 +631,17 @@ jobs:
             exit 1
           fi
 
-      - name: Phase 0 API non-vacuity - invalid OpenAPI must fail Prism validate
+      - name: Phase 0 API non-vacuity - invalid OpenAPI must fail Prism startup
         run: |
           set -euo pipefail
           cp "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" /tmp/phase0_invalid_openapi.yaml
           printf "\ninvalid_yaml: [\n" >> /tmp/phase0_invalid_openapi.yaml
           set +e
-          npx -y @stoplight/prism-cli@5.14.2 validate /tmp/phase0_invalid_openapi.yaml > artifacts/b07-p2/prism_negative_control.log 2>&1
+          timeout 15s npx -y @stoplight/prism-cli@5.14.2 mock /tmp/phase0_invalid_openapi.yaml -h 127.0.0.1 -p 4011 > artifacts/b07-p2/prism_negative_control.log 2>&1
           STATUS=$?
           set -e
-          if [ "${STATUS}" -eq 0 ]; then
-            echo "Negative control failed: Prism accepted intentionally invalid OpenAPI"
+          if [ "${STATUS}" -eq 0 ] || [ "${STATUS}" -eq 124 ]; then
+            echo "Negative control failed: Prism did not reject intentionally invalid OpenAPI"
             cat artifacts/b07-p2/prism_negative_control.log || true
             exit 1
           fi
