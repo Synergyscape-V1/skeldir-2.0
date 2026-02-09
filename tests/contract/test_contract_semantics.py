@@ -56,6 +56,17 @@ def load_scope_config() -> dict:
         return yaml.safe_load(f)
 
 
+def load_skip_allowlist() -> set[str]:
+    """Load explicit bundle skip allowlist for runtime conformance tests."""
+    allowlist_path = Path(__file__).parent / "semantics_skip_allowlist.yaml"
+    with open(allowlist_path, "r") as f:
+        data = yaml.safe_load(f) or {}
+    bundles = data.get("bundles", {})
+    if not isinstance(bundles, dict):
+        raise ValueError("semantics_skip_allowlist.yaml must define a 'bundles' mapping")
+    return set(bundles.keys())
+
+
 def get_bundled_specs() -> List[Path]:
     """Get all bundled OpenAPI specifications."""
     bundles_dir = Path(__file__).parent.parent.parent / "api-contracts" / "dist" / "openapi" / "v1"
@@ -65,6 +76,7 @@ def get_bundled_specs() -> List[Path]:
 # Load scope configuration
 config = load_scope_config()
 in_scope_prefixes = config.get('in_scope_prefixes', [])
+semantics_skip_allowlist = load_skip_allowlist()
 
 
 def is_in_scope(path: str) -> bool:
@@ -176,8 +188,16 @@ def test_contract_semantic_conformance(spec_path: Path):
     
     if not operations_tested:
         if skipped_due_to_missing:
+            if spec_path.name not in semantics_skip_allowlist:
+                pytest.fail(
+                    f"Unexpected runtime skip (404) for non-allowlisted bundle: {spec_path.name}"
+                )
             pytest.skip(f"All operations returned 404 (not implemented) in {spec_path.name}")
         if not is_revenue_spec:
+            if spec_path.name not in semantics_skip_allowlist:
+                pytest.fail(
+                    f"Unexpected runtime skip (security-only) for non-allowlisted bundle: {spec_path.name}"
+                )
             pytest.skip(f"No operations without security requirements in {spec_path.name}")
         pytest.fail(f"No in-scope operations executed for {spec_path.name}")
 
@@ -282,7 +302,6 @@ def test_coverage_report():
 if __name__ == "__main__":
     # Allow running directly for quick testing
     pytest.main([__file__, "-v"])
-
 
 
 
