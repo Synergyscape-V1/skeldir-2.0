@@ -676,6 +676,7 @@ jobs:
           mkdir -p artifacts/b07-p2/schema-authority
           python scripts/schema/assert_canonical_schema.py \
             --mode ci \
+            --dump-image postgres@sha256:468e1f126ca5af849799cda06ac9b03d8090aae9fa5163408b3e8da44fad0702 \
             --artifacts-dir artifacts/b07-p2/schema-authority \
             --diff-out artifacts/b07-p2/schema-authority/schema.diff
 
