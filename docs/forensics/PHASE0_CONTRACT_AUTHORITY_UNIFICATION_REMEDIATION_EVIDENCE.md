@@ -165,3 +165,38 @@ Observed behavior:
   - Contract skip behavior is governed and auditable.
   - Required protected checks pass with remediation in place.
 
+## 10) Follow-Up Corrective Action (API Authority Closure)
+
+Follow-up PR:
+- `https://github.com/Muk223/skeldir-2.0/pull/62`
+- Merge commit on `main`: `eed178be5f70fcbf953f638a6ba6b3546c18b59f`
+
+Additional remediation implemented in required check path (`CI` workflow, job `B0.7 P2 Runtime Proof (LLM + Redaction)`):
+- Canonical bundle-of-record declared in job env:
+  - `PHASE0_CONTRACT_BUNDLE_OF_RECORD=api-contracts/dist/openapi/v1/health.bundled.yaml`
+- Prism mock preflight on canonical bundle (startability gate).
+- Prism mock smoke request to `/api/health/ready` with required 200.
+- API non-vacuity negative control:
+  - generate intentionally invalid OpenAPI artifact in CI
+  - assert Prism startup fails.
+
+Supporting CI run evidence:
+- CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21838252976`
+- Required check PASS (API authority path):
+  - `B0.7 P2 Runtime Proof (LLM + Redaction)`  
+    `https://github.com/Muk223/skeldir-2.0/actions/runs/21838252976/job/63015207643`
+- Required check PASS (branch protection peer):
+  - `Celery Foundation B0.5.1`  
+    `https://github.com/Muk223/skeldir-2.0/actions/runs/21838252976/job/63015207671`
+
+Branch-protection governance (Exit Gate 0.D) remained:
+- Required contexts on `main`:
+  - `B0.7 P2 Runtime Proof (LLM + Redaction)`
+  - `Celery Foundation B0.5.1`
+
+Phase 0 status after follow-up:
+- Exit Gate 0.A (DB Authority Derivation): **PASS**
+- Exit Gate 0.B (API Authority Usability via Prism mockability): **PASS**
+- Exit Gate 0.C (API Non-Vacuity): **PASS**
+- Exit Gate 0.D (Merge-Blocking Governance on `main`): **PASS**
+- Exit Gate 0.E (Contract Skip Governance): **PASS**
