@@ -670,8 +670,18 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
-      - name: Apply migrations (admin identity)
+      - name: Phase 0 DB authority - required deterministic schema drift gate
         run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2/schema-authority
+          python scripts/schema/assert_canonical_schema.py \
+            --mode ci \
+            --artifacts-dir artifacts/b07-p2/schema-authority \
+            --diff-out artifacts/b07-p2/schema-authority/schema.diff
+
+      - name: Ensure DB is at head after schema authority gate
+        run: |
+          set -euo pipefail
           python -m alembic upgrade head
 
       - name: Grant runtime test privileges on migrated tables
