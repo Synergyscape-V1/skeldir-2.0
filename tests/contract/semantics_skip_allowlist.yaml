@@ -1,0 +1,11 @@
+bundles:
+  export.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  health.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  llm-budget.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  llm-explanations.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  llm-investigations.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  reconciliation.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  webhooks.paypal.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  webhooks.shopify.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  webhooks.stripe.bundled.yaml: "Intentionally deferred runtime conformance coverage"
+  webhooks.woocommerce.bundled.yaml: "Intentionally deferred runtime conformance coverage"

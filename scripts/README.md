@@ -11,7 +11,7 @@
 | **Start mock servers** | `start-mocks.sh` | `make mock-start` or `./scripts/start-mocks.sh` |
 | **Health check mocks** | `health-check-mocks.sh` | `./scripts/health-check-mocks.sh` |
 | **Validate contracts** | `contracts/check.sh` | `make contract-validate` |
-| **Validate schema** | `validate-schema-compliance.py` | `python validate-schema-compliance.py` |
+| **Validate schema authority** | `schema/assert_canonical_schema.py` | `python scripts/schema/assert_canonical_schema.py --mode auto` |
 | **Generate models** | `generate-models.sh` | `make model-generate` |
 | **Run phase gate** | `phase_gates/run_gate.py` | `python scripts/phase_gates/run_gate.py --phase B0.3` |
 
@@ -41,6 +41,8 @@ scripts/generate-models.sh
 - `dump_*.py` - Debug utilities (dump routes, schemas, endpoints)
 - `print_*.py` - Route classification (implemented vs. stubbed)
 - `validate_*.py` - Schema validators (invariants, canonical events)
+- `schema/assert_canonical_schema.py` - Deterministic migration->dump->diff authority gate
+- `identity/assert_runtime_identity.py` - Runtime vs migration DB identity parity gate
 - `entrypoints.json` - Route mapping: /path → implementation
 - `mock_registry.json` - Mock endpoint registry
 

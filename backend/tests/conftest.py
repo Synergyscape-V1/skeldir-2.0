@@ -6,9 +6,10 @@ Provides tenant creation/cleanup fixtures to satisfy FK constraints.
 import os
 import logging
 from uuid import uuid4
+from urllib.parse import urlparse
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 
 os.environ["TESTING"] = "1"
@@ -74,6 +75,68 @@ from app.db.session import engine
 # This ensures settings is imported with validated credentials
 from app.celery_app import _ensure_celery_configured
 _ensure_celery_configured()
+
+_RUNTIME_IDENTITY_VERIFIED = False
+
+
+def _is_runtime_proof_test(node: pytest.Node) -> bool:
+    keywords = node.keywords
+    if "integration" in keywords or "e2e" in keywords:
+        return True
+    node_path = str(getattr(node, "fspath", "")).replace("\\", "/").lower()
+    return "/integration/" in node_path or node_path.endswith("_e2e.py")
+
+
+def _dsn_username(dsn: str) -> str:
+    return urlparse(dsn).username or ""
+
+
+@pytest.fixture(autouse=True)
+def _assert_runtime_identity_parity(request: pytest.FixtureRequest) -> None:
+    """Global invariant: runtime proof tests in CI must execute as runtime DB identity."""
+    global _RUNTIME_IDENTITY_VERIFIED
+    if _RUNTIME_IDENTITY_VERIFIED:
+        return
+    if os.getenv("CI") != "true":
+        return
+    if not _is_runtime_proof_test(request.node):
+        return
+
+    runtime_dsn = os.getenv("DATABASE_URL")
+    migration_dsn = os.getenv("MIGRATION_DATABASE_URL")
+    expected_runtime_user = os.getenv("EXPECTED_RUNTIME_DB_USER")
+
+    if not runtime_dsn:
+        raise RuntimeError("CI runtime proof requires DATABASE_URL.")
+    if not migration_dsn:
+        raise RuntimeError("CI runtime proof requires MIGRATION_DATABASE_URL for identity parity checks.")
+    if not expected_runtime_user:
+        raise RuntimeError("CI runtime proof requires EXPECTED_RUNTIME_DB_USER.")
+    if runtime_dsn == migration_dsn:
+        raise RuntimeError("DATABASE_URL and MIGRATION_DATABASE_URL must not be identical in CI runtime proofs.")
+
+    runtime_engine = create_engine(runtime_dsn)
+    migration_engine = create_engine(migration_dsn)
+    with runtime_engine.connect() as runtime_conn:
+        runtime_current_user = runtime_conn.execute(text("SELECT current_user")).scalar_one()
+    with migration_engine.connect() as migration_conn:
+        migration_current_user = migration_conn.execute(text("SELECT current_user")).scalar_one()
+
+    runtime_dsn_user = _dsn_username(runtime_dsn)
+    if runtime_current_user != expected_runtime_user:
+        raise RuntimeError(
+            f"runtime identity mismatch: current_user={runtime_current_user}, expected={expected_runtime_user}"
+        )
+    if runtime_dsn_user and runtime_dsn_user != expected_runtime_user:
+        raise RuntimeError(
+            f"runtime DSN username mismatch: username={runtime_dsn_user}, expected={expected_runtime_user}"
+        )
+    if migration_current_user == runtime_current_user:
+        raise RuntimeError(
+            "runtime proof connected as migration/privileged identity; strict separation violated."
+        )
+
+    _RUNTIME_IDENTITY_VERIFIED = True
 
 
 async def _insert_tenant(conn, tenant_id: uuid4, api_key_hash: str) -> None:

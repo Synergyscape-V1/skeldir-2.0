@@ -20,8 +20,13 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Get database URL from environment variable
-# This ensures no hardcoded credentials in the codebase
+# In CI, fail closed: migrations must use MIGRATION_DATABASE_URL explicitly.
 migration_database_url = os.environ.get("MIGRATION_DATABASE_URL")
+ci_mode = os.environ.get("CI", "").lower() == "true"
+if ci_mode and not migration_database_url:
+    raise ValueError(
+        "MIGRATION_DATABASE_URL is required in CI for strict migration/runtime identity separation."
+    )
 database_url = migration_database_url or os.environ.get("DATABASE_URL")
 if not database_url:
     raise ValueError(
@@ -101,7 +106,6 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
 
 
 

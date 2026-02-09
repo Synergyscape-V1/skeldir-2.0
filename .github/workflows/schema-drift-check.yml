@@ -1,11 +1,66 @@
-name: Schema Drift Detection (Disabled)
+name: Schema Drift Check
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'alembic/versions/**'
+      - 'db/schema/**'
+      - 'scripts/schema/**'
+      - '.github/workflows/schema-drift-check.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alembic/versions/**'
+      - 'db/schema/**'
+      - 'scripts/schema/**'
 
 jobs:
-  disabled:
+  drift-check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: skeldir_test
+          POSTGRES_USER: migration_owner
+          POSTGRES_PASSWORD: migration_owner
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
-      - name: Disabled
-        run: echo "Schema drift detection is disabled until migrations are operational."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install alembic sqlalchemy psycopg2-binary
+
+      - name: Enforce migrations-derived canonical schema
+        env:
+          CI: "true"
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@localhost:5432/skeldir_test
+        run: |
+          python scripts/schema/assert_canonical_schema.py \
+            --mode ci \
+            --artifacts-dir artifacts/schema_drift_check \
+            --diff-out artifacts/schema_drift_check/canonical_drift.diff
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-check
+          path: artifacts/schema_drift_check/
+          retention-days: 7

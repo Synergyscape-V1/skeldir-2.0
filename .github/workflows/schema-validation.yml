@@ -5,16 +5,22 @@ on:
     paths:
       - 'alembic/versions/**'
       - 'db/schema/**'
-      - 'scripts/validate-schema-compliance.py'
+      - 'scripts/schema/**'
+      - 'scripts/identity/**'
+      - 'scripts/r0/normalize_pg_dump.sh'
+      - '.github/workflows/schema-validation.yml'
   push:
     branches:
       - main
     paths:
       - 'alembic/versions/**'
       - 'db/schema/**'
+      - 'scripts/schema/**'
+      - 'scripts/identity/**'
+      - 'scripts/r0/normalize_pg_dump.sh'
 
 jobs:
-  validate-schema:
+  validate-schema-authority:
     runs-on: ubuntu-latest
     
     services:
@@ -22,8 +28,8 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_DB: skeldir_test
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: migration_owner
+          POSTGRES_PASSWORD: migration_owner
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -46,56 +52,82 @@ jobs:
           pip install --upgrade pip
           pip install alembic sqlalchemy psycopg2-binary pyyaml
       
-      - name: Apply migrations
+      - name: Create runtime role for identity split
         env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
+          PGPASSWORD: migration_owner
         run: |
-          echo "Applying Alembic migrations..."
-          alembic upgrade head
-          echo "Migrations applied successfully"
-      
-      - name: Run schema validator
+          psql -h localhost -U migration_owner -d skeldir_test -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user LOGIN PASSWORD 'app_user'; END IF; END \$\$;"
+
+      - name: Deterministic schema authority check (migrations -> dump -> diff)
         env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
+          CI: "true"
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@localhost:5432/skeldir_test
         run: |
-          echo "Running schema compliance validator..."
-          python scripts/validate-schema-compliance.py \
-            --output validation_results.json \
-            --verbose || true
-          
-          echo ""
-          echo "=== Validation Report ==="
-          cat validation_results.json | python -m json.tool
-      
+          python scripts/schema/assert_canonical_schema.py \
+            --mode ci \
+            --artifacts-dir artifacts/schema_authority \
+            --diff-out artifacts/schema_authority/canonical_drift.diff
+
+      - name: Runtime identity parity check
+        env:
+          DATABASE_URL: postgresql://app_user:app_user@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@localhost:5432/skeldir_test
+          EXPECTED_RUNTIME_DB_USER: app_user
+        run: |
+          python scripts/identity/assert_runtime_identity.py
+
+      - name: Negative control: runtime identity mismatch must fail
+        env:
+          DATABASE_URL: postgresql://app_user:app_user@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@localhost:5432/skeldir_test
+          EXPECTED_RUNTIME_DB_USER: migration_owner
+        run: |
+          set +e
+          python scripts/identity/assert_runtime_identity.py
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Negative control failed: runtime identity mismatch was not detected"
+            exit 1
+          fi
+          echo "Negative control passed: identity mismatch is non-vacuous"
+
+      - name: Negative control: mutated canonical must fail
+        env:
+          CI: "true"
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@localhost:5432/skeldir_test
+        run: |
+          cp db/schema/canonical_schema.sql /tmp/canonical_schema.negative.sql
+          printf "\n-- NEGATIVE CONTROL (must drift)\nCREATE TABLE public.__phase0_negative_control (id integer);\n" >> /tmp/canonical_schema.negative.sql
+          set +e
+          python scripts/schema/assert_canonical_schema.py \
+            --mode ci \
+            --no-migrate \
+            --canonical /tmp/canonical_schema.negative.sql \
+            --artifacts-dir artifacts/schema_authority_negative \
+            --diff-out artifacts/schema_authority_negative/canonical_drift.diff
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Negative control failed: drift was not detected"
+            exit 1
+          fi
+          echo "Negative control passed: drift detection is non-vacuous"
+
       - name: Upload validation report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: validation-report
-          path: validation_results.json
+          name: schema-authority-report
+          path: artifacts/schema_authority/
           retention-days: 7
-      
-      - name: Fail on BLOCKING divergences
-        env:
-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/skeldir_test
-        run: |
-          python scripts/validate-schema-compliance.py --output /tmp/validation.json || true
-          EXIT_CODE=$(python -c "import json; print(json.load(open('/tmp/validation.json'))['exit_code'])")
-          
-          if [ "$EXIT_CODE" -eq 1 ]; then
-            echo "FAIL: BLOCKING schema divergences detected"
-            echo "Review validation_results.json artifact for details"
-            exit 1
-          elif [ "$EXIT_CODE" -eq 2 ]; then
-            echo "WARN: HIGH severity divergences detected (non-blocking)"
-            echo "Review validation_results.json artifact for details"
-            exit 0
-          else
-            echo "PASS: Schema is compliant with canonical specification"
-            exit 0
-          fi
 
-
-
+      - name: Upload negative control report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-authority-negative-control
+          path: artifacts/schema_authority_negative/
+          retention-days: 7
 
 
