@@ -79,7 +79,7 @@ _ensure_celery_configured()
 _RUNTIME_IDENTITY_VERIFIED = False
 
 
-def _is_runtime_proof_test(node: pytest.Node) -> bool:
+def _is_runtime_proof_test(node) -> bool:
     keywords = node.keywords
     if "integration" in keywords or "e2e" in keywords:
         return True
