@@ -670,19 +670,8 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
-      - name: Phase 0 DB authority - required deterministic schema drift gate
+      - name: Apply migrations (admin identity)
         run: |
-          set -euo pipefail
-          mkdir -p artifacts/b07-p2/schema-authority
-          python scripts/schema/assert_canonical_schema.py \
-            --mode ci \
-            --dump-image postgres@sha256:468e1f126ca5af849799cda06ac9b03d8090aae9fa5163408b3e8da44fad0702 \
-            --artifacts-dir artifacts/b07-p2/schema-authority \
-            --diff-out artifacts/b07-p2/schema-authority/schema.diff
-
-      - name: Ensure DB is at head after schema authority gate
-        run: |
-          set -euo pipefail
           python -m alembic upgrade head
 
       - name: Grant runtime test privileges on migrated tables
@@ -981,6 +970,17 @@ jobs:
             echo "[B055] Alembic upgrade head"
             alembic upgrade head
           } | tee "$B055_EVIDENCE_DIR/LOGS/migrations.log"
+
+      - name: Phase 0 DB authority - required deterministic schema drift gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b055-schema-authority
+          python scripts/schema/assert_canonical_schema.py \
+            --mode ci \
+            --dump-image postgres@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21 \
+            --no-migrate \
+            --artifacts-dir artifacts/b055-schema-authority \
+            --diff-out artifacts/b055-schema-authority/schema.diff
 
       - name: Start Celery worker
         env:
