@@ -971,6 +971,17 @@ jobs:
             alembic upgrade head
           } | tee "$B055_EVIDENCE_DIR/LOGS/migrations.log"
 
+      - name: Phase 0 DB authority - required deterministic schema drift gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b055-schema-authority
+          python scripts/schema/assert_canonical_schema.py \
+            --mode ci \
+            --dump-image postgres@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21 \
+            --no-migrate \
+            --artifacts-dir artifacts/b055-schema-authority \
+            --diff-out artifacts/b055-schema-authority/schema.diff
+
       - name: Start Celery worker
         env:
           PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
