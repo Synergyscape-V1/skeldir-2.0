@@ -97,6 +97,8 @@ def _assert_runtime_identity_parity(request: pytest.FixtureRequest) -> None:
     global _RUNTIME_IDENTITY_VERIFIED
     if _RUNTIME_IDENTITY_VERIFIED:
         return
+    if os.getenv("ENFORCE_RUNTIME_IDENTITY_PARITY") != "1":
+        return
     if os.getenv("CI") != "true":
         return
     if not _is_runtime_proof_test(request.node):

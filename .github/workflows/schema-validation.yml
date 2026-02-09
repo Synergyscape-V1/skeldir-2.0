@@ -76,7 +76,7 @@ jobs:
         run: |
           python scripts/identity/assert_runtime_identity.py
 
-      - name: Negative control: runtime identity mismatch must fail
+      - name: "Negative control: runtime identity mismatch must fail"
         env:
           DATABASE_URL: postgresql://app_user:app_user@localhost:5432/skeldir_test
           MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@localhost:5432/skeldir_test
@@ -92,7 +92,7 @@ jobs:
           fi
           echo "Negative control passed: identity mismatch is non-vacuous"
 
-      - name: Negative control: mutated canonical must fail
+      - name: "Negative control: mutated canonical must fail"
         env:
           CI: "true"
           MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@localhost:5432/skeldir_test
@@ -129,5 +129,4 @@ jobs:
           name: schema-authority-negative-control
           path: artifacts/schema_authority_negative/
           retention-days: 7
-
 
