@@ -1,23 +1,11 @@
-name: Schema Drift Check
+name: Schema Drift Diagnostics (Manual)
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'alembic/versions/**'
-      - 'db/schema/**'
-      - 'scripts/schema/**'
-      - '.github/workflows/schema-drift-check.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'alembic/versions/**'
-      - 'db/schema/**'
-      - 'scripts/schema/**'
 
 jobs:
   drift-check:
+    name: Drift diagnostics (non-merge authority)
     runs-on: ubuntu-latest
     services:
       postgres:
