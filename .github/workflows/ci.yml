@@ -550,6 +550,7 @@ jobs:
           --health-retries 20
     env:
       CI: "true"
+      PHASE0_CONTRACT_BUNDLE_OF_RECORD: api-contracts/dist/openapi/v1/health.bundled.yaml
       DB_NAME: skeldir_b07_p2
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
@@ -577,11 +578,74 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
+
+      - name: Phase 0 API authority - Prism bundle-of-record preflight
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2
+          test -f "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}"
+          npx -y @stoplight/prism-cli@5.14.2 mock "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" -h 127.0.0.1 -p 4012 > artifacts/b07-p2/prism_preflight.log 2>&1 &
+          PRISM_PREFLIGHT_PID=$!
+          trap 'kill "${PRISM_PREFLIGHT_PID}" 2>/dev/null || true' EXIT
+          sleep 3
+          if ! kill -0 "${PRISM_PREFLIGHT_PID}" 2>/dev/null; then
+            echo "Prism preflight failed to start canonical bundle"
+            tail -n 200 artifacts/b07-p2/prism_preflight.log || true
+            exit 1
+          fi
+
+      - name: Phase 0 API authority - Prism mock startability smoke
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2
+          npx -y @stoplight/prism-cli@5.14.2 mock "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" -h 127.0.0.1 -p 4010 > artifacts/b07-p2/prism_mock.log 2>&1 &
+          PRISM_PID=$!
+          trap 'kill "${PRISM_PID}" 2>/dev/null || true' EXIT
+
+          READY=0
+          for i in $(seq 1 30); do
+            if ! kill -0 "${PRISM_PID}" 2>/dev/null; then
+              echo "Prism process exited unexpectedly"
+              tail -n 200 artifacts/b07-p2/prism_mock.log || true
+              exit 1
+            fi
+            CODE=$(curl -s -o artifacts/b07-p2/prism_health_ready_response.json -w "%{http_code}" http://127.0.0.1:4010/api/health/ready || true)
+            if [ "${CODE}" = "200" ]; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "${READY}" != "1" ]; then
+            echo "Prism mock smoke failed to return 200 for /api/health/ready"
+            tail -n 200 artifacts/b07-p2/prism_mock.log || true
+            exit 1
+          fi
+
+      - name: Phase 0 API non-vacuity - invalid OpenAPI must fail Prism startup
+        run: |
+          set -euo pipefail
+          cp "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" /tmp/phase0_invalid_openapi.yaml
+          printf "\ninvalid_yaml: [\n" >> /tmp/phase0_invalid_openapi.yaml
+          set +e
+          timeout 15s npx -y @stoplight/prism-cli@5.14.2 mock /tmp/phase0_invalid_openapi.yaml -h 127.0.0.1 -p 4011 > artifacts/b07-p2/prism_negative_control.log 2>&1
+          STATUS=$?
+          set -e
+          if [ "${STATUS}" -eq 0 ] || [ "${STATUS}" -eq 124 ]; then
+            echo "Negative control failed: Prism did not reject intentionally invalid OpenAPI"
+            cat artifacts/b07-p2/prism_negative_control.log || true
+            exit 1
+          fi
+          echo "Negative control passed: Prism rejected intentionally invalid OpenAPI"
 
       - name: Install PostgreSQL client
         run: |
