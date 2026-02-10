@@ -76,6 +76,7 @@ class LLMApiCall(Base):
     request_metadata_ref: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     response_metadata_ref: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     reasoning_trace_ref: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    prompt_fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         Text,
         nullable=False,

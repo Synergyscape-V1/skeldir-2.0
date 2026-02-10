@@ -19,6 +19,8 @@ Architecture:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -267,6 +269,7 @@ class BudgetPolicyEngine:
         input_tokens: int,
         output_tokens: int,
         correlation_id: Optional[str] = None,
+        prompt_fingerprint: Optional[str] = None,
     ) -> BudgetDecision:
         """
         Evaluate request and record decision in audit log.
@@ -301,6 +304,7 @@ class BudgetPolicyEngine:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             correlation_id=correlation_id,
+            prompt_fingerprint=prompt_fingerprint,
         )
 
         logger.info(
@@ -328,8 +332,24 @@ class BudgetPolicyEngine:
         input_tokens: int,
         output_tokens: int,
         correlation_id: Optional[str],
+        prompt_fingerprint: Optional[str],
     ) -> None:
         """Record decision in llm_call_audit table."""
+        if prompt_fingerprint:
+            fingerprint = prompt_fingerprint
+        else:
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    {
+                        "request_id": decision.request_id,
+                        "requested_model": requested_model,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
         # RAW_SQL_ALLOWLIST: budget policy audit insert
         await conn.execute(
             text("""
@@ -338,13 +358,15 @@ class BudgetPolicyEngine:
                     requested_model, resolved_model,
                     estimated_cost_cents, cap_cents,
                     decision, reason,
-                    input_tokens, output_tokens
+                    input_tokens, output_tokens,
+                    prompt_fingerprint
                 ) VALUES (
                     :tenant_id, :user_id, :request_id, :correlation_id,
                     :requested_model, :resolved_model,
                     :estimated_cost_cents, :cap_cents,
                     :decision, :reason,
-                    :input_tokens, :output_tokens
+                    :input_tokens, :output_tokens,
+                    :prompt_fingerprint
                 )
             """),
             {
@@ -360,5 +382,6 @@ class BudgetPolicyEngine:
                 "reason": decision.reason,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
+                "prompt_fingerprint": fingerprint,
             },
         )

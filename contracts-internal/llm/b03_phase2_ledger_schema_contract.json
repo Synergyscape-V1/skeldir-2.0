@@ -1,0 +1,62 @@
+{
+  "contract_id": "b03.phase2.ledger_schema_contract",
+  "contract_version": "1.0.0",
+  "phase": "B0.3",
+  "policy": {
+    "prompt_persistence_default": "raw_prompt_text_not_required",
+    "fingerprint_or_hash_required": true,
+    "notes": [
+      "Default storage is fingerprint/hash plus minimal metadata references.",
+      "Per-tenant encrypted prompt-text opt-in may be added later without breaking this contract."
+    ]
+  },
+  "tables": [
+    {
+      "schema": "public",
+      "table": "llm_api_calls",
+      "tenant_scoped": true,
+      "append_only": false,
+      "required_columns": [
+        { "name": "tenant_id", "type": "uuid", "nullable": false },
+        { "name": "user_id", "type": "uuid", "nullable": false },
+        { "name": "created_at", "type": "timestamptz", "nullable": false },
+        { "name": "endpoint", "type": "text", "nullable": false },
+        { "name": "request_id", "type": "text", "nullable": false },
+        { "name": "provider", "type": "text", "nullable": false },
+        { "name": "model", "type": "text", "nullable": false },
+        { "name": "input_tokens", "type": "integer", "nullable": false },
+        { "name": "output_tokens", "type": "integer", "nullable": false },
+        { "name": "cost_cents", "type": "integer", "nullable": false },
+        { "name": "latency_ms", "type": "integer", "nullable": false },
+        { "name": "status", "type": "text", "nullable": false },
+        { "name": "prompt_fingerprint", "type": "text", "nullable": false },
+        { "name": "cache_key", "type": "text", "nullable": true }
+      ],
+      "required_uniques": [
+        ["tenant_id", "request_id", "endpoint"]
+      ]
+    },
+    {
+      "schema": "public",
+      "table": "llm_call_audit",
+      "tenant_scoped": true,
+      "append_only": true,
+      "required_columns": [
+        { "name": "tenant_id", "type": "uuid", "nullable": false },
+        { "name": "user_id", "type": "uuid", "nullable": false },
+        { "name": "created_at", "type": "timestamptz", "nullable": false },
+        { "name": "request_id", "type": "character varying", "nullable": false },
+        { "name": "requested_model", "type": "character varying", "nullable": false },
+        { "name": "resolved_model", "type": "character varying", "nullable": false },
+        { "name": "estimated_cost_cents", "type": "integer", "nullable": false },
+        { "name": "cap_cents", "type": "integer", "nullable": false },
+        { "name": "decision", "type": "character varying", "nullable": false },
+        { "name": "reason", "type": "text", "nullable": false },
+        { "name": "prompt_fingerprint", "type": "text", "nullable": false },
+        { "name": "input_tokens", "type": "integer", "nullable": true },
+        { "name": "output_tokens", "type": "integer", "nullable": true }
+      ],
+      "required_uniques": []
+    }
+  ]
+}

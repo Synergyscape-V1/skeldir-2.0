@@ -1,0 +1,26 @@
+{
+  "contract_id": "b03.phase2.ledger_schema_contract",
+  "contract_version": "1.0.0",
+  "contract_check": {
+    "failures": []
+  },
+  "negative_control": {
+    "negative_control_passed": true,
+    "injected_column": "__negative_control_missing_column__",
+    "reason": "tampered contract failed against real migrated schema as expected",
+    "result": {
+      "failures": [
+        {
+          "schema": "public",
+          "table": "llm_api_calls",
+          "failures": [
+            {
+              "type": "missing_column",
+              "column": "__negative_control_missing_column__"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
