@@ -4,10 +4,10 @@ Date: 2026-02-10
 Phase: B0.3
 Execution status: PASS (`2026-02-10T21:50:11Z`)
 Provenance:
-- Commit: `188a0cca2`
+- Commit: `ce6cd1c05`
 - Branch: `b03-phase2-runtime-proof`
 - PR: `https://github.com/Muk223/skeldir-2.0/pull/71`
-- CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21882485535` (workflow_dispatch, SUCCESS)
+- CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21884348957` (pull_request, SUCCESS)
 
 ## Scope
 
@@ -27,8 +27,9 @@ This evidence pack captures EG2.1-EG2.5 for schema authority closure:
 - Branch-protection CI probe: `scripts/ci/enforce_required_status_checks.py`
 - Summary (local ephemeral runtime proof): `backend/validation/evidence/database/phase2_b03_local_ephemeral_20260210/phase2_b03_summary.json`
 - CI confirmations:
-  - `Phase Gates (B0.3)` job `63168716042`: PASS
-  - `Phase Chain (B0.4 target)` job `63168715837`: PASS
+  - `Governance Guardrails` job `63175246212`: PASS
+  - `Phase Gates (B0.3)` job `63175274639`: PASS
+  - `Phase Chain (B0.4 target)` job `63175274510`: PASS
 
 ## Artifacts
 
