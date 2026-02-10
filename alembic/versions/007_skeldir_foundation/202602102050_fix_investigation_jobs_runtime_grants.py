@@ -25,12 +25,18 @@ def upgrade() -> None:
     op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE tenants TO app_rw")
     op.execute("GRANT SELECT ON TABLE tenants TO app_ro")
     op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE tenants TO app_user")
+    op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE channel_taxonomy TO app_rw")
+    op.execute("GRANT SELECT ON TABLE channel_taxonomy TO app_ro")
+    op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE channel_taxonomy TO app_user")
 
 
 def downgrade() -> None:
     op.execute("REVOKE ALL ON TABLE tenants FROM app_user")
     op.execute("REVOKE ALL ON TABLE tenants FROM app_ro")
     op.execute("REVOKE ALL ON TABLE tenants FROM app_rw")
+    op.execute("REVOKE ALL ON TABLE channel_taxonomy FROM app_user")
+    op.execute("REVOKE ALL ON TABLE channel_taxonomy FROM app_ro")
+    op.execute("REVOKE ALL ON TABLE channel_taxonomy FROM app_rw")
     op.execute("REVOKE ALL ON TABLE investigation_jobs FROM app_user")
     op.execute("REVOKE ALL ON TABLE investigation_jobs FROM app_ro")
     op.execute("REVOKE ALL ON TABLE investigation_jobs FROM app_rw")
