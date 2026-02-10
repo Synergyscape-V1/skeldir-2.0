@@ -21,9 +21,16 @@ def upgrade() -> None:
     op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE investigation_jobs TO app_rw")
     op.execute("GRANT SELECT ON TABLE investigation_jobs TO app_ro")
     op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE investigation_jobs TO app_user")
+    # tenant builders and contract guards seed test tenants under runtime identity.
+    op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE tenants TO app_rw")
+    op.execute("GRANT SELECT ON TABLE tenants TO app_ro")
+    op.execute("GRANT SELECT, INSERT, UPDATE ON TABLE tenants TO app_user")
 
 
 def downgrade() -> None:
+    op.execute("REVOKE ALL ON TABLE tenants FROM app_user")
+    op.execute("REVOKE ALL ON TABLE tenants FROM app_ro")
+    op.execute("REVOKE ALL ON TABLE tenants FROM app_rw")
     op.execute("REVOKE ALL ON TABLE investigation_jobs FROM app_user")
     op.execute("REVOKE ALL ON TABLE investigation_jobs FROM app_ro")
     op.execute("REVOKE ALL ON TABLE investigation_jobs FROM app_rw")
