@@ -11,8 +11,72 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get system health status */
+        /**
+         * Get system health status
+         * @description Returns overall system health and status of individual services.
+         *     No authentication required for basic health check.
+         */
         get: operations["getHealthStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed system health
+         * @description Returns detailed health information including metrics (requires authentication)
+         */
+        get: operations["getDetailedHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kubernetes readiness probe
+         * @description Indicates if the service is ready to accept traffic
+         */
+        get: operations["readinessProbe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kubernetes liveness probe
+         * @description Indicates if the service is alive and should not be restarted
+         */
+        get: operations["livenessProbe"];
         put?: never;
         post?: never;
         delete?: never;
@@ -25,6 +89,82 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        HealthResponse: {
+            /**
+             * @description Overall system health status
+             * @enum {string}
+             */
+            status: "healthy" | "degraded" | "unhealthy";
+            /**
+             * Format: date-time
+             * @description Health check timestamp
+             */
+            timestamp: string;
+            /**
+             * @description API version
+             * @example 2.0.0
+             */
+            version?: string;
+            /** @description Individual service statuses */
+            services: {
+                /** @enum {string} */
+                database?: "up" | "down" | "degraded";
+                /** @enum {string} */
+                api?: "up" | "down" | "degraded";
+                /** @enum {string} */
+                cache?: "up" | "down" | "degraded";
+                /** @enum {string} */
+                queue?: "up" | "down" | "degraded";
+            };
+            /** @description Service uptime in seconds */
+            uptime_seconds?: number;
+        };
+        DetailedHealthResponse: {
+            /**
+             * @description Overall system health status
+             * @enum {string}
+             */
+            status: "healthy" | "degraded" | "unhealthy";
+            /**
+             * Format: date-time
+             * @description Health check timestamp
+             */
+            timestamp: string;
+            /**
+             * @description API version
+             * @example 2.0.0
+             */
+            version?: string;
+            /** @description Individual service statuses */
+            services: {
+                /** @enum {string} */
+                database?: "up" | "down" | "degraded";
+                /** @enum {string} */
+                api?: "up" | "down" | "degraded";
+                /** @enum {string} */
+                cache?: "up" | "down" | "degraded";
+                /** @enum {string} */
+                queue?: "up" | "down" | "degraded";
+            };
+            /** @description Service uptime in seconds */
+            uptime_seconds?: number;
+        } & {
+            metrics?: {
+                requests_per_minute?: number;
+                /** Format: float */
+                average_response_ms?: number;
+                /** Format: float */
+                error_rate?: number;
+                active_connections?: number;
+            };
+            database?: {
+                pool_size?: number;
+                active_connections?: number;
+                /** Format: float */
+                query_latency_ms?: number;
+            };
+        };
+        /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
         ProblemDetails: {
             /**
              * Format: uri
@@ -50,7 +190,7 @@ export interface components {
             /**
              * Format: uri
              * @description URI reference identifying this specific occurrence
-             * @example /api/attribution/revenue/realtime
+             * @example https://api.skeldir.com/api/attribution/revenue/realtime
              */
             instance: string;
             /**
@@ -77,21 +217,132 @@ export interface components {
         };
     };
     responses: {
-        /** @description Internal server error */
-        ServerError: {
+        /** @description Service is unavailable */
+        ServiceUnavailable: {
             headers: {
                 /** @description Request correlation ID for distributed tracing */
                 "X-Correlation-ID"?: string;
                 [name: string]: unknown;
             };
             content: {
-                "application/problem+json": components["schemas"]["ProblemDetails"];
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+        /** @description Unauthorized - invalid or missing authentication */
+        UnauthorizedError: {
+            headers: {
+                /** @description Request correlation ID for distributed tracing */
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
             };
         };
     };
     parameters: {
-        /** @description Unique request correlation ID for tracking */
+        /** @description Unique request correlation ID for distributed tracing */
         CorrelationId: string;
+        /** @description Bearer token for authentication (format - Bearer <token>) */
+        Authorization: string;
     };
     requestBodies: never;
     headers: never;
@@ -103,35 +354,458 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Unique request correlation ID for tracking */
-                "X-Correlation-ID": components["parameters"]["CorrelationId"];
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Health status */
+            /** @description System is healthy */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "status": "healthy",
+                     *       "timestamp": "2025-11-26T14:30:00Z",
+                     *       "version": "2.0.0",
+                     *       "services": {
+                     *         "database": "up",
+                     *         "api": "up",
+                     *         "cache": "up",
+                     *         "queue": "up"
+                     *       },
+                     *       "uptime_seconds": 86400
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @description Overall system health status
+                         * @enum {string}
+                         */
+                        status: "healthy" | "degraded" | "unhealthy";
+                        /**
+                         * Format: date-time
+                         * @description Health check timestamp
+                         */
+                        timestamp: string;
+                        /**
+                         * @description API version
+                         * @example 2.0.0
+                         */
+                        version?: string;
+                        /** @description Individual service statuses */
+                        services: {
+                            /** @enum {string} */
+                            database?: "up" | "down" | "degraded";
+                            /** @enum {string} */
+                            api?: "up" | "down" | "degraded";
+                            /** @enum {string} */
+                            cache?: "up" | "down" | "degraded";
+                            /** @enum {string} */
+                            queue?: "up" | "down" | "degraded";
+                        };
+                        /** @description Service uptime in seconds */
+                        uptime_seconds?: number;
+                    };
+                };
+            };
+            /** @description Service is unavailable */
+            503: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getDetailedHealth: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detailed health information */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "status": "healthy",
+                     *       "timestamp": "2025-11-26T14:30:00Z",
+                     *       "version": "2.0.0",
+                     *       "services": {
+                     *         "database": "up",
+                     *         "api": "up",
+                     *         "cache": "up",
+                     *         "queue": "up"
+                     *       },
+                     *       "uptime_seconds": 86400,
+                     *       "metrics": {
+                     *         "requests_per_minute": 1200,
+                     *         "average_response_ms": 180.5,
+                     *         "error_rate": 0.002,
+                     *         "active_connections": 24
+                     *       },
+                     *       "database": {
+                     *         "pool_size": 50,
+                     *         "active_connections": 12,
+                     *         "query_latency_ms": 12.3
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @description Overall system health status
+                         * @enum {string}
+                         */
+                        status: "healthy" | "degraded" | "unhealthy";
+                        /**
+                         * Format: date-time
+                         * @description Health check timestamp
+                         */
+                        timestamp: string;
+                        /**
+                         * @description API version
+                         * @example 2.0.0
+                         */
+                        version?: string;
+                        /** @description Individual service statuses */
+                        services: {
+                            /** @enum {string} */
+                            database?: "up" | "down" | "degraded";
+                            /** @enum {string} */
+                            api?: "up" | "down" | "degraded";
+                            /** @enum {string} */
+                            cache?: "up" | "down" | "degraded";
+                            /** @enum {string} */
+                            queue?: "up" | "down" | "degraded";
+                        };
+                        /** @description Service uptime in seconds */
+                        uptime_seconds?: number;
+                    } & {
+                        metrics?: {
+                            requests_per_minute?: number;
+                            /** Format: float */
+                            average_response_ms?: number;
+                            /** Format: float */
+                            error_rate?: number;
+                            active_connections?: number;
+                        };
+                        database?: {
+                            pool_size?: number;
+                            active_connections?: number;
+                            /** Format: float */
+                            query_latency_ms?: number;
+                        };
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    readinessProbe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service is ready */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "ready": true
+                     *     }
+                     */
                     "application/json": {
-                        /** @enum {string} */
-                        status: "healthy" | "degraded" | "unhealthy";
-                        /** Format: date-time */
-                        timestamp: string;
-                        services: {
-                            /** @enum {string} */
-                            database?: "up" | "down";
-                            /** @enum {string} */
-                            api?: "up" | "down";
-                        };
+                        /** @example true */
+                        ready?: boolean;
                     };
                 };
             };
-            500: components["responses"]["ServerError"];
+            /** @description Service is unavailable */
+            503: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    livenessProbe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service is alive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "alive": true
+                     *     }
+                     */
+                    "application/json": {
+                        /** @example true */
+                        alive?: boolean;
+                    };
+                };
+            };
+            /** @description Service is unavailable */
+            503: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
         };
     };
 }

@@ -11,7 +11,7 @@ Contract Operations:
 All routes use generated Pydantic models from backend/app/schemas/auth.py
 """
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header
 from uuid import UUID, uuid4
 from typing import Annotated
 
@@ -21,9 +21,9 @@ from app.schemas.auth import (
     LoginResponse,
     RefreshRequest,
     RefreshResponse,
-    LogoutResponse,
     User,
 )
+from app.security.auth import AuthContext, get_auth_context
 
 router = APIRouter()
 
@@ -77,7 +77,8 @@ async def login(
 )
 async def refresh_token(
     request: RefreshRequest,
-    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")]
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    _: Annotated[AuthContext, Depends(get_auth_context)],
 ):
     """
     Refresh access token using refresh token.
@@ -101,14 +102,14 @@ async def refresh_token(
 
 @router.post(
     "/logout",
-    response_model=LogoutResponse,
     status_code=200,
     operation_id="logout",
     summary="Logout user and invalidate tokens",
     description="Invalidate access and refresh tokens, ending the user session"
 )
 async def logout(
-    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")]
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
 ):
     """
     Logout user and invalidate tokens.
@@ -122,8 +123,25 @@ async def logout(
     # Sample implementation - always succeeds for testing
     # Production: blacklist tokens, mark session ended in database
     
-    return LogoutResponse(
-        message="Logout successful"
-    )
+    return {
+        "success": True,
+        "correlation_id": str(x_correlation_id),
+        "message": f"Session terminated for {auth_context.user_id}",
+    }
 
 
+@router.get(
+    "/verify",
+    status_code=200,
+    operation_id="verifyToken",
+    summary="Verify token validity",
+    description="Check if the current access token is valid",
+)
+async def verify_token(
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+):
+    return {
+        "valid": True,
+        "user_id": str(auth_context.user_id),
+    }

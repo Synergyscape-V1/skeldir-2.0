@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/webhooks/woocommerce/order.created": {
+    "/api/webhooks/woocommerce/order/created": {
         parameters: {
             query?: never;
             header?: never;
@@ -13,14 +13,18 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["wooOrderCreated"];
+        /**
+         * WooCommerce order created webhook
+         * @description Triggered when a new order is created in WooCommerce
+         */
+        post: operations["woocommerceOrderCreated"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/webhooks/woocommerce/order.updated": {
+    "/api/webhooks/woocommerce/order/updated": {
         parameters: {
             query?: never;
             header?: never;
@@ -29,7 +33,51 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["wooOrderUpdated"];
+        /**
+         * WooCommerce order updated webhook
+         * @description Triggered when an order is updated in WooCommerce
+         */
+        post: operations["woocommerceOrderUpdated"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/woocommerce/order_completed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * WooCommerce order completed webhook
+         * @description Triggered when an order is marked as completed
+         */
+        post: operations["woocommerceOrderCompleted"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/woocommerce/order/refunded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * WooCommerce order refunded webhook
+         * @description Triggered when an order refund is initiated
+         */
+        post: operations["woocommerceOrderRefunded"];
         delete?: never;
         options?: never;
         head?: never;
@@ -37,109 +85,1045 @@ export interface paths {
         trace?: never;
     };
 }
-
 export type webhooks = Record<string, never>;
-
 export interface components {
     schemas: {
-        WooOrder: {
+        WooCommerceOrder: {
+            /** @description WooCommerce order ID */
             id: number;
+            /** @description Unique order key */
             order_key: string;
-            status: "pending" | "processing" | "on-hold" | "completed" | "cancelled" | "refunded" | "failed";
+            /** @description Order number */
+            number?: string;
+            /**
+             * @description Order status
+             * @enum {string}
+             */
+            status?: "pending" | "processing" | "on-hold" | "completed" | "cancelled" | "refunded" | "failed";
+            /** @description Order total as string */
             total: string;
-            currency: string;
+            /** @description Order subtotal */
+            subtotal?: string;
+            /** @description Total tax amount */
+            total_tax?: string;
+            /**
+             * @description Currency code
+             * @example USD
+             */
+            currency?: string;
+            /** Format: date-time */
             date_created: string;
-            date_modified: string;
+            /** Format: date-time */
+            date_modified?: string;
+            /** Format: date-time */
+            date_completed?: string;
+            /** Format: date-time */
+            date_paid?: string;
+            /** @description Payment method ID */
+            payment_method?: string;
+            /** @description Payment method display name */
+            payment_method_title?: string;
+            /** @description Customer ID (0 for guests) */
             customer_id?: number;
             billing?: {
-                email?: string;
                 first_name?: string;
                 last_name?: string;
+                /** Format: email */
+                email?: string;
             };
-            meta_data?: {
-                key?: string;
-                value?: string;
-            }[];
             line_items?: {
                 id?: number;
                 name?: string;
                 quantity?: number;
                 total?: string;
             }[];
+            /** @description Order metadata including attribution data */
+            meta_data?: {
+                id?: number;
+                key?: string;
+                value?: string;
+            }[];
+            /** @description Refund entries for the order */
+            refunds?: {
+                id?: number;
+                amount?: string;
+                reason?: string;
+            }[];
         };
         SuccessResponse: {
             success: boolean;
+            /** Format: uuid */
+            correlation_id: string;
             message?: string;
         };
+        /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
+        ProblemDetails: {
+            /**
+             * Format: uri
+             * @description URI reference identifying the problem type
+             * @example https://api.skeldir.com/problems/authentication-failed
+             */
+            type: string;
+            /**
+             * @description Short, human-readable summary of the problem
+             * @example Authentication Failed
+             */
+            title: string;
+            /**
+             * @description HTTP status code
+             * @example 401
+             */
+            status: number;
+            /**
+             * @description Human-readable explanation specific to this occurrence
+             * @example The provided JWT token has expired. Please refresh your authentication token.
+             */
+            detail: string;
+            /**
+             * Format: uri
+             * @description URI reference identifying this specific occurrence
+             * @example https://api.skeldir.com/api/attribution/revenue/realtime
+             */
+            instance: string;
+            /**
+             * Format: uuid
+             * @description Request correlation ID for distributed tracing
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            correlation_id: string;
+            /**
+             * Format: date-time
+             * @description ISO 8601 timestamp when the error occurred
+             * @example 2025-11-11T14:32:00Z
+             */
+            timestamp: string;
+            /** @description Optional array of specific validation errors */
+            errors?: {
+                /** @example email */
+                field?: string;
+                /** @example Invalid email format */
+                message?: string;
+                /** @example INVALID_FORMAT */
+                code?: string;
+            }[];
+        };
     };
-    responses: never;
+    responses: {
+        /** @description Webhook processed successfully */
+        WebhookAccepted: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "success": true,
+                 *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                 *       "message": "Webhook received"
+                 *     }
+                 */
+                "application/json": {
+                    success: boolean;
+                    /** Format: uuid */
+                    correlation_id: string;
+                    message?: string;
+                };
+            };
+        };
+        /** @description Unauthorized - invalid or missing authentication */
+        UnauthorizedError: {
+            headers: {
+                /** @description Request correlation ID for distributed tracing */
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+        /** @description Internal server error */
+        ServerError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
     pathItems: never;
 }
-
+export type $defs = Record<string, never>;
 export interface operations {
-    wooOrderCreated: {
+    woocommerceOrderCreated: {
         parameters: {
             query?: never;
-            header: {
-                "X-WC-Webhook-Signature": string;
-                "X-WC-Webhook-Topic": "order.created";
-                "X-WC-Webhook-Source": string;
+            header?: {
+                /** @description HMAC-SHA256 signature for webhook verification */
+                "X-WC-Webhook-Signature"?: string;
+                /** @description Webhook topic */
+                "X-WC-Webhook-Topic"?: "order.created";
+                "X-WC-Webhook-Resource"?: "order";
             };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WooOrder"];
+                /**
+                 * @example {
+                 *       "id": 12345,
+                 *       "order_key": "wc_order_abc123",
+                 *       "number": "1001",
+                 *       "status": "processing",
+                 *       "total": "199.99",
+                 *       "currency": "USD",
+                 *       "date_created": "2025-11-26T14:30:00Z",
+                 *       "meta_data": [
+                 *         {
+                 *           "id": 1,
+                 *           "key": "skeldir_session_id",
+                 *           "value": "sess_abc123"
+                 *         },
+                 *         {
+                 *           "id": 2,
+                 *           "key": "utm_source",
+                 *           "value": "google"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    /** @description WooCommerce order ID */
+                    id: number;
+                    /** @description Unique order key */
+                    order_key: string;
+                    /** @description Order number */
+                    number?: string;
+                    /**
+                     * @description Order status
+                     * @enum {string}
+                     */
+                    status?: "pending" | "processing" | "on-hold" | "completed" | "cancelled" | "refunded" | "failed";
+                    /** @description Order total as string */
+                    total: string;
+                    /** @description Order subtotal */
+                    subtotal?: string;
+                    /** @description Total tax amount */
+                    total_tax?: string;
+                    /**
+                     * @description Currency code
+                     * @example USD
+                     */
+                    currency?: string;
+                    /** Format: date-time */
+                    date_created: string;
+                    /** Format: date-time */
+                    date_modified?: string;
+                    /** Format: date-time */
+                    date_completed?: string;
+                    /** Format: date-time */
+                    date_paid?: string;
+                    /** @description Payment method ID */
+                    payment_method?: string;
+                    /** @description Payment method display name */
+                    payment_method_title?: string;
+                    /** @description Customer ID (0 for guests) */
+                    customer_id?: number;
+                    billing?: {
+                        first_name?: string;
+                        last_name?: string;
+                        /** Format: email */
+                        email?: string;
+                    };
+                    line_items?: {
+                        id?: number;
+                        name?: string;
+                        quantity?: number;
+                        total?: string;
+                    }[];
+                    /** @description Order metadata including attribution data */
+                    meta_data?: {
+                        id?: number;
+                        key?: string;
+                        value?: string;
+                    }[];
+                    /** @description Refund entries for the order */
+                    refunds?: {
+                        id?: number;
+                        amount?: string;
+                        reason?: string;
+                    }[];
+                };
             };
         };
         responses: {
+            /** @description Webhook processed successfully */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
                 };
             };
+            /** @description Unauthorized - invalid or missing authentication */
             401: {
                 headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
-    wooOrderUpdated: {
+    woocommerceOrderUpdated: {
         parameters: {
             query?: never;
-            header: {
-                "X-WC-Webhook-Signature": string;
-                "X-WC-Webhook-Topic": "order.updated";
-                "X-WC-Webhook-Source": string;
+            header?: {
+                "X-WC-Webhook-Signature"?: string;
+                "X-WC-Webhook-Topic"?: "order.updated";
+                "X-WC-Webhook-Resource"?: "order";
             };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WooOrder"];
+                /**
+                 * @example {
+                 *       "id": 12345,
+                 *       "order_key": "wc_order_update_12345",
+                 *       "date_created": "2025-11-26T14:30:00Z",
+                 *       "status": "processing",
+                 *       "total": "199.99",
+                 *       "currency": "USD",
+                 *       "meta_data": [
+                 *         {
+                 *           "id": 1,
+                 *           "key": "skeldir_session_id",
+                 *           "value": "sess_update123"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    /** @description WooCommerce order ID */
+                    id: number;
+                    /** @description Unique order key */
+                    order_key: string;
+                    /** @description Order number */
+                    number?: string;
+                    /**
+                     * @description Order status
+                     * @enum {string}
+                     */
+                    status?: "pending" | "processing" | "on-hold" | "completed" | "cancelled" | "refunded" | "failed";
+                    /** @description Order total as string */
+                    total: string;
+                    /** @description Order subtotal */
+                    subtotal?: string;
+                    /** @description Total tax amount */
+                    total_tax?: string;
+                    /**
+                     * @description Currency code
+                     * @example USD
+                     */
+                    currency?: string;
+                    /** Format: date-time */
+                    date_created: string;
+                    /** Format: date-time */
+                    date_modified?: string;
+                    /** Format: date-time */
+                    date_completed?: string;
+                    /** Format: date-time */
+                    date_paid?: string;
+                    /** @description Payment method ID */
+                    payment_method?: string;
+                    /** @description Payment method display name */
+                    payment_method_title?: string;
+                    /** @description Customer ID (0 for guests) */
+                    customer_id?: number;
+                    billing?: {
+                        first_name?: string;
+                        last_name?: string;
+                        /** Format: email */
+                        email?: string;
+                    };
+                    line_items?: {
+                        id?: number;
+                        name?: string;
+                        quantity?: number;
+                        total?: string;
+                    }[];
+                    /** @description Order metadata including attribution data */
+                    meta_data?: {
+                        id?: number;
+                        key?: string;
+                        value?: string;
+                    }[];
+                    /** @description Refund entries for the order */
+                    refunds?: {
+                        id?: number;
+                        amount?: string;
+                        reason?: string;
+                    }[];
+                };
             };
         };
         responses: {
+            /** @description Webhook processed successfully */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    woocommerceOrderCompleted: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-WC-Webhook-Signature"?: string;
+                "X-WC-Webhook-Topic"?: "order.completed";
+                "X-WC-Webhook-Resource"?: "order";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description WooCommerce order ID */
+                    id: number;
+                    /** @description Unique order key */
+                    order_key: string;
+                    /** @description Order number */
+                    number?: string;
+                    /**
+                     * @description Order status
+                     * @enum {string}
+                     */
+                    status?: "pending" | "processing" | "on-hold" | "completed" | "cancelled" | "refunded" | "failed";
+                    /** @description Order total as string */
+                    total: string;
+                    /** @description Order subtotal */
+                    subtotal?: string;
+                    /** @description Total tax amount */
+                    total_tax?: string;
+                    /**
+                     * @description Currency code
+                     * @example USD
+                     */
+                    currency?: string;
+                    /** Format: date-time */
+                    date_created: string;
+                    /** Format: date-time */
+                    date_modified?: string;
+                    /** Format: date-time */
+                    date_completed?: string;
+                    /** Format: date-time */
+                    date_paid?: string;
+                    /** @description Payment method ID */
+                    payment_method?: string;
+                    /** @description Payment method display name */
+                    payment_method_title?: string;
+                    /** @description Customer ID (0 for guests) */
+                    customer_id?: number;
+                    billing?: {
+                        first_name?: string;
+                        last_name?: string;
+                        /** Format: email */
+                        email?: string;
+                    };
+                    line_items?: {
+                        id?: number;
+                        name?: string;
+                        quantity?: number;
+                        total?: string;
+                    }[];
+                    /** @description Order metadata including attribution data */
+                    meta_data?: {
+                        id?: number;
+                        key?: string;
+                        value?: string;
+                    }[];
+                    /** @description Refund entries for the order */
+                    refunds?: {
+                        id?: number;
+                        amount?: string;
+                        reason?: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook processed successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    woocommerceOrderRefunded: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-WC-Webhook-Signature"?: string;
+                "X-WC-Webhook-Topic"?: "order.refunded";
+                "X-WC-Webhook-Resource"?: "order";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "id": 12345,
+                 *       "order_key": "wc_order_ref_12345",
+                 *       "date_created": "2025-11-26T14:30:00Z",
+                 *       "status": "refunded",
+                 *       "total": "199.99",
+                 *       "currency": "USD",
+                 *       "refunds": [
+                 *         {
+                 *           "id": 9876,
+                 *           "amount": "199.99",
+                 *           "reason": "customer_request"
+                 *         }
+                 *       ],
+                 *       "meta_data": [
+                 *         {
+                 *           "id": 1,
+                 *           "key": "skeldir_session_id",
+                 *           "value": "sess_refund123"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    /** @description WooCommerce order ID */
+                    id: number;
+                    /** @description Unique order key */
+                    order_key: string;
+                    /** @description Order number */
+                    number?: string;
+                    /**
+                     * @description Order status
+                     * @enum {string}
+                     */
+                    status?: "pending" | "processing" | "on-hold" | "completed" | "cancelled" | "refunded" | "failed";
+                    /** @description Order total as string */
+                    total: string;
+                    /** @description Order subtotal */
+                    subtotal?: string;
+                    /** @description Total tax amount */
+                    total_tax?: string;
+                    /**
+                     * @description Currency code
+                     * @example USD
+                     */
+                    currency?: string;
+                    /** Format: date-time */
+                    date_created: string;
+                    /** Format: date-time */
+                    date_modified?: string;
+                    /** Format: date-time */
+                    date_completed?: string;
+                    /** Format: date-time */
+                    date_paid?: string;
+                    /** @description Payment method ID */
+                    payment_method?: string;
+                    /** @description Payment method display name */
+                    payment_method_title?: string;
+                    /** @description Customer ID (0 for guests) */
+                    customer_id?: number;
+                    billing?: {
+                        first_name?: string;
+                        last_name?: string;
+                        /** Format: email */
+                        email?: string;
+                    };
+                    line_items?: {
+                        id?: number;
+                        name?: string;
+                        quantity?: number;
+                        total?: string;
+                    }[];
+                    /** @description Order metadata including attribution data */
+                    meta_data?: {
+                        id?: number;
+                        key?: string;
+                        value?: string;
+                    }[];
+                    /** @description Refund entries for the order */
+                    refunds?: {
+                        id?: number;
+                        amount?: string;
+                        reason?: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook processed successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
                 };
             };
         };
     };
 }
-
-export type $defs = Record<string, never>;

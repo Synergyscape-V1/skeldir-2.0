@@ -11,10 +11,54 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get reconciliation status for all platforms */
+        /**
+         * Get reconciliation status for all platforms
+         * @description Returns the current connection and sync status for all integrated platforms.
+         *     Includes verification status for payment providers.
+         */
         get: operations["getReconciliationStatus"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reconciliation/platform/{platform_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed status for a specific platform
+         * @description Returns detailed reconciliation information for a single platform
+         */
+        get: operations["getPlatformReconciliationStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reconciliation/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger manual sync for platforms
+         * @description Initiates a manual synchronization for specified platforms
+         */
+        post: operations["triggerSync"];
         delete?: never;
         options?: never;
         head?: never;
@@ -25,6 +69,81 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ReconciliationStatusResponse: {
+            platforms: {
+                /**
+                 * @description Platform identifier
+                 * @enum {string}
+                 */
+                platform_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Shopify" | "WooCommerce" | "Stripe" | "PayPal";
+                /**
+                 * @description Current connection status
+                 * @enum {string}
+                 */
+                connection_status: "verified" | "partial" | "pending" | "failed" | "disconnected";
+                /**
+                 * Format: date-time
+                 * @description Timestamp of last successful sync
+                 */
+                last_sync: string;
+                /** @description Total events processed from this platform */
+                events_processed?: number;
+                /**
+                 * Format: float
+                 * @description Total verified revenue from this platform
+                 */
+                revenue_verified?: number;
+                /** @description Error description if connection is not fully verified */
+                error_message?: string;
+                /**
+                 * Format: date-time
+                 * @description When the next automatic sync is scheduled
+                 */
+                next_scheduled_sync?: string;
+            }[];
+            /**
+             * @description Aggregate status across all platforms
+             * @enum {string}
+             */
+            overall_status: "verified" | "partial" | "pending" | "failed";
+            /**
+             * Format: date-time
+             * @description Timestamp of last complete sync across all platforms
+             */
+            last_full_sync?: string;
+        };
+        PlatformStatus: {
+            /**
+             * @description Platform identifier
+             * @enum {string}
+             */
+            platform_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Shopify" | "WooCommerce" | "Stripe" | "PayPal";
+            /**
+             * @description Current connection status
+             * @enum {string}
+             */
+            connection_status: "verified" | "partial" | "pending" | "failed" | "disconnected";
+            /**
+             * Format: date-time
+             * @description Timestamp of last successful sync
+             */
+            last_sync: string;
+            /** @description Total events processed from this platform */
+            events_processed?: number;
+            /**
+             * Format: float
+             * @description Total verified revenue from this platform
+             */
+            revenue_verified?: number;
+            /** @description Error description if connection is not fully verified */
+            error_message?: string;
+            /**
+             * Format: date-time
+             * @description When the next automatic sync is scheduled
+             */
+            next_scheduled_sync?: string;
+        };
+        /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
         ProblemDetails: {
             /**
              * Format: uri
@@ -50,7 +169,7 @@ export interface components {
             /**
              * Format: uri
              * @description URI reference identifying this specific occurrence
-             * @example /api/attribution/revenue/realtime
+             * @example https://api.skeldir.com/api/attribution/revenue/realtime
              */
             instance: string;
             /**
@@ -85,14 +204,181 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                "application/problem+json": components["schemas"]["ProblemDetails"];
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+        /** @description Internal server error */
+        ServerError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+        /** @description Resource not found */
+        NotFoundError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
             };
         };
     };
     parameters: {
-        /** @description Unique request correlation ID for tracking */
+        /** @description Unique request correlation ID for distributed tracing */
         CorrelationId: string;
-        /** @description Bearer token for authentication */
+        /** @description Bearer token for authentication (format - Bearer <token>) */
         Authorization: string;
     };
     requestBodies: never;
@@ -105,36 +391,515 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Unique request correlation ID for tracking */
-                "X-Correlation-ID": components["parameters"]["CorrelationId"];
-                /** @description Bearer token for authentication */
-                Authorization: components["parameters"]["Authorization"];
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Reconciliation status */
+            /** @description Reconciliation status for all platforms */
             200: {
                 headers: {
+                    "X-Correlation-ID"?: string;
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "platforms": [
+                     *         {
+                     *           "platform_name": "Shopify",
+                     *           "connection_status": "verified",
+                     *           "last_sync": "2025-11-26T14:30:00Z",
+                     *           "events_processed": 1523,
+                     *           "revenue_verified": 45230
+                     *         },
+                     *         {
+                     *           "platform_name": "Stripe",
+                     *           "connection_status": "verified",
+                     *           "last_sync": "2025-11-26T14:28:00Z",
+                     *           "events_processed": 892,
+                     *           "revenue_verified": 38120.5
+                     *         },
+                     *         {
+                     *           "platform_name": "Meta",
+                     *           "connection_status": "partial",
+                     *           "last_sync": "2025-11-26T12:00:00Z",
+                     *           "error_message": "API rate limit reached"
+                     *         }
+                     *       ],
+                     *       "overall_status": "partial",
+                     *       "last_full_sync": "2025-11-26T10:00:00Z"
+                     *     }
+                     */
                     "application/json": {
                         platforms: {
-                            /** @enum {string} */
+                            /**
+                             * @description Platform identifier
+                             * @enum {string}
+                             */
                             platform_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Shopify" | "WooCommerce" | "Stripe" | "PayPal";
-                            /** @enum {string} */
-                            connection_status: "verified" | "partial" | "pending" | "failed";
-                            /** Format: date-time */
+                            /**
+                             * @description Current connection status
+                             * @enum {string}
+                             */
+                            connection_status: "verified" | "partial" | "pending" | "failed" | "disconnected";
+                            /**
+                             * Format: date-time
+                             * @description Timestamp of last successful sync
+                             */
                             last_sync: string;
+                            /** @description Total events processed from this platform */
+                            events_processed?: number;
+                            /**
+                             * Format: float
+                             * @description Total verified revenue from this platform
+                             */
+                            revenue_verified?: number;
+                            /** @description Error description if connection is not fully verified */
                             error_message?: string;
+                            /**
+                             * Format: date-time
+                             * @description When the next automatic sync is scheduled
+                             */
+                            next_scheduled_sync?: string;
+                        }[];
+                        /**
+                         * @description Aggregate status across all platforms
+                         * @enum {string}
+                         */
+                        overall_status: "verified" | "partial" | "pending" | "failed";
+                        /**
+                         * Format: date-time
+                         * @description Timestamp of last complete sync across all platforms
+                         */
+                        last_full_sync?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
                         }[];
                     };
                 };
             };
-            401: components["responses"]["UnauthorizedError"];
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getPlatformReconciliationStatus: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path: {
+                /** @description Platform identifier */
+                platform_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detailed platform reconciliation status */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "platform_name": "Shopify",
+                     *       "connection_status": "verified",
+                     *       "last_sync": "2025-11-26T13:00:00Z",
+                     *       "events_processed": 9821,
+                     *       "revenue_verified": 452120.75,
+                     *       "next_scheduled_sync": "2025-11-26T14:00:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @description Platform identifier
+                         * @enum {string}
+                         */
+                        platform_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Shopify" | "WooCommerce" | "Stripe" | "PayPal";
+                        /**
+                         * @description Current connection status
+                         * @enum {string}
+                         */
+                        connection_status: "verified" | "partial" | "pending" | "failed" | "disconnected";
+                        /**
+                         * Format: date-time
+                         * @description Timestamp of last successful sync
+                         */
+                        last_sync: string;
+                        /** @description Total events processed from this platform */
+                        events_processed?: number;
+                        /**
+                         * Format: float
+                         * @description Total verified revenue from this platform
+                         */
+                        revenue_verified?: number;
+                        /** @description Error description if connection is not fully verified */
+                        error_message?: string;
+                        /**
+                         * Format: date-time
+                         * @description When the next automatic sync is scheduled
+                         */
+                        next_scheduled_sync?: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    triggerSync: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description List of platform IDs to sync (empty = all platforms) */
+                    platforms?: string[];
+                    /**
+                     * @description Whether to perform a full historical sync
+                     * @default false
+                     */
+                    full_sync?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Sync initiated */
+            202: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "sync_id": "99999999-aaaa-bbbb-cccc-111111111111",
+                     *       "status": "queued",
+                     *       "estimated_completion": "2025-11-26T15:00:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        sync_id: string;
+                        /** @enum {string} */
+                        status: "queued" | "in_progress";
+                        /** Format: date-time */
+                        estimated_completion: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
         };
     };
 }

@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/api/budget/optimization": {
+    "/api/budget/optimize": {
         parameters: {
             query?: never;
             header?: never;
@@ -14,10 +14,32 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Optimize budget allocation
-         * @description Get LLM-powered budget optimization recommendations
+         * Generate budget optimization recommendation
+         * @description Initiates a budget optimization job using hybrid deterministic + LLM workflow.
+         *     Returns a job ID for polling the recommendation status.
          */
-        post: operations["optimizeBudget"];
+        post: operations["createBudgetOptimization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/budget/recommendations/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get budget recommendation
+         * @description Retrieves the budget optimization recommendation for a completed job.
+         *     Returns 202 if the job is still running, 200 when complete.
+         */
+        get: operations["getBudgetRecommendation"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -28,108 +50,514 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        BudgetOptimizationRequest: {
-            /** @description Total budget amount to allocate */
-            total_budget: number;
-            /**
-             * @description Currency code (ISO 4217)
-             * @default USD
-             */
-            currency: string;
-            /**
-             * @description Time period for the budget allocation
-             * @default monthly
-             * @enum {string}
-             */
-            time_period: "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
-            platforms: {
-                /** @description Platform identifier */
-                name: string;
-                /** @description Current budget allocation for this platform */
-                current_allocation: number;
-                /** @description Performance score (0-1) */
-                performance_score?: number;
+        BudgetRecommendation: {
+            /** Format: uuid */
+            job_id: string;
+            /** @enum {string} */
+            status: "complete" | "running" | "failed";
+            allocations: {
+                channel: string;
+                /** Format: float */
+                current_budget: number;
+                /** Format: float */
+                recommended_budget: number;
+                /** Format: float */
+                expected_roas: number;
+                confidence_range?: {
+                    min?: number;
+                    max?: number;
+                };
             }[];
-            /**
-             * @description Primary optimization objective
-             * @default maximize_roi
-             * @enum {string}
-             */
-            optimization_goal: "maximize_roi" | "minimize_cost" | "balance_growth" | "reduce_variance";
-            /** @description Optional constraints for optimization */
-            constraints?: {
-                min_allocation_per_platform?: number;
-                max_allocation_per_platform?: number;
-                locked_platforms?: string[];
+            /** @description LLM-generated strategic explanation */
+            synthesis?: string;
+            metrics?: {
+                deterministic_runtime_ms?: number;
+                /** Format: float */
+                llm_cost_usd?: number;
             };
         };
-        BudgetOptimizationResponse: {
-            /** @description Unique optimization identifier */
-            optimization_id: string;
-            /**
-             * @description Status of the optimization
-             * @enum {string}
-             */
-            status: "completed" | "partial" | "failed";
-            recommendations: {
-                /** @description Platform identifier */
-                platform: string;
-                /** @description Current budget allocation */
-                current_allocation: number;
-                /** @description Recommended new allocation */
-                recommended_allocation: number;
-                /** @description Percentage change from current */
-                change_percentage?: number;
-                /** @description LLM-generated explanation for the recommendation */
-                rationale?: string;
-            }[];
-            /** @description Projected improvements from following recommendations */
-            projected_improvement?: {
-                /** @description Projected ROI increase percentage */
-                roi_increase?: number;
-                /** @description Projected revenue increase amount */
-                revenue_increase?: number;
-                /** @description Confidence score for the projection */
-                confidence?: number;
+        ChannelAllocation: {
+            channel: string;
+            /** Format: float */
+            current_budget: number;
+            /** Format: float */
+            recommended_budget: number;
+            /** Format: float */
+            expected_roas: number;
+            confidence_range?: {
+                min?: number;
+                max?: number;
             };
+        };
+        /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
+        ProblemDetails: {
+            /**
+             * Format: uri
+             * @description URI reference identifying the problem type
+             * @example https://api.skeldir.com/problems/authentication-failed
+             */
+            type: string;
+            /**
+             * @description Short, human-readable summary of the problem
+             * @example Authentication Failed
+             */
+            title: string;
+            /**
+             * @description HTTP status code
+             * @example 401
+             */
+            status: number;
+            /**
+             * @description Human-readable explanation specific to this occurrence
+             * @example The provided JWT token has expired. Please refresh your authentication token.
+             */
+            detail: string;
+            /**
+             * Format: uri
+             * @description URI reference identifying this specific occurrence
+             * @example https://api.skeldir.com/api/attribution/revenue/realtime
+             */
+            instance: string;
+            /**
+             * Format: uuid
+             * @description Request correlation ID for distributed tracing
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            correlation_id: string;
             /**
              * Format: date-time
-             * @description When the optimization was created
+             * @description ISO 8601 timestamp when the error occurred
+             * @example 2025-11-11T14:32:00Z
              */
-            created_at: string;
+            timestamp: string;
+            /** @description Optional array of specific validation errors */
+            errors?: {
+                /** @example email */
+                field?: string;
+                /** @example Invalid email format */
+                message?: string;
+                /** @example INVALID_FORMAT */
+                code?: string;
+            }[];
         };
     };
-    responses: never;
-    parameters: never;
+    responses: {
+        /** @description Unauthorized - invalid or missing authentication */
+        UnauthorizedError: {
+            headers: {
+                /** @description Request correlation ID for distributed tracing */
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+        /** @description Resource not found */
+        NotFoundError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+    };
+    parameters: {
+        /** @description Unique request correlation ID for distributed tracing */
+        CorrelationId: string;
+        /** @description Bearer token for authentication (format - Bearer <token>) */
+        Authorization: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    optimizeBudget: {
+    createBudgetOptimization: {
         parameters: {
             query?: never;
-            header?: {
-                "X-Correlation-ID"?: string;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BudgetOptimizationRequest"];
+                "application/json": {
+                    /**
+                     * Format: float
+                     * @example 50000
+                     */
+                    total_budget: number;
+                    constraints?: {
+                        date_range?: {
+                            /** Format: date */
+                            start_date?: string;
+                            /** Format: date */
+                            end_date?: string;
+                        };
+                        channel_minimums?: {
+                            [key: string]: number;
+                        };
+                        channel_maximums?: {
+                            [key: string]: number;
+                        };
+                    };
+                    /** @enum {string} */
+                    optimization_goal: "maximize_roas" | "maximize_revenue" | "minimize_cpa";
+                };
             };
         };
         responses: {
-            /** @description Budget optimization completed */
+            /** @description Optimization job started */
+            202: {
+                headers: {
+                    /** @description Request correlation ID echoed back */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "job_id": "11111111-2222-3333-4444-555555555555",
+                     *       "estimated_duration_seconds": 15,
+                     *       "status_url": "https://api.skeldir.com/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        job_id: string;
+                        /** @example 15 */
+                        estimated_duration_seconds: number;
+                        /** Format: uri */
+                        status_url: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getBudgetRecommendation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recommendation ready */
             200: {
+                headers: {
+                    /** @description Request correlation ID echoed back */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "job_id": "11111111-2222-3333-4444-555555555555",
+                     *       "status": "complete",
+                     *       "allocations": [
+                     *         {
+                     *           "channel": "meta",
+                     *           "current_budget": 20000,
+                     *           "recommended_budget": 22000,
+                     *           "expected_roas": 3.1
+                     *         },
+                     *         {
+                     *           "channel": "google",
+                     *           "current_budget": 20000,
+                     *           "recommended_budget": 18000,
+                     *           "expected_roas": 2.7
+                     *         }
+                     *       ],
+                     *       "synthesis": "Allocate +20% to Meta due to higher ROAS; reduce Google spend until CPA stabilizes.",
+                     *       "metrics": {
+                     *         "deterministic_runtime_ms": 120,
+                     *         "llm_cost_usd": 0.02
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        job_id: string;
+                        /** @enum {string} */
+                        status: "complete" | "running" | "failed";
+                        allocations: {
+                            channel: string;
+                            /** Format: float */
+                            current_budget: number;
+                            /** Format: float */
+                            recommended_budget: number;
+                            /** Format: float */
+                            expected_roas: number;
+                            confidence_range?: {
+                                min?: number;
+                                max?: number;
+                            };
+                        }[];
+                        /** @description LLM-generated strategic explanation */
+                        synthesis?: string;
+                        metrics?: {
+                            deterministic_runtime_ms?: number;
+                            /** Format: float */
+                            llm_cost_usd?: number;
+                        };
+                    };
+                };
+            };
+            /** @description Job still running */
+            202: {
                 headers: {
                     "X-Correlation-ID"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BudgetOptimizationResponse"];
+                    /**
+                     * @example {
+                     *       "job_id": "11111111-2222-3333-4444-555555555555",
+                     *       "status": "running",
+                     *       "progress_percentage": 65
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        job_id: string;
+                        /** @enum {string} */
+                        status: "running";
+                        progress_percentage?: number;
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
                 };
             };
         };

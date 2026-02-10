@@ -44,7 +44,7 @@ def build_attribution_realtime_revenue_response(
         "data_freshness_seconds": _freshness_seconds(now, fetch_time),
         "verified": False,
         "tenant_id": str(tenant_id),
-        "confidence_score": snapshot.confidence_score,
+        "confidence_score": snapshot.confidence_score if snapshot.confidence_score is not None else 0.0,
         "upgrade_notice": snapshot.upgrade_notice,
     }
 
