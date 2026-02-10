@@ -65,6 +65,7 @@ This evidence pack captures EG2.1-EG2.5 for schema authority closure:
     - `Phase Gates (B0.3)`
 - Regression guard:
   - CI now runs `python scripts/ci/enforce_required_status_checks.py` using contract `contracts-internal/governance/b03_phase2_required_status_checks.main.json`.
+  - In PR contexts where branch-protection API is not readable (`403` from integration token), the guard uses check-run fallback to ensure required contexts are emitted for the adjudicated SHA.
 
 ## EG2.4 Assertions Verified
 
