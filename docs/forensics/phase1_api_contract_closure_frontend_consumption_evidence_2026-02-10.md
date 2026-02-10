@@ -183,3 +183,52 @@ Unrelated file intentionally left untouched per instruction:
    - OpenAPI/type drift fails frontend contract compile gate,
    - breaking OpenAPI change fails `oasdiff`.
 
+## Post-Remediation Update (2026-02-10)
+
+The previously unvalidated items are now remediated as follows.
+
+### A) Changes committed and pushed to `main`
+- Phase 1 commits:
+  - `019884115` (`phase1: enforce contract consumption gates and negative controls`)
+  - `a0d16c6b5` (`phase1: harden oasdiff negative-control assertion`)
+- PR merged to `main`:
+  - `https://github.com/Muk223/skeldir-2.0/pull/66`
+- Main head after merge:
+  - `08afccd0a`
+
+### B) Main-branch CI run links for required Phase 1 checks
+- Main push CI run:
+  - `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656`
+- Required Phase 1 checks in that run:
+  - Validate Contracts: `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656/job/63137439721` (pass)
+  - Frontend Contract Consumption Gate: `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656/job/63137898096` (pass)
+  - Mock Usability Gate: `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656/job/63137898350` (pass)
+  - Phase 1 Negative Controls: `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656/job/63137898122` (pass)
+
+Note: the overall workflow still has unrelated failing jobs; however, the required Phase 1 checks above are green.
+
+### C) Merge-blocking enforcement in production branch context (`main`)
+- Branch protection now includes Phase 1 checks as required status checks:
+  - `B0.7 P2 Runtime Proof (LLM + Redaction)`
+  - `Celery Foundation B0.5.1`
+  - `Validate Contracts`
+  - `Frontend Contract Consumption Gate`
+  - `Mock Usability Gate`
+  - `Phase 1 Negative Controls`
+- Evidence (GitHub API response):
+  - `gh api repos/Muk223/skeldir-2.0/branches/main/protection`
+  - strict mode: `true`
+
+### D) Non-vacuous negative controls demonstrated in remote CI context
+- Dedicated CI job:
+  - `.github/workflows/ci.yml` -> `Phase 1 Negative Controls`
+- Script:
+  - `scripts/contracts/run_negative_controls.sh`
+- Controls proven:
+  - Runtime response drift induces contract/runtime failure (intentional backend mutation).
+  - Frontend type drift induces compile failure (intentional TypeScript mismatch).
+  - Intentional OpenAPI breaking mutation is detected by `oasdiff`.
+- PR run proof:
+  - `https://github.com/Muk223/skeldir-2.0/actions/runs/21873789946/job/63137000474` (pass)
+- Main run proof:
+  - `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656/job/63137898122` (pass)
