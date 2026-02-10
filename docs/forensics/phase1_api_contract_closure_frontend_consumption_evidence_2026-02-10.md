@@ -5,6 +5,27 @@ Branch: `fix/phase1-contract-consumption`
 Base commit at branch creation: `5006ab7`  
 Scope: Empirical validation of Phase 1 remediation status and gate outcomes.
 
+## Superseding Status (Authoritative)
+This document contains an initial pre-remediation snapshot and a later post-remediation update.
+The **authoritative final status** is:
+
+- Phase 1 remediation is asserted on `main`.
+- Required Phase 1 checks are configured as merge-blocking in `main` branch protection.
+- Main-branch run evidence exists for:
+  - `Validate Contracts`
+  - `Frontend Contract Consumption Gate`
+  - `Mock Usability Gate`
+  - `Phase 1 Negative Controls`
+  - `Phase 1 Runtime Conformance`
+
+Authoritative references:
+- Merge PR: `https://github.com/Muk223/skeldir-2.0/pull/66`
+- Merge PR (runtime conformance gate addition): `https://github.com/Muk223/skeldir-2.0/pull/68`
+- Main run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656`
+- Main run (post-PR68): `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998`
+- Branch protection API evidence:
+  - `gh api repos/Muk223/skeldir-2.0/branches/main/protection`
+
 ## Executive Verdict
 The hypothesis "Phase 1 is fully and completely completed" is **not validated** yet.
 
@@ -215,6 +236,7 @@ Note: the overall workflow still has unrelated failing jobs; however, the requir
   - `Frontend Contract Consumption Gate`
   - `Mock Usability Gate`
   - `Phase 1 Negative Controls`
+  - `Phase 1 Runtime Conformance`
 - Evidence (GitHub API response):
   - `gh api repos/Muk223/skeldir-2.0/branches/main/protection`
   - strict mode: `true`
@@ -232,3 +254,36 @@ Note: the overall workflow still has unrelated failing jobs; however, the requir
   - `https://github.com/Muk223/skeldir-2.0/actions/runs/21873789946/job/63137000474` (pass)
 - Main run proof:
   - `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656/job/63137898122` (pass)
+
+## Post-Remediation Update II (2026-02-10) - Runtime Conformance Gate Authority on `main`
+
+Hypothesis addressed:
+- "Dedicated `Phase 1 Runtime Conformance` job is required for exit-gate authority, and current runtime checks are not merge-blocking."
+
+Forensic result:
+- A dedicated CI job was added in `.github/workflows/ci.yml`:
+  - job id: `phase1-runtime-conformance`
+  - display name: `Phase 1 Runtime Conformance`
+  - command: `pytest tests/contract/test_contract_semantics.py -q`
+- Change was merged to `main`:
+  - PR: `https://github.com/Muk223/skeldir-2.0/pull/68`
+  - merge commit: `62b93e9653a567be9b84b1e19d9a04220564494c`
+- `main` branch protection required checks now include `Phase 1 Runtime Conformance`:
+  - Evidence: `gh api repos/Muk223/skeldir-2.0/branches/main/protection/required_status_checks`
+  - required contexts include:
+    - `Validate Contracts`
+    - `Frontend Contract Consumption Gate`
+    - `Mock Usability Gate`
+    - `Phase 1 Negative Controls`
+    - `Phase 1 Runtime Conformance`
+- `main` run proof (production branch context):
+  - Run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998`
+  - Required Phase 1 context outcomes in that run:
+    - `Validate Contracts`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998/job/63144028401` (success)
+    - `Frontend Contract Consumption Gate`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998/job/63144262072` (success)
+    - `Mock Usability Gate`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998/job/63144262031` (success)
+    - `Phase 1 Negative Controls`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998/job/63144261986` (success)
+    - `Phase 1 Runtime Conformance`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998/job/63144261983` (success)
+
+Conclusion:
+- The hypothesis is refuted. Runtime conformance is now an explicit, dedicated, merge-blocking required check on `main`, and it has passing `main`-branch execution evidence.
