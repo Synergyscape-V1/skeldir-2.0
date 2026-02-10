@@ -116,6 +116,7 @@ def _seed_tenant(runtime_db_url: str, tenant_id: UUID) -> None:
         insert_cols.append("name")
 
     placeholders = ", ".join(f":{col}" for col in insert_cols)
+    # RAW_SQL_ALLOWLIST: deterministic tenant seed for B0.7 P4 operational readiness integration proof.
     stmt = text(f"INSERT INTO tenants ({', '.join(insert_cols)}) VALUES ({placeholders})")
     with engine.begin() as conn:
         conn.execute(text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"), {"tenant_id": str(tenant_id)})
