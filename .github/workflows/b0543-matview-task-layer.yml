@@ -28,6 +28,7 @@ jobs:
     env:
       PYTHONPATH: ${{ github.workspace }}/backend
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       TESTING: "1"
       CI: "true"
     steps:
@@ -53,6 +54,9 @@ jobs:
           done
 
       - name: Apply migrations
+        env:
+          MIGRATION_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
+          DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
           alembic -c alembic.ini upgrade heads
 
