@@ -1341,6 +1341,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       PYTHONPATH: ${{ github.workspace }}/backend
@@ -1383,6 +1384,7 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
           set -euo pipefail
           # B0.5.3.2: Upgrade to skeldir_foundation (core attribution schema + celery foundation)
@@ -1433,6 +1435,7 @@ jobs:
       # Dual-URL strategy constructed from single credential source
       DATABASE_URL_SYNC: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
       DATABASE_URL_ASYNC: postgresql+asyncpg://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1534,6 +1537,7 @@ jobs:
       - name: Run migrations to skeldir_foundation@head (Gate G3)
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_SYNC }}  # Use sync driver for Alembic
+          MIGRATION_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
           echo "=== G3: Running migrations with sync driver to avoid MissingGreenlet ==="
           echo "DATABASE_URL (sync): postgresql://app_user:***@127.0.0.1:5432/skeldir_validation"
