@@ -60,6 +60,7 @@ def _normalize_schema(text: str) -> str:
         "Ã‚Â±": "±",
         "Â±": "±",
     }
+    in_matview_query = False
     for raw in text.splitlines():
         line = raw.rstrip()
         for src, dst in replacements.items():
@@ -67,6 +68,8 @@ def _normalize_schema(text: str) -> str:
         if "--" in line:
             line = line.split("--", 1)[0].rstrip()
         line = not_null_constraint_re.sub("NOT NULL", line)
+        if line.startswith("CREATE MATERIALIZED VIEW "):
+            in_matview_query = True
         if line.lstrip().startswith(
             (
                 "SELECT ",
@@ -85,6 +88,11 @@ def _normalize_schema(text: str) -> str:
             )
         ):
             line = qualifier_re.sub("", line)
+        elif in_matview_query:
+            # Normalize pg_dump alias qualification noise inside materialized-view query bodies.
+            line = qualifier_re.sub("", line)
+            if "WITH NO DATA;" in line:
+                in_matview_query = False
         if line.startswith("--"):
             continue
         if line.startswith("SET "):

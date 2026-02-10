@@ -27,6 +27,7 @@ def _normalize_schema(text: str) -> str:
     qualifier_re = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.")
 
     out: list[str] = []
+    in_matview_query = False
     for line in text.splitlines():
         if line.startswith("--"):
             continue
@@ -44,6 +45,8 @@ def _normalize_schema(text: str) -> str:
         if "--" in norm:
             norm = norm.split("--", 1)[0].rstrip()
         norm = not_null_constraint_re.sub("NOT NULL", norm)
+        if norm.startswith("CREATE MATERIALIZED VIEW "):
+            in_matview_query = True
         # Cross-version pg_dump may qualify column refs differently in SELECT bodies.
         if norm.lstrip().startswith(
             (
@@ -63,6 +66,11 @@ def _normalize_schema(text: str) -> str:
             )
         ):
             norm = qualifier_re.sub("", norm)
+        elif in_matview_query:
+            # pg_dump output differs by version on qualification inside matview SELECT bodies.
+            norm = qualifier_re.sub("", norm)
+            if "WITH NO DATA;" in norm:
+                in_matview_query = False
         out.append(norm)
     normalized: list[str] = []
     prev_blank = False
