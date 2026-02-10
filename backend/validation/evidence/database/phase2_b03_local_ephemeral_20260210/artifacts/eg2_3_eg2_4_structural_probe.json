@@ -1,0 +1,88 @@
+{
+  "tenant_scoped_llm_tables": [
+    "llm_api_calls",
+    "llm_breaker_state",
+    "llm_budget_reservations",
+    "llm_call_audit",
+    "llm_hourly_shutoff_state",
+    "llm_monthly_budget_state",
+    "llm_monthly_costs",
+    "llm_semantic_cache"
+  ],
+  "rls_rows": [
+    {
+      "table_name": "llm_api_calls",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    },
+    {
+      "table_name": "llm_breaker_state",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    },
+    {
+      "table_name": "llm_budget_reservations",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    },
+    {
+      "table_name": "llm_call_audit",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    },
+    {
+      "table_name": "llm_hourly_shutoff_state",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    },
+    {
+      "table_name": "llm_monthly_budget_state",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    },
+    {
+      "table_name": "llm_monthly_costs",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    },
+    {
+      "table_name": "llm_semantic_cache",
+      "rls_enabled": true,
+      "rls_forced": true,
+      "has_policy": true
+    }
+  ],
+  "structural_violations": [],
+  "mandatory_tables": [
+    "public.llm_api_calls",
+    "public.llm_call_audit"
+  ],
+  "missing_mandatory": [],
+  "runtime_privileges": [
+    {
+      "table_name": "public.llm_api_calls",
+      "can_insert": true,
+      "can_select": true,
+      "can_update": true,
+      "can_delete": false
+    },
+    {
+      "table_name": "public.llm_call_audit",
+      "can_insert": true,
+      "can_select": true,
+      "can_update": false,
+      "can_delete": false
+    }
+  ],
+  "insert_violations": [],
+  "append_only_violations": [],
+  "append_only_trigger_violations": [],
+  "prompt_fingerprint_violations": []
+}

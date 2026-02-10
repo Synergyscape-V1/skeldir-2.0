@@ -56,6 +56,13 @@ jobs:
         run: |
           python scripts/ci/enforce_forensics_index.py
 
+      - name: Enforce main branch required status checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_STATUS_CHECKS_CONTRACT: contracts-internal/governance/b03_phase2_required_status_checks.main.json
+        run: |
+          python scripts/ci/enforce_required_status_checks.py
+
   # Contract validation
 
   validate-contracts:
