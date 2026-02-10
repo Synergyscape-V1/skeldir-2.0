@@ -175,6 +175,7 @@ def _query_dict_rows(db_url: str, sql: str, params: tuple[Any, ...] | None = Non
 
 
 def _apply_migrations(migration_url: str, env: dict[str, str], log_dir: Path) -> None:
+    _ensure_schema_create_for_migration_role(migration_url)
     mig_env = env.copy()
     mig_env["MIGRATION_DATABASE_URL"] = migration_url
     mig_env["DATABASE_URL"] = migration_url
@@ -186,7 +187,15 @@ def _downgrade_base_then_upgrade(migration_url: str, env: dict[str, str], log_di
     mig_env["MIGRATION_DATABASE_URL"] = migration_url
     mig_env["DATABASE_URL"] = migration_url
     _run(["alembic", "downgrade", "base"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / f"{prefix}_alembic_downgrade_base.log")
+    _ensure_schema_create_for_migration_role(migration_url)
     _run(["alembic", "upgrade", "head"], env=mig_env, cwd=REPO_ROOT, log_path=log_dir / f"{prefix}_alembic_upgrade_head.log")
+
+
+def _ensure_schema_create_for_migration_role(migration_url: str) -> None:
+    with _connect(migration_url) as conn:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO current_user")
 
 
 def _reset_public_schema(migration_url: str) -> None:

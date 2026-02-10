@@ -91,11 +91,7 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS fn_llm_call_audit_append_only")
 
     op.execute("DROP INDEX IF EXISTS idx_llm_call_audit_prompt_fingerprint")
-    op.execute(
-        "ALTER TABLE llm_call_audit DROP COLUMN IF EXISTS prompt_fingerprint"
-    )  # CI:DESTRUCTIVE_OK - Downgrade removes Phase-2 additive column introduced in revision 202602101300.
+    op.execute("ALTER TABLE llm_call_audit DROP COLUMN IF EXISTS prompt_fingerprint")  # CI:DESTRUCTIVE_OK - Downgrade removes Phase-2 additive column introduced in revision 202602101300.
 
     op.execute("DROP INDEX IF EXISTS idx_llm_api_calls_prompt_fingerprint")
-    op.execute(
-        "ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS prompt_fingerprint"
-    )  # CI:DESTRUCTIVE_OK - Downgrade removes Phase-2 additive column introduced in revision 202602101300.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS prompt_fingerprint")  # CI:DESTRUCTIVE_OK - Downgrade removes Phase-2 additive column introduced in revision 202602101300.

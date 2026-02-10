@@ -430,7 +430,7 @@ jobs:
           psql -h localhost -U postgres -c "CREATE DATABASE skeldir_phase OWNER migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
-          psql -h localhost -U postgres -d skeldir_phase -c "GRANT USAGE, CREATE ON SCHEMA public TO app_user;"
+          psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
 
@@ -530,7 +530,7 @@ jobs:
           psql -h localhost -U postgres -c "CREATE DATABASE skeldir_phase OWNER migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
-          psql -h localhost -U postgres -d skeldir_phase -c "GRANT USAGE, CREATE ON SCHEMA public TO app_user;"
+          psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
       - name: Run phase chain to B0.4
