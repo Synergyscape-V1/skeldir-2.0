@@ -54,7 +54,7 @@ recreate_db() {
 run_alembic() {
   local url="$1"
   local args="$2"
-  DATABASE_URL="${url}" alembic ${args}
+  MIGRATION_DATABASE_URL="${url}" DATABASE_URL="${url}" alembic ${args}
 }
 
 echo "== ZG-0.2: prepare roles and databases =="

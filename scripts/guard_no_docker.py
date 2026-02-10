@@ -56,6 +56,7 @@ EXCLUDED_PREFIXES = [
 
 ALLOWED_DOCKER_PATHS = {
     Path(".github/workflows/ci.yml"),
+    Path(".github/workflows/b07-p4-e2e-operational-readiness.yml"),
     Path("backend/Dockerfile"),
     Path("backend/mock_platform/Dockerfile"),
 }

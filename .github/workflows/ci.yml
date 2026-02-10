@@ -210,11 +210,26 @@ jobs:
               -H "Authorization: Bearer mock-token" >/tmp/attr.json 2>/dev/null; then
               break
             fi
+            if ! kill -0 "$ATTR_PID" 2>/dev/null; then
+              echo "Attribution Prism process exited early"
+              tail -n 200 /tmp/prism-attribution.log || true
+              exit 1
+            fi
             sleep 1
           done
 
-          curl -sSf "http://127.0.0.1:4014/api/health" \
-            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000002" >/tmp/health.json
+          for i in {1..20}; do
+            if curl -sSf "http://127.0.0.1:4014/api/health" \
+              -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000002" >/tmp/health.json 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$HEALTH_PID" 2>/dev/null; then
+              echo "Health Prism process exited early"
+              tail -n 200 /tmp/prism-health.log || true
+              exit 1
+            fi
+            sleep 1
+          done
 
           python - <<'PY'
           import json
@@ -565,8 +580,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: checkout
     if: github.event_name == 'pull_request' || contains(github.event.head_commit.modified, 'backend/') || contains(github.event.head_commit.added, 'backend/')
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app_user
+          POSTGRES_PASSWORD: app_user
+          POSTGRES_DB: skeldir_validation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U app_user -d skeldir_validation"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       DATABASE_URL: postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@localhost:5432/skeldir_validation
+      CI: "true"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -582,6 +613,20 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            pg_isready -h 127.0.0.1 -p 5432 -U app_user -d skeldir_validation && break
+            sleep 1
+          done
+
+      - name: Apply migrations
+        env:
+          MIGRATION_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
+          DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
+        run: |
+          alembic -c alembic.ini upgrade heads
       
       - name: Run tests
         run: |
@@ -1341,6 +1386,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
       PYTHONPATH: ${{ github.workspace }}/backend
@@ -1383,6 +1429,7 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
           set -euo pipefail
           # B0.5.3.2: Upgrade to skeldir_foundation (core attribution schema + celery foundation)
@@ -1433,6 +1480,7 @@ jobs:
       # Dual-URL strategy constructed from single credential source
       DATABASE_URL_SYNC: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
       DATABASE_URL_ASYNC: postgresql+asyncpg://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user_ci_ephemeral_2025@127.0.0.1:5432/skeldir_validation
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1534,6 +1582,7 @@ jobs:
       - name: Run migrations to skeldir_foundation@head (Gate G3)
         env:
           DATABASE_URL: ${{ env.DATABASE_URL_SYNC }}  # Use sync driver for Alembic
+          MIGRATION_DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
           echo "=== G3: Running migrations with sync driver to avoid MissingGreenlet ==="
           echo "DATABASE_URL (sync): postgresql://app_user:***@127.0.0.1:5432/skeldir_validation"
