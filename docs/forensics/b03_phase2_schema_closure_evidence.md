@@ -2,11 +2,12 @@
 
 Date: 2026-02-10
 Phase: B0.3
-Execution status: PASS (`2026-02-10T19:51:48.189577+00:00`)
+Execution status: PASS (`2026-02-10T21:14:49Z`)
 Provenance:
-- Commit: `34ddb0d2c`
+- Commit: `188a0cca2`
 - Branch: `b03-phase2-runtime-proof`
 - PR: `https://github.com/Muk223/skeldir-2.0/pull/71`
+- CI run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21882485535` (workflow_dispatch, SUCCESS)
 
 ## Scope
 
@@ -23,6 +24,9 @@ This evidence pack captures EG2.1-EG2.5 for schema authority closure:
 - Enforcement engine: `scripts/ci/phase2_schema_closure_gate.py`
 - Contract: `contracts-internal/llm/b03_phase2_ledger_schema_contract.json`
 - Summary: `backend/validation/evidence/database/phase2_b03/phase2_b03_summary.json`
+- CI confirmations:
+  - `Phase Gates (B0.3)` job `63168716042`: PASS
+  - `Phase Chain (B0.4 target)` job `63168715837`: PASS
 
 ## Artifacts
 
@@ -42,6 +46,7 @@ This evidence pack captures EG2.1-EG2.5 for schema authority closure:
   - `python scripts/phase_gates/run_gate.py B0.3`
 - Gate result:
   - `backend/validation/evidence/database/phase2_b03/phase2_b03_summary.json` reports all gates passed.
+  - CI run `21882485535` completed green end-to-end with B0.3 and chain gates passing.
 
 ## EG2.4 Assertions Verified
 
