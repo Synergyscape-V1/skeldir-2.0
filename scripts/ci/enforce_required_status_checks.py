@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -34,6 +35,20 @@ def _workflow_text() -> str:
     for path in sorted(workflows_dir.glob("*.yml")):
         parts.append(path.read_text(encoding="utf-8", errors="replace"))
     return "\n".join(parts)
+
+
+def _context_declared(context: str, workflow_text: str) -> bool:
+    if context in workflow_text:
+        return True
+    match = re.match(r"^Phase Gates \(([^)]+)\)$", context)
+    if match:
+        phase = match.group(1)
+        manifest = Path("docs/phases/phase_manifest.yaml")
+        if not manifest.exists():
+            return False
+        manifest_text = manifest.read_text(encoding="utf-8", errors="replace")
+        return "name: Phase Gates" in workflow_text and phase in manifest_text
+    return False
 
 
 def main() -> int:
@@ -73,7 +88,7 @@ def main() -> int:
         # PR-scoped GitHub tokens commonly cannot access branch-protection APIs.
         # Fallback proves required check names are declared in workflow sources.
         workflow_text = _workflow_text()
-        missing_in_workflows = [ctx for ctx in expected if ctx not in workflow_text]
+        missing_in_workflows = [ctx for ctx in expected if not _context_declared(ctx, workflow_text)]
         if missing_in_workflows:
             print("required status checks fallback failed: expected contexts missing from workflow definitions")
             for context in missing_in_workflows:
