@@ -3,6 +3,10 @@
 Date: 2026-02-10
 Phase: B0.3
 Execution status: PASS (`2026-02-10T19:51:48.189577+00:00`)
+Provenance:
+- Commit: `34ddb0d2c`
+- Branch: `b03-phase2-runtime-proof`
+- PR: `https://github.com/Muk223/skeldir-2.0/pull/71`
 
 ## Scope
 
