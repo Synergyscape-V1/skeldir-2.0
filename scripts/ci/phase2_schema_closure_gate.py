@@ -18,6 +18,7 @@ import argparse
 import difflib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -53,6 +54,8 @@ def _run(cmd: list[str], *, env: dict[str, str], cwd: Path, log_path: Path) -> N
 
 def _normalize_schema(text: str) -> str:
     keep: list[str] = []
+    not_null_constraint_re = re.compile(r"\bCONSTRAINT\s+[A-Za-z0-9_]+\s+NOT\s+NULL\b")
+    qualifier_re = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.")
     replacements = {
         "Ã‚Â±": "±",
         "Â±": "±",
@@ -61,6 +64,27 @@ def _normalize_schema(text: str) -> str:
         line = raw.rstrip()
         for src, dst in replacements.items():
             line = line.replace(src, dst)
+        if "--" in line:
+            line = line.split("--", 1)[0].rstrip()
+        line = not_null_constraint_re.sub("NOT NULL", line)
+        if line.lstrip().startswith(
+            (
+                "SELECT ",
+                "FROM ",
+                "WHERE ",
+                "GROUP BY ",
+                "ORDER BY ",
+                "JOIN ",
+                "LEFT JOIN ",
+                "RIGHT JOIN ",
+                "INNER JOIN ",
+                "FULL JOIN ",
+                "ON ",
+                "AND ",
+                "OR ",
+            )
+        ):
+            line = qualifier_re.sub("", line)
         if line.startswith("--"):
             continue
         if line.startswith("SET "):

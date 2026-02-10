@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,9 @@ def _run(cmd: list[str], *, env: dict[str, str] | None = None, cwd: Path | None 
 
 
 def _normalize_schema(text: str) -> str:
+    not_null_constraint_re = re.compile(r"\bCONSTRAINT\s+[A-Za-z0-9_]+\s+NOT\s+NULL\b")
+    qualifier_re = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.")
+
     out: list[str] = []
     for line in text.splitlines():
         if line.startswith("--"):
@@ -36,7 +40,30 @@ def _normalize_schema(text: str) -> str:
             continue
         if line.startswith("COMMENT ON EXTENSION"):
             continue
-        out.append(line.rstrip())
+        norm = line.rstrip()
+        if "--" in norm:
+            norm = norm.split("--", 1)[0].rstrip()
+        norm = not_null_constraint_re.sub("NOT NULL", norm)
+        # Cross-version pg_dump may qualify column refs differently in SELECT bodies.
+        if norm.lstrip().startswith(
+            (
+                "SELECT ",
+                "FROM ",
+                "WHERE ",
+                "GROUP BY ",
+                "ORDER BY ",
+                "JOIN ",
+                "LEFT JOIN ",
+                "RIGHT JOIN ",
+                "INNER JOIN ",
+                "FULL JOIN ",
+                "ON ",
+                "AND ",
+                "OR ",
+            )
+        ):
+            norm = qualifier_re.sub("", norm)
+        out.append(norm)
     normalized: list[str] = []
     prev_blank = False
     for line in out:
