@@ -128,6 +128,155 @@ jobs:
             exit 1
           fi
           echo "Breaking change detection complete"
+
+  frontend-contract-consumption:
+    name: Frontend Contract Consumption Gate
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Bundle canonical OpenAPI artifacts
+        run: |
+          bash scripts/contracts/bundle.sh
+
+      - name: Generate frontend types from canonical bundles
+        run: |
+          bash scripts/contracts/generate_frontend_types.sh
+
+      - name: Enforce generated type drift check
+        run: |
+          git diff --exit-code -- frontend/src/types/api
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Compile frontend contract consumption gate
+        run: |
+          cd frontend
+          npm run contract:compile
+
+  mock-usability-gate:
+    name: Mock Usability Gate
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Bundle canonical OpenAPI artifacts
+        run: |
+          bash scripts/contracts/bundle.sh
+
+      - name: Start Prism mocks (revenue + health) and run usability smoke
+        run: |
+          set -euo pipefail
+          npx @stoplight/prism-cli mock -h 127.0.0.1 -p 4011 api-contracts/dist/openapi/v1/attribution.bundled.yaml > /tmp/prism-attribution.log 2>&1 &
+          ATTR_PID=$!
+          npx @stoplight/prism-cli mock -h 127.0.0.1 -p 4014 api-contracts/dist/openapi/v1/health.bundled.yaml > /tmp/prism-health.log 2>&1 &
+          HEALTH_PID=$!
+
+          cleanup() {
+            kill $ATTR_PID $HEALTH_PID 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for i in {1..20}; do
+            if curl -sSf "http://127.0.0.1:4011/api/attribution/revenue/realtime" \
+              -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000001" \
+              -H "Authorization: Bearer mock-token" >/tmp/attr.json 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -sSf "http://127.0.0.1:4014/api/health" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000002" >/tmp/health.json
+
+          python - <<'PY'
+          import json
+
+          attr = json.loads(open("/tmp/attr.json", encoding="utf-8").read())
+          health = json.loads(open("/tmp/health.json", encoding="utf-8").read())
+
+          required_attr = ["total_revenue", "event_count", "last_updated", "verified", "tenant_id"]
+          missing_attr = [k for k in required_attr if k not in attr]
+          if missing_attr:
+              raise SystemExit(f"Attribution mock missing required fields: {missing_attr}")
+
+          required_health = ["status", "timestamp"]
+          missing_health = [k for k in required_health if k not in health]
+          if missing_health:
+              raise SystemExit(f"Health mock missing required fields: {missing_health}")
+
+          print("Prism usability smoke PASS")
+          PY
+
+  phase1-negative-controls:
+    name: Phase 1 Negative Controls
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+          pip install pyyaml
+          go install github.com/oasdiff/oasdiff@v1.11.7
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Bundle canonical OpenAPI artifacts
+        run: |
+          bash scripts/contracts/bundle.sh
+
+      - name: Execute negative controls (must each fail as designed)
+        run: |
+          chmod +x scripts/contracts/run_negative_controls.sh
+          bash scripts/contracts/run_negative_controls.sh
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest

@@ -51,7 +51,7 @@ paths:
         - name: If-None-Match
           in: header
           required: false
-          schema: &ref_14
+          schema: &ref_29
             type: string
           description: ETag from previous response for cache validation
       responses:
@@ -76,14 +76,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_8
+                required: &ref_23
                   - total_revenue
                   - event_count
                   - last_updated
                   - data_freshness_seconds
                   - verified
                   - tenant_id
-                properties: &ref_9
+                properties: &ref_24
                   total_revenue:
                     type: number
                     format: double
@@ -216,7 +216,7 @@ paths:
                           example: INVALID_FORMAT
         '429':
           description: Too Many Requests - rate limit exceeded
-          headers: &ref_15
+          headers: &ref_30
             X-Correlation-ID:
               schema:
                 type: string
@@ -225,7 +225,7 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: &ref_16
+          content: &ref_31
             application/problem+json:
               schema:
                 type: object
@@ -301,12 +301,12 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: &ref_10
+                      required: &ref_25
                         - channel_name
                         - revenue
                         - conversion_count
                         - confidence_score
-                      properties: &ref_11
+                      properties: &ref_26
                         channel_name:
                           type: string
                           enum:
@@ -428,12 +428,12 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_12
+                required: &ref_27
                   - explanation
                   - citations
                   - confidence
                   - generated_at
-                properties: &ref_13
+                properties: &ref_28
                   explanation:
                     type: string
                     minLength: 150
@@ -493,12 +493,12 @@ paths:
           content: *ref_5
         '404':
           description: Resource not found
-          headers: &ref_17
+          headers: &ref_12
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_18
+          content: &ref_13
             application/problem+json:
               schema:
                 type: object
@@ -540,14 +540,14 @@ paths:
           application/json:
             schema:
               type: object
-              required:
+              required: &ref_16
                 - platform
                 - platform_account_id
-              properties:
+              properties: &ref_17
                 platform:
                   type: string
                   description: Supported platform identifier
-                  enum:
+                  enum: &ref_8
                     - google_ads
                     - meta_ads
                     - tiktok_ads
@@ -562,7 +562,7 @@ paths:
                 status:
                   type: string
                   description: Connection lifecycle state
-                  enum:
+                  enum: &ref_9
                     - pending
                     - active
                     - disabled
@@ -582,7 +582,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required:
+                required: &ref_10
                   - id
                   - tenant_id
                   - platform
@@ -590,7 +590,7 @@ paths:
                   - status
                   - created_at
                   - updated_at
-                properties:
+                properties: &ref_11
                   id:
                     type: string
                     format: uuid
@@ -600,24 +600,13 @@ paths:
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum:
-                      - google_ads
-                      - meta_ads
-                      - tiktok_ads
-                      - linkedin_ads
-                      - stripe
-                      - paypal
-                      - shopify
-                      - woocommerce
+                    enum: *ref_8
                   platform_account_id:
                     type: string
                   status:
                     type: string
                     description: Connection lifecycle state
-                    enum:
-                      - pending
-                      - active
-                      - disabled
+                    enum: *ref_9
                   created_at:
                     type: string
                     format: date-time
@@ -628,14 +617,24 @@ paths:
                 id: 11111111-1111-1111-1111-111111111111
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: google_ads
-                platform_account_id: '123-456-7890'
+                platform_account_id: 123-456-7890
                 status: active
                 created_at: '2026-01-28T12:00:00Z'
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_4
-          content: *ref_5
+          headers: &ref_14
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_15
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
@@ -671,15 +670,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum:
-              - google_ads
-              - meta_ads
-              - tiktok_ads
-              - linkedin_ads
-              - stripe
-              - paypal
-              - shopify
-              - woocommerce
+            enum: *ref_8
           description: Platform identifier
         - name: platform_account_id
           in: query
@@ -699,53 +690,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required:
-                  - id
-                  - tenant_id
-                  - platform
-                  - platform_account_id
-                  - status
-                  - created_at
-                  - updated_at
-                properties:
-                  id:
-                    type: string
-                    format: uuid
-                  tenant_id:
-                    type: string
-                    format: uuid
-                  platform:
-                    type: string
-                    description: Supported platform identifier
-                    enum:
-                      - google_ads
-                      - meta_ads
-                      - tiktok_ads
-                      - linkedin_ads
-                      - stripe
-                      - paypal
-                      - shopify
-                      - woocommerce
-                  platform_account_id:
-                    type: string
-                  status:
-                    type: string
-                    description: Connection lifecycle state
-                    enum:
-                      - pending
-                      - active
-                      - disabled
-                  created_at:
-                    type: string
-                    format: date-time
-                  updated_at:
-                    type: string
-                    format: date-time
+                required: *ref_10
+                properties: *ref_11
               example:
                 id: 11111111-1111-1111-1111-111111111111
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: google_ads
-                platform_account_id: '123-456-7890'
+                platform_account_id: 123-456-7890
                 status: active
                 created_at: '2026-01-28T12:00:00Z'
                 updated_at: '2026-01-28T12:05:00Z'
@@ -755,8 +706,8 @@ paths:
           content: *ref_5
         '404':
           description: Resource not found
-          headers: *ref_17
-          content: *ref_18
+          headers: *ref_12
+          content: *ref_13
         '500':
           description: Internal server error
           headers: *ref_6
@@ -789,23 +740,15 @@ paths:
           application/json:
             schema:
               type: object
-              required:
+              required: &ref_18
                 - platform
                 - platform_account_id
                 - access_token
-              properties:
+              properties: &ref_19
                 platform:
                   type: string
                   description: Supported platform identifier
-                  enum:
-                    - google_ads
-                    - meta_ads
-                    - tiktok_ads
-                    - linkedin_ads
-                    - stripe
-                    - paypal
-                    - shopify
-                    - woocommerce
+                  enum: *ref_8
                 platform_account_id:
                   type: string
                 access_token:
@@ -824,6 +767,8 @@ paths:
                 token_type:
                   type: string
                   nullable: true
+                  enum:
+                    - Bearer
       responses:
         '200':
           description: Platform credentials stored
@@ -836,34 +781,26 @@ paths:
             application/json:
               schema:
                 type: object
-                required:
+                required: &ref_21
                   - tenant_id
                   - platform
                   - platform_account_id
                   - status
                   - updated_at
-                properties:
+                properties: &ref_22
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum:
-                      - google_ads
-                      - meta_ads
-                      - tiktok_ads
-                      - linkedin_ads
-                      - stripe
-                      - paypal
-                      - shopify
-                      - woocommerce
+                    enum: *ref_8
                   platform_account_id:
                     type: string
                   status:
                     type: string
                     description: Credential storage status
-                    enum:
+                    enum: &ref_20
                       - stored
                       - expired
                       - missing
@@ -877,40 +814,68 @@ paths:
               example:
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: google_ads
-                platform_account_id: '123-456-7890'
+                platform_account_id: 123-456-7890
                 status: stored
                 expires_at: '2026-02-28T12:00:00Z'
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_4
-          content: *ref_5
+          headers: *ref_14
+          content: *ref_15
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
         '404':
           description: Resource not found
-          headers: *ref_17
-          content: *ref_18
+          headers: *ref_12
+          content: *ref_13
         '500':
           description: Internal server error
           headers: *ref_6
           content: *ref_7
 components:
   schemas:
-    RealtimeRevenueCounter:
+    Platform:
+      type: string
+      description: Supported platform identifier
+      enum: *ref_8
+    PlatformConnectionStatus:
+      type: string
+      description: Connection lifecycle state
+      enum: *ref_9
+    PlatformConnectionUpsertRequest:
       type: object
-      required: *ref_8
-      properties: *ref_9
-    ChannelAttribution:
+      required: *ref_16
+      properties: *ref_17
+    PlatformConnectionResponse:
       type: object
       required: *ref_10
       properties: *ref_11
+    PlatformCredentialUpsertRequest:
+      type: object
+      required: *ref_18
+      properties: *ref_19
+    PlatformCredentialStatus:
+      type: string
+      description: Credential storage status
+      enum: *ref_20
+    PlatformCredentialStatusResponse:
+      type: object
+      required: *ref_21
+      properties: *ref_22
+    RealtimeRevenueCounter:
+      type: object
+      required: *ref_23
+      properties: *ref_24
+    ChannelAttribution:
+      type: object
+      required: *ref_25
+      properties: *ref_26
     AttributionExplanation:
       type: object
-      required: *ref_12
-      properties: *ref_13
+      required: *ref_27
+      properties: *ref_28
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -939,7 +904,7 @@ components:
       name: If-None-Match
       in: header
       required: false
-      schema: *ref_14
+      schema: *ref_29
       description: ETag from previous response for cache validation
   responses:
     UnauthorizedError:
@@ -948,13 +913,17 @@ components:
       content: *ref_5
     RateLimitError:
       description: Too Many Requests - rate limit exceeded
-      headers: *ref_15
-      content: *ref_16
+      headers: *ref_30
+      content: *ref_31
     ServerError:
       description: Internal server error
       headers: *ref_6
       content: *ref_7
     NotFoundError:
       description: Resource not found
-      headers: *ref_17
-      content: *ref_18
+      headers: *ref_12
+      content: *ref_13
+    ValidationError:
+      description: Bad Request - validation failed
+      headers: *ref_14
+      content: *ref_15

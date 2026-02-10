@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "contract:compile": "tsc -p tsconfig.contract-gate.json --noEmit",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx",
     "test": "echo \"No frontend tests configured\""

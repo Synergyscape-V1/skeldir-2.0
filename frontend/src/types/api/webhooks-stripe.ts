@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/webhooks/stripe/payment_intent.succeeded": {
+    "/api/webhooks/stripe/charge/succeeded": {
         parameters: {
             query?: never;
             header?: never;
@@ -13,6 +13,50 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Stripe charge succeeded webhook
+         * @description Triggered when a charge is successfully completed
+         */
+        post: operations["stripeChargeSucceeded"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/stripe/payment_intent_succeeded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stripe payment intent succeeded webhook (legacy path)
+         * @description Triggered when a payment intent is successfully completed (legacy endpoint)
+         */
+        post: operations["stripePaymentIntentSucceededLegacy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/stripe/payment_intent/succeeded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stripe payment intent succeeded webhook
+         * @description Triggered when a payment intent is successfully completed
+         */
         post: operations["stripePaymentIntentSucceeded"];
         delete?: never;
         options?: never;
@@ -20,7 +64,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhooks/stripe/checkout.session.completed": {
+    "/api/webhooks/stripe/charge/refunded": {
         parameters: {
             query?: never;
             header?: never;
@@ -29,7 +73,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["stripeCheckoutSessionCompleted"];
+        /**
+         * Stripe charge refunded webhook
+         * @description Triggered when a charge is refunded
+         */
+        post: operations["stripeChargeRefunded"];
         delete?: never;
         options?: never;
         head?: never;
@@ -37,114 +85,1567 @@ export interface paths {
         trace?: never;
     };
 }
-
 export type webhooks = Record<string, never>;
-
 export interface components {
     schemas: {
-        StripePaymentIntent: {
-            id: string;
-            object: "payment_intent";
-            amount: number;
-            amount_received: number;
-            currency: string;
-            status: "succeeded" | "processing" | "requires_payment_method" | "canceled";
-            created: number;
-            metadata?: Record<string, string>;
-            customer?: string | null;
-            payment_method?: string;
-        };
-        StripeCheckoutSession: {
-            id: string;
-            object: "checkout.session";
-            amount_total: number;
-            currency: string;
-            status: "complete" | "expired" | "open";
-            payment_status: "paid" | "unpaid" | "no_payment_required";
-            customer?: string | null;
-            customer_email?: string | null;
-            metadata?: Record<string, string>;
-            created: number;
-        };
         StripeEvent: {
+            /**
+             * @description Unique event identifier
+             * @example evt_1234567890
+             */
             id: string;
-            object: "event";
-            type: string;
+            /**
+             * @description Event type
+             * @enum {string}
+             */
+            type: "charge.succeeded" | "charge.refunded" | "payment_intent.succeeded" | "payment_intent.payment_failed";
+            /** @description Unix timestamp of event creation */
             created: number;
+            /** @description Whether this is a live mode event */
+            livemode?: boolean;
             data: {
-                object: components["schemas"]["StripePaymentIntent"] | components["schemas"]["StripeCheckoutSession"];
+                object: {
+                    /**
+                     * @description Charge ID
+                     * @example ch_1234567890
+                     */
+                    id: string;
+                    /**
+                     * @description Amount in cents
+                     * @example 19999
+                     */
+                    amount: number;
+                    /**
+                     * @description Amount refunded in cents
+                     * @example 0
+                     */
+                    amount_refunded?: number;
+                    /**
+                     * @description Three-letter currency code
+                     * @example usd
+                     */
+                    currency: string;
+                    /** @enum {string} */
+                    status: "succeeded" | "pending" | "failed" | "refunded";
+                    /** @description Whether the charge was paid */
+                    paid?: boolean;
+                    /** @description Whether the charge was fully refunded */
+                    refunded?: boolean;
+                    /**
+                     * @description Custom metadata including attribution data
+                     * @example {
+                     *       "skeldir_session_id": "sess_abc123",
+                     *       "order_id": "ord_12345"
+                     *     }
+                     */
+                    metadata?: {
+                        [key: string]: string;
+                    };
+                    /** Format: email */
+                    receipt_email?: string;
+                    billing_details?: {
+                        /** Format: email */
+                        email?: string;
+                        name?: string;
+                    };
+                };
             };
-            livemode: boolean;
+        };
+        StripeCharge: {
+            /**
+             * @description Charge ID
+             * @example ch_1234567890
+             */
+            id: string;
+            /**
+             * @description Amount in cents
+             * @example 19999
+             */
+            amount: number;
+            /**
+             * @description Amount refunded in cents
+             * @example 0
+             */
+            amount_refunded?: number;
+            /**
+             * @description Three-letter currency code
+             * @example usd
+             */
+            currency: string;
+            /** @enum {string} */
+            status: "succeeded" | "pending" | "failed" | "refunded";
+            /** @description Whether the charge was paid */
+            paid?: boolean;
+            /** @description Whether the charge was fully refunded */
+            refunded?: boolean;
+            /**
+             * @description Custom metadata including attribution data
+             * @example {
+             *       "skeldir_session_id": "sess_abc123",
+             *       "order_id": "ord_12345"
+             *     }
+             */
+            metadata?: {
+                [key: string]: string;
+            };
+            /** Format: email */
+            receipt_email?: string;
+            billing_details?: {
+                /** Format: email */
+                email?: string;
+                name?: string;
+            };
         };
         SuccessResponse: {
             success: boolean;
+            /** Format: uuid */
+            correlation_id: string;
             message?: string;
         };
+        /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
+        ProblemDetails: {
+            /**
+             * Format: uri
+             * @description URI reference identifying the problem type
+             * @example https://api.skeldir.com/problems/authentication-failed
+             */
+            type: string;
+            /**
+             * @description Short, human-readable summary of the problem
+             * @example Authentication Failed
+             */
+            title: string;
+            /**
+             * @description HTTP status code
+             * @example 401
+             */
+            status: number;
+            /**
+             * @description Human-readable explanation specific to this occurrence
+             * @example The provided JWT token has expired. Please refresh your authentication token.
+             */
+            detail: string;
+            /**
+             * Format: uri
+             * @description URI reference identifying this specific occurrence
+             * @example https://api.skeldir.com/api/attribution/revenue/realtime
+             */
+            instance: string;
+            /**
+             * Format: uuid
+             * @description Request correlation ID for distributed tracing
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            correlation_id: string;
+            /**
+             * Format: date-time
+             * @description ISO 8601 timestamp when the error occurred
+             * @example 2025-11-11T14:32:00Z
+             */
+            timestamp: string;
+            /** @description Optional array of specific validation errors */
+            errors?: {
+                /** @example email */
+                field?: string;
+                /** @example Invalid email format */
+                message?: string;
+                /** @example INVALID_FORMAT */
+                code?: string;
+            }[];
+        };
     };
-    responses: never;
+    responses: {
+        /** @description Webhook processed successfully */
+        WebhookAccepted: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "success": true,
+                 *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                 *       "message": "Webhook received"
+                 *     }
+                 */
+                "application/json": {
+                    success: boolean;
+                    /** Format: uuid */
+                    correlation_id: string;
+                    message?: string;
+                };
+            };
+        };
+        /** @description Bad Request - validation failed */
+        ValidationError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+        /** @description Unauthorized - invalid or missing authentication */
+        UnauthorizedError: {
+            headers: {
+                /** @description Request correlation ID for distributed tracing */
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+        /** @description Internal server error */
+        ServerError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                };
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
     pathItems: never;
 }
-
+export type $defs = Record<string, never>;
 export interface operations {
-    stripePaymentIntentSucceeded: {
+    stripeChargeSucceeded: {
         parameters: {
             query?: never;
-            header: {
-                "Stripe-Signature": string;
+            header?: {
+                /** @description Stripe webhook signature for verification */
+                "Stripe-Signature"?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StripeEvent"];
+                /**
+                 * @example {
+                 *       "id": "evt_1234567890",
+                 *       "type": "charge.succeeded",
+                 *       "created": 1732631400,
+                 *       "data": {
+                 *         "object": {
+                 *           "id": "ch_1234567890",
+                 *           "amount": 19999,
+                 *           "currency": "usd",
+                 *           "status": "succeeded",
+                 *           "metadata": {
+                 *             "skeldir_session_id": "sess_abc123",
+                 *             "order_id": "ord_12345"
+                 *           }
+                 *         }
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description Unique event identifier
+                     * @example evt_1234567890
+                     */
+                    id: string;
+                    /**
+                     * @description Event type
+                     * @enum {string}
+                     */
+                    type: "charge.succeeded" | "charge.refunded" | "payment_intent.succeeded" | "payment_intent.payment_failed";
+                    /** @description Unix timestamp of event creation */
+                    created: number;
+                    /** @description Whether this is a live mode event */
+                    livemode?: boolean;
+                    data: {
+                        object: {
+                            /**
+                             * @description Charge ID
+                             * @example ch_1234567890
+                             */
+                            id: string;
+                            /**
+                             * @description Amount in cents
+                             * @example 19999
+                             */
+                            amount: number;
+                            /**
+                             * @description Amount refunded in cents
+                             * @example 0
+                             */
+                            amount_refunded?: number;
+                            /**
+                             * @description Three-letter currency code
+                             * @example usd
+                             */
+                            currency: string;
+                            /** @enum {string} */
+                            status: "succeeded" | "pending" | "failed" | "refunded";
+                            /** @description Whether the charge was paid */
+                            paid?: boolean;
+                            /** @description Whether the charge was fully refunded */
+                            refunded?: boolean;
+                            /**
+                             * @description Custom metadata including attribution data
+                             * @example {
+                             *       "skeldir_session_id": "sess_abc123",
+                             *       "order_id": "ord_12345"
+                             *     }
+                             */
+                            metadata?: {
+                                [key: string]: string;
+                            };
+                            /** Format: email */
+                            receipt_email?: string;
+                            billing_details?: {
+                                /** Format: email */
+                                email?: string;
+                                name?: string;
+                            };
+                        };
+                    };
+                };
             };
         };
         responses: {
+            /** @description Webhook processed successfully */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
                 };
             };
+            /** @description Bad Request - validation failed */
             400: {
                 headers: {
+                    "X-Correlation-ID"?: string;
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
-    stripeCheckoutSessionCompleted: {
+    stripePaymentIntentSucceededLegacy: {
         parameters: {
             query?: never;
-            header: {
-                "Stripe-Signature": string;
+            header?: {
+                "Stripe-Signature"?: string;
             };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StripeEvent"];
+                /**
+                 * @example {
+                 *       "id": "evt_paymentintent_1234567890",
+                 *       "type": "payment_intent.succeeded",
+                 *       "created": 1732631500,
+                 *       "data": {
+                 *         "object": {
+                 *           "id": "pi_1234567890",
+                 *           "amount": 19999,
+                 *           "currency": "usd",
+                 *           "status": "succeeded",
+                 *           "metadata": {
+                 *             "skeldir_session_id": "sess_refund123"
+                 *           }
+                 *         }
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description Unique event identifier
+                     * @example evt_1234567890
+                     */
+                    id: string;
+                    /**
+                     * @description Event type
+                     * @enum {string}
+                     */
+                    type: "charge.succeeded" | "charge.refunded" | "payment_intent.succeeded" | "payment_intent.payment_failed";
+                    /** @description Unix timestamp of event creation */
+                    created: number;
+                    /** @description Whether this is a live mode event */
+                    livemode?: boolean;
+                    data: {
+                        object: {
+                            /**
+                             * @description Charge ID
+                             * @example ch_1234567890
+                             */
+                            id: string;
+                            /**
+                             * @description Amount in cents
+                             * @example 19999
+                             */
+                            amount: number;
+                            /**
+                             * @description Amount refunded in cents
+                             * @example 0
+                             */
+                            amount_refunded?: number;
+                            /**
+                             * @description Three-letter currency code
+                             * @example usd
+                             */
+                            currency: string;
+                            /** @enum {string} */
+                            status: "succeeded" | "pending" | "failed" | "refunded";
+                            /** @description Whether the charge was paid */
+                            paid?: boolean;
+                            /** @description Whether the charge was fully refunded */
+                            refunded?: boolean;
+                            /**
+                             * @description Custom metadata including attribution data
+                             * @example {
+                             *       "skeldir_session_id": "sess_abc123",
+                             *       "order_id": "ord_12345"
+                             *     }
+                             */
+                            metadata?: {
+                                [key: string]: string;
+                            };
+                            /** Format: email */
+                            receipt_email?: string;
+                            billing_details?: {
+                                /** Format: email */
+                                email?: string;
+                                name?: string;
+                            };
+                        };
+                    };
+                };
             };
         };
         responses: {
+            /** @description Webhook processed successfully */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            400: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    stripePaymentIntentSucceeded: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Stripe-Signature"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "id": "evt_paymentintent_1234567890",
+                 *       "type": "payment_intent.succeeded",
+                 *       "created": 1732631500,
+                 *       "data": {
+                 *         "object": {
+                 *           "id": "pi_1234567890",
+                 *           "amount": 19999,
+                 *           "currency": "usd",
+                 *           "status": "succeeded",
+                 *           "metadata": {
+                 *             "skeldir_session_id": "sess_refund123"
+                 *           }
+                 *         }
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description Unique event identifier
+                     * @example evt_1234567890
+                     */
+                    id: string;
+                    /**
+                     * @description Event type
+                     * @enum {string}
+                     */
+                    type: "charge.succeeded" | "charge.refunded" | "payment_intent.succeeded" | "payment_intent.payment_failed";
+                    /** @description Unix timestamp of event creation */
+                    created: number;
+                    /** @description Whether this is a live mode event */
+                    livemode?: boolean;
+                    data: {
+                        object: {
+                            /**
+                             * @description Charge ID
+                             * @example ch_1234567890
+                             */
+                            id: string;
+                            /**
+                             * @description Amount in cents
+                             * @example 19999
+                             */
+                            amount: number;
+                            /**
+                             * @description Amount refunded in cents
+                             * @example 0
+                             */
+                            amount_refunded?: number;
+                            /**
+                             * @description Three-letter currency code
+                             * @example usd
+                             */
+                            currency: string;
+                            /** @enum {string} */
+                            status: "succeeded" | "pending" | "failed" | "refunded";
+                            /** @description Whether the charge was paid */
+                            paid?: boolean;
+                            /** @description Whether the charge was fully refunded */
+                            refunded?: boolean;
+                            /**
+                             * @description Custom metadata including attribution data
+                             * @example {
+                             *       "skeldir_session_id": "sess_abc123",
+                             *       "order_id": "ord_12345"
+                             *     }
+                             */
+                            metadata?: {
+                                [key: string]: string;
+                            };
+                            /** Format: email */
+                            receipt_email?: string;
+                            billing_details?: {
+                                /** Format: email */
+                                email?: string;
+                                name?: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook processed successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            400: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    stripeChargeRefunded: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Stripe-Signature"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "id": "evt_refund_1234567890",
+                 *       "type": "charge.refunded",
+                 *       "created": 1732631500,
+                 *       "data": {
+                 *         "object": {
+                 *           "id": "ch_1234567890",
+                 *           "amount": 19999,
+                 *           "currency": "usd",
+                 *           "status": "refunded",
+                 *           "metadata": {
+                 *             "skeldir_session_id": "sess_refund123"
+                 *           }
+                 *         }
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description Unique event identifier
+                     * @example evt_1234567890
+                     */
+                    id: string;
+                    /**
+                     * @description Event type
+                     * @enum {string}
+                     */
+                    type: "charge.succeeded" | "charge.refunded" | "payment_intent.succeeded" | "payment_intent.payment_failed";
+                    /** @description Unix timestamp of event creation */
+                    created: number;
+                    /** @description Whether this is a live mode event */
+                    livemode?: boolean;
+                    data: {
+                        object: {
+                            /**
+                             * @description Charge ID
+                             * @example ch_1234567890
+                             */
+                            id: string;
+                            /**
+                             * @description Amount in cents
+                             * @example 19999
+                             */
+                            amount: number;
+                            /**
+                             * @description Amount refunded in cents
+                             * @example 0
+                             */
+                            amount_refunded?: number;
+                            /**
+                             * @description Three-letter currency code
+                             * @example usd
+                             */
+                            currency: string;
+                            /** @enum {string} */
+                            status: "succeeded" | "pending" | "failed" | "refunded";
+                            /** @description Whether the charge was paid */
+                            paid?: boolean;
+                            /** @description Whether the charge was fully refunded */
+                            refunded?: boolean;
+                            /**
+                             * @description Custom metadata including attribution data
+                             * @example {
+                             *       "skeldir_session_id": "sess_abc123",
+                             *       "order_id": "ord_12345"
+                             *     }
+                             */
+                            metadata?: {
+                                [key: string]: string;
+                            };
+                            /** Format: email */
+                            receipt_email?: string;
+                            billing_details?: {
+                                /** Format: email */
+                                email?: string;
+                                name?: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook processed successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "message": "Webhook received"
+                     *     }
+                     */
+                    "application/json": {
+                        success: boolean;
+                        /** Format: uuid */
+                        correlation_id: string;
+                        message?: string;
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            400: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
                 };
             };
         };
     };
 }
-
-export type $defs = Record<string, never>;
