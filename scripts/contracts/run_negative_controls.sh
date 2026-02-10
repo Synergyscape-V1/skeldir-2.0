@@ -92,9 +92,13 @@ doc["paths"]["/api/auth/login"]["post"]["responses"]["200"]["content"]["applicat
 dst.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 PY
 
-if oasdiff breaking api-contracts/dist/openapi/v1/auth.bundled.yaml /tmp/auth.breaking.yaml; then
-  echo "[negative-control] ERROR: oasdiff did not fail under intentional breaking change"
+OASDIFF_OUT="$(mktemp)"
+oasdiff breaking api-contracts/dist/openapi/v1/auth.bundled.yaml /tmp/auth.breaking.yaml >"$OASDIFF_OUT" 2>&1 || true
+cat "$OASDIFF_OUT"
+if grep -q "0 changes" "$OASDIFF_OUT"; then
+  echo "[negative-control] ERROR: oasdiff did not detect intentional breaking change"
   exit 1
 fi
+rm -f "$OASDIFF_OUT"
 
 echo "[negative-control] PASS"
