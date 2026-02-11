@@ -264,3 +264,52 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
         timeout=10.0,
     )
     assert res4.status_code == 401
+
+    # Malformed JSON with valid signature must route to DLQ (never 422 drift).
+    bad_key = f"b057_p3_bad_{uuid4().hex[:12]}"
+    malformed_body = b'{"id":"evt_bad","created":'
+    signed_malformed = f"{created}.{malformed_body.decode('utf-8')}".encode("utf-8")
+    malformed_sig = hmac.new(
+        b057_p3_fixture.stripe_secret.encode("utf-8"),
+        signed_malformed,
+        hashlib.sha256,
+    ).hexdigest()
+
+    res5 = httpx.post(
+        f"{api_base_url}/api/webhooks/stripe/payment_intent/succeeded",
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": b057_p3_fixture.tenant_key,
+            "Stripe-Signature": f"t={created},v1={malformed_sig}",
+            "X-Idempotency-Key": bad_key,
+        },
+        content=malformed_body,
+        timeout=10.0,
+    )
+    assert res5.status_code == 200, res5.text
+    malformed_payload = res5.json()
+    assert malformed_payload.get("status") == "dlq_routed"
+    assert malformed_payload.get("dead_event_id")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("SELECT set_config('app.current_tenant_id', :tid, false)"),
+            {"tid": str(b057_p3_fixture.tenant_id)},
+        )
+        dlq_count = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM public.dead_events "
+                "WHERE raw_payload->>'idempotency_key' = :key"
+            ),
+            {"key": bad_key},
+        ).scalar_one()
+        canonical_count = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM public.attribution_events "
+                "WHERE idempotency_key = :key"
+            ),
+            {"key": bad_key},
+        ).scalar_one()
+
+    assert int(dlq_count) >= 1
+    assert int(canonical_count) == 0

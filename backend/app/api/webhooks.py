@@ -8,6 +8,8 @@ Responsibilities:
 - Return 200 for success and DLQ-routed validation failures; 401 for signature/tenant failures
 """
 import logging
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4, uuid5, NAMESPACE_URL
@@ -16,7 +18,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi import Body
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.config import settings
 from app.core.tenant_context import get_tenant_with_webhook_secrets
@@ -307,7 +309,6 @@ async def stripe_payment_intent_succeeded(
 )
 async def stripe_payment_intent_succeeded_v2(
     request: Request,
-    payload: dict = Body(...),
     stripe_signature: str = Header(None, alias="Stripe-Signature"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     tenant_info=Depends(tenant_secrets),
@@ -328,24 +329,39 @@ async def stripe_payment_intent_succeeded_v2(
             content={"status": "invalid_signature", "vendor": "stripe"},
         )
 
+    payload: dict[str, Any] = {}
+    payload_parse_error: str | None = None
+    try:
+        parsed_payload = json.loads(raw_body.decode("utf-8"))
+        if not isinstance(parsed_payload, dict):
+            raise ValueError("payload root must be a JSON object")
+        payload = parsed_payload
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        payload_parse_error = str(exc)
+
     idempotency_key = x_idempotency_key
     pi_id = None
     amount_cents = None
     currency = None
     created_epoch = None
     event_id = None
-    try:
-        event_id = payload.get("id")
-        created_epoch = payload.get("created")
-        obj = (payload.get("data") or {}).get("object") or {}
-        pi_id = obj.get("id")
-        amount_cents = obj.get("amount")
-        currency = obj.get("currency")
-        if not idempotency_key and pi_id:
-            idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
-    except Exception:
-        # Handled as malformed below (routes to DLQ).
-        pass
+    if payload_parse_error is None:
+        try:
+            event_id = payload.get("id")
+            created_epoch = payload.get("created")
+            obj = (payload.get("data") or {}).get("object") or {}
+            pi_id = obj.get("id")
+            amount_cents = obj.get("amount")
+            currency = obj.get("currency")
+            if not idempotency_key and pi_id:
+                idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
+        except Exception:
+            # Handled as malformed below (routes to DLQ).
+            pass
+    elif not idempotency_key:
+        # Keep malformed-body routing deterministic even without a client idempotency key.
+        body_sha256 = hashlib.sha256(raw_body).hexdigest()
+        idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_invalid_json_{body_sha256}"))
 
     if not idempotency_key:
         return JSONResponse(
@@ -355,6 +371,31 @@ async def stripe_payment_intent_succeeded_v2(
 
     set_business_correlation_id(idempotency_key)
     correlation_uuid = str(_make_correlation_uuid(idempotency_key))
+
+    if payload_parse_error is not None:
+        dead = await _route_to_dlq_direct(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            correlation_id=correlation_uuid,
+            payload={
+                "event_type": "purchase",
+                "vendor": "stripe",
+                "idempotency_key": idempotency_key,
+                "correlation_id": correlation_uuid,
+                "vendor_payload": {
+                    "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+                    "raw_body_bytes": len(raw_body),
+                    "parse_error": payload_parse_error,
+                },
+            },
+            error_message="invalid_json_payload",
+            error_type="validation_error",
+        )
+        return {
+            "status": "dlq_routed",
+            "dead_event_id": str(dead.id),
+            "error": "validation_error",
+        }
 
     pii_paths = _pii_redacted_paths(request)
     if pii_paths:
