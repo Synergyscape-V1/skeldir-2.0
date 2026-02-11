@@ -14,9 +14,11 @@ import asyncio
 import hashlib
 import hmac
 import json
+import multiprocessing as mp
 import os
 import platform
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -46,6 +48,16 @@ PII_KEYS = [
     "customer_email",
     "customer_phone",
 ]
+
+# ---------------------------------------------------------------------------
+# CPU-aware resource reservation (Phase 3 EG3.4)
+# ---------------------------------------------------------------------------
+_DETECTED_CORES = os.cpu_count() or 2
+# Loadgen: max 2 workers; always reserve >= 2 cores for server + DB
+_LOADGEN_WORKERS = max(1, min(_DETECTED_CORES - 2, 2))
+# Server workers: fill remaining minus 1 reserved for DB
+_SERVER_WORKERS = max(2, _DETECTED_CORES - _LOADGEN_WORKERS - 1)
+_MP_START_METHOD = "spawn"
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -285,6 +297,24 @@ async def db_count_dlq_for_keys(conn: asyncpg.Connection, tenant_id: UUID, keys:
     )
 
 
+async def db_channel_for_key(conn: asyncpg.Connection, tenant_id: UUID, key: str) -> str | None:
+    await _set_tenant_context(conn, tenant_id)
+    row = await conn.fetchrow(
+        """
+        SELECT channel
+        FROM attribution_events
+        WHERE tenant_id=$1 AND idempotency_key=$2
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        str(tenant_id),
+        key,
+    )
+    if not row:
+        return None
+    return str(row["channel"])
+
+
 async def db_pii_key_hits_since(
     conn: asyncpg.Connection, since_utc: datetime, tenant_ids: list[UUID]
 ) -> dict[str, int]:
@@ -369,6 +399,365 @@ def _make_headers_for_stripe(
 
 def _keys_for_scenario(candidate_sha: str, scenario: str, n: int) -> list[str]:
     return [str(_uuid_deterministic("r3", candidate_sha, scenario, str(i))) for i in range(n)]
+
+
+# ============================================================================
+# Phase 0 — Null Benchmark (isolated ruler calibration)
+# ============================================================================
+
+def _run_stub_server(port: int) -> None:
+    """Target function for stub server child process.
+
+    Must be top-level to be picklable on Windows (spawn).
+    """
+    async def _handle(
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        try:
+            await reader.readuntil(b"\r\n\r\n")
+        except (asyncio.IncompleteReadError, ConnectionResetError):
+            writer.close()
+            return
+        writer.write(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 15\r\n"
+            b"Connection: keep-alive\r\n"
+            b"\r\n"
+            b'{\"status\":\"ok\"}'
+        )
+        try:
+            await writer.drain()
+        except ConnectionResetError:
+            pass
+        writer.close()
+
+    async def _main() -> None:
+        srv = await asyncio.start_server(_handle, "127.0.0.1", port)
+        await srv.serve_forever()
+
+    asyncio.run(_main())
+
+
+def _stub_server_process(port: int = 9999) -> mp.Process:
+    """Start the stub server in a daemon child process."""
+    p = mp.Process(target=_run_stub_server, args=(port,), daemon=True)
+    p.start()
+    return p
+
+
+def _null_benchmark_worker(
+    worker_id: int,
+    url: str,
+    count: int,
+    concurrency: int,
+    result_queue: "mp.Queue[dict]",
+) -> None:
+    """Child process: own GIL, own event loop, own httpx client."""
+
+    async def _run() -> None:
+        ok = 0
+        fail = 0
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _one() -> None:
+            nonlocal ok, fail
+            async with sem:
+                try:
+                    resp = await client.get(url, timeout=5.0)
+                    if resp.status_code == 200:
+                        ok += 1
+                    else:
+                        fail += 1
+                except Exception:
+                    fail += 1
+
+        limits = httpx.Limits(
+            max_connections=concurrency,
+            max_keepalive_connections=concurrency,
+        )
+        async with httpx.AsyncClient(limits=limits) as client:
+            await asyncio.gather(*[_one() for _ in range(count)])
+        result_queue.put({"worker_id": worker_id, "ok": ok, "fail": fail})
+
+    asyncio.run(_run())
+
+
+def _run_null_benchmark(
+    num_workers: int,
+    total_requests: int = 10000,
+    concurrency_per_worker: int = 50,
+    stub_port: int = 9999,
+) -> float:
+    """Spin up stub server + N loadgen workers, return measured req/s.
+
+    Exit gate: if < 2000 req/s, the CI runner cannot sustain the target.
+    """
+    stub = _stub_server_process(port=stub_port)
+    time.sleep(0.5)  # let stub bind
+
+    url = f"http://127.0.0.1:{stub_port}/"
+    per_worker = total_requests // num_workers
+    remainder = total_requests % num_workers
+
+    result_queue: mp.Queue = mp.Queue()
+    workers: list[mp.Process] = []
+    for i in range(num_workers):
+        count = per_worker + (1 if i < remainder else 0)
+        p = mp.Process(
+            target=_null_benchmark_worker,
+            args=(i, url, count, concurrency_per_worker, result_queue),
+        )
+        workers.append(p)
+
+    started = time.perf_counter()
+    for p in workers:
+        p.start()
+    for p in workers:
+        p.join(timeout=60)
+    elapsed = time.perf_counter() - started
+
+    total_ok = 0
+    total_fail = 0
+    for _ in range(num_workers):
+        try:
+            r = result_queue.get_nowait()
+            total_ok += r["ok"]
+            total_fail += r["fail"]
+        except Exception:
+            pass
+
+    stub.terminate()
+    stub.join(timeout=5)
+
+    rps = total_ok / elapsed if elapsed > 0 else 0.0
+    print("=== R3_NULL_BENCHMARK ===")
+    print(json.dumps({
+        "TOTAL_REQUESTS": total_requests,
+        "TOTAL_OK": total_ok,
+        "TOTAL_FAIL": total_fail,
+        "ELAPSED_S": round(elapsed, 4),
+        "NULL_BENCHMARK_RPS": round(rps, 1),
+        "NUM_WORKERS": num_workers,
+        "STUB_PORT": stub_port,
+    }, indent=2, sort_keys=True))
+    return rps
+
+
+# ============================================================================
+# Phase 1 — Multiprocess S8 generator infrastructure
+# ============================================================================
+
+@dataclass(frozen=True)
+class S8WorkerConfig:
+    """Compact config passed to each S8 child process (< 1KB serialised).
+
+    Workers reconstruct request payloads internally using the existing
+    deterministic helpers — no large request blobs cross the IPC boundary.
+    """
+    worker_id: int
+    base_url: str
+    tenant_api_key_header: str
+    tenant_api_key: str
+    stripe_secret: str
+    tenant_id: str              # str(UUID) for pickle safety
+    name: str                   # scenario name for key derivation
+    run_start_epoch: int
+    concurrency: int            # per-worker concurrency
+    timeout_s: float
+    # Key assignments for this worker
+    replay_key: str
+    replay_count: int           # this worker's share of duplicate requests
+    unique_keys: list
+    malformed_keys: list
+    pii_keys: list
+
+
+def _build_s8_requests_from_config(
+    cfg: S8WorkerConfig,
+) -> list[tuple[str, dict[str, str], bytes]]:
+    """Reconstruct (url, headers, body) tuples from compact config.
+
+    Uses the same deterministic helpers as the original S8 builder —
+    guarantees identical payloads regardless of worker partition.
+    """
+    url = f"{cfg.base_url}/api/webhooks/stripe/payment_intent/succeeded"
+    reqs: list[tuple[str, dict[str, str], bytes]] = []
+
+    # Replay / duplicate requests
+    if cfg.replay_count > 0:
+        replay_body = build_stripe_payment_intent_body(
+            event_id=f"evt_{cfg.replay_key.replace('-', '')[:16]}",
+            payment_intent_id=f"pi_{cfg.replay_key.replace('-', '')[:16]}",
+            amount_cents=101,
+            currency="usd",
+            created_epoch=cfg.run_start_epoch,
+            include_pii=False,
+        )
+        replay_headers = _make_headers_for_stripe(
+            tenant_api_key_header=cfg.tenant_api_key_header,
+            tenant_api_key=cfg.tenant_api_key,
+            stripe_secret=cfg.stripe_secret,
+            correlation_id=_uuid_deterministic(
+                "r3", cfg.name, cfg.tenant_id, cfg.replay_key
+            ),
+            idempotency_key=cfg.replay_key,
+            body=replay_body,
+        )
+        for _ in range(cfg.replay_count):
+            reqs.append((url, replay_headers, replay_body))
+
+    # Unique valid requests
+    for key in cfg.unique_keys:
+        correlation_id = _uuid_deterministic("r3", cfg.name, cfg.tenant_id, key)
+        body = build_stripe_payment_intent_body(
+            event_id=f"evt_{key.replace('-', '')[:16]}",
+            payment_intent_id=f"pi_{key.replace('-', '')[:16]}",
+            amount_cents=111,
+            currency="usd",
+            created_epoch=cfg.run_start_epoch,
+            include_pii=False,
+        )
+        headers = _make_headers_for_stripe(
+            tenant_api_key_header=cfg.tenant_api_key_header,
+            tenant_api_key=cfg.tenant_api_key,
+            stripe_secret=cfg.stripe_secret,
+            correlation_id=correlation_id,
+            idempotency_key=key,
+            body=body,
+        )
+        reqs.append((url, headers, body))
+
+    # Malformed requests
+    for key in cfg.malformed_keys:
+        correlation_id = _uuid_deterministic("r3", cfg.name, cfg.tenant_id, key)
+        body = build_stripe_payment_intent_body(
+            event_id=f"evt_{key.replace('-', '')[:16]}",
+            payment_intent_id=None,
+            amount_cents=None,
+            currency="usd",
+            created_epoch="not_an_int",
+            include_pii=False,
+        )
+        headers = _make_headers_for_stripe(
+            tenant_api_key_header=cfg.tenant_api_key_header,
+            tenant_api_key=cfg.tenant_api_key,
+            stripe_secret=cfg.stripe_secret,
+            correlation_id=correlation_id,
+            idempotency_key=key,
+            body=body,
+        )
+        reqs.append((url, headers, body))
+
+    # PII requests
+    for key in cfg.pii_keys:
+        correlation_id = _uuid_deterministic("r3", cfg.name, cfg.tenant_id, key)
+        body = build_stripe_payment_intent_body(
+            event_id=f"evt_{key.replace('-', '')[:16]}",
+            payment_intent_id=f"pi_{key.replace('-', '')[:16]}",
+            amount_cents=131,
+            currency="usd",
+            created_epoch=cfg.run_start_epoch,
+            include_pii=True,
+        )
+        headers = _make_headers_for_stripe(
+            tenant_api_key_header=cfg.tenant_api_key_header,
+            tenant_api_key=cfg.tenant_api_key,
+            stripe_secret=cfg.stripe_secret,
+            correlation_id=correlation_id,
+            idempotency_key=key,
+            body=body,
+        )
+        reqs.append((url, headers, body))
+
+    # Deterministic shuffle (same as original S8)
+    reqs.sort(
+        key=lambda r: hashlib.sha256(
+            r[1]["X-Idempotency-Key"].encode("utf-8")
+        ).hexdigest()
+    )
+    return reqs
+
+
+def _s8_worker_entry(
+    cfg: S8WorkerConfig,
+    result_queue: "mp.Queue[dict]",
+) -> None:
+    """S8 child process entry point.
+
+    Builds payloads from config, fires via _http_fire, reports results.
+    Runs in a *spawned* process — own GIL, own event loop, fresh interpreter.
+    """
+
+    async def _run() -> None:
+        reqs = _build_s8_requests_from_config(cfg)
+        limits = httpx.Limits(
+            max_connections=cfg.concurrency,
+            max_keepalive_connections=cfg.concurrency,
+        )
+        async with httpx.AsyncClient(limits=limits) as client:
+            status_counts, timeouts, conn_errors = await _http_fire(
+                client, reqs, concurrency=cfg.concurrency, timeout_s=cfg.timeout_s
+            )
+        result_queue.put({
+            "worker_id": cfg.worker_id,
+            "status_counts": status_counts,
+            "timeouts": timeouts,
+            "conn_errors": conn_errors,
+        })
+
+    asyncio.run(_run())
+
+
+def _slice_list(lst: list, num_chunks: int) -> list[list]:
+    """Partition a list into num_chunks roughly-equal slices."""
+    if not lst:
+        return [[] for _ in range(num_chunks)]
+    chunk_size = len(lst) // num_chunks
+    remainder = len(lst) % num_chunks
+    slices: list[list] = []
+    start = 0
+    for i in range(num_chunks):
+        end = start + chunk_size + (1 if i < remainder else 0)
+        slices.append(lst[start:end])
+        start = end
+    return slices
+
+
+def _s8_multiprocess_fire(
+    configs: list[S8WorkerConfig],
+) -> tuple[dict[str, int], int, int]:
+    """Spawn N child processes, each running _s8_worker_entry.
+
+    Returns aggregated (status_counts, timeouts, conn_errors).
+    """
+    result_queue: mp.Queue = mp.Queue()
+    procs: list[mp.Process] = []
+    for cfg in configs:
+        p = mp.Process(target=_s8_worker_entry, args=(cfg, result_queue))
+        procs.append(p)
+
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(timeout=120)
+
+    merged_status: dict[str, int] = {}
+    total_timeouts = 0
+    total_conn_errors = 0
+    for _ in range(len(configs)):
+        try:
+            r = result_queue.get(timeout=5)
+            for k, v in r["status_counts"].items():
+                merged_status[k] = merged_status.get(k, 0) + v
+            total_timeouts += r["timeouts"]
+            total_conn_errors += r["conn_errors"]
+        except Exception:
+            # Worker crashed — count as total failure
+            merged_status["worker_crash"] = merged_status.get("worker_crash", 0) + 1
+
+    return merged_status, total_timeouts, total_conn_errors
 
 
 async def scenario_s1_replay_storm(
@@ -803,16 +1192,396 @@ async def scenario_s6_mixed_storm(
     )
 
 
+async def scenario_s7_invalid_json_dlq(
+    *,
+    name: str,
+    client: httpx.AsyncClient,
+    base_url: str,
+    tenant: TenantSeed,
+    tenant_api_key_header: str,
+    n: int,
+    concurrency: int,
+    timeout_s: float,
+    conn: asyncpg.Connection,
+    keys: list[str],
+) -> ScenarioResult:
+    url = f"{base_url}/api/webhooks/stripe/payment_intent/succeeded"
+    reqs: list[tuple[str, dict[str, str], bytes]] = []
+    for k in keys:
+        correlation_id = _uuid_deterministic("r3", name, str(tenant.tenant_id), k)
+        body = f'{{"id":"evt_{k[:8]}","created":1234567890,"data":'.encode("utf-8")
+        headers = _make_headers_for_stripe(
+            tenant_api_key_header=tenant_api_key_header,
+            tenant_api_key=tenant.api_key,
+            stripe_secret=tenant.secrets["stripe"],
+            correlation_id=correlation_id,
+            idempotency_key=k,
+            body=body,
+        )
+        reqs.append((url, headers, body))
+
+    status_counts, timeouts, conn_errors = await _http_fire(
+        client, reqs, concurrency=concurrency, timeout_s=timeout_s
+    )
+    canonical = await db_count_canonical_for_keys(conn, tenant.tenant_id, keys)
+    dlq = await db_count_dlq_for_keys(conn, tenant.tenant_id, keys)
+    http_5xx = sum(v for code, v in status_counts.items() if code.isdigit() and 500 <= int(code) <= 599)
+
+    passed = canonical == 0 and dlq == n and http_5xx == 0 and timeouts == 0 and conn_errors == 0
+    return ScenarioResult(
+        name=name,
+        passed=passed,
+        http_status_counts=status_counts,
+        http_timeouts=timeouts,
+        http_connection_errors=conn_errors,
+        db={
+            "CANONICAL_ROWS_CREATED": canonical,
+            "DLQ_ROWS_CREATED": dlq,
+            "HTTP_5XX_COUNT": http_5xx,
+            "HTTP_TIMEOUT_COUNT": timeouts,
+            "HTTP_CONNECTION_ERRORS": conn_errors,
+        },
+    )
+
+
+async def scenario_s8_perf_gate(
+    *,
+    name: str,
+    client: httpx.AsyncClient,
+    base_url: str,
+    tenant_api_key_header: str,
+    n: int,
+    concurrency: int,
+    timeout_s: float,
+    run_start_utc: datetime,
+    conn: asyncpg.Connection,
+    max_seconds: float,
+    admin_db_url: str,
+    candidate_sha: str,
+) -> ScenarioResult:
+    if n < 100:
+        raise RuntimeError("S8 perf gate requires n >= 100")
+
+    # 1. Warm-up pass (single process, fire-and-forget)
+    # -----------------------------------------------------------------------
+    print(f"R3_S8_WARMUP: Firing 100 requests to warm JIT/pools...")
+    warmup_tenant_id = _uuid_deterministic("r3", candidate_sha, "s8_warmup")
+    warmup_tenant = TenantSeed(
+        tenant_id=warmup_tenant_id,
+        api_key=f"r3_warmup_{candidate_sha[:8]}",
+        api_key_hash=_sha256_hex(f"r3_warmup_{candidate_sha[:8]}"),
+        secrets={"stripe": "warmup_secret", "shopify": "", "paypal": "", "woocommerce": ""},
+    )
+    # Seed warmup tenant
+    admin_conn = await _pg_connect_with_retry(admin_db_url)
+    try:
+        await seed_tenant(admin_conn, warmup_tenant)
+    finally:
+        await admin_conn.close()
+
+    warmup_key = str(_uuid_deterministic("r3", "warmup"))
+    warmup_body = build_stripe_payment_intent_body(
+        event_id="evt_warmup",
+        payment_intent_id="pi_warmup",
+        amount_cents=100,
+        currency="usd",
+        created_epoch=int(run_start_utc.timestamp()),
+        include_pii=False,
+    )
+    warmup_headers = _make_headers_for_stripe(
+        tenant_api_key_header=tenant_api_key_header,
+        tenant_api_key=warmup_tenant.api_key,
+        stripe_secret=warmup_tenant.secrets["stripe"],
+        correlation_id=_uuid_deterministic("r3", "warmup"),
+        idempotency_key=warmup_key,
+        body=warmup_body,
+    )
+    # Fire 100 warmup reqs
+    await _http_fire(
+        client,
+        [(f"{base_url}/api/webhooks/stripe/payment_intent/succeeded", warmup_headers, warmup_body) for _ in range(100)],
+        concurrency=10,
+        timeout_s=5.0,
+    )
+
+    # 2. Key Partitioning Logic (Deterministic)
+    # -----------------------------------------------------------------------
+    duplicate_count = max(1, min(100, n // 4))
+    malformed_count = max(1, min(50, n // 8))
+    pii_count = max(1, min(50, n // 8))
+    while duplicate_count + malformed_count + pii_count >= n:
+        if duplicate_count >= malformed_count and duplicate_count >= pii_count and duplicate_count > 1:
+            duplicate_count -= 1
+        elif malformed_count >= pii_count and malformed_count > 1:
+            malformed_count -= 1
+        elif pii_count > 1:
+            pii_count -= 1
+        else:
+            break
+    unique_count = n - duplicate_count - malformed_count - pii_count
+
+    # 3. Execution Trials (Median of 3)
+    # -----------------------------------------------------------------------
+    trials_elapsed: list[float] = []
+    trial_results: list[dict] = []
+
+    # Prepare worker slices
+    # We use _LOADGEN_WORKERS calculated at module level
+    num_workers = _LOADGEN_WORKERS
+
+    for trial_idx in range(3):
+        trial_label = f"trial_{trial_idx}"
+        print(f"R3_S8_TRIAL_{trial_idx}: Preparing isolated tenant...")
+
+        # A. Isolation: Unique tenant per trial
+        t_id = _uuid_deterministic("r3", candidate_sha, "s8", str(trial_idx))
+        t_api_key = f"r3_{candidate_sha[:8]}_s8_{trial_idx}_{t_id}"
+        t_seed = TenantSeed(
+            tenant_id=t_id,
+            api_key=t_api_key,
+            api_key_hash=_sha256_hex(t_api_key),
+            secrets={"stripe": f"s8_secret_{trial_idx}", "shopify": "", "paypal": "", "woocommerce": ""},
+        )
+
+        admin_conn = await _pg_connect_with_retry(admin_db_url)
+        try:
+            await seed_tenant(admin_conn, t_seed)
+        finally:
+            await admin_conn.close()
+
+        # B. Key Generation (scoped to trial tenant/name)
+        trial_name = f"{name}_{trial_idx}"
+        replay_key = str(_uuid_deterministic("r3", trial_name, "replay"))
+        unique_keys = _keys_for_scenario("s8", f"{trial_name}_unique", unique_count)
+        malformed_keys = _keys_for_scenario("s8", f"{trial_name}_malformed", malformed_count)
+        pii_keys = _keys_for_scenario("s8", f"{trial_name}_pii", pii_count)
+
+        # C. Distribute config to workers
+        worker_configs: list[S8WorkerConfig] = []
+        unique_slices = _slice_list(unique_keys, num_workers)
+        malformed_slices = _slice_list(malformed_keys, num_workers)
+        pii_slices = _slice_list(pii_keys, num_workers)
+
+        # Replay distribution: roughly equal
+        replay_per_worker = duplicate_count // num_workers
+        replay_remainder = duplicate_count % num_workers
+
+        for i in range(num_workers):
+            r_count = replay_per_worker + (1 if i < replay_remainder else 0)
+
+            cfg = S8WorkerConfig(
+                worker_id=i,
+                base_url=base_url,
+                tenant_api_key_header=tenant_api_key_header,
+                tenant_api_key=t_seed.api_key,
+                stripe_secret=t_seed.secrets["stripe"],
+                tenant_id=str(t_seed.tenant_id),
+                name=trial_name,
+                run_start_epoch=int(run_start_utc.timestamp()),
+                concurrency=max(1, concurrency // num_workers),
+                timeout_s=timeout_s,
+                replay_key=replay_key,
+                replay_count=r_count,
+                unique_keys=unique_slices[i],
+                malformed_keys=malformed_slices[i],
+                pii_keys=pii_slices[i],
+            )
+            worker_configs.append(cfg)
+
+        # D. Fire (Multiprocess)
+        print(f"R3_S8_TRIAL_{trial_idx}: Firing {n} reqs with {num_workers} workers...")
+        started = time.perf_counter()
+        status_counts, timeouts, conn_errors = _s8_multiprocess_fire(worker_configs)
+        elapsed = time.perf_counter() - started
+        trials_elapsed.append(elapsed)
+
+        # E. Verify Correctness (DB check)
+        replay_canonical = await db_count_canonical_for_key(conn, t_seed.tenant_id, replay_key)
+        unique_canonical = await db_count_canonical_for_keys(conn, t_seed.tenant_id, unique_keys)
+        malformed_dlq = await db_count_dlq_for_keys(conn, t_seed.tenant_id, malformed_keys)
+        pii_dlq = await db_count_dlq_for_keys(conn, t_seed.tenant_id, pii_keys)
+        pii_hits = await db_pii_key_hits_since(conn, run_start_utc, [t_seed.tenant_id])
+        http_5xx = sum(v for code, v in status_counts.items() if code.isdigit() and 500 <= int(code) <= 599)
+
+        trial_passed = (
+            replay_canonical == 1
+            and unique_canonical == unique_count
+            and malformed_dlq == malformed_count
+            and pii_dlq == pii_count
+            and sum(pii_hits.values()) == 0
+            and http_5xx == 0
+            and timeouts == 0
+            and conn_errors == 0
+            # Note: elapsed time check is done on MEDIAN, not per-trial here
+        )
+
+        trial_results.append({
+            "passed": trial_passed,
+            "elapsed": elapsed,
+            "db": {
+                "replay_canonical": replay_canonical,
+                "unique_canonical": unique_canonical,
+                "malformed_dlq": malformed_dlq,
+                "pii_dlq": pii_dlq,
+                "pii_hits": sum(pii_hits.values()),
+            },
+            "status_counts": status_counts,
+            "timeouts": timeouts,
+            "conn_errors": conn_errors,
+        })
+
+        if not trial_passed:
+            print(f"R3_S8_TRIAL_{trial_idx}: FAILED correctness. Aborting.")
+            break
+        print(f"R3_S8_TRIAL_{trial_idx}: Correctness PASS in {elapsed:.4f}s")
+
+    # 4. Verdict (Median Calculation)
+    # -----------------------------------------------------------------------
+    trials_elapsed.sort()
+    median_elapsed = trials_elapsed[1] if len(trials_elapsed) == 3 else (trials_elapsed[0] if trials_elapsed else 999.0)
+    all_correct = len(trial_results) == 3 and all(r["passed"] for r in trial_results)
+
+    passed = all_correct and median_elapsed < max_seconds
+
+    # 5. Bottleneck Attribution Artifact
+    # -----------------------------------------------------------------------
+    attribution = {
+        "ELAPSED_TRIAL_1_S": round(trial_results[0]["elapsed"], 4) if len(trial_results) > 0 else None,
+        "ELAPSED_TRIAL_2_S": round(trial_results[1]["elapsed"], 4) if len(trial_results) > 1 else None,
+        "ELAPSED_TRIAL_3_S": round(trial_results[2]["elapsed"], 4) if len(trial_results) > 2 else None,
+        "ELAPSED_MEDIAN_S": round(median_elapsed, 4),
+        "NULL_BENCHMARK_RPS": "SEE_EARLIER_LOGS",
+        "NUM_LOADGEN_WORKERS": _LOADGEN_WORKERS,
+        "NUM_SERVER_WORKERS": _SERVER_WORKERS,
+        "DETECTED_CPU_CORES": _DETECTED_CORES,
+        "MP_START_METHOD": _MP_START_METHOD,
+        "WARM_UP_REQUESTS": 100,
+        "CAUSAL_CHAIN": "multiprocess_generator(spawn) -> N_workers x independent_GIL -> CPU_distributed",
+        "TRIALS_ALL_CORRECT": all_correct,
+    }
+
+    # Return structure matching ScenarioResult, aggregating the median trial's DB stats
+    # (or the last run one) for the verdict block
+    last_run = trial_results[-1] if trial_results else {}
+
+    return ScenarioResult(
+        name=name,
+        passed=passed,
+        http_status_counts=last_run.get("status_counts", {}),
+        http_timeouts=last_run.get("timeouts", 0),
+        http_connection_errors=last_run.get("conn_errors", 0),
+        db={
+            **attribution,
+            "TOTAL_REQUESTS": n,
+            "MAX_SECONDS": max_seconds,
+            "LAST_TRIAL_DB_STATS": last_run.get("db", {}),
+        },
+    )
+
+
+async def scenario_s9_normalization_aliases(
+    *,
+    name: str,
+    client: httpx.AsyncClient,
+    base_url: str,
+    tenant: TenantSeed,
+    tenant_api_key_header: str,
+    timeout_s: float,
+    run_start_utc: datetime,
+    conn: asyncpg.Connection,
+) -> ScenarioResult:
+    url = f"{base_url}/api/webhooks/stripe/payment_intent/succeeded"
+    key_fb = str(_uuid_deterministic("r3", name, "fb"))
+    key_facebook = str(_uuid_deterministic("r3", name, "facebook"))
+
+    def _payload(k: str, utm_source: str) -> bytes:
+        body: dict[str, Any] = {
+            "id": f"evt_{k.replace('-', '')[:16]}",
+            "type": "payment_intent.succeeded",
+            "created": int(run_start_utc.timestamp()),
+            "data": {
+                "object": {
+                    "id": f"pi_{k.replace('-', '')[:16]}",
+                    "amount": 999,
+                    "currency": "usd",
+                    "status": "succeeded",
+                    "metadata": {
+                        "vendor": "facebook_ads",
+                        "utm_source": utm_source,
+                        "utm_medium": "cpc",
+                    },
+                }
+            },
+        }
+        return json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+    body_fb = _payload(key_fb, "fb")
+    body_facebook = _payload(key_facebook, "facebook")
+
+    headers_fb = _make_headers_for_stripe(
+        tenant_api_key_header=tenant_api_key_header,
+        tenant_api_key=tenant.api_key,
+        stripe_secret=tenant.secrets["stripe"],
+        correlation_id=_uuid_deterministic("r3", name, str(tenant.tenant_id), key_fb),
+        idempotency_key=key_fb,
+        body=body_fb,
+    )
+    headers_facebook = _make_headers_for_stripe(
+        tenant_api_key_header=tenant_api_key_header,
+        tenant_api_key=tenant.api_key,
+        stripe_secret=tenant.secrets["stripe"],
+        correlation_id=_uuid_deterministic("r3", name, str(tenant.tenant_id), key_facebook),
+        idempotency_key=key_facebook,
+        body=body_facebook,
+    )
+
+    resp_fb = await client.post(url, content=body_fb, headers=headers_fb, timeout=timeout_s)
+    resp_facebook = await client.post(
+        url, content=body_facebook, headers=headers_facebook, timeout=timeout_s
+    )
+    status_counts = {
+        str(resp_fb.status_code): 1,
+        str(resp_facebook.status_code): 1,
+    }
+
+    channel_fb = await db_channel_for_key(conn, tenant.tenant_id, key_fb)
+    channel_facebook = await db_channel_for_key(conn, tenant.tenant_id, key_facebook)
+    passed = (
+        resp_fb.status_code == 200
+        and resp_facebook.status_code == 200
+        and channel_fb is not None
+        and channel_fb == channel_facebook
+        and channel_fb == "facebook_paid"
+    )
+    return ScenarioResult(
+        name=name,
+        passed=passed,
+        http_status_counts=status_counts,
+        http_timeouts=0,
+        http_connection_errors=0,
+        db={
+            "CHANNEL_FB": channel_fb,
+            "CHANNEL_FACEBOOK": channel_facebook,
+        },
+    )
+
+
 async def main() -> int:
     candidate_sha = os.getenv("CANDIDATE_SHA") or os.getenv("GITHUB_SHA") or _env("CANDIDATE_SHA", default="local")
     base_url = _env("R3_API_BASE_URL", default="http://127.0.0.1:8000")
-    db_url = _env("R3_DATABASE_URL", default=_env("DATABASE_URL", default=""))
+    admin_db_url = _env("R3_ADMIN_DATABASE_URL", default=_env("MIGRATION_DATABASE_URL", default=""))
+    runtime_db_url = _env("R3_RUNTIME_DATABASE_URL", default=_env("DATABASE_URL", default=""))
     tenant_api_key_header = _env("TENANT_API_KEY_HEADER", default="X-Skeldir-Tenant-Key")
 
     ladder = _parse_int_list(_env("R3_LADDER", default="50,250,1000"))
     concurrency = int(_env("R3_CONCURRENCY", default="200"))
     timeout_s = float(_env("R3_TIMEOUT_S", default="10"))
+    perf_n = int(_env("R3_PERF_N", default="10000"))
+    perf_max_seconds = float(_env("R3_PERF_MAX_SECONDS", default="10"))
     run_start_utc = _now_utc()
+
+    if admin_db_url == runtime_db_url:
+        raise RuntimeError("R3 requires distinct admin/runtime DSNs for proof integrity.")
 
     print("=== R3_ENV ===")
     print(
@@ -826,11 +1595,26 @@ async def main() -> int:
                 "concurrency": concurrency,
                 "timeout_s": timeout_s,
                 "ladder": ladder,
+                "perf_n": perf_n,
+                "perf_max_seconds": perf_max_seconds,
+                "admin_dsn_distinct_from_runtime": True,
             },
             indent=2,
             sort_keys=True,
         )
     )
+
+    print(f"R3_CPU_CORES={_DETECTED_CORES}  LOADGEN_WORKERS={_LOADGEN_WORKERS}  SERVER_WORKERS={_SERVER_WORKERS}")
+
+    if _env("R3_NULL_BENCHMARK") == "1":
+        rps = _run_null_benchmark(
+            num_workers=_LOADGEN_WORKERS,
+            total_requests=10000,
+            concurrency_per_worker=50,
+        )
+        if rps < 2000.0:
+            print(f"FATAL: Null benchmark {rps:.1f} < 2000 req/s. Upgrade runner.")
+            return 2
 
     tenant_a_id = _uuid_deterministic("r3", candidate_sha, "tenant", "A")
     tenant_b_id = _uuid_deterministic("r3", candidate_sha, "tenant", "B")
@@ -865,7 +1649,7 @@ async def main() -> int:
     print(f"TENANT_A_ID={tenant_a.tenant_id}")
     print(f"TENANT_B_ID={tenant_b.tenant_id}")
 
-    conn = await _pg_connect_with_retry(db_url)
+    conn = await _pg_connect_with_retry(admin_db_url)
     try:
         await seed_channel_taxonomy(conn)
         await seed_tenant(conn, tenant_a)
@@ -876,7 +1660,7 @@ async def main() -> int:
     limits = httpx.Limits(max_connections=concurrency, max_keepalive_connections=concurrency)
     async with httpx.AsyncClient(limits=limits) as client:
         await _wait_for_http_ready(client, base_url)
-        conn2 = await _pg_connect_with_retry(db_url)
+        conn2 = await _pg_connect_with_retry(runtime_db_url)
         try:
             all_results: list[ScenarioResult] = []
 
@@ -940,6 +1724,24 @@ async def main() -> int:
                 if not s3.passed:
                     break
 
+                s7_keys = _keys_for_scenario(candidate_sha, f"S7_{n}", max(1, min(n, 50)))
+                s7 = await scenario_s7_invalid_json_dlq(
+                    name=f"S7_InvalidJsonDLQ_N{len(s7_keys)}",
+                    client=client,
+                    base_url=base_url,
+                    tenant=tenant_a,
+                    tenant_api_key_header=tenant_api_key_header,
+                    n=len(s7_keys),
+                    concurrency=min(concurrency, 100),
+                    timeout_s=timeout_s,
+                    conn=conn2,
+                    keys=s7_keys,
+                )
+                _verdict_block(s7.name, {"passed": s7.passed, **s7.db, "http_status_counts": s7.http_status_counts})
+                all_results.append(s7)
+                if not s7.passed:
+                    break
+
                 s4_keys = _keys_for_scenario(candidate_sha, f"S4_{n}", n)
                 s4 = await scenario_s4_pii_storm(
                     name=f"S4_PIIStorm_N{n}",
@@ -1001,6 +1803,39 @@ async def main() -> int:
                 if not s6.passed:
                     break
 
+            if all(r.passed for r in all_results):
+                s9 = await scenario_s9_normalization_aliases(
+                    name="S9_NormalizationAliases_fb_facebook",
+                    client=client,
+                    base_url=base_url,
+                    tenant=tenant_a,
+                    tenant_api_key_header=tenant_api_key_header,
+                    timeout_s=timeout_s,
+                    run_start_utc=run_start_utc,
+                    conn=conn2,
+                )
+                _verdict_block(s9.name, {"passed": s9.passed, **s9.db, "http_status_counts": s9.http_status_counts})
+                all_results.append(s9)
+
+            if all(r.passed for r in all_results):
+                s8 = await scenario_s8_perf_gate(
+                    name=f"S8_PerfGate_N{perf_n}",
+                    client=client,
+                    base_url=base_url,
+                    # tenant arg removed; s8 generates its own isolated tenants
+                    tenant_api_key_header=tenant_api_key_header,
+                    n=perf_n,
+                    concurrency=concurrency,
+                    timeout_s=timeout_s,
+                    run_start_utc=run_start_utc,
+                    conn=conn2,
+                    max_seconds=perf_max_seconds,
+                    admin_db_url=admin_db_url,
+                    candidate_sha=candidate_sha,
+                )
+                _verdict_block(s8.name, {"passed": s8.passed, **s8.db, "http_status_counts": s8.http_status_counts})
+                all_results.append(s8)
+
             all_passed = all(r.passed for r in all_results)
             print("=== EG-R3-6 (Evidence Pack) ===")
             print(f"SCENARIOS_EXECUTED={len(all_results)}")
@@ -1012,4 +1847,5 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    mp.set_start_method(_MP_START_METHOD)
     raise SystemExit(asyncio.run(main()))
