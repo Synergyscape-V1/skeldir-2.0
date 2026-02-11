@@ -16,6 +16,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B0.7 P4 remediation | docs/forensics/b07_p4_remediation_evidence.md | E2E distributed runtime proof + operational readiness closure pack (compose + SQL dashboards + runbooks) | pending | pending |
 | B0.3 Phase 2 hypothesis matrix | docs/forensics/b03_phase2_hypothesis_matrix.md | Hypothesis-driven adjudication of H2.* schema-closure risks with evidence pointers. | PR #71 / pending | pending |
 | B0.3 Phase 2 schema closure | docs/forensics/b03_phase2_schema_closure_evidence.md | Runtime-backed EG2.1-EG2.5 closure evidence for authoritative schema + ledger contract. | PR #71 / pending | pending |
+| B0.4 Phase 3 remediation | docs/forensics/b04_phase3_ingestion_integrity_remediation.md | Privacy ingestion integrity + revised customer-profile performance gate authority (EG3.1-EG3.5). | PR #72 / 20b3ffb | pending |
 | B055 Phase 3 v2 | docs/forensics/b055_phase3_remediation_v2_integrity_evidence.md | Phase 3 integrity remediation evidence pack | PR #17 / 93b58be | pending |
 | B055 Phase 3 EG9 context | docs/forensics/b055_phase3_eg9_topology_idempotency_context.md | Pre-remediation topology/DI/idempotency baseline | PR #18 / 214a98d | https://github.com/Muk223/skeldir-2.0/actions/runs/20967066505 |
 | B055 Phase 3 EG9 remediation | docs/forensics/b055_phase3_eg9_topology_idempotency_remediation_evidence.md | EG9/Topology/Idempotency remediation evidence | PR #18 / 214a98d | https://github.com/Muk223/skeldir-2.0/actions/runs/20967066505 |
