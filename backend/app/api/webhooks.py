@@ -347,6 +347,9 @@ async def stripe_payment_intent_succeeded_v2(
     currency = None
     created_epoch = None
     event_id = None
+    vendor_for_normalization = "stripe"
+    utm_source_for_normalization = "stripe"
+    utm_medium_for_normalization: str | None = None
     if payload_parse_error is None:
         try:
             event_id = payload.get("id")
@@ -355,6 +358,17 @@ async def stripe_payment_intent_succeeded_v2(
             pi_id = obj.get("id")
             amount_cents = obj.get("amount")
             currency = obj.get("currency")
+            metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+            if metadata:
+                vendor_candidate = metadata.get("vendor")
+                if isinstance(vendor_candidate, str) and vendor_candidate.strip():
+                    vendor_for_normalization = vendor_candidate.strip().lower()
+                utm_source_candidate = metadata.get("utm_source")
+                if isinstance(utm_source_candidate, str) and utm_source_candidate.strip():
+                    utm_source_for_normalization = utm_source_candidate.strip()
+                utm_medium_candidate = metadata.get("utm_medium")
+                if isinstance(utm_medium_candidate, str) and utm_medium_candidate.strip():
+                    utm_medium_for_normalization = utm_medium_candidate.strip()
             if not idempotency_key and pi_id:
                 idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
         except Exception:
@@ -461,12 +475,14 @@ async def stripe_payment_intent_succeeded_v2(
         "revenue_amount": revenue_amount,
         "currency": currency.upper(),
         "session_id": str(uuid5(NAMESPACE_URL, f"stripe:{idempotency_key}")),
-        "vendor": "stripe",
-        "utm_source": "stripe",
+        "vendor": vendor_for_normalization,
+        "utm_source": utm_source_for_normalization,
         "external_event_id": pi_id,
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,
     }
+    if utm_medium_for_normalization:
+        event_data["utm_medium"] = utm_medium_for_normalization
 
     result = await ingest_with_transaction(
         tenant_id=tenant_info["tenant_id"],
