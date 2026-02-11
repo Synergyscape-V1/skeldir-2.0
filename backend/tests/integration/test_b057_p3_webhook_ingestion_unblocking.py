@@ -313,3 +313,82 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
 
     assert int(dlq_count) >= 1
     assert int(canonical_count) == 0
+
+    # PII payload with valid signature must route to DLQ without 500 and without PII persistence.
+    pii_key = f"b057_p3_pii_{uuid4().hex[:12]}"
+    pii_payload = {
+        "id": "evt_b057_p3_pii",
+        "created": created,
+        "email": "pii_user@test.invalid",
+        "ip_address": "203.0.113.99",
+        "data": {
+            "object": {
+                "id": "pi_b057_p3_pii",
+                "amount": 4321,
+                "currency": "usd",
+                "receipt_email": "receipt@test.invalid",
+                "billing_details": {"email": "bill@test.invalid"},
+            }
+        },
+    }
+    pii_body = json.dumps(pii_payload, separators=(",", ":")).encode("utf-8")
+    pii_signed_payload = f"{created}.{pii_body.decode('utf-8')}".encode("utf-8")
+    pii_sig = hmac.new(
+        b057_p3_fixture.stripe_secret.encode("utf-8"),
+        pii_signed_payload,
+        hashlib.sha256,
+    ).hexdigest()
+
+    res6 = httpx.post(
+        f"{api_base_url}/api/webhooks/stripe/payment_intent/succeeded",
+        headers={
+            "Content-Type": "application/json",
+            "X-Skeldir-Tenant-Key": b057_p3_fixture.tenant_key,
+            "Stripe-Signature": f"t={created},v1={pii_sig}",
+            "X-Idempotency-Key": pii_key,
+        },
+        content=pii_body,
+        timeout=10.0,
+    )
+    assert res6.status_code == 200, res6.text
+    pii_result = res6.json()
+    assert pii_result.get("status") == "dlq_routed"
+    assert pii_result.get("dead_event_id")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("SELECT set_config('app.current_tenant_id', :tid, false)"),
+            {"tid": str(b057_p3_fixture.tenant_id)},
+        )
+        pii_dlq_count = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM public.dead_events "
+                "WHERE raw_payload->>'idempotency_key' = :key"
+            ),
+            {"key": pii_key},
+        ).scalar_one()
+        pii_canonical_count = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM public.attribution_events "
+                "WHERE idempotency_key = :key"
+            ),
+            {"key": pii_key},
+        ).scalar_one()
+        pii_key_hits = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM public.dead_events
+                WHERE raw_payload->>'idempotency_key' = :key
+                  AND (
+                    jsonb_path_exists(raw_payload, '$.**.email')
+                    OR jsonb_path_exists(raw_payload, '$.**.receipt_email')
+                    OR jsonb_path_exists(raw_payload, '$.**.ip_address')
+                  )
+                """
+            ),
+            {"key": pii_key},
+        ).scalar_one()
+
+    assert int(pii_dlq_count) >= 1
+    assert int(pii_canonical_count) == 0
+    assert int(pii_key_hits) == 0

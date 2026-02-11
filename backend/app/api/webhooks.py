@@ -272,6 +272,7 @@ async def stripe_payment_intent_succeeded(
     tenant_info=Depends(tenant_secrets),
 ):
     raw_body = getattr(request.state, "original_body", None) or await request.body()
+    stripped_body = await request.body()
     if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -328,11 +329,12 @@ async def stripe_payment_intent_succeeded_v2(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"status": "invalid_signature", "vendor": "stripe"},
         )
+    stripped_body = await request.body()
 
     payload: dict[str, Any] = {}
     payload_parse_error: str | None = None
     try:
-        parsed_payload = json.loads(raw_body.decode("utf-8"))
+        parsed_payload = json.loads(stripped_body.decode("utf-8"))
         if not isinstance(parsed_payload, dict):
             raise ValueError("payload root must be a JSON object")
         payload = parsed_payload
