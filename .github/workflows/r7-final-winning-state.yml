@@ -433,11 +433,24 @@ jobs:
         shell: bash
         env:
           DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/r3
-          R3_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
+          MIGRATION_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r3
+          R3_ADMIN_DATABASE_URL: postgresql://r7_admin:r7_admin@127.0.0.1:5432/r3
+          R3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
           R3_API_BASE_URL: http://127.0.0.1:8000
           R3_LADDER: "50,250,1000"
           R3_CONCURRENCY: "200"
           R3_TIMEOUT_S: "60"
+          R3_NULL_BENCHMARK: "1"
+          R3_NULL_BENCHMARK_TARGET_RPS: "50"
+          R3_NULL_BENCHMARK_DURATION_S: "60"
+          R3_NULL_BENCHMARK_MIN_RPS: "50"
+          R3_EG34_P95_MAX_MS: "2000"
+          R3_EG34_TEST1_RPS: "29"
+          R3_EG34_TEST1_DURATION_S: "60"
+          R3_EG34_TEST2_RPS: "46"
+          R3_EG34_TEST2_DURATION_S: "60"
+          R3_EG34_TEST3_RPS: "5"
+          R3_EG34_TEST3_DURATION_S: "300"
           DATABASE_POOL_SIZE: "40"
           DATABASE_MAX_OVERFLOW: "40"
           LOG_LEVEL: "DEBUG"
