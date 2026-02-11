@@ -329,6 +329,7 @@ async def stripe_payment_intent_succeeded_v2(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"status": "invalid_signature", "vendor": "stripe"},
         )
+    stripped_body = await request.body()
 
     payload: dict[str, Any] = {}
     payload_parse_error: str | None = None
