@@ -76,7 +76,23 @@ jobs:
         run: |
           python -m alembic upgrade head
 
+      - name: Enforce B0.5.7-P3 least-privilege tenant access
+        env:
+          PGPASSWORD: ${{ env.DB_SUPERPASS }}
+        run: |
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON TABLE public.tenants FROM app_user;"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON TABLE public.tenants FROM app_ro;"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "REVOKE ALL ON TABLE public.tenants FROM app_rw;"
+
+      - name: Assert direct tenant table access is denied for runtime identity
+        env:
+          PGPASSWORD: ${{ env.RUNTIME_PASS }}
+        run: |
+          if psql -h "${DB_HOST}" -U "${RUNTIME_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "SELECT id FROM public.tenants LIMIT 1" >/dev/null 2>&1; then
+            echo "runtime identity unexpectedly has direct tenants SELECT"
+            exit 1
+          fi
+
       - name: Run B0.5.7-P3 integration test (real HTTP + real DB)
         run: |
           pytest -q backend/tests/integration/test_b057_p3_webhook_ingestion_unblocking.py
-
