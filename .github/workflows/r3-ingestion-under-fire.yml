@@ -113,7 +113,9 @@ jobs:
           DO $$
           BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-              CREATE ROLE app_user LOGIN PASSWORD 'app_user';
+              CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            ELSE
+              ALTER ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
             END IF;
           END$$;
           GRANT CONNECT ON DATABASE r3 TO app_user;
