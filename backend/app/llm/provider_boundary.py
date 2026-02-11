@@ -62,6 +62,10 @@ def _cache_key(prompt: Mapping[str, Any], endpoint: str, model_name: str) -> str
     return hashlib.sha256(f"{endpoint}|{model_name}|{_json(seed)}".encode("utf-8")).hexdigest()
 
 
+def _prompt_fingerprint(prompt: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_json(prompt).encode("utf-8")).hexdigest()
+
+
 def _watermark(prompt: Mapping[str, Any]) -> int:
     raw = prompt.get("cache_watermark", 0)
     try:
@@ -112,6 +116,7 @@ class SkeldirLLMProvider:
         prompt = dict(model.prompt or {})
         requested_model = str(prompt.get("model") or settings.LLM_PROVIDER_MODEL)
         key = _cache_key(prompt, endpoint, requested_model)
+        prompt_fingerprint = _prompt_fingerprint(prompt)
         watermark = _watermark(prompt)
         reservation = max(0, int(model.max_cost_cents))
 
@@ -124,6 +129,7 @@ class SkeldirLLMProvider:
             requested_model=requested_model,
             reservation=reservation,
             cache_key=key,
+            prompt_fingerprint=prompt_fingerprint,
             cache_watermark=watermark,
         )
         if not claimed:
@@ -357,6 +363,7 @@ class SkeldirLLMProvider:
         requested_model: str,
         reservation: int,
         cache_key: str,
+        prompt_fingerprint: str,
         cache_watermark: int,
     ) -> tuple[UUID, datetime, bool]:
         stmt = (
@@ -380,6 +387,7 @@ class SkeldirLLMProvider:
                 budget_reservation_cents=reservation,
                 budget_settled_cents=0,
                 cache_key=cache_key,
+                prompt_fingerprint=prompt_fingerprint,
                 cache_watermark=cache_watermark,
                 request_metadata_ref={"correlation_id": correlation_id, "boundary_id": self.boundary_id},
             )

@@ -38,11 +38,13 @@ phases:
       command: ["python", "scripts/phase_gates/run_gate.py", "B0.3"]
       artifacts:
         - backend/validation/evidence/database/b0_3_summary.json
+        - backend/validation/evidence/database/phase2_b03/phase2_b03_summary.json
     exit_gates:
-      - schema_validation
-      - migration_cycle
-      - guardrails
-      - query_performance
+      - EG2.1_canonical_schema_parity
+      - EG2.2_migration_determinism
+      - EG2.3_tenant_rls_structural
+      - EG2.4_mandatory_ledger_tables
+      - EG2.5_schema_write_shape_binding
 
   - id: SCHEMA_GUARD
     intent: "Schema contract guard enforcing required columns and forbidding raw inserts."

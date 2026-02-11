@@ -1,0 +1,2 @@
+{"level": "INFO", "logger": "app.celery_app", "message": "celery_app_configured"}
+runtime_probe_ok True

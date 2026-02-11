@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""
-B0.3 gate runner for database schema foundation.
-"""
+"""B0.3 gate runner for Phase 2 schema closure."""
 
 from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,30 +14,6 @@ from typing import List
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_DIR = REPO_ROOT / "backend" / "validation" / "evidence" / "database"
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def resolve_bash_executable() -> str:
-    """Locate a usable bash executable across platforms."""
-    candidate_env = [
-        os.environ.get("B0X_BASH"),
-        os.environ.get("GIT_BASH"),
-        os.environ.get("BASH"),
-    ]
-    candidate_paths = [
-        r"C:\Program Files\Git\bin\bash.exe",
-        r"C:\Program Files\Git\usr\bin\bash.exe",
-    ]
-    for candidate in candidate_env:
-        if candidate and (Path(candidate).exists() or shutil.which(candidate)):
-            return candidate
-    for candidate in candidate_paths:
-        if Path(candidate).exists():
-            return candidate
-    resolved = shutil.which("bash")
-    return resolved or "bash"
-
-
-BASH_EXE = resolve_bash_executable()
 
 
 class GateFailure(RuntimeError):
@@ -71,55 +44,18 @@ def run_b0_3_gate() -> dict:
     if "DATABASE_URL" not in env:
         raise GateFailure("DATABASE_URL environment variable is required.")
 
-    # R1: Schema validation via Alembic + compliance script
-    run_command(["alembic", "upgrade", "heads"], "alembic_upgrade_head.log", env=env)
+    # Phase 2 closure gate (EG2.1-EG2.5 + non-vacuous controls).
     run_command(
         [
             "python",
-            "scripts/validate-schema-compliance.py",
-            "--output",
-            str(EVIDENCE_DIR / "schema_validation_report.json"),
+            "scripts/ci/phase2_schema_closure_gate.py",
+            "--evidence-dir",
+            str(EVIDENCE_DIR / "phase2_b03"),
         ],
-        "schema_validation.log",
+        "phase2_schema_closure_gate.log",
         env=env,
     )
-    summary["steps"].append({"name": "schema_validation", "status": "success"})
-
-    # R2: Migration downgrade/upgrade cycle
-    run_command(["alembic", "downgrade", "-1"], "alembic_downgrade.log", env=env)
-    run_command(["alembic", "upgrade", "heads"], "alembic_upgrade_after_downgrade.log", env=env)
-    summary["steps"].append({"name": "migration_cycle", "status": "success"})
-
-    # R3: Guardrails and idempotency tests
-    run_command(
-        [BASH_EXE, "scripts/database/test-data-integrity.sh"],
-        "test_data_integrity.log",
-        env=env,
-    )
-    run_command(
-        [BASH_EXE, "scripts/database/validate-pii-guardrails.sh"],
-        "validate_pii_guardrails.log",
-        env=env,
-    )
-    run_command(
-        [BASH_EXE, "scripts/database/run-audit-scan.sh"],
-        "run_audit_scan.log",
-        env=env,
-    )
-    summary["steps"].append({"name": "guardrails", "status": "success"})
-
-    # R4: Query performance evidence
-    run_command(
-        [
-            "python",
-            "scripts/database/run_query_performance.py",
-            "--output",
-            str(EVIDENCE_DIR / "query_performance_report.json"),
-        ],
-        "query_performance.log",
-        env=env,
-    )
-    summary["steps"].append({"name": "query_performance", "status": "success"})
+    summary["steps"].append({"name": "phase2_schema_closure", "status": "success"})
 
     return summary
 

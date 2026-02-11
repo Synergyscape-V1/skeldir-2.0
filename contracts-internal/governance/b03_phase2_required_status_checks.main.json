@@ -1,0 +1,18 @@
+{
+  "contract_id": "b03.phase2.required_status_checks.main",
+  "contract_version": "1.0.0",
+  "repository": "Muk223/skeldir-2.0",
+  "branch": "main",
+  "strict_required": true,
+  "required_contexts": [
+    "B0.7 P2 Runtime Proof (LLM + Redaction)",
+    "Celery Foundation B0.5.1",
+    "Validate Contracts",
+    "Frontend Contract Consumption Gate",
+    "Mock Usability Gate",
+    "Phase 1 Negative Controls",
+    "Phase 1 Runtime Conformance",
+    "B0.6 Phase 2 Adjudication",
+    "Phase Gates (B0.3)"
+  ]
+}

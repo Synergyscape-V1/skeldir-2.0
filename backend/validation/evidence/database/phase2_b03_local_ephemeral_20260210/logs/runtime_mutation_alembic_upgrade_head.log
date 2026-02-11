@@ -1,0 +1,84 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> baseline, Schema Foundation Baseline—Pre-B0.3
+INFO  [alembic.runtime.migration] Running upgrade baseline -> 202511131115, Add core tables for B0.3 schema foundation
+INFO  [alembic.runtime.migration] Running upgrade 202511131115 -> 202511131119, Add materialized views for contract-compliant JSON responses
+INFO  [alembic.runtime.migration] Running upgrade 202511131119 -> 202511131120, Add RLS policies for tenant isolation
+INFO  [alembic.runtime.migration] Running upgrade 202511131120 -> 202511131121, Add GRANTs for application roles
+INFO  [alembic.runtime.migration] Running upgrade 202511131121 -> 202512120900, Create Celery broker/result tables for Postgres SQLA transport.
+INFO  [alembic.runtime.migration] Running upgrade 202512120900 -> 202512131200, Create worker DLQ table for failed Celery tasks.
+INFO  [alembic.runtime.migration] Running upgrade 202512131200 -> 202512131530, Backfill Kombu SQLA transport sequences for Celery broker tables.
+INFO  [alembic.runtime.migration] Running upgrade 202512131530 -> 202512131600, Align kombu_message schema with Kombu SQLAlchemy transport models.
+INFO  [alembic.runtime.migration] Running upgrade 202512131600 -> 202512151200, Rename celery_task_failures to worker_failed_jobs (B0.5.3.1 canonical DLQ).
+INFO  [alembic.runtime.migration] Running upgrade 202512151200 -> 202512151300, Create attribution_recompute_jobs table for window-scoped idempotency
+INFO  [alembic.runtime.migration] Running upgrade 202511131121 -> 202511131232, Enhance attribution_allocations schema with revenue accounting determinism
+INFO  [alembic.runtime.migration] Running upgrade 202511131232 -> 202511131240, Add sum-equality validation for allocation revenue accounting
+INFO  [alembic.runtime.migration] Running upgrade 202511131240 -> 202511131250, Enhance revenue_ledger with allocation-based posting support
+INFO  [alembic.runtime.migration] Running upgrade 202511131250 -> 202511141200, Revoke UPDATE and DELETE privileges on attribution_events from app_rw
+INFO  [alembic.runtime.migration] Running upgrade 202511141200 -> 202511141201, Add guard trigger to prevent UPDATE/DELETE on attribution_events
+INFO  [alembic.runtime.migration] Running upgrade 202511141201 -> 202511141300, Revoke UPDATE/DELETE privileges from app_rw on revenue_ledger
+INFO  [alembic.runtime.migration] Running upgrade 202511141300 -> 202511141301, Add guard trigger to prevent UPDATE/DELETE on revenue_ledger
+INFO  [alembic.runtime.migration] Running upgrade 202511141301 -> 202511141302, Enforce allocation_id NOT NULL on revenue_ledger
+INFO  [alembic.runtime.migration] Running upgrade 202511141302 -> 202511141310, Create channel_taxonomy table and seed from channel_mapping.yaml
+INFO  [alembic.runtime.migration] Running upgrade 202511141310 -> 202511141311, Migrate attribution_allocations from CHECK constraint to FK to channel_taxonomy
+INFO  [alembic.runtime.migration] Running upgrade 202511141311 -> 202511151400, Add auth_critical columns to tenants table
+INFO  [alembic.runtime.migration] Running upgrade 202511151400 -> 202511151410, Realign attribution_events table with canonical schema
+INFO  [alembic.runtime.migration] Running upgrade 202511151410 -> 202511151420, Add statistical metadata fields to attribution_allocations
+INFO  [alembic.runtime.migration] Running upgrade 202511151420 -> 202511151430, Realign revenue_ledger table with canonical schema
+INFO  [alembic.runtime.migration] Running upgrade 202511151430 -> 202511151440, Add retry tracking and remediation fields to dead_events
+INFO  [alembic.runtime.migration] Running upgrade 202511151440 -> 202511151450, Create revenue_state_transitions audit table
+INFO  [alembic.runtime.migration] Running upgrade 202511151450 -> 202511151500, Add materialized view for channel performance analytics
+INFO  [alembic.runtime.migration] Running upgrade 202511151500 -> 202511151510, Add materialized view for daily revenue summary analytics
+INFO  [alembic.runtime.migration] Running upgrade 202511151510 -> 202511161100, Realign attribution_allocations.event_id FK for audit trail preservation
+INFO  [alembic.runtime.migration] Running upgrade 202511161100 -> 202511161110, Fix mv_allocation_summary to use LEFT JOIN for nullable event_id
+INFO  [alembic.runtime.migration] Running upgrade 202511161110 -> 202511161120, Add unknown channel fallback to channel_taxonomy
+INFO  [alembic.runtime.migration] Running upgrade 202511161120 -> 202511161130, Add FK constraint to attribution_events.channel referencing channel_taxonomy
+INFO  [alembic.runtime.migration] Running upgrade 202511131121, 202512151300 -> 202512151400, Merge skeldir_foundation: Unify core attribution schema + celery foundation
+INFO  [alembic.runtime.migration] Running upgrade 202512151400 -> 202512151410, Add allocation model versioning for B0.5.3.2
+INFO  [alembic.runtime.migration] Running upgrade 202512151410 -> 202512171500, Force RLS on attribution_recompute_jobs for tenant isolation (B0.5.3.4)
+INFO  [alembic.runtime.migration] Running upgrade 202512171500 -> 202512171700, Block worker-context mutations to ingestion tables.
+INFO  [alembic.runtime.migration] Running upgrade 202511161130 -> 202511171200, B0.3 reconciliation: canonical index + remediation constraint alignment.
+INFO  [alembic.runtime.migration] Running upgrade 202511171200 -> 202511171300, Add revenue ledger audit trigger and tenant_id to revenue_state_transitions
+INFO  [alembic.runtime.migration] Running upgrade 202511171300 -> 202511171400, Drop deprecated materialized views
+INFO  [alembic.runtime.migration] Running upgrade 202511171400 -> 202511171500, Add state column to channel_taxonomy table
+INFO  [alembic.runtime.migration] Running upgrade 202511171500 -> 202511171510, Create channel_state_transitions audit table
+INFO  [alembic.runtime.migration] Running upgrade 202511171510 -> 202511171520, Create channel_assignment_corrections audit table
+INFO  [alembic.runtime.migration] Running upgrade 202511171520 -> 202511171530, Add audit triggers for channel state transitions and assignment corrections
+INFO  [alembic.runtime.migration] Running upgrade 202511171530 -> 202511271210, Add amount_cents >= 0 guardrail to revenue_ledger
+INFO  [alembic.runtime.migration] Running upgrade 202511271210 -> 202512081500, Add LLM subsystem tables for cost tracking and investigation workflows
+INFO  [alembic.runtime.migration] Running upgrade 202512081500 -> 202512081510, Add RLS policies to LLM subsystem tables
+INFO  [alembic.runtime.migration] Running upgrade 202512081510 -> 202512091100, Add CI validation test column
+INFO  [alembic.runtime.migration] Running upgrade 202511161130 -> 202511161200, Add PII guardrail triggers for JSONB surfaces
+INFO  [alembic.runtime.migration] Running upgrade 202511161200 -> 202511161210, Add PII audit table and scanning function
+INFO  [alembic.runtime.migration] Running upgrade 202511161210, 202512081510 -> e9b7435efea6, merge_migration_heads
+INFO  [alembic.runtime.migration] Running upgrade e9b7435efea6, 202512091100, 202512171700 -> 6c5d5f5534ef, EG-1C: Merge all heads into single canonical head
+INFO  [alembic.runtime.migration] Running upgrade 6c5d5f5534ef -> 202512191900, Set matview ownership to app_user for refresh permissions.
+INFO  [alembic.runtime.migration] Running upgrade 202512191900 -> 202512201000, Restore canonical matview contract (5 views) and ownership.
+INFO  [alembic.runtime.migration] Running upgrade 202512201000 -> 202512271900, R3 ingestion hardening: tenant-correct idempotency + deep PII guardrail.
+INFO  [alembic.runtime.migration] Running upgrade 202512271900 -> 202512271910, R3: Add webhook secret columns to tenants (required for webhook ingress).
+INFO  [alembic.runtime.migration] Running upgrade 202512271910 -> 202512280100, R4: Create worker_side_effects table for crash/idempotency proofs.
+INFO  [alembic.runtime.migration] Running upgrade 202512280100 -> 202512280200, R4-FIX: Add attempt tracking + crash barrier tables.
+INFO  [alembic.runtime.migration] Running upgrade 202512280200 -> 202512280300, R4-FIX: Add broker recovery exclusion table.
+INFO  [alembic.runtime.migration] Running upgrade 202512280300 -> 202512291500, R5 remediation requires:
+- bulk (set-based) writes to attribution_allocations for 10k/100k feasibility
+- deterministic recompute behavior without per-row trigger amplification
+INFO  [alembic.runtime.migration] Running upgrade 202512291500 -> 202512291600, R5 performance remediation: make the allocation sum-equality trigger scale ~O(N).
+INFO  [alembic.runtime.migration] Running upgrade 202512291600 -> 202512301930, R4/R6 governance: revoke CREATE on public schema for app_user.
+INFO  [alembic.runtime.migration] Running upgrade 202512201000 -> 202512231000, Add ghost revenue reconciliation columns to revenue_ledger
+INFO  [alembic.runtime.migration] Running upgrade 202512231000 -> 202512231010, Add LLM call audit table for budget enforcement
+INFO  [alembic.runtime.migration] Running upgrade 202512231010 -> 202512231020, Add investigation_jobs table for centaur friction
+INFO  [alembic.runtime.migration] Running upgrade 202512231020 -> 202512241930, Allow NULL allocation_id in revenue_ledger (supports reconciliation rows)
+INFO  [alembic.runtime.migration] Running upgrade 202512241930, 202512301930 -> de648b76dd68, Merge skeldir_foundation heads
+INFO  [alembic.runtime.migration] Running upgrade de648b76dd68 -> 202601031930, Anchor post-merge revision for unambiguous downgrade.
+INFO  [alembic.runtime.migration] Running upgrade 202601031930 -> 202601131610, Add llm_api_calls idempotency key
+INFO  [alembic.runtime.migration] Running upgrade 202601131610 -> 202601211900, B0.5.7-P3: Mediate webhook tenant secret resolution via SECURITY DEFINER.
+INFO  [alembic.runtime.migration] Running upgrade 202601211900 -> 202601221200, Grant runtime roles access to LLM audit tables (B0.5.7-P4).
+INFO  [alembic.runtime.migration] Running upgrade 202601221200 -> 202601281200, B0.6 Phase 2: Platform connection and credential substrate.
+INFO  [alembic.runtime.migration] Running upgrade 202601281200 -> 202601281230, B0.6 Phase 3: Postgres realtime revenue cache + stampede prevention substrate.
+INFO  [alembic.runtime.migration] Running upgrade 202601131610 -> 202602051200, Finalize LLM write shape with user scoping and breaker tables
+INFO  [alembic.runtime.migration] Running upgrade 202601031930 -> 202602051210, Add user scoping and RLS to llm_call_audit
+INFO  [alembic.runtime.migration] Running upgrade 202602051210, 202602051200, 202601281230 -> c0a524bf2357, merge heads for b07 p1
+INFO  [alembic.runtime.migration] Running upgrade c0a524bf2357 -> 202602051220, Anchor post-merge revision for unambiguous downgrade (B0.7 P1).
+INFO  [alembic.runtime.migration] Running upgrade 202602051220 -> 202602071100, B0.7-P3 LLM provider controls: reservation, shutoff metadata, cache, and audit columns.
+INFO  [alembic.runtime.migration] Running upgrade 202602071100 -> 202602101300, B0.3 Phase 2: prompt fingerprints + append-only audit privileges.
+INFO  [alembic.runtime.migration] Running upgrade 202602101300 -> 202602102050, Grant runtime privileges for investigation_jobs.

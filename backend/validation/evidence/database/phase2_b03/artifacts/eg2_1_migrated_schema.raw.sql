@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict fI9FpwVjXOb8VCnXGIzgg29Nmzke8GSfeoAs6B7O6CEfYV7k1OXheP8fr4DGfaZ
+\restrict 80SWmDkVri5fpoYyoEcKANc0H0aw4yZFLjASHzPboZuFv6EIQZzLg13hJ8e9oMd
 
 -- Dumped from database version 18.0
 -- Dumped by pg_dump version 18.0
@@ -18,13 +18,6 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
-
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
--- *not* creating schema, since initdb creates it
-
 
 --
 -- Name: security; Type: SCHEMA; Schema: -; Owner: -
@@ -50,7 +43,7 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
+            tolerance_cents INTEGER := 1; -- Â±1 cent rounding tolerance
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
@@ -3601,5 +3594,5 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fI9FpwVjXOb8VCnXGIzgg29Nmzke8GSfeoAs6B7O6CEfYV7k1OXheP8fr4DGfaZ
+\unrestrict 80SWmDkVri5fpoYyoEcKANc0H0aw4yZFLjASHzPboZuFv6EIQZzLg13hJ8e9oMd
 
