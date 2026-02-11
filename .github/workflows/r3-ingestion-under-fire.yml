@@ -41,15 +41,30 @@ jobs:
       CI: "true"
       PYTHONPATH: backend
       TENANT_API_KEY_HEADER: X-Skeldir-Tenant-Key
-      DATABASE_URL: postgresql://r3:r3@127.0.0.1:5432/r3
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
       MIGRATION_DATABASE_URL: postgresql://r3:r3@127.0.0.1:5432/r3
-      DATABASE_POOL_SIZE: "30"
-      DATABASE_MAX_OVERFLOW: "80"
-      R3_DATABASE_URL: postgresql://r3:r3@127.0.0.1:5432/r3
+      DATABASE_POOL_SIZE: "20"
+      DATABASE_MAX_OVERFLOW: "0"
+      DATABASE_POOL_TIMEOUT_SECONDS: "3"
+      DATABASE_POOL_TOTAL_CAP: "30"
+      INGESTION_FOLLOWUP_TASKS_ENABLED: "false"
+      R3_ADMIN_DATABASE_URL: postgresql://r3:r3@127.0.0.1:5432/r3
+      R3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
       R3_API_BASE_URL: http://127.0.0.1:8000
       R3_LADDER: "50,250,1000"
       R3_CONCURRENCY: "200"
       R3_TIMEOUT_S: "10"
+      R3_NULL_BENCHMARK: "1"
+      R3_NULL_BENCHMARK_TARGET_RPS: "50"
+      R3_NULL_BENCHMARK_DURATION_S: "60"
+      R3_NULL_BENCHMARK_MIN_RPS: "50"
+      R3_EG34_P95_MAX_MS: "2000"
+      R3_EG34_TEST1_RPS: "29"
+      R3_EG34_TEST1_DURATION_S: "60"
+      R3_EG34_TEST2_RPS: "46"
+      R3_EG34_TEST2_DURATION_S: "60"
+      R3_EG34_TEST3_RPS: "5"
+      R3_EG34_TEST3_DURATION_S: "300"
 
     steps:
       - name: Checkout
@@ -88,11 +103,37 @@ jobs:
           set -euo pipefail
           alembic upgrade heads
 
+      - name: Provision runtime DB identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "${MIGRATION_DATABASE_URL}" <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+              CREATE ROLE app_user LOGIN PASSWORD 'app_user';
+            END IF;
+          END$$;
+          GRANT CONNECT ON DATABASE r3 TO app_user;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          GRANT USAGE ON SCHEMA security TO app_user;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA security TO app_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_user;
+          SQL
+
+      - name: Calibrate Worker Counts
+        shell: bash
+        run: |
+          python -c "import os; c=os.cpu_count() or 2; l=max(1, min(c-2, 2)); s=max(2, c-l-1); print(f'R3_LOADGEN_WORKERS={l}'); print(f'R3_SERVER_WORKERS={s}')" >> $GITHUB_ENV
+
       - name: Start API
         shell: bash
         run: |
           set -euo pipefail
-          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers "$R3_SERVER_WORKERS" --no-access-log > uvicorn.log 2>&1 &
 
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
@@ -116,6 +157,17 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/r3/ingestion_under_fire.py | tee r3_harness.log
+
+      - name: Assert no raw PII in API logs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -E -n "pii_user@test.invalid|receipt@test.invalid|203.0.113.99|bill@test.invalid" uvicorn.log; then
+            echo "FAIL: raw PII marker detected in uvicorn.log"
+            exit 1
+          fi
+          echo "PASS: no raw PII markers detected in uvicorn.log"
 
       - name: Render R3 summary (candidate-anchored)
         if: always()

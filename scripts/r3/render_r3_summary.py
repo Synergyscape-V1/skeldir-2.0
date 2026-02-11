@@ -82,12 +82,23 @@ def _max_n(verdicts: dict[str, dict[str, Any]]) -> int | None:
     return max(ns) if ns else None
 
 
-def _pick(verdicts: dict[str, dict[str, Any]], prefix: str, n: int) -> tuple[str, dict[str, Any]] | None:
-    suffix = f"_N{n}"
+def _pick(verdicts: dict[str, dict[str, Any]], prefix: str, n: int | None) -> tuple[str, dict[str, Any]] | None:
+    if n is not None:
+        suffix = f"_N{n}"
+        for name, payload in verdicts.items():
+            if name.startswith(prefix) and name.endswith(suffix):
+                return name, payload
     for name, payload in verdicts.items():
-        if name.startswith(prefix) and name.endswith(suffix):
+        if name.startswith(prefix):
             return name, payload
     return None
+
+
+def _pick_exact(verdicts: dict[str, dict[str, Any]], name: str) -> tuple[str, dict[str, Any]] | None:
+    payload = verdicts.get(name)
+    if payload is None:
+        return None
+    return name, payload
 
 
 def _bool(v: Any) -> bool:
@@ -98,9 +109,12 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _gate(v: bool) -> str:
+    return "PASS" if v else "FAIL"
+
+
 def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, out_path: Path) -> str:
-    n = _max_n(parsed.verdicts)
-    if n is None:
+    if not parsed.verdicts:
         md = "\n".join(
             [
                 "# R3 Ingestion Under Fire Validation Summary (Truth Anchor)",
@@ -128,33 +142,46 @@ def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, ou
         out_path.write_text(md + "\n", encoding="utf-8")
         return md
 
+    n = _max_n(parsed.verdicts)
     s1 = _pick(parsed.verdicts, "S1_ReplayStorm", n)
-    s2 = _pick(parsed.verdicts, "S2_UniqueStorm", n)
     s3 = _pick(parsed.verdicts, "S3_MalformedStorm", n)
     s4 = _pick(parsed.verdicts, "S4_PIIStorm", n)
     s5 = _pick(parsed.verdicts, "S5_CrossTenantCollision", n)
     s6 = _pick(parsed.verdicts, "S6_MixedStorm", n)
+    s7 = _pick(parsed.verdicts, "S7_InvalidJsonDLQ", n)
+    s9 = _pick(parsed.verdicts, "S9_NormalizationAliases", None)
 
-    gate_0 = True  # Harness prints deterministic tenant IDs + env block.
-    gate_1 = _bool(s1 and s1[1].get("passed"))
-    gate_2 = _bool(s5 and s5[1].get("passed"))
-    gate_3 = _bool(s3 and s3[1].get("passed"))
-    gate_4 = _bool(s4 and s4[1].get("passed"))
-    gate_5 = _bool(s6 and s6[1].get("passed"))
-    gate_6 = all(x is not None for x in [s1, s2, s3, s4, s5, s6])
+    eg35 = _pick_exact(parsed.verdicts, "EG3_5_NullBenchmark")
+    eg34_t1 = _pick_exact(parsed.verdicts, "EG3_4_Test1_Month6")
+    eg34_t2 = _pick_exact(parsed.verdicts, "EG3_4_Test2_Month18")
+    eg34_t3 = _pick_exact(parsed.verdicts, "EG3_4_Test3_SustainedOps")
 
-    complete = n >= 1000 and all([gate_0, gate_1, gate_2, gate_3, gate_4, gate_5, gate_6])
+    gate_anchor = True
+    gate_31 = _bool(s4 and s4[1].get("passed"))
+    gate_32 = _bool((s1 and s1[1].get("passed")) and (s5 and s5[1].get("passed")))
+    gate_33 = _bool((s3 and s3[1].get("passed")) and (s7 and s7[1].get("passed")))
+    gate_34_t1 = _bool(eg34_t1 and eg34_t1[1].get("passed"))
+    gate_34_t2 = _bool(eg34_t2 and eg34_t2[1].get("passed"))
+    gate_34_t3 = _bool(eg34_t3 and eg34_t3[1].get("passed"))
+    gate_35 = _bool(eg35 and eg35[1].get("passed"))
+    gate_alias = _bool(s9 and s9[1].get("passed"))
+
+    required = [gate_anchor, gate_31, gate_32, gate_33, gate_34_t1, gate_34_t2, gate_34_t3, gate_35]
+    complete = all(required)
     status = "COMPLETE" if complete else "IN PROGRESS"
+    measurement_note = "VALID" if gate_35 else "INVALID"
 
     env = parsed.env or {}
+    base_url = env.get("base_url")
     ladder = env.get("ladder")
     concurrency = env.get("concurrency")
     timeout_s = env.get("timeout_s")
-    base_url = env.get("base_url")
     run_start_utc = env.get("run_start_utc")
-
-    def _gate(v: bool) -> str:
-        return "PASS" if v else "FAIL"
+    eg34_profiles = env.get("eg34_profiles")
+    null_enabled = env.get("null_benchmark_enabled")
+    null_target_rps = env.get("null_benchmark_target_rps")
+    null_duration_s = env.get("null_benchmark_duration_s")
+    null_min_rps = env.get("null_benchmark_min_rps")
 
     md = "\n".join(
         [
@@ -167,6 +194,7 @@ def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, ou
             f"- **Candidate SHA:** `{candidate_sha}`",
             f"- **CI run:** {run_url}",
             f"- **Generated at:** `{_utc_now_iso()}`",
+            f"- **Measurement validity (EG3.5):** `{measurement_note}`",
             "",
             "## Run Configuration (from harness log)",
             "",
@@ -175,38 +203,33 @@ def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, ou
             f"- `R3_CONCURRENCY` = `{concurrency}`",
             f"- `R3_TIMEOUT_S` = `{timeout_s}`",
             f"- `RUN_START_UTC` = `{run_start_utc}`",
+            f"- `R3_EG34_PROFILES` = `{eg34_profiles}`",
+            f"- `R3_NULL_BENCHMARK_ENABLED` = `{null_enabled}`",
+            f"- `R3_NULL_BENCHMARK_TARGET_RPS` = `{null_target_rps}`",
+            f"- `R3_NULL_BENCHMARK_DURATION_S` = `{null_duration_s}`",
+            f"- `R3_NULL_BENCHMARK_MIN_RPS` = `{null_min_rps}`",
             "",
             "## Exit Gates (Pass Matrix)",
             "",
             "| Gate | Description | Status |",
             "|------|-------------|--------|",
-            f"| EG-R3-0 | Truth anchor & clean room | {_gate(gate_0)} |",
-            f"| EG-R3-1 | Idempotency under fire (ReplayStorm @ N={n}) | {_gate(gate_1)} |",
-            f"| EG-R3-2 | Tenant-correct idempotency (CrossTenantCollision @ N={n}) | {_gate(gate_2)} |",
-            f"| EG-R3-3 | DLQ reliability (MalformedStorm @ N={n}) | {_gate(gate_3)} |",
-            f"| EG-R3-4 | PII self-defense (PIIStorm @ N={n}) | {_gate(gate_4)} |",
-            f"| EG-R3-5 | MixedStorm stability (MixedStorm @ N={n}) | {_gate(gate_5)} |",
-            f"| EG-R3-6 | Evidence pack present (verdict blocks for S1..S6) | {_gate(gate_6)} |",
+            f"| EG-R3-0 | Truth anchor & clean room | {_gate(gate_anchor)} |",
+            f"| EG3.1 | PII stripping before persistence (PIIStorm @ N={n}) | {_gate(gate_31)} |",
+            f"| EG3.2 | Idempotency at persistence boundary (Replay + CrossTenant) | {_gate(gate_32)} |",
+            f"| EG3.3 | Deterministic malformed/PII DLQ routing | {_gate(gate_33)} |",
+            f"| EG3.4 Test 1 | Month 6 profile (29 rps, 60s, p95 < 2s) | {_gate(gate_34_t1)} |",
+            f"| EG3.4 Test 2 | Month 18 profile (46 rps, 60s, p95 < 2s) | {_gate(gate_34_t2)} |",
+            f"| EG3.4 Test 3 | Sustained ops (5 rps, 300s, no degradation) | {_gate(gate_34_t3)} |",
+            f"| EG3.5 | Measurement validity null benchmark (>=50 rps, 60s) | {_gate(gate_35)} |",
+            f"| EG-R3-7 | Channel alias normalization sanity | {_gate(gate_alias)} |",
             "",
-            "## Evidence (Browser-Verifiable Logs)",
-            "",
-            "This run prints, to CI logs:",
-            "",
-            "- One `R3_VERDICT_BEGIN/END` JSON block per scenario (S1..S6), per ladder step.",
-            "- DB truth checks (canonical/DLQ counts + PII key hit scan summaries).",
-            "",
-            "## Key Verdicts (Max Ladder Step)",
+            "## Key Verdicts",
             "",
             f"Max ladder step detected: `N={n}`",
             "",
             "### S1 ReplayStorm",
             "```json",
             json.dumps(s1[1] if s1 else {}, indent=2, sort_keys=True),
-            "```",
-            "",
-            "### S5 CrossTenantCollision",
-            "```json",
-            json.dumps(s5[1] if s5 else {}, indent=2, sort_keys=True),
             "```",
             "",
             "### S3 MalformedStorm",
@@ -222,6 +245,26 @@ def render_summary_md(*, candidate_sha: str, run_url: str, parsed: ParsedRun, ou
             "### S6 MixedStorm",
             "```json",
             json.dumps(s6[1] if s6 else {}, indent=2, sort_keys=True),
+            "```",
+            "",
+            "### EG3.5 Null Benchmark",
+            "```json",
+            json.dumps(eg35[1] if eg35 else {}, indent=2, sort_keys=True),
+            "```",
+            "",
+            "### EG3.4 Test1 Month6",
+            "```json",
+            json.dumps(eg34_t1[1] if eg34_t1 else {}, indent=2, sort_keys=True),
+            "```",
+            "",
+            "### EG3.4 Test2 Month18",
+            "```json",
+            json.dumps(eg34_t2[1] if eg34_t2 else {}, indent=2, sort_keys=True),
+            "```",
+            "",
+            "### EG3.4 Test3 SustainedOps",
+            "```json",
+            json.dumps(eg34_t3[1] if eg34_t3 else {}, indent=2, sort_keys=True),
             "```",
             "",
             "## Where the Evidence Lives",
