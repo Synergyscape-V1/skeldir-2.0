@@ -20,8 +20,6 @@ sources:
   facebook_ads:
     "FB_ADS": facebook_paid
     "FB_BRAND": facebook_brand
-    "FB": facebook_paid
-    "FACEBOOK": facebook_paid
     "FACEBOOK_ADS": facebook_paid
   
   google_ads:
@@ -57,6 +55,7 @@ sources:
 # - Vendor channel indicators are case-sensitive (as provided by vendor APIs)
 # - Multiple vendor indicators can map to the same canonical code
 # - New vendors/channels require update to both this file and channel_taxonomy table
+
 
 
 

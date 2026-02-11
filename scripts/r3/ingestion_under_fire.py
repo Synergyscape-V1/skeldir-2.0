@@ -1705,8 +1705,8 @@ async def scenario_s9_normalization_aliases(
         }
         return json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
-    body_fb = _payload(key_fb, "fb")
-    body_facebook = _payload(key_facebook, "facebook")
+    body_fb = _payload(key_fb, "fb_ads")
+    body_facebook = _payload(key_facebook, "facebook_ads")
 
     headers_fb = _make_headers_for_stripe(
         tenant_api_key_header=tenant_api_key_header,
