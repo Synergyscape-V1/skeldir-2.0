@@ -296,7 +296,13 @@ async def _http_fire_rate_controlled(
     return status_counts, timeouts, connection_errors, latencies_ms, elapsed_s, total_requests
 
 
-async def _wait_for_http_ready(client: httpx.AsyncClient, base_url: str, *, attempts: int = 10, delay_s: float = 1.0) -> None:
+async def _wait_for_http_ready(
+    client: httpx.AsyncClient,
+    base_url: str,
+    *,
+    attempts: int = 60,
+    delay_s: float = 1.0,
+) -> None:
     last_status = None
     for _ in range(attempts):
         try:
@@ -1760,6 +1766,8 @@ async def main() -> int:
     ladder = _parse_int_list(_env("R3_LADDER", default="50,250,1000"))
     concurrency = int(_env("R3_CONCURRENCY", default="200"))
     timeout_s = float(_env("R3_TIMEOUT_S", default="10"))
+    ready_attempts = int(_env("R3_READY_ATTEMPTS", default="60"))
+    ready_delay_s = float(_env("R3_READY_DELAY_S", default="1"))
     eg34_p95_max_ms = float(_env("R3_EG34_P95_MAX_MS", default="2000"))
     eg34_profiles = [
         PerfGateProfile(
@@ -1808,6 +1816,8 @@ async def main() -> int:
                 "platform": platform.platform(),
                 "concurrency": concurrency,
                 "timeout_s": timeout_s,
+                "readiness_attempts": ready_attempts,
+                "readiness_delay_s": ready_delay_s,
                 "ladder": ladder,
                 "eg34_profiles": [
                     {
@@ -1875,7 +1885,12 @@ async def main() -> int:
 
     limits = httpx.Limits(max_connections=concurrency, max_keepalive_connections=concurrency)
     async with httpx.AsyncClient(limits=limits) as client:
-        await _wait_for_http_ready(client, base_url)
+        await _wait_for_http_ready(
+            client,
+            base_url,
+            attempts=ready_attempts,
+            delay_s=ready_delay_s,
+        )
         conn2 = await _pg_connect_with_retry(runtime_db_url)
         try:
             all_results: list[ScenarioResult] = []
