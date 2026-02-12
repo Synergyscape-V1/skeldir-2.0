@@ -16,7 +16,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 import ssl
 
 # Test DSN using app_user (the role that will enforce RLS)
-TEST_DSN = "postgresql+asyncpg://app_user:npg_IGZ4D2rHNndq@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb"
+TEST_DSN = os.getenv("DATABASE_URL")
+if TEST_DSN and TEST_DSN.startswith("postgresql://"):
+    TEST_DSN = TEST_DSN.replace("postgresql://", "postgresql+asyncpg://", 1)
+if not TEST_DSN:
+    pytest.skip("DATABASE_URL is required for RLS gate tests", allow_module_level=True)
 
 # Create test engine with app_user credentials
 ssl_context = ssl.create_default_context()

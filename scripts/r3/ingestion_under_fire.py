@@ -1757,7 +1757,11 @@ async def scenario_s9_normalization_aliases(
 
 
 async def main() -> int:
-    candidate_sha = os.getenv("CANDIDATE_SHA") or os.getenv("GITHUB_SHA") or _env("CANDIDATE_SHA", default="local")
+    candidate_sha = os.getenv("CANDIDATE_SHA") or os.getenv("GITHUB_SHA")
+    if not candidate_sha:
+        # Local runs without a commit SHA must remain clean-room across repeated
+        # executions against the same database.
+        candidate_sha = f"local-{int(time.time())}"
     base_url = _env("R3_API_BASE_URL", default="http://127.0.0.1:8000")
     admin_db_url = _env("R3_ADMIN_DATABASE_URL", default=_env("MIGRATION_DATABASE_URL", default=""))
     runtime_db_url = _env("R3_RUNTIME_DATABASE_URL", default=_env("DATABASE_URL", default=""))
