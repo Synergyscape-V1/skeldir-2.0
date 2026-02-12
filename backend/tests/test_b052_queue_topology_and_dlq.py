@@ -281,6 +281,10 @@ class TestWorkerDLQ:
 
             # Query DLQ for captured failure
             async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                    {"tenant_id": str(test_tenant_id)},
+                )
                 result = await conn.execute(
                     text("""
                         SELECT task_name, queue, exception_class, error_message, status, tenant_id, task_kwargs
@@ -312,6 +316,10 @@ class TestWorkerDLQ:
 
             # Cleanup: Delete test DLQ entry
             async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                    {"tenant_id": str(test_tenant_id)},
+                )
                 await conn.execute(
                     text("""
                         DELETE FROM worker_failed_jobs
@@ -381,6 +389,10 @@ class TestWorkerDLQ:
         params = {f"task_id_{idx}": task_id for idx, task_id in enumerate(task_ids)}
 
         async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
             result = await conn.execute(
                 text(
                     f"""

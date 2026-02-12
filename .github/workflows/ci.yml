@@ -388,6 +388,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_phase
+      OPS_DATABASE_URL: postgresql://app_ops:app_ops@127.0.0.1:5432/skeldir_phase
+      EXPECTED_RUNTIME_DB_USER: app_user
+      SKELDIR_TEST_SECRET: SKELDIR_TEST_SECRET_CI_PHASE4
       # Include BOTH repo root and backend/ to avoid "pipeline paralysis" (runner + app imports).
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       CI: "true"
@@ -432,11 +435,13 @@ jobs:
         run: |
           psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
           psql -h localhost -U postgres -c "CREATE USER migration_owner WITH PASSWORD 'migration_owner';"
+          psql -h localhost -U postgres -c "CREATE USER app_ops WITH PASSWORD 'app_ops';"
           psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
           psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END \$\$;"
           psql -h localhost -U postgres -c "CREATE DATABASE skeldir_phase OWNER migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
+          psql -h localhost -U postgres -d skeldir_phase -c "GRANT USAGE ON SCHEMA public TO app_ops;"
           psql -h localhost -U postgres -d skeldir_phase -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
@@ -492,6 +497,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_phase
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_phase
+      OPS_DATABASE_URL: postgresql://app_ops:app_ops@127.0.0.1:5432/skeldir_phase
+      EXPECTED_RUNTIME_DB_USER: app_user
+      SKELDIR_TEST_SECRET: SKELDIR_TEST_SECRET_CI_PHASE4
       # Include BOTH repo root and backend/ to avoid "pipeline paralysis" (runner + app imports).
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       CI: "true"
@@ -533,11 +541,13 @@ jobs:
         run: |
           psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
           psql -h localhost -U postgres -c "CREATE USER migration_owner WITH PASSWORD 'migration_owner';"
+          psql -h localhost -U postgres -c "CREATE USER app_ops WITH PASSWORD 'app_ops';"
           psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
           psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END \$\$;"
           psql -h localhost -U postgres -c "CREATE DATABASE skeldir_phase OWNER migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO migration_owner;"
           psql -h localhost -U postgres -d skeldir_phase -c "GRANT ALL ON SCHEMA public TO app_user;"
+          psql -h localhost -U postgres -d skeldir_phase -c "GRANT USAGE ON SCHEMA public TO app_ops;"
           psql -h localhost -U postgres -d skeldir_phase -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
           psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
           psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"

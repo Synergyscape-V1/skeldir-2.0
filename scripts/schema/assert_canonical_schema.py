@@ -39,6 +39,8 @@ def _normalize_schema(text: str) -> str:
             continue
         if line.startswith("SELECT pg_catalog.set_config"):
             continue
+        if line.startswith("SELECT set_config("):
+            continue
         if line.startswith("COMMENT ON EXTENSION"):
             continue
         norm = line.rstrip()
