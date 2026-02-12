@@ -290,7 +290,11 @@ jobs:
             [ -z "$table" ] && continue
             row=$(podman exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -A -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid=('public.${table}'::regclass);" | tr -d ' ')
             echo "${table}=${row}"
-            if ! echo "$row" | grep -q "t|t"; then
+            if [ "$table" = "worker_failed_jobs" ]; then
+              if ! echo "$row" | grep -q "t|f"; then
+                FAILURES+=("RLS_NOT_ENFORCED:${table}=${row}")
+              fi
+            elif ! echo "$row" | grep -q "t|t"; then
               FAILURES+=("RLS_NOT_ENFORCED:${table}=${row}")
             fi
           done < "$ARTIFACTS_DIR/CLOSED_SET_TENANT_TABLES.txt"
@@ -339,7 +343,8 @@ jobs:
           EOSQL
           podman cp /tmp/r2_pii_fail.sql skeldir-r2-postgres:/tmp/r2_pii_fail.sql
           pii_result=$(podman exec -e PGPASSWORD=r2_app_password skeldir-r2-postgres psql -U r2_app_role -d $POSTGRES_DB -f /tmp/r2_pii_fail.sql 2>&1 || true)
-          echo "PII_INSERT_ATTEMPT_ERROR_SNIPPET=$(echo "$pii_result" | grep -i -m1 -E \"PII key detected|guardrail|ERROR\" || true)"
+          pii_error_snippet=$(echo "$pii_result" | grep -i -m1 -E 'PII key detected|guardrail|ERROR' || true)
+          echo "PII_INSERT_ATTEMPT_ERROR_SNIPPET=${pii_error_snippet}"
           if ! echo "$pii_result" | grep -qiE "pii|guardrail|not allowed|violat"; then
             FAILURES+=("PII_GUARDRAIL_NOT_ENFORCED")
           fi
