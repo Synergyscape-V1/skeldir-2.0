@@ -178,7 +178,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     env["CELERY_RESULT_BACKEND"] = f"db+{cfg.runtime_sync_url}"
     env["BAYESIAN_TASK_SOFT_TIME_LIMIT_S"] = "4"
     env["BAYESIAN_TASK_TIME_LIMIT_S"] = "5"
-    env["BAYESIAN_PROBE_LOG_PATH"] = str(probe_log)
+    env["BAYESIAN_PROBE_LOG_PATH"] = str(probe_log.resolve())
     env.setdefault("ENVIRONMENT", "test")
 
     worker_proc = None
