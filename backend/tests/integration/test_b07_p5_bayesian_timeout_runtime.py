@@ -233,12 +233,22 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
             time.sleep(0.2)
         assert fallback_event is not None, "Expected deterministic fallback event before hard kill"
 
-        health_result = celery_app.send_task(
-            "app.tasks.bayesian.health_probe",
-            kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
-            queue="attribution",
-        ).get(timeout=20)
-        assert isinstance(health_result, dict)
+        health_result = None
+        health_error = None
+        health_deadline = time.time() + 60
+        while time.time() < health_deadline:
+            try:
+                health_result = celery_app.send_task(
+                    "app.tasks.bayesian.health_probe",
+                    kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
+                    queue="attribution",
+                ).get(timeout=10)
+                if isinstance(health_result, dict) and health_result.get("status") == "ok":
+                    break
+            except Exception as exc:  # noqa: BLE001 - worker may still be respawning after hard kill
+                health_error = exc
+                time.sleep(1)
+        assert isinstance(health_result, dict), f"Expected health probe result, got error: {health_error}"
         assert health_result.get("status") == "ok"
 
         proof_path.write_text(
