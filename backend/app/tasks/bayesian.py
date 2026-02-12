@@ -55,6 +55,47 @@ def _as_uuid(raw: str | UUID) -> UUID:
     return UUID(str(raw))
 
 
+def _build_fallback_payload(*, task_id: str, tenant_id: UUID, correlation_id: UUID, elapsed_ms: int) -> dict:
+    return {
+        "status": "fallback",
+        "reason": "bayesian_soft_time_limit_exceeded",
+        "task_id": task_id,
+        "tenant_id": str(tenant_id),
+        "correlation_id": str(correlation_id),
+        "elapsed_ms": elapsed_ms,
+        "fallback_model": "deterministic_last_touch",
+        "fallback_lookback_days": 30,
+        "fallback_triggered": True,
+    }
+
+
+def _emit_fallback_event(*, task_id: str, tenant_id: UUID, correlation_id: UUID, elapsed_ms: int) -> dict:
+    fallback_payload = _build_fallback_payload(
+        task_id=task_id,
+        tenant_id=tenant_id,
+        correlation_id=correlation_id,
+        elapsed_ms=elapsed_ms,
+    )
+    logger.warning(
+        "bayesian_soft_timeout_fallback",
+        extra={
+            "event_type": "bayesian.compute",
+            "tenant_id": str(tenant_id),
+            "correlation_id": str(correlation_id),
+            "task_id": task_id,
+            "fallback_model": "deterministic_last_touch",
+        },
+    )
+    _append_probe_event(
+        {
+            "event": "bayesian_soft_timeout_fallback",
+            "timestamp": _utc_now(),
+            **fallback_payload,
+        }
+    )
+    return fallback_payload
+
+
 @celery_app.task(
     bind=True,
     name="app.tasks.bayesian.run_mcmc_inference",
@@ -106,7 +147,22 @@ def run_mcmc_inference(
 
     try:
         deadline = time.monotonic() + max(1, int(run_seconds))
+        soft_deadline = started_at + float(_TASK_SOFT_LIMIT_S)
         while time.monotonic() < deadline:
+            if time.monotonic() >= soft_deadline:
+                # Deterministic fallback guardrail in case soft-timeout signaling is delayed.
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                fallback_payload = _emit_fallback_event(
+                    task_id=task_id,
+                    tenant_id=tenant,
+                    correlation_id=correlation,
+                    elapsed_ms=elapsed_ms,
+                )
+                if continue_after_soft_timeout:
+                    # Keep consuming CPU slot until hard limit kills this worker process.
+                    while True:
+                        time.sleep(0.2)
+                return fallback_payload
             time.sleep(0.2)
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         return {
@@ -119,33 +175,11 @@ def run_mcmc_inference(
         }
     except SoftTimeLimitExceeded:
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
-        fallback_payload = {
-            "status": "fallback",
-            "reason": "bayesian_soft_time_limit_exceeded",
-            "task_id": task_id,
-            "tenant_id": str(tenant),
-            "correlation_id": str(correlation),
-            "elapsed_ms": elapsed_ms,
-            "fallback_model": "deterministic_last_touch",
-            "fallback_lookback_days": 30,
-            "fallback_triggered": True,
-        }
-        logger.warning(
-            "bayesian_soft_timeout_fallback",
-            extra={
-                "event_type": "bayesian.compute",
-                "tenant_id": str(tenant),
-                "correlation_id": str(correlation),
-                "task_id": task_id,
-                "fallback_model": "deterministic_last_touch",
-            },
-        )
-        _append_probe_event(
-            {
-                "event": "bayesian_soft_timeout_fallback",
-                "timestamp": _utc_now(),
-                **fallback_payload,
-            }
+        fallback_payload = _emit_fallback_event(
+            task_id=task_id,
+            tenant_id=tenant,
+            correlation_id=correlation,
+            elapsed_ms=elapsed_ms,
         )
         if continue_after_soft_timeout:
             # Keep consuming CPU slot until hard limit kills this worker process.
