@@ -130,6 +130,121 @@ async def test_p3_hourly_shutoff_distinct_from_monthly(monkeypatch, test_tenant)
 
 
 @pytest.mark.asyncio
+async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(monkeypatch, test_tenant):
+    monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
+    monkeypatch.setattr(settings, "LLM_MONTHLY_CAP_CENTS", 10_000, raising=False)
+
+    calls = {"count": 0}
+
+    async def _spy_provider(*, requested_model, prompt, reservation):
+        calls["count"] += 1
+        return {
+            "provider": "stub",
+            "model": requested_model,
+            "output_text": "ok",
+            "reasoning_trace": {"trace_type": "spy"},
+            "response_metadata": {"source": "spy"},
+            "usage": {"input_tokens": 1, "output_tokens": 1, "cost_cents": 1},
+        }
+
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_provider_call", _spy_provider, raising=True)
+
+    kill_request_id = str(uuid4())
+    pass_request_id = str(uuid4())
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        blocked = await generate_explanation(
+            _payload(
+                test_tenant,
+                request_id=kill_request_id,
+                prompt={"kill_switch": True, "cache_enabled": False},
+            ),
+            session=session,
+        )
+        allowed = await generate_explanation(
+            _payload(
+                test_tenant,
+                request_id=pass_request_id,
+                prompt={"kill_switch": False, "cache_enabled": False},
+            ),
+            session=session,
+        )
+
+    assert blocked["status"] == "blocked"
+    assert blocked["blocked_reason"] == "provider_kill_switch"
+    assert allowed["status"] == "accepted"
+    assert calls["count"] == 1
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        kill_row = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == kill_request_id,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+        pass_row = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == pass_request_id,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+        assert kill_row.provider_attempted is False
+        assert int(kill_row.cost_cents) == 0
+        assert pass_row.provider_attempted is True
+
+
+@pytest.mark.asyncio
+async def test_p3_breaker_open_blocks_without_provider_attempt_non_vacuous(monkeypatch, test_tenant):
+    monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
+    monkeypatch.setattr(settings, "LLM_MONTHLY_CAP_CENTS", 10_000, raising=False)
+
+    calls = {"count": 0}
+
+    async def _spy_provider(*, requested_model, prompt, reservation):
+        calls["count"] += 1
+        return {
+            "provider": "stub",
+            "model": requested_model,
+            "output_text": "ok",
+            "reasoning_trace": {"trace_type": "spy"},
+            "response_metadata": {"source": "spy"},
+            "usage": {"input_tokens": 1, "output_tokens": 1, "cost_cents": 1},
+        }
+
+    async def _breaker_open(*args, **kwargs):
+        return True
+
+    async def _breaker_closed(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_provider_call", _spy_provider, raising=True)
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_breaker_open", _breaker_open, raising=True)
+
+    blocked_request_id = str(uuid4())
+    allowed_request_id = str(uuid4())
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        blocked = await generate_explanation(
+            _payload(test_tenant, request_id=blocked_request_id, prompt={"cache_enabled": False}),
+            session=session,
+        )
+        monkeypatch.setattr(_PROVIDER_BOUNDARY, "_breaker_open", _breaker_closed, raising=True)
+        allowed = await generate_explanation(
+            _payload(test_tenant, request_id=allowed_request_id, prompt={"cache_enabled": False}),
+            session=session,
+        )
+
+    assert blocked["status"] == "blocked"
+    assert blocked["blocked_reason"] == "breaker_open"
+    assert allowed["status"] == "accepted"
+    assert calls["count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_p3_retry_idempotency_no_double_debit(test_tenant):
     request_id = str(uuid4())
     prompt = {"simulated_cost_cents": 2, "cache_enabled": False}
@@ -199,6 +314,45 @@ async def test_p3_timeout_enforced(monkeypatch, test_tenant):
         res = await generate_explanation(_payload(test_tenant, request_id=str(uuid4()), prompt=prompt), session=session)
     assert res["status"] == "failed"
     assert res["failure_reason"] == "provider_timeout"
+
+
+@pytest.mark.asyncio
+async def test_p3_timeout_non_vacuous_negative_control(monkeypatch, test_tenant):
+    monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
+    monkeypatch.setattr(settings, "LLM_MONTHLY_CAP_CENTS", 10_000, raising=False)
+
+    calls = {"count": 0}
+
+    async def _slow_provider(*, requested_model, prompt, reservation):
+        calls["count"] += 1
+        await asyncio.sleep(0.05)
+        return {
+            "provider": "stub",
+            "model": requested_model,
+            "output_text": "slow-ok",
+            "reasoning_trace": {"trace_type": "slow"},
+            "response_metadata": {"source": "slow"},
+            "usage": {"input_tokens": 1, "output_tokens": 1, "cost_cents": 1},
+        }
+
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_provider_call", _slow_provider, raising=True)
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        monkeypatch.setattr(settings, "LLM_PROVIDER_TIMEOUT_MS", 10, raising=False)
+        timed_out = await generate_explanation(
+            _payload(test_tenant, request_id=str(uuid4()), prompt={"cache_enabled": False}),
+            session=session,
+        )
+        monkeypatch.setattr(settings, "LLM_PROVIDER_TIMEOUT_MS", 300, raising=False)
+        succeeded = await generate_explanation(
+            _payload(test_tenant, request_id=str(uuid4()), prompt={"cache_enabled": False}),
+            session=session,
+        )
+
+    assert timed_out["status"] == "failed"
+    assert timed_out["failure_reason"] == "provider_timeout"
+    assert succeeded["status"] == "accepted"
+    assert calls["count"] == 2
 
 
 @pytest.mark.asyncio
@@ -315,3 +469,64 @@ async def test_p3_provider_enabled_routes_through_aisuite_boundary(monkeypatch, 
         )
     assert result["status"] == "accepted"
     assert result["explanation"] == "aisuite-path-ok"
+
+
+@pytest.mark.asyncio
+async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant):
+    monkeypatch.setattr(settings, "LLM_PROVIDER_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "LLM_PROVIDER_API_KEY", "fake-key", raising=False)
+    monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
+    monkeypatch.setattr(settings, "LLM_MONTHLY_CAP_CENTS", 10_000, raising=False)
+
+    async def _fake_aisuite(*, requested_model, prompt):
+        provider_name = requested_model.split(":", 1)[0]
+        return {
+            "provider": provider_name,
+            "model": requested_model,
+            "output_text": f"{provider_name}-path-ok",
+            "reasoning_trace": {"trace_type": "fake"},
+            "response_metadata": {"source": "provider-swap-test"},
+            "usage": {"input_tokens": 1, "output_tokens": 1, "cost_cents": 1},
+        }
+
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_call_aisuite", _fake_aisuite, raising=True)
+
+    request_a = str(uuid4())
+    request_b = str(uuid4())
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        monkeypatch.setattr(settings, "LLM_PROVIDER_MODEL", "openai:gpt-4o-mini", raising=False)
+        run_a = await generate_explanation(
+            _payload(test_tenant, request_id=request_a, prompt={"cache_enabled": False}),
+            session=session,
+        )
+        monkeypatch.setattr(settings, "LLM_PROVIDER_MODEL", "anthropic:claude-3-5-sonnet", raising=False)
+        run_b = await generate_explanation(
+            _payload(test_tenant, request_id=request_b, prompt={"cache_enabled": False}),
+            session=session,
+        )
+
+    assert run_a["status"] == "accepted"
+    assert run_b["status"] == "accepted"
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        row_a = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == request_a,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+        row_b = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == request_b,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+
+    assert row_a.provider == "openai"
+    assert row_b.provider == "anthropic"
