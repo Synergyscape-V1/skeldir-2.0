@@ -195,6 +195,7 @@ async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(monkey
         ).scalars().one()
         assert kill_row.provider_attempted is False
         assert int(kill_row.cost_cents) == 0
+        assert kill_row.cost_usd == 0
         assert pass_row.provider_attempted is True
 
 

@@ -20,7 +20,7 @@ This index maps each Phase 5 exit gate to executable tests and expected artifact
 - Negative control:
   - Same test invokes a second request with `kill_switch=False` and asserts provider invocation occurs.
 - Ledger proof:
-  - Same test asserts blocked row monetary spend is zero (`LLMApiCall.cost_cents == 0`).
+  - Same test asserts blocked row monetary spend is zero (`LLMApiCall.cost_cents == 0` and `LLMApiCall.cost_usd == 0`).
 - Artifact:
   - `artifacts/b07-p2/p3_controls.log`
 

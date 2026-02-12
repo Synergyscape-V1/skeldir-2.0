@@ -8,17 +8,23 @@ set -euo pipefail
 ALLOWED_PROVIDER_PATH="backend/app/llm/provider_boundary.py"
 ALLOWED_BAYESIAN_PATH="backend/app/workers/bayesian.py"
 
-if ! command -v rg >/dev/null 2>&1; then
-  echo "ERROR: rg (ripgrep) is required for enforce_boundary.sh"
-  exit 2
-fi
-
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
 violations=0
 
-scan_pattern='^\s*(from|import)\s+'
+scan_pattern='^[[:space:]]*(from|import)[[:space:]]+'
+hits_file="$(mktemp)"
+trap 'rm -f "$hits_file"' EXIT
+
+search_imports() {
+  local file="$1"
+  if command -v rg >/dev/null 2>&1; then
+    rg -n "$scan_pattern(aisuite|pymc)([[:space:]\.].*)?$" "$file" >"$hits_file" 2>/dev/null
+  else
+    grep -nE "$scan_pattern(aisuite|pymc)([[:space:]\.].*)?$" "$file" >"$hits_file" 2>/dev/null
+  fi
+}
 
 echo "[enforce_boundary] scanning Python imports..."
 
@@ -28,9 +34,9 @@ while IFS= read -r path; do
     continue
   fi
 
-  if rg -n "$scan_pattern(aisuite|pymc)([[:space:]\.].*)?$" "$rel" >/tmp/enforce_boundary_hits.txt 2>/dev/null; then
+  if search_imports "$rel"; then
     echo "Boundary violation in $rel:"
-    cat /tmp/enforce_boundary_hits.txt
+    cat "$hits_file"
     violations=1
   fi
 done < <(git ls-files '*.py')
