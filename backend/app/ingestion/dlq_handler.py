@@ -17,6 +17,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.observability.context import log_context
 from app.observability.api_metrics import events_dlq_total
+from app.db.session import engine
+from sqlalchemy import text
 
 try:
     import structlog
@@ -246,9 +248,18 @@ class DLQHandler:
                 "event_type": (original_payload or {}).get("event_type", "unknown"),
             }
         )
-        logger.error("event_routed_to_dlq", extra=ctx)
+        # High-volume expected ingress failures (schema/PII) should not emit
+        # error-level logs per event; metrics + dead_events rows are the
+        # authoritative signal.
+        if error_type in {ErrorType.SCHEMA_VALIDATION, ErrorType.PII_VIOLATION}:
+            logger.debug("event_routed_to_dlq", extra=ctx)
+        elif classification == ErrorClassification.TRANSIENT:
+            logger.warning("event_routed_to_dlq", extra=ctx)
+        else:
+            logger.error("event_routed_to_dlq", extra=ctx)
 
         return dead_event
+
 
     async def retry_dead_event(
         self,
@@ -381,3 +392,63 @@ class DLQHandler:
             retry_count=2: 60 * (2^2) = 240 seconds
         """
         return self.INITIAL_DELAY_SECONDS * (self.BACKOFF_MULTIPLIER ** retry_count)
+
+
+async def route_unresolved_tenant_to_quarantine(
+    *,
+    source: str,
+    payload: dict,
+    error_message: str,
+    error_type: str = "unresolved_tenant",
+    correlation_id: str | None = None,
+) -> None:
+    """
+    Write unresolved-tenant events into the quarantine DLQ lane.
+
+    This path intentionally does not require tenant context and is restricted by
+    RLS policies to write-only for app runtime roles and read-only for ops role.
+    """
+    correlation_uuid = None
+    if correlation_id:
+        try:
+            correlation_uuid = UUID(str(correlation_id))
+        except (TypeError, ValueError):
+            correlation_uuid = None
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO dead_events_quarantine
+                (
+                    tenant_id,
+                    source,
+                    raw_payload,
+                    error_type,
+                    error_code,
+                    error_message,
+                    error_detail,
+                    correlation_id
+                )
+                VALUES
+                (
+                    NULL,
+                    :source,
+                    :raw_payload::jsonb,
+                    :error_type,
+                    :error_code,
+                    :error_message,
+                    '{}'::jsonb,
+                    :correlation_id
+                )
+                """
+            ),
+            {
+                "source": source,
+                "raw_payload": payload or {},
+                "error_type": error_type,
+                "error_code": "UNRESOLVED_TENANT",
+                "error_message": str(error_message)[:500],
+                "correlation_id": str(correlation_uuid) if correlation_uuid else None,
+            },
+        )

@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import math
 import multiprocessing as mp
 import os
 import platform
@@ -22,6 +23,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import asyncpg
@@ -104,6 +106,15 @@ class ScenarioResult:
     http_timeouts: int
     http_connection_errors: int
     db: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PerfGateProfile:
+    name: str
+    target_rps: float
+    duration_s: int
+    p95_max_ms: float
+    enforce_no_degradation: bool = False
 
 
 async def _pg_connect(database_url: str) -> asyncpg.Connection:
@@ -220,6 +231,71 @@ async def _http_fire(
     return status_counts, timeouts, connection_errors
 
 
+async def _http_fire_rate_controlled(
+    client: httpx.AsyncClient,
+    requests: list[tuple[str, dict[str, str], bytes]],
+    *,
+    concurrency: int,
+    timeout_s: float,
+    target_rps: float,
+    duration_s: int,
+) -> tuple[dict[str, int], int, int, list[float], float, int]:
+    if not requests:
+        raise RuntimeError("Rate-controlled fire requires at least one request template.")
+    if target_rps <= 0:
+        raise RuntimeError("target_rps must be > 0.")
+    if duration_s <= 0:
+        raise RuntimeError("duration_s must be > 0.")
+
+    sem = asyncio.Semaphore(concurrency)
+    status_counts: dict[str, int] = {}
+    timeouts = 0
+    connection_errors = 0
+    latencies_ms: list[float] = []
+    total_requests = max(1, int(round(target_rps * duration_s)))
+
+    async def _one(url: str, headers: dict[str, str], body: bytes) -> None:
+        nonlocal timeouts, connection_errors
+        async with sem:
+            transient_request_error = False
+            for attempt in range(3):
+                request_started = time.perf_counter()
+                try:
+                    resp = await client.post(url, content=body, headers=headers, timeout=timeout_s)
+                    latencies_ms.append((time.perf_counter() - request_started) * 1000.0)
+                    key = str(resp.status_code)
+                    status_counts[key] = status_counts.get(key, 0) + 1
+                    if transient_request_error:
+                        status_counts["request_error_recovered"] = status_counts.get("request_error_recovered", 0) + 1
+                    return
+                except (httpx.TimeoutException, asyncio.TimeoutError):
+                    timeouts += 1
+                    status_counts["timeout"] = status_counts.get("timeout", 0) + 1
+                    return
+                except httpx.RequestError:
+                    transient_request_error = True
+                    if attempt < 2:
+                        await asyncio.sleep(0.05 * (attempt + 1))
+                        continue
+                    connection_errors += 1
+                    status_counts["request_error"] = status_counts.get("request_error", 0) + 1
+                    return
+
+    started = time.perf_counter()
+    tasks: list[asyncio.Task[None]] = []
+    for i in range(total_requests):
+        scheduled_at = started + (i / target_rps)
+        delay_s = scheduled_at - time.perf_counter()
+        if delay_s > 0:
+            await asyncio.sleep(delay_s)
+        url, headers, body = requests[i % len(requests)]
+        tasks.append(asyncio.create_task(_one(url, headers, body)))
+
+    await asyncio.gather(*tasks)
+    elapsed_s = time.perf_counter() - started
+    return status_counts, timeouts, connection_errors, latencies_ms, elapsed_s, total_requests
+
+
 async def _wait_for_http_ready(client: httpx.AsyncClient, base_url: str, *, attempts: int = 10, delay_s: float = 1.0) -> None:
     last_status = None
     for _ in range(attempts):
@@ -245,6 +321,52 @@ def _parse_int_list(csv: str) -> list[int]:
     for part in [p.strip() for p in csv.split(",") if p.strip()]:
         out.append(int(part))
     return out
+
+
+def _percentile(values: list[float], pct: float) -> float | None:
+    if not values:
+        return None
+    if pct <= 0:
+        return min(values)
+    if pct >= 100:
+        return max(values)
+    ordered = sorted(values)
+    rank = math.ceil((pct / 100.0) * len(ordered)) - 1
+    rank = max(0, min(rank, len(ordered) - 1))
+    return ordered[rank]
+
+
+def _database_name_from_dsn(dsn: str) -> str:
+    parsed = urlparse(dsn)
+    path = (parsed.path or "").strip("/")
+    if path:
+        return path.split("/")[-1]
+    # Fallback for non-standard DSNs that still include /dbname.
+    if "/" in dsn:
+        return dsn.split("?", 1)[0].rsplit("/", 1)[-1]
+    return ""
+
+
+def _http_error_count(status_counts: dict[str, int]) -> int:
+    errors = 0
+    for code, count in status_counts.items():
+        if code == "request_error_recovered":
+            continue
+        if code.isdigit():
+            if not (200 <= int(code) <= 299):
+                errors += count
+            continue
+        errors += count
+    return errors
+
+
+def _http_observed_count(status_counts: dict[str, int]) -> int:
+    observed = 0
+    for code, count in status_counts.items():
+        if code == "request_error_recovered":
+            continue
+        observed += count
+    return int(observed)
 
 
 async def db_count_canonical_for_key(conn: asyncpg.Connection, tenant_id: UUID, key: str) -> int:
@@ -349,6 +471,133 @@ async def db_pii_key_hits_since(
     }
 
 
+async def db_pii_key_hits_between(
+    conn: asyncpg.Connection,
+    start_utc: datetime,
+    end_utc: datetime,
+    tenant_ids: list[UUID],
+) -> dict[str, int]:
+    clauses = " OR ".join([f"jsonb_path_exists(raw_payload, '$.**.{k}')" for k in PII_KEYS])
+    canonical_hits = 0
+    dlq_hits = 0
+    for tenant_id in tenant_ids:
+        await _set_tenant_context(conn, tenant_id)
+        canonical_hits += int(
+            await conn.fetchval(
+                f"""
+                SELECT COUNT(*) FROM attribution_events
+                WHERE created_at >= $1 AND created_at <= $2 AND tenant_id = $3 AND ({clauses})
+                """,
+                start_utc,
+                end_utc,
+                str(tenant_id),
+            )
+        )
+        dlq_hits += int(
+            await conn.fetchval(
+                f"""
+                SELECT COUNT(*) FROM dead_events
+                WHERE ingested_at >= $1 AND ingested_at <= $2 AND tenant_id = $3 AND ({clauses})
+                """,
+                start_utc,
+                end_utc,
+                str(tenant_id),
+            )
+        )
+    return {
+        "attribution_events_raw_payload_hits": canonical_hits,
+        "dead_events_raw_payload_hits": dlq_hits,
+    }
+
+
+async def db_window_totals(
+    conn: asyncpg.Connection,
+    tenant_id: UUID,
+    start_utc: datetime,
+    end_utc: datetime,
+) -> dict[str, int]:
+    await _set_tenant_context(conn, tenant_id)
+    canonical_total = int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(*) FROM attribution_events
+            WHERE tenant_id = $1 AND created_at >= $2 AND created_at <= $3
+            """,
+            str(tenant_id),
+            start_utc,
+            end_utc,
+        )
+    )
+    dlq_total = int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(*) FROM dead_events
+            WHERE tenant_id = $1 AND ingested_at >= $2 AND ingested_at <= $3
+            """,
+            str(tenant_id),
+            start_utc,
+            end_utc,
+        )
+    )
+    return {
+        "window_canonical_rows": canonical_total,
+        "window_dlq_rows": dlq_total,
+    }
+
+
+async def db_duplicate_canonical_keys_between(
+    conn: asyncpg.Connection,
+    tenant_id: UUID,
+    start_utc: datetime,
+    end_utc: datetime,
+) -> int:
+    await _set_tenant_context(conn, tenant_id)
+    return int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(*) FROM (
+              SELECT idempotency_key
+              FROM attribution_events
+              WHERE tenant_id = $1
+                AND created_at >= $2
+                AND created_at <= $3
+              GROUP BY idempotency_key
+              HAVING COUNT(*) > 1
+            ) duplicates
+            """,
+            str(tenant_id),
+            start_utc,
+            end_utc,
+        )
+    )
+
+
+async def db_connection_snapshot(conn: asyncpg.Connection, database_name: str) -> dict[str, int]:
+    row = await conn.fetchrow(
+        """
+        SELECT
+          COUNT(*)::int AS total_connections,
+          COUNT(*) FILTER (WHERE state = 'active')::int AS active_connections,
+          COUNT(*) FILTER (
+            WHERE state = 'active'
+              AND wait_event_type IN ('Lock', 'LWLock', 'IO', 'IPC', 'BufferPin')
+          )::int AS waiting_connections,
+          COUNT(*) FILTER (WHERE usename = 'app_user')::int AS app_user_connections
+        FROM pg_stat_activity
+        WHERE datname = $1
+        """,
+        database_name,
+    )
+    max_connections = int(await conn.fetchval("SHOW max_connections"))
+    return {
+        "total_connections": int(row["total_connections"]) if row else 0,
+        "active_connections": int(row["active_connections"]) if row else 0,
+        "waiting_connections": int(row["waiting_connections"]) if row else 0,
+        "app_user_connections": int(row["app_user_connections"]) if row else 0,
+        "max_connections": max_connections,
+    }
+
+
 def build_stripe_payment_intent_body(
     *,
     event_id: str,
@@ -402,151 +651,103 @@ def _keys_for_scenario(candidate_sha: str, scenario: str, n: int) -> list[str]:
 
 
 # ============================================================================
-# Phase 0 — Null Benchmark (isolated ruler calibration)
+# Phase 0 - Null Benchmark (measurement validity calibration)
 # ============================================================================
 
-def _run_stub_server(port: int) -> None:
-    """Target function for stub server child process.
-
-    Must be top-level to be picklable on Windows (spawn).
-    """
-    async def _handle(
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
-        try:
-            await reader.readuntil(b"\r\n\r\n")
-        except (asyncio.IncompleteReadError, ConnectionResetError):
-            writer.close()
-            return
-        writer.write(
-            b"HTTP/1.1 200 OK\r\n"
-            b"Content-Type: application/json\r\n"
-            b"Content-Length: 15\r\n"
-            b"Connection: keep-alive\r\n"
-            b"\r\n"
-            b'{\"status\":\"ok\"}'
-        )
-        try:
-            await writer.drain()
-        except ConnectionResetError:
-            pass
-        writer.close()
-
-    async def _main() -> None:
-        srv = await asyncio.start_server(_handle, "127.0.0.1", port)
-        await srv.serve_forever()
-
-    asyncio.run(_main())
-
-
-def _stub_server_process(port: int = 9999) -> mp.Process:
-    """Start the stub server in a daemon child process."""
-    p = mp.Process(target=_run_stub_server, args=(port,), daemon=True)
-    p.start()
-    return p
-
-
-def _null_benchmark_worker(
-    worker_id: int,
-    url: str,
-    count: int,
-    concurrency: int,
-    result_queue: "mp.Queue[dict]",
+async def _null_stub_server_handler(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
 ) -> None:
-    """Child process: own GIL, own event loop, own httpx client."""
-
-    async def _run() -> None:
-        ok = 0
-        fail = 0
-        sem = asyncio.Semaphore(concurrency)
-
-        async def _one() -> None:
-            nonlocal ok, fail
-            async with sem:
-                try:
-                    resp = await client.get(url, timeout=5.0)
-                    if resp.status_code == 200:
-                        ok += 1
-                    else:
-                        fail += 1
-                except Exception:
-                    fail += 1
-
-        limits = httpx.Limits(
-            max_connections=concurrency,
-            max_keepalive_connections=concurrency,
-        )
-        async with httpx.AsyncClient(limits=limits) as client:
-            await asyncio.gather(*[_one() for _ in range(count)])
-        result_queue.put({"worker_id": worker_id, "ok": ok, "fail": fail})
-
-    asyncio.run(_run())
+    try:
+        await reader.readuntil(b"\r\n\r\n")
+    except (asyncio.IncompleteReadError, ConnectionResetError):
+        writer.close()
+        return
+    writer.write(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: 15\r\n"
+        b"Connection: keep-alive\r\n"
+        b"\r\n"
+        b'{"status":"ok"}'
+    )
+    try:
+        await writer.drain()
+    except ConnectionResetError:
+        pass
+    writer.close()
 
 
-def _run_null_benchmark(
-    num_workers: int,
-    total_requests: int = 10000,
-    concurrency_per_worker: int = 50,
+async def run_null_benchmark_gate(
+    *,
+    client: httpx.AsyncClient,
+    timeout_s: float,
+    concurrency: int,
+    target_rps: float,
+    duration_s: int,
+    min_rps: float,
     stub_port: int = 9999,
-) -> float:
-    """Spin up stub server + N loadgen workers, return measured req/s.
-
-    Exit gate: if < 2000 req/s, the CI runner cannot sustain the target.
-    """
-    stub = _stub_server_process(port=stub_port)
-    time.sleep(0.5)  # let stub bind
-
-    url = f"http://127.0.0.1:{stub_port}/"
-    per_worker = total_requests // num_workers
-    remainder = total_requests % num_workers
-
-    result_queue: mp.Queue = mp.Queue()
-    workers: list[mp.Process] = []
-    for i in range(num_workers):
-        count = per_worker + (1 if i < remainder else 0)
-        p = mp.Process(
-            target=_null_benchmark_worker,
-            args=(i, url, count, concurrency_per_worker, result_queue),
+) -> ScenarioResult:
+    server = await asyncio.start_server(_null_stub_server_handler, "127.0.0.1", stub_port)
+    try:
+        request_templates = [(
+            f"http://127.0.0.1:{stub_port}/",
+            {"Content-Type": "application/json"},
+            b"{}",
+        )]
+        status_counts, timeouts, conn_errors, latencies_ms, elapsed_s, target_request_count = await _http_fire_rate_controlled(
+            client,
+            request_templates,
+            concurrency=concurrency,
+            timeout_s=timeout_s,
+            target_rps=target_rps,
+            duration_s=duration_s,
         )
-        workers.append(p)
+    finally:
+        server.close()
+        await server.wait_closed()
 
-    started = time.perf_counter()
-    for p in workers:
-        p.start()
-    for p in workers:
-        p.join(timeout=60)
-    elapsed = time.perf_counter() - started
-
-    total_ok = 0
-    total_fail = 0
-    for _ in range(num_workers):
-        try:
-            r = result_queue.get_nowait()
-            total_ok += r["ok"]
-            total_fail += r["fail"]
-        except Exception:
-            pass
-
-    stub.terminate()
-    stub.join(timeout=5)
-
-    rps = total_ok / elapsed if elapsed > 0 else 0.0
-    print("=== R3_NULL_BENCHMARK ===")
-    print(json.dumps({
-        "TOTAL_REQUESTS": total_requests,
-        "TOTAL_OK": total_ok,
-        "TOTAL_FAIL": total_fail,
-        "ELAPSED_S": round(elapsed, 4),
-        "NULL_BENCHMARK_RPS": round(rps, 1),
-        "NUM_WORKERS": num_workers,
-        "STUB_PORT": stub_port,
-    }, indent=2, sort_keys=True))
-    return rps
+    achieved_rps = target_request_count / elapsed_s if elapsed_s > 0 else 0.0
+    p50_ms = _percentile(latencies_ms, 50)
+    p95_ms = _percentile(latencies_ms, 95)
+    http_errors = _http_error_count(status_counts)
+    observed_count = _http_observed_count(status_counts)
+    measurement_valid = (
+        achieved_rps >= min_rps
+        and observed_count == target_request_count
+        and http_errors == 0
+        and timeouts == 0
+        and conn_errors == 0
+    )
+    return ScenarioResult(
+        name="EG3_5_NullBenchmark",
+        passed=measurement_valid,
+        http_status_counts=status_counts,
+        http_timeouts=timeouts,
+        http_connection_errors=conn_errors,
+        db={
+            "measurement_valid": measurement_valid,
+            "reason": "ok" if measurement_valid else "invalid_measurement_environment",
+            "duration_s": duration_s,
+            "target_rps": target_rps,
+            "minimum_required_rps": min_rps,
+            "target_request_count": target_request_count,
+            "observed_request_count": observed_count,
+            "elapsed_s": round(elapsed_s, 4),
+            "achieved_rps": round(achieved_rps, 3),
+            "latency_p50_ms": round(p50_ms, 3) if p50_ms is not None else None,
+            "latency_p95_ms": round(p95_ms, 3) if p95_ms is not None else None,
+            "http_error_count": http_errors,
+            "http_timeout_count": timeouts,
+            "http_connection_errors": conn_errors,
+            "client_stack": "httpx.AsyncClient",
+            "concurrency_model": "asyncio-semaphore",
+        },
+    )
 
 
 # ============================================================================
-# Phase 1 — Multiprocess S8 generator infrastructure
+# Phase 1 - Legacy S8 generator infrastructure (retained for deterministic payload assembly)
 # ============================================================================
 
 @dataclass(frozen=True)
@@ -1246,70 +1447,23 @@ async def scenario_s7_invalid_json_dlq(
 
 async def scenario_s8_perf_gate(
     *,
-    name: str,
+    profile: PerfGateProfile,
     client: httpx.AsyncClient,
     base_url: str,
+    tenant: TenantSeed,
     tenant_api_key_header: str,
-    n: int,
     concurrency: int,
     timeout_s: float,
-    run_start_utc: datetime,
     conn: asyncpg.Connection,
-    max_seconds: float,
-    admin_db_url: str,
+    admin_conn: asyncpg.Connection,
+    runtime_database_name: str,
     candidate_sha: str,
 ) -> ScenarioResult:
-    if n < 100:
-        raise RuntimeError("S8 perf gate requires n >= 100")
-
-    # 1. Warm-up pass (single process, fire-and-forget)
-    # -----------------------------------------------------------------------
-    print(f"R3_S8_WARMUP: Firing 100 requests to warm JIT/pools...")
-    warmup_tenant_id = _uuid_deterministic("r3", candidate_sha, "s8_warmup")
-    warmup_tenant = TenantSeed(
-        tenant_id=warmup_tenant_id,
-        api_key=f"r3_warmup_{candidate_sha[:8]}",
-        api_key_hash=_sha256_hex(f"r3_warmup_{candidate_sha[:8]}"),
-        secrets={"stripe": "warmup_secret", "shopify": "", "paypal": "", "woocommerce": ""},
-    )
-    # Seed warmup tenant
-    admin_conn = await _pg_connect_with_retry(admin_db_url)
-    try:
-        await seed_tenant(admin_conn, warmup_tenant)
-    finally:
-        await admin_conn.close()
-
-    warmup_key = str(_uuid_deterministic("r3", "warmup"))
-    warmup_body = build_stripe_payment_intent_body(
-        event_id="evt_warmup",
-        payment_intent_id="pi_warmup",
-        amount_cents=100,
-        currency="usd",
-        created_epoch=int(run_start_utc.timestamp()),
-        include_pii=False,
-    )
-    warmup_headers = _make_headers_for_stripe(
-        tenant_api_key_header=tenant_api_key_header,
-        tenant_api_key=warmup_tenant.api_key,
-        stripe_secret=warmup_tenant.secrets["stripe"],
-        correlation_id=_uuid_deterministic("r3", "warmup"),
-        idempotency_key=warmup_key,
-        body=warmup_body,
-    )
-    # Fire 100 warmup reqs
-    await _http_fire(
-        client,
-        [(f"{base_url}/api/webhooks/stripe/payment_intent/succeeded", warmup_headers, warmup_body) for _ in range(100)],
-        concurrency=10,
-        timeout_s=5.0,
-    )
-
-    # 2. Key Partitioning Logic (Deterministic)
-    # -----------------------------------------------------------------------
-    duplicate_count = max(1, min(100, n // 4))
-    malformed_count = max(1, min(50, n // 8))
-    pii_count = max(1, min(50, n // 8))
-    while duplicate_count + malformed_count + pii_count >= n:
+    total_requests = max(1, int(round(profile.target_rps * profile.duration_s)))
+    duplicate_count = max(1, total_requests // 4)
+    malformed_count = max(1, total_requests // 10)
+    pii_count = max(1, total_requests // 10)
+    while duplicate_count + malformed_count + pii_count >= total_requests:
         if duplicate_count >= malformed_count and duplicate_count >= pii_count and duplicate_count > 1:
             duplicate_count -= 1
         elif malformed_count >= pii_count and malformed_count > 1:
@@ -1318,165 +1472,195 @@ async def scenario_s8_perf_gate(
             pii_count -= 1
         else:
             break
-    unique_count = n - duplicate_count - malformed_count - pii_count
+    unique_count = total_requests - duplicate_count - malformed_count - pii_count
 
-    # 3. Execution Trials (Median of 3)
-    # -----------------------------------------------------------------------
-    trials_elapsed: list[float] = []
-    trial_results: list[dict] = []
+    replay_key = str(_uuid_deterministic("r3", candidate_sha, profile.name, "replay"))
+    unique_keys = _keys_for_scenario(candidate_sha, f"{profile.name}_unique", unique_count)
+    malformed_keys = _keys_for_scenario(candidate_sha, f"{profile.name}_malformed", malformed_count)
+    pii_keys = _keys_for_scenario(candidate_sha, f"{profile.name}_pii", pii_count)
+    all_keys = [replay_key, *unique_keys, *malformed_keys, *pii_keys]
 
-    # Prepare worker slices
-    # We use _LOADGEN_WORKERS calculated at module level
-    num_workers = _LOADGEN_WORKERS
-
-    for trial_idx in range(3):
-        trial_label = f"trial_{trial_idx}"
-        print(f"R3_S8_TRIAL_{trial_idx}: Preparing isolated tenant...")
-
-        # A. Isolation: Unique tenant per trial
-        t_id = _uuid_deterministic("r3", candidate_sha, "s8", str(trial_idx))
-        t_api_key = f"r3_{candidate_sha[:8]}_s8_{trial_idx}_{t_id}"
-        t_seed = TenantSeed(
-            tenant_id=t_id,
-            api_key=t_api_key,
-            api_key_hash=_sha256_hex(t_api_key),
-            secrets={"stripe": f"s8_secret_{trial_idx}", "shopify": "", "paypal": "", "woocommerce": ""},
+    test_start_utc = _now_utc()
+    request_templates = _build_s8_requests_from_config(
+        S8WorkerConfig(
+            worker_id=0,
+            base_url=base_url,
+            tenant_api_key_header=tenant_api_key_header,
+            tenant_api_key=tenant.api_key,
+            stripe_secret=tenant.secrets["stripe"],
+            tenant_id=str(tenant.tenant_id),
+            name=profile.name,
+            run_start_epoch=int(test_start_utc.timestamp()),
+            concurrency=max(1, concurrency),
+            timeout_s=timeout_s,
+            replay_key=replay_key,
+            replay_count=duplicate_count,
+            unique_keys=unique_keys,
+            malformed_keys=malformed_keys,
+            pii_keys=pii_keys,
         )
+    )
 
-        admin_conn = await _pg_connect_with_retry(admin_db_url)
-        try:
-            await seed_tenant(admin_conn, t_seed)
-        finally:
-            await admin_conn.close()
+    resource_before = await db_connection_snapshot(admin_conn, runtime_database_name)
+    status_counts, timeouts, conn_errors, latency_ms, elapsed_s, target_request_count = await _http_fire_rate_controlled(
+        client,
+        request_templates,
+        concurrency=max(1, concurrency),
+        timeout_s=timeout_s,
+        target_rps=profile.target_rps,
+        duration_s=profile.duration_s,
+    )
+    test_end_utc = _now_utc()
+    resource_after = await db_connection_snapshot(admin_conn, runtime_database_name)
 
-        # B. Key Generation (scoped to trial tenant/name)
-        trial_name = f"{name}_{trial_idx}"
-        replay_key = str(_uuid_deterministic("r3", trial_name, "replay"))
-        unique_keys = _keys_for_scenario("s8", f"{trial_name}_unique", unique_count)
-        malformed_keys = _keys_for_scenario("s8", f"{trial_name}_malformed", malformed_count)
-        pii_keys = _keys_for_scenario("s8", f"{trial_name}_pii", pii_count)
+    replay_canonical = await db_count_canonical_for_key(conn, tenant.tenant_id, replay_key)
+    unique_canonical = await db_count_canonical_for_keys(conn, tenant.tenant_id, unique_keys)
+    malformed_dlq = await db_count_dlq_for_keys(conn, tenant.tenant_id, malformed_keys)
+    pii_dlq = await db_count_dlq_for_keys(conn, tenant.tenant_id, pii_keys)
+    canonical_for_all_keys = await db_count_canonical_for_keys(conn, tenant.tenant_id, all_keys)
+    dlq_for_all_keys = await db_count_dlq_for_keys(conn, tenant.tenant_id, all_keys)
+    duplicate_keys = await db_duplicate_canonical_keys_between(conn, tenant.tenant_id, test_start_utc, test_end_utc)
+    pii_hits = await db_pii_key_hits_between(conn, test_start_utc, test_end_utc, [tenant.tenant_id])
+    window_totals = await db_window_totals(conn, tenant.tenant_id, test_start_utc, test_end_utc)
 
-        # C. Distribute config to workers
-        worker_configs: list[S8WorkerConfig] = []
-        unique_slices = _slice_list(unique_keys, num_workers)
-        malformed_slices = _slice_list(malformed_keys, num_workers)
-        pii_slices = _slice_list(pii_keys, num_workers)
+    p50_ms = _percentile(latency_ms, 50)
+    p95_ms = _percentile(latency_ms, 95)
+    observed_count = _http_observed_count(status_counts)
+    achieved_rps = target_request_count / elapsed_s if elapsed_s > 0 else 0.0
+    http_errors = _http_error_count(status_counts)
+    error_rate = (http_errors / target_request_count) if target_request_count > 0 else 1.0
 
-        # Replay distribution: roughly equal
-        replay_per_worker = duplicate_count // num_workers
-        replay_remainder = duplicate_count % num_workers
+    first_half_p95 = None
+    second_half_p95 = None
+    no_degradation = True
+    if profile.enforce_no_degradation and len(latency_ms) >= 20:
+        split = len(latency_ms) // 2
+        first_half_p95 = _percentile(latency_ms[:split], 95)
+        second_half_p95 = _percentile(latency_ms[split:], 95)
+        if first_half_p95 is not None and second_half_p95 is not None:
+            no_degradation = second_half_p95 <= max(profile.p95_max_ms, first_half_p95 * 1.25)
 
-        for i in range(num_workers):
-            r_count = replay_per_worker + (1 if i < replay_remainder else 0)
+    resource_stable = (
+        resource_after["total_connections"] <= resource_after["max_connections"]
+        and resource_after["waiting_connections"] <= max(2, resource_before["waiting_connections"] + 2)
+    )
 
-            cfg = S8WorkerConfig(
-                worker_id=i,
-                base_url=base_url,
-                tenant_api_key_header=tenant_api_key_header,
-                tenant_api_key=t_seed.api_key,
-                stripe_secret=t_seed.secrets["stripe"],
-                tenant_id=str(t_seed.tenant_id),
-                name=trial_name,
-                run_start_epoch=int(run_start_utc.timestamp()),
-                concurrency=max(1, concurrency // num_workers),
-                timeout_s=timeout_s,
-                replay_key=replay_key,
-                replay_count=r_count,
-                unique_keys=unique_slices[i],
-                malformed_keys=malformed_slices[i],
-                pii_keys=pii_slices[i],
-            )
-            worker_configs.append(cfg)
+    expected_canonical = 1 + len(unique_keys)
+    expected_dlq = len(malformed_keys) + len(pii_keys)
 
-        # D. Fire (Multiprocess)
-        print(f"R3_S8_TRIAL_{trial_idx}: Firing {n} reqs with {num_workers} workers...")
-        started = time.perf_counter()
-        status_counts, timeouts, conn_errors = _s8_multiprocess_fire(worker_configs)
-        elapsed = time.perf_counter() - started
-        trials_elapsed.append(elapsed)
-
-        # E. Verify Correctness (DB check)
-        replay_canonical = await db_count_canonical_for_key(conn, t_seed.tenant_id, replay_key)
-        unique_canonical = await db_count_canonical_for_keys(conn, t_seed.tenant_id, unique_keys)
-        malformed_dlq = await db_count_dlq_for_keys(conn, t_seed.tenant_id, malformed_keys)
-        pii_dlq = await db_count_dlq_for_keys(conn, t_seed.tenant_id, pii_keys)
-        pii_hits = await db_pii_key_hits_since(conn, run_start_utc, [t_seed.tenant_id])
-        http_5xx = sum(v for code, v in status_counts.items() if code.isdigit() and 500 <= int(code) <= 599)
-
-        trial_passed = (
-            replay_canonical == 1
-            and unique_canonical == unique_count
-            and malformed_dlq == malformed_count
-            and pii_dlq == pii_count
-            and sum(pii_hits.values()) == 0
-            and http_5xx == 0
-            and timeouts == 0
-            and conn_errors == 0
-            # Note: elapsed time check is done on MEDIAN, not per-trial here
-        )
-
-        trial_results.append({
-            "passed": trial_passed,
-            "elapsed": elapsed,
-            "db": {
-                "replay_canonical": replay_canonical,
-                "unique_canonical": unique_canonical,
-                "malformed_dlq": malformed_dlq,
-                "pii_dlq": pii_dlq,
-                "pii_hits": sum(pii_hits.values()),
-            },
-            "status_counts": status_counts,
-            "timeouts": timeouts,
-            "conn_errors": conn_errors,
-        })
-
-        if not trial_passed:
-            print(f"R3_S8_TRIAL_{trial_idx}: FAILED correctness. Aborting.")
-            break
-        print(f"R3_S8_TRIAL_{trial_idx}: Correctness PASS in {elapsed:.4f}s")
-
-    # 4. Verdict (Median Calculation)
-    # -----------------------------------------------------------------------
-    trials_elapsed.sort()
-    median_elapsed = trials_elapsed[1] if len(trials_elapsed) == 3 else (trials_elapsed[0] if trials_elapsed else 999.0)
-    all_correct = len(trial_results) == 3 and all(r["passed"] for r in trial_results)
-
-    passed = all_correct and median_elapsed < max_seconds
-
-    # 5. Bottleneck Attribution Artifact
-    # -----------------------------------------------------------------------
-    attribution = {
-        "ELAPSED_TRIAL_1_S": round(trial_results[0]["elapsed"], 4) if len(trial_results) > 0 else None,
-        "ELAPSED_TRIAL_2_S": round(trial_results[1]["elapsed"], 4) if len(trial_results) > 1 else None,
-        "ELAPSED_TRIAL_3_S": round(trial_results[2]["elapsed"], 4) if len(trial_results) > 2 else None,
-        "ELAPSED_MEDIAN_S": round(median_elapsed, 4),
-        "NULL_BENCHMARK_RPS": "SEE_EARLIER_LOGS",
-        "NUM_LOADGEN_WORKERS": _LOADGEN_WORKERS,
-        "NUM_SERVER_WORKERS": _SERVER_WORKERS,
-        "DETECTED_CPU_CORES": _DETECTED_CORES,
-        "MP_START_METHOD": _MP_START_METHOD,
-        "WARM_UP_REQUESTS": 100,
-        "CAUSAL_CHAIN": "multiprocess_generator(spawn) -> N_workers x independent_GIL -> CPU_distributed",
-        "TRIALS_ALL_CORRECT": all_correct,
-    }
-
-    # Return structure matching ScenarioResult, aggregating the median trial's DB stats
-    # (or the last run one) for the verdict block
-    last_run = trial_results[-1] if trial_results else {}
+    passed = (
+        achieved_rps >= (profile.target_rps * 0.98)
+        and p95_ms is not None
+        and p95_ms < profile.p95_max_ms
+        and error_rate == 0.0
+        and replay_canonical == 1
+        and unique_canonical == len(unique_keys)
+        and malformed_dlq == len(malformed_keys)
+        and pii_dlq == len(pii_keys)
+        and canonical_for_all_keys == expected_canonical
+        and dlq_for_all_keys == expected_dlq
+        and duplicate_keys == 0
+        and sum(pii_hits.values()) == 0
+        and observed_count == target_request_count
+        and resource_stable
+        and no_degradation
+    )
 
     return ScenarioResult(
-        name=name,
+        name=profile.name,
         passed=passed,
-        http_status_counts=last_run.get("status_counts", {}),
-        http_timeouts=last_run.get("timeouts", 0),
-        http_connection_errors=last_run.get("conn_errors", 0),
+        http_status_counts=status_counts,
+        http_timeouts=timeouts,
+        http_connection_errors=conn_errors,
         db={
-            **attribution,
-            "TOTAL_REQUESTS": n,
-            "MAX_SECONDS": max_seconds,
-            "LAST_TRIAL_DB_STATS": last_run.get("db", {}),
+            "duration_s": profile.duration_s,
+            "target_rps": profile.target_rps,
+            "target_request_count": target_request_count,
+            "observed_request_count": observed_count,
+            "elapsed_s": round(elapsed_s, 4),
+            "achieved_rps": round(achieved_rps, 3),
+            "latency_p50_ms": round(p50_ms, 3) if p50_ms is not None else None,
+            "latency_p95_ms": round(p95_ms, 3) if p95_ms is not None else None,
+            "latency_first_half_p95_ms": round(first_half_p95, 3) if first_half_p95 is not None else None,
+            "latency_second_half_p95_ms": round(second_half_p95, 3) if second_half_p95 is not None else None,
+            "http_error_count": http_errors,
+            "http_timeout_count": timeouts,
+            "http_connection_errors": conn_errors,
+            "http_error_rate_percent": round(error_rate * 100.0, 5),
+            "resource_stable": resource_stable,
+            "resource_snapshot_before": resource_before,
+            "resource_snapshot_after": resource_after,
+            "window_start_utc": test_start_utc.isoformat(),
+            "window_end_utc": test_end_utc.isoformat(),
+            "replay_canonical_rows_for_key": replay_canonical,
+            "unique_canonical_rows_created": unique_canonical,
+            "malformed_dlq_rows_created": malformed_dlq,
+            "pii_dlq_rows_created": pii_dlq,
+            "canonical_rows_for_all_profile_keys": canonical_for_all_keys,
+            "dlq_rows_for_all_profile_keys": dlq_for_all_keys,
+            "expected_canonical_rows_for_all_profile_keys": expected_canonical,
+            "expected_dlq_rows_for_all_profile_keys": expected_dlq,
+            "duplicate_canonical_keys_in_window": duplicate_keys,
+            "pii_key_hit_count_in_db": int(sum(pii_hits.values())),
+            **pii_hits,
+            **window_totals,
+            "no_degradation_over_time": no_degradation,
         },
     )
+
+
+async def run_eg34_customer_profile_suite(
+    *,
+    profiles: list[PerfGateProfile],
+    client: httpx.AsyncClient,
+    base_url: str,
+    tenant_api_key_header: str,
+    concurrency: int,
+    timeout_s: float,
+    conn: asyncpg.Connection,
+    admin_db_url: str,
+    runtime_db_url: str,
+    candidate_sha: str,
+) -> list[ScenarioResult]:
+    runtime_database_name = _database_name_from_dsn(runtime_db_url)
+    if runtime_database_name == "":
+        raise RuntimeError("Unable to determine runtime database name for connection snapshot probes.")
+
+    results: list[ScenarioResult] = []
+    admin_conn = await _pg_connect_with_retry(admin_db_url)
+    try:
+        for idx, profile in enumerate(profiles):
+            tenant_id = _uuid_deterministic("r3", candidate_sha, "eg3_4", profile.name, str(idx))
+            tenant_api_key = f"r3_{candidate_sha[:8]}_{profile.name}_{tenant_id}"
+            tenant = TenantSeed(
+                tenant_id=tenant_id,
+                api_key=tenant_api_key,
+                api_key_hash=_sha256_hex(tenant_api_key),
+                secrets={
+                    "shopify": f"eg34_shopify_{idx}_{candidate_sha[:8]}",
+                    "stripe": f"eg34_stripe_{idx}_{candidate_sha[:8]}",
+                    "paypal": f"eg34_paypal_{idx}_{candidate_sha[:8]}",
+                    "woocommerce": f"eg34_woo_{idx}_{candidate_sha[:8]}",
+                },
+            )
+            await seed_tenant(admin_conn, tenant)
+            result = await scenario_s8_perf_gate(
+                profile=profile,
+                client=client,
+                base_url=base_url,
+                tenant=tenant,
+                tenant_api_key_header=tenant_api_key_header,
+                concurrency=concurrency,
+                timeout_s=timeout_s,
+                conn=conn,
+                admin_conn=admin_conn,
+                runtime_database_name=runtime_database_name,
+                candidate_sha=candidate_sha,
+            )
+            results.append(result)
+    finally:
+        await admin_conn.close()
+    return results
 
 
 async def scenario_s9_normalization_aliases(
@@ -1567,7 +1751,11 @@ async def scenario_s9_normalization_aliases(
 
 
 async def main() -> int:
-    candidate_sha = os.getenv("CANDIDATE_SHA") or os.getenv("GITHUB_SHA") or _env("CANDIDATE_SHA", default="local")
+    candidate_sha = os.getenv("CANDIDATE_SHA") or os.getenv("GITHUB_SHA")
+    if not candidate_sha:
+        # Local runs without a commit SHA must remain clean-room across repeated
+        # executions against the same database.
+        candidate_sha = f"local-{int(time.time())}"
     base_url = _env("R3_API_BASE_URL", default="http://127.0.0.1:8000")
     admin_db_url = _env("R3_ADMIN_DATABASE_URL", default=_env("MIGRATION_DATABASE_URL", default=""))
     runtime_db_url = _env("R3_RUNTIME_DATABASE_URL", default=_env("DATABASE_URL", default=""))
@@ -1576,10 +1764,40 @@ async def main() -> int:
     ladder = _parse_int_list(_env("R3_LADDER", default="50,250,1000"))
     concurrency = int(_env("R3_CONCURRENCY", default="200"))
     timeout_s = float(_env("R3_TIMEOUT_S", default="10"))
-    perf_n = int(_env("R3_PERF_N", default="10000"))
-    perf_max_seconds = float(_env("R3_PERF_MAX_SECONDS", default="10"))
+    eg34_p95_max_ms = float(_env("R3_EG34_P95_MAX_MS", default="2000"))
+    eg34_profiles = [
+        PerfGateProfile(
+            name="EG3_4_Test1_Month6",
+            target_rps=float(_env("R3_EG34_TEST1_RPS", default="29")),
+            duration_s=int(_env("R3_EG34_TEST1_DURATION_S", default="60")),
+            p95_max_ms=eg34_p95_max_ms,
+            enforce_no_degradation=False,
+        ),
+        PerfGateProfile(
+            name="EG3_4_Test2_Month18",
+            target_rps=float(_env("R3_EG34_TEST2_RPS", default="46")),
+            duration_s=int(_env("R3_EG34_TEST2_DURATION_S", default="60")),
+            p95_max_ms=eg34_p95_max_ms,
+            enforce_no_degradation=False,
+        ),
+        PerfGateProfile(
+            name="EG3_4_Test3_SustainedOps",
+            target_rps=float(_env("R3_EG34_TEST3_RPS", default="5")),
+            duration_s=int(_env("R3_EG34_TEST3_DURATION_S", default="300")),
+            p95_max_ms=eg34_p95_max_ms,
+            enforce_no_degradation=True,
+        ),
+    ]
+    null_benchmark_enabled = _env("R3_NULL_BENCHMARK", default="1") == "1"
+    null_benchmark_target_rps = float(_env("R3_NULL_BENCHMARK_TARGET_RPS", default="50"))
+    null_benchmark_duration_s = int(_env("R3_NULL_BENCHMARK_DURATION_S", default="60"))
+    null_benchmark_min_rps = float(
+        _env("R3_NULL_BENCHMARK_MIN_RPS", default=str(null_benchmark_target_rps))
+    )
     run_start_utc = _now_utc()
 
+    if admin_db_url == "" or runtime_db_url == "":
+        raise RuntimeError("R3 requires both admin and runtime DSNs for proof integrity.")
     if admin_db_url == runtime_db_url:
         raise RuntimeError("R3 requires distinct admin/runtime DSNs for proof integrity.")
 
@@ -1595,8 +1813,20 @@ async def main() -> int:
                 "concurrency": concurrency,
                 "timeout_s": timeout_s,
                 "ladder": ladder,
-                "perf_n": perf_n,
-                "perf_max_seconds": perf_max_seconds,
+                "eg34_profiles": [
+                    {
+                        "name": p.name,
+                        "target_rps": p.target_rps,
+                        "duration_s": p.duration_s,
+                        "p95_max_ms": p.p95_max_ms,
+                        "enforce_no_degradation": p.enforce_no_degradation,
+                    }
+                    for p in eg34_profiles
+                ],
+                "null_benchmark_enabled": null_benchmark_enabled,
+                "null_benchmark_target_rps": null_benchmark_target_rps,
+                "null_benchmark_duration_s": null_benchmark_duration_s,
+                "null_benchmark_min_rps": null_benchmark_min_rps,
                 "admin_dsn_distinct_from_runtime": True,
             },
             indent=2,
@@ -1605,16 +1835,6 @@ async def main() -> int:
     )
 
     print(f"R3_CPU_CORES={_DETECTED_CORES}  LOADGEN_WORKERS={_LOADGEN_WORKERS}  SERVER_WORKERS={_SERVER_WORKERS}")
-
-    if _env("R3_NULL_BENCHMARK") == "1":
-        rps = _run_null_benchmark(
-            num_workers=_LOADGEN_WORKERS,
-            total_requests=10000,
-            concurrency_per_worker=50,
-        )
-        if rps < 2000.0:
-            print(f"FATAL: Null benchmark {rps:.1f} < 2000 req/s. Upgrade runner.")
-            return 2
 
     tenant_a_id = _uuid_deterministic("r3", candidate_sha, "tenant", "A")
     tenant_b_id = _uuid_deterministic("r3", candidate_sha, "tenant", "B")
@@ -1818,28 +2038,56 @@ async def main() -> int:
                 all_results.append(s9)
 
             if all(r.passed for r in all_results):
-                s8 = await scenario_s8_perf_gate(
-                    name=f"S8_PerfGate_N{perf_n}",
+                if null_benchmark_enabled:
+                    s_null = await run_null_benchmark_gate(
+                        client=client,
+                        timeout_s=timeout_s,
+                        concurrency=max(1, min(concurrency, 100)),
+                        target_rps=null_benchmark_target_rps,
+                        duration_s=null_benchmark_duration_s,
+                        min_rps=null_benchmark_min_rps,
+                    )
+                else:
+                    s_null = ScenarioResult(
+                        name="EG3_5_NullBenchmark",
+                        passed=True,
+                        http_status_counts={},
+                        http_timeouts=0,
+                        http_connection_errors=0,
+                        db={
+                            "measurement_valid": True,
+                            "reason": "disabled_by_configuration",
+                        },
+                    )
+                _verdict_block(s_null.name, {"passed": s_null.passed, **s_null.db, "http_status_counts": s_null.http_status_counts})
+                all_results.append(s_null)
+
+            if all(r.passed for r in all_results):
+                eg34_results = await run_eg34_customer_profile_suite(
+                    profiles=eg34_profiles,
                     client=client,
                     base_url=base_url,
-                    # tenant arg removed; s8 generates its own isolated tenants
                     tenant_api_key_header=tenant_api_key_header,
-                    n=perf_n,
                     concurrency=concurrency,
                     timeout_s=timeout_s,
-                    run_start_utc=run_start_utc,
                     conn=conn2,
-                    max_seconds=perf_max_seconds,
                     admin_db_url=admin_db_url,
+                    runtime_db_url=runtime_db_url,
                     candidate_sha=candidate_sha,
                 )
-                _verdict_block(s8.name, {"passed": s8.passed, **s8.db, "http_status_counts": s8.http_status_counts})
-                all_results.append(s8)
+                for eg34 in eg34_results:
+                    _verdict_block(eg34.name, {"passed": eg34.passed, **eg34.db, "http_status_counts": eg34.http_status_counts})
+                    all_results.append(eg34)
 
             all_passed = all(r.passed for r in all_results)
             print("=== EG-R3-6 (Evidence Pack) ===")
             print(f"SCENARIOS_EXECUTED={len(all_results)}")
             print(f"ALL_SCENARIOS_PASSED={all_passed}")
+
+            null_invalid = any(r.name == "EG3_5_NullBenchmark" and not r.passed for r in all_results)
+            if null_invalid:
+                print("R3_MEASUREMENT_INVALID=true")
+                return 3
 
             return 0 if all_passed else 1
         finally:

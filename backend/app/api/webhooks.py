@@ -8,6 +8,7 @@ Responsibilities:
 - Return 200 for success and DLQ-routed validation failures; 401 for signature/tenant failures
 """
 import logging
+import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4, uuid5, NAMESPACE_URL
@@ -21,7 +22,7 @@ from typing import Optional
 from app.core.config import settings
 from app.core.tenant_context import get_tenant_with_webhook_secrets
 from app.db.session import get_session
-from app.ingestion.dlq_handler import DLQHandler
+from app.ingestion.dlq_handler import DLQHandler, route_unresolved_tenant_to_quarantine
 from app.ingestion.event_service import ingest_with_transaction
 from app.models import DeadEvent
 from app.schemas.webhooks_shopify import ShopifyOrderCreateRequest
@@ -43,6 +44,11 @@ from app.webhooks.signatures import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+try:
+    import orjson as _fast_json
+except Exception:  # pragma: no cover - optional acceleration dependency
+    _fast_json = None
+
 
 class WebhookResponse(BaseModel):
     status: str
@@ -61,11 +67,26 @@ class WebhookErrorResponse(BaseModel):
 async def tenant_secrets(request: Request):
     api_key = request.headers.get(settings.TENANT_API_KEY_HEADER)
     if not api_key:
+        await route_unresolved_tenant_to_quarantine(
+            source="webhook",
+            payload={"path": str(request.url.path), "method": request.method},
+            error_message="missing tenant API key",
+            correlation_id=get_request_correlation_id(),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"status": "invalid_tenant_key"},
         )
-    tenant_info = await get_tenant_with_webhook_secrets(api_key)
+    try:
+        tenant_info = await get_tenant_with_webhook_secrets(api_key)
+    except HTTPException:
+        await route_unresolved_tenant_to_quarantine(
+            source="webhook",
+            payload={"path": str(request.url.path), "method": request.method},
+            error_message="unknown tenant API key",
+            correlation_id=get_request_correlation_id(),
+        )
+        raise
     set_tenant_id(tenant_info["tenant_id"])
     return tenant_info
 
@@ -106,6 +127,8 @@ def _compute_recompute_window(event_timestamp: str) -> tuple[str, str]:
 def _schedule_downstream_tasks(
     *, tenant_id, event_timestamp: str, correlation_id: str
 ) -> None:
+    if not settings.INGESTION_FOLLOWUP_TASKS_ENABLED:
+        return
     try:
         from celery import chain
 
@@ -269,8 +292,9 @@ async def stripe_payment_intent_succeeded(
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     tenant_info=Depends(tenant_secrets),
 ):
-    raw_body = getattr(request.state, "original_body", None) or await request.body()
-    if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
+    original_raw_body = getattr(request.state, "original_body", None) or await request.body()
+    sanitized_body = await request.body()
+    if not verify_stripe_signature(original_raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"status": "invalid_signature", "vendor": "stripe"},
@@ -307,7 +331,6 @@ async def stripe_payment_intent_succeeded(
 )
 async def stripe_payment_intent_succeeded_v2(
     request: Request,
-    payload: dict = Body(...),
     stripe_signature: str = Header(None, alias="Stripe-Signature"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     tenant_info=Depends(tenant_secrets),
@@ -321,12 +344,45 @@ async def stripe_payment_intent_succeeded_v2(
     - Malformed payload: DLQ with sanitized payload, no canonical insert
     - Duplicate valid events: idempotent success (no 5xx)
     """
-    raw_body = getattr(request.state, "original_body", None) or await request.body()
-    if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
+    sanitized_body = await request.body()
+    original_raw_body = getattr(request.state, "original_body", None) or sanitized_body
+    if not verify_stripe_signature(
+        original_raw_body, tenant_info["stripe_webhook_secret"], stripe_signature
+    ):
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"status": "invalid_signature", "vendor": "stripe"},
         )
+
+    payload: dict
+    try:
+        if _fast_json is not None:
+            payload = _fast_json.loads(sanitized_body)
+        else:
+            payload = json.loads(sanitized_body)
+    except Exception as e:
+        # Maintain R3 invalid-JSON contract: route malformed JSON to DLQ, never canonical.
+        idempotency_key = x_idempotency_key or str(uuid4())
+        correlation_uuid = str(_make_correlation_uuid(idempotency_key))
+        dead = await _route_to_dlq_direct(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            correlation_id=correlation_uuid,
+            payload={
+                "event_type": "purchase",
+                "vendor": "stripe",
+                "idempotency_key": idempotency_key,
+                "correlation_id": correlation_uuid,
+                "raw_body": sanitized_body.decode("utf-8", errors="replace"),
+            },
+            error_message=f"invalid_json: {e}",
+            error_type="validation_error",
+        )
+        return {
+            "status": "dlq_routed",
+            "dead_event_id": str(dead.id),
+            "error": "validation_error",
+        }
 
     idempotency_key = x_idempotency_key
     pi_id = None
@@ -334,6 +390,7 @@ async def stripe_payment_intent_succeeded_v2(
     currency = None
     created_epoch = None
     event_id = None
+    metadata: dict = {}
     try:
         event_id = payload.get("id")
         created_epoch = payload.get("created")
@@ -341,6 +398,9 @@ async def stripe_payment_intent_succeeded_v2(
         pi_id = obj.get("id")
         amount_cents = obj.get("amount")
         currency = obj.get("currency")
+        candidate_metadata = obj.get("metadata")
+        if isinstance(candidate_metadata, dict):
+            metadata = candidate_metadata
         if not idempotency_key and pi_id:
             idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
     except Exception:
@@ -412,14 +472,20 @@ async def stripe_payment_intent_succeeded_v2(
 
     ts = datetime.fromtimestamp(created_epoch, tz=timezone.utc)
     revenue_amount = str((Decimal(amount_cents) / Decimal(100)).quantize(Decimal("0.01")))
+    vendor = str(metadata.get("vendor") or "stripe")
+    utm_source = str(metadata.get("utm_source") or "stripe")
+    utm_medium = metadata.get("utm_medium")
+    if utm_medium is not None:
+        utm_medium = str(utm_medium)
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
         "revenue_amount": revenue_amount,
         "currency": currency.upper(),
         "session_id": str(uuid5(NAMESPACE_URL, f"stripe:{idempotency_key}")),
-        "vendor": "stripe",
-        "utm_source": "stripe",
+        "vendor": vendor,
+        "utm_source": utm_source,
+        "utm_medium": utm_medium,
         "external_event_id": pi_id,
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,

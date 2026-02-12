@@ -16,16 +16,23 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 import ssl
 
+runtime_dsn = os.getenv("DATABASE_URL")
+if not runtime_dsn:
+    pytest.skip("DATABASE_URL is required for Celery RLS gate tests", allow_module_level=True)
+
+if runtime_dsn.startswith("postgresql://"):
+    runtime_dsn = runtime_dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Must set env before importing celery_app
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://app_user:npg_IGZ4D2rHNndq@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb")
-os.environ.setdefault("CELERY_BROKER_URL", "sqla+postgresql://app_user:npg_IGZ4D2rHNndq@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "db+postgresql://app_user:npg_IGZ4D2rHNndq@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require")
+os.environ["DATABASE_URL"] = runtime_dsn
+os.environ.setdefault("CELERY_BROKER_URL", os.getenv("CELERY_BROKER_URL", "memory://"))
+os.environ.setdefault("CELERY_RESULT_BACKEND", os.getenv("CELERY_RESULT_BACKEND", "cache+memory://"))
 
 from app.celery_app import celery_app
 from app.tasks.context import tenant_task
 
 # Test engine for data setup/teardown
-TEST_DSN = "postgresql+asyncpg://app_user:npg_IGZ4D2rHNndq@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb"
+TEST_DSN = runtime_dsn
 ssl_context = ssl.create_default_context()
 test_engine = create_async_engine(TEST_DSN, connect_args={"ssl": ssl_context}, pool_pre_ping=True)
 
