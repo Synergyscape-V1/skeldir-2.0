@@ -122,7 +122,7 @@ jobs:
           print(json.dumps(payload, indent=2))
           PY
 
-          psql "${DATABASE_URL}" -c "select count(*) from worker_failed_jobs;" > "${EVIDENCE_DIR}/worker_failed_jobs_before.txt"
+          psql "${DATABASE_URL}" -c "SELECT set_config('app.current_tenant_id', '11111111-1111-1111-1111-111111111111', true); SELECT count(*) FROM worker_failed_jobs;" > "${EVIDENCE_DIR}/worker_failed_jobs_before.txt"
           psql "${DATABASE_URL}" -c "select count(*) from kombu_message;" > "${EVIDENCE_DIR}/kombu_message_before.txt"
 
           WORKER_NODE="b0545@$(hostname)"
@@ -193,11 +193,11 @@ jobs:
           FORCE_TASK_ID="$(grep -Eo "[0-9a-fA-F-]{36}" "${EVIDENCE_DIR}/force_failure_call.txt" | tail -n 1 || true)"
 
           sleep 5
-          psql "${DATABASE_URL}" -c "select count(*) from worker_failed_jobs;" > "${EVIDENCE_DIR}/worker_failed_jobs_after.txt"
+          psql "${DATABASE_URL}" -c "SELECT set_config('app.current_tenant_id', '11111111-1111-1111-1111-111111111111', true); SELECT count(*) FROM worker_failed_jobs;" > "${EVIDENCE_DIR}/worker_failed_jobs_after.txt"
           if [ -n "${FORCE_TASK_ID}" ]; then
-            psql "${DATABASE_URL}" -c "select task_name, correlation_id, error_type, error_message from worker_failed_jobs where task_id='${FORCE_TASK_ID}' order by failed_at desc limit 5;" > "${EVIDENCE_DIR}/worker_failed_jobs_row.txt"
+            psql "${DATABASE_URL}" -c "SELECT set_config('app.current_tenant_id', '11111111-1111-1111-1111-111111111111', true); SELECT task_name, correlation_id, error_type, error_message FROM worker_failed_jobs WHERE task_id='${FORCE_TASK_ID}' OR correlation_id='${CORRELATION_ID}'::uuid ORDER BY failed_at DESC LIMIT 5;" > "${EVIDENCE_DIR}/worker_failed_jobs_row.txt"
           else
-            psql "${DATABASE_URL}" -c "select task_name, correlation_id, error_type, error_message from worker_failed_jobs order by failed_at desc limit 5;" > "${EVIDENCE_DIR}/worker_failed_jobs_row.txt"
+            psql "${DATABASE_URL}" -c "SELECT set_config('app.current_tenant_id', '11111111-1111-1111-1111-111111111111', true); SELECT task_name, correlation_id, error_type, error_message FROM worker_failed_jobs WHERE correlation_id='${CORRELATION_ID}'::uuid ORDER BY failed_at DESC LIMIT 5;" > "${EVIDENCE_DIR}/worker_failed_jobs_row.txt"
           fi
           psql "${DATABASE_URL}" -c "select count(*) from kombu_message;" > "${EVIDENCE_DIR}/kombu_message_after.txt"
 
