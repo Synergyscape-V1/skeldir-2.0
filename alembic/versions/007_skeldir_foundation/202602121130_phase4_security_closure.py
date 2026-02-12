@@ -17,18 +17,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Ensure an ops/debug role exists for quarantine-lane access.
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ops') THEN
-                CREATE ROLE app_ops LOGIN PASSWORD 'app_ops';
-            END IF;
-        END $$;
-        """
-    )
-
     # Drift guard: every tenant-scoped or user-scoped base table must have FORCE RLS.
     # We do not auto-generate policies here to avoid weakening stricter table-specific policies.
     op.execute(
@@ -155,21 +143,39 @@ def upgrade() -> None:
         """
         CREATE POLICY ops_quarantine_select ON dead_events_quarantine
             FOR SELECT
-            TO app_ops
-            USING (tenant_id IS NULL);
+            TO PUBLIC
+            USING (tenant_id IS NULL AND current_user = 'app_ops');
         """
     )
 
-    op.execute("GRANT USAGE ON SCHEMA public TO app_ops")
-    op.execute("GRANT SELECT ON TABLE dead_events_quarantine TO app_ops")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ops') THEN
+                EXECUTE 'GRANT USAGE ON SCHEMA public TO app_ops';
+                EXECUTE 'GRANT SELECT ON TABLE dead_events_quarantine TO app_ops';
+            END IF;
+        END $$;
+        """
+    )
     op.execute("GRANT SELECT, INSERT ON TABLE dead_events_quarantine TO app_user")
     op.execute("GRANT SELECT, INSERT ON TABLE dead_events_quarantine TO app_rw")
     op.execute("GRANT SELECT ON TABLE dead_events_quarantine TO app_ro")
 
 
 def downgrade() -> None:
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ops') THEN
+                EXECUTE 'REVOKE ALL ON TABLE dead_events_quarantine FROM app_ops';
+            END IF;
+        END $$;
+        """
+    )
     op.execute("REVOKE ALL ON TABLE dead_events_quarantine FROM app_ro")
     op.execute("REVOKE ALL ON TABLE dead_events_quarantine FROM app_rw")
     op.execute("REVOKE ALL ON TABLE dead_events_quarantine FROM app_user")
-    op.execute("REVOKE ALL ON TABLE dead_events_quarantine FROM app_ops")
-    op.execute("DROP TABLE IF EXISTS dead_events_quarantine")
+    op.execute("DROP TABLE IF EXISTS dead_events_quarantine")  # CI:DESTRUCTIVE_OK - Quarantine lane rollback for Phase 4
