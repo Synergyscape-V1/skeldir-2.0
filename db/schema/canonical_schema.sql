@@ -1740,6 +1740,8 @@ CREATE TABLE public.worker_failed_jobs (
     CONSTRAINT ck_worker_failed_jobs_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying, 'resolved'::character varying, 'abandoned'::character varying])::text[])))
 );
 
+ALTER TABLE ONLY public.worker_failed_jobs FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: worker_side_effects; Type: TABLE; Schema: public; Owner: -
