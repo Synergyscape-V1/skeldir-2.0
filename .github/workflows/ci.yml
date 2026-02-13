@@ -961,6 +961,26 @@ jobs:
           mkdir -p artifacts/b07-p2
           bash scripts/ci/enforce_boundary.sh | tee artifacts/b07-p2/enforce_boundary.log
 
+      - name: EG5.9 non-vacuity self-test (boundary guard must fail on violation)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2
+          SELFTEST_FILE="backend/app/_phase5_boundary_selftest_violation.py"
+          cat > "${SELFTEST_FILE}" <<'PY'
+          import openai
+          PY
+          set +e
+          bash scripts/ci/enforce_boundary.sh > artifacts/b07-p2/enforce_boundary_selftest.log 2>&1
+          STATUS=$?
+          set -e
+          rm -f "${SELFTEST_FILE}"
+          if [ "${STATUS}" -eq 0 ]; then
+            echo "Boundary guard self-test failed: forbidden import did not trigger failure"
+            cat artifacts/b07-p2/enforce_boundary_selftest.log || true
+            exit 1
+          fi
+          echo "Boundary guard self-test passed (guard failed as expected on injected violation)"
+
       - name: Run B0.7 P2 provider enablement unit gate
         env:
           LLM_PROVIDER_API_KEY: ""
@@ -998,8 +1018,11 @@ jobs:
           test -f "${ARTIFACT_DIR}/pytest.log" || { echo "Missing ${ARTIFACT_DIR}/pytest.log"; exit 1; }
           test -f "${ARTIFACT_DIR}/p3_controls.log" || { echo "Missing ${ARTIFACT_DIR}/p3_controls.log"; exit 1; }
           test -f "${ARTIFACT_DIR}/p5_bayesian.log" || { echo "Missing ${ARTIFACT_DIR}/p5_bayesian.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p5_bayesian_worker.log" || { echo "Missing ${ARTIFACT_DIR}/p5_bayesian_worker.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p5_bayesian_probe.jsonl" || { echo "Missing ${ARTIFACT_DIR}/p5_bayesian_probe.jsonl"; exit 1; }
           test -f "${ARTIFACT_DIR}/p5_bayesian_runtime_proof.json" || { echo "Missing ${ARTIFACT_DIR}/p5_bayesian_runtime_proof.json"; exit 1; }
           test -f "${ARTIFACT_DIR}/enforce_boundary.log" || { echo "Missing ${ARTIFACT_DIR}/enforce_boundary.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/enforce_boundary_selftest.log" || { echo "Missing ${ARTIFACT_DIR}/enforce_boundary_selftest.log"; exit 1; }
           test -f "${ARTIFACT_DIR}/runtime_db_probe.json" || { echo "Missing ${ARTIFACT_DIR}/runtime_db_probe.json"; exit 1; }
           test -f "${ARTIFACT_DIR}/redaction_probe.json" || { echo "Missing ${ARTIFACT_DIR}/redaction_probe.json"; exit 1; }
 
@@ -1031,11 +1054,29 @@ jobs:
 
           echo "B0.7 P2 redaction hygiene scan passed"
 
+      - name: Build B0.7 P2 artifact manifest
+        if: always()
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="artifacts/b07-p2"
+          test -d "${ARTIFACT_DIR}" || { echo "Missing artifact directory: ${ARTIFACT_DIR}"; exit 1; }
+          ls -la "${ARTIFACT_DIR}"
+          find "${ARTIFACT_DIR}" -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > "${ARTIFACT_DIR}/manifest.sha256"
+          test -f "${ARTIFACT_DIR}/manifest.sha256" || { echo "Missing ${ARTIFACT_DIR}/manifest.sha256"; exit 1; }
+
       - name: Upload B0.7 P2 artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: b07-p2-runtime-proof
+          path: artifacts/b07-p2
+          retention-days: 14
+
+      - name: Upload Phase 5 compute safety artifact bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase5-compute-safety-proof
           path: artifacts/b07-p2
           retention-days: 14
 
