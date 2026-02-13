@@ -90,7 +90,7 @@ def _start_worker(env: dict[str, str], log_path: Path) -> tuple[subprocess.Popen
         "-P",
         "prefork",
         "--concurrency",
-        "1",
+        "2",
         "-Q",
         "attribution,housekeeping",
         "-l",
