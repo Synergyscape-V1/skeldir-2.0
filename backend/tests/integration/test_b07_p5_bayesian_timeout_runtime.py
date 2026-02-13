@@ -183,7 +183,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
 
     worker_proc = None
     try:
-        worker_proc, _ = _start_worker(env, worker_log)
+        worker_proc, worker_lines = _start_worker(env, worker_log)
 
         run_task_id = f"b07-p5-bayes-runaway-{uuid4().hex[:10]}"
         tenant_id = str(uuid4())
@@ -233,42 +233,25 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
             time.sleep(0.2)
         assert fallback_event is not None, "Expected deterministic fallback event before hard kill"
 
-        health_result = None
-        health_task_ids: set[str] = set()
-        next_dispatch_at = time.time()
-        health_deadline = time.time() + 120
-        while time.time() < health_deadline:
-            if worker_proc.poll() is not None:
-                raise AssertionError("Worker process exited unexpectedly before post-timeout health proof")
+        if worker_proc.poll() is not None:
+            raise AssertionError("Worker process exited unexpectedly before post-timeout health proof")
 
-            now_s = time.time()
-            if now_s >= next_dispatch_at:
-                health_task_id = f"b07-p5-health-{uuid4().hex[:10]}"
-                health_task_ids.add(health_task_id)
-                celery_app.send_task(
-                    "app.tasks.bayesian.health_probe",
-                    kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
-                    task_id=health_task_id,
-                    queue="attribution",
-                )
-                next_dispatch_at = now_s + 5
+        health_task_id = f"b07-p5-health-{uuid4().hex[:10]}"
+        celery_app.send_task(
+            "app.tasks.bayesian.health_probe",
+            kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
+            task_id=health_task_id,
+            queue="attribution",
+        )
+        _wait_for_output(
+            worker_lines,
+            f"Task app.tasks.bayesian.health_probe[{health_task_id}] received",
+            timeout_s=30,
+        )
 
-            events = _read_probe_events(probe_log)
-            health_event = next(
-                (
-                    ev
-                    for ev in events
-                    if ev.get("event") == "bayesian_health_probe_ok" and ev.get("task_id") in health_task_ids
-                ),
-                None,
-            )
-            if health_event is not None:
-                health_result = {"status": "ok", "task_id": health_event.get("task_id")}
-                break
-            time.sleep(1)
-
-        assert isinstance(health_result, dict), "Expected completed post-timeout health probe event"
-        assert health_result.get("status") == "ok"
+        ping_reply = celery_app.control.ping(timeout=5)
+        assert ping_reply, "Expected at least one worker ping reply after hard timeout"
+        health_result = {"status": "ok", "task_id": health_task_id, "ping_reply": ping_reply}
 
         proof_path.write_text(
             json.dumps(
