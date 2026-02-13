@@ -2,6 +2,12 @@
 
 This index maps each Phase 5 exit gate to executable tests and expected artifacts.
 
+## Adjudication Status
+- PR: #82 (`phase5-compute-safety-remediation`)
+- Head commit: `73af75955`
+- CI run (green): https://github.com/Muk223/skeldir-2.0/actions/runs/21968910012
+- Runtime gate pass: `B0.7 P2 Runtime Proof (LLM + Redaction)` job 63465564982
+
 ## Completion Criteria (Phase 5)
 - Code containing Phase 5 controls/tests is merged to `main`.
 - `main` CI is green.
