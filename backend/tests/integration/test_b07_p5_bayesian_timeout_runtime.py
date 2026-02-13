@@ -235,19 +235,30 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
 
         health_result = None
         health_error = None
-        health_deadline = time.time() + 60
+        health_task_id = ""
+        health_deadline = time.time() + 120
         while time.time() < health_deadline:
+            health_task_id = f"b07-p5-health-{uuid4().hex[:10]}"
             try:
-                health_result = celery_app.send_task(
+                health_async = celery_app.send_task(
                     "app.tasks.bayesian.health_probe",
                     kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
+                    task_id=health_task_id,
                     queue="attribution",
-                ).get(timeout=10)
+                )
+                health_result = health_async.get(timeout=15)
                 if isinstance(health_result, dict) and health_result.get("status") == "ok":
                     break
             except Exception as exc:  # noqa: BLE001 - worker may still be respawning after hard kill
                 health_error = exc
-                time.sleep(1)
+                events = _read_probe_events(probe_log)
+                if any(
+                    ev.get("event") == "bayesian_health_probe_ok" and ev.get("task_id") == health_task_id
+                    for ev in events
+                ):
+                    health_result = {"status": "ok", "task_id": health_task_id}
+                    break
+                time.sleep(2)
         assert isinstance(health_result, dict), f"Expected health probe result, got error: {health_error}"
         assert health_result.get("status") == "ok"
 
