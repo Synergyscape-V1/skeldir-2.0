@@ -234,32 +234,40 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
         assert fallback_event is not None, "Expected deterministic fallback event before hard kill"
 
         health_result = None
-        health_error = None
-        health_task_id = ""
+        health_task_ids: set[str] = set()
+        next_dispatch_at = time.time()
         health_deadline = time.time() + 120
         while time.time() < health_deadline:
-            health_task_id = f"b07-p5-health-{uuid4().hex[:10]}"
-            try:
-                health_async = celery_app.send_task(
+            if worker_proc.poll() is not None:
+                raise AssertionError("Worker process exited unexpectedly before post-timeout health proof")
+
+            now_s = time.time()
+            if now_s >= next_dispatch_at:
+                health_task_id = f"b07-p5-health-{uuid4().hex[:10]}"
+                health_task_ids.add(health_task_id)
+                celery_app.send_task(
                     "app.tasks.bayesian.health_probe",
                     kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
                     task_id=health_task_id,
                     queue="attribution",
                 )
-                health_result = health_async.get(timeout=15)
-                if isinstance(health_result, dict) and health_result.get("status") == "ok":
-                    break
-            except Exception as exc:  # noqa: BLE001 - worker may still be respawning after hard kill
-                health_error = exc
-                events = _read_probe_events(probe_log)
-                if any(
-                    ev.get("event") == "bayesian_health_probe_ok" and ev.get("task_id") == health_task_id
+                next_dispatch_at = now_s + 5
+
+            events = _read_probe_events(probe_log)
+            health_event = next(
+                (
+                    ev
                     for ev in events
-                ):
-                    health_result = {"status": "ok", "task_id": health_task_id}
-                    break
-                time.sleep(2)
-        assert isinstance(health_result, dict), f"Expected health probe result, got error: {health_error}"
+                    if ev.get("event") == "bayesian_health_probe_ok" and ev.get("task_id") in health_task_ids
+                ),
+                None,
+            )
+            if health_event is not None:
+                health_result = {"status": "ok", "task_id": health_event.get("task_id")}
+                break
+            time.sleep(1)
+
+        assert isinstance(health_result, dict), "Expected completed post-timeout health probe event"
         assert health_result.get("status") == "ok"
 
         proof_path.write_text(
