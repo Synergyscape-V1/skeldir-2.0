@@ -3,16 +3,18 @@
 This index maps each Phase 5 exit gate to executable tests, CI enforcement points, and auditable artifacts.
 
 ## Adjudication Baseline (main)
-- Merge commit: `6b08af3194cdf99889c1de4c298e3d823823f154` (PR #82)
-- Main CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/21971741169
-- Phase 5 execution job: `B0.7 P2 Runtime Proof (LLM + Redaction)` (job `63474641496`)
+- Merge commit: `b928e67a89264178bc15a29fa3f5cd9ba380a455` (PR #84)
+- Main CI run: https://github.com/Muk223/skeldir-2.0/actions/runs/21995773671
+- Phase 5 execution job: `B0.7 P2 Runtime Proof (LLM + Redaction)` (job `63555250970`)
 
 ## CI Contradiction Resolution (H5.1)
-For run `21971741169`, Phase 5 gates did execute in `b07-p2-runtime-proof`:
+For run `21995773671`, Phase 5 gates did execute in `b07-p2-runtime-proof`:
 - Step 17: `Enforce compute boundaries (EG5.9 static analysis)`
-- Step 19: `Run B0.7 P3 provider controls gate`
-- Step 20: `Run B0.7 P5 Bayesian timeout runtime gate`
-- Step 23: `Upload B0.7 P2 artifacts`
+- Step 18: `EG5.9 non-vacuity self-test (boundary guard must fail on violation)`
+- Step 20: `Run B0.7 P3 provider controls gate`
+- Step 21: `Run B0.7 P5 Bayesian timeout runtime gate`
+- Step 25: `Upload B0.7 P2 artifacts`
+- Step 26: `Upload Phase 5 compute safety artifact bundle`
 
 ## Completion Criteria (Phase 5)
 - Code containing Phase 5 controls/tests is merged to `main`.
