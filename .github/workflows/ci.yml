@@ -916,6 +916,27 @@ jobs:
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
           psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
+      - name: Assert runtime identity (least-privilege)
+        env:
+          PGPASSWORD: ${{ env.RUNTIME_PASS }}
+        run: |
+          CURRENT_USER=$(psql -h "${DB_HOST}" -U "${RUNTIME_USER}" -d "${DB_NAME}" -t -c "SELECT current_user;" | xargs)
+          SUPER_FLAG=$(psql -h "${DB_HOST}" -U "${RUNTIME_USER}" -d "${DB_NAME}" -t -c "SELECT rolsuper FROM pg_roles WHERE rolname = current_user;" | xargs)
+          echo "Runtime DB current_user=${CURRENT_USER}"
+          echo "Runtime DB rolsuper=${SUPER_FLAG}"
+          if [ "${CURRENT_USER}" != "${RUNTIME_USER}" ]; then
+            echo "ERROR: Runtime DB identity mismatch (expected ${RUNTIME_USER})"
+            exit 1
+          fi
+          if [ "${CURRENT_USER}" = "${MIGRATION_USER}" ] || [ "${CURRENT_USER}" = "${DB_SUPERUSER}" ]; then
+            echo "ERROR: Runtime DB identity is privileged (${CURRENT_USER})"
+            exit 1
+          fi
+          if [ "${SUPER_FLAG}" != "f" ]; then
+            echo "ERROR: Runtime DB identity has superuser privileges"
+            exit 1
+          fi
+
       - name: Apply migrations (admin identity)
         run: |
           python -m alembic upgrade head
@@ -934,6 +955,12 @@ jobs:
           python scripts/ci/enforce_llm_api_call_single_write_path.py --output artifacts/b07-p2/single_write_path_scan.log
           pytest -q backend/tests/test_b07_p3_single_write_path_enforcement.py | tee artifacts/b07-p2/single_write_path_pytest.log
 
+      - name: Enforce compute boundaries (EG5.9 static analysis)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2
+          bash scripts/ci/enforce_boundary.sh | tee artifacts/b07-p2/enforce_boundary.log
+
       - name: Run B0.7 P2 provider enablement unit gate
         env:
           LLM_PROVIDER_API_KEY: ""
@@ -945,6 +972,12 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/b07-p2
           pytest -q backend/tests/test_b07_p3_provider_controls.py | tee artifacts/b07-p2/p3_controls.log
+
+      - name: Run B0.7 P5 Bayesian timeout runtime gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2
+          pytest -q backend/tests/integration/test_b07_p5_bayesian_timeout_runtime.py | tee artifacts/b07-p2/p5_bayesian.log
 
       - name: Run B0.7 P2 runtime chain proof
         run: |
@@ -963,8 +996,17 @@ jobs:
           test -d "${ARTIFACT_DIR}" || { echo "Missing artifact directory: ${ARTIFACT_DIR}"; exit 1; }
           test -f "${ARTIFACT_DIR}/worker.log" || { echo "Missing ${ARTIFACT_DIR}/worker.log"; exit 1; }
           test -f "${ARTIFACT_DIR}/pytest.log" || { echo "Missing ${ARTIFACT_DIR}/pytest.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p3_controls.log" || { echo "Missing ${ARTIFACT_DIR}/p3_controls.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p5_bayesian.log" || { echo "Missing ${ARTIFACT_DIR}/p5_bayesian.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p5_bayesian_runtime_proof.json" || { echo "Missing ${ARTIFACT_DIR}/p5_bayesian_runtime_proof.json"; exit 1; }
+          test -f "${ARTIFACT_DIR}/enforce_boundary.log" || { echo "Missing ${ARTIFACT_DIR}/enforce_boundary.log"; exit 1; }
           test -f "${ARTIFACT_DIR}/runtime_db_probe.json" || { echo "Missing ${ARTIFACT_DIR}/runtime_db_probe.json"; exit 1; }
           test -f "${ARTIFACT_DIR}/redaction_probe.json" || { echo "Missing ${ARTIFACT_DIR}/redaction_probe.json"; exit 1; }
+
+          # Prove Phase 5 suites actually executed by checking named tests appear in logs.
+          grep -n 'test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous' "${ARTIFACT_DIR}/p3_controls.log" >/dev/null
+          grep -n 'test_p3_provider_swap_config_only_proof' "${ARTIFACT_DIR}/p3_controls.log" >/dev/null
+          grep -n 'test_b07_p5_bayesian_timeout_contract_real_worker' "${ARTIFACT_DIR}/p5_bayesian.log" >/dev/null
 
           # Fail on literal canary leakage anywhere in captured artifacts.
           if grep -R --line-number --fixed-strings "${CANARY}" "${ARTIFACT_DIR}"; then

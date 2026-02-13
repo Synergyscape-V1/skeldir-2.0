@@ -154,6 +154,7 @@ def _ensure_celery_configured():
         "app.tasks.matviews",
         "app.tasks.llm",
         "app.tasks.attribution",
+        "app.tasks.bayesian",
         "app.tasks.r4_failure_semantics",
         "app.tasks.r6_resource_governance",
     ]
@@ -211,6 +212,7 @@ def _ensure_celery_configured():
             'app.tasks.matviews.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},
             'app.tasks.llm.*': {'queue': QUEUE_LLM, 'routing_key': f'{QUEUE_LLM}.task'},
             'app.tasks.attribution.*': {'queue': QUEUE_ATTRIBUTION, 'routing_key': f'{QUEUE_ATTRIBUTION}.task'},
+            'app.tasks.bayesian.*': {'queue': QUEUE_ATTRIBUTION, 'routing_key': f'{QUEUE_ATTRIBUTION}.task'},
             'app.tasks.r4_failure_semantics.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
             'app.tasks.r6_resource_governance.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
         },

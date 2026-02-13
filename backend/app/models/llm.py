@@ -113,6 +113,11 @@ class LLMApiCall(Base):
     cache_watermark: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     request_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    @property
+    def cost_usd(self) -> float:
+        """Return dollar-denominated cost for response/ledger assertions."""
+        return float(self.cost_cents or 0) / 100.0
+
     __table_args__ = (
         CheckConstraint("input_tokens >= 0", name="ck_llm_api_calls_input_tokens_positive"),
         CheckConstraint("output_tokens >= 0", name="ck_llm_api_calls_output_tokens_positive"),
