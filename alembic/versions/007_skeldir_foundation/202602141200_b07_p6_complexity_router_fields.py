@@ -66,21 +66,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "ALTER TABLE llm_api_calls DROP CONSTRAINT IF EXISTS ck_llm_api_calls_chosen_tier_valid"
-    )
-    op.execute(
-        "ALTER TABLE llm_api_calls DROP CONSTRAINT IF EXISTS ck_llm_api_calls_complexity_bucket_range"
-    )
-    op.execute(
-        "ALTER TABLE llm_api_calls DROP CONSTRAINT IF EXISTS ck_llm_api_calls_complexity_score_range"
-    )
+    op.execute("ALTER TABLE llm_api_calls DROP CONSTRAINT IF EXISTS ck_llm_api_calls_chosen_tier_valid")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 constraints.
+    op.execute("ALTER TABLE llm_api_calls DROP CONSTRAINT IF EXISTS ck_llm_api_calls_complexity_bucket_range")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 constraints.
+    op.execute("ALTER TABLE llm_api_calls DROP CONSTRAINT IF EXISTS ck_llm_api_calls_complexity_score_range")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 constraints.
 
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS routing_reason")
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS policy_version")
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS policy_id")
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS chosen_model")
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS chosen_provider")
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS chosen_tier")
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS complexity_bucket")
-    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS complexity_score")
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS routing_reason")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS policy_version")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS policy_id")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS chosen_model")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS chosen_provider")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS chosen_tier")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS complexity_bucket")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
+    op.execute("ALTER TABLE llm_api_calls DROP COLUMN IF EXISTS complexity_score")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive Phase 6 columns.
