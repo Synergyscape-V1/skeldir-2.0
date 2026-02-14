@@ -1010,6 +1010,12 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/b07-p2
           pytest -q backend/tests/test_b07_p6_complexity_router.py -k "eg66" | tee artifacts/b07-p2/p6_ledger_persistence_proof.log
+
+      - name: Run B0.7 P7 ledger-cost-cache-audit gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b07-p2
+          pytest -q backend/tests/test_b07_p7_ledger_cost_cache_audit.py | tee artifacts/b07-p2/p7_ledger_cost_cache.log
       - name: Run B0.7 P5 Bayesian timeout runtime gate
         run: |
           set -euo pipefail
@@ -1043,6 +1049,11 @@ jobs:
           test -f "${ARTIFACT_DIR}/p6_router_tests.log" || { echo "Missing ${ARTIFACT_DIR}/p6_router_tests.log"; exit 1; }
           test -f "${ARTIFACT_DIR}/p6_policy_swap_proof.log" || { echo "Missing ${ARTIFACT_DIR}/p6_policy_swap_proof.log"; exit 1; }
           test -f "${ARTIFACT_DIR}/p6_ledger_persistence_proof.log" || { echo "Missing ${ARTIFACT_DIR}/p6_ledger_persistence_proof.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p7_ledger_cost_cache.log" || { echo "Missing ${ARTIFACT_DIR}/p7_ledger_cost_cache.log"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p7_runtime_probe.json" || { echo "Missing ${ARTIFACT_DIR}/p7_runtime_probe.json"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p7_outcome_matrix_summary.json" || { echo "Missing ${ARTIFACT_DIR}/p7_outcome_matrix_summary.json"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p7_rollup_reconciliation.json" || { echo "Missing ${ARTIFACT_DIR}/p7_rollup_reconciliation.json"; exit 1; }
+          test -f "${ARTIFACT_DIR}/p7_cache_performance.json" || { echo "Missing ${ARTIFACT_DIR}/p7_cache_performance.json"; exit 1; }
           test -f "${ARTIFACT_DIR}/runtime_db_probe.json" || { echo "Missing ${ARTIFACT_DIR}/runtime_db_probe.json"; exit 1; }
           test -f "${ARTIFACT_DIR}/redaction_probe.json" || { echo "Missing ${ARTIFACT_DIR}/redaction_probe.json"; exit 1; }
 
@@ -1054,6 +1065,10 @@ jobs:
           grep -n 'test_eg62_config_policy_mapping_and_fail_closed' "${ARTIFACT_DIR}/p6_policy_swap_proof.log" >/dev/null
           grep -n 'test_eg65_budget_pressure_downgrade_and_negative_control' "${ARTIFACT_DIR}/p6_policy_swap_proof.log" >/dev/null
           grep -n 'test_eg66_ledger_persistence_across_success_failure_blocked_cached' "${ARTIFACT_DIR}/p6_ledger_persistence_proof.log" >/dev/null
+          grep -n 'test_p7_runtime_probe_discovers_llm_tables_and_validates_insert_select_rls' "${ARTIFACT_DIR}/p7_ledger_cost_cache.log" >/dev/null
+          grep -n 'test_p7_outcome_matrix_emits_complete_ledger_and_audit_and_no_raw_prompt_persistence' "${ARTIFACT_DIR}/p7_ledger_cost_cache.log" >/dev/null
+          grep -n 'test_p7_rollup_reconciliation_sum_calls_equals_monthly_rollup' "${ARTIFACT_DIR}/p7_ledger_cost_cache.log" >/dev/null
+          grep -n 'test_p7_cache_performance_binding_and_negative_controls' "${ARTIFACT_DIR}/p7_ledger_cost_cache.log" >/dev/null
           grep -n 'test_b07_p5_bayesian_timeout_contract_real_worker' "${ARTIFACT_DIR}/p5_bayesian.log" >/dev/null
 
           # Fail on literal canary leakage anywhere in captured artifacts.
