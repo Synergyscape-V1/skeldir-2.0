@@ -28,6 +28,7 @@ except ModuleNotFoundError:
 
 from app.core.config import settings
 from app.db.session import set_tenant_guc_async, set_user_guc_async
+from app.llm.complexity_router import RoutingDecision, route_request
 from app.models.llm import (
     LLMBreakerState,
     LLMBudgetReservation,
@@ -59,7 +60,9 @@ def _cache_key(prompt: Mapping[str, Any], endpoint: str, model_name: str) -> str
     seed = dict(prompt)
     seed.pop("cache_watermark", None)
     seed.pop("cache_enabled", None)
-    return hashlib.sha256(f"{endpoint}|{model_name}|{_json(seed)}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        f"{endpoint}|{model_name}|{_json(seed)}".encode("utf-8")
+    ).hexdigest()
 
 
 def _prompt_fingerprint(prompt: Mapping[str, Any]) -> str:
@@ -114,7 +117,18 @@ class SkeldirLLMProvider:
         request_id = str(model.request_id or model.correlation_id or "")
         correlation_id = str(model.correlation_id or request_id or "")
         prompt = dict(model.prompt or {})
-        requested_model = str(prompt.get("model") or settings.LLM_PROVIDER_MODEL)
+        budget_state = await self._current_budget_state(
+            session=session,
+            tenant_id=model.tenant_id,
+            user_id=model.user_id,
+        )
+        routing = route_request(
+            prompt=prompt,
+            feature=endpoint,
+            context={"budget_state": budget_state},
+            policy_path=settings.LLM_COMPLEXITY_POLICY_PATH,
+        )
+        requested_model = f"{routing.chosen_provider}:{routing.chosen_model}"
         key = _cache_key(prompt, endpoint, requested_model)
         prompt_fingerprint = _prompt_fingerprint(prompt)
         watermark = _watermark(prompt)
@@ -131,6 +145,7 @@ class SkeldirLLMProvider:
             cache_key=key,
             prompt_fingerprint=prompt_fingerprint,
             cache_watermark=watermark,
+            routing=routing,
         )
         if not claimed:
             return await self._load_existing(
@@ -162,10 +177,20 @@ class SkeldirLLMProvider:
             now=now,
         )
         if shutoff_reason:
-            await self._release(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation)
+            await self._release(
+                session,
+                model.tenant_id,
+                model.user_id,
+                endpoint,
+                request_id,
+                month,
+                reservation,
+            )
             await self._finalize_blocked(session, api_call_id, shutoff_reason)
             await session.commit()
-            return self._blocked_result(api_call_id, request_id, correlation_id, requested_model, shutoff_reason)
+            return self._blocked_result(
+                api_call_id, request_id, correlation_id, requested_model, shutoff_reason
+            )
 
         reserved_ok = await self._reserve(
             session=session,
@@ -180,13 +205,29 @@ class SkeldirLLMProvider:
         if not reserved_ok:
             await self._finalize_blocked(session, api_call_id, "monthly_cap_exceeded")
             await session.commit()
-            return self._blocked_result(api_call_id, request_id, correlation_id, requested_model, "monthly_cap_exceeded")
+            return self._blocked_result(
+                api_call_id,
+                request_id,
+                correlation_id,
+                requested_model,
+                "monthly_cap_exceeded",
+            )
 
         cache_enabled = bool(prompt.get("cache_enabled", True))
         if cache_enabled:
-            hit = await self._cache_hit(session, model.tenant_id, model.user_id, endpoint, key, watermark)
+            hit = await self._cache_hit(
+                session, model.tenant_id, model.user_id, endpoint, key, watermark
+            )
             if hit is not None:
-                await self._release(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation)
+                await self._release(
+                    session,
+                    model.tenant_id,
+                    model.user_id,
+                    endpoint,
+                    request_id,
+                    month,
+                    reservation,
+                )
                 usage = {
                     "input_tokens": int(hit.input_tokens),
                     "output_tokens": int(hit.output_tokens),
@@ -223,10 +264,20 @@ class SkeldirLLMProvider:
                 )
 
         if await self._breaker_open(session, model.tenant_id, model.user_id, now):
-            await self._release(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation)
+            await self._release(
+                session,
+                model.tenant_id,
+                model.user_id,
+                endpoint,
+                request_id,
+                month,
+                reservation,
+            )
             await self._finalize_blocked(session, api_call_id, "breaker_open")
             await session.commit()
-            return self._blocked_result(api_call_id, request_id, correlation_id, requested_model, "breaker_open")
+            return self._blocked_result(
+                api_call_id, request_id, correlation_id, requested_model, "breaker_open"
+            )
 
         # Reservation and pre-call guards are committed before the network call so
         # no transaction is held open while waiting on provider latency.
@@ -236,7 +287,11 @@ class SkeldirLLMProvider:
         started = time.perf_counter()
         try:
             payload = await asyncio.wait_for(
-                self._provider_call(requested_model=requested_model, prompt=prompt, reservation=reservation),
+                self._provider_call(
+                    requested_model=requested_model,
+                    prompt=prompt,
+                    reservation=reservation,
+                ),
                 timeout=timeout_s,
             )
             if force_failure:
@@ -249,12 +304,39 @@ class SkeldirLLMProvider:
             settled = min(max(0, int(usage["cost_cents"])), reservation)
             settled_at = await self._db_now(session)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
-            await self._settle(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation, settled)
+            await self._settle(
+                session,
+                model.tenant_id,
+                model.user_id,
+                endpoint,
+                request_id,
+                month,
+                reservation,
+                settled,
+            )
             await self._breaker_success(session, model.tenant_id, model.user_id)
-            await self._hourly_record(session, model.tenant_id, model.user_id, settled_at, settled)
-            await self._monthly_cost_record(session, model.tenant_id, model.user_id, str(payload["model"]), settled, created_at)
+            await self._hourly_record(
+                session, model.tenant_id, model.user_id, settled_at, settled
+            )
+            await self._monthly_cost_record(
+                session,
+                model.tenant_id,
+                model.user_id,
+                str(payload["model"]),
+                settled,
+                created_at,
+            )
             if cache_enabled:
-                await self._cache_write(session, model.tenant_id, model.user_id, endpoint, key, watermark, payload, usage)
+                await self._cache_write(
+                    session,
+                    model.tenant_id,
+                    model.user_id,
+                    endpoint,
+                    key,
+                    watermark,
+                    payload,
+                    usage,
+                )
             metadata = dict(payload.get("response_metadata", {}))
             metadata["boundary_id"] = self.boundary_id
             await self._finalize_success(
@@ -288,8 +370,18 @@ class SkeldirLLMProvider:
         except TimeoutError:
             failed_at = await self._db_now(session)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
-            await self._release(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation)
-            await self._breaker_failure(session, model.tenant_id, model.user_id, failed_at)
+            await self._release(
+                session,
+                model.tenant_id,
+                model.user_id,
+                endpoint,
+                request_id,
+                month,
+                reservation,
+            )
+            await self._breaker_failure(
+                session, model.tenant_id, model.user_id, failed_at
+            )
             await self._finalize_failed(session, api_call_id, "provider_timeout")
             await session.commit()
             return ProviderBoundaryResult(
@@ -297,7 +389,12 @@ class SkeldirLLMProvider:
                 model=requested_model,
                 output_text="",
                 reasoning_trace=None,
-                usage={"input_tokens": 0, "output_tokens": 0, "cost_cents": 0, "latency_ms": int(timeout_s * 1000)},
+                usage={
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_cents": 0,
+                    "latency_ms": int(timeout_s * 1000),
+                },
                 status="failed",
                 was_cached=False,
                 request_id=request_id,
@@ -308,16 +405,33 @@ class SkeldirLLMProvider:
         except Exception as exc:
             failed_at = await self._db_now(session)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
-            await self._release(session, model.tenant_id, model.user_id, endpoint, request_id, month, reservation)
-            await self._breaker_failure(session, model.tenant_id, model.user_id, failed_at)
-            await self._finalize_failed(session, api_call_id, f"provider_error:{type(exc).__name__}")
+            await self._release(
+                session,
+                model.tenant_id,
+                model.user_id,
+                endpoint,
+                request_id,
+                month,
+                reservation,
+            )
+            await self._breaker_failure(
+                session, model.tenant_id, model.user_id, failed_at
+            )
+            await self._finalize_failed(
+                session, api_call_id, f"provider_error:{type(exc).__name__}"
+            )
             await session.commit()
             return ProviderBoundaryResult(
                 provider="error",
                 model=requested_model,
                 output_text="",
                 reasoning_trace=None,
-                usage={"input_tokens": 0, "output_tokens": 0, "cost_cents": 0, "latency_ms": 0},
+                usage={
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_cents": 0,
+                    "latency_ms": 0,
+                },
                 status="failed",
                 was_cached=False,
                 request_id=request_id,
@@ -326,7 +440,45 @@ class SkeldirLLMProvider:
                 failure_reason=f"provider_error:{type(exc).__name__}",
             )
 
-    async def _ensure_rls_context(self, session: AsyncSession, tenant_id: UUID, user_id: UUID) -> None:
+    async def _current_budget_state(
+        self,
+        *,
+        session: AsyncSession,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> Mapping[str, int]:
+        now = await self._db_now(session)
+        month = _month_start_utc(now)
+        row = (
+            await session.execute(
+                text(
+                    """
+                    SELECT cap_cents, spent_cents, reserved_cents
+                    FROM llm_monthly_budget_state
+                    WHERE tenant_id = :tenant_id
+                      AND user_id = :user_id
+                      AND month = :month
+                    LIMIT 1
+                    """
+                ),
+                {"tenant_id": tenant_id, "user_id": user_id, "month": month},
+            )
+        ).first()
+        if row is None:
+            return {
+                "cap_cents": max(0, int(settings.LLM_MONTHLY_CAP_CENTS)),
+                "spent_cents": 0,
+                "reserved_cents": 0,
+            }
+        return {
+            "cap_cents": int(row[0] or 0),
+            "spent_cents": int(row[1] or 0),
+            "reserved_cents": int(row[2] or 0),
+        }
+
+    async def _ensure_rls_context(
+        self, session: AsyncSession, tenant_id: UUID, user_id: UUID
+    ) -> None:
         await set_tenant_guc_async(session, tenant_id, local=False)
         await set_user_guc_async(session, user_id, local=False)
 
@@ -343,7 +495,12 @@ class SkeldirLLMProvider:
             model=model_name,
             output_text="",
             reasoning_trace=None,
-            usage={"input_tokens": 0, "output_tokens": 0, "cost_cents": 0, "latency_ms": 0},
+            usage={
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_cents": 0,
+                "latency_ms": 0,
+            },
             status="blocked",
             was_cached=False,
             request_id=request_id,
@@ -365,6 +522,7 @@ class SkeldirLLMProvider:
         cache_key: str,
         prompt_fingerprint: str,
         cache_watermark: int,
+        routing: RoutingDecision,
     ) -> tuple[UUID, datetime, bool]:
         stmt = (
             insert(LLMApiCall)
@@ -389,9 +547,22 @@ class SkeldirLLMProvider:
                 cache_key=cache_key,
                 prompt_fingerprint=prompt_fingerprint,
                 cache_watermark=cache_watermark,
-                request_metadata_ref={"correlation_id": correlation_id, "boundary_id": self.boundary_id},
+                complexity_score=float(routing.complexity_score),
+                complexity_bucket=int(routing.complexity_bucket),
+                chosen_tier=routing.chosen_tier,
+                chosen_provider=routing.chosen_provider,
+                chosen_model=routing.chosen_model,
+                policy_id=routing.policy_id,
+                policy_version=routing.policy_version,
+                routing_reason=routing.routing_reason,
+                request_metadata_ref={
+                    "correlation_id": correlation_id,
+                    "boundary_id": self.boundary_id,
+                },
             )
-            .on_conflict_do_nothing(index_elements=["tenant_id", "request_id", "endpoint"])
+            .on_conflict_do_nothing(
+                index_elements=["tenant_id", "request_id", "endpoint"]
+            )
             .returning(LLMApiCall.id, LLMApiCall.created_at)
         )
         row = (await session.execute(stmt)).first()
@@ -407,7 +578,9 @@ class SkeldirLLMProvider:
             )
         ).first()
         if existing is None:
-            raise RuntimeError("idempotency guard failed to locate existing llm_api_calls row")
+            raise RuntimeError(
+                "idempotency guard failed to locate existing llm_api_calls row"
+            )
         return existing[0], existing[1], False
 
     async def _load_existing(
@@ -451,16 +624,22 @@ class SkeldirLLMProvider:
         now: datetime,
     ) -> str | None:
         row = (
-            await session.execute(
-                select(LLMHourlyShutoffState).where(
-                    LLMHourlyShutoffState.tenant_id == tenant_id,
-                    LLMHourlyShutoffState.user_id == user_id,
-                    LLMHourlyShutoffState.is_shutoff.is_(True),
-                    LLMHourlyShutoffState.disabled_until.is_not(None),
-                    LLMHourlyShutoffState.disabled_until > now,
-                ).order_by(LLMHourlyShutoffState.disabled_until.desc())
+            (
+                await session.execute(
+                    select(LLMHourlyShutoffState)
+                    .where(
+                        LLMHourlyShutoffState.tenant_id == tenant_id,
+                        LLMHourlyShutoffState.user_id == user_id,
+                        LLMHourlyShutoffState.is_shutoff.is_(True),
+                        LLMHourlyShutoffState.disabled_until.is_not(None),
+                        LLMHourlyShutoffState.disabled_until > now,
+                    )
+                    .order_by(LLMHourlyShutoffState.disabled_until.desc())
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         return None if row is None else (row.reason or "hourly_shutoff_active")
 
     async def _reserve(
@@ -616,37 +795,49 @@ class SkeldirLLMProvider:
         now: datetime,
     ) -> bool:
         row = (
-            await session.execute(
-                select(LLMBreakerState).where(
-                    LLMBreakerState.tenant_id == tenant_id,
-                    LLMBreakerState.user_id == user_id,
-                    LLMBreakerState.breaker_key == self.breaker_key,
+            (
+                await session.execute(
+                    select(LLMBreakerState).where(
+                        LLMBreakerState.tenant_id == tenant_id,
+                        LLMBreakerState.user_id == user_id,
+                        LLMBreakerState.breaker_key == self.breaker_key,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is None or row.state != "open":
             return False
         opened = row.opened_at or row.updated_at
         if opened is None:
             return True
-        cooldown = opened + timedelta(seconds=max(1, int(settings.LLM_BREAKER_OPEN_SECONDS)))
+        cooldown = opened + timedelta(
+            seconds=max(1, int(settings.LLM_BREAKER_OPEN_SECONDS))
+        )
         if now < cooldown:
             return True
         row.state = "half_open"
         row.updated_at = now
         return False
 
-    async def _breaker_success(self, session: AsyncSession, tenant_id: UUID, user_id: UUID) -> None:
+    async def _breaker_success(
+        self, session: AsyncSession, tenant_id: UUID, user_id: UUID
+    ) -> None:
         now = await self._db_now(session)
         row = (
-            await session.execute(
-                select(LLMBreakerState).where(
-                    LLMBreakerState.tenant_id == tenant_id,
-                    LLMBreakerState.user_id == user_id,
-                    LLMBreakerState.breaker_key == self.breaker_key,
+            (
+                await session.execute(
+                    select(LLMBreakerState).where(
+                        LLMBreakerState.tenant_id == tenant_id,
+                        LLMBreakerState.user_id == user_id,
+                        LLMBreakerState.breaker_key == self.breaker_key,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is None:
             session.add(
                 LLMBreakerState(
@@ -675,14 +866,18 @@ class SkeldirLLMProvider:
     ) -> None:
         threshold = max(1, int(settings.LLM_BREAKER_FAILURE_THRESHOLD))
         row = (
-            await session.execute(
-                select(LLMBreakerState).where(
-                    LLMBreakerState.tenant_id == tenant_id,
-                    LLMBreakerState.user_id == user_id,
-                    LLMBreakerState.breaker_key == self.breaker_key,
+            (
+                await session.execute(
+                    select(LLMBreakerState).where(
+                        LLMBreakerState.tenant_id == tenant_id,
+                        LLMBreakerState.user_id == user_id,
+                        LLMBreakerState.breaker_key == self.breaker_key,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is None:
             state = "open" if threshold <= 1 else "closed"
             session.add(
@@ -717,15 +912,19 @@ class SkeldirLLMProvider:
         watermark: int,
     ) -> LLMSemanticCache | None:
         row = (
-            await session.execute(
-                select(LLMSemanticCache).where(
-                    LLMSemanticCache.tenant_id == tenant_id,
-                    LLMSemanticCache.user_id == user_id,
-                    LLMSemanticCache.endpoint == endpoint,
-                    LLMSemanticCache.cache_key == key,
+            (
+                await session.execute(
+                    select(LLMSemanticCache).where(
+                        LLMSemanticCache.tenant_id == tenant_id,
+                        LLMSemanticCache.user_id == user_id,
+                        LLMSemanticCache.endpoint == endpoint,
+                        LLMSemanticCache.cache_key == key,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is None or int(row.watermark) != int(watermark):
             return None
         row.hit_count = int(row.hit_count) + 1
@@ -788,8 +987,12 @@ class SkeldirLLMProvider:
         reservation: int,
     ) -> Mapping[str, Any]:
         if settings.LLM_PROVIDER_ENABLED:
-            return await self._call_aisuite(requested_model=requested_model, prompt=prompt)
-        return await self._call_stub(requested_model=requested_model, prompt=prompt, reservation=reservation)
+            return await self._call_aisuite(
+                requested_model=requested_model, prompt=prompt
+            )
+        return await self._call_stub(
+            requested_model=requested_model, prompt=prompt, reservation=reservation
+        )
 
     async def _call_stub(
         self,
@@ -815,10 +1018,16 @@ class SkeldirLLMProvider:
             "output_text": str(prompt.get("simulated_output_text") or f"stub:{digest}"),
             "reasoning_trace": {"trace_type": "stub", "digest": digest},
             "response_metadata": {"source": "stub"},
-            "usage": {"input_tokens": in_tokens, "output_tokens": out_tokens, "cost_cents": cost_cents},
+            "usage": {
+                "input_tokens": in_tokens,
+                "output_tokens": out_tokens,
+                "cost_cents": cost_cents,
+            },
         }
 
-    async def _call_aisuite(self, *, requested_model: str, prompt: Mapping[str, Any]) -> Mapping[str, Any]:
+    async def _call_aisuite(
+        self, *, requested_model: str, prompt: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
         def _invoke_sync() -> Any:
             if aisuite is None:
                 raise RuntimeError("aisuite_not_installed")
@@ -827,16 +1036,22 @@ class SkeldirLLMProvider:
             if not isinstance(messages, list):
                 user_text = prompt.get("input") or prompt.get("text") or _json(prompt)
                 messages = [{"role": "user", "content": str(user_text)}]
-            return client.chat.completions.create(model=requested_model, messages=messages)
+            return client.chat.completions.create(
+                model=requested_model, messages=messages
+            )
 
         raw = await asyncio.to_thread(_invoke_sync)
         return self._normalize_aisuite(raw=raw, requested_model=requested_model)
 
-    def _normalize_aisuite(self, *, raw: Any, requested_model: str) -> Mapping[str, Any]:
+    def _normalize_aisuite(
+        self, *, raw: Any, requested_model: str
+    ) -> Mapping[str, Any]:
         if isinstance(raw, Mapping):
             usage = raw.get("usage") or {}
             return {
-                "provider": str(raw.get("provider") or requested_model.split(":", 1)[0]),
+                "provider": str(
+                    raw.get("provider") or requested_model.split(":", 1)[0]
+                ),
                 "model": str(raw.get("model") or requested_model),
                 "output_text": str(raw.get("output_text") or raw.get("text") or ""),
                 "reasoning_trace": raw.get("reasoning_trace"),
@@ -847,7 +1062,9 @@ class SkeldirLLMProvider:
                     "cost_cents": int(usage.get("cost_cents", 0) or 0),
                 },
             }
-        provider = requested_model.split(":", 1)[0] if ":" in requested_model else "aisuite"
+        provider = (
+            requested_model.split(":", 1)[0] if ":" in requested_model else "aisuite"
+        )
         model_name = str(getattr(raw, "model", requested_model))
         usage_obj = getattr(raw, "usage", None)
         usage = {
@@ -883,14 +1100,18 @@ class SkeldirLLMProvider:
         hour_start = _hour_start_utc(now)
         threshold = max(0, int(settings.LLM_HOURLY_SHUTOFF_CENTS))
         row = (
-            await session.execute(
-                select(LLMHourlyShutoffState).where(
-                    LLMHourlyShutoffState.tenant_id == tenant_id,
-                    LLMHourlyShutoffState.user_id == user_id,
-                    LLMHourlyShutoffState.hour_start == hour_start,
+            (
+                await session.execute(
+                    select(LLMHourlyShutoffState).where(
+                        LLMHourlyShutoffState.tenant_id == tenant_id,
+                        LLMHourlyShutoffState.user_id == user_id,
+                        LLMHourlyShutoffState.hour_start == hour_start,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row is None:
             row = LLMHourlyShutoffState(
                 tenant_id=tenant_id,
@@ -933,12 +1154,15 @@ class SkeldirLLMProvider:
                 month=month,
                 total_cost_cents=max(0, cost_cents),
                 total_calls=1,
-                model_breakdown={model_name: {"calls": 1, "cost_cents": max(0, cost_cents)}},
+                model_breakdown={
+                    model_name: {"calls": 1, "cost_cents": max(0, cost_cents)}
+                },
             )
             .on_conflict_do_update(
                 index_elements=["tenant_id", "user_id", "month"],
                 set_={
-                    "total_cost_cents": LLMMonthlyCost.total_cost_cents + max(0, cost_cents),
+                    "total_cost_cents": LLMMonthlyCost.total_cost_cents
+                    + max(0, cost_cents),
                     "total_calls": LLMMonthlyCost.total_calls + 1,
                     "model_breakdown": LLMMonthlyCost.model_breakdown,
                 },
@@ -985,7 +1209,9 @@ class SkeldirLLMProvider:
         row.block_reason = None
         row.failure_reason = None
 
-    async def _finalize_blocked(self, session: AsyncSession, api_call_id: UUID, reason: str) -> None:
+    async def _finalize_blocked(
+        self, session: AsyncSession, api_call_id: UUID, reason: str
+    ) -> None:
         row = await session.get(LLMApiCall, api_call_id)
         if row is None:
             raise RuntimeError("missing llm_api_calls row on blocked finalize")
@@ -998,7 +1224,9 @@ class SkeldirLLMProvider:
         row.reasoning_trace_ref = {}
         row.distillation_eligible = False
 
-    async def _finalize_failed(self, session: AsyncSession, api_call_id: UUID, reason: str) -> None:
+    async def _finalize_failed(
+        self, session: AsyncSession, api_call_id: UUID, reason: str
+    ) -> None:
         row = await session.get(LLMApiCall, api_call_id)
         if row is None:
             raise RuntimeError("missing llm_api_calls row on failed finalize")

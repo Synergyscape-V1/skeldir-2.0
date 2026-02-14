@@ -29,14 +29,36 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: PostgresDsn = Field(..., description="Async PostgreSQL DSN")
-    DATABASE_POOL_SIZE: int = Field(10, description="Base connection pool size")
+    DATABASE_POOL_SIZE: int = Field(20, description="Base connection pool size")
     DATABASE_MAX_OVERFLOW: int = Field(
-        20, description="Additional connections allowed beyond pool size"
+        0, description="Additional connections allowed beyond pool size"
+    )
+    DATABASE_POOL_TIMEOUT_SECONDS: float = Field(
+        5.0,
+        description=(
+            "Seconds to wait for an available pooled connection before failing fast "
+            "at the application layer."
+        ),
+    )
+    DATABASE_POOL_TOTAL_CAP: int = Field(
+        30,
+        description=(
+            "Hard per-process cap for pooled connections (pool_size + max_overflow). "
+            "Prevents DB listener swamping under burst."
+        ),
     )
 
     # Tenant Authentication
     TENANT_API_KEY_HEADER: str = Field(
         "X-Skeldir-Tenant-Key", description="Header carrying tenant API key"
+    )
+    TENANT_SECRETS_CACHE_TTL_SECONDS: int = Field(
+        60,
+        description="In-memory TTL for tenant webhook secret cache (seconds).",
+    )
+    TENANT_SECRETS_CACHE_MAX_ENTRIES: int = Field(
+        2048,
+        description="Maximum entries for tenant webhook secret cache.",
     )
     # JWT Authentication (Phase 1)
     AUTH_JWT_SECRET: Optional[str] = Field(
@@ -88,6 +110,10 @@ class Settings(BaseSettings):
         "openai:gpt-4o-mini",
         description="Provider/model route in '<provider>:<model>' format for aisuite dispatch.",
     )
+    LLM_COMPLEXITY_POLICY_PATH: str = Field(
+        "backend/app/llm/policies/complexity_router_policy.json",
+        description="Path to deterministic complexity-routing policy JSON.",
+    )
     LLM_PROVIDER_KILL_SWITCH: bool = Field(
         False,
         description="Emergency provider kill-switch. When enabled, all LLM requests are blocked before provider invocation.",
@@ -116,6 +142,10 @@ class Settings(BaseSettings):
     # Ingestion
     IDEMPOTENCY_CACHE_TTL: int = Field(
         86400, description="Idempotency cache TTL in seconds (24 hours)"
+    )
+    INGESTION_FOLLOWUP_TASKS_ENABLED: bool = Field(
+        False,
+        description="Enable synchronous scheduling of downstream ingestion follow-up tasks from webhook requests.",
     )
 
     # Celery (Postgres-only broker/result backend)
@@ -231,6 +261,15 @@ class Settings(BaseSettings):
         """
         if value < 0:
             raise ValueError(f"{info.field_name} must be >= 0")
+        if info.field_name == "DATABASE_POOL_SIZE" and value < 1:
+            raise ValueError("DATABASE_POOL_SIZE must be >= 1")
+        return value
+
+    @field_validator("DATABASE_POOL_TIMEOUT_SECONDS")
+    @classmethod
+    def validate_pool_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("DATABASE_POOL_TIMEOUT_SECONDS must be > 0")
         return value
 
     @field_validator("TENANT_API_KEY_HEADER")
@@ -242,6 +281,13 @@ class Settings(BaseSettings):
         if not value or not value.strip():
             raise ValueError("TENANT_API_KEY_HEADER cannot be empty")
         return value.strip()
+
+    @field_validator("TENANT_SECRETS_CACHE_TTL_SECONDS", "TENANT_SECRETS_CACHE_MAX_ENTRIES")
+    @classmethod
+    def validate_tenant_secret_cache_settings(cls, value: int, info) -> int:
+        if value < 1:
+            raise ValueError(f"{info.field_name} must be >= 1")
+        return value
 
     @field_validator(
         "AUTH_JWT_SECRET",
@@ -275,6 +321,14 @@ class Settings(BaseSettings):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("LLM_PROVIDER_MODEL cannot be empty")
+        return cleaned
+
+    @field_validator("LLM_COMPLEXITY_POLICY_PATH")
+    @classmethod
+    def validate_llm_complexity_policy_path(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("LLM_COMPLEXITY_POLICY_PATH cannot be empty")
         return cleaned
 
     @field_validator("IDEMPOTENCY_CACHE_TTL")
