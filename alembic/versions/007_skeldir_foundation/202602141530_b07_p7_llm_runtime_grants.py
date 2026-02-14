@@ -16,16 +16,16 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-RW_TABLES = (
-    "llm_api_calls",
-    "llm_call_audit",
-    "llm_monthly_costs",
-    "llm_breaker_state",
-    "llm_hourly_shutoff_state",
-    "llm_monthly_budget_state",
-    "llm_budget_reservations",
-    "llm_semantic_cache",
-)
+TABLE_PRIVILEGES = {
+    "llm_api_calls": "SELECT, INSERT, UPDATE",
+    "llm_call_audit": "SELECT, INSERT",
+    "llm_monthly_costs": "SELECT, INSERT, UPDATE",
+    "llm_breaker_state": "SELECT, INSERT, UPDATE",
+    "llm_hourly_shutoff_state": "SELECT, INSERT, UPDATE",
+    "llm_monthly_budget_state": "SELECT, INSERT, UPDATE",
+    "llm_budget_reservations": "SELECT, INSERT, UPDATE",
+    "llm_semantic_cache": "SELECT, INSERT, UPDATE",
+}
 
 
 def _grant_if_role_exists(role: str, privileges: str, table_name: str) -> None:
@@ -57,14 +57,14 @@ def _revoke_if_role_exists(role: str, table_name: str) -> None:
 
 
 def upgrade() -> None:
-    for table_name in RW_TABLES:
-        _grant_if_role_exists("app_rw", "SELECT, INSERT, UPDATE", table_name)
-        _grant_if_role_exists("app_user", "SELECT, INSERT, UPDATE", table_name)
+    for table_name, privileges in TABLE_PRIVILEGES.items():
+        _grant_if_role_exists("app_rw", privileges, table_name)
+        _grant_if_role_exists("app_user", privileges, table_name)
         _grant_if_role_exists("app_ro", "SELECT", table_name)
 
 
 def downgrade() -> None:
-    for table_name in RW_TABLES:
+    for table_name in TABLE_PRIVILEGES:
         _revoke_if_role_exists("app_ro", table_name)
         _revoke_if_role_exists("app_user", table_name)
         _revoke_if_role_exists("app_rw", table_name)
