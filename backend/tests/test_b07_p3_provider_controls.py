@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
@@ -473,7 +474,7 @@ async def test_p3_provider_enabled_routes_through_aisuite_boundary(monkeypatch, 
 
 
 @pytest.mark.asyncio
-async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant):
+async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant, tmp_path):
     monkeypatch.setattr(settings, "LLM_PROVIDER_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "LLM_PROVIDER_API_KEY", "fake-key", raising=False)
     monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
@@ -492,15 +493,42 @@ async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant):
 
     monkeypatch.setattr(_PROVIDER_BOUNDARY, "_call_aisuite", _fake_aisuite, raising=True)
 
+    policy_a = tmp_path / "policy_a.json"
+    policy_b = tmp_path / "policy_b.json"
+    policy_a.write_text(
+        json.dumps(
+            {
+                "policy_id": "swap-proof",
+                "policy_version": "a",
+                "bucket_tiers": [{"min_bucket": 1, "max_bucket": 10, "tier": "cheap"}],
+                "tiers": {"cheap": {"provider": "openai", "model": "gpt-4o-mini"}},
+                "budget_downgrade": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    policy_b.write_text(
+        json.dumps(
+            {
+                "policy_id": "swap-proof",
+                "policy_version": "b",
+                "bucket_tiers": [{"min_bucket": 1, "max_bucket": 10, "tier": "cheap"}],
+                "tiers": {"cheap": {"provider": "anthropic", "model": "claude-3-5-sonnet"}},
+                "budget_downgrade": {"enabled": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+
     request_a = str(uuid4())
     request_b = str(uuid4())
     async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
-        monkeypatch.setattr(settings, "LLM_PROVIDER_MODEL", "openai:gpt-4o-mini", raising=False)
+        monkeypatch.setattr(settings, "LLM_COMPLEXITY_POLICY_PATH", str(policy_a), raising=False)
         run_a = await generate_explanation(
             _payload(test_tenant, request_id=request_a, prompt={"cache_enabled": False}),
             session=session,
         )
-        monkeypatch.setattr(settings, "LLM_PROVIDER_MODEL", "anthropic:claude-3-5-sonnet", raising=False)
+        monkeypatch.setattr(settings, "LLM_COMPLEXITY_POLICY_PATH", str(policy_b), raising=False)
         run_b = await generate_explanation(
             _payload(test_tenant, request_id=request_b, prompt={"cache_enabled": False}),
             session=session,
