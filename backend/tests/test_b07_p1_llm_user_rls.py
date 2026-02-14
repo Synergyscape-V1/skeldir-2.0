@@ -95,7 +95,7 @@ async def test_llm_user_rls_blocks_cross_user_reads(test_tenant):
     assert semantic_cache.scalar_one() >= 1
     assert breaker.scalar_one() == 1
     assert shutoff.scalar_one() == 1
-    assert audit.scalar_one() == 1
+    assert audit.scalar_one() >= 1
 
     async with get_session(tenant_id=tenant_id, user_id=user_b) as session:
         api_calls = await session.execute(select(func.count()).select_from(LLMApiCall))

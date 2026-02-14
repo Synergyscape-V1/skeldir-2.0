@@ -159,6 +159,21 @@ class SkeldirLLMProvider:
         # an auditable llm_api_calls denial row for incident forensics.
         if settings.LLM_PROVIDER_KILL_SWITCH or bool(prompt.get("kill_switch", False)):
             await self._finalize_blocked(session, api_call_id, "provider_kill_switch")
+            await self._write_call_audit(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                estimated_cost_cents=reservation,
+                decision="BLOCK",
+                reason="provider_kill_switch",
+                input_tokens=0,
+                output_tokens=0,
+                prompt_fingerprint=prompt_fingerprint,
+            )
             await session.commit()
             return self._blocked_result(
                 api_call_id,
@@ -187,6 +202,21 @@ class SkeldirLLMProvider:
                 reservation,
             )
             await self._finalize_blocked(session, api_call_id, shutoff_reason)
+            await self._write_call_audit(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                estimated_cost_cents=reservation,
+                decision="BLOCK",
+                reason=shutoff_reason,
+                input_tokens=0,
+                output_tokens=0,
+                prompt_fingerprint=prompt_fingerprint,
+            )
             await session.commit()
             return self._blocked_result(
                 api_call_id, request_id, correlation_id, requested_model, shutoff_reason
@@ -204,6 +234,21 @@ class SkeldirLLMProvider:
         )
         if not reserved_ok:
             await self._finalize_blocked(session, api_call_id, "monthly_cap_exceeded")
+            await self._write_call_audit(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                estimated_cost_cents=reservation,
+                decision="BLOCK",
+                reason="monthly_cap_exceeded",
+                input_tokens=0,
+                output_tokens=0,
+                prompt_fingerprint=prompt_fingerprint,
+            )
             await session.commit()
             return self._blocked_result(
                 api_call_id,
@@ -248,6 +293,21 @@ class SkeldirLLMProvider:
                     settled=0,
                     breaker_state="closed",
                 )
+                await self._write_call_audit(
+                    session=session,
+                    tenant_id=model.tenant_id,
+                    user_id=model.user_id,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                    requested_model=requested_model,
+                    resolved_model=str(hit.model),
+                    estimated_cost_cents=0,
+                    decision="ALLOW",
+                    reason="cache_hit",
+                    input_tokens=int(hit.input_tokens),
+                    output_tokens=int(hit.output_tokens),
+                    prompt_fingerprint=prompt_fingerprint,
+                )
                 await session.commit()
                 return ProviderBoundaryResult(
                     provider=str(hit.provider),
@@ -274,6 +334,21 @@ class SkeldirLLMProvider:
                 reservation,
             )
             await self._finalize_blocked(session, api_call_id, "breaker_open")
+            await self._write_call_audit(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                estimated_cost_cents=reservation,
+                decision="BLOCK",
+                reason="breaker_open",
+                input_tokens=0,
+                output_tokens=0,
+                prompt_fingerprint=prompt_fingerprint,
+            )
             await session.commit()
             return self._blocked_result(
                 api_call_id, request_id, correlation_id, requested_model, "breaker_open"
@@ -353,6 +428,21 @@ class SkeldirLLMProvider:
                 settled=settled,
                 breaker_state="closed",
             )
+            await self._write_call_audit(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                requested_model=requested_model,
+                resolved_model=str(payload["model"]),
+                estimated_cost_cents=settled,
+                decision="ALLOW",
+                reason="success",
+                input_tokens=int(usage.get("input_tokens", 0)),
+                output_tokens=int(usage.get("output_tokens", 0)),
+                prompt_fingerprint=prompt_fingerprint,
+            )
             await session.commit()
             return ProviderBoundaryResult(
                 provider=str(payload["provider"]),
@@ -383,6 +473,21 @@ class SkeldirLLMProvider:
                 session, model.tenant_id, model.user_id, failed_at
             )
             await self._finalize_failed(session, api_call_id, "provider_timeout")
+            await self._write_call_audit(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                estimated_cost_cents=0,
+                decision="ALLOW",
+                reason="provider_timeout",
+                input_tokens=0,
+                output_tokens=0,
+                prompt_fingerprint=prompt_fingerprint,
+            )
             await session.commit()
             return ProviderBoundaryResult(
                 provider="timeout",
@@ -420,6 +525,21 @@ class SkeldirLLMProvider:
             await self._finalize_failed(
                 session, api_call_id, f"provider_error:{type(exc).__name__}"
             )
+            await self._write_call_audit(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                requested_model=requested_model,
+                resolved_model=requested_model,
+                estimated_cost_cents=0,
+                decision="ALLOW",
+                reason=f"provider_error:{type(exc).__name__}",
+                input_tokens=0,
+                output_tokens=0,
+                prompt_fingerprint=prompt_fingerprint,
+            )
             await session.commit()
             return ProviderBoundaryResult(
                 provider="error",
@@ -439,6 +559,74 @@ class SkeldirLLMProvider:
                 api_call_id=api_call_id,
                 failure_reason=f"provider_error:{type(exc).__name__}",
             )
+
+    async def _write_call_audit(
+        self,
+        *,
+        session: AsyncSession,
+        tenant_id: UUID,
+        user_id: UUID,
+        request_id: str,
+        correlation_id: str,
+        requested_model: str,
+        resolved_model: str,
+        estimated_cost_cents: int,
+        decision: str,
+        reason: str,
+        input_tokens: int,
+        output_tokens: int,
+        prompt_fingerprint: str,
+    ) -> None:
+        await session.execute(
+            text(
+                """
+                INSERT INTO llm_call_audit (
+                    tenant_id,
+                    user_id,
+                    request_id,
+                    correlation_id,
+                    requested_model,
+                    resolved_model,
+                    estimated_cost_cents,
+                    cap_cents,
+                    decision,
+                    reason,
+                    input_tokens,
+                    output_tokens,
+                    prompt_fingerprint
+                ) VALUES (
+                    :tenant_id,
+                    :user_id,
+                    :request_id,
+                    :correlation_id,
+                    :requested_model,
+                    :resolved_model,
+                    :estimated_cost_cents,
+                    :cap_cents,
+                    :decision,
+                    :reason,
+                    :input_tokens,
+                    :output_tokens,
+                    :prompt_fingerprint
+                )
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+                "requested_model": requested_model,
+                "resolved_model": resolved_model,
+                "estimated_cost_cents": max(0, int(estimated_cost_cents)),
+                "cap_cents": max(0, int(settings.LLM_MONTHLY_CAP_CENTS)),
+                "decision": decision,
+                "reason": reason,
+                "input_tokens": max(0, int(input_tokens)),
+                "output_tokens": max(0, int(output_tokens)),
+                "prompt_fingerprint": prompt_fingerprint,
+            },
+        )
 
     async def _current_budget_state(
         self,
