@@ -1,0 +1,20 @@
+{
+  "policy_id": "b07-phase6-complexity-router",
+  "policy_version": "2026-02-14",
+  "bucket_tiers": [
+    { "min_bucket": 1, "max_bucket": 3, "tier": "cheap" },
+    { "min_bucket": 4, "max_bucket": 7, "tier": "standard" },
+    { "min_bucket": 8, "max_bucket": 10, "tier": "premium" }
+  ],
+  "tiers": {
+    "cheap": { "provider": "openai", "model": "gpt-4o-mini" },
+    "standard": { "provider": "anthropic", "model": "claude-3-5-sonnet" },
+    "premium": { "provider": "anthropic", "model": "claude-3-5-opus" }
+  },
+  "budget_downgrade": {
+    "enabled": true,
+    "pressure_threshold": 0.8,
+    "critical_threshold": 0.95,
+    "downgrade_order": ["premium", "standard", "cheap"]
+  }
+}

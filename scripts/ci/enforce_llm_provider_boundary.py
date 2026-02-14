@@ -33,6 +33,11 @@ FORBIDDEN_MODULE_PREFIXES = (
 
 IMPORT_LINE_RE = re.compile(r"^\s*(from|import)\s+([a-zA-Z0-9_\.]+)\b")
 DYNAMIC_IMPORT_RE = re.compile(r"__import__\(\s*['\"]([a-zA-Z0-9_\.]+)['\"]\s*\)")
+FORBIDDEN_DIRECT_CALL_PATTERNS = (
+    re.compile(r"\.chat\.completions\.create\s*\("),
+    re.compile(r"\.responses\.create\s*\("),
+    re.compile(r"\.messages\.create\s*\("),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +66,10 @@ def _is_allowed(path: str) -> bool:
 
 
 def _is_forbidden_import(module: str) -> bool:
-    return any(module == prefix or module.startswith(prefix + ".") for prefix in FORBIDDEN_MODULE_PREFIXES)
+    return any(
+        module == prefix or module.startswith(prefix + ".")
+        for prefix in FORBIDDEN_MODULE_PREFIXES
+    )
 
 
 def _scan_lines(path: Path) -> list[Violation]:
@@ -73,10 +81,16 @@ def _scan_lines(path: Path) -> list[Violation]:
                 if m:
                     module = m.group(2)
                     if _is_forbidden_import(module):
-                        violations.append(Violation(str(path), line_no, line.rstrip("\n")))
+                        violations.append(
+                            Violation(str(path), line_no, line.rstrip("\n"))
+                        )
                         continue
                 dyn = DYNAMIC_IMPORT_RE.search(line)
                 if dyn and _is_forbidden_import(dyn.group(1)):
+                    violations.append(Violation(str(path), line_no, line.rstrip("\n")))
+                if any(
+                    pattern.search(line) for pattern in FORBIDDEN_DIRECT_CALL_PATTERNS
+                ):
                     violations.append(Violation(str(path), line_no, line.rstrip("\n")))
     except OSError as exc:
         violations.append(Violation(str(path), -1, f"<unreadable: {exc}>"))

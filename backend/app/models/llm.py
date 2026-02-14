@@ -14,6 +14,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     Integer,
     Text,
     UniqueConstraint,
@@ -111,6 +112,54 @@ class LLMApiCall(Base):
     )
     cache_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cache_watermark: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    complexity_score: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+        server_default="0",
+    )
+    complexity_bucket: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    chosen_tier: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="cheap",
+        server_default="cheap",
+    )
+    chosen_provider: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="openai",
+        server_default="openai",
+    )
+    chosen_model: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="gpt-4o-mini",
+        server_default="gpt-4o-mini",
+    )
+    policy_id: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="unknown",
+        server_default="unknown",
+    )
+    policy_version: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="unknown",
+        server_default="unknown",
+    )
+    routing_reason: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="bucket_policy",
+        server_default="bucket_policy",
+    )
     request_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     @property
@@ -119,8 +168,12 @@ class LLMApiCall(Base):
         return float(self.cost_cents or 0) / 100.0
 
     __table_args__ = (
-        CheckConstraint("input_tokens >= 0", name="ck_llm_api_calls_input_tokens_positive"),
-        CheckConstraint("output_tokens >= 0", name="ck_llm_api_calls_output_tokens_positive"),
+        CheckConstraint(
+            "input_tokens >= 0", name="ck_llm_api_calls_input_tokens_positive"
+        ),
+        CheckConstraint(
+            "output_tokens >= 0", name="ck_llm_api_calls_output_tokens_positive"
+        ),
         CheckConstraint("cost_cents >= 0", name="ck_llm_api_calls_cost_cents_positive"),
         CheckConstraint("latency_ms >= 0", name="ck_llm_api_calls_latency_ms_positive"),
         CheckConstraint(
@@ -138,6 +191,18 @@ class LLMApiCall(Base):
         CheckConstraint(
             "budget_settled_cents >= 0",
             name="ck_llm_api_calls_budget_settled_nonnegative",
+        ),
+        CheckConstraint(
+            "complexity_score >= 0 AND complexity_score <= 1",
+            name="ck_llm_api_calls_complexity_score_range",
+        ),
+        CheckConstraint(
+            "complexity_bucket >= 1 AND complexity_bucket <= 10",
+            name="ck_llm_api_calls_complexity_bucket_range",
+        ),
+        CheckConstraint(
+            "chosen_tier IN ('cheap', 'standard', 'premium')",
+            name="ck_llm_api_calls_chosen_tier_valid",
         ),
         UniqueConstraint(
             "tenant_id",
@@ -183,8 +248,12 @@ class LLMMonthlyCost(Base):
             "month",
             name="uq_llm_monthly_costs_tenant_user_month",
         ),
-        CheckConstraint("total_cost_cents >= 0", name="ck_llm_monthly_costs_cost_cents_positive"),
-        CheckConstraint("total_calls >= 0", name="ck_llm_monthly_costs_total_calls_positive"),
+        CheckConstraint(
+            "total_cost_cents >= 0", name="ck_llm_monthly_costs_cost_cents_positive"
+        ),
+        CheckConstraint(
+            "total_calls >= 0", name="ck_llm_monthly_costs_total_calls_positive"
+        ),
     )
 
 
@@ -227,7 +296,9 @@ class Investigation(Base):
             "status IN ('pending', 'running', 'completed', 'failed')",
             name="ck_investigations_status_valid",
         ),
-        CheckConstraint("cost_cents >= 0", name="ck_investigations_cost_cents_positive"),
+        CheckConstraint(
+            "cost_cents >= 0", name="ck_investigations_cost_cents_positive"
+        ),
     )
 
 
@@ -269,7 +340,9 @@ class BudgetOptimizationJob(Base):
             "status IN ('pending', 'running', 'completed', 'failed')",
             name="ck_budget_optimization_jobs_status_valid",
         ),
-        CheckConstraint("cost_cents >= 0", name="ck_budget_optimization_jobs_cost_cents_positive"),
+        CheckConstraint(
+            "cost_cents >= 0", name="ck_budget_optimization_jobs_cost_cents_positive"
+        ),
     )
 
 
@@ -294,8 +367,12 @@ class LLMBreakerState(Base):
         server_default="0",
         nullable=False,
     )
-    opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_trip_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    opened_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_trip_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),
@@ -314,7 +391,9 @@ class LLMBreakerState(Base):
             "state IN ('closed', 'open', 'half_open')",
             name="ck_llm_breaker_state_state_valid",
         ),
-        CheckConstraint("failure_count >= 0", name="ck_llm_breaker_state_failure_count_positive"),
+        CheckConstraint(
+            "failure_count >= 0", name="ck_llm_breaker_state_failure_count_positive"
+        ),
     )
 
 
@@ -359,8 +438,12 @@ class LLMMonthlyBudgetState(Base):
             "month",
             name="uq_llm_monthly_budget_state_tenant_user_month",
         ),
-        CheckConstraint("cap_cents >= 0", name="ck_llm_monthly_budget_state_cap_nonnegative"),
-        CheckConstraint("spent_cents >= 0", name="ck_llm_monthly_budget_state_spent_nonnegative"),
+        CheckConstraint(
+            "cap_cents >= 0", name="ck_llm_monthly_budget_state_cap_nonnegative"
+        ),
+        CheckConstraint(
+            "spent_cents >= 0", name="ck_llm_monthly_budget_state_spent_nonnegative"
+        ),
         CheckConstraint(
             "reserved_cents >= 0",
             name="ck_llm_monthly_budget_state_reserved_nonnegative",
@@ -413,8 +496,13 @@ class LLMBudgetReservation(Base):
             "request_id",
             name="uq_llm_budget_reservations_tenant_user_endpoint_request",
         ),
-        CheckConstraint("reserved_cents >= 0", name="ck_llm_budget_reservations_reserved_nonnegative"),
-        CheckConstraint("settled_cents >= 0", name="ck_llm_budget_reservations_settled_nonnegative"),
+        CheckConstraint(
+            "reserved_cents >= 0",
+            name="ck_llm_budget_reservations_reserved_nonnegative",
+        ),
+        CheckConstraint(
+            "settled_cents >= 0", name="ck_llm_budget_reservations_settled_nonnegative"
+        ),
         CheckConstraint(
             "state IN ('reserved', 'settled', 'released', 'blocked')",
             name="ck_llm_budget_reservations_state_valid",
@@ -493,10 +581,18 @@ class LLMSemanticCache(Base):
             "cache_key",
             name="uq_llm_semantic_cache_tenant_user_endpoint_key",
         ),
-        CheckConstraint("input_tokens >= 0", name="ck_llm_semantic_cache_input_tokens_nonnegative"),
-        CheckConstraint("output_tokens >= 0", name="ck_llm_semantic_cache_output_tokens_nonnegative"),
-        CheckConstraint("cost_cents >= 0", name="ck_llm_semantic_cache_cost_nonnegative"),
-        CheckConstraint("hit_count >= 0", name="ck_llm_semantic_cache_hit_count_nonnegative"),
+        CheckConstraint(
+            "input_tokens >= 0", name="ck_llm_semantic_cache_input_tokens_nonnegative"
+        ),
+        CheckConstraint(
+            "output_tokens >= 0", name="ck_llm_semantic_cache_output_tokens_nonnegative"
+        ),
+        CheckConstraint(
+            "cost_cents >= 0", name="ck_llm_semantic_cache_cost_nonnegative"
+        ),
+        CheckConstraint(
+            "hit_count >= 0", name="ck_llm_semantic_cache_hit_count_nonnegative"
+        ),
     )
 
 
@@ -513,7 +609,9 @@ class LLMHourlyShutoffState(Base):
     )
     tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    hour_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    hour_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     is_shutoff: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -539,7 +637,9 @@ class LLMHourlyShutoffState(Base):
         server_default="0",
         nullable=False,
     )
-    disabled_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    disabled_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),
@@ -554,7 +654,13 @@ class LLMHourlyShutoffState(Base):
             "hour_start",
             name="uq_llm_hourly_shutoff_tenant_user_hour",
         ),
-        CheckConstraint("threshold_cents >= 0", name="ck_llm_hourly_shutoff_threshold_nonnegative"),
-        CheckConstraint("total_cost_cents >= 0", name="ck_llm_hourly_shutoff_total_cost_nonnegative"),
-        CheckConstraint("total_calls >= 0", name="ck_llm_hourly_shutoff_total_calls_nonnegative"),
+        CheckConstraint(
+            "threshold_cents >= 0", name="ck_llm_hourly_shutoff_threshold_nonnegative"
+        ),
+        CheckConstraint(
+            "total_cost_cents >= 0", name="ck_llm_hourly_shutoff_total_cost_nonnegative"
+        ),
+        CheckConstraint(
+            "total_calls >= 0", name="ck_llm_hourly_shutoff_total_calls_nonnegative"
+        ),
     )
