@@ -130,6 +130,18 @@ def _seed_tenant(runtime_db_url: str) -> _TenantFixture:
     now = datetime.now(timezone.utc)
     engine = create_engine(runtime_db_url)
     with engine.begin() as conn:
+        available = set(
+            conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'tenants'
+                    """
+                )
+            ).scalars()
+        )
         required = set(
             conn.execute(
                 text(
@@ -157,7 +169,7 @@ def _seed_tenant(runtime_db_url: str) -> _TenantFixture:
         "created_at": now,
         "updated_at": now,
     }
-    insert_cols = [col for col in required if col in payload]
+    insert_cols = [col for col in payload if col in available]
     missing = sorted(col for col in required if col not in payload)
     if missing:
         raise RuntimeError(f"Missing required tenant columns: {', '.join(missing)}")
