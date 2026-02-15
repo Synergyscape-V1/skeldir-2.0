@@ -1,0 +1,55 @@
+name: b07-phase8-full-physics-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_dir:
+        description: Artifact directory for full-physics evidence
+        required: false
+        default: artifacts/b07-phase8-full-physics
+
+jobs:
+  b07_phase8_full_physics:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      B07_P8_ARTIFACT_DIR: ${{ github.event.inputs.artifact_dir || 'artifacts/b07-phase8-full-physics' }}
+      E2E_API_BASE_URL: http://127.0.0.1:8000
+      E2E_MOCK_BASE_URL: http://127.0.0.1:8080
+      E2E_WAIT_TIMEOUT_S: "120"
+      AUTH_JWT_SECRET: e2e-secret
+      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_ISSUER: https://issuer.skeldir.test
+      AUTH_JWT_AUDIENCE: skeldir-api
+      PHASE8_RUNTIME_DB_USER: app_user
+      PHASE8_RUNTIME_DB_PASS: app_user
+      PHASE8_DB_ADMIN_USER: skeldir
+      PHASE8_DB_ADMIN_PASS: skeldir_e2e
+      PHASE8_DB_NAME: skeldir_e2e
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Run Phase 8 closure pack (full physics authority)
+        run: |
+          python scripts/phase8/run_phase8_closure_pack.py \
+            --full-physics \
+            --artifact-dir "${B07_P8_ARTIFACT_DIR}"
+
+      - name: Upload full-physics Phase 8 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b07-phase8-closure-pack-full-physics-${{ github.run_id }}
+          path: ${{ env.B07_P8_ARTIFACT_DIR }}
+          retention-days: 14

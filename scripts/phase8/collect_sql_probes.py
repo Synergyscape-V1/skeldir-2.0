@@ -140,6 +140,9 @@ def main() -> int:
         )
 
         perf_composed_llm_calls = 0
+        perf_composed_llm_api_calls = 0
+        perf_composed_llm_audit_calls = 0
+        perf_revenue_ledger_rows_during_window = 0
         if llm_load_probe:
             params = {
                 "tenant_id": llm_load_probe["tenant_id"],
@@ -176,6 +179,26 @@ def main() -> int:
                     params,
                 ).scalar_one()
             )
+            perf_revenue_ledger_rows_during_window = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER
+                        FROM revenue_ledger
+                        WHERE tenant_id = :runtime_tenant_id
+                          AND created_at >= :started_at
+                          AND created_at <= :finished_at
+                        """
+                    ),
+                    {
+                        "runtime_tenant_id": tenant_id,
+                        "started_at": llm_load_probe["started_at"],
+                        "finished_at": llm_load_probe["finished_at"],
+                    },
+                ).scalar_one()
+            )
+            perf_composed_llm_api_calls = perf_api_calls
+            perf_composed_llm_audit_calls = perf_audit_calls
             perf_composed_llm_calls = max(perf_api_calls, perf_audit_calls)
 
     summary = {
@@ -187,7 +210,14 @@ def main() -> int:
         "llm_outcomes": llm_outcomes,
         "cost_correctness": cost_correctness,
         "pg_snapshot": pg_snapshot,
+        "perf_window": {
+            "started_at": llm_load_probe.get("started_at") if llm_load_probe else None,
+            "finished_at": llm_load_probe.get("finished_at") if llm_load_probe else None,
+        },
+        "perf_composed_llm_api_calls": perf_composed_llm_api_calls,
+        "perf_composed_llm_audit_calls": perf_composed_llm_audit_calls,
         "perf_composed_llm_calls": perf_composed_llm_calls,
+        "perf_revenue_ledger_rows_during_window": perf_revenue_ledger_rows_during_window,
     }
     (out_dir / "phase8_sql_probe_summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"

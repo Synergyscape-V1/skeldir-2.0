@@ -1546,6 +1546,7 @@ async def scenario_s8_perf_gate(
 
     p50_ms = _percentile(latency_ms, 50)
     p95_ms = _percentile(latency_ms, 95)
+    p99_ms = _percentile(latency_ms, 99)
     observed_count = _http_observed_count(status_counts)
     achieved_rps = target_request_count / elapsed_s if elapsed_s > 0 else 0.0
     http_errors = _http_error_count(status_counts)
@@ -1602,6 +1603,7 @@ async def scenario_s8_perf_gate(
             "achieved_rps": round(achieved_rps, 3),
             "latency_p50_ms": round(p50_ms, 3) if p50_ms is not None else None,
             "latency_p95_ms": round(p95_ms, 3) if p95_ms is not None else None,
+            "latency_p99_ms": round(p99_ms, 3) if p99_ms is not None else None,
             "latency_first_half_p95_ms": round(first_half_p95, 3) if first_half_p95 is not None else None,
             "latency_second_half_p95_ms": round(second_half_p95, 3) if second_half_p95 is not None else None,
             "http_error_count": http_errors,
