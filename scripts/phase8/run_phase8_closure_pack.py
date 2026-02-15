@@ -244,8 +244,10 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
     else:
         env.update(
             {
-                "R3_LADDER": os.getenv("R3_LADDER", "50,250,1000"),
-                "R3_CONCURRENCY": os.getenv("R3_CONCURRENCY", "200"),
+                # Full-physics authority is encoded by EG3.4 Test2 (46 rps), not by high-N ladder replay storms.
+                # Keep ladder bounded by default so hosted runners can reach the authoritative profile gate.
+                "R3_LADDER": os.getenv("R3_LADDER", "50"),
+                "R3_CONCURRENCY": os.getenv("R3_CONCURRENCY", "120"),
                 "R3_TIMEOUT_S": os.getenv("R3_TIMEOUT_S", "10"),
                 "R3_NULL_BENCHMARK": os.getenv("R3_NULL_BENCHMARK", "1"),
                 "R3_NULL_BENCHMARK_TARGET_RPS": os.getenv("R3_NULL_BENCHMARK_TARGET_RPS", "50"),
