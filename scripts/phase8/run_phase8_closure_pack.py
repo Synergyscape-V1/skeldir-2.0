@@ -561,7 +561,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "llm_audit_rows_during_window": perf_llm_audit_calls,
             "ledger_rows_written_during_window": perf_ledger_rows,
             "router_engaged": any(
-                bool((row.get("provider_attempted") or "").strip())
+                isinstance(row.get("provider_attempted"), str)
+                and bool(row.get("provider_attempted").strip())
                 for row in (sql_probe_summary.get("llm_outcomes") or [])
                 if isinstance(row, dict)
             ),
