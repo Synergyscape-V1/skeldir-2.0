@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -15,6 +16,7 @@ from app.db.deps import get_db_session
 from app.security.auth import AuthContext, get_auth_context
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
@@ -76,21 +78,28 @@ async def _latest_reconciliation_run(
     db_session: AsyncSession,
     tenant_id: UUID,
 ) -> dict[str, Any] | None:
-    row = (
-        await db_session.execute(
-            text(
-                """
-                SELECT id, state, last_run_at
-                FROM reconciliation_runs
-                WHERE tenant_id = :tenant_id
-                ORDER BY last_run_at DESC
-                LIMIT 1
-                """
-            ),
-            {"tenant_id": str(tenant_id)},
+    try:
+        row = (
+            await db_session.execute(
+                text(
+                    """
+                    SELECT id, state, last_run_at
+                    FROM reconciliation_runs
+                    WHERE tenant_id = :tenant_id
+                    ORDER BY last_run_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"tenant_id": str(tenant_id)},
+            )
+        ).mappings().first()
+        return dict(row) if row else None
+    except Exception:
+        logger.exception(
+            "reconciliation_run_status_unavailable",
+            extra={"tenant_id": str(tenant_id)},
         )
-    ).mappings().first()
-    return dict(row) if row else None
+        return None
 
 
 async def _aggregate_revenue_by_source(
@@ -244,29 +253,35 @@ async def trigger_sync(
     now = datetime.now(timezone.utc)
     sync_id = uuid4()
     if _db_session_available(db_session):
-        await db_session.execute(
-            text(
-                """
-                INSERT INTO reconciliation_runs (
-                    id, tenant_id, created_at, updated_at, last_run_at, state, run_metadata
-                )
-                VALUES (
-                    :id, :tenant_id, now(), now(), :last_run_at, 'running', :run_metadata::jsonb
-                )
-                """
-            ),
-            {
-                "id": str(sync_id),
-                "tenant_id": str(auth_context.tenant_id),
-                "last_run_at": now,
-                "run_metadata": json.dumps(
-                    {
-                        "requested_platforms": [_normalize_platform_key(v) for v in payload.platforms],
-                        "full_sync": bool(payload.full_sync),
-                    }
+        try:
+            await db_session.execute(
+                text(
+                    """
+                    INSERT INTO reconciliation_runs (
+                        id, tenant_id, created_at, updated_at, last_run_at, state, run_metadata
+                    )
+                    VALUES (
+                        :id, :tenant_id, now(), now(), :last_run_at, 'running', :run_metadata::jsonb
+                    )
+                    """
                 ),
-            },
-        )
+                {
+                    "id": str(sync_id),
+                    "tenant_id": str(auth_context.tenant_id),
+                    "last_run_at": now,
+                    "run_metadata": json.dumps(
+                        {
+                            "requested_platforms": [_normalize_platform_key(v) for v in payload.platforms],
+                            "full_sync": bool(payload.full_sync),
+                        }
+                    ),
+                },
+            )
+        except Exception:
+            logger.exception(
+                "reconciliation_sync_enqueue_failed",
+                extra={"tenant_id": str(auth_context.tenant_id), "sync_id": str(sync_id)},
+            )
 
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
     eta = (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
