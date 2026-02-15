@@ -66,6 +66,10 @@ def _api_base_url() -> str:
     return os.getenv("E2E_API_BASE_URL", "http://127.0.0.1:8000")
 
 
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _load_openapi(path: Path) -> dict[str, Any]:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -313,12 +317,14 @@ def test_b07_p8_three_topologies_contract_fidelity_and_non_vacuous_controls() ->
     api_base_url = _api_base_url()
     artifact_dir = _artifact_dir()
 
-    reconciliation_doc = _load_openapi(
+    reconciliation_spec_path = (
         _repo_root() / "api-contracts" / "dist" / "openapi" / "v1" / "reconciliation.bundled.yaml"
     )
-    attribution_doc = _load_openapi(
+    attribution_spec_path = (
         _repo_root() / "api-contracts" / "dist" / "openapi" / "v1" / "attribution.bundled.yaml"
     )
+    reconciliation_doc = _load_openapi(reconciliation_spec_path)
+    attribution_doc = _load_openapi(attribution_spec_path)
 
     tenant = _seed_tenant(runtime_db)
     user_id = uuid4()
@@ -483,6 +489,14 @@ def test_b07_p8_three_topologies_contract_fidelity_and_non_vacuous_controls() ->
     probe = {
         "tenant_id": str(tenant.tenant_id),
         "user_id": str(user_id),
+        "openapi_spec_sha256": {
+            "reconciliation": _sha256_file(reconciliation_spec_path),
+            "attribution": _sha256_file(attribution_spec_path),
+        },
+        "negative_controls": {
+            "missing_required_field_rejected": True,
+            "wrong_type_rejected": True,
+        },
         "webhook_response": webhook_data,
         "event_count": event_count,
         "recompute_status": recompute_status,

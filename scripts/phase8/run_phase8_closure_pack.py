@@ -10,8 +10,9 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 from urllib.parse import urlparse
 
 import psycopg2
@@ -35,8 +36,104 @@ class _Phase8Config:
     full_physics: bool
 
 
+_R3_VERDICT_BEGIN = re.compile(r"^R3_VERDICT_BEGIN\s+(.+)$")
+_R3_VERDICT_END = re.compile(r"^R3_VERDICT_END\s+(.+)$")
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _run_authority(cfg: _Phase8Config) -> str:
+    return "full_physics" if cfg.full_physics else "ci_subset"
+
+
+def _eg85_gate_name(run_authority: str) -> str:
+    return (
+        "eg8_5_composed_ingestion_perf_authority"
+        if run_authority == "full_physics"
+        else "eg8_5_ci_sanity"
+    )
+
+
+def _summary_filename_for_authority(run_authority: str) -> str:
+    return (
+        "phase8_gate_summary_full_physics.json"
+        if run_authority == "full_physics"
+        else "phase8_gate_summary_ci_subset.json"
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _canonical_openapi_spec_hash(cfg: _Phase8Config) -> str:
+    reconciliation = (
+        cfg.repo_root / "api-contracts" / "dist" / "openapi" / "v1" / "reconciliation.bundled.yaml"
+    )
+    attribution = (
+        cfg.repo_root / "api-contracts" / "dist" / "openapi" / "v1" / "attribution.bundled.yaml"
+    )
+    if not reconciliation.exists() or not attribution.exists():
+        missing: list[str] = []
+        if not reconciliation.exists():
+            missing.append(str(reconciliation))
+        if not attribution.exists():
+            missing.append(str(attribution))
+        raise RuntimeError(f"Canonical OpenAPI bundle(s) missing: {', '.join(missing)}")
+    joined = f"{_sha256_file(reconciliation)}|{_sha256_file(attribution)}".encode("utf-8")
+    return hashlib.sha256(joined).hexdigest()
+
+
+def _parse_r3_verdicts(log_path: Path) -> dict[str, dict[str, Any]]:
+    if not log_path.exists():
+        raise RuntimeError(f"R3 log not found: {log_path}")
+    verdicts: dict[str, dict[str, Any]] = {}
+    current_name: str | None = None
+    buf: list[str] = []
+    for raw_line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        begin_match = _R3_VERDICT_BEGIN.match(line)
+        if begin_match:
+            current_name = begin_match.group(1).strip()
+            buf = []
+            continue
+        end_match = _R3_VERDICT_END.match(line)
+        if end_match and current_name:
+            payload = "\n".join(buf).strip()
+            verdicts[current_name] = json.loads(payload) if payload else {}
+            current_name = None
+            buf = []
+            continue
+        if current_name is not None:
+            buf.append(raw_line)
+    return verdicts
+
+
+def _extract_profile_metrics_from_r3_log(log_path: Path, profile_name: str) -> dict[str, Any]:
+    verdicts = _parse_r3_verdicts(log_path)
+    payload = verdicts.get(profile_name)
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"R3 profile verdict not found in log: {profile_name}")
+    if not bool(payload.get("passed")):
+        raise RuntimeError(f"R3 profile verdict failed: {profile_name}")
+    return payload
+
+
+def _eg85_profile_metadata(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+    run_authority = _run_authority(cfg)
+    if run_authority == "full_physics":
+        ingestion_profile_name = "EG3_4_46rps_60s"
+    else:
+        ingestion_profile_name = "EG8_5_ci_sanity_profile"
+    return {
+        "run_authority": run_authority,
+        "ingestion_profile_name": ingestion_profile_name,
+        "target_rps": float(env["R3_EG34_TEST2_RPS"]),
+        "duration_s": int(env["R3_EG34_TEST2_DURATION_S"]),
+        "concurrency": int(env["R3_CONCURRENCY"]),
+    }
 
 
 def _default_config(*, artifact_dir: Path, ci_subset: bool, full_physics: bool) -> _Phase8Config:
@@ -289,8 +386,12 @@ def _assert_secret_hygiene(log_path: Path) -> None:
             raise RuntimeError(f"Secret redaction gate failed; pattern matched: {pattern}")
 
 
-def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
+def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
     gates: dict[str, str] = {}
+    openapi_spec_sha256 = _canonical_openapi_spec_hash(cfg)
+    run_authority = _run_authority(cfg)
+    profile_metadata = _eg85_profile_metadata(cfg, env)
+    eg85_evidence: dict[str, Any] = {}
     llm_load_proc: subprocess.Popen[str] | None = None
 
     def run_step(name: str, cmd: Sequence[str], *, cwd: Path | None = None) -> None:
@@ -422,6 +523,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
             )
         )
         perf_llm_calls = int(sql_probe_summary.get("perf_composed_llm_calls", 0))
+        perf_llm_api_calls = int(sql_probe_summary.get("perf_composed_llm_api_calls", 0))
+        perf_llm_audit_calls = int(sql_probe_summary.get("perf_composed_llm_audit_calls", 0))
+        perf_ledger_rows = int(sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0))
         if perf_llm_calls <= 0:
             llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
             dispatched = int(llm_probe.get("dispatched_count", 0))
@@ -429,7 +533,41 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
                 raise RuntimeError(
                     "Composed performance evidence invalid: no llm_api_calls during ingestion load window"
                 )
-        gates["eg8_5_composed_ingestion_perf"] = "pass"
+        r3_profile = _extract_profile_metrics_from_r3_log(
+            cfg.logs_dir / "r3_ingestion_under_fire.log",
+            "EG3_4_Test2_Month18",
+        )
+        if not r3_profile.get("resource_stable", False):
+            raise RuntimeError("Composed performance evidence invalid: resource_stable=false")
+        if float(r3_profile.get("http_error_rate_percent", 100.0)) > 0.0:
+            raise RuntimeError("Composed performance evidence invalid: non-zero HTTP error rate")
+
+        # CI subset is a sanity gate only; authoritative EG3.4 certification is full physics only.
+        gates[_eg85_gate_name(run_authority)] = "pass"
+        eg85_evidence = {
+            "run_authority": run_authority,
+            "authoritative": run_authority == "full_physics",
+            "gate_label": _eg85_gate_name(run_authority),
+            **profile_metadata,
+            "p50_ms": r3_profile.get("latency_p50_ms"),
+            "p95_ms": r3_profile.get("latency_p95_ms"),
+            "p99_ms": r3_profile.get("latency_p99_ms"),
+            "error_rate_percent": r3_profile.get("http_error_rate_percent"),
+            "pii_violations": int(r3_profile.get("pii_key_hit_count_in_db", 0)),
+            "duplicates": int(r3_profile.get("duplicate_canonical_keys_in_window", 0)),
+            "dlq_count": int(r3_profile.get("dlq_rows_for_all_profile_keys", 0)),
+            "llm_calls_during_window": perf_llm_calls,
+            "llm_api_calls_during_window": perf_llm_api_calls,
+            "llm_audit_rows_during_window": perf_llm_audit_calls,
+            "ledger_rows_written_during_window": perf_ledger_rows,
+            "router_engaged": any(
+                isinstance(row.get("provider_attempted"), str)
+                and bool(row.get("provider_attempted").strip())
+                for row in (sql_probe_summary.get("llm_outcomes") or [])
+                if isinstance(row, dict)
+            ),
+            "safety_controls_verified_via_gate": gates.get("eg8_3_compute_safety") == "pass",
+        }
 
         run_step(
             "compose_logs",
@@ -437,7 +575,12 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
         )
         _assert_secret_hygiene(cfg.logs_dir / "compose_logs.log")
         gates["eg8_7_operational_readiness_pack"] = "pass"
-        return gates
+        return {
+            "run_authority": run_authority,
+            "openapi_spec_sha256": openapi_spec_sha256,
+            "gates": gates,
+            "eg8_5": eg85_evidence,
+        }
     finally:
         if llm_load_proc is not None and llm_load_proc.poll() is None:
             llm_load_proc.terminate()
@@ -471,15 +614,21 @@ def main() -> int:
     _ensure_dirs(cfg)
     env = _build_env(cfg)
 
+    run_authority = _run_authority(cfg)
     summary = {
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "run_authority": run_authority,
         "ci_subset": cfg.ci_subset,
         "full_physics": cfg.full_physics,
         "gates": {},
+        "eg8_5": {},
         "status": "failed",
     }
     try:
-        summary["gates"] = _run_phase8(cfg, env)
+        run_result = _run_phase8(cfg, env)
+        summary["openapi_spec_sha256"] = run_result["openapi_spec_sha256"]
+        summary["gates"] = run_result["gates"]
+        summary["eg8_5"] = run_result["eg8_5"]
         summary["status"] = "passed"
         return_code = 0
     except Exception as exc:  # noqa: BLE001
@@ -487,7 +636,13 @@ def main() -> int:
         return_code = 1
     finally:
         summary["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        (cfg.artifact_dir / "phase8_gate_summary.json").write_text(
+        canonical_summary = cfg.artifact_dir / "phase8_gate_summary.json"
+        authority_summary = cfg.artifact_dir / _summary_filename_for_authority(run_authority)
+        payload = json.dumps(summary, indent=2, sort_keys=True)
+        canonical_summary.write_text(
+            payload, encoding="utf-8"
+        )
+        authority_summary.write_text(
             json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
         )
         _write_manifest(cfg.artifact_dir)
