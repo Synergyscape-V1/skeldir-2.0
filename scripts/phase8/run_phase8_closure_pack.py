@@ -378,15 +378,14 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
         gates["eg8_4_ledger_audit_cost"] = "pass"
         gates["eg8_6_openapi_runtime_fidelity"] = "pass"
 
+        llm_duration_s = 120 if not cfg.ci_subset else 600
         llm_load_artifact = cfg.artifact_dir / "phase8_llm_perf_probe.json"
         llm_load_proc = subprocess.Popen(
             [
                 sys.executable,
                 "scripts/phase8/llm_background_load.py",
                 "--duration-s",
-                # CI subset still runs several minutes; keep background load active
-                # long enough to overlap the full ingestion-under-fire window.
-                "120" if not cfg.ci_subset else "600",
+                str(llm_duration_s),
                 "--interval-s",
                 "0.5",
                 "--artifact",
@@ -400,7 +399,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
         )
         run_step("r3_ingestion_under_fire", [sys.executable, "scripts/r3/ingestion_under_fire.py"])
         if llm_load_proc is not None:
-            llm_load_proc.wait(timeout=180)
+            llm_load_proc.wait(timeout=llm_duration_s + 120)
 
         run_step(
             "collect_phase8_sql",
