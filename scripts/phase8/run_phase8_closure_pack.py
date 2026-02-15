@@ -384,7 +384,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
                 sys.executable,
                 "scripts/phase8/llm_background_load.py",
                 "--duration-s",
-                "120" if not cfg.ci_subset else "60",
+                # CI subset still runs several minutes; keep background load active
+                # long enough to overlap the full ingestion-under-fire window.
+                "120" if not cfg.ci_subset else "600",
                 "--interval-s",
                 "0.5",
                 "--artifact",
