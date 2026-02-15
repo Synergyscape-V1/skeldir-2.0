@@ -141,7 +141,12 @@ def main() -> int:
 
         perf_composed_llm_calls = 0
         if llm_load_probe:
-            perf_composed_llm_calls = int(
+            params = {
+                "tenant_id": llm_load_probe["tenant_id"],
+                "started_at": llm_load_probe["started_at"],
+                "finished_at": llm_load_probe["finished_at"],
+            }
+            perf_api_calls = int(
                 conn.execute(
                     text(
                         """
@@ -153,13 +158,25 @@ def main() -> int:
                           AND created_at <= :finished_at
                         """
                     ),
-                    {
-                        "tenant_id": llm_load_probe["tenant_id"],
-                        "started_at": llm_load_probe["started_at"],
-                        "finished_at": llm_load_probe["finished_at"],
-                    },
+                    params,
                 ).scalar_one()
             )
+            perf_audit_calls = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER
+                        FROM llm_call_audit
+                        WHERE tenant_id = :tenant_id
+                          AND request_id LIKE 'phase8-perf-llm-%'
+                          AND created_at >= :started_at
+                          AND created_at <= :finished_at
+                        """
+                    ),
+                    params,
+                ).scalar_one()
+            )
+            perf_composed_llm_calls = max(perf_api_calls, perf_audit_calls)
 
     summary = {
         "runtime_identity": {
