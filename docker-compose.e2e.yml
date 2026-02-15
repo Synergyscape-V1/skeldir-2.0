@@ -42,7 +42,9 @@ services:
       CI: "true"
       ENVIRONMENT: test
       LOG_LEVEL: INFO
-      DATABASE_URL: postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e
+      DATABASE_URL: ${E2E_DATABASE_URL:-postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
+      CELERY_BROKER_URL: ${E2E_CELERY_BROKER_URL:-sqla+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
+      CELERY_RESULT_BACKEND: ${E2E_CELERY_RESULT_BACKEND:-db+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
       AUTH_JWT_SECRET: e2e-secret
       AUTH_JWT_ALGORITHM: HS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
@@ -50,6 +52,7 @@ services:
       PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
       PLATFORM_TOKEN_KEY_ID: e2e-key
       STRIPE_BASE_URL: http://mock_platform:8080
+      INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
       REALTIME_REVENUE_CACHE_TTL_SECONDS: 3
       REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS: 5
       REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS: 2
@@ -76,7 +79,9 @@ services:
       CI: "true"
       ENVIRONMENT: test
       LOG_LEVEL: INFO
-      DATABASE_URL: postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e
+      DATABASE_URL: ${E2E_DATABASE_URL:-postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
+      CELERY_BROKER_URL: ${E2E_CELERY_BROKER_URL:-sqla+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
+      CELERY_RESULT_BACKEND: ${E2E_CELERY_RESULT_BACKEND:-db+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
       AUTH_JWT_SECRET: e2e-secret
       AUTH_JWT_ALGORITHM: HS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
@@ -84,6 +89,7 @@ services:
       PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
       PLATFORM_TOKEN_KEY_ID: e2e-key
       STRIPE_BASE_URL: http://mock_platform:8080
+      INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
     command: >
       celery -A app.celery_app worker
