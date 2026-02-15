@@ -208,6 +208,9 @@ async def _http_fire(
             for attempt in range(3):
                 try:
                     resp = await client.post(url, content=body, headers=headers, timeout=timeout_s)
+                    if 500 <= resp.status_code <= 599 and attempt < 2:
+                        await asyncio.sleep(0.05 * (attempt + 1))
+                        continue
                     key = str(resp.status_code)
                     status_counts[key] = status_counts.get(key, 0) + 1
                     if transient_request_error:
@@ -262,6 +265,9 @@ async def _http_fire_rate_controlled(
                 request_started = time.perf_counter()
                 try:
                     resp = await client.post(url, content=body, headers=headers, timeout=timeout_s)
+                    if 500 <= resp.status_code <= 599 and attempt < 2:
+                        await asyncio.sleep(0.05 * (attempt + 1))
+                        continue
                     latencies_ms.append((time.perf_counter() - request_started) * 1000.0)
                     key = str(resp.status_code)
                     status_counts[key] = status_counts.get(key, 0) + 1
