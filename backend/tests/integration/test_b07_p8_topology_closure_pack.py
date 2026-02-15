@@ -178,6 +178,7 @@ def _seed_tenant(runtime_db_url: str) -> _TenantFixture:
     if "name" not in insert_cols:
         insert_cols.append("name")
     placeholders = ", ".join(f":{col}" for col in insert_cols)
+    # RAW_SQL_ALLOWLIST: phase8 topology probe seeds a tenant fixture directly.
     sql = text(
         f"INSERT INTO tenants ({', '.join(insert_cols)}) VALUES ({placeholders})"
     )
