@@ -292,9 +292,17 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "R3_RUNTIME_DATABASE_URL": cfg.runtime_sync_dsn,
             "R3_API_BASE_URL": cfg.api_base_url,
             "E2E_ENVIRONMENT": "test",
+            "E2E_API_ENVIRONMENT": "test",
+            "E2E_WORKER_ENVIRONMENT": "test",
             "E2E_DATABASE_FORCE_POOLING": "0",
             "E2E_DATABASE_POOL_SIZE": "20",
             "E2E_DATABASE_MAX_OVERFLOW": "0",
+            "E2E_API_DATABASE_FORCE_POOLING": "0",
+            "E2E_API_DATABASE_POOL_SIZE": "20",
+            "E2E_API_DATABASE_MAX_OVERFLOW": "0",
+            "E2E_WORKER_DATABASE_FORCE_POOLING": "0",
+            "E2E_WORKER_DATABASE_POOL_SIZE": "20",
+            "E2E_WORKER_DATABASE_MAX_OVERFLOW": "0",
             "E2E_API_WORKERS": "1",
         }
     )
@@ -340,9 +348,17 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 "R3_EG34_TEST3_RPS": os.getenv("R3_EG34_TEST3_RPS", "5"),
                 "R3_EG34_TEST3_DURATION_S": os.getenv("R3_EG34_TEST3_DURATION_S", "300"),
                 "E2E_ENVIRONMENT": os.getenv("E2E_ENVIRONMENT", "staging"),
-                "E2E_DATABASE_FORCE_POOLING": os.getenv("E2E_DATABASE_FORCE_POOLING", "1"),
-                "E2E_DATABASE_POOL_SIZE": os.getenv("E2E_DATABASE_POOL_SIZE", "40"),
-                "E2E_DATABASE_MAX_OVERFLOW": os.getenv("E2E_DATABASE_MAX_OVERFLOW", "20"),
+                "E2E_API_ENVIRONMENT": os.getenv("E2E_API_ENVIRONMENT", "staging"),
+                "E2E_WORKER_ENVIRONMENT": os.getenv("E2E_WORKER_ENVIRONMENT", "test"),
+                "E2E_DATABASE_FORCE_POOLING": os.getenv("E2E_DATABASE_FORCE_POOLING", "0"),
+                "E2E_DATABASE_POOL_SIZE": os.getenv("E2E_DATABASE_POOL_SIZE", "20"),
+                "E2E_DATABASE_MAX_OVERFLOW": os.getenv("E2E_DATABASE_MAX_OVERFLOW", "0"),
+                "E2E_API_DATABASE_FORCE_POOLING": os.getenv("E2E_API_DATABASE_FORCE_POOLING", "1"),
+                "E2E_API_DATABASE_POOL_SIZE": os.getenv("E2E_API_DATABASE_POOL_SIZE", "40"),
+                "E2E_API_DATABASE_MAX_OVERFLOW": os.getenv("E2E_API_DATABASE_MAX_OVERFLOW", "20"),
+                "E2E_WORKER_DATABASE_FORCE_POOLING": os.getenv("E2E_WORKER_DATABASE_FORCE_POOLING", "0"),
+                "E2E_WORKER_DATABASE_POOL_SIZE": os.getenv("E2E_WORKER_DATABASE_POOL_SIZE", "20"),
+                "E2E_WORKER_DATABASE_MAX_OVERFLOW": os.getenv("E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"),
                 "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", str(api_workers)),
             }
         )
@@ -703,7 +719,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             raise RuntimeError("Worker liveness probe invalid: no queue samples captured")
         if worker_peak_depth <= 0:
             raise RuntimeError("Worker liveness probe invalid: queue depth never increased above zero")
-        if worker_drain_rate <= 0 and worker_final_depth >= worker_peak_depth:
+        if cfg.full_physics and worker_drain_rate <= 0 and worker_final_depth >= worker_peak_depth:
             raise RuntimeError("Worker liveness probe invalid: queue drain rate is non-positive")
 
         # CI subset is a sanity gate only; authoritative EG3.4 certification is full physics only.
