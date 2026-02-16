@@ -23,6 +23,8 @@ import LoginInterface from "@/components/LoginInterface";
 import ProtectedLayout from "@/components/ProtectedLayout";
 import CommandCenterPage from "@/pages/CommandCenterPage";
 import ChannelDetailRoute from "@/pages/ChannelDetailRoute";
+import { A6VictorComparison } from "@/pages/channel-comparison/a6-victor";
+import { VICTOR_FIXTURES } from "@/pages/channel-comparison/a6-victor/victor-fixtures";
 import DataStub from "@/pages/DataStub";
 import BudgetOptimizerPage from "@/pages/BudgetOptimizerPage";
 import BudgetScenarioDetailPage from "@/pages/BudgetScenarioDetailPage";
@@ -46,6 +48,7 @@ function Router() {
         <Route path="/" element={<ProtectedLayout />}>
           <Route index element={<CommandCenterPage />} />
           <Route path="channels" element={<ChannelDetailRoute />} />
+          <Route path="channels/compare" element={<A6VictorComparison initialState={VICTOR_FIXTURES.ready} />} />
           <Route path="data" element={<DataStub />} />
           <Route path="budget" element={<BudgetOptimizerPage />} />
           <Route path="budget/scenarios/:scenarioId" element={<BudgetScenarioDetailPage />} />
