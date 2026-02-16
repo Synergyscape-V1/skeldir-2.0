@@ -7,10 +7,14 @@ on:
         description: Artifact directory for full-physics evidence
         required: false
         default: artifacts/b07-phase8-full-physics
+      runner_label:
+        description: GitHub runner label for full-physics execution (e.g., ubuntu-8core)
+        required: false
+        default: ubuntu-8core
 
 jobs:
   b07_phase8_full_physics:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_label || 'ubuntu-latest' }}
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       B07_P8_ARTIFACT_DIR: ${{ github.event.inputs.artifact_dir || 'artifacts/b07-phase8-full-physics' }}

@@ -8,8 +8,8 @@ row-level security enforcement.
 
 from __future__ import annotations
 
-import ssl
 import os
+import ssl
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -56,7 +56,15 @@ def _build_async_database_url_and_args() -> tuple[str, dict]:
 
 
 _ASYNC_DATABASE_URL, _CONNECT_ARGS = _build_async_database_url_and_args()
-_USE_NULL_POOL = os.getenv("TESTING") == "1" or settings.ENVIRONMENT.lower() == "test"
+_FORCE_POOLING = os.getenv("DATABASE_FORCE_POOLING", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+_USE_NULL_POOL = (
+    os.getenv("TESTING") == "1" or settings.ENVIRONMENT.lower() == "test"
+) and not _FORCE_POOLING
 
 engine_kwargs = {
     "connect_args": _CONNECT_ARGS,

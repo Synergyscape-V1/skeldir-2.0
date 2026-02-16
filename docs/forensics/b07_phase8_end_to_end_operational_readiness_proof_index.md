@@ -53,6 +53,7 @@ This index is the Phase 8 closure anchor for B0.1-B0.7 composition proof.
   - `scripts/r3/ingestion_under_fire.py`
 - Composition coupling proof (ledger/audit writes during ingestion load):
   - `scripts/phase8/llm_background_load.py`
+  - `scripts/phase8/queue_liveness_probe.py`
   - `scripts/phase8/collect_sql_probes.py` (`perf_composed_llm_calls > 0`)
 - Gate semantics authority lock:
   - `run_authority` is serialized as either `ci_subset` or `full_physics`.
@@ -61,6 +62,7 @@ This index is the Phase 8 closure anchor for B0.1-B0.7 composition proof.
 - CI runner constraint:
   - CI runs `--ci-subset` with null benchmark + sanity load profile.
   - Staging runs `--full-physics` with EG3.4 46 rps profile authority.
+  - Full-physics staging workflow accepts `runner_label` input and records measured host capacity via `runner_physics_probe.json`.
 
 ## OpenAPI Runtime Fidelity Gate (EG8.6)
 - Runtime schema validation in composed topology:
@@ -75,6 +77,8 @@ This index is the Phase 8 closure anchor for B0.1-B0.7 composition proof.
   - `artifacts/b07-phase8/phase8_gate_summary.json`
   - `artifacts/b07-phase8/phase8_gate_summary_ci_subset.json` (CI subset)
   - `artifacts/b07-phase8-full-physics/phase8_gate_summary_full_physics.json` (staging full-physics)
+  - `artifacts/b07-phase8/runner_physics_probe.json`
+  - `artifacts/b07-phase8/phase8_worker_liveness_probe.json`
   - `artifacts/b07-phase8/manifest.sha256`
   - `artifacts/b07-phase8/runtime_db_probe.json`
   - `artifacts/b07-phase8/p8_topology_probe.json`
