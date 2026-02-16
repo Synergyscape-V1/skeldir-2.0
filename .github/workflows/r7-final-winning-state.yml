@@ -185,6 +185,8 @@ jobs:
           BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
               CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+            ELSE
+              ALTER ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
             END IF;
           END
           $$;
@@ -440,6 +442,11 @@ jobs:
           R3_LADDER: "50,250,1000"
           R3_CONCURRENCY: "200"
           R3_TIMEOUT_S: "60"
+<<<<<<< HEAD
+=======
+          R3_READY_ATTEMPTS: "60"
+          R3_READY_DELAY_S: "1"
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
           R3_NULL_BENCHMARK: "1"
           R3_NULL_BENCHMARK_TARGET_RPS: "50"
           R3_NULL_BENCHMARK_DURATION_S: "60"

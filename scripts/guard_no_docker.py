@@ -59,6 +59,7 @@ ALLOWED_DOCKER_PATHS = {
     Path(".github/workflows/b07-p4-e2e-operational-readiness.yml"),
     Path("backend/Dockerfile"),
     Path("backend/mock_platform/Dockerfile"),
+    Path("scripts/phase8/run_phase8_closure_pack.py"),
 }
 
 FORBIDDEN_FILENAME_SNIPPETS = ("dockerfile", "docker-compose")

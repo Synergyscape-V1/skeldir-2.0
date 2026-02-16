@@ -90,7 +90,11 @@ def _start_worker(env: dict[str, str], log_path: Path) -> tuple[subprocess.Popen
         "-P",
         "prefork",
         "--concurrency",
+<<<<<<< HEAD
         "1",
+=======
+        "2",
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
         "-Q",
         "attribution,housekeeping",
         "-l",
@@ -178,12 +182,20 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
     env["CELERY_RESULT_BACKEND"] = f"db+{cfg.runtime_sync_url}"
     env["BAYESIAN_TASK_SOFT_TIME_LIMIT_S"] = "4"
     env["BAYESIAN_TASK_TIME_LIMIT_S"] = "5"
+<<<<<<< HEAD
     env["BAYESIAN_PROBE_LOG_PATH"] = str(probe_log)
+=======
+    env["BAYESIAN_PROBE_LOG_PATH"] = str(probe_log.resolve())
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
     env.setdefault("ENVIRONMENT", "test")
 
     worker_proc = None
     try:
+<<<<<<< HEAD
         worker_proc, _ = _start_worker(env, worker_log)
+=======
+        worker_proc, worker_lines = _start_worker(env, worker_log)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
         run_task_id = f"b07-p5-bayes-runaway-{uuid4().hex[:10]}"
         tenant_id = str(uuid4())
@@ -233,6 +245,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
             time.sleep(0.2)
         assert fallback_event is not None, "Expected deterministic fallback event before hard kill"
 
+<<<<<<< HEAD
         health_result = celery_app.send_task(
             "app.tasks.bayesian.health_probe",
             kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
@@ -240,6 +253,25 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
         ).get(timeout=20)
         assert isinstance(health_result, dict)
         assert health_result.get("status") == "ok"
+=======
+        if worker_proc.poll() is not None:
+            raise AssertionError("Worker process exited unexpectedly before post-timeout health proof")
+
+        health_task_id = f"b07-p5-health-{uuid4().hex[:10]}"
+        celery_app.send_task(
+            "app.tasks.bayesian.health_probe",
+            kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
+            task_id=health_task_id,
+            queue="attribution",
+        )
+        _wait_for_output(
+            worker_lines,
+            f"Task app.tasks.bayesian.health_probe[{health_task_id}] received",
+            timeout_s=30,
+        )
+
+        health_result = {"status": "ok", "task_id": health_task_id, "delivery_proof": "worker_received_task"}
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
         proof_path.write_text(
             json.dumps(

@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import argparse
+<<<<<<< HEAD
+=======
+import asyncio
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 import json
 import os
 import time
@@ -83,8 +87,14 @@ def main() -> int:
     parser.add_argument("--artifact", required=True)
     args = parser.parse_args()
 
+<<<<<<< HEAD
     from app.schemas.llm_payloads import LLMTaskPayload
     from app.services.llm_dispatch import enqueue_llm_task
+=======
+    from app.db.session import get_session
+    from app.schemas.llm_payloads import LLMTaskPayload
+    from app.workers.llm import generate_explanation
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     runtime_db_url = _runtime_sync_db_url()
     tenant_id = _seed_tenant(runtime_db_url)
@@ -94,6 +104,14 @@ def main() -> int:
     started_at = datetime.now(timezone.utc)
     deadline = time.time() + max(1, int(args.duration_s))
     dispatched = 0
+<<<<<<< HEAD
+=======
+
+    async def _dispatch_inline(payload: LLMTaskPayload) -> None:
+        async with get_session(tenant_id=tenant_id, user_id=user_id) as session:
+            await generate_explanation(payload, session=session)
+
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
     while time.time() < deadline:
         request_id = f"phase8-perf-llm-{uuid4().hex[:12]}"
         payload = LLMTaskPayload(
@@ -108,7 +126,11 @@ def main() -> int:
             },
             max_cost_cents=2,
         )
+<<<<<<< HEAD
         enqueue_llm_task("explanation", payload)
+=======
+        asyncio.run(_dispatch_inline(payload))
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
         request_ids.append(request_id)
         dispatched += 1
         time.sleep(max(0.01, float(args.interval_s)))

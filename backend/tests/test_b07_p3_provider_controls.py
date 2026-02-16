@@ -181,9 +181,13 @@ async def test_p3_hourly_shutoff_distinct_from_monthly(monkeypatch, test_tenant)
 
 
 @pytest.mark.asyncio
+<<<<<<< HEAD
 async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(
     monkeypatch, test_tenant
 ):
+=======
+async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(monkeypatch, test_tenant):
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
     monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
     monkeypatch.setattr(settings, "LLM_MONTHLY_CAP_CENTS", 10_000, raising=False)
 
@@ -200,9 +204,13 @@ async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(
             "usage": {"input_tokens": 1, "output_tokens": 1, "cost_cents": 1},
         }
 
+<<<<<<< HEAD
     monkeypatch.setattr(
         _PROVIDER_BOUNDARY, "_provider_call", _spy_provider, raising=True
     )
+=======
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_provider_call", _spy_provider, raising=True)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     kill_request_id = str(uuid4())
     pass_request_id = str(uuid4())
@@ -231,6 +239,7 @@ async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(
 
     async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
         kill_row = (
+<<<<<<< HEAD
             (
                 await session.execute(
                     select(LLMApiCall).where(
@@ -256,6 +265,25 @@ async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(
             .scalars()
             .one()
         )
+=======
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == kill_request_id,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+        pass_row = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == pass_request_id,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
         assert kill_row.provider_attempted is False
         assert int(kill_row.cost_cents) == 0
         assert kill_row.cost_usd == 0
@@ -263,9 +291,13 @@ async def test_p3_kill_switch_blocks_without_provider_attempt_non_vacuous(
 
 
 @pytest.mark.asyncio
+<<<<<<< HEAD
 async def test_p3_breaker_open_blocks_without_provider_attempt_non_vacuous(
     monkeypatch, test_tenant
 ):
+=======
+async def test_p3_breaker_open_blocks_without_provider_attempt_non_vacuous(monkeypatch, test_tenant):
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
     monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
     monkeypatch.setattr(settings, "LLM_MONTHLY_CAP_CENTS", 10_000, raising=False)
 
@@ -288,17 +320,23 @@ async def test_p3_breaker_open_blocks_without_provider_attempt_non_vacuous(
     async def _breaker_closed(*args, **kwargs):
         return False
 
+<<<<<<< HEAD
     monkeypatch.setattr(
         _PROVIDER_BOUNDARY, "_provider_call", _spy_provider, raising=True
     )
     monkeypatch.setattr(
         _PROVIDER_BOUNDARY, "_breaker_open", _breaker_open, raising=True
     )
+=======
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_provider_call", _spy_provider, raising=True)
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_breaker_open", _breaker_open, raising=True)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     blocked_request_id = str(uuid4())
     allowed_request_id = str(uuid4())
     async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
         blocked = await generate_explanation(
+<<<<<<< HEAD
             _payload(
                 test_tenant,
                 request_id=blocked_request_id,
@@ -315,6 +353,14 @@ async def test_p3_breaker_open_blocks_without_provider_attempt_non_vacuous(
                 request_id=allowed_request_id,
                 prompt={"cache_enabled": False},
             ),
+=======
+            _payload(test_tenant, request_id=blocked_request_id, prompt={"cache_enabled": False}),
+            session=session,
+        )
+        monkeypatch.setattr(_PROVIDER_BOUNDARY, "_breaker_open", _breaker_closed, raising=True)
+        allowed = await generate_explanation(
+            _payload(test_tenant, request_id=allowed_request_id, prompt={"cache_enabled": False}),
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
             session=session,
         )
 
@@ -432,23 +478,35 @@ async def test_p3_timeout_non_vacuous_negative_control(monkeypatch, test_tenant)
             "usage": {"input_tokens": 1, "output_tokens": 1, "cost_cents": 1},
         }
 
+<<<<<<< HEAD
     monkeypatch.setattr(
         _PROVIDER_BOUNDARY, "_provider_call", _slow_provider, raising=True
     )
+=======
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_provider_call", _slow_provider, raising=True)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
         monkeypatch.setattr(settings, "LLM_PROVIDER_TIMEOUT_MS", 10, raising=False)
         timed_out = await generate_explanation(
+<<<<<<< HEAD
             _payload(
                 test_tenant, request_id=str(uuid4()), prompt={"cache_enabled": False}
             ),
+=======
+            _payload(test_tenant, request_id=str(uuid4()), prompt={"cache_enabled": False}),
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
             session=session,
         )
         monkeypatch.setattr(settings, "LLM_PROVIDER_TIMEOUT_MS", 300, raising=False)
         succeeded = await generate_explanation(
+<<<<<<< HEAD
             _payload(
                 test_tenant, request_id=str(uuid4()), prompt={"cache_enabled": False}
             ),
+=======
+            _payload(test_tenant, request_id=str(uuid4()), prompt={"cache_enabled": False}),
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
             session=session,
         )
 
@@ -459,9 +517,13 @@ async def test_p3_timeout_non_vacuous_negative_control(monkeypatch, test_tenant)
 
 
 @pytest.mark.asyncio
+<<<<<<< HEAD
 async def test_p3_reservation_and_settlement_use_separate_transactions(
     monkeypatch, test_tenant
 ):
+=======
+async def test_p3_reservation_and_settlement_use_separate_transactions(monkeypatch, test_tenant):
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
     monkeypatch.setattr(settings, "LLM_MONTHLY_CAP_CENTS", 10_000, raising=False)
     monkeypatch.setattr(settings, "LLM_HOURLY_SHUTOFF_CENTS", 10_000, raising=False)
 
@@ -617,9 +679,13 @@ async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant, tmp_
             "usage": {"input_tokens": 1, "output_tokens": 1, "cost_cents": 1},
         }
 
+<<<<<<< HEAD
     monkeypatch.setattr(
         _PROVIDER_BOUNDARY, "_call_aisuite", _fake_aisuite, raising=True
     )
+=======
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_call_aisuite", _fake_aisuite, raising=True)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     policy_a = tmp_path / "policy_a.json"
     policy_b = tmp_path / "policy_b.json"
@@ -641,9 +707,13 @@ async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant, tmp_
                 "policy_id": "swap-proof",
                 "policy_version": "b",
                 "bucket_tiers": [{"min_bucket": 1, "max_bucket": 10, "tier": "cheap"}],
+<<<<<<< HEAD
                 "tiers": {
                     "cheap": {"provider": "anthropic", "model": "claude-3-5-sonnet"}
                 },
+=======
+                "tiers": {"cheap": {"provider": "anthropic", "model": "claude-3-5-sonnet"}},
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
                 "budget_downgrade": {"enabled": False},
             }
         ),
@@ -653,6 +723,7 @@ async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant, tmp_
     request_a = str(uuid4())
     request_b = str(uuid4())
     async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+<<<<<<< HEAD
         monkeypatch.setattr(
             settings, "LLM_COMPLEXITY_POLICY_PATH", str(policy_a), raising=False
         )
@@ -669,6 +740,16 @@ async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant, tmp_
             _payload(
                 test_tenant, request_id=request_b, prompt={"cache_enabled": False}
             ),
+=======
+        monkeypatch.setattr(settings, "LLM_COMPLEXITY_POLICY_PATH", str(policy_a), raising=False)
+        run_a = await generate_explanation(
+            _payload(test_tenant, request_id=request_a, prompt={"cache_enabled": False}),
+            session=session,
+        )
+        monkeypatch.setattr(settings, "LLM_COMPLEXITY_POLICY_PATH", str(policy_b), raising=False)
+        run_b = await generate_explanation(
+            _payload(test_tenant, request_id=request_b, prompt={"cache_enabled": False}),
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
             session=session,
         )
 
@@ -677,6 +758,7 @@ async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant, tmp_
 
     async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
         row_a = (
+<<<<<<< HEAD
             (
                 await session.execute(
                     select(LLMApiCall).where(
@@ -702,6 +784,25 @@ async def test_p3_provider_swap_config_only_proof(monkeypatch, test_tenant, tmp_
             .scalars()
             .one()
         )
+=======
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == request_a,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+        row_b = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.request_id == request_b,
+                    LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                )
+            )
+        ).scalars().one()
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     assert row_a.provider == "openai"
     assert row_b.provider == "anthropic"

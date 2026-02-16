@@ -140,8 +140,21 @@ def main() -> int:
         )
 
         perf_composed_llm_calls = 0
+<<<<<<< HEAD
         if llm_load_probe:
             perf_composed_llm_calls = int(
+=======
+        perf_composed_llm_api_calls = 0
+        perf_composed_llm_audit_calls = 0
+        perf_revenue_ledger_rows_during_window = 0
+        if llm_load_probe:
+            params = {
+                "tenant_id": llm_load_probe["tenant_id"],
+                "started_at": llm_load_probe["started_at"],
+                "finished_at": llm_load_probe["finished_at"],
+            }
+            perf_api_calls = int(
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
                 conn.execute(
                     text(
                         """
@@ -153,13 +166,53 @@ def main() -> int:
                           AND created_at <= :finished_at
                         """
                     ),
+<<<<<<< HEAD
                     {
                         "tenant_id": llm_load_probe["tenant_id"],
+=======
+                    params,
+                ).scalar_one()
+            )
+            perf_audit_calls = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER
+                        FROM llm_call_audit
+                        WHERE tenant_id = :tenant_id
+                          AND request_id LIKE 'phase8-perf-llm-%'
+                          AND created_at >= :started_at
+                          AND created_at <= :finished_at
+                        """
+                    ),
+                    params,
+                ).scalar_one()
+            )
+            perf_revenue_ledger_rows_during_window = int(
+                conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER
+                        FROM revenue_ledger
+                        WHERE tenant_id = :runtime_tenant_id
+                          AND created_at >= :started_at
+                          AND created_at <= :finished_at
+                        """
+                    ),
+                    {
+                        "runtime_tenant_id": tenant_id,
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
                         "started_at": llm_load_probe["started_at"],
                         "finished_at": llm_load_probe["finished_at"],
                     },
                 ).scalar_one()
             )
+<<<<<<< HEAD
+=======
+            perf_composed_llm_api_calls = perf_api_calls
+            perf_composed_llm_audit_calls = perf_audit_calls
+            perf_composed_llm_calls = max(perf_api_calls, perf_audit_calls)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     summary = {
         "runtime_identity": {
@@ -170,7 +223,18 @@ def main() -> int:
         "llm_outcomes": llm_outcomes,
         "cost_correctness": cost_correctness,
         "pg_snapshot": pg_snapshot,
+<<<<<<< HEAD
         "perf_composed_llm_calls": perf_composed_llm_calls,
+=======
+        "perf_window": {
+            "started_at": llm_load_probe.get("started_at") if llm_load_probe else None,
+            "finished_at": llm_load_probe.get("finished_at") if llm_load_probe else None,
+        },
+        "perf_composed_llm_api_calls": perf_composed_llm_api_calls,
+        "perf_composed_llm_audit_calls": perf_composed_llm_audit_calls,
+        "perf_composed_llm_calls": perf_composed_llm_calls,
+        "perf_revenue_ledger_rows_during_window": perf_revenue_ledger_rows_during_window,
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
     }
     (out_dir / "phase8_sql_probe_summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"

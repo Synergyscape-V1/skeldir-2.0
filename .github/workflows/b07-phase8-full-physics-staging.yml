@@ -1,22 +1,19 @@
-name: b07-phase8-closure-pack
+name: b07-phase8-full-physics-staging
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      artifact_dir:
+        description: Artifact directory for full-physics evidence
+        required: false
+        default: artifacts/b07-phase8-full-physics
 
 jobs:
-  b07_phase8_closure_pack:
-<<<<<<< HEAD
-    runs-on: ubuntu-latest  # Targeting Enterprise runner (expecting 4+ vCPU)
-=======
+  b07_phase8_full_physics:
     runs-on: ubuntu-latest
->>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
-      B07_P8_ARTIFACT_DIR: artifacts/b07-phase8
+      B07_P8_ARTIFACT_DIR: ${{ github.event.inputs.artifact_dir || 'artifacts/b07-phase8-full-physics' }}
       E2E_API_BASE_URL: http://127.0.0.1:8000
       E2E_MOCK_BASE_URL: http://127.0.0.1:8080
       E2E_WAIT_TIMEOUT_S: "120"
@@ -43,16 +40,16 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Run Phase 8 closure pack (CI subset)
+      - name: Run Phase 8 closure pack (full physics authority)
         run: |
           python scripts/phase8/run_phase8_closure_pack.py \
-            --ci-subset \
+            --full-physics \
             --artifact-dir "${B07_P8_ARTIFACT_DIR}"
 
-      - name: Upload Phase 8 artifacts
+      - name: Upload full-physics Phase 8 artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: b07-phase8-closure-pack
-          path: artifacts/b07-phase8
+          name: b07-phase8-closure-pack-full-physics-${{ github.run_id }}
+          path: ${{ env.B07_P8_ARTIFACT_DIR }}
           retention-days: 14

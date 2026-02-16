@@ -10,7 +10,6 @@
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -933,6 +932,26 @@ CREATE TABLE public.dead_events (
 
 ALTER TABLE ONLY public.dead_events FORCE ROW LEVEL SECURITY;
 
+--
+-- Name: dead_events_quarantine; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dead_events_quarantine (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid,
+    source text NOT NULL,
+    raw_payload jsonb NOT NULL,
+    error_type text NOT NULL,
+    error_code text,
+    error_message text NOT NULL,
+    error_detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    correlation_id uuid,
+    ingested_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by_role text DEFAULT CURRENT_USER NOT NULL
+);
+
+ALTER TABLE ONLY public.dead_events_quarantine FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: explanation_cache; Type: TABLE; Schema: public; Owner: -
@@ -974,6 +993,8 @@ CREATE TABLE public.investigation_jobs (
     CONSTRAINT ck_investigation_jobs_ready_before_approved CHECK ((((status)::text <> ALL ((ARRAY['APPROVED'::character varying, 'COMPLETED'::character varying])::text[])) OR (ready_for_review_at IS NOT NULL))),
     CONSTRAINT investigation_jobs_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'READY_FOR_REVIEW'::character varying, 'APPROVED'::character varying, 'COMPLETED'::character varying, 'CANCELLED'::character varying])::text[])))
 );
+
+ALTER TABLE ONLY public.investigation_jobs FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -1110,9 +1131,20 @@ CREATE TABLE public.llm_api_calls (
     cache_key text,
     cache_watermark bigint,
     prompt_fingerprint text NOT NULL,
+    complexity_score double precision DEFAULT 0 NOT NULL,
+    complexity_bucket integer DEFAULT 1 NOT NULL,
+    chosen_tier text DEFAULT 'cheap'::text NOT NULL,
+    chosen_provider text DEFAULT 'openai'::text NOT NULL,
+    chosen_model text DEFAULT 'gpt-4o-mini'::text NOT NULL,
+    policy_id text DEFAULT 'unknown'::text NOT NULL,
+    policy_version text DEFAULT 'unknown'::text NOT NULL,
+    routing_reason text DEFAULT 'bucket_policy'::text NOT NULL,
     CONSTRAINT ck_llm_api_calls_breaker_state_valid CHECK ((breaker_state = ANY (ARRAY['closed'::text, 'open'::text, 'half_open'::text]))),
     CONSTRAINT ck_llm_api_calls_budget_reservation_nonnegative CHECK ((budget_reservation_cents >= 0)),
     CONSTRAINT ck_llm_api_calls_budget_settled_nonnegative CHECK ((budget_settled_cents >= 0)),
+    CONSTRAINT ck_llm_api_calls_chosen_tier_valid CHECK ((chosen_tier = ANY (ARRAY['cheap'::text, 'standard'::text, 'premium'::text]))),
+    CONSTRAINT ck_llm_api_calls_complexity_bucket_range CHECK (((complexity_bucket >= 1) AND (complexity_bucket <= 10))),
+    CONSTRAINT ck_llm_api_calls_complexity_score_range CHECK (((complexity_score >= (0)::double precision) AND (complexity_score <= (1)::double precision))),
     CONSTRAINT ck_llm_api_calls_status_valid CHECK ((status = ANY (ARRAY['pending'::text, 'success'::text, 'blocked'::text, 'failed'::text, 'idempotent_replay'::text]))),
     CONSTRAINT llm_api_calls_cost_cents_check CHECK ((cost_cents >= 0)),
     CONSTRAINT llm_api_calls_input_tokens_check CHECK ((input_tokens >= 0)),
@@ -1741,6 +1773,8 @@ CREATE TABLE public.worker_failed_jobs (
     CONSTRAINT ck_worker_failed_jobs_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying, 'resolved'::character varying, 'abandoned'::character varying])::text[])))
 );
 
+ALTER TABLE ONLY public.worker_failed_jobs FORCE ROW LEVEL SECURITY;
+
 
 --
 -- Name: worker_side_effects; Type: TABLE; Schema: public; Owner: -
@@ -1903,6 +1937,13 @@ ALTER TABLE ONLY public.channel_taxonomy
 
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_pkey PRIMARY KEY (id);
+
+--
+-- Name: dead_events_quarantine dead_events_quarantine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dead_events_quarantine
+    ADD CONSTRAINT dead_events_quarantine_pkey PRIMARY KEY (id);
 
 
 --
@@ -2332,6 +2373,18 @@ CREATE INDEX idx_channel_state_transitions_to_state_changed_at ON public.channel
 --
 
 CREATE INDEX idx_dead_events_error_code ON public.dead_events USING btree (error_code);
+
+--
+-- Name: idx_dead_events_quarantine_null_lane; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dead_events_quarantine_null_lane ON public.dead_events_quarantine USING btree (ingested_at DESC) WHERE (tenant_id IS NULL);
+
+--
+-- Name: idx_dead_events_quarantine_tenant_ingested_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dead_events_quarantine_tenant_ingested_at ON public.dead_events_quarantine USING btree (tenant_id, ingested_at DESC);
 
 
 --
@@ -2984,6 +3037,13 @@ ALTER TABLE ONLY public.channel_assignment_corrections
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_channel_code_fkey FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code) ON DELETE CASCADE;
 
+--
+-- Name: dead_events_quarantine dead_events_quarantine_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dead_events_quarantine
+    ADD CONSTRAINT dead_events_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
+
 
 --
 -- Name: dead_events dead_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -3277,10 +3337,22 @@ ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dead_events ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: dead_events_quarantine; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: explanation_cache; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: investigation_jobs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: investigation_tool_calls; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3348,6 +3420,8 @@ ALTER TABLE public.llm_semantic_cache ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.llm_validation_failures ENABLE ROW LEVEL SECURITY;
 
+CREATE POLICY ops_quarantine_select ON public.dead_events_quarantine FOR SELECT USING (((tenant_id IS NULL) AND (CURRENT_USER = 'app_ops'::name)));
+
 --
 -- Name: platform_connections; Type: ROW SECURITY; Schema: public; Owner: -
 --
@@ -3359,6 +3433,8 @@ ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
 
 --
 -- Name: r4_crash_barriers; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3436,6 +3512,13 @@ CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = 
 --
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: investigation_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
@@ -3586,6 +3669,20 @@ CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user 
 
 
 --
+-- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+
+
+--
+-- Name: dead_events_quarantine tenant_lane_select; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+
+
+--
 -- Name: worker_failed_jobs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3602,4 +3699,3 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 --
 
 \unrestrict fI9FpwVjXOb8VCnXGIzgg29Nmzke8GSfeoAs6B7O6CEfYV7k1OXheP8fr4DGfaZ
-

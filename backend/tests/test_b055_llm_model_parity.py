@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text, inspect
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Text, inspect
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PGUUID
 
 from app.db.session import engine
@@ -31,6 +31,9 @@ def _normalize_type(sa_type) -> str:
         return "boolean"
     if isinstance(sa_type, Integer):
         return "integer"
+    if isinstance(sa_type, Float):
+        # Postgres reflects SQLAlchemy Float as DOUBLE PRECISION.
+        return "double_precision"
     if isinstance(sa_type, Text):
         return "text"
     if isinstance(sa_type, String):

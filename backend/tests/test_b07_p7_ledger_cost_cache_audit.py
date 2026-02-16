@@ -216,6 +216,14 @@ async def test_p7_runtime_probe_discovers_llm_tables_and_validates_insert_select
                     tenant_id=tenant_a,
                     user_id=user_id,
                 )
+<<<<<<< HEAD
+=======
+            column_names = {str(c["column_name"]) for c in cols}
+            if "tenant_id" in column_names:
+                params["tenant_id"] = str(tenant_a)
+            if "user_id" in column_names:
+                params["user_id"] = str(user_id)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
             if "id" not in params and any(str(c["column_name"]) == "id" for c in cols):
                 params["id"] = str(uuid4())
 

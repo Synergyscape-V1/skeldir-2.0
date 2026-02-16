@@ -426,10 +426,13 @@ class Settings(BaseSettings):
     def validate_llm_provider_config(self) -> "Settings":
         if self.LLM_PROVIDER_ENABLED and not self.LLM_PROVIDER_API_KEY:
             raise ValueError("LLM_PROVIDER_ENABLED requires LLM_PROVIDER_API_KEY")
+<<<<<<< HEAD
         if (self.DATABASE_POOL_SIZE + self.DATABASE_MAX_OVERFLOW) > self.DATABASE_POOL_TOTAL_CAP:
             raise ValueError(
                 "DATABASE_POOL_SIZE + DATABASE_MAX_OVERFLOW exceeds DATABASE_POOL_TOTAL_CAP"
             )
+=======
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
         if self.BAYESIAN_TASK_TIME_LIMIT_S <= self.BAYESIAN_TASK_SOFT_TIME_LIMIT_S:
             raise ValueError(
                 "BAYESIAN_TASK_TIME_LIMIT_S must be greater than BAYESIAN_TASK_SOFT_TIME_LIMIT_S"

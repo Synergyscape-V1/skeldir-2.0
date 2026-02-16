@@ -8,6 +8,10 @@ Responsibilities:
 - Return 200 for success and DLQ-routed validation failures; 401 for signature/tenant failures
 """
 import logging
+<<<<<<< HEAD
+=======
+import hashlib
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -17,7 +21,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi import Body
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.config import settings
 from app.core.tenant_context import get_tenant_with_webhook_secrets
@@ -292,9 +296,15 @@ async def stripe_payment_intent_succeeded(
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     tenant_info=Depends(tenant_secrets),
 ):
+<<<<<<< HEAD
     original_raw_body = getattr(request.state, "original_body", None) or await request.body()
     sanitized_body = await request.body()
     if not verify_stripe_signature(original_raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
+=======
+    raw_body = getattr(request.state, "original_body", None) or await request.body()
+    stripped_body = await request.body()
+    if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"status": "invalid_signature", "vendor": "stripe"},
@@ -353,6 +363,17 @@ async def stripe_payment_intent_succeeded_v2(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"status": "invalid_signature", "vendor": "stripe"},
         )
+    stripped_body = await request.body()
+
+    payload: dict[str, Any] = {}
+    payload_parse_error: str | None = None
+    try:
+        parsed_payload = json.loads(stripped_body.decode("utf-8"))
+        if not isinstance(parsed_payload, dict):
+            raise ValueError("payload root must be a JSON object")
+        payload = parsed_payload
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        payload_parse_error = str(exc)
 
     payload: dict
     try:
@@ -390,6 +411,7 @@ async def stripe_payment_intent_succeeded_v2(
     currency = None
     created_epoch = None
     event_id = None
+<<<<<<< HEAD
     metadata: dict = {}
     try:
         event_id = payload.get("id")
@@ -406,6 +428,39 @@ async def stripe_payment_intent_succeeded_v2(
     except Exception:
         # Handled as malformed below (routes to DLQ).
         pass
+=======
+    vendor_for_normalization = "stripe"
+    utm_source_for_normalization = "stripe"
+    utm_medium_for_normalization: str | None = None
+    if payload_parse_error is None:
+        try:
+            event_id = payload.get("id")
+            created_epoch = payload.get("created")
+            obj = (payload.get("data") or {}).get("object") or {}
+            pi_id = obj.get("id")
+            amount_cents = obj.get("amount")
+            currency = obj.get("currency")
+            metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+            if metadata:
+                vendor_candidate = metadata.get("vendor")
+                if isinstance(vendor_candidate, str) and vendor_candidate.strip():
+                    vendor_for_normalization = vendor_candidate.strip().lower()
+                utm_source_candidate = metadata.get("utm_source")
+                if isinstance(utm_source_candidate, str) and utm_source_candidate.strip():
+                    utm_source_for_normalization = utm_source_candidate.strip()
+                utm_medium_candidate = metadata.get("utm_medium")
+                if isinstance(utm_medium_candidate, str) and utm_medium_candidate.strip():
+                    utm_medium_for_normalization = utm_medium_candidate.strip()
+            if not idempotency_key and pi_id:
+                idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
+        except Exception:
+            # Handled as malformed below (routes to DLQ).
+            pass
+    elif not idempotency_key:
+        # Keep malformed-body routing deterministic even without a client idempotency key.
+        body_sha256 = hashlib.sha256(raw_body).hexdigest()
+        idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_invalid_json_{body_sha256}"))
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 
     if not idempotency_key:
         return JSONResponse(
@@ -415,6 +470,31 @@ async def stripe_payment_intent_succeeded_v2(
 
     set_business_correlation_id(idempotency_key)
     correlation_uuid = str(_make_correlation_uuid(idempotency_key))
+
+    if payload_parse_error is not None:
+        dead = await _route_to_dlq_direct(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            correlation_id=correlation_uuid,
+            payload={
+                "event_type": "purchase",
+                "vendor": "stripe",
+                "idempotency_key": idempotency_key,
+                "correlation_id": correlation_uuid,
+                "vendor_payload": {
+                    "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+                    "raw_body_bytes": len(raw_body),
+                    "parse_error": payload_parse_error,
+                },
+            },
+            error_message="invalid_json_payload",
+            error_type="validation_error",
+        )
+        return {
+            "status": "dlq_routed",
+            "dead_event_id": str(dead.id),
+            "error": "validation_error",
+        }
 
     pii_paths = _pii_redacted_paths(request)
     if pii_paths:
@@ -483,13 +563,20 @@ async def stripe_payment_intent_succeeded_v2(
         "revenue_amount": revenue_amount,
         "currency": currency.upper(),
         "session_id": str(uuid5(NAMESPACE_URL, f"stripe:{idempotency_key}")),
+<<<<<<< HEAD
         "vendor": vendor,
         "utm_source": utm_source,
         "utm_medium": utm_medium,
+=======
+        "vendor": vendor_for_normalization,
+        "utm_source": utm_source_for_normalization,
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
         "external_event_id": pi_id,
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,
     }
+    if utm_medium_for_normalization:
+        event_data["utm_medium"] = utm_medium_for_normalization
 
     result = await ingest_with_transaction(
         tenant_id=tenant_info["tenant_id"],

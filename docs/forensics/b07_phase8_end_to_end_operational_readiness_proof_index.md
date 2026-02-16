@@ -54,6 +54,13 @@ This index is the Phase 8 closure anchor for B0.1-B0.7 composition proof.
 - Composition coupling proof (ledger/audit writes during ingestion load):
   - `scripts/phase8/llm_background_load.py`
   - `scripts/phase8/collect_sql_probes.py` (`perf_composed_llm_calls > 0`)
+<<<<<<< HEAD
+=======
+- Gate semantics authority lock:
+  - `run_authority` is serialized as either `ci_subset` or `full_physics`.
+  - CI subset emits `eg8_5_ci_sanity` only (non-authoritative).
+  - Full physics emits `eg8_5_composed_ingestion_perf_authority` only.
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 - CI runner constraint:
   - CI runs `--ci-subset` with null benchmark + sanity load profile.
   - Staging runs `--full-physics` with EG3.4 46 rps profile authority.
@@ -69,6 +76,11 @@ This index is the Phase 8 closure anchor for B0.1-B0.7 composition proof.
   - `scripts/phase8/run_phase8_closure_pack.py`
 - Artifact set:
   - `artifacts/b07-phase8/phase8_gate_summary.json`
+<<<<<<< HEAD
+=======
+  - `artifacts/b07-phase8/phase8_gate_summary_ci_subset.json` (CI subset)
+  - `artifacts/b07-phase8-full-physics/phase8_gate_summary_full_physics.json` (staging full-physics)
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
   - `artifacts/b07-phase8/manifest.sha256`
   - `artifacts/b07-phase8/runtime_db_probe.json`
   - `artifacts/b07-phase8/p8_topology_probe.json`
@@ -83,6 +95,11 @@ This index is the Phase 8 closure anchor for B0.1-B0.7 composition proof.
 ## CI Wiring
 - Dedicated workflow:
   - `.github/workflows/b07-phase8-closure-pack.yml`
+<<<<<<< HEAD
+=======
+- Staging full-physics workflow:
+  - `.github/workflows/b07-phase8-full-physics-staging.yml`
+>>>>>>> 2df083e09a5bb0ba4d3888d774dd055b2cb42bd4
 - Artifact upload:
   - `b07-phase8-closure-pack`
 
