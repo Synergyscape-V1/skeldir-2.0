@@ -9,6 +9,7 @@
  */
 
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Minus, ArrowUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,7 @@ const confCls: Record<ConfidenceTier, string> = {
 export function ChannelPerformanceTable({ channels, loading }: Props) {
   const [sortField, setSortField] = useState<SortField>('confidence');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const navigate = useNavigate();
 
   const sorted = useMemo(() => {
     if (!channels.length) return [];
@@ -120,13 +122,18 @@ export function ChannelPerformanceTable({ channels, loading }: Props) {
             return (
               <div
                 key={ch.channelId}
-                className="grid grid-cols-[1fr_90px_100px_70px_160px_40px] gap-2 px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent/50 transition-colors duration-200"
+                className="grid grid-cols-[1fr_90px_100px_70px_160px_40px] gap-2 px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent/50 transition-colors duration-200 cursor-pointer group"
                 role="row"
+                tabIndex={0}
+                aria-label={`View ${ch.channelName} channel analysis`}
+                onClick={() => navigate(`/channels/${ch.channelId}`)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/channels/${ch.channelId}`); }}
               >
                 {/* Channel name with platform logo */}
                 <div className="flex items-center gap-2.5" role="cell">
                   <Logo size={18} className="text-muted-foreground flex-shrink-0" />
-                  <span className="text-sm font-medium text-foreground truncate">{ch.channelName}</span>
+                  <span className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{ch.channelName}</span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="opacity-0 group-hover:opacity-60 transition-opacity text-primary flex-shrink-0" aria-hidden="true"><path d="M2 5h6M5.5 2.5L8 5l-2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
 
                 {/* Spend */}

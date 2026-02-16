@@ -47,8 +47,8 @@ function Router() {
         {/* Protected routes with AppShell */}
         <Route path="/" element={<ProtectedLayout />}>
           <Route index element={<CommandCenterPage />} />
-          <Route path="channels" element={<ChannelDetailRoute />} />
           <Route path="channels/compare" element={<A6VictorComparison initialState={VICTOR_FIXTURES.ready} />} />
+          <Route path="channels/:channelId" element={<ChannelDetailRoute />} />
           <Route path="data" element={<DataStub />} />
           <Route path="budget" element={<BudgetOptimizerPage />} />
           <Route path="budget/scenarios/:scenarioId" element={<BudgetScenarioDetailPage />} />

@@ -15,7 +15,6 @@ import {
   SidebarProvider,
   Sidebar,
   SidebarContent,
-  SidebarHeader,
   SidebarInset,
   SidebarMenu,
   SidebarMenuItem,
@@ -23,9 +22,10 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { NAV_ITEMS } from '@/config/nav'
-import { SidebarBranding } from '@/components/SidebarBranding'
+import { HeaderLogo } from '@/components/HeaderLogo'
 import UserAvatar from '@/components/ui/user-avatar'
 import { useCurrentUser } from '@/hooks/useAuth'
+import { cn } from '@/lib/utils'
 
 function AppShellContent() {
   const { toggleSidebar, open } = useSidebar()
@@ -38,12 +38,8 @@ function AppShellContent() {
         collapsible="icon"
         className="border-r border-sidebar-border"
       >
-        <SidebarHeader>
-          <SidebarBranding />
-        </SidebarHeader>
-
         <SidebarContent role="navigation" aria-label="Primary navigation">
-          <SidebarMenu>
+          <SidebarMenu className="px-2 py-4 gap-0.5">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon
               return (
@@ -53,13 +49,16 @@ function AppShellContent() {
                       to={item.path}
                       end={item.path === '/'}
                       className={({ isActive }) =>
-                        isActive
-                          ? 'border-l-2 border-primary bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                          : ''
+                        cn(
+                          'transition-all duration-200 ease-in-out',
+                          isActive
+                            ? 'border-l-2 border-primary bg-sidebar-accent text-sidebar-accent-foreground font-semibold shadow-sm'
+                            : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
+                        )
                       }
                     >
-                      <Icon />
-                      <span>{item.label}</span>
+                      <Icon className="size-4 shrink-0 transition-transform duration-200 group-hover/menu-item:scale-105" />
+                      <span className="text-sm font-medium tracking-tight transition-colors duration-200">{item.label}</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -72,7 +71,7 @@ function AppShellContent() {
       <SidebarInset className="flex flex-col flex-1">
         <header
           role="banner"
-          className="sticky top-0 z-50 flex h-16 items-center justify-between px-6 border-b border-border bg-background"
+          className="sticky top-0 z-50 flex h-16 items-center justify-between px-6 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
         >
           <div className="flex items-center gap-4">
             {/* Hamburger for mobile (<768px per directive) and sidebar toggle */}
@@ -88,10 +87,21 @@ function AppShellContent() {
               <Menu className="h-5 w-5" />
             </Button>
 
-            {/* Logo area - hidden on mobile when hamburger shows */}
-            <div className="hidden lg:block text-lg font-semibold text-foreground">
-              Skeldir
-            </div>
+            {/* Desktop sidebar toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              className="hidden lg:flex"
+              aria-label="Toggle sidebar"
+              aria-controls="app-sidebar"
+              aria-expanded={open}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+
+            {/* Logo - always visible, resizable */}
+            <HeaderLogo size="md" className="ml-2" />
           </div>
 
           <div className="flex items-center gap-2">

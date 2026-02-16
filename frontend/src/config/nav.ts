@@ -46,7 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     label: 'Channels',
-    path: '/channels',
+    path: '/channels/compare',
     icon: Layers,
   },
   {
