@@ -1,0 +1,45 @@
+﻿=== OpenAPI Contract Operations Map ===
+Timestamp: 2025-11-20T13:48:25.547431
+
+
+=== attribution.bundled.yaml ===
+GET    /api/attribution/revenue/realtime                  | operationId=getRealtimeRevenue
+
+=== auth.bundled.yaml ===
+POST   /api/auth/login                                    | operationId=login
+POST   /api/auth/refresh                                  | operationId=refreshToken
+POST   /api/auth/logout                                   | operationId=logout
+
+=== export.bundled.yaml ===
+GET    /api/export/revenue                                | operationId=exportRevenue
+
+=== health.bundled.yaml ===
+GET    /api/health                                        | operationId=healthCheck
+
+=== reconciliation.bundled.yaml ===
+GET    /api/reconciliation/status                         | operationId=getReconciliationStatus
+
+=== webhooks.paypal.bundled.yaml ===
+POST   /webhooks/paypal/payment/sale/completed            | operationId=paypalSaleCompleted
+
+=== webhooks.shopify.bundled.yaml ===
+POST   /webhooks/shopify/orders/create                    | operationId=shopifyOrderCreate
+
+=== webhooks.stripe.bundled.yaml ===
+POST   /webhooks/stripe/charge/succeeded                  | operationId=stripeChargeSucceeded
+
+=== webhooks.woocommerce.bundled.yaml ===
+POST   /webhooks/woocommerce/order/created                | operationId=woocommerceOrderCreated
+
+=== Summary ===
+attribution.bundled.yaml: 1 operations
+auth.bundled.yaml: 3 operations
+export.bundled.yaml: 1 operations
+health.bundled.yaml: 1 operations
+reconciliation.bundled.yaml: 1 operations
+webhooks.paypal.bundled.yaml: 1 operations
+webhooks.shopify.bundled.yaml: 1 operations
+webhooks.stripe.bundled.yaml: 1 operations
+webhooks.woocommerce.bundled.yaml: 1 operations
+
+Total operations across all contracts: 11

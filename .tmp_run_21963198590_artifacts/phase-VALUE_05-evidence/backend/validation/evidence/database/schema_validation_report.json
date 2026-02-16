@@ -1,0 +1,46 @@
+{
+  "validation_date": "2025-11-27T18:19:26.751272Z",
+  "canonical_spec_version": "1.0.0",
+  "database": "localhost:5542/skeldir_dev",
+  "status": "PASS",
+  "summary": {
+    "total_divergences": 2,
+    "blocking": 0,
+    "high": 0,
+    "moderate": 0,
+    "low": 2
+  },
+  "divergences": [
+    {
+      "type": "MISSING_COLUMN",
+      "severity": "LOW",
+      "table": "tenants",
+      "element": "ingested_at",
+      "expected": "TIMESTAMPTZ NOT NULL",
+      "actual": "MISSING",
+      "invariant": null,
+      "impact": "",
+      "required_for": []
+    },
+    {
+      "type": "MISSING_COLUMN",
+      "severity": "LOW",
+      "table": "dead_events",
+      "element": "created_at",
+      "expected": "TIMESTAMPTZ NOT NULL",
+      "actual": "MISSING",
+      "invariant": null,
+      "impact": "",
+      "required_for": []
+    }
+  ],
+  "tables_checked": [
+    "tenants",
+    "attribution_events",
+    "attribution_allocations",
+    "revenue_ledger",
+    "revenue_state_transitions",
+    "dead_events"
+  ],
+  "exit_code": 0
+}

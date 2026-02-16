@@ -24,9 +24,9 @@ export type Tier = 'high' | 'medium' | 'low';
  * - Full accessibility support (ARIA, keyboard, screen readers)
  * 
  * @param score - Confidence score (0-100). Values outside range are clamped.
- *   - High tier: >= 70 (Success Green #16A34A)
- *   - Medium tier: 30-69 (Warning Amber #F59E0B)
- *   - Low tier: < 30 (Critical Red #B91C1C)
+ *   - High tier: >= 70 (Success Green - green-600)
+ *   - Medium tier: 30-69 (Warning Amber - amber-500)
+ *   - Low tier: < 30 (Critical Red - red-700)
  * @param className - Optional CSS classes for customization
  * 
  * @example
@@ -195,6 +195,7 @@ export default function ConfidenceScoreBadge({ score: rawScore, className = '' }
       <div
         ref={badgeRef}
         className={`confidence-badge inline-flex items-center gap-2 px-3.5 py-1.5 rounded-[20px] border min-w-[80px] h-8 cursor-help ${className}`}
+        // Justification: glass UI requires computed rgba() from tier-dependent RGB + D0 CSS vars; Tailwind cannot express runtime-computed backdrop/border/shadow from dynamic color components
         style={{
           backgroundColor: 'var(--confidence-badge-bg)',
           backdropFilter: 'blur(var(--confidence-badge-blur))',
@@ -217,11 +218,13 @@ export default function ConfidenceScoreBadge({ score: rawScore, className = '' }
       >
         <div
           className={`tier-dot ${tier === 'high' ? 'tier-dot-high' : ''} w-2 h-2 rounded-full`}
+          // Justification: tier-dot color is tier-dependent (3 runtime variants from D0 CSS vars)
           style={{ backgroundColor: tierColor }}
           data-testid={`tier-dot-${tier}`}
         />
         <span
           className="confidence-percentage text-sm font-bold"
+          // Justification: percentage color is tier-dependent (3 runtime variants from D0 CSS vars); letterSpacing is typography geometry
           style={{ color: tierColor, letterSpacing: '-0.5px' }}
           data-testid="confidence-percentage"
         >

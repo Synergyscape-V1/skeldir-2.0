@@ -1,0 +1,137 @@
+=== PII Stripping Middleware Implementation Complete ===
+Timestamp: 2025-11-20 14:15:00
+
+Phase G: Active Privacy Defense
+
+=== Defense-in-Depth Architecture ===
+
+Layer 1 (Runtime - NEW):
+- PIIStrippingMiddleware in backend/app/middleware/pii_stripping.py
+- Intercepts POST/PUT/PATCH requests with JSON payloads
+- Recursively traverses data structures
+- Replaces PII key values with "[REDACTED]"
+- Executes BEFORE Pydantic validation
+
+Layer 2 (Database - EXISTING):
+- PostgreSQL triggers: trg_pii_guardrail_*
+- Function: fn_detect_pii_keys(payload JSONB)
+- Blocks INSERT if PII keys detected
+- Provides backup defense if middleware bypassed
+
+Layer 3 (Audit - EXISTING):
+- Function: fn_scan_pii_contamination()
+- Periodic batch scanning
+- Detects residual contamination
+
+=== Implementation Details ===
+
+File: backend/app/middleware/pii_stripping.py
+
+PII Keys Detected:
+- email, phone, address, ip, ssn
+- credit_card, passport
+- billing_address, shipping_address
+- customer_email, customer_phone
+
+Behavior:
+1. Check request method (POST/PUT/PATCH)
+2. Check content-type (application/json)
+3. Parse JSON payload
+4. Recursively traverse:
+   - Dictionaries: Check each key
+   - Lists: Process each item
+   - Scalars: Pass through
+5. Replace PII key values with "[REDACTED]"
+6. Log redaction events
+7. Replace request body
+8. Continue to next handler
+
+File: backend/app/main.py
+
+Middleware Registration:
+```python
+# Added BEFORE CORS middleware to ensure priority
+app.add_middleware(PIIStrippingMiddleware)
+```
+
+=== Expected Behavior ===
+
+Request (before middleware):
+```json
+POST /api/webhooks/shopify/order
+{
+  "order_id": "12345",
+  "customer_email": "user@example.com",
+  "customer_phone": "+1-555-0123",
+  "items": [
+    {
+      "sku": "ABC123",
+      "price": 29.99
+    }
+  ]
+}
+```
+
+Request (after middleware):
+```json
+{
+  "order_id": "12345",
+  "customer_email": "[REDACTED]",
+  "customer_phone": "[REDACTED]",
+  "items": [
+    {
+      "sku": "ABC123",
+      "price": 29.99
+    }
+  ]
+}
+```
+
+Application Logic:
+- Receives already-redacted payload
+- PII never enters Pydantic validation
+- PII never reaches database INSERT
+
+Database Trigger:
+- Acts as backup if middleware fails
+- Blocks INSERT with PII keys
+- Provides second layer of defense
+
+=== Coordination Test Plan ===
+
+Test 1: Middleware Strips PII
+- Send POST with email/phone
+- Verify middleware logs redaction
+- Verify database receives [REDACTED]
+- Verify API returns 200 OK
+
+Test 2: DB Trigger Blocks Direct PII
+- Bypass middleware (direct SQL)
+- Attempt INSERT with PII keys
+- Verify trigger raises ERROR
+- Verify no data persisted
+
+Test 3: Defense-in-Depth Proof
+- Test both layers independently
+- Verify neither can be bypassed
+- Document dual protection
+
+=== Evidence Status ===
+
+Implementation: COMPLETE
+Files Created:
+- backend/app/middleware/__init__.py
+- backend/app/middleware/pii_stripping.py
+Files Modified:
+- backend/app/main.py (middleware registration)
+
+Runtime Testing: DEFERRED
+- Requires FastAPI runtime
+- Requires database connection
+- Requires full dependency installation
+
+Phase G deliverable: COMPLETE (middleware implemented)
+Test execution: DEFERRED to integration phase
+
+Next: Phase H (Database governance validation)
+

@@ -1,0 +1,8 @@
+{
+  "tenant_id": "e4cfb4ed-e493-46f9-a383-cc63a53b47be",
+  "user_id": "3d7b0714-f3c4-4c77-bd8a-1949482b6222",
+  "request_id": "b07-p2-e4cfb4ed",
+  "endpoint": "app.tasks.llm.explanation",
+  "provider": "stub",
+  "distillation_eligible": false
+}

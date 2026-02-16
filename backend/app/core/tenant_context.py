@@ -14,6 +14,9 @@ Related Documents:
 
 import logging
 import hashlib
+import time
+from collections import OrderedDict
+from threading import Lock
 from typing import Optional
 from uuid import UUID
 
@@ -22,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.db.session import engine
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,33 @@ logger = logging.getLogger(__name__)
 class TenantContextError(Exception):
     """Raised when tenant context cannot be derived or is invalid."""
     pass
+
+
+_TENANT_SECRET_CACHE: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+_TENANT_SECRET_CACHE_LOCK = Lock()
+
+
+def _tenant_secret_cache_get(api_key_hash: str) -> Optional[dict]:
+    now = time.monotonic()
+    with _TENANT_SECRET_CACHE_LOCK:
+        entry = _TENANT_SECRET_CACHE.get(api_key_hash)
+        if entry is None:
+            return None
+        inserted_at, payload = entry
+        if (now - inserted_at) > settings.TENANT_SECRETS_CACHE_TTL_SECONDS:
+            _TENANT_SECRET_CACHE.pop(api_key_hash, None)
+            return None
+        _TENANT_SECRET_CACHE.move_to_end(api_key_hash)
+        # Return a shallow copy so callers cannot mutate cache state.
+        return dict(payload)
+
+
+def _tenant_secret_cache_put(api_key_hash: str, payload: dict) -> None:
+    with _TENANT_SECRET_CACHE_LOCK:
+        _TENANT_SECRET_CACHE[api_key_hash] = (time.monotonic(), dict(payload))
+        _TENANT_SECRET_CACHE.move_to_end(api_key_hash)
+        while len(_TENANT_SECRET_CACHE) > settings.TENANT_SECRETS_CACHE_MAX_ENTRIES:
+            _TENANT_SECRET_CACHE.popitem(last=False)
 
 
 async def get_tenant_with_webhook_secrets(api_key: str) -> dict:
@@ -49,6 +80,10 @@ async def get_tenant_with_webhook_secrets(api_key: str) -> dict:
         raise HTTPException(status_code=401, detail={"status": "invalid_tenant_key"})
 
     api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    cached = _tenant_secret_cache_get(api_key_hash)
+    if cached is not None:
+        return cached
+
     async with engine.connect() as conn:
         res = await conn.execute(
             text(
@@ -69,13 +104,15 @@ async def get_tenant_with_webhook_secrets(api_key: str) -> dict:
     if not row:
         raise HTTPException(status_code=401, detail={"status": "invalid_tenant_key"})
 
-    return {
+    payload = {
         "tenant_id": UUID(str(row["tenant_id"])),
         "shopify_webhook_secret": row.get("shopify_webhook_secret"),
         "stripe_webhook_secret": row.get("stripe_webhook_secret"),
         "paypal_webhook_secret": row.get("paypal_webhook_secret"),
         "woocommerce_webhook_secret": row.get("woocommerce_webhook_secret"),
     }
+    _tenant_secret_cache_put(api_key_hash, payload)
+    return payload
 
 
 def derive_tenant_id_from_request(request: Request) -> Optional[UUID]:
@@ -237,5 +274,4 @@ async def tenant_context_middleware(request: Request, call_next):
         # SET LOCAL is automatically cleared on transaction end
         # Explicit rollback not needed unless we want to ensure cleanup
         pass
-
 

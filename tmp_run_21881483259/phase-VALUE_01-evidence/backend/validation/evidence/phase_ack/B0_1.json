@@ -1,0 +1,10 @@
+{
+  "phase": "B0.1",
+  "status": "success",
+  "message": "Local run after restart verifying B0.1 requirements",
+  "timestamp": "2025-11-27T02:08:23.865567+00:00",
+  "commit": "local",
+  "workflow": "local-run",
+  "run_id": "local",
+  "run_attempt": "local"
+}

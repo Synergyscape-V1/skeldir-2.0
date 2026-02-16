@@ -1,0 +1,130 @@
+﻿Found 9 bundled contracts:
+  - attribution.bundled.yaml
+  - auth.bundled.yaml
+  - export.bundled.yaml
+  - health.bundled.yaml
+  - reconciliation.bundled.yaml
+  - webhooks.paypal.bundled.yaml
+  - webhooks.shopify.bundled.yaml
+  - webhooks.stripe.bundled.yaml
+  - webhooks.woocommerce.bundled.yaml
+
+Validating contracts...
+[Validating] attribution.bundled.yaml...
+node.exe : (node:44704) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:44704) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\attribution.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] auth.bundled.yaml...
+node.exe : (node:22124) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:22124) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\auth.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] export.bundled.yaml...
+node.exe : (node:45288) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:45288) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\export.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] health.bundled.yaml...
+node.exe : (node:39860) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:39860) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\health.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] reconciliation.bundled.yaml...
+node.exe : (node:44052) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:44052) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\reconciliation.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] webhooks.paypal.bundled.yaml...
+node.exe : (node:42624) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:42624) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\webhooks.paypal.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] webhooks.shopify.bundled.yaml...
+node.exe : (node:48280) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:48280) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\webhooks.shopify.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] webhooks.stripe.bundled.yaml...
+node.exe : (node:46184) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:46184) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\webhooks.stripe.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+[Validating] webhooks.woocommerce.bundled.yaml...
+node.exe : (node:37492) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead 
+to security vulnerabilities, as the arguments are not escaped, only concatenated.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Users\ayewhy\AppData\Roaming ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:37492) [D...y concatenated.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[error] Found unexpected parameters: [SKELDIR, II\api-contracts\dist\openapi\v1\webhooks.woocommerce.bundled.yaml]
+
+See 'openapi-generator-cli help' for usage.
+Validation complete

@@ -1,0 +1,92 @@
+{
+  "eg4_1_table_discovery": {
+    "pass": true,
+    "tenant_table_count": 30
+  },
+  "eg4_2_rls_force_coverage": {
+    "pass": true
+  },
+  "eg4_3_runtime_identity": {
+    "migration": {
+      "current_user": "migration_owner",
+      "rolbypassrls": false,
+      "rolsuper": false,
+      "session_user": "migration_owner"
+    },
+    "ops": {
+      "current_user": "app_ops",
+      "rolbypassrls": false,
+      "rolsuper": false,
+      "session_user": "app_ops"
+    },
+    "pass": true,
+    "runtime": {
+      "current_user": "app_user",
+      "rolbypassrls": false,
+      "rolsuper": false,
+      "session_user": "app_user"
+    }
+  },
+  "eg4_4_context_fail_closed": {
+    "details": {
+      "cross_tenant_insert_spoof_blocked": true,
+      "dlq_tenant_a_null_lane": 0,
+      "dlq_tenant_a_other": 0,
+      "dlq_tenant_a_own": 1,
+      "dlq_tenant_b_null_lane": 0,
+      "dlq_tenant_b_other": 0,
+      "dlq_tenant_b_own": 1,
+      "missing_context_exception": "invalid input syntax for type uuid: \"\"\n",
+      "ops_identity": {
+        "current_user": "app_ops",
+        "session_user": "app_ops"
+      },
+      "ops_quarantine_visible": 1,
+      "ops_tenant_lane_visible": 0,
+      "visible_with_missing_context": null,
+      "visible_with_tenant_a_context": 1,
+      "visible_with_tenant_b_context": 1
+    },
+    "pass": true
+  },
+  "eg4_5_secret_scan": {
+    "details": {
+      "db_hit_count": 0,
+      "file_hit_count": 0,
+      "scan_dirs": [
+        "backend/validation/evidence",
+        "artifacts",
+        ".tmp_ci_artifacts"
+      ]
+    },
+    "pass": true
+  },
+  "eg4_6_dlq_two_lane": {
+    "details": {
+      "cross_tenant_insert_spoof_blocked": true,
+      "dlq_tenant_a_null_lane": 0,
+      "dlq_tenant_a_other": 0,
+      "dlq_tenant_a_own": 1,
+      "dlq_tenant_b_null_lane": 0,
+      "dlq_tenant_b_other": 0,
+      "dlq_tenant_b_own": 1,
+      "missing_context_exception": "invalid input syntax for type uuid: \"\"\n",
+      "ops_identity": {
+        "current_user": "app_ops",
+        "session_user": "app_ops"
+      },
+      "ops_quarantine_visible": 1,
+      "ops_tenant_lane_visible": 0,
+      "visible_with_missing_context": null,
+      "visible_with_tenant_a_context": 1,
+      "visible_with_tenant_b_context": 1
+    },
+    "pass": true
+  },
+  "eg4_7_phase3_perf_non_regression": {
+    "mode": "delegated_to_r3_harness",
+    "note": "Executed by scripts/r3/ingestion_under_fire.py from B0.4 gate",
+    "pass": true
+  },
+  "timestamp": "2026-02-12T18:44:45.039212+00:00"
+}

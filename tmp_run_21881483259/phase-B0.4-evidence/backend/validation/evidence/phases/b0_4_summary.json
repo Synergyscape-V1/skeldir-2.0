@@ -1,0 +1,6 @@
+{
+  "phase": "B0.4",
+  "status": "failure",
+  "timestamp": "2026-02-10T20:39:33.856328+00:00",
+  "error": "Command python -m pytest backend/tests/test_b04_ingestion_soundness.py -q failed (see /home/runner/work/skeldir-2.0/skeldir-2.0/backend/validation/evidence/phases/b0_4_ingestion_soundness.log)"
+}

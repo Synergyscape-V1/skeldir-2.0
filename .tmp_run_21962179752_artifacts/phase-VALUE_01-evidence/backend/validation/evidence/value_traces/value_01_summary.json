@@ -1,0 +1,32 @@
+{
+  "tenant_id": "e405b8c4-03f9-424f-a704-3723fe93767c",
+  "allocation_id": "a1ef8cc6-59c7-4ba1-bd7a-3176c41bbf00",
+  "order_id": "order-133fb07b",
+  "transaction_id": "txn-8b87f083",
+  "platform_claims": [
+    {
+      "source": "meta",
+      "amount_cents": 50000
+    },
+    {
+      "source": "google",
+      "amount_cents": 50000
+    }
+  ],
+  "verified_revenue": {
+    "source": "shopify",
+    "amount_cents": 50000
+  },
+  "reconciliation_result": {
+    "claimed_total_cents": 100000,
+    "verified_total_cents": 50000,
+    "ghost_revenue_cents": 50000,
+    "discrepancy_bps": 10000
+  },
+  "invariants": {
+    "verified_wins": true,
+    "penny_perfect": true,
+    "idempotent": true
+  },
+  "timestamp": "2026-02-12T20:03:28.545645+00:00"
+}

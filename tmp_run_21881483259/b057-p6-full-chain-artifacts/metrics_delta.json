@@ -1,0 +1,8 @@
+{
+  "events_ingested_total": 1.0,
+  "celery_task_success_total_recompute_window": 1.0,
+  "celery_task_success_total_matview_refresh_all_for_tenant": 1.0,
+  "matview_refresh_total_mv_allocation_summary_success": 1.0,
+  "api_metrics_url": "http://127.0.0.1:52899/metrics",
+  "worker_metrics_url": "http://127.0.0.1:39139/metrics"
+}

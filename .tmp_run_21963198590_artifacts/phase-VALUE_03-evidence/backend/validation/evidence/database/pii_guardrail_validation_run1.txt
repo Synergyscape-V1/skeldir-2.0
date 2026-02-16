@@ -1,0 +1,24 @@
+==========================================
+PII Guardrail Validation Test (2025-11-27T11:55:38-06:00)
+==========================================
+
+Test 1: Attribution event insert with PII key 'email' (expect FAILURE)
+ERROR:  PII key detected in attribution_events.raw_payload. Ingestion blocked by database policy (Layer 2 guardrail). Key found: email. Reference: ADR-003-PII-Defense-Strategy.md. Action: Remove PII key from payload before retry.
+CONTEXT:  PL/pgSQL function fn_enforce_pii_guardrail_raw() line 22 at RAISE
+[PASS] PII trigger blocked attribution_events insert with PII key
+
+Test 2: Attribution event insert with PII-like value (expect SUCCESS)
+[PASS] Attribution event with PII only in value succeeded (documented limitation)
+
+Test 3: Revenue ledger metadata with PII key 'email' (expect FAILURE)
+ERROR:  PII key detected in revenue_ledger.metadata. Write blocked by database policy (Layer 2 guardrail). Key found: email. Reference: ADR-003-PII-Defense-Strategy.md. Action: Remove PII key from metadata before retry.
+CONTEXT:  PL/pgSQL function fn_enforce_pii_guardrail_metadata() line 22 at RAISE
+[PASS] PII trigger blocked revenue_ledger metadata containing PII key
+
+Test 4: Revenue ledger insert with NULL metadata (expect SUCCESS)
+[PASS] Revenue ledger insert with NULL metadata succeeded
+
+==========================================
+PII guardrail validation complete (2025-11-27T11:55:38-06:00)
+Evidence written to /c/Users/ayewhy/II SKELDIR II/backend/validation/evidence/database/pii_guardrail_validation.txt
+==========================================

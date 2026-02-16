@@ -1,0 +1,27 @@
+
+> skeldir-frontend@1.0.0 typecheck:design-system
+> tsc -p tsconfig.design-system.json --noEmit
+
+src/components/ConfidenceScoreBadge.tsx(155,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceScoreBadge.tsx(160,23): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceScoreBadge.tsx(168,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceScoreBadge.tsx(173,23): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceTooltip.tsx(74,13): error TS6133: 'viewportHeight' is declared but its value is never read.
+src/components/ConfidenceTooltip.tsx(123,15): error TS6133: 'viewportHeight' is declared but its value is never read.
+src/components/CorrelationIdDisplay.tsx(2,22): error TS2307: Cannot find module '@/assets/brand/icons/copy.svg' or its corresponding type declarations.
+src/components/CorrelationIdDisplay.tsx(3,23): error TS2307: Cannot find module '@/assets/brand/icons/checkmark.svg' or its corresponding type declarations.
+src/components/dashboard/BulkActionModal.tsx(142,71): error TS2339: Property 'amount' does not exist on type 'UnmatchedTransaction'.
+src/components/dashboard/BulkActionModal.tsx(181,64): error TS2339: Property 'platform' does not exist on type 'UnmatchedTransaction'.
+src/components/dashboard/BulkActionModal.tsx(187,82): error TS2339: Property 'date' does not exist on type 'UnmatchedTransaction'.
+src/components/dashboard/BulkActionModal.tsx(189,82): error TS2339: Property 'date' does not exist on type 'UnmatchedTransaction'.
+src/components/error-banner/ErrorBanner.tsx(86,23): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ui/request-status.tsx(53,25): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/contexts/VerificationSyncContext.tsx(37,5): error TS6133: 'syncState' is declared but its value is never read.
+src/contexts/VerificationSyncContext.tsx(44,10): error TS6133: 'toastQueue' is declared but its value is never read.
+src/contexts/VerificationSyncContext.tsx(62,36): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/contexts/VerificationSyncContext.tsx(63,62): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/pages/D1AtomicsHarness.tsx(62,19): error TS2322: Type '"link"' is not assignable to type '"default" | "secondary" | "destructive" | "outline" | "ghost" | null | undefined'.
+src/services/verificationPolling.ts(15,13): error TS6138: Property 'interval' is declared but its value is never read.
+src/services/verificationPolling.ts(106,30): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/services/verificationWebSocket.ts(107,28): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/services/verificationWebSocket.ts(113,32): error TS2339: Property 'env' does not exist on type 'ImportMeta'.

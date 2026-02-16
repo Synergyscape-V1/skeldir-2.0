@@ -1,0 +1,9 @@
+{
+  "hit_rate": 0.6,
+  "negative_cache_disabled_provider_calls": 20,
+  "negative_unique_hits": 0,
+  "negative_unique_provider_calls": 30,
+  "provider_call_count": 40,
+  "workload_total": 100,
+  "workload_unique_prompts": 40
+}

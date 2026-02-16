@@ -1,4 +1,4 @@
-# B0.4 Phase 4 Multi-Tenancy & Security Closure Evidence
+﻿# B0.4 Phase 4 Multi-Tenancy & Security Closure Evidence
 
 Date: 2026-02-12  
 Branch target: `main`  
@@ -35,7 +35,7 @@ with:
 
 Observed:
 
-- Phase-4 probe artifacts were passing (EG4.1�EG4.6 pass; runtime identity verified).
+- Phase-4 probe artifacts were passing (EG4.1–EG4.6 pass; runtime identity verified).
 - R3 failed early at `S3_MalformedStorm_N50` with:
   - `DLQ_ROWS_CREATED=100`
   - expected scenario invariant was `dlq == n` (for `n=50`).
@@ -66,7 +66,7 @@ Updated: `scripts/r3/ingestion_under_fire.py`
 Artifact: `backend/validation/evidence/phases/b0_4_summary.json`
 
 - `status = "success"`
-- timestamp: `2026-02-12T18:30:02.401521+00:00`
+- timestamp: `2026-02-12T20:13:10.271081+00:00`
 
 ### 4.2 R3 harness aggregate
 Artifact: `backend/validation/evidence/phases/b0_4_r3_harness.log`
@@ -102,14 +102,48 @@ Verified:
 - `investigation_jobs` present with:
   - `policy_cmds=["ALL"]`, `policy_count=1`, `rls_enabled=true`, `force_rls=true`
 
-## 5) Completion Status (Current Truth)
+## 5) CI Adjudication (Clean-Room Evidence)
 
-Local execution state for this corrective directive:
+Canonical CI run (GitHub Actions clean-room):
 
-- Phase-4 probe path passes.
-- R3 aggregate path passes.
-- B0.4 gate is green on the provisioned DB (`status: success`).
+- Run ID: `21962179752`
+- URL: `https://github.com/Muk223/skeldir-2.0/actions/runs/21962179752`
+- Head SHA: `2377a75bbcbc5dd588dd93d771b88f03824fa9e7`
+- Conclusion: `success`
 
-Remaining program-level closure item (outside local execution):
+Captured from CI artifact store (`phase-B0.4-evidence`):
 
-- Commit/push and CI green on `main` are still required for full branch-level closure.
+- `backend/validation/evidence/security/phase4_tenant_tables.json`
+- `backend/validation/evidence/security/phase4_gate_summary.json`
+- `backend/validation/evidence/phases/b0_4_summary.json`
+
+Final gate values from CI artifact `phase4_gate_summary.json`:
+
+- `eg4_1_table_discovery.pass = true` (tenant_table_count=`30`)
+- `eg4_2_rls_force_coverage.pass = true`
+- `eg4_3_runtime_identity.pass = true` (`runtime=app_user`, `ops=app_ops`, `migration=migration_owner`; all non-superuser and no bypass RLS)
+- `eg4_4_context_fail_closed.pass = true`
+- `eg4_5_secret_scan.pass = true` (`db_hit_count=0`, `file_hit_count=0`)
+- `eg4_6_dlq_two_lane.pass = true`
+- `eg4_7_phase3_perf_non_regression.pass = true` (delegated to R3 harness from B0.4 gate)
+
+Explicit required-table verification from CI artifact `phase4_tenant_tables.json`:
+
+- `llm_api_calls` is present in catalog discovery with `scope=tenant_id`, `rls_enabled=true`, `force_rls=true`, `policy_cmds=["ALL"]`.
+- `investigation_jobs` is present with `policy_cmds=["ALL"]`, `policy_count=1`, `rls_enabled=true`, `force_rls=true`.
+
+Global coherence checks in this same run are green, including prior red vectors:
+
+- `validate-schema-authority`: `success`
+- `b0545-convergence`: `success`
+- `Phase Gates (B0.3)`: `success`
+- `Phase Chain (B0.4 target)`: `success`
+- workflow `CI`: `success`
+
+## 6) Completion Status (Current Truth)
+
+Program-level closure state:
+
+- Remediation branch CI is fully green in clean-room adjudication.
+- PR to `main` is open and merge-clean: `https://github.com/Muk223/skeldir-2.0/pull/81`.
+- Phase 4 is technically closed at enforcement/probe level and system-coherent at repository CI level on the remediation head.

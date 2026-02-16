@@ -150,3 +150,6 @@ backend/celerybeat-schedule.*
 docs/NUL
 NUL
 backend/.venv311/
+
+*storybook.log
+storybook-static

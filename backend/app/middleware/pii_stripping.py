@@ -61,6 +61,9 @@ PII_KEYS: Set[str] = {
 # Only strip PII at ingestion boundary to avoid breaking non-ingestion APIs
 # (e.g., auth/login legitimately accepts an email address).
 PII_STRIP_PATH_PREFIXES: tuple[str, ...] = ("/api/webhooks",)
+_PII_JSON_KEY_TOKENS: tuple[bytes, ...] = tuple(
+    f"\"{k.lower()}\"".encode("utf-8") for k in sorted(PII_KEYS)
+)
 
 
 def strip_pii_keys_recursive(data: Any, path: str = "root") -> tuple[Any, list[str]]:
@@ -145,6 +148,13 @@ class PIIStrippingMiddleware(BaseHTTPMiddleware):
                     setattr(request.state, "original_body", body)
                     
                     if body:
+                        # Fast path: if no known PII key tokens exist in raw JSON, skip
+                        # recursive parse/scrub and keep original payload untouched.
+                        lowered = body.lower()
+                        if not any(token in lowered for token in _PII_JSON_KEY_TOKENS):
+                            request._body = body
+                            return await call_next(request)
+
                         # Parse JSON
                         try:
                             payload = json.loads(body)
@@ -159,7 +169,7 @@ class PIIStrippingMiddleware(BaseHTTPMiddleware):
                         
                         # Log redaction events
                         if redacted_keys:
-                            logger.info(
+                            logger.debug(
                                 "PII keys stripped from ingestion request",
                                 extra={
                                     "event_type": "pii_redaction",

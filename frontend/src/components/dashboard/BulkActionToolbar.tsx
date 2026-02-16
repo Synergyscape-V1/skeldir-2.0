@@ -1,6 +1,8 @@
-import { 
-  CheckCircle, Flag, Archive, UserPlus, Download, X, Loader2 
+import {
+  CheckCircle, Flag, Archive, UserPlus, Download, X, Loader2
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 
 interface BulkActionToolbarProps {
   selectedCount: number;
@@ -36,9 +38,9 @@ export function BulkActionToolbar({
               transaction{selectedCount !== 1 ? 's' : ''} selected
             </span>
           </div>
-          
-          <div className="h-6 w-px bg-blue-400 dark:bg-blue-500" />
-          
+
+          <Separator orientation="vertical" className="h-6 bg-blue-400 dark:bg-blue-500" />
+
           <div className="text-white">
             <span className="font-semibold" data-testid="text-selected-amount">
               ${selectedTotalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -56,74 +58,74 @@ export function BulkActionToolbar({
             </div>
           ) : (
             <>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
+                className="bg-white text-blue-600 border-transparent hover:bg-blue-50"
                 onClick={onMarkReviewed}
-                className="inline-flex items-center px-3 py-2 bg-white text-blue-600 text-sm font-medium 
-                           rounded-md hover-elevate active-elevate-2 transition-colors focus:outline-none focus:ring-2 
-                           focus:ring-white focus:ring-offset-2 focus:ring-offset-blue-600"
                 data-testid="button-mark-reviewed"
               >
-                <CheckCircle className="w-4 h-4 mr-2" />
+                <CheckCircle />
                 Mark Reviewed
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                className="bg-blue-500 dark:bg-blue-600 text-white hover:bg-blue-400"
                 onClick={onFlagInvestigation}
-                className="inline-flex items-center px-3 py-2 bg-blue-500 dark:bg-blue-600 text-white text-sm font-medium 
-                           rounded-md hover-elevate active-elevate-2 transition-colors focus:outline-none focus:ring-2 
-                           focus:ring-white focus:ring-offset-2 focus:ring-offset-blue-600"
                 data-testid="button-flag-investigation"
               >
-                <Flag className="w-4 h-4 mr-2" />
+                <Flag />
                 Flag for Investigation
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                className="bg-blue-500 dark:bg-blue-600 text-white hover:bg-blue-400"
                 onClick={onExcludeVariance}
-                className="inline-flex items-center px-3 py-2 bg-blue-500 dark:bg-blue-600 text-white text-sm font-medium 
-                           rounded-md hover-elevate active-elevate-2 transition-colors focus:outline-none focus:ring-2 
-                           focus:ring-white focus:ring-offset-2 focus:ring-offset-blue-600"
                 data-testid="button-exclude-variance"
               >
-                <Archive className="w-4 h-4 mr-2" />
+                <Archive />
                 Exclude from Variance
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                className="bg-blue-500 dark:bg-blue-600 text-white hover:bg-blue-400"
                 onClick={onAssignUser}
-                className="inline-flex items-center px-3 py-2 bg-blue-500 dark:bg-blue-600 text-white text-sm font-medium 
-                           rounded-md hover-elevate active-elevate-2 transition-colors focus:outline-none focus:ring-2 
-                           focus:ring-white focus:ring-offset-2 focus:ring-offset-blue-600"
                 data-testid="button-assign-user"
               >
-                <UserPlus className="w-4 h-4 mr-2" />
+                <UserPlus />
                 Assign
-              </button>
+              </Button>
 
-              <div className="h-6 w-px bg-blue-400 dark:bg-blue-500" />
+              <Separator orientation="vertical" className="h-6 bg-blue-400 dark:bg-blue-500" />
 
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                className="bg-blue-500 dark:bg-blue-600 text-white hover:bg-blue-400"
                 onClick={onExport}
-                className="inline-flex items-center px-3 py-2 bg-blue-500 dark:bg-blue-600 text-white text-sm font-medium 
-                           rounded-md hover-elevate active-elevate-2 transition-colors focus:outline-none focus:ring-2 
-                           focus:ring-white focus:ring-offset-2 focus:ring-offset-blue-600"
                 title="Export selected transactions to CSV"
                 data-testid="button-export-selected"
               >
-                <Download className="w-4 h-4 mr-2" />
+                <Download />
                 Export
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-white hover:bg-blue-500"
                 onClick={onClearSelection}
-                className="inline-flex items-center p-2 text-white hover-elevate active-elevate-2 rounded-md 
-                           transition-colors focus:outline-none focus:ring-2 focus:ring-white 
-                           focus:ring-offset-2 focus:ring-offset-blue-600"
                 title="Clear selection"
                 data-testid="button-clear-selection"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </Button>
             </>
           )}
         </div>

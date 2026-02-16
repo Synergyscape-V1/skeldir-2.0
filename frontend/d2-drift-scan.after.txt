@@ -1,0 +1,27 @@
+🔍 D2 Token Drift Sentinel Scanner
+================================================================================
+
+📋 D2-Authoritative Scope: 9 components
+
+✅ ActivitySection: 0 violation(s)
+✅ UserInfoCard: 0 violation(s)
+✅ DataConfidenceBar: 0 violation(s)
+✅ BulkActionModal: 0 violation(s)
+✅ BulkActionToolbar: 0 violation(s)
+✅ ErrorBanner (+1 CSS): 0 violation(s)
+✅ ErrorBannerContainer: 0 violation(s)
+✅ ErrorBannerProvider: 0 violation(s)
+✅ ConfidenceScoreBadge (+1 CSS): 0 violation(s)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Hex literals:           0
+  Arbitrary hex classes:  0
+  Theming inline styles:  0
+
+================================================================================
+✅ D2 TOKEN DRIFT SCAN: PASS
+================================================================================
+
+Zero hex violations. Inline styles within allowlist.

@@ -1,0 +1,29 @@
+{
+  "contract_fields_present": {
+    "cost_usd": true,
+    "latency_ms": true,
+    "timeout_ms": true
+  },
+  "budget_enforcement": {
+    "tenant_id": "ba6c1bf3-7e62-4bf9-bdea-2ee343bbe4de",
+    "requested_model": "gpt-4",
+    "resolved_model": "claude-3-haiku",
+    "input_tokens": 5000,
+    "output_tokens": 3000,
+    "estimated_cost_cents": 33,
+    "cap_cents": 30,
+    "decision": "FALLBACK",
+    "reason": "FALLBACK: gpt-4 -> claude-3-haiku (requested 33\u00a2 > cap 30\u00a2; fallback_estimate 1\u00a2)"
+  },
+  "audit_record": {
+    "request_id": "05d3a41d-14fd-41fb-98bc-c16b68bdcd18",
+    "decision": "FALLBACK",
+    "exists": true
+  },
+  "invariants": {
+    "contract_fields_present": true,
+    "premium_blocked_or_fallback": true,
+    "audit_trail_exists": true
+  },
+  "timestamp": "2026-02-12T20:36:26.667583+00:00"
+}

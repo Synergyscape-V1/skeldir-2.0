@@ -1,0 +1,9 @@
+# HELP multiproc_orphan_files_detected_total Total multiprocess shard *.db files detected for non-live PIDs (before pruning grace window)
+# TYPE multiproc_orphan_files_detected_total counter
+multiproc_orphan_files_detected_total 0.0
+# HELP multiproc_pruned_files_total Total multiprocess shard *.db files pruned for stale, non-live PIDs
+# TYPE multiproc_pruned_files_total counter
+multiproc_pruned_files_total 0.0
+# HELP multiproc_dir_overflow_total Total times multiprocess shard file count exceeded configured threshold
+# TYPE multiproc_dir_overflow_total counter
+multiproc_dir_overflow_total 0.0

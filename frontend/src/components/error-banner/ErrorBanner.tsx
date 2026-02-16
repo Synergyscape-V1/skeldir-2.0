@@ -3,6 +3,7 @@ import { X, ChevronDown } from 'lucide-react';
 import { SEVERITY_CONFIG } from '@/lib/error-banner-config';
 import { useAutoDismiss } from '@/hooks/use-auto-dismiss';
 import type { BannerConfig } from '@/types/error-banner';
+import { Button } from '@/components/ui/button';
 import { CorrelationIdDisplay } from '@/components/CorrelationIdDisplay';
 import './ErrorBanner.css';
 
@@ -116,15 +117,7 @@ export function ErrorBanner({ config, index, totalBanners, onDismiss }: ErrorBan
 
   const position = 80 + index * 76;
 
-  const backgroundStyle =
-    severity === 'critical'
-      ? {
-          background: `linear-gradient(to right, hsl(var(--brand-critical) / 0.05), hsl(var(--brand-alice) / 0.9))`,
-        }
-      : {
-          backgroundColor: 'hsl(var(--brand-alice) / 0.9)',
-        };
-
+  // Justification: position is data-driven (computed from banner index), not known at build time
   const positionStyle = typeof window !== 'undefined' && window.innerWidth <= 640
     ? { bottom: `${position}px` }
     : { top: `${position}px`, right: '24px' };
@@ -135,6 +128,7 @@ export function ErrorBanner({ config, index, totalBanners, onDismiss }: ErrorBan
       className={`error-banner-container fixed z-[9999] w-[400px] ${
         isEntering ? 'banner-enter' : isExiting ? 'banner-exit' : 'banner-reposition'
       }`}
+      // Justification: top/bottom/right are data-driven geometry (computed from banner stack index)
       style={positionStyle}
       data-index={index}
       data-banner-id={id}
@@ -147,41 +141,39 @@ export function ErrorBanner({ config, index, totalBanners, onDismiss }: ErrorBan
     >
       <div
         ref={autoDismiss.elementRef as React.RefObject<HTMLDivElement>}
-        className="relative rounded-lg p-3 backdrop-blur-[16px] shadow-[0_4px_16px_rgba(9,47,100,0.1)]"
-        style={{
-          ...backgroundStyle,
-          borderLeft: `4px solid ${severityConfig.borderColor}`,
-        }}
+        className={`relative rounded-lg p-3 backdrop-blur-[16px] shadow-[0_4px_16px_rgba(9,47,100,0.1)] border-l-4 ${
+          severity === 'critical' ? 'banner-bg-critical' : 'banner-bg-default'
+        }`}
+        // Justification: borderLeft color is severity-driven (4 runtime variants from D0 token config)
+        style={{ borderLeftColor: severityConfig.borderColor }}
       >
         <div className="flex items-start gap-3">
           <Icon
             className="error-banner-icon w-5 h-5 flex-shrink-0"
+            // Justification: icon color is severity-driven (4 runtime variants from D0 token config)
             style={{ color: severityConfig.iconColor }}
             aria-hidden="true"
           />
 
           <div className="flex-1 min-w-0">
             <p
-              className="error-banner-message text-sm leading-relaxed"
-              style={{ color: 'hsl(var(--brand-cool-black))' }}
+              className="error-banner-message text-sm leading-relaxed text-brand-cool-black"
               data-testid={`text-banner-message-${id}`}
             >
               {message}
             </p>
 
             {action && (
-              <button
+              <Button
                 ref={actionButtonRef}
+                variant="ghost"
                 onClick={action.onClick}
-                className="mt-1.5 min-h-[44px] px-4 py-2 text-sm font-medium rounded-md hover:underline transition-all duration-150"
-                style={{
-                  color: 'hsl(var(--brand-tufts))',
-                  textUnderlineOffset: '3px',
-                }}
+                className="mt-1.5 min-h-[44px] hover:underline text-brand-tufts"
+                style={{ textUnderlineOffset: '3px' }}
                 data-testid={`button-action-${action.testId || severity}`}
               >
                 {action.label}
-              </button>
+              </Button>
             )}
 
             {correlationId && (
@@ -198,14 +190,13 @@ export function ErrorBanner({ config, index, totalBanners, onDismiss }: ErrorBan
                       setIsDetailsExpanded(!isDetailsExpanded);
                     }
                   }}
-                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium transition-all duration-150 opacity-50 hover:opacity-100"
-                  style={{ color: 'hsl(var(--brand-cool-black))' }}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium transition-all duration-150 opacity-50 hover:opacity-100 text-brand-cool-black"
                   aria-expanded={isDetailsExpanded}
                   aria-controls={`advanced-details-${id}`}
                   data-testid={`button-toggle-details-${id}`}
                 >
-                  <ChevronDown 
-                    className={`w-3.5 h-3.5 transition-transform duration-200 ${isDetailsExpanded ? 'rotate-180' : ''}`} 
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${isDetailsExpanded ? 'rotate-180' : ''}`}
                   />
                   <span>Advanced details</span>
                 </button>
@@ -213,10 +204,11 @@ export function ErrorBanner({ config, index, totalBanners, onDismiss }: ErrorBan
                 <div
                   id={`advanced-details-${id}`}
                   className={`overflow-hidden ${!hasInteractedWithDetails && !isDetailsExpanded ? 'advanced-details-collapsed' : ''}`}
+                  // Justification: animation/maxHeight/opacity are state-driven expand/collapse (dynamic geometry)
                   style={{
-                    animation: isDetailsExpanded 
-                      ? 'detailsExpand 250ms cubic-bezier(0.4, 0, 0.2, 1) forwards' 
-                      : hasInteractedWithDetails 
+                    animation: isDetailsExpanded
+                      ? 'detailsExpand 250ms cubic-bezier(0.4, 0, 0.2, 1) forwards'
+                      : hasInteractedWithDetails
                         ? 'detailsCollapse 200ms cubic-bezier(0.4, 0, 0.2, 1) forwards'
                         : 'none',
                     ...(hasInteractedWithDetails && {
@@ -232,16 +224,17 @@ export function ErrorBanner({ config, index, totalBanners, onDismiss }: ErrorBan
             )}
           </div>
 
-          <button
+          <Button
             ref={closeButtonRef}
+            variant="ghost"
+            size="icon"
             onClick={handleDismiss}
-            className="flex items-center justify-center min-w-[44px] min-h-[44px] -mr-2 -mt-2 rounded-md transition-all duration-150 opacity-60 hover:opacity-100 hover:scale-110"
-            style={{ color: 'hsl(var(--brand-cool-black))' }}
+            className="min-w-[44px] min-h-[44px] -mr-2 -mt-2 opacity-60 hover:opacity-100 hover:scale-110 border-transparent text-brand-cool-black"
             aria-label={`Close ${severity} notification`}
             data-testid={`button-close-banner-${id}`}
           >
             <X className="w-6 h-6" />
-          </button>
+          </Button>
         </div>
       </div>
     </div>

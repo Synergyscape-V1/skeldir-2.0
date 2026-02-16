@@ -1,0 +1,29 @@
+{
+  "status": "success",
+  "results": [
+    {
+      "query": "EXPLAIN ANALYZE SELECT id, name FROM tenants LIMIT 10;",
+      "returncode": 0,
+      "stdout": "                                                 QUERY PLAN                                                  \n-------------------------------------------------------------------------------------------------------------\n Limit  (cost=0.00..0.77 rows=10 width=38) (actual time=0.025..0.028 rows=10.00 loops=1)\n   Buffers: shared hit=1\n   ->  Seq Scan on tenants  (cost=0.00..1.15 rows=15 width=38) (actual time=0.023..0.024 rows=10.00 loops=1)\n         Buffers: shared hit=1\n Planning:\n   Buffers: shared hit=84\n Planning Time: 1.229 ms\n Execution Time: 0.112 ms\n(8 rows)\n\n",
+      "stderr": ""
+    },
+    {
+      "query": "EXPLAIN ANALYZE SELECT * FROM attribution_events ORDER BY occurred_at DESC LIMIT 10;",
+      "returncode": 0,
+      "stdout": "                                                         QUERY PLAN                                                          \n-----------------------------------------------------------------------------------------------------------------------------\n Limit  (cost=1.05..1.06 rows=3 width=785) (actual time=0.065..0.066 rows=3.00 loops=1)\n   Buffers: shared hit=4\n   ->  Sort  (cost=1.05..1.06 rows=3 width=785) (actual time=0.063..0.064 rows=3.00 loops=1)\n         Sort Key: occurred_at DESC\n         Sort Method: quicksort  Memory: 26kB\n         Buffers: shared hit=4\n         ->  Seq Scan on attribution_events  (cost=0.00..1.03 rows=3 width=785) (actual time=0.022..0.030 rows=3.00 loops=1)\n               Buffers: shared hit=1\n Planning:\n   Buffers: shared hit=232\n Planning Time: 2.474 ms\n Execution Time: 0.116 ms\n(12 rows)\n\n",
+      "stderr": ""
+    },
+    {
+      "query": "EXPLAIN ANALYZE SELECT * FROM attribution_allocations ORDER BY created_at DESC LIMIT 10;",
+      "returncode": 0,
+      "stdout": "                                                            QUERY PLAN                                                            \n----------------------------------------------------------------------------------------------------------------------------------\n Limit  (cost=1.08..1.09 rows=4 width=302) (actual time=0.075..0.076 rows=4.00 loops=1)\n   Buffers: shared hit=4\n   ->  Sort  (cost=1.08..1.09 rows=4 width=302) (actual time=0.073..0.073 rows=4.00 loops=1)\n         Sort Key: created_at DESC\n         Sort Method: quicksort  Memory: 26kB\n         Buffers: shared hit=4\n         ->  Seq Scan on attribution_allocations  (cost=0.00..1.04 rows=4 width=302) (actual time=0.032..0.034 rows=4.00 loops=1)\n               Buffers: shared hit=1\n Planning:\n   Buffers: shared hit=262\n Planning Time: 2.152 ms\n Execution Time: 0.149 ms\n(12 rows)\n\n",
+      "stderr": ""
+    },
+    {
+      "query": "EXPLAIN ANALYZE SELECT * FROM revenue_ledger ORDER BY verification_timestamp DESC LIMIT 10;",
+      "returncode": 0,
+      "stdout": "                                                       QUERY PLAN                                                        \n-------------------------------------------------------------------------------------------------------------------------\n Limit  (cost=1.03..1.03 rows=2 width=224) (actual time=0.046..0.047 rows=2.00 loops=1)\n   Buffers: shared hit=4\n   ->  Sort  (cost=1.03..1.03 rows=2 width=224) (actual time=0.045..0.045 rows=2.00 loops=1)\n         Sort Key: verification_timestamp DESC\n         Sort Method: quicksort  Memory: 25kB\n         Buffers: shared hit=4\n         ->  Seq Scan on revenue_ledger  (cost=0.00..1.02 rows=2 width=224) (actual time=0.016..0.017 rows=2.00 loops=1)\n               Buffers: shared hit=1\n Planning:\n   Buffers: shared hit=246\n Planning Time: 2.007 ms\n Execution Time: 0.085 ms\n(12 rows)\n\n",
+      "stderr": ""
+    }
+  ]
+}

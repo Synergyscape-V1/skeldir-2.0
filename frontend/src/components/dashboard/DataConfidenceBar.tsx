@@ -1,26 +1,37 @@
 import { Clock } from 'lucide-react';
 import { DataIntegritySeal, TrendIndicator } from '@/components/icons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
+import { RequestStatus } from '@/components/ui/request-status';
 import { useVerificationSyncContext } from '@/contexts/VerificationSyncContext';
 import { useAnimatedNumber } from '@/hooks/useAnimatedNumber';
 
 /**
  * Props interface for DataConfidenceBar component
  * All metrics sourced from backend verification service
+ *
+ * D2-P3 State Contract: supports loading/empty/error/success via normalized status prop.
+ * Non-success states delegate to RequestStatus (D1 substrate).
  */
 interface DataConfidenceBarProps {
+  /** Normalized state contract — drives render branch selection */
+  status: 'loading' | 'error' | 'empty' | 'success';
+
   /** Overall data confidence score (0-100) - represents system-wide verification quality */
   overallConfidence: number;
-  
+
   /** Percentage of individual transactions verified (0-100) */
   verifiedTransactionPercentage: number;
-  
+
   /** Relative time string for last data sync */
   lastUpdated: string;
-  
+
   /** Confidence trend direction based on recent verification changes */
   trend: 'increasing' | 'stable' | 'decreasing';
-  
+
+  /** Error recovery callback — required for error state, ignored otherwise */
+  onRetry: () => void;
+
   /** Optional: Custom className for additional styling */
   className?: string;
 }
@@ -44,10 +55,12 @@ interface DataConfidenceBarProps {
  * />
  */
 export function DataConfidenceBar({
+  status,
   overallConfidence,
   verifiedTransactionPercentage,
   lastUpdated,
   trend,
+  onRetry,
   className = '',
 }: DataConfidenceBarProps) {
   /**
@@ -145,10 +158,40 @@ export function DataConfidenceBar({
   // Determine if should be highlighted during verification sync
   const isHighlighted = highlightedComponent === 'confidence' && isAnimating;
 
+  // D2-P3: Non-success state branches — delegate to RequestStatus substrate
+  if (status !== 'success') {
+    return (
+      <div
+        className={`data-confidence-bar border-t border-b border-border bg-muted/30 py-4 px-6 ${className}`}
+        role="status"
+        aria-live="polite"
+        aria-label="Data confidence bar"
+        data-testid="data-confidence-bar"
+        data-status={status}
+      >
+        <RequestStatus
+          {...(status === 'error' ? {
+            status: 'error' as const,
+            message: 'Failed to load confidence data',
+            onRetry,
+            skeletonVariant: 'card' as const,
+          } : status === 'empty' ? {
+            status: 'empty' as const,
+            message: 'No confidence data available',
+            skeletonVariant: 'card' as const,
+          } : {
+            status: 'loading' as const,
+            skeletonVariant: 'card' as const,
+          })}
+        />
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider>
-      <div 
-        className={`data-confidence-bar ${colors.bg} border-t ${colors.border} border-b py-4 px-6 
+      <div
+        className={`data-confidence-bar ${colors.bg} border-t ${colors.border} border-b py-4 px-6
                     transition-colors duration-300 ease-in-out
                     ${isHighlighted ? 'ring-4 ring-blue-300 ring-opacity-50 animate-pulse-once' : ''}
                     ${className}`}
@@ -156,6 +199,7 @@ export function DataConfidenceBar({
         aria-live="polite"
         aria-label={`Data confidence: ${overallConfidence}%, trend ${trend}`}
         data-testid="data-confidence-bar"
+        data-status="success"
         data-protected-zone="verification-status"
       >
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -282,9 +326,9 @@ export function DataConfidenceBar({
                 
                 {/* Accuracy Level Badge */}
                 <div className="flex items-center gap-1.5">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors.badge}`} data-testid="badge-accuracy">
+                  <Badge variant="secondary" className={`rounded-full ${colors.badge}`} data-testid="badge-accuracy">
                     {accuracyLabels[confidenceLevel]}
-                  </span>
+                  </Badge>
                 </div>
               </div>
             </div>

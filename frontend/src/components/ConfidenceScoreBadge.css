@@ -45,11 +45,11 @@
 @keyframes dotPulse {
   0%, 100% {
     transform: scale(1.0);
-    box-shadow: 0 0 8px rgba(70, 139, 230, 0.6);
+    box-shadow: 0 0 8px hsl(var(--brand-tufts) / 0.6);
   }
   50% {
     transform: scale(1.3);
-    box-shadow: 0 0 12px rgba(70, 139, 230, 0.8);
+    box-shadow: 0 0 12px hsl(var(--brand-tufts) / 0.8);
   }
 }
 

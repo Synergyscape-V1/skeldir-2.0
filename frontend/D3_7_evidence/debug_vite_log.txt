@@ -1,0 +1,22 @@
+D3.7 Investigation — Vite Build Error (BEFORE FIX)
+
+Command: npm run build-storybook
+
+Error trace:
+---
+[vite]: Rollup failed to resolve import "@radix-ui/react-select" from
+"C:/Users/ayewhy/II SKELDIR II/frontend/src/components/ui/select.tsx".
+This is most likely unintended because it can break your application
+at runtime.
+If you do want to externalize this module explicitly add it to
+`build.rollupOptions.external`
+---
+
+Root cause: @radix-ui/react-select was listed in shadcn primitives inventory
+but the package was never installed. shadcn-theme.stories.tsx imports
+Select from @/components/ui/select, which requires @radix-ui/react-select.
+
+Post-fix: npm run build-storybook completes successfully.
+  ✓ canonical-data-table.stories-CrZWglWv.js built (62.41 kB)
+  ✓ shadcn-theme.stories-DWtTbTkE.js built (102.18 kB)
+  ✓ Storybook build completed successfully

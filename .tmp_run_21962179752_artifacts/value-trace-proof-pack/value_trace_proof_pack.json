@@ -1,0 +1,38 @@
+{
+  "candidate_sha": "7f53ce3f2f649f59163ddd1c4e15897b877eb8a7",
+  "run_id": "21962179752",
+  "run_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21962179752",
+  "generated_at_utc": "2026-02-12T20:13:32.526257+00:00",
+  "value_gates": [
+    {
+      "gate_id": "VALUE_01",
+      "job_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21962179752/job/63442360052",
+      "artifact_name": "phase-VALUE_01-evidence",
+      "artifact_id": 5489083450
+    },
+    {
+      "gate_id": "VALUE_02",
+      "job_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21962179752/job/63442360060",
+      "artifact_name": "phase-VALUE_02-evidence",
+      "artifact_id": 5489084545
+    },
+    {
+      "gate_id": "VALUE_03",
+      "job_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21962179752/job/63442360412",
+      "artifact_name": "phase-VALUE_03-evidence",
+      "artifact_id": 5489086593
+    },
+    {
+      "gate_id": "VALUE_04",
+      "job_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21962179752/job/63442360012",
+      "artifact_name": "phase-VALUE_04-evidence",
+      "artifact_id": 5489084312
+    },
+    {
+      "gate_id": "VALUE_05",
+      "job_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21962179752/job/63442360002",
+      "artifact_name": "phase-VALUE_05-evidence",
+      "artifact_id": 5489081973
+    }
+  ]
+}

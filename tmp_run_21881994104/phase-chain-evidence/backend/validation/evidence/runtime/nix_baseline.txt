@@ -1,0 +1,26 @@
+﻿2025-11-20 13:47:30
+=== Current replit.nix Configuration ===
+{ pkgs }: {
+  deps = [
+    pkgs.nodejs-20_x
+    pkgs.python311
+    pkgs.python311Packages.pip
+    pkgs.bash
+    pkgs.git
+  ];
+  env = {
+    PYTHON_LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+      pkgs.stdenv.cc.cc.lib
+      pkgs.zlib
+      pkgs.python311
+    ];
+    PATH = "${pkgs.nodejs-20_x}/bin:${pkgs.python311}/bin:$PATH";
+  };
+}
+
+
+=== Missing Packages Identified ===
+- pkgs.postgresql_15 (required for database)
+- pkgs.redis (required for task queue)
+- pkgs.python311Packages.numpy (required for scientific stack)
+- Prism (available via npm, not in nix)

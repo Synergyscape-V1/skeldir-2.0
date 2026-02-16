@@ -1,0 +1,14 @@
+
+> skeldir-frontend@1.0.0 build:design-system
+> vite build --config vite.config.lib.ts
+
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 1554 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist-design-system/[22m[35mstyle.css            [39m[1m[2m  3.44 kB[22m[1m[22m[2m │ gzip:  1.03 kB[22m
+[2mdist-design-system/[22m[36mdesign-system.es.js  [39m[1m[2m333.05 kB[22m[1m[22m[2m │ gzip: 75.29 kB[22m[2m │ map: 990.56 kB[22m
+[2mdist-design-system/[22m[35mstyle.css             [39m[1m[2m  3.44 kB[22m[1m[22m[2m │ gzip:  1.03 kB[22m
+[2mdist-design-system/[22m[36mdesign-system.umd.js  [39m[1m[2m211.75 kB[22m[1m[22m[2m │ gzip: 60.52 kB[22m[2m │ map: 953.85 kB[22m
+[32m✓ built in 2.27s[39m

@@ -180,32 +180,25 @@ export default function ConfidenceTooltip({ tier, score, visible, badgeRef, tool
       ref={tooltipRef}
       id={tooltipId}
       role="tooltip"
-      className="confidence-tooltip fixed px-4 py-3 rounded-lg max-w-[280px] pointer-events-none"
+      className="confidence-tooltip fixed px-4 py-3 rounded-lg max-w-[280px] pointer-events-none bg-gray-800 text-white text-sm shadow-lg"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
-        backgroundColor: '#1F2937',
-        color: '#FFFFFF',
         zIndex: 9999,
-        fontSize: '0.875rem',
         lineHeight: 1.6,
         opacity: isPositioned ? 1 : 0,
-        boxShadow: '0 4px 16px 0 rgba(0, 0, 0, 0.3)',
       }}
       data-testid="confidence-tooltip"
       data-tooltip-tier={tier}
     >
       {getTooltipMessage(tier, score)}
       <div
-        className="absolute"
+        className="absolute border-l-[6px] border-r-[6px] border-l-transparent border-r-transparent"
         style={{
           left: `${arrowLeft}px`,
           [position.placement === 'above' ? 'bottom' : 'top']: '-6px',
-          width: 0,
-          height: 0,
-          borderLeft: '6px solid transparent',
-          borderRight: '6px solid transparent',
-          [position.placement === 'above' ? 'borderTop' : 'borderBottom']: '6px solid #1F2937',
+          [position.placement === 'above' ? 'borderTopWidth' : 'borderBottomWidth']: '6px',
+          [position.placement === 'above' ? 'borderTopColor' : 'borderBottomColor']: 'rgb(31, 41, 55)', // gray-800
         }}
       />
     </div>,

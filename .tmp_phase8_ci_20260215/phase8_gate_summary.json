@@ -1,0 +1,9 @@
+{
+  "ci_subset": true,
+  "error": "Step failed (pytest_p8_topology): /opt/hostedtoolcache/Python/3.11.14/x64/bin/python -m pytest -q backend/tests/integration/test_b07_p8_topology_closure_pack.py",
+  "finished_at": "2026-02-14T23:02:40Z",
+  "full_physics": false,
+  "gates": {},
+  "started_at": "2026-02-14T22:58:44Z",
+  "status": "failed"
+}

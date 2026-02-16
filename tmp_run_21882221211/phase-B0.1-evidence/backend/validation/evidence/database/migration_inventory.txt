@@ -1,0 +1,46 @@
+﻿2025-11-20 13:48:56
+=== Alembic Migration Inventory ===
+
+FullName                                                                                                               
+--------                                                                                                               
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\001_core_schema\202511121302_baseline.py                                
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\001_core_schema\202511131115_add_core_tables.py                         
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\001_core_schema\202511131119_add_materialized_views.py                  
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\001_core_schema\202511131120_add_rls_policies.py                        
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\001_core_schema\202511131121_add_grants.py                              
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\002_pii_controls\202511161200_add_pii_guardrail_triggers.py             
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\002_pii_controls\202511161210_add_pii_audit_table.py                    
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511131232_enhance_allocation_schema.py           
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511131240_add_sum_equality_validation.py         
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511131250_enhance_revenue_ledger.py              
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511141200_revoke_events_update_delete.py         
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511141201_add_events_guard_trigger.py            
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511141300_revoke_ledger_update_delete.py         
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511141301_add_ledger_guard_trigger.py            
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511141302_ledger_allocation_id_not_null.py       
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511141310_create_channel_taxonomy.py             
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511141311_allocations_channel_fk_to_taxonomy.py  
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151400_add_tenants_auth_columns.py            
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151410_realign_attribution_events.py          
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151420_add_allocations_statistical_fields.py  
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151430_realign_revenue_ledger.py              
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151440_add_dead_events_retry_tracking.py      
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151450_create_revenue_state_transitions.py    
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151500_add_mv_channel_performance.py          
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511151510_add_mv_daily_revenue_summary.py        
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511161100_realign_allocations_fk_audit_trail.py  
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511161110_fix_mv_allocation_summary_left_join.py 
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511161120_add_unknown_channel_fallback.py        
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511161130_add_events_channel_fk.py               
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511171200_reconcile_b03_baseline.py              
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511171300_add_revenue_audit_trigger.py           
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511171400_drop_deprecated_matviews.py            
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511171500_add_channel_taxonomy_state.py          
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511171510_create_channel_state_transitions.py    
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511171520_create_channel_assignment_correction...
+C:\Users\ayewhy\II SKELDIR II\alembic\versions\003_data_governance\202511171530_add_channel_audit_triggers.py          
+
+
+
+=== Migration Count ===
+Total migration files: 36

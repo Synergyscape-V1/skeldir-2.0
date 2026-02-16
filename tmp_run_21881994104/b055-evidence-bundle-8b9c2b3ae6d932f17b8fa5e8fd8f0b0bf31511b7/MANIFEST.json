@@ -1,0 +1,82 @@
+{
+  "adjudicated_sha": "8b9c2b3ae6d932f17b8fa5e8fd8f0b0bf31511b7",
+  "bundle_dir": "/home/runner/work/skeldir-2.0/skeldir-2.0/artifacts/b055_evidence_bundle",
+  "bundle_name": "b055_evidence_bundle",
+  "files": {
+    "ALEMBIC/current.txt": {
+      "sha256": "7040a55f74019998881a99486bafefce0da3c7d8227c46120fab524602462d62",
+      "size_bytes": 148
+    },
+    "ALEMBIC/heads.txt": {
+      "sha256": "01a687530775665f2635396ea655c0925ff6e0e24e46c66ef8513ead979ac7cb",
+      "size_bytes": 60
+    },
+    "ALEMBIC/history.txt": {
+      "sha256": "03a1af536757cf0896bc4d61e86ae57b71f344ba85197b05809615e7b3fafe46",
+      "size_bytes": 8788
+    },
+    "ENV/ci_context.json": {
+      "sha256": "67c6a9762fa3ad55216029e9a09a2d2236cadad505ed78f732c72c80fd3c5215",
+      "size_bytes": 509
+    },
+    "ENV/git_sha.txt": {
+      "sha256": "f40b45698180271ce5fe2a7789172d6f0461620460f66ddaf9091fd6c0ad6a90",
+      "size_bytes": 216
+    },
+    "ENV/pip_freeze.txt": {
+      "sha256": "9695ac4d504a0cfbed8d301318295913e38710145c81b3f496c78c33de98957e",
+      "size_bytes": 1841
+    },
+    "ENV/python_version.txt": {
+      "sha256": "5bcd553099db913837bc0be327a293cbbae6fad836e4095a5bce4a9f2d594cd8",
+      "size_bytes": 51
+    },
+    "LOGS/determinism_scan.log": {
+      "sha256": "9b8de874b31ce3d909416e612e01ac5428eddcf3acd5e1d72a2f9defd3917f9c",
+      "size_bytes": 134
+    },
+    "LOGS/hermeticity_scan.log": {
+      "sha256": "154daa257f677af05b2474526c25dc3ee4f6aaac9d24933a93482df3014a8c35",
+      "size_bytes": 343
+    },
+    "LOGS/migrations.log": {
+      "sha256": "31a0c67eca541a2caa0f8efeabcbd7a7c365f449d5bbb5bb69ac25142a855f91",
+      "size_bytes": 111
+    },
+    "LOGS/pytest_b055.log": {
+      "sha256": "6b4a8ccd63c3682fcfac31fdf08fb13e26d42b75cd178540a89d0dbdeb3925db",
+      "size_bytes": 9382
+    },
+    "SCHEMA/catalog_constraints.json": {
+      "sha256": "db74ecd90cbf89fe5771dc2cebd5511c7f3095d87cc1175f8ca0ebd56d664193",
+      "size_bytes": 28084
+    },
+    "SCHEMA/schema.sql": {
+      "sha256": "a44df35089ef254a988bb17755e204f85b1f6c49d5f6f728c39c20843dcbe572",
+      "size_bytes": 205265
+    }
+  },
+  "generated_at_utc": "2026-02-10T20:55:12.650501+00:00",
+  "git_sha": "8b9c2b3ae6d932f17b8fa5e8fd8f0b0bf31511b7",
+  "github_sha": "01596231c1190c168bfc7164f9adc4cb4de23531",
+  "pr_head_sha": "8b9c2b3ae6d932f17b8fa5e8fd8f0b0bf31511b7",
+  "required_files": [
+    "MANIFEST.json",
+    "SCHEMA/schema.sql",
+    "SCHEMA/catalog_constraints.json",
+    "ALEMBIC/current.txt",
+    "ALEMBIC/heads.txt",
+    "ALEMBIC/history.txt",
+    "LOGS/pytest_b055.log",
+    "LOGS/migrations.log",
+    "LOGS/hermeticity_scan.log",
+    "LOGS/determinism_scan.log",
+    "ENV/git_sha.txt",
+    "ENV/python_version.txt",
+    "ENV/pip_freeze.txt",
+    "ENV/ci_context.json"
+  ],
+  "run_attempt": "1",
+  "workflow_run_id": "21881994104",
+  "workflow_sha": "8b9c2b3ae6d932f17b8fa5e8fd8f0b0bf31511b7"
+}

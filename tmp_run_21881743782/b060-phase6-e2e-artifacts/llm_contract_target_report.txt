@@ -1,0 +1,21 @@
+LLM contract <-> DB parity report
+contract: contracts-internal/llm/b07_llm_api_calls_write_contract.json
+shape: target_row_shape
+mode: report
+table: public.llm_api_calls
+
+status: PASS
+
+extra columns (info only) (12):
+  - block_reason
+  - breaker_state
+  - budget_reservation_cents
+  - budget_settled_cents
+  - cache_key
+  - cache_watermark
+  - failure_reason
+  - id
+  - prompt_fingerprint
+  - provider_attempted
+  - request_metadata
+  - status

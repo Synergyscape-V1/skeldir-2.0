@@ -1,0 +1,7 @@
+{
+  "service": "health",
+  "p95_ms": 1.44,
+  "pass": true,
+  "target_ms": 500,
+  "requests": 100
+}

@@ -1,0 +1,25 @@
+{
+  "tenant_id": "5f859a1c-8502-4251-837b-4733ebb31f80",
+  "event_id": "6ba4372f-0a19-4ce1-9437-4963e0257697",
+  "job_row": {
+    "id": "906da831-c5af-4707-ac11-673e8ed826d2",
+    "status": "succeeded",
+    "run_count": 1,
+    "window_start": "2026-01-25 00:00:00+00:00",
+    "window_end": "2026-01-26 00:00:00+00:00",
+    "model_version": "1.0.0"
+  },
+  "matview_row": {
+    "tenant_id": "5f859a1c-8502-4251-837b-4733ebb31f80",
+    "event_id": "6ba4372f-0a19-4ce1-9437-4963e0257697",
+    "model_version": "1.0.0",
+    "total_allocated_cents": 1050,
+    "event_revenue_cents": 1050,
+    "is_balanced": true,
+    "drift_cents": 0
+  },
+  "event_count_tenant": 1,
+  "allocation_count_tenant": 3,
+  "event_count_no_tenant": 0,
+  "allocation_count_no_tenant": 0
+}

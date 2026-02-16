@@ -1,9 +1,35 @@
+/**
+ * D3.7 CHOKE-POINT FILE: src/index.css (serves as globals.css)
+ *
+ * Cursor workflow:
+ *   This file is the single source of truth for shadcn CSS variable → D0 token mapping.
+ *   - :root block defines LIGHT MODE enterprise D0 tokens as HSL channels
+ *   - .dark block defines DARK MODE enterprise D0 tokens
+ *   - shadcn variables (--background, --primary, etc.) ARE the D0 tokens
+ *   - Brand-specific colors imported from ./assets/brand/colors.css
+ *
+ * Invariants:
+ *   - Every shadcn CSS variable must be defined in BOTH :root and .dark
+ *   - Values must be bare HSL channels (e.g. "217 91% 42%") — no hsl() wrapper
+ *   - The duplicate @layer base block with shadcn defaults has been REMOVED
+ *     (it was conflicting with enterprise D0 values)
+ *
+ * Re-validation: `npm run storybook` → shadcn theme story → toggle light/dark
+ */
+
 /* Import brand colors for RouteGuard and authentication components */
 @import './assets/brand/colors.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* D3.7 Alpha Semantics Decision:
+ * D0 tokens are HSL CHANNELS (e.g. --primary: 217 91% 42%) — no hsl() wrapper.
+ * Tailwind consumes them as hsl(var(--primary)) which supports opacity modifiers
+ * natively (e.g. bg-primary/90, ring-primary/50).
+ * Decision branch: "D0 tokens already provide HSL channels → map directly."
+ * No hex-to-HSL conversion needed. */
 
 /* LIGHT MODE */
 :root {
@@ -264,15 +290,9 @@
 
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply font-sans antialiased bg-background text-foreground;
-  }
-}
+/* D3.7: Duplicate @layer base :root/.dark block removed.
+ * Enterprise D0 tokens (top of file) are the single source of truth.
+ * shadcn defaults were conflicting with D0 values. */
 
 /**
  * Using the elevate system.
@@ -1197,5 +1217,16 @@
   }
   50% {
     opacity: 0.5;
+  }
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }

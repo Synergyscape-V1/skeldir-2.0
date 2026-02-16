@@ -32,6 +32,7 @@ from app.ingestion.channel_normalization import (
     get_valid_taxonomy_codes,
     log_unmapped_channel,
 )
+import app.ingestion.channel_normalization as channel_normalization
 
 
 class TestNormalizeChannelContract:
@@ -100,6 +101,20 @@ class TestKnownMappings:
         assert result == 'facebook_brand', (
             f"Expected 'facebook_brand' for Facebook Brand, got '{result}'"
         )
+
+    def test_facebook_ads_fb_alias(self):
+        """Gate 4.2: Alias mapping - fb -> facebook_paid."""
+        result = normalize_channel(utm_source="fb", utm_medium="cpc", vendor="facebook_ads")
+        assert result == 'facebook_paid', (
+            f"Expected 'facebook_paid' for fb alias, got '{result}'"
+        )
+
+    def test_facebook_ads_facebook_alias(self):
+        """Gate 4.2: Alias mapping - facebook -> facebook_paid."""
+        result = normalize_channel(utm_source="facebook", utm_medium="cpc", vendor="facebook_ads")
+        assert result == 'facebook_paid', (
+            f"Expected 'facebook_paid' for facebook alias, got '{result}'"
+        )
     
     def test_tiktok_ads(self):
         """Gate 4.2: Known mapping - TikTok Ads."""
@@ -141,6 +156,16 @@ class TestKnownMappings:
         result = normalize_channel(utm_source="EMAIL", utm_medium=None, vendor="stripe")
         assert result == 'email', (
             f"Expected 'email' for Stripe Email, got '{result}'"
+        )
+
+    def test_stripe_vendor_passthrough_defaults_to_direct(self):
+        """
+        Stripe webhook v2 default metadata sets vendor=stripe, utm_source=stripe.
+        This should normalize to DIRECT without unmapped fallback logging.
+        """
+        result = normalize_channel(utm_source="stripe", utm_medium=None, vendor="stripe")
+        assert result == "direct", (
+            f"Expected 'direct' for vendor/source passthrough, got '{result}'"
         )
     
     def test_woocommerce_email(self):
@@ -201,6 +226,54 @@ class TestUnmappedInputs:
             f"Expected 'unknown' for UTM without vendor, got '{result}'"
         )
         assert mock_log.called, "Should log unmapped channel when vendor missing"
+
+    @patch("app.ingestion.channel_normalization.increment_unmapped_channel_metric")
+    @patch("app.ingestion.channel_normalization.log_unmapped_channel")
+    def test_unmapped_logging_deduplicates_per_raw_key(self, mock_log, mock_metric):
+        """
+        Repeated unmapped keys should log/emit once per process to avoid log storms.
+        """
+        channel_normalization._normalize_channel_cached.cache_clear()
+        with channel_normalization._SEEN_UNMAPPED_KEYS_LOCK:
+            channel_normalization._SEEN_UNMAPPED_KEYS.clear()
+
+        for _ in range(3):
+            result = normalize_channel(
+                utm_source="bing",
+                utm_medium="cpc",
+                vendor="bing_ads",
+                tenant_id="tenant-a",
+            )
+            assert result == "unknown"
+
+        assert mock_log.call_count == 1
+        assert mock_metric.call_count == 1
+
+    @patch("app.ingestion.channel_normalization.increment_unmapped_channel_metric")
+    @patch("app.ingestion.channel_normalization.log_unmapped_channel")
+    def test_unmapped_dedup_cache_is_bounded(self, mock_log, mock_metric):
+        """
+        Dedup key cache must remain bounded to prevent memory growth under high cardinality.
+        """
+        channel_normalization._normalize_channel_cached.cache_clear()
+        with channel_normalization._SEEN_UNMAPPED_KEYS_LOCK:
+            channel_normalization._SEEN_UNMAPPED_KEYS.clear()
+
+        original_cap = channel_normalization._UNMAPPED_KEY_CACHE_MAX
+        channel_normalization._UNMAPPED_KEY_CACHE_MAX = 3
+        try:
+            for i in range(10):
+                result = normalize_channel(
+                    utm_source=f"source_{i}",
+                    utm_medium="cpc",
+                    vendor="vendor_x",
+                    tenant_id="tenant-b",
+                )
+                assert result == "unknown"
+                with channel_normalization._SEEN_UNMAPPED_KEYS_LOCK:
+                    assert len(channel_normalization._SEEN_UNMAPPED_KEYS) <= 3
+        finally:
+            channel_normalization._UNMAPPED_KEY_CACHE_MAX = original_cap
 
 
 class TestEdgeCases:
@@ -321,9 +394,6 @@ class TestCIIntegration:
 # Pytest configuration
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-
-
-
 
 
 

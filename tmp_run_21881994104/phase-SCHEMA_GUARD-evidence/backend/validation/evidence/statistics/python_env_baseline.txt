@@ -1,0 +1,97 @@
+﻿2025-11-20 13:49:24
+=== Python Environment Baseline ===
+
+--- Python Version ---
+Python 3.14.0
+
+--- Installed Packages ---
+Package                  Version
+------------------------ -------
+annotated-types          0.7.0
+argcomplete              3.6.3
+black                    25.11.0
+cfgv                     3.4.0
+click                    8.3.1
+colorama                 0.4.6
+datamodel-code-generator 0.25.0
+distlib                  0.4.0
+dnspython                2.8.0
+email-validator          2.3.0
+filelock                 3.20.0
+genson                   1.3.0
+identify                 2.6.15
+idna                     3.11
+inflect                  5.6.2
+isort                    5.13.2
+Jinja2                   3.1.6
+MarkupSafe               3.0.3
+more-itertools           10.8.0
+mypy_extensions          1.1.0
+nodeenv                  1.9.1
+packaging                25.0
+pathspec                 0.12.1
+pip                      25.2
+platformdirs             4.5.0
+pre_commit               4.3.0
+pydantic                 2.12.4
+pydantic_core            2.41.5
+pytokens                 0.3.0
+PyYAML                   6.0.3
+typeguard                4.4.4
+typing_extensions        4.15.0
+typing-inspection        0.4.2
+virtualenv               20.35.3
+
+=== Scientific Library Import Tests ===
+
+--- PyMC Import ---
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-64b53730-37f1-4980-8055-99cb1b3cb1f1.ps1:77 char:265
++ ... Encoding UTF8; python -c "import pymc; print('SUCCESS')" 2>&1 | Out-F ...
++                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import pymc; print('SUCCESS')
+    ^^^^^^^^^^^
+ModuleNotFoundError: No module named 'pymc'
+
+--- ArviZ Import ---
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-64b53730-37f1-4980-8055-99cb1b3cb1f1.ps1:77 char:533
++ ... ncoding UTF8; python -c "import arviz; print('SUCCESS')" 2>&1 | Out-F ...
++                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import arviz; print('SUCCESS')
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'arviz'
+
+--- NumPy Import ---
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-64b53730-37f1-4980-8055-99cb1b3cb1f1.ps1:77 char:802
++ ... ncoding UTF8; python -c "import numpy; print('SUCCESS')" 2>&1 | Out-F ...
++                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import numpy; print('SUCCESS')
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'numpy'
+
+--- Pandas Import ---
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-64b53730-37f1-4980-8055-99cb1b3cb1f1.ps1:77 char:1072
++ ... coding UTF8; python -c "import pandas; print('SUCCESS')" 2>&1 | Out-F ...
++                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import pandas; print('SUCCESS')
+    ^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'pandas'

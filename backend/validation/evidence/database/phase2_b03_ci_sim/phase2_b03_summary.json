@@ -1,0 +1,23 @@
+{
+  "phase": "B0.3",
+  "timestamp": "2026-02-10T20:27:18.649072+00:00",
+  "status": "failure",
+  "error": "command failed (1): alembic upgrade head; log=C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_ci_sim\\logs\\alembic_upgrade_head.log",
+  "gates": [
+    {
+      "gate": "runtime_schema_mutation",
+      "passed": true,
+      "details": {
+        "diff_path": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_ci_sim\\artifacts\\runtime_vs_migrated.diff"
+      }
+    },
+    {
+      "gate": "EG2.1",
+      "passed": true,
+      "details": {
+        "canonical": "C:\\Users\\ayewhy\\II SKELDIR II\\db\\schema\\canonical_schema.sql",
+        "diff_path": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_ci_sim\\artifacts\\eg2_1_parity.diff"
+      }
+    }
+  ]
+}

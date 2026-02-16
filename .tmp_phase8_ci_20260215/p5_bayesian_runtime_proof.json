@@ -1,0 +1,36 @@
+{
+  "fallback_event": {
+    "correlation_id": "ec82c41b-b9f9-4945-b072-5c96f6e51a6b",
+    "elapsed_ms": 4002,
+    "event": "bayesian_soft_timeout_fallback",
+    "fallback_lookback_days": 30,
+    "fallback_model": "deterministic_last_touch",
+    "fallback_triggered": true,
+    "reason": "bayesian_soft_time_limit_exceeded",
+    "status": "fallback",
+    "task_id": "b07-p5-bayes-runaway-5c9af8ba83",
+    "tenant_id": "3eeec099-d99e-43e0-af1d-82ec8c0ab19d",
+    "timestamp": "2026-02-14T22:59:44.326379+00:00"
+  },
+  "health_probe": {
+    "delivery_proof": "worker_received_task",
+    "status": "ok",
+    "task_id": "b07-p5-health-22ebddbd86"
+  },
+  "production_limits": {
+    "soft_time_limit_s": 270,
+    "time_limit_s": 300
+  },
+  "runaway_elapsed_s": 6.839829409000004,
+  "runaway_error_class": "TimeLimitExceeded",
+  "runaway_error_message": "TimeLimitExceeded(5,)",
+  "runaway_task_id": "b07-p5-bayes-runaway-5c9af8ba83",
+  "runtime_identity": {
+    "current_user": "app_user",
+    "rolsuper": false
+  },
+  "runtime_test_limits": {
+    "soft_time_limit_s": 4,
+    "time_limit_s": 5
+  }
+}

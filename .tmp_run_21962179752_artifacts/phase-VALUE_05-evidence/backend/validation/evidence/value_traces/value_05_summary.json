@@ -1,0 +1,55 @@
+{
+  "tenant_id": "b4756cfd-391d-45ca-985a-9fd9a6309b4a",
+  "job_id": "a2dadbc1-5576-44da-9420-9b0b751d16f7",
+  "min_hold_seconds": 45,
+  "transitions": [
+    {
+      "time": "t=0s",
+      "action": "create_job",
+      "status": "PENDING",
+      "remaining_hold_seconds": 45,
+      "assertion": "PENDING with 45s hold"
+    },
+    {
+      "time": "t=30s",
+      "action": "get_job",
+      "status": "PENDING",
+      "remaining_hold_seconds": 15,
+      "assertion": "Still PENDING (min_hold not reached)"
+    },
+    {
+      "time": "t=46s",
+      "action": "get_job",
+      "status": "READY_FOR_REVIEW",
+      "remaining_hold_seconds": 0,
+      "assertion": "READY_FOR_REVIEW (min_hold passed)"
+    },
+    {
+      "time": "t=46s",
+      "action": "check_not_completed",
+      "status": "READY_FOR_REVIEW",
+      "approved_at": null,
+      "completed_at": null,
+      "assertion": "NOT COMPLETED (approval gate enforced)"
+    },
+    {
+      "time": "t=46s (after approve)",
+      "action": "approve_job",
+      "status": "COMPLETED",
+      "approved_at": "2026-02-12T20:04:08.077155+00:00",
+      "completed_at": "2026-02-12T20:04:08.077155+00:00",
+      "assertion": "COMPLETED (after explicit approval)"
+    }
+  ],
+  "invariants": {
+    "min_hold_enforced": true,
+    "approval_gate_enforced": true,
+    "state_machine_integrity": true
+  },
+  "final_state": {
+    "status": "COMPLETED",
+    "approved_at": "2026-02-12T20:04:08.077155+00:00",
+    "completed_at": "2026-02-12T20:04:08.077155+00:00"
+  },
+  "timestamp": "2026-02-12T20:03:22.206708+00:00"
+}

@@ -15,8 +15,11 @@ Related Documents:
 
 import logging
 import os
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Optional
+from functools import lru_cache
+from threading import Lock
 
 import yaml
 
@@ -26,6 +29,12 @@ logger = logging.getLogger(__name__)
 # Cache for channel mapping and taxonomy codes
 _CHANNEL_MAPPING: Optional[Dict] = None
 _VALID_TAXONOMY_CODES: Optional[set] = None
+_UNMAPPED_KEY_CACHE_MAX = max(
+    128,
+    int(os.getenv("CHANNEL_UNMAPPED_DEDUP_MAX_KEYS", "4096")),
+)
+_SEEN_UNMAPPED_KEYS: OrderedDict[str, None] = OrderedDict()
+_SEEN_UNMAPPED_KEYS_LOCK = Lock()
 
 
 def load_channel_mapping() -> Dict:
@@ -104,6 +113,23 @@ def get_valid_taxonomy_codes() -> set:
     return _VALID_TAXONOMY_CODES
 
 
+def _normalize_input(value: Optional[str]) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _mark_unmapped_key_first_seen(raw_key: str) -> bool:
+    with _SEEN_UNMAPPED_KEYS_LOCK:
+        if raw_key in _SEEN_UNMAPPED_KEYS:
+            _SEEN_UNMAPPED_KEYS.move_to_end(raw_key)
+            return False
+        _SEEN_UNMAPPED_KEYS[raw_key] = None
+        if len(_SEEN_UNMAPPED_KEYS) > _UNMAPPED_KEY_CACHE_MAX:
+            _SEEN_UNMAPPED_KEYS.popitem(last=False)
+        return True
+
+
 def log_unmapped_channel(
     raw_key: str,
     utm_source: Optional[str],
@@ -158,6 +184,68 @@ def increment_unmapped_channel_metric(vendor: str, raw_key: str) -> None:
     )
 
 
+@lru_cache(maxsize=4096)
+def _normalize_channel_cached(
+    vendor: str,
+    utm_source: str,
+    utm_medium: str,
+) -> str:
+    """
+    Normalize channel inputs to a canonical taxonomy code using an O(1) cache.
+    """
+    mapping = load_channel_mapping()
+    valid_codes = get_valid_taxonomy_codes()
+
+    if not vendor:
+        return "direct" if not utm_source and not utm_medium else "unknown"
+
+    vendor_mapping = mapping.get(vendor)
+    if not vendor_mapping:
+        return "unknown"
+
+    canonical_code = None
+
+    if utm_source:
+        canonical_code = vendor_mapping.get(utm_source.upper())
+        if not canonical_code:
+            canonical_code = vendor_mapping.get(utm_source)
+
+    if not canonical_code and utm_source and utm_medium:
+        combined_key = f"{utm_source.upper()}_{utm_medium.upper()}"
+        canonical_code = vendor_mapping.get(combined_key)
+        if not canonical_code:
+            canonical_code = vendor_mapping.get(f"{utm_source}_{utm_medium}")
+
+    if not canonical_code and utm_medium:
+        canonical_code = vendor_mapping.get(utm_medium.upper())
+        if not canonical_code:
+            canonical_code = vendor_mapping.get(utm_medium)
+
+    # Common webhook pattern: vendor + utm_source both set to the vendor name.
+    if (
+        not canonical_code
+        and utm_source
+        and not utm_medium
+        and utm_source.lower() == vendor
+    ):
+        canonical_code = vendor_mapping.get("DIRECT") or vendor_mapping.get("direct")
+
+    if canonical_code:
+        if canonical_code in valid_codes:
+            return canonical_code
+        logger.warning(
+            "Mapped channel code not in taxonomy - falling back to 'unknown'",
+            extra={
+                "mapped_code": canonical_code,
+                "utm_source": utm_source,
+                "utm_medium": utm_medium,
+                "vendor": vendor,
+            },
+        )
+
+    return "unknown"
+
+
 def normalize_channel(
     utm_source: Optional[str] = None,
     utm_medium: Optional[str] = None,
@@ -201,100 +289,51 @@ def normalize_channel(
         >>> normalize_channel(utm_source=None, utm_medium=None, vendor=None)
         'unknown'  # No indicators provided
     """
-    # Load mapping and taxonomy (cached)
+    source_value = _normalize_input(utm_source)
+    medium_value = _normalize_input(utm_medium)
+    vendor_value = _normalize_input(vendor).lower()
+
+    if not vendor_value and not source_value and not medium_value:
+        return "direct"
+
     try:
-        mapping = load_channel_mapping()
-        valid_codes = get_valid_taxonomy_codes()
+        canonical_code = _normalize_channel_cached(vendor_value, source_value, medium_value)
     except Exception as e:
         logger.error(
             "Failed to load channel mapping or taxonomy codes",
             extra={"error": str(e)},
             exc_info=True
         )
-        # Fail-safe: return 'unknown' if we can't load configuration
-        return 'unknown'
-    
-    # Handle None inputs by converting to empty string for consistent key building
-    utm_source = utm_source or ""
-    utm_medium = utm_medium or ""
-    vendor = vendor or ""
-    
-    # If no vendor specified, try to infer a default mapping based on UTM parameters
-    if not vendor:
-        # Default to 'direct' if no tracking parameters
-        if not utm_source and not utm_medium:
-            return 'direct'
-        # Otherwise we have UTM params but no vendor context - treat as unmapped
-        raw_key = f"{utm_source}/{utm_medium}"
-        log_unmapped_channel(raw_key, utm_source, utm_medium, vendor="unknown", tenant_id=tenant_id)
-        increment_unmapped_channel_metric(vendor="unknown", raw_key=raw_key)
-        return 'unknown'
-    
-    # Check if vendor exists in mapping
-    if vendor not in mapping:
-        raw_key = f"{vendor}/{utm_source}/{utm_medium}"
-        log_unmapped_channel(raw_key, utm_source, utm_medium, vendor, tenant_id)
-        increment_unmapped_channel_metric(vendor, raw_key)
-        return 'unknown'
-    
-    vendor_mapping = mapping[vendor]
-    
-    # Try to find canonical code using various key patterns
-    # Pattern 1: Direct vendor indicator lookup (e.g., "FB_ADS", "SEARCH")
-    canonical_code = None
-    
-    # Check uppercase utm_source first (common pattern in mapping)
-    if utm_source:
-        canonical_code = vendor_mapping.get(utm_source.upper())
-    
-    # Check combination keys (e.g., "GOOGLE_SEARCH", "FACEBOOK_ADS")
-    if not canonical_code and utm_source and utm_medium:
-        combined_key = f"{utm_source.upper()}_{utm_medium.upper()}"
-        canonical_code = vendor_mapping.get(combined_key)
-    
-    # Check utm_medium alone
-    if not canonical_code and utm_medium:
-        canonical_code = vendor_mapping.get(utm_medium.upper())
-    
-    # Check lowercase versions (some vendors use lowercase)
-    if not canonical_code:
-        for key in [utm_source, utm_medium, f"{utm_source}_{utm_medium}"]:
-            if key:
-                canonical_code = vendor_mapping.get(key)
-                if canonical_code:
-                    break
-    
-    # If we found a mapping, validate it exists in taxonomy
-    if canonical_code:
-        if canonical_code in valid_codes:
-            logger.debug(
-                "Channel normalized successfully",
-                extra={
-                    "utm_source": utm_source,
-                    "utm_medium": utm_medium,
-                    "vendor": vendor,
-                    "canonical_code": canonical_code,
-                }
-            )
-            return canonical_code
-        else:
-            # Mapped value doesn't exist in taxonomy (configuration error)
-            logger.warning(
-                "Mapped channel code not in taxonomy - falling back to 'unknown'",
-                extra={
-                    "mapped_code": canonical_code,
-                    "utm_source": utm_source,
-                    "utm_medium": utm_medium,
-                    "vendor": vendor,
-                    "tenant_id": tenant_id,
-                }
-            )
-    
-    # No mapping found - fall back to 'unknown'
-    raw_key = f"{vendor}/{utm_source}/{utm_medium}" if utm_source or utm_medium else vendor
-    log_unmapped_channel(raw_key, utm_source, utm_medium, vendor, tenant_id)
-    increment_unmapped_channel_metric(vendor, raw_key)
-    return 'unknown'
+        return "unknown"
+
+    if canonical_code != "unknown":
+        logger.debug(
+            "Channel normalized successfully",
+            extra={
+                "utm_source": source_value,
+                "utm_medium": medium_value,
+                "vendor": vendor_value,
+                "canonical_code": canonical_code,
+            },
+        )
+        return canonical_code
+
+    raw_key = (
+        f"{vendor_value}/{source_value}/{medium_value}"
+        if source_value or medium_value
+        else (vendor_value or "unknown")
+    )
+    # Avoid per-event log/metric storms for repeated unmapped keys.
+    if _mark_unmapped_key_first_seen(raw_key):
+        log_unmapped_channel(
+            raw_key,
+            source_value or None,
+            medium_value or None,
+            vendor_value or "unknown",
+            tenant_id,
+        )
+        increment_unmapped_channel_metric(vendor_value or "unknown", raw_key)
+    return "unknown"
 
 
 def reload_channel_mapping() -> None:
@@ -306,6 +345,9 @@ def reload_channel_mapping() -> None:
     """
     global _CHANNEL_MAPPING
     _CHANNEL_MAPPING = None
+    _normalize_channel_cached.cache_clear()
+    with _SEEN_UNMAPPED_KEYS_LOCK:
+        _SEEN_UNMAPPED_KEYS.clear()
     load_channel_mapping()
     logger.info("Channel mapping reloaded from disk")
 
@@ -319,10 +361,11 @@ def reload_taxonomy_codes() -> None:
     """
     global _VALID_TAXONOMY_CODES
     _VALID_TAXONOMY_CODES = None
+    _normalize_channel_cached.cache_clear()
+    with _SEEN_UNMAPPED_KEYS_LOCK:
+        _SEEN_UNMAPPED_KEYS.clear()
     get_valid_taxonomy_codes()
     logger.info("Taxonomy codes reloaded")
-
-
 
 
 

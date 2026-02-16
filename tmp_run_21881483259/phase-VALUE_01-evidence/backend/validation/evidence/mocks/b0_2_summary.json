@@ -1,0 +1,30 @@
+{
+  "timestamp": "2025-12-22T23:01:38.040976+00:00",
+  "steps": [
+    {
+      "name": "config",
+      "status": "success"
+    },
+    {
+      "name": "toolchain",
+      "status": "success"
+    },
+    {
+      "name": "behavior",
+      "status": "success"
+    },
+    {
+      "name": "latency",
+      "status": "success"
+    },
+    {
+      "name": "error_simulation",
+      "status": "success"
+    },
+    {
+      "name": "frontend",
+      "status": "success"
+    }
+  ],
+  "status": "success"
+}

@@ -1,0 +1,12 @@
+{
+  "phase": "VALUE_01",
+  "candidate_sha": "",
+  "ci_run_url": "",
+  "timestamp": "2026-02-10T20:40:56.117321+00:00",
+  "command": [
+    "python",
+    "scripts/phase_gates/value_01_gate.py"
+  ],
+  "status": "failure",
+  "missing_artifacts": []
+}

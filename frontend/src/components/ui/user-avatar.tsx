@@ -23,17 +23,17 @@ export default function UserAvatar({ userName, userEmail, userInitials, profileI
               className="object-cover"
             />
           ) : null}
-          <AvatarFallback 
-            className="bg-[#2D3748] text-white font-medium text-xs lg:text-sm"
+          <AvatarFallback
+            className="bg-gray-700 text-white font-medium text-xs lg:text-sm"
           >
             {userInitials.toUpperCase()}
           </AvatarFallback>
         </Avatar>
       </TooltipTrigger>
-      <TooltipContent 
-        side="bottom" 
+      <TooltipContent
+        side="bottom"
         sideOffset={8}
-        className="bg-[#1A202C] text-white border-0 rounded shadow-lg"
+        className="bg-gray-900 text-white border-0 rounded shadow-lg"
       >
         {userName} | {userEmail}
       </TooltipContent>

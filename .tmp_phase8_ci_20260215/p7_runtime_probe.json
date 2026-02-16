@@ -1,0 +1,108 @@
+{
+  "current_user": "app_user",
+  "privileges": [
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_api_calls"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_breaker_state"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_budget_reservations"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_call_audit"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_hourly_shutoff_state"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_monthly_budget_state"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_monthly_costs"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_semantic_cache"
+    },
+    {
+      "can_insert": true,
+      "can_select": true,
+      "table": "llm_validation_failures"
+    }
+  ],
+  "probe_rows": [
+    {
+      "table": "llm_api_calls",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_breaker_state",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_budget_reservations",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_call_audit",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_hourly_shutoff_state",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_monthly_budget_state",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_monthly_costs",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_semantic_cache",
+      "visible_cross": 0,
+      "visible_same": 1
+    },
+    {
+      "table": "llm_validation_failures",
+      "visible_cross": 0,
+      "visible_same": 1
+    }
+  ],
+  "tenant_tables": [
+    "llm_api_calls",
+    "llm_breaker_state",
+    "llm_budget_reservations",
+    "llm_call_audit",
+    "llm_hourly_shutoff_state",
+    "llm_monthly_budget_state",
+    "llm_monthly_costs",
+    "llm_semantic_cache",
+    "llm_validation_failures"
+  ]
+}

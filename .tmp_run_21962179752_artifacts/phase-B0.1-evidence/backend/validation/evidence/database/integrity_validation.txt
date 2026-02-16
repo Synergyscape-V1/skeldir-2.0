@@ -1,0 +1,24 @@
+==========================================
+Data Integrity Controls Validation (2025-11-27T12:19:28-06:00)
+==========================================
+
+Scenario 1: RLS tenant isolation
+[PASS] Tenant context sees its own attribution event
+[PASS] Cross-tenant context blocked by RLS
+
+Scenario 2: Immutability guardrails on attribution_events
+[PASS] Immutability trigger blocked UPDATE on attribution_events
+[PASS] Immutability trigger blocked DELETE on attribution_events
+
+Scenario 3: Sum-equality guardrail
+[PASS] Sum-equality trigger blocked drifted allocations
+[PASS] Sum-equality validation allowed balanced allocations
+
+Scenario 4: Idempotency enforcement
+[PASS] Idempotency constraint rejected duplicate event
+
+Cleaning up secondary tenant...
+==========================================
+Data integrity validation complete (2025-11-27T12:19:28-06:00)
+Evidence written to /c/Users/ayewhy/II SKELDIR II/backend/validation/evidence/database/integrity_validation.txt
+==========================================

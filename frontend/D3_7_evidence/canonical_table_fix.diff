@@ -1,0 +1,11 @@
+--- a/package.json
++++ b/package.json
+@@ -26,6 +26,7 @@
+     "@radix-ui/react-dialog": "^1.1.15",
++    "@radix-ui/react-select": "^2.1.4",
+     "@radix-ui/react-label": "^2.1.8",
+
+FIX: Add missing @radix-ui/react-select dependency
+REASON: shadcn-theme.stories.tsx imports Select from select.tsx, which
+requires @radix-ui/react-select. The Storybook build failed when bundling
+all stories because this dependency was missing.

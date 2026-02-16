@@ -1,0 +1,14 @@
+EXPLAIN ANALYZE SELECT id, name FROM tenants LIMIT 10;
+
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.00..0.77 rows=10 width=38) (actual time=0.014..0.015 rows=10.00 loops=1)
+   Buffers: shared hit=1
+   ->  Seq Scan on tenants  (cost=0.00..1.15 rows=15 width=38) (actual time=0.012..0.013 rows=10.00 loops=1)
+         Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=84 dirtied=1
+ Planning Time: 1.149 ms
+ Execution Time: 0.086 ms
+(8 rows)
+

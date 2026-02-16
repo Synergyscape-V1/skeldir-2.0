@@ -1,0 +1,58 @@
+﻿2025-11-20 13:46:56
+=== Binary Availability Tests ===
+
+--- uvicorn ---
+
+--- celery ---
+NOT FOUND: The term 'celery' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+
+--- psql ---
+psql (PostgreSQL) 18.0
+
+--- prism ---
+NOT FOUND: The term 'prism' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+
+--- python ---
+Python 3.14.0
+
+--- Python Scientific Imports ---
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-e0344e31-ae14-4589-82d6-ef59aafbe6df.ps1:77 char:128
++ ... ecks.txt -Append -Encoding UTF8; python -c "import pymc" 2>&1 | Out-F ...
++                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import pymc
+ModuleNotFoundError: No module named 'pymc'
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-e0344e31-ae14-4589-82d6-ef59aafbe6df.ps1:77 char:246
++ ... cks.txt -Append -Encoding UTF8; python -c "import arviz" 2>&1 | Out-F ...
++                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import arviz
+ModuleNotFoundError: No module named 'arviz'
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-e0344e31-ae14-4589-82d6-ef59aafbe6df.ps1:77 char:365
++ ... cks.txt -Append -Encoding UTF8; python -c "import numpy" 2>&1 | Out-F ...
++                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import numpy
+ModuleNotFoundError: No module named 'numpy'
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-e0344e31-ae14-4589-82d6-ef59aafbe6df.ps1:77 char:484
++ ... ks.txt -Append -Encoding UTF8; python -c "import pandas" 2>&1 | Out-F ...
++                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 1, in <module>
+    import pandas
+ModuleNotFoundError: No module named 'pandas'

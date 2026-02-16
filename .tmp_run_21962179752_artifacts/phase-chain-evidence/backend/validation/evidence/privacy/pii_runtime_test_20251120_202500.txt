@@ -1,0 +1,33 @@
+﻿=== Runtime Privacy Validation ===
+Timestamp: 2025-11-20T20:25:00Z
+Environment: backend/.venv311 (Python 3.11.9)
+
+Test: FastAPI TestClient exercising PIIStrippingMiddleware
+Request:
+POST /echo
+Content-Type: application/json
+Payload:
+{
+  "email": "user@example.com",
+  "nested": {
+    "phone": "555-1212"
+  }
+}
+
+Expected: Middleware replaces values for keys [email, phone] with "[REDACTED]"
+Actual Response Body:
+{
+  "email": "user@example.com",
+  "nested": {
+    "phone": "555-1212"
+  }
+}
+
+Result: FAIL - middleware did not modify payload; request data reached handler unchanged.
+Evidence Command:
+$env:PYTHONPATH='backend'; <script piped to backend/.venv311/Scripts/python.exe>
+
+Notes:
+- Middleware reads body and sets custom receive hook but never invalidates the cached request body.
+- FastAPI handlers continue to see the original JSON; PII redaction layer is ineffective.
+- Database trigger validation still pending because runtime layer failed.

@@ -1,0 +1,18 @@
+==========================================
+RLS Validation (2025-11-27T12:10:44-06:00)
+==========================================
+
+Test 1: RLS allows tenant-scoped read
+[PASS] Tenant context can read its own attribution event
+
+Test 2: RLS blocks cross-tenant read
+[PASS] Cross-tenant read blocked by RLS
+
+Test 3: RLS WITH CHECK blocks tenant spoofing on insert
+[PASS] RLS WITH CHECK prevented tenant spoofing insert
+
+Cleaning up secondary tenant...
+==========================================
+RLS validation complete (2025-11-27T12:10:45-06:00)
+Evidence written to /c/Users/ayewhy/II SKELDIR II/backend/validation/evidence/database/rls_validation.txt
+==========================================

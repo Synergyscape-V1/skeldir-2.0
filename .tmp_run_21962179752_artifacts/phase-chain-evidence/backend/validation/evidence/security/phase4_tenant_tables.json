@@ -1,0 +1,307 @@
+{
+  "runtime_user": "app_user",
+  "tenant_scoped_tables": [
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "attribution_allocations"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "attribution_events"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "attribution_recompute_jobs"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "budget_optimization_jobs"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "channel_assignment_corrections"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "dead_events"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "INSERT",
+        "SELECT"
+      ],
+      "policy_count": 2,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "dead_events_quarantine"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "explanation_cache"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "investigation_jobs"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "investigation_tool_calls"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "investigations"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_api_calls"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_breaker_state"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_budget_reservations"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_call_audit"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_hourly_shutoff_state"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_monthly_budget_state"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_monthly_costs"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_semantic_cache"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "llm_validation_failures"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "platform_connections"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "platform_credentials"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "r4_crash_barriers"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "r4_task_attempts"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "reconciliation_runs"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "revenue_cache_entries"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "revenue_ledger"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "revenue_state_transitions"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "worker_failed_jobs"
+    },
+    {
+      "force_rls": true,
+      "policy_cmds": [
+        "ALL"
+      ],
+      "policy_count": 1,
+      "rls_enabled": true,
+      "scope": "tenant_id",
+      "table_name": "worker_side_effects"
+    }
+  ],
+  "timestamp": "2026-02-12T20:04:13.824405+00:00"
+}

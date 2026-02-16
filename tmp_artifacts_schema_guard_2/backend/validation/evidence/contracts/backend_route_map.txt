@@ -1,0 +1,28 @@
+﻿2025-11-20 13:47:47
+python : Traceback (most recent call last):
+At C:\Users\ayewhy\AppData\Local\Temp\ps-script-e2d5a7f4-09ed-43be-a627-4949f47c5e72.ps1:77 char:127
++ ... -Encoding UTF8; python scripts/extract_fastapi_routes.py 2>&1 | Out-F ...
++                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\ayewhy\II SKELDIR II\scripts\extract_fastapi_routes.py", line 13, in <module>
+    from app.main import app
+  File "C:\Users\ayewhy\II SKELDIR II\backend\app\main.py", line 13, in <module>
+    from fastapi import FastAPI
+ModuleNotFoundError: No module named 'fastapi'
+ERROR: Failed to load FastAPI app: No module named 'fastapi'
+
+NOTE: FastAPI not installed - extracting routes from source code inspection instead
+
+=== Routes from backend/app/api/auth.py ===
+POST /api/auth/login | operation_id=login
+POST /api/auth/refresh | operation_id=refreshToken
+POST /api/auth/logout | operation_id=logout
+
+=== Routes from backend/app/api/attribution.py ===
+GET /api/attribution/revenue/realtime | operation_id=getRealtimeRevenue
+
+=== Routes from backend/app/main.py ===
+GET /health | out-of-scope
+GET / | root redirect

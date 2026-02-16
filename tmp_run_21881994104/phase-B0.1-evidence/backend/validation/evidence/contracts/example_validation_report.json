@@ -1,0 +1,62 @@
+{
+  "status": "success",
+  "timestamp": "2026-02-10T20:56:58.680614+00:00",
+  "script_version": "1.0.0",
+  "python_version": "3.11.14",
+  "total_files": 13,
+  "total_issues": 0,
+  "files": [
+    {
+      "file": "api-contracts/dist/openapi/v1/attribution.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/auth.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/export.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/health.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/llm-budget.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/llm-explanations.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/llm-investigations.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/reconciliation.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/revenue.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/webhooks.paypal.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/webhooks.shopify.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/webhooks.stripe.bundled.yaml",
+      "issues": []
+    },
+    {
+      "file": "api-contracts/dist/openapi/v1/webhooks.woocommerce.bundled.yaml",
+      "issues": []
+    }
+  ]
+}

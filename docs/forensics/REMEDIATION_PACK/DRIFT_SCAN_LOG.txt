@@ -1,0 +1,98 @@
+src/components/common/PlatformLogo.tsx:13:    primaryColor: '#635BFF',
+src/components/common/PlatformLogo.tsx:21:    primaryColor: '#96BF48',
+src/components/common/PlatformLogo.tsx:29:    primaryColor: '#000000',
+src/components/common/PlatformLogo.tsx:37:    primaryColor: '#4285F4',
+src/components/common/PlatformLogo.tsx:45:    primaryColor: '#4285F4',
+src/components/common/PlatformLogo.tsx:53:    primaryColor: '#0866FF',
+src/components/common/PlatformLogo.tsx:61:    primaryColor: '#000000',
+src/components/common/PlatformLogo.tsx:69:    primaryColor: '#00457C',
+src/components/composites/fixtures.ts:38:      { id: 1, action: 'Invoice #4821 reconciled with Stripe', time: '2026-02-10T14:30:00Z' },
+src/components/ConfidenceScoreBadge.tsx:27: *   - High tier: >= 70 (Success Green #16A34A)
+src/components/ConfidenceScoreBadge.tsx:28: *   - Medium tier: 30-69 (Warning Amber #F59E0B)
+src/components/ConfidenceScoreBadge.tsx:29: *   - Low tier: < 30 (Critical Red #B91C1C)
+src/components/ConfidenceTooltip.tsx:187:        backgroundColor: '#1F2937',
+src/components/ConfidenceTooltip.tsx:188:        color: '#FFFFFF',
+src/components/ConfidenceTooltip.tsx:208:          [position.placement === 'above' ? 'borderTop' : 'borderBottom']: '6px solid #1F2937',
+src/components/dashboard/PlatformCard.tsx:82:      'verified': '#10B981',      // Green
+src/components/dashboard/PlatformCard.tsx:83:      'partial': '#F59E0B',       // Amber
+src/components/dashboard/PlatformCard.tsx:84:      'pending': '#3B82F6',       // Blue
+src/components/dashboard/PlatformCard.tsx:85:      'error': '#EF4444',         // Red
+src/components/dashboard/PlatformCard.tsx:86:      'unverified': '#F59E0B',    // Amber
+src/components/dashboard/PlatformCard.tsx:88:    return colorMap[status] || '#6B7280'; // Gray fallback
+src/components/dashboard/PlatformCard.tsx:192:            backgroundColor: '#3B82F6',
+src/components/dashboard/VerificationShowcase.tsx:147:          <CardDescription className="text-sm" style={{ color: '#6B7280' }}>
+src/components/dashboard/VerificationShowcase.tsx:152:              <Clock className="w-3 h-3" style={{ color: isStale ? '#F59E0B' : '#6B7280' }} data-testid="icon-clock" />
+src/components/dashboard/VerificationShowcase.tsx:153:              <span className="text-[11px]" style={{ color: isStale ? '#F59E0B' : '#6B7280' }} data-testid="text-last-synced">
+src/components/dashboard/VerificationShowcase.tsx:161:                      style={{ color: '#F59E0B' }} 
+src/components/dashboard/VerificationShowcase.tsx:186:            backgroundColor: '#FEF2F2', 
+src/components/dashboard/VerificationShowcase.tsx:187:            borderColor: '#EF4444',
+src/components/dashboard/VerificationShowcase.tsx:191:          <p className="text-sm font-semibold" style={{ color: '#B91C1C' }}>
+src/components/dashboard/VerificationShowcase.tsx:194:          <p className="text-xs mt-1" style={{ color: '#991B1B' }}>
+src/components/dashboard/VerificationShowcase.tsx:209:          <CardDescription className="text-sm" style={{ color: '#6B7280' }}>
+src/components/dashboard/VerificationShowcase.tsx:214:              <Clock className="w-3 h-3" style={{ color: isStale ? '#F59E0B' : '#6B7280' }} data-testid="icon-clock" />
+src/components/dashboard/VerificationShowcase.tsx:215:              <span className="text-[11px]" style={{ color: isStale ? '#F59E0B' : '#6B7280' }} data-testid="text-last-synced">
+src/components/dashboard/VerificationShowcase.tsx:223:                      style={{ color: '#F59E0B' }} 
+src/components/EmptyState.tsx:12:        backgroundColor: '#F8FAFC' 
+src/components/EmptyState.tsx:25:        style={{ color: '#1A202C' }}
+src/components/EmptyState.tsx:32:        style={{ color: '#6B7280' }}
+src/components/ExportButton.tsx:272:              <circle cx="10" cy="10" r="8" stroke="#93BFEF" strokeWidth="3" strokeLinecap="round" strokeDasharray="40 10" />
+src/components/icons/SkelderIcons.tsx:42:    high: '#10B981',
+src/components/icons/SkelderIcons.tsx:43:    medium: '#F59E0B',
+src/components/icons/SkelderIcons.tsx:44:    low: '#EF4444',
+src/components/icons/SkelderIcons.tsx:148:          <stop offset="0%" stopColor="#10B981" />
+src/components/icons/SkelderIcons.tsx:149:          <stop offset="100%" stopColor="#059669" />
+src/components/icons/SkelderIcons.tsx:158:        fill="#10B981" 
+src/components/icons/SkelderIcons.tsx:173:        stroke="#FFFFFF"
+src/components/icons/SkelderIcons.tsx:208:        stroke="#F59E0B" 
+src/components/icons/SkelderIcons.tsx:216:        fill="#F59E0B"
+src/components/icons/SkelderIcons.tsx:223:        <circle cx="0" cy="0" r="1.5" fill="#F59E0B" />
+src/components/icons/SkelderIcons.tsx:228:          stroke="#F59E0B"
+src/components/icons/SkelderIcons.tsx:236:          stroke="#F59E0B"
+src/components/icons/SkelderIcons.tsx:279:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:291:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:299:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:307:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:314:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:339:    up: '#10B981',
+src/components/icons/SkelderIcons.tsx:340:    down: '#EF4444',
+src/components/icons/SkelderIcons.tsx:341:    stable: '#6B7280',
+src/components/icons/SkelderIcons.tsx:421:    processing: '#3B82F6',
+src/components/icons/SkelderIcons.tsx:422:    complete: '#10B981',
+src/components/icons/SkelderIcons.tsx:423:    failed: '#EF4444',
+src/components/icons/SkelderIcons.tsx:424:    pending: '#F59E0B',
+src/components/icons/SkelderIcons.tsx:560:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:569:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:578:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:613:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:620:        stroke="#3B82F6"
+src/components/icons/SkelderIcons.tsx:628:        stroke="#3B82F6"
+src/components/logos/GoogleLogo.tsx:12:      <path fill="#EA4335" d="M115.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18C71.25 34.32 81.24 25 93.5 25s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44S80.99 39.2 80.99 47.18c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z"/>
+src/components/logos/GoogleLogo.tsx:13:      <path fill="#FBBC05" d="M163.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18c0-12.85 9.99-22.18 22.25-22.18s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44s-12.51 5.46-12.51 13.44c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z"/>
+src/components/logos/GoogleLogo.tsx:14:      <path fill="#4285F4" d="M209.75 26.34v39.82c0 16.38-9.66 23.07-21.08 23.07-10.75 0-17.22-7.19-19.66-13.07l8.48-3.53c1.51 3.61 5.21 7.87 11.17 7.87 7.31 0 11.84-4.51 11.84-13v-3.19h-.34c-2.18 2.69-6.38 5.04-11.68 5.04-11.09 0-21.25-9.66-21.25-22.09 0-12.52 10.16-22.26 21.25-22.26 5.29 0 9.49 2.35 11.68 4.96h.34v-3.61h9.25zm-8.56 20.92c0-7.81-5.21-13.52-11.84-13.52-6.72 0-12.35 5.71-12.35 13.52 0 7.73 5.63 13.36 12.35 13.36 6.63 0 11.84-5.63 11.84-13.36z"/>
+src/components/logos/GoogleLogo.tsx:15:      <path fill="#34A853" d="M225 3v65h-9.5V3h9.5z"/>
+src/components/logos/GoogleLogo.tsx:16:      <path fill="#EA4335" d="M262.02 54.48l7.56 5.04c-2.44 3.61-8.32 9.83-18.48 9.83-12.6 0-22.01-9.74-22.01-22.18 0-13.19 9.49-22.18 20.92-22.18 11.51 0 17.14 9.16 18.98 14.11l1.01 2.52-29.65 12.28c2.27 4.45 5.8 6.72 10.75 6.72 4.96 0 8.4-2.44 10.92-6.14zm-23.27-7.98l19.82-8.23c-1.09-2.77-4.37-4.7-8.23-4.7-4.95 0-11.84 4.37-11.59 12.93z"/>
+src/components/logos/GoogleLogo.tsx:17:      <path fill="#4285F4" d="M35.29 41.41V32H67c.31 1.64.47 3.58.47 5.68 0 7.06-1.93 15.79-8.15 22.01-6.05 6.3-13.78 9.66-24.02 9.66C16.32 69.35.36 53.89.36 34.91.36 15.93 16.32.47 35.3.47c10.5 0 17.98 4.12 23.6 9.49l-6.64 6.64c-4.03-3.78-9.49-6.72-16.97-6.72-13.86 0-24.7 11.17-24.7 25.03 0 13.86 10.84 25.03 24.7 25.03 8.99 0 14.11-3.61 17.39-6.89 2.66-2.66 4.41-6.46 5.1-11.65l-22.49.01z"/>
+src/components/logos/PayPalLogo.tsx:14:        fill="#003087"
+src/components/logos/PayPalLogo.tsx:18:        fill="#003087"
+src/components/logos/PayPalLogo.tsx:22:        fill="#003087"
+src/components/logos/PayPalLogo.tsx:26:        fill="#003087"
+src/components/logos/PayPalLogo.tsx:30:        fill="#003087"
+src/components/logos/PayPalLogo.tsx:34:        fill="#003087"
+src/components/logos/PayPalLogo.tsx:38:        fill="#003087"
+src/components/logos/PayPalLogo.tsx:42:        fill="#003087"
+src/components/logos/ShopifyLogo.tsx:14:        fill="#96BF48"
+src/components/logos/ShopifyLogo.tsx:18:        fill="#96BF48"
+src/components/logos/SquareLogo.tsx:18:        stroke="#141414"
+src/components/logos/SquareLogo.tsx:28:        fill="#141414"
+src/components/logos/StripeLogo.tsx:16:        fill="#635BFF"
+src/components/PulsingDot.tsx:25:                backgroundColor: '#3B82F6',
+src/components/StatusIcon.tsx:15:      color: '#059669',
+src/components/StatusIcon.tsx:20:      color: '#B45309',
+src/components/StatusIcon.tsx:25:      color: '#3B82F6',
+src/components/StatusIcon.tsx:30:      color: '#8B5CF6',
+src/components/ui/chart.tsx:55:          "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-none [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-sector]:outline-none [&_.recharts-surface]:outline-none",
+src/components/ui/user-avatar.tsx:27:            className="bg-[#2D3748] text-white font-medium text-xs lg:text-sm"
+src/components/ui/user-avatar.tsx:36:        className="bg-[#1A202C] text-white border-0 rounded shadow-lg"
+src/components/VerificationBadge.tsx:114:            backgroundColor: '#1F2937', 
+src/components/VerificationBadge.tsx:115:            color: '#FFFFFF',
+src/components/VerificationBadge.tsx:126:              borderTop: '6px solid #1F2937' 

@@ -1,0 +1,82 @@
+202602101300 -> 202602102050 (skeldir_foundation, celery_foundation) (head), Grant runtime privileges for investigation_jobs.
+202602071100 -> 202602101300 (skeldir_foundation, celery_foundation), B0.3 Phase 2: prompt fingerprints + append-only audit privileges.
+202602051220 -> 202602071100 (skeldir_foundation, celery_foundation), B0.7-P3 LLM provider controls: reservation, shutoff metadata, cache, and audit columns.
+c0a524bf2357 -> 202602051220 (skeldir_foundation, celery_foundation), Anchor post-merge revision for unambiguous downgrade (B0.7 P1).
+202602051210, 202602051200, 202601281230 -> c0a524bf2357 (skeldir_foundation, celery_foundation) (mergepoint), merge heads for b07 p1
+202601031930 -> 202602051210 (skeldir_foundation, celery_foundation), Add user scoping and RLS to llm_call_audit
+202601131610 -> 202602051200 (skeldir_foundation, celery_foundation), Finalize LLM write shape with user scoping and breaker tables
+202601281200 -> 202601281230 (skeldir_foundation, celery_foundation), B0.6 Phase 3: Postgres realtime revenue cache + stampede prevention substrate.
+202601221200 -> 202601281200 (skeldir_foundation, celery_foundation), B0.6 Phase 2: Platform connection and credential substrate.
+202601211900 -> 202601221200 (skeldir_foundation, celery_foundation), Grant runtime roles access to LLM audit tables (B0.5.7-P4).
+202601131610 -> 202601211900 (skeldir_foundation, celery_foundation), B0.5.7-P3: Mediate webhook tenant secret resolution via SECURITY DEFINER.
+202601031930 -> 202601131610 (skeldir_foundation, celery_foundation) (branchpoint), Add llm_api_calls idempotency key
+de648b76dd68 -> 202601031930 (skeldir_foundation, celery_foundation) (branchpoint), Anchor post-merge revision for unambiguous downgrade.
+202512241930, 202512301930 -> de648b76dd68 (skeldir_foundation, celery_foundation) (mergepoint), Merge skeldir_foundation heads
+202512231020 -> 202512241930 (skeldir_foundation, celery_foundation), Allow NULL allocation_id in revenue_ledger (supports reconciliation rows)
+202512231010 -> 202512231020 (skeldir_foundation, celery_foundation), Add investigation_jobs table for centaur friction
+202512231000 -> 202512231010 (skeldir_foundation, celery_foundation), Add LLM call audit table for budget enforcement
+202512201000 -> 202512231000 (skeldir_foundation, celery_foundation), Add ghost revenue reconciliation columns to revenue_ledger
+202512291600 -> 202512301930 (skeldir_foundation, celery_foundation), R4/R6 governance: revoke CREATE on public schema for app_user.
+202512291500 -> 202512291600 (skeldir_foundation, celery_foundation), R5 performance remediation: make the allocation sum-equality trigger scale ~O(N).
+202512280300 -> 202512291500 (skeldir_foundation, celery_foundation), R5 remediation requires:
+- bulk (set-based) writes to attribution_allocations for 10k/100k feasibility
+- deterministic recompute behavior without per-row trigger amplification
+202512280200 -> 202512280300 (skeldir_foundation, celery_foundation), R4-FIX: Add broker recovery exclusion table.
+202512280100 -> 202512280200 (skeldir_foundation, celery_foundation), R4-FIX: Add attempt tracking + crash barrier tables.
+202512271910 -> 202512280100 (skeldir_foundation, celery_foundation), R4: Create worker_side_effects table for crash/idempotency proofs.
+202512271900 -> 202512271910 (skeldir_foundation, celery_foundation), R3: Add webhook secret columns to tenants (required for webhook ingress).
+202512201000 -> 202512271900 (skeldir_foundation, celery_foundation), R3 ingestion hardening: tenant-correct idempotency + deep PII guardrail.
+202512191900 -> 202512201000 (skeldir_foundation, celery_foundation) (branchpoint), Restore canonical matview contract (5 views) and ownership.
+6c5d5f5534ef -> 202512191900 (skeldir_foundation, celery_foundation), Set matview ownership to app_user for refresh permissions.
+e9b7435efea6, 202512091100, 202512171700 -> 6c5d5f5534ef (skeldir_foundation, celery_foundation) (mergepoint), EG-1C: Merge all heads into single canonical head
+202511161210, 202512081510 -> e9b7435efea6 (mergepoint), merge_migration_heads
+202511161200 -> 202511161210, Add PII audit table and scanning function
+202511161130 -> 202511161200, Add PII guardrail triggers for JSONB surfaces
+202512081510 -> 202512091100, Add CI validation test column
+202512081500 -> 202512081510 (branchpoint), Add RLS policies to LLM subsystem tables
+202511271210 -> 202512081500, Add LLM subsystem tables for cost tracking and investigation workflows
+202511171530 -> 202511271210, Add amount_cents >= 0 guardrail to revenue_ledger
+202511171520 -> 202511171530, Add audit triggers for channel state transitions and assignment corrections
+202511171510 -> 202511171520, Create channel_assignment_corrections audit table
+202511171500 -> 202511171510, Create channel_state_transitions audit table
+202511171400 -> 202511171500, Add state column to channel_taxonomy table
+202511171300 -> 202511171400, Drop deprecated materialized views
+202511171200 -> 202511171300, Add revenue ledger audit trigger and tenant_id to revenue_state_transitions
+202511161130 -> 202511171200, B0.3 reconciliation: canonical index + remediation constraint alignment.
+202512171500 -> 202512171700 (skeldir_foundation, celery_foundation), Block worker-context mutations to ingestion tables.
+202512151410 -> 202512171500 (skeldir_foundation, celery_foundation), Force RLS on attribution_recompute_jobs for tenant isolation (B0.5.3.4)
+202512151400 -> 202512151410 (skeldir_foundation, celery_foundation), Add allocation model versioning for B0.5.3.2
+202511131121, 202512151300 -> 202512151400 (skeldir_foundation, celery_foundation) (mergepoint), Merge skeldir_foundation: Unify core attribution schema + celery foundation
+202511161120 -> 202511161130 (branchpoint), Add FK constraint to attribution_events.channel referencing channel_taxonomy
+202511161110 -> 202511161120, Add unknown channel fallback to channel_taxonomy
+202511161100 -> 202511161110, Fix mv_allocation_summary to use LEFT JOIN for nullable event_id
+202511151510 -> 202511161100, Realign attribution_allocations.event_id FK for audit trail preservation
+202511151500 -> 202511151510, Add materialized view for daily revenue summary analytics
+202511151450 -> 202511151500, Add materialized view for channel performance analytics
+202511151440 -> 202511151450, Create revenue_state_transitions audit table
+202511151430 -> 202511151440, Add retry tracking and remediation fields to dead_events
+202511151420 -> 202511151430, Realign revenue_ledger table with canonical schema
+202511151410 -> 202511151420, Add statistical metadata fields to attribution_allocations
+202511151400 -> 202511151410, Realign attribution_events table with canonical schema
+202511141311 -> 202511151400, Add auth_critical columns to tenants table
+202511141310 -> 202511141311, Migrate attribution_allocations from CHECK constraint to FK to channel_taxonomy
+202511141302 -> 202511141310, Create channel_taxonomy table and seed from channel_mapping.yaml
+202511141301 -> 202511141302, Enforce allocation_id NOT NULL on revenue_ledger
+202511141300 -> 202511141301, Add guard trigger to prevent UPDATE/DELETE on revenue_ledger
+202511141201 -> 202511141300, Revoke UPDATE/DELETE privileges from app_rw on revenue_ledger
+202511141200 -> 202511141201, Add guard trigger to prevent UPDATE/DELETE on attribution_events
+202511131250 -> 202511141200, Revoke UPDATE and DELETE privileges on attribution_events from app_rw
+202511131240 -> 202511131250, Enhance revenue_ledger with allocation-based posting support
+202511131232 -> 202511131240, Add sum-equality validation for allocation revenue accounting
+202511131121 -> 202511131232, Enhance attribution_allocations schema with revenue accounting determinism
+202512151200 -> 202512151300 (celery_foundation), Create attribution_recompute_jobs table for window-scoped idempotency
+202512131600 -> 202512151200 (celery_foundation), Rename celery_task_failures to worker_failed_jobs (B0.5.3.1 canonical DLQ).
+202512131530 -> 202512131600 (celery_foundation), Align kombu_message schema with Kombu SQLAlchemy transport models.
+202512131200 -> 202512131530 (celery_foundation), Backfill Kombu SQLA transport sequences for Celery broker tables.
+202512120900 -> 202512131200 (celery_foundation), Create worker DLQ table for failed Celery tasks.
+202511131121 -> 202512120900 (celery_foundation), Create Celery broker/result tables for Postgres SQLA transport.
+202511131120 -> 202511131121 (branchpoint), Add GRANTs for application roles
+202511131119 -> 202511131120, Add RLS policies for tenant isolation
+202511131115 -> 202511131119, Add materialized views for contract-compliant JSON responses
+baseline -> 202511131115, Add core tables for B0.3 schema foundation
+<base> -> baseline, Schema Foundation Baseline—Pre-B0.3

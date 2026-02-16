@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 # Structured logging for API process (JSON with tenant/correlation context).
@@ -29,6 +30,7 @@ configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 # Import routers
 from app.api import auth, attribution, export, health, reconciliation, revenue, webhooks, platforms
 from app.api.problem_details import problem_details_response
+from app.api.webhook_validation import handle_request_validation_error
 
 # Import middleware - Phase G: Active Privacy Defense
 from app.middleware import PIIStrippingMiddleware
@@ -103,6 +105,11 @@ async def auth_error_handler(request: Request, exc: AuthError):
         correlation_id=correlation_id,
         type_url=exc.type_url,
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    return await handle_request_validation_error(request, exc)
 
 
 if __name__ == "__main__":

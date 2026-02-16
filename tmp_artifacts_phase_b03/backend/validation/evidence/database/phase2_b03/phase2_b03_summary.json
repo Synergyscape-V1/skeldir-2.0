@@ -1,0 +1,23 @@
+{
+  "phase": "B0.3",
+  "timestamp": "2026-02-10T20:10:54.925423+00:00",
+  "status": "failure",
+  "error": "command failed (1): alembic upgrade head; log=/home/runner/work/skeldir-2.0/skeldir-2.0/backend/validation/evidence/database/phase2_b03/logs/alembic_upgrade_head.log",
+  "gates": [
+    {
+      "gate": "runtime_schema_mutation",
+      "passed": true,
+      "details": {
+        "diff_path": "/home/runner/work/skeldir-2.0/skeldir-2.0/backend/validation/evidence/database/phase2_b03/artifacts/runtime_vs_migrated.diff"
+      }
+    },
+    {
+      "gate": "EG2.1",
+      "passed": false,
+      "details": {
+        "canonical": "/home/runner/work/skeldir-2.0/skeldir-2.0/db/schema/canonical_schema.sql",
+        "diff_path": "/home/runner/work/skeldir-2.0/skeldir-2.0/backend/validation/evidence/database/phase2_b03/artifacts/eg2_1_parity.diff"
+      }
+    }
+  ]
+}

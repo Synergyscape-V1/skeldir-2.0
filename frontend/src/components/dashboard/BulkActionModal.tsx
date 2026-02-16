@@ -1,5 +1,18 @@
 import { useState } from 'react';
-import { X, AlertTriangle, CheckCircle, Flag, Archive, UserPlus } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Flag, Archive, UserPlus } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { UnmatchedTransaction } from '@shared/schema';
 
 interface BulkActionModalProps {
@@ -70,7 +83,7 @@ export function BulkActionModal({
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    
+
     if (action === 'assign_user') {
       if (!assignedUser) {
         newErrors.assignUser = 'Please select a user to assign';
@@ -86,7 +99,7 @@ export function BulkActionModal({
         newErrors.notes = 'Note must be at least 10 characters or empty';
       }
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -97,222 +110,197 @@ export function BulkActionModal({
     }
 
     const metadata: any = {};
-    
+
     if (action === 'assign_user' && assignedUser) {
       metadata.assignedUserId = assignedUser;
     }
-    
+
     if (notes && notes.trim()) {
       metadata.notes = notes.trim();
     }
-    
+
     if (reason && reason.trim()) {
       metadata.reason = reason.trim();
     }
-    
+
     onConfirm(metadata);
   };
 
-  // Check if form is valid for enabling/disabling confirm button
   const isFormValid = (): boolean => {
     if (action === 'assign_user') {
       return !!assignedUser;
     } else if (action === 'exclude_variance') {
       return !!reason && reason.trim().length >= 10;
     } else if (action === 'flag_investigation') {
-      // Notes are optional, but if provided, must be at least 10 characters
       if (notes && notes.trim().length > 0 && notes.trim().length < 10) {
         return false;
       }
     }
-    // mark_reviewed doesn't have required fields
     return true;
   };
 
-  // Calculate total amount
-  const totalAmount = selectedTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalAmount = selectedTransactions.reduce((sum, t) => sum + t.amount_cents / 100, 0);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto" data-testid="modal-bulk-action">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/50 dark:bg-black/70 transition-opacity"
-        onClick={onCancel}
-        data-testid="backdrop-bulk-action-modal"
-      />
-
-      {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-card border border-border rounded-md shadow-xl w-full max-w-2xl transform transition-all">
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-border">
-            <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-md ${config.bgColor}`}>
-                <Icon className={`w-6 h-6 ${config.iconColor}`} />
-              </div>
-              <h2 className="text-xl font-bold text-foreground" data-testid="text-modal-title">{config.title}</h2>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <DialogContent className="max-w-2xl" data-testid="modal-bulk-action">
+        <DialogHeader>
+          <div className="flex items-center space-x-3">
+            <div className={`p-2 rounded-md ${config.bgColor}`}>
+              <Icon className={`w-6 h-6 ${config.iconColor}`} />
             </div>
-            <button
-              onClick={onCancel}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              data-testid="button-close-modal"
-            >
-              <X className="w-6 h-6" />
-            </button>
+            <DialogTitle className="text-xl" data-testid="text-modal-title">
+              {config.title}
+            </DialogTitle>
+          </div>
+          <DialogDescription data-testid="text-modal-description">
+            {config.description}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6">
+          {/* Transaction Summary */}
+          <div className="bg-muted/30 border border-border rounded-md p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3">
+              Selection Summary
+            </h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Transactions:</span>
+                <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-count">{selectedCount}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Total Amount:</span>
+                <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-amount">
+                  ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Platforms:</span>
+                <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-platforms">
+                  {[...new Set(selectedTransactions.map(t => t.platform_name))].join(', ')}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Date Range:</span>
+                <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-date-range">
+                  {new Date(Math.min(...selectedTransactions.map(t => new Date(t.timestamp).getTime()))).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  {' - '}
+                  {new Date(Math.max(...selectedTransactions.map(t => new Date(t.timestamp).getTime()))).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Body */}
-          <div className="p-6 space-y-6">
-            {/* Description */}
-            <p className="text-foreground/80" data-testid="text-modal-description">{config.description}</p>
-
-            {/* Transaction Summary */}
-            <div className="bg-muted/30 border border-border rounded-md p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-3">
-                Selection Summary
-              </h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Transactions:</span>
-                  <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-count">{selectedCount}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Total Amount:</span>
-                  <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-amount">
-                    ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Platforms:</span>
-                  <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-platforms">
-                    {[...new Set(selectedTransactions.map(t => t.platform))].join(', ')}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Date Range:</span>
-                  <span className="ml-2 font-semibold text-foreground" data-testid="text-summary-date-range">
-                    {new Date(Math.min(...selectedTransactions.map(t => new Date(t.date).getTime()))).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    {' - '}
-                    {new Date(Math.max(...selectedTransactions.map(t => new Date(t.date).getTime()))).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Conditional Input Fields */}
-            {action === 'assign_user' && (
-              <div>
-                <label htmlFor="assigned-user" className="block text-sm font-medium text-foreground mb-2">
-                  Assign to Team Member <span className="text-red-600 dark:text-red-500">*</span>
-                </label>
-                <select
-                  id="assigned-user"
-                  value={assignedUser}
-                  onChange={(e) => {
-                    setAssignedUser(e.target.value);
-                    setErrors(prev => ({ ...prev, assignUser: '' }));
-                  }}
-                  className={`w-full px-3 py-2 bg-background border rounded-md text-foreground 
-                             focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600
-                             ${errors.assignUser ? 'border-red-500 dark:border-red-600' : 'border-border'}`}
-                  data-testid="select-assign-user"
-                >
-                  <option value="">Select team member...</option>
-                  <option value="user1">John Smith (Finance)</option>
-                  <option value="user2">Sarah Johnson (Accounting)</option>
-                  <option value="user3">Mike Chen (Operations)</option>
-                </select>
-                {errors.assignUser && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-500" data-testid="error-assign-user">
-                    {errors.assignUser}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {(action === 'flag_investigation' || action === 'exclude_variance') && (
-              <div>
-                <label htmlFor="reason" className="block text-sm font-medium text-foreground mb-2">
-                  Reason {action === 'exclude_variance' && <span className="text-red-600 dark:text-red-500">*</span>}
-                </label>
-                <input
-                  id="reason"
-                  type="text"
-                  value={reason}
-                  onChange={(e) => {
-                    setReason(e.target.value);
-                    setErrors(prev => ({ ...prev, reason: '' }));
-                  }}
-                  placeholder="e.g., Legacy data from migration, Known refund processing delay"
-                  className={`w-full px-3 py-2 bg-background border rounded-md text-foreground 
-                             focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600
-                             ${errors.reason ? 'border-red-500 dark:border-red-600' : 'border-border'}`}
-                  required={action === 'exclude_variance'}
-                  data-testid="input-reason"
-                />
-                {errors.reason && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-500" data-testid="error-reason">
-                    {errors.reason}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Notes (all actions) */}
+          {/* Conditional Input Fields */}
+          {action === 'assign_user' && (
             <div>
-              <label htmlFor="notes" className="block text-sm font-medium text-foreground mb-2">
-                Notes (Optional)
-              </label>
-              <textarea
-                id="notes"
-                value={notes}
+              <Label htmlFor="assigned-user" className="mb-2">
+                Assign to Team Member <span className="text-destructive">*</span>
+              </Label>
+              {/* Native <select> retained: D1 Select (Radix) provides a fully custom dropdown
+                  with fundamentally different UX from native OS <select>. Native is preferred
+                  here for platform-consistent UX. Exception-tagged in D2_SCOPE.md. */}
+              <select
+                id="assigned-user"
+                value={assignedUser}
                 onChange={(e) => {
-                  setNotes(e.target.value);
-                  setErrors(prev => ({ ...prev, notes: '' }));
+                  setAssignedUser(e.target.value);
+                  setErrors(prev => ({ ...prev, assignUser: '' }));
                 }}
-                rows={3}
-                placeholder="Add any additional context or notes..."
-                className={`w-full px-3 py-2 bg-background border rounded-md text-foreground 
-                           focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 resize-none
-                           ${errors.notes ? 'border-red-500 dark:border-red-600' : 'border-border'}`}
-                data-testid="textarea-notes"
-              />
-              {errors.notes && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-500" data-testid="error-notes">
-                  {errors.notes}
+                className={`mt-2 flex h-9 w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background
+                           focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2
+                           ${errors.assignUser ? 'border-destructive' : 'border-input'}`}
+                data-testid="select-assign-user"
+              >
+                <option value="">Select team member...</option>
+                <option value="user1">John Smith (Finance)</option>
+                <option value="user2">Sarah Johnson (Accounting)</option>
+                <option value="user3">Mike Chen (Operations)</option>
+              </select>
+              {errors.assignUser && (
+                <p className="mt-1 text-sm text-destructive" data-testid="error-assign-user">
+                  {errors.assignUser}
                 </p>
               )}
             </div>
+          )}
 
-            {/* Warning Message */}
-            <div className="flex items-start space-x-3 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-md">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-800 dark:text-amber-200" data-testid="text-warning-message">{config.warningText}</p>
+          {(action === 'flag_investigation' || action === 'exclude_variance') && (
+            <div>
+              <Label htmlFor="reason" className="mb-2">
+                Reason {action === 'exclude_variance' && <span className="text-destructive">*</span>}
+              </Label>
+              <Input
+                id="reason"
+                type="text"
+                value={reason}
+                onChange={(e) => {
+                  setReason(e.target.value);
+                  setErrors(prev => ({ ...prev, reason: '' }));
+                }}
+                placeholder="e.g., Legacy data from migration, Known refund processing delay"
+                className={`mt-2 ${errors.reason ? 'border-destructive' : ''}`}
+                required={action === 'exclude_variance'}
+                data-testid="input-reason"
+              />
+              {errors.reason && (
+                <p className="mt-1 text-sm text-destructive" data-testid="error-reason">
+                  {errors.reason}
+                </p>
+              )}
             </div>
+          )}
+
+          {/* Notes (all actions) */}
+          <div>
+            <Label htmlFor="notes" className="mb-2">Notes (Optional)</Label>
+            <Textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                setErrors(prev => ({ ...prev, notes: '' }));
+              }}
+              rows={3}
+              placeholder="Add any additional context or notes..."
+              className={`mt-2 resize-none ${errors.notes ? 'border-destructive' : ''}`}
+              data-testid="textarea-notes"
+            />
+            {errors.notes && (
+              <p className="mt-1 text-sm text-destructive" data-testid="error-notes">
+                {errors.notes}
+              </p>
+            )}
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end space-x-3 p-6 border-t border-border bg-muted/30">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 text-foreground bg-background border border-border rounded-md hover-elevate active-elevate-2
-                         transition-colors focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:ring-offset-2"
-              data-testid="button-cancel-action"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleConfirm}
-              disabled={!isFormValid()}
-              className={`px-4 py-2 text-white rounded-md transition-colors focus:outline-none focus:ring-2 
-                         focus:ring-offset-2 ${config.confirmColor} disabled:opacity-50 disabled:cursor-not-allowed`}
-              data-testid="button-confirm-action"
-            >
-              {config.confirmButton}
-            </button>
-          </div>
+          {/* Warning Message */}
+          <Alert className="bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+            <AlertDescription className="text-amber-800 dark:text-amber-200" data-testid="text-warning-message">
+              {config.warningText}
+            </AlertDescription>
+          </Alert>
         </div>
-      </div>
-    </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            data-testid="button-cancel-action"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirm}
+            disabled={!isFormValid()}
+            className={`text-white ${config.confirmColor}`}
+            data-testid="button-confirm-action"
+          >
+            {config.confirmButton}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

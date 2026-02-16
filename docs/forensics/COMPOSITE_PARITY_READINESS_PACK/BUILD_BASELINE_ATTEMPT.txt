@@ -1,0 +1,409 @@
+
+> skeldir-frontend@1.0.0 build
+> tsc && vite build
+
+src/api/sdk-client.ts(15,43): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/export-client.ts(9,60): error TS2339: Property 'requestBody' does not exist on type 'undefined'.
+src/api/services/export-client.ts(10,61): error TS2339: Property 'responses' does not exist on type 'undefined'.
+src/api/services/export-client.ts(11,58): error TS2339: Property 'requestBody' does not exist on type 'undefined'.
+src/api/services/export-client.ts(12,59): error TS2339: Property 'responses' does not exist on type 'undefined'.
+src/api/services/llm-budget.ts(10,63): error TS2339: Property 'BudgetOptimizationRequest' does not exist on type '{ BudgetRecommendation: { job_id: string; status: "running" | "complete" | "failed"; allocations: { channel: string; current_budget: number; recommended_budget: number; expected_roas: number; confidence_range?: { ...; } | undefined; }[]; synthesis?: string | undefined; metrics?: { ...; } | undefined; }; ChannelAlloc...'.
+src/api/services/llm-budget.ts(11,64): error TS2339: Property 'BudgetOptimizationResponse' does not exist on type '{ BudgetRecommendation: { job_id: string; status: "running" | "complete" | "failed"; allocations: { channel: string; current_budget: number; recommended_budget: number; expected_roas: number; confidence_range?: { ...; } | undefined; }[]; synthesis?: string | undefined; metrics?: { ...; } | undefined; }; ChannelAlloc...'.
+src/api/services/llm-budget.ts(13,36): error TS2339: Property 'optimizeBudget' does not exist on type 'operations'.
+src/api/services/llm-budget.ts(15,36): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/llm-explanations.ts(10,63): error TS2339: Property 'EntityExplanationResponse' does not exist on type '{ EntityExplanation: { explanation: string; citations: { metric: string; value: number; source: string; }[]; confidence: "high" | "low" | "medium"; generated_at: string; cost_usd: number; latency_ms: number; }; Citation: { ...; }; ExplanationError: { ...; }; ProblemDetails: { ...; }; }'.
+src/api/services/llm-explanations.ts(16,42): error TS2339: Property 'getExplanation' does not exist on type 'operations'.
+src/api/services/llm-explanations.ts(18,42): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/llm-investigations.ts(10,58): error TS2339: Property 'InvestigationRequest' does not exist on type '{ InvestigationStatus: { investigation_id: string; status: "running" | "complete" | "failed" | "queued" | "timeout"; progress_percentage?: number | undefined; current_step?: string | undefined; ... 4 more ...; tool_calls_used?: number | undefined; }; InvestigationFinding: { ...; }; ProblemDetails: { ...; }; }'.
+src/api/services/llm-investigations.ts(11,65): error TS2339: Property 'InvestigationStatusResponse' does not exist on type '{ InvestigationStatus: { investigation_id: string; status: "running" | "complete" | "failed" | "queued" | "timeout"; progress_percentage?: number | undefined; current_step?: string | undefined; ... 4 more ...; tool_calls_used?: number | undefined; }; InvestigationFinding: { ...; }; ProblemDetails: { ...; }; }'.
+src/api/services/llm-investigations.ts(13,46): error TS2339: Property 'startInvestigation' does not exist on type 'operations'.
+src/api/services/llm-investigations.ts(16,44): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/webhook-paypal.ts(10,56): error TS2339: Property 'PayPalWebhookEvent' does not exist on type '{ PayPalEvent: { id: string; event_type: "PAYMENT.SALE.COMPLETED" | "PAYMENT.CAPTURE.COMPLETED" | "PAYMENT.SALE.REFUNDED" | "PAYMENT.CAPTURE.REFUNDED"; create_time?: string | undefined; resource_type?: string | undefined; summary?: string | undefined; resource: { ...; }; }; PayPalResource: { ...; }; SuccessResponse:...'.
+src/api/services/webhook-paypal.ts(11,58): error TS2339: Property 'PayPalPaymentCapture' does not exist on type '{ PayPalEvent: { id: string; event_type: "PAYMENT.SALE.COMPLETED" | "PAYMENT.CAPTURE.COMPLETED" | "PAYMENT.SALE.REFUNDED" | "PAYMENT.CAPTURE.REFUNDED"; create_time?: string | undefined; resource_type?: string | undefined; summary?: string | undefined; resource: { ...; }; }; PayPalResource: { ...; }; SuccessResponse:...'.
+src/api/services/webhook-paypal.ts(12,57): error TS2339: Property 'PayPalCheckoutOrder' does not exist on type '{ PayPalEvent: { id: string; event_type: "PAYMENT.SALE.COMPLETED" | "PAYMENT.CAPTURE.COMPLETED" | "PAYMENT.SALE.REFUNDED" | "PAYMENT.CAPTURE.REFUNDED"; create_time?: string | undefined; resource_type?: string | undefined; summary?: string | undefined; resource: { ...; }; }; PayPalResource: { ...; }; SuccessResponse:...'.
+src/api/services/webhook-paypal.ts(15,40): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/webhook-paypal.ts(32,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-paypal.ts(40,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/api/services/webhook-paypal.ts(51,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-paypal.ts(59,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/api/services/webhook-shopify.ts(14,41): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/webhook-shopify.ts(30,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-shopify.ts(38,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/api/services/webhook-shopify.ts(48,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-shopify.ts(56,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/api/services/webhook-stripe.ts(11,57): error TS2339: Property 'StripePaymentIntent' does not exist on type '{ StripeEvent: { id: string; type: "charge.succeeded" | "charge.refunded" | "payment_intent.succeeded" | "payment_intent.payment_failed"; created: number; livemode?: boolean | undefined; data: { ...; }; }; StripeCharge: { ...; }; SuccessResponse: { ...; }; ProblemDetails: { ...; }; }'.
+src/api/services/webhook-stripe.ts(12,59): error TS2339: Property 'StripeCheckoutSession' does not exist on type '{ StripeEvent: { id: string; type: "charge.succeeded" | "charge.refunded" | "payment_intent.succeeded" | "payment_intent.payment_failed"; created: number; livemode?: boolean | undefined; data: { ...; }; }; StripeCharge: { ...; }; SuccessResponse: { ...; }; ProblemDetails: { ...; }; }'.
+src/api/services/webhook-stripe.ts(15,40): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/webhook-stripe.ts(28,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-stripe.ts(34,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/api/services/webhook-stripe.ts(41,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-stripe.ts(47,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/api/services/webhook-woocommerce.ts(10,46): error TS2339: Property 'WooOrder' does not exist on type '{ WooCommerceOrder: { id: number; order_key: string; number?: string | undefined; status?: "pending" | "processing" | "failed" | "completed" | "refunded" | "on-hold" | "cancelled" | undefined; ... 14 more ...; refunds?: { ...; }[] | undefined; }; SuccessResponse: { ...; }; ProblemDetails: { ...; }; }'.
+src/api/services/webhook-woocommerce.ts(13,45): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/services/webhook-woocommerce.ts(29,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-woocommerce.ts(37,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/api/services/webhook-woocommerce.ts(47,7): error TS2554: Expected 1-2 arguments, but got 3.
+src/api/services/webhook-woocommerce.ts(55,5): error TS2322: Type '{ success: boolean; correlation_id: string; message?: string | undefined; } | null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+  Type 'null' is not assignable to type '{ success: boolean; correlation_id: string; message?: string | undefined; }'.
+src/App.tsx(1,25): error TS6133: 'useLocation' is declared but its value is never read.
+src/components/ConfidenceScoreBadge.tsx(155,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceScoreBadge.tsx(160,23): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceScoreBadge.tsx(168,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceScoreBadge.tsx(173,23): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ConfidenceTooltip.tsx(74,13): error TS6133: 'viewportHeight' is declared but its value is never read.
+src/components/ConfidenceTooltip.tsx(123,15): error TS6133: 'viewportHeight' is declared but its value is never read.
+src/components/CorrelationIdDisplay.tsx(2,22): error TS2307: Cannot find module '@/assets/brand/icons/copy.svg' or its corresponding type declarations.
+src/components/CorrelationIdDisplay.tsx(3,23): error TS2307: Cannot find module '@/assets/brand/icons/checkmark.svg' or its corresponding type declarations.
+src/components/dashboard/BulkActionModal.tsx(142,71): error TS2339: Property 'amount' does not exist on type 'UnmatchedTransaction'.
+src/components/dashboard/BulkActionModal.tsx(181,64): error TS2339: Property 'platform' does not exist on type 'UnmatchedTransaction'.
+src/components/dashboard/BulkActionModal.tsx(187,82): error TS2339: Property 'date' does not exist on type 'UnmatchedTransaction'.
+src/components/dashboard/BulkActionModal.tsx(189,82): error TS2339: Property 'date' does not exist on type 'UnmatchedTransaction'.
+src/components/dashboard/DataIntegrityMonitor.tsx(78,20): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/components/dashboard/DataIntegrityMonitor.tsx(82,20): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/components/dashboard/DataIntegrityMonitor.tsx(103,31): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/dashboard/DataIntegrityMonitor.tsx(238,37): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/components/dashboard/DataIntegrityMonitor.tsx(270,34): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/dashboard/DataIntegrityMonitor.tsx(295,17): error TS2322: Type 'PlatformStatus' is not assignable to type '"error" | "pending" | "partial" | "verified" | "unverified"'.
+src/components/dashboard/DataReconciliationStatus.tsx(17,55): error TS6133: 'InvestigationIcon' is declared but its value is never read.
+src/components/dashboard/DataReconciliationStatus.tsx(122,42): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(153,21): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(153,50): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(154,21): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(156,101): error TS2339: Property 'lastSyncTime' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(159,36): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(160,29): error TS2339: Property 'variance' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(183,47): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(188,36): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(188,66): error TS7006: Parameter 'acc' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(188,71): error TS7006: Parameter 'transaction' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(194,44): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(197,43): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(198,6): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(198,11): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(202,9): error TS6133: 'avgDaysPending' is declared but its value is never read.
+src/components/dashboard/DataReconciliationStatus.tsx(202,36): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(203,17): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(203,47): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(203,52): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(203,101): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(230,98): error TS2339: Property 'lastSyncTime' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(236,19): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(239,52): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(243,36): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(246,36): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(250,33): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(268,15): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(268,44): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(269,16): error TS2551: Property 'unmatchedTransactions' does not exist on type 'DataReconciliationStatus'. Did you mean 'unmatched_transactions'?
+src/components/dashboard/DataReconciliationStatus.tsx(273,34): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(273,39): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(284,9): error TS2561: Object literal may only specify known properties, but 'transactionIds' does not exist in type 'BulkActionRequest'. Did you mean to write 'transaction_ids'?
+src/components/dashboard/DataReconciliationStatus.tsx(295,36): error TS2339: Property 'updatedCount' does not exist on type 'BulkActionResponse'.
+src/components/dashboard/DataReconciliationStatus.tsx(295,72): error TS2339: Property 'updatedCount' does not exist on type 'BulkActionResponse'.
+src/components/dashboard/DataReconciliationStatus.tsx(310,67): error TS2339: Property 'message' does not exist on type 'BulkActionResponse'.
+src/components/dashboard/DataReconciliationStatus.tsx(315,20): error TS2339: Property 'failedTransactions' does not exist on type 'BulkActionResponse'.
+src/components/dashboard/DataReconciliationStatus.tsx(318,36): error TS2339: Property 'failedTransactions' does not exist on type 'BulkActionResponse'.
+src/components/dashboard/DataReconciliationStatus.tsx(318,85): error TS2339: Property 'failedTransactions' does not exist on type 'BulkActionResponse'.
+src/components/dashboard/DataReconciliationStatus.tsx(354,39): error TS2339: Property 'unmatchedCount' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(354,67): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(354,101): error TS2339: Property 'unmatchedCount' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(354,136): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(365,37): error TS2339: Property 'unmatchedCount' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(367,32): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(375,22): error TS2339: Property 'unmatchedCount' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(505,18): error TS2339: Property 'variance' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(530,79): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(534,84): error TS2339: Property 'unmatchedCount' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(592,90): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(599,46): error TS2339: Property 'matchPercentage' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(613,20): error TS2551: Property 'platformVariances' does not exist on type 'DataReconciliationStatus'. Did you mean 'platform_variances'?
+src/components/dashboard/DataReconciliationStatus.tsx(616,44): error TS2551: Property 'platformVariances' does not exist on type 'DataReconciliationStatus'. Did you mean 'platform_variances'?
+src/components/dashboard/DataReconciliationStatus.tsx(625,20): error TS2339: Property 'unmatchedCount' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(630,37): error TS2339: Property 'variance' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(639,76): error TS2339: Property 'unmatchedCount' does not exist on type 'DataReconciliationStatus'.
+src/components/dashboard/DataReconciliationStatus.tsx(694,28): error TS2551: Property 'platformVariances' does not exist on type 'DataReconciliationStatus'. Did you mean 'platform_variances'?
+src/components/dashboard/DataReconciliationStatus.tsx(694,53): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(697,31): error TS2551: Property 'platformVariances' does not exist on type 'DataReconciliationStatus'. Did you mean 'platform_variances'?
+src/components/dashboard/DataReconciliationStatus.tsx(719,46): error TS2551: Property 'platformVariances' does not exist on type 'DataReconciliationStatus'. Did you mean 'platform_variances'?
+src/components/dashboard/DataReconciliationStatus.tsx(719,69): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(723,45): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatus.tsx(723,65): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(724,69): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatus.tsx(775,28): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatus.tsx(775,71): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatus.tsx(783,29): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatus.tsx(783,50): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(783,55): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(833,26): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatus.tsx(833,56): error TS7006: Parameter 'transaction' implicitly has an 'any' type.
+src/components/dashboard/DataReconciliationStatus.tsx(898,20): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatus.tsx(905,35): error TS18046: 'transactions' is of type 'unknown'.
+src/components/dashboard/DataReconciliationStatusHeader.tsx(2,3): error TS6133: 'CheckCircle' is declared but its value is never read.
+src/components/dashboard/MathematicalValidationCallout.tsx(64,9): error TS6133: 'calculatedSums' is declared but its value is never read.
+src/components/dashboard/MathematicalValidationCallout.tsx(68,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/dashboard/ModelComparisonChart.tsx(48,53): error TS2339: Property 'total_revenue' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(48,71): error TS2339: Property 'total_revenue' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(49,39): error TS2339: Property 'total_revenue' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(64,49): error TS2339: Property 'channel_allocations' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(65,31): error TS18046: 'b' is of type 'unknown'.
+src/components/dashboard/ModelComparisonChart.tsx(65,35): error TS18046: 'a' is of type 'unknown'.
+src/components/dashboard/ModelComparisonChart.tsx(67,41): error TS2339: Property 'total_revenue' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(70,30): error TS2339: Property 'model_type' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(70,91): error TS2339: Property 'model_type' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(73,114): error TS2339: Property 'model_type' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(74,28): error TS2339: Property 'model_type' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(78,116): error TS2339: Property 'model_type' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(79,45): error TS2339: Property 'total_revenue' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(83,86): error TS2339: Property 'model_type' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(93,46): error TS18046: 'allocation' is of type 'unknown'.
+src/components/dashboard/ModelComparisonChart.tsx(93,65): error TS2339: Property 'total_revenue' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(96,103): error TS2339: Property 'model_type' does not exist on type 'ModelComparison'.
+src/components/dashboard/ModelComparisonChart.tsx(102,43): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'number'.
+src/components/dashboard/PlatformVarianceGrid.tsx(3,1): error TS6133: 'Card' is declared but its value is never read.
+src/components/dashboard/PlatformVarianceGrid.tsx(34,66): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(35,40): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGrid.tsx(39,29): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(40,70): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(49,44): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGrid.tsx(49,98): error TS2339: Property 'name' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(50,56): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(57,40): error TS2339: Property 'matchPercentage' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(65,38): error TS2339: Property 'name' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(76,67): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(78,31): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGrid.tsx(87,109): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(88,29): error TS2339: Property 'matchPercentage' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(96,27): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGrid.tsx(96,56): error TS2339: Property 'totalTransactions' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(99,25): error TS2339: Property 'unmatchedRevenue' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(101,112): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(102,32): error TS2339: Property 'unmatchedRevenue' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGrid.tsx(119,74): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGrid.tsx(122,64): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGridNew.tsx(17,20): error TS2339: Property 'unmatchedRevenue' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(18,23): error TS2339: Property 'unmatchedRevenue' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(18,44): error TS2339: Property 'unmatchedRevenue' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(33,47): error TS2339: Property 'totalTransactions' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(34,26): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGridNew.tsx(34,52): error TS2339: Property 'totalTransactions' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(38,67): error TS2339: Property 'name' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(42,29): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(43,38): error TS2339: Property 'name' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(45,40): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/components/dashboard/PlatformVarianceGridNew.tsx(46,36): error TS2339: Property 'unmatchedRevenue' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(48,35): error TS2339: Property 'matchPercentage' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(49,63): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/PlatformVarianceGridNew.tsx(50,57): error TS2339: Property 'id' does not exist on type 'PlatformVariance'.
+src/components/dashboard/VerificationShowcase.tsx(37,10): error TS6133: 'recentStatusChanges' is declared but its value is never read.
+src/components/dashboard/VerificationShowcase.tsx(41,31): error TS2551: Property 'lastSynced' does not exist on type 'SyncStatus'. Did you mean 'last_sync'?
+src/components/dashboard/VerificationShowcase.tsx(42,41): error TS2551: Property 'lastSynced' does not exist on type 'SyncStatus'. Did you mean 'last_sync'?
+src/components/dashboard/VerificationShowcase.tsx(45,31): error TS2551: Property 'lastSynced' does not exist on type 'SyncStatus'. Did you mean 'last_sync'?
+src/components/dashboard/VerificationShowcase.tsx(46,47): error TS2551: Property 'lastSynced' does not exist on type 'SyncStatus'. Did you mean 'last_sync'?
+src/components/dashboard/VerificationShowcase.tsx(58,65): error TS2339: Property 'platform' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(58,86): error TS2339: Property 'platform' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(61,29): error TS2339: Property 'platform' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(67,46): error TS2367: This comparison appears to be unintentional because the types '"error" | "connected" | "disconnected" | "pending"' and '"verified"' have no overlap.
+src/components/dashboard/VerificationShowcase.tsx(68,67): error TS2339: Property 'platform' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(73,35): error TS2339: Property 'platform' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(99,29): error TS2339: Property 'verifiedTotal' does not exist on type 'RevenueBreakdown'.
+src/components/dashboard/VerificationShowcase.tsx(103,29): error TS2339: Property 'unverifiedTotal' does not exist on type 'RevenueBreakdown'.
+src/components/dashboard/VerificationShowcase.tsx(105,30): error TS2339: Property 'verifiedTotal' does not exist on type 'RevenueBreakdown'.
+src/components/dashboard/VerificationShowcase.tsx(105,66): error TS2339: Property 'unverifiedTotal' does not exist on type 'RevenueBreakdown'.
+src/components/dashboard/VerificationShowcase.tsx(112,29): error TS2339: Property 'platform' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(113,31): error TS2339: Property 'brandColor' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(115,27): error TS2339: Property 'amount' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(116,36): error TS2339: Property 'matchPercentage' does not exist on type 'PlatformStatus'.
+src/components/dashboard/VerificationShowcase.tsx(123,42): error TS2339: Property 'platforms' does not exist on type 'RevenueBreakdown'.
+src/components/dashboard/VerificationShowcase.tsx(123,58): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/components/dashboard/VerificationShowcase.tsx(130,37): error TS2339: Property 'platforms' does not exist on type 'RevenueBreakdown'.
+src/components/dashboard/VerificationShowcase.tsx(131,14): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/components/dashboard/VerificationShowcase.tsx(132,14): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+src/components/dashboard/VerificationShowcase.tsx(132,19): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/components/dashboard/VerificationShowcase.tsx(248,17): error TS2322: Type '"error" | "connected" | "disconnected" | "pending"' is not assignable to type '"error" | "pending" | "partial" | "verified" | "unverified"'.
+  Type '"connected"' is not assignable to type '"error" | "pending" | "partial" | "verified" | "unverified"'.
+src/components/dashboard/VerificationShowcase.tsx(252,29): error TS2367: This comparison appears to be unintentional because the types '"error" | "connected" | "disconnected" | "pending"' and '"verified"' have no overlap.
+src/components/DashboardShell.tsx(1,52): error TS6133: 'SidebarTrigger' is declared but its value is never read.
+src/components/DualRevenueCard.tsx(183,10): error TS6133: 'retryDelay' is declared but its value is never read.
+src/components/DualRevenueCard.tsx(289,9): error TS6133: 'isPaused' is declared but its value is never read.
+src/components/error-banner/ErrorBanner.tsx(86,23): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ErrorBoundary.tsx(5,23): error TS2307: Cannot find module '@/assets/brand/icons/error.svg' or its corresponding type declarations.
+src/components/ErrorBoundary.tsx(70,9): error TS6133: 'immediateSuccess' is declared but its value is never read.
+src/components/ExportButton.tsx(8,20): error TS2307: Cannot find module './ExportButton.module.css' or its corresponding type declarations.
+src/components/ExportButton.tsx(9,21): error TS2307: Cannot find module '@/assets/brand/icons/csv.svg' or its corresponding type declarations.
+src/components/ExportButton.tsx(10,23): error TS2307: Cannot find module '@/assets/brand/icons/excel.svg' or its corresponding type declarations.
+src/components/ExportButton.tsx(11,21): error TS2307: Cannot find module '@/assets/brand/icons/pdf.svg' or its corresponding type declarations.
+src/components/ExportButton.tsx(12,25): error TS2307: Cannot find module '@/assets/brand/icons/chevron-down.svg' or its corresponding type declarations.
+src/components/ExportButton.tsx(101,9): error TS6133: 'progressIntervalRef' is declared but its value is never read.
+src/components/ExportButton.tsx(234,9): error TS6133: 'handleRetry' is declared but its value is never read.
+src/components/GeometricBackground.tsx(2,25): error TS2307: Cannot find module '@assets/backgrounds/geometric-light.png' or its corresponding type declarations.
+src/components/llm/LLMInvestigationDemo.tsx(131,50): error TS7006: Parameter 'finding' implicitly has an 'any' type.
+src/components/llm/LLMInvestigationDemo.tsx(131,59): error TS7006: Parameter 'idx' implicitly has an 'any' type.
+src/components/llm/LLMInvestigationDemo.tsx(143,59): error TS7006: Parameter 'rec' implicitly has an 'any' type.
+src/components/llm/LLMInvestigationDemo.tsx(143,64): error TS7006: Parameter 'idx' implicitly has an 'any' type.
+src/components/LoginForm.tsx(9,31): error TS2307: Cannot find module '@assets/brand/logo-shield.png' or its corresponding type declarations.
+src/components/LoginInterface.tsx(6,10): error TS6133: 'Eye' is declared but its value is never read.
+src/components/LoginInterface.tsx(6,15): error TS6133: 'EyeOff' is declared but its value is never read.
+src/components/LoginInterface.tsx(10,31): error TS2307: Cannot find module '@assets/brand/logo-shield.png' or its corresponding type declarations.
+src/components/LoginInterface.tsx(11,28): error TS2307: Cannot find module '@assets/brand/logo.svg' or its corresponding type declarations.
+src/components/LoginInterface.tsx(26,24): error TS6133: 'setShowPassword' is declared but its value is never read.
+src/components/PlatformBreakdownTooltip.tsx(39,34): error TS2339: Property 'platform' does not exist on type 'PlatformRevenue'.
+src/components/PlatformBreakdownTooltip.tsx(41,48): error TS2339: Property 'status' does not exist on type 'PlatformRevenue'.
+src/components/PlatformBreakdownTooltip.tsx(43,42): error TS2339: Property 'platform' does not exist on type 'PlatformRevenue'.
+src/components/PlatformBreakdownTooltip.tsx(43,71): error TS2339: Property 'status' does not exist on type 'PlatformRevenue'.
+src/components/PlatformBreakdownTooltip.tsx(46,29): error TS2339: Property 'platform' does not exist on type 'PlatformRevenue'.
+src/components/PlatformBreakdownTooltip.tsx(49,30): error TS2339: Property 'amount' does not exist on type 'PlatformRevenue'.
+src/components/PlatformBreakdownTooltip.tsx(52,30): error TS2339: Property 'status' does not exist on type 'PlatformRevenue'.
+src/components/ProcessedLogo.tsx(23,10): error TS6133: 'isProcessing' is declared but its value is never read.
+src/components/ProcessedLogo.tsx(25,9): error TS6133: 'canvasRef' is declared but its value is never read.
+src/components/RevenueDisplay.tsx(3,27): error TS2307: Cannot find module '@/assets/brand/icons/checkmark.svg' or its corresponding type declarations.
+src/components/RouteGuard.tsx(6,26): error TS2307: Cannot find module '@/assets/brand/icons/redirect.svg' or its corresponding type declarations.
+src/components/SidebarBranding.tsx(3,31): error TS2307: Cannot find module '@assets/brand/logo-shield.png' or its corresponding type declarations.
+src/components/SidebarBranding.tsx(4,28): error TS2307: Cannot find module '@assets/brand/logo.svg' or its corresponding type declarations.
+src/components/ThemeProvider.tsx(17,43): error TS6133: 'defaultTheme' is declared but its value is never read.
+src/components/ui/accordion.tsx(2,37): error TS2307: Cannot find module '@radix-ui/react-accordion' or its corresponding type declarations.
+src/components/ui/alert-dialog.tsx(2,39): error TS2307: Cannot find module '@radix-ui/react-alert-dialog' or its corresponding type declarations.
+src/components/ui/aspect-ratio.tsx(1,39): error TS2307: Cannot find module '@radix-ui/react-aspect-ratio' or its corresponding type declarations.
+src/components/ui/calendar.tsx(3,27): error TS2307: Cannot find module 'react-day-picker' or its corresponding type declarations.
+src/components/ui/calendar.tsx(55,22): error TS7031: Binding element 'className' implicitly has an 'any' type.
+src/components/ui/calendar.tsx(58,23): error TS7031: Binding element 'className' implicitly has an 'any' type.
+src/components/ui/carousel.tsx(4,8): error TS2307: Cannot find module 'embla-carousel-react' or its corresponding type declarations.
+src/components/ui/collapsible.tsx(3,39): error TS2307: Cannot find module '@radix-ui/react-collapsible' or its corresponding type declarations.
+src/components/ui/command.tsx(3,45): error TS2307: Cannot find module 'cmdk' or its corresponding type declarations.
+src/components/ui/context-menu.tsx(2,39): error TS2307: Cannot find module '@radix-ui/react-context-menu' or its corresponding type declarations.
+src/components/ui/drawer.tsx(4,43): error TS2307: Cannot find module 'vaul' or its corresponding type declarations.
+src/components/ui/dropdown-menu.tsx(2,40): error TS2307: Cannot find module '@radix-ui/react-dropdown-menu' or its corresponding type declarations.
+src/components/ui/form.tsx(4,33): error TS2307: Cannot find module '@radix-ui/react-label' or its corresponding type declarations.
+src/components/ui/form.tsx(13,8): error TS2307: Cannot find module 'react-hook-form' or its corresponding type declarations.
+src/components/ui/hover-card.tsx(4,37): error TS2307: Cannot find module '@radix-ui/react-hover-card' or its corresponding type declarations.
+src/components/ui/input-otp.tsx(2,43): error TS2307: Cannot find module 'input-otp' or its corresponding type declarations.
+src/components/ui/input-otp.tsx(36,44): error TS18046: 'inputOTPContext' is of type 'unknown'.
+src/components/ui/label.tsx(2,33): error TS2307: Cannot find module '@radix-ui/react-label' or its corresponding type declarations.
+src/components/ui/menubar.tsx(4,35): error TS2307: Cannot find module '@radix-ui/react-menubar' or its corresponding type declarations.
+src/components/ui/navigation-menu.tsx(2,42): error TS2307: Cannot find module '@radix-ui/react-navigation-menu' or its corresponding type declarations.
+src/components/ui/popover.tsx(2,35): error TS2307: Cannot find module '@radix-ui/react-popover' or its corresponding type declarations.
+src/components/ui/progress.tsx(4,36): error TS2307: Cannot find module '@radix-ui/react-progress' or its corresponding type declarations.
+src/components/ui/request-status.tsx(53,25): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/components/ui/resizable.tsx(4,37): error TS2307: Cannot find module 'react-resizable-panels' or its corresponding type declarations.
+src/components/ui/scroll-area.tsx(2,38): error TS2307: Cannot find module '@radix-ui/react-scroll-area' or its corresponding type declarations.
+src/components/ui/select.tsx(4,34): error TS2307: Cannot find module '@radix-ui/react-select' or its corresponding type declarations.
+src/components/ui/slider.tsx(2,34): error TS2307: Cannot find module '@radix-ui/react-slider' or its corresponding type declarations.
+src/components/ui/switch.tsx(2,35): error TS2307: Cannot find module '@radix-ui/react-switch' or its corresponding type declarations.
+src/components/ui/toggle-group.tsx(4,39): error TS2307: Cannot find module '@radix-ui/react-toggle-group' or its corresponding type declarations.
+src/components/ui/tooltip-advanced.tsx(69,6): error TS6133: 'state' is declared but its value is never read.
+src/components/ui/tooltip-advanced.tsx(79,17): error TS6133: 'floatingRect' is declared but its value is never read.
+src/components/ui/tooltip-advanced.tsx(256,57): error TS6133: 'propRef' is declared but its value is never read.
+src/components/VerificationBadge.tsx(3,27): error TS2307: Cannot find module '@/assets/brand/icons/checkmark.svg' or its corresponding type declarations.
+src/components/VerificationBadge.tsx(4,26): error TS2307: Cannot find module '@/assets/brand/icons/question.svg' or its corresponding type declarations.
+src/components/VerificationBadge.tsx(48,15): error TS2339: Property 'source' does not exist on type 'ReconciliationContext'.
+src/components/VerificationBadge.tsx(48,23): error TS2339: Property 'matchPercentage' does not exist on type 'ReconciliationContext'.
+src/components/VerificationBadge.tsx(48,40): error TS2339: Property 'timeWindow' does not exist on type 'ReconciliationContext'.
+src/components/VerificationBadge.tsx(61,15): error TS2339: Property 'source' does not exist on type 'ReconciliationContext'.
+src/components/VerificationBadge.tsx(61,23): error TS2339: Property 'expectedReconciliation' does not exist on type 'ReconciliationContext'.
+src/contexts/VerificationSyncContext.tsx(37,5): error TS6133: 'syncState' is declared but its value is never read.
+src/contexts/VerificationSyncContext.tsx(44,10): error TS6133: 'toastQueue' is declared but its value is never read.
+src/contexts/VerificationSyncContext.tsx(62,36): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/contexts/VerificationSyncContext.tsx(63,62): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/contract-consumption-gate.ts(13,6): error TS6196: '_authPath' is declared but never used.
+src/contract-consumption-gate.ts(14,6): error TS6196: '_authMethod' is declared but never used.
+src/contract-consumption-gate.ts(15,6): error TS6196: '_authResponse200' is declared but never used.
+src/contract-consumption-gate.ts(17,6): error TS6196: '_realtimePath' is declared but never used.
+src/contract-consumption-gate.ts(18,6): error TS6196: '_realtimeMethod' is declared but never used.
+src/contract-consumption-gate.ts(19,6): error TS6196: '_realtimeResponse200' is declared but never used.
+src/contract-consumption-gate.ts(23,6): error TS6196: '_healthPath' is declared but never used.
+src/contract-consumption-gate.ts(24,6): error TS6196: '_healthMethod' is declared but never used.
+src/contract-consumption-gate.ts(25,6): error TS6196: '_healthResponse200' is declared but never used.
+src/contract-consumption-gate.ts(27,6): error TS6196: '_reconciliationPath' is declared but never used.
+src/contract-consumption-gate.ts(28,6): error TS6196: '_reconciliationMethod' is declared but never used.
+src/contract-consumption-gate.ts(31,6): error TS6196: '_reconciliationResponse200' is declared but never used.
+src/contract-consumption-gate.ts(35,6): error TS6196: '_exportPath' is declared but never used.
+src/contract-consumption-gate.ts(36,6): error TS6196: '_exportMethod' is declared but never used.
+src/contract-consumption-gate.ts(37,6): error TS6196: '_exportResponse200' is declared but never used.
+src/hooks/use-api-client-with-banners.ts(16,28): error TS6133: 'TReq' is declared but its value is never read.
+src/hooks/use-channel-performance.ts(8,34): error TS2305: Module '"@/api/attribution-client"' has no exported member 'ChannelPerformance'.
+src/hooks/use-channel-performance.ts(34,48): error TS2339: Property 'getChannelPerformance' does not exist on type '{ getRealtimeRevenue(params?: { start_date?: string | undefined; end_date?: string | undefined; } | undefined): Promise<{ data: { total_revenue: number; event_count: number; last_updated: string; ... 4 more ...; upgrade_notice?: string | ... 1 more ... | undefined; } | null; error: null; correlationId: string | unde...'.
+src/hooks/use-dashboard-polling.ts(38,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/hooks/use-elevation.ts(35,3): error TS6133: 'transitionDuration' is declared but its value is never read.
+src/hooks/use-export-data.ts(10,8): error TS2305: Module '"@/api/export-client"' has no exported member 'ExportRequest'.
+src/hooks/use-export-data.ts(11,8): error TS2305: Module '"@/api/export-client"' has no exported member 'ExportDataResponse'.
+src/hooks/use-export-data.ts(12,8): error TS2305: Module '"@/api/export-client"' has no exported member 'ExportJobStatus'.
+src/hooks/use-file-downloader.ts(53,25): error TS2345: Argument of type 'Uint8Array<ArrayBufferLike>[]' is not assignable to parameter of type 'BlobPart[]'.
+  Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'BlobPart'.
+    Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'ArrayBufferView<ArrayBuffer>'.
+      Types of property 'buffer' are incompatible.
+        Type 'ArrayBufferLike' is not assignable to type 'ArrayBuffer'.
+          Type 'SharedArrayBuffer' is not assignable to type 'ArrayBuffer'.
+            Types of property '[Symbol.toStringTag]' are incompatible.
+              Type '"SharedArrayBuffer"' is not assignable to type '"ArrayBuffer"'.
+src/hooks/use-polling-manager.test.ts(89,46): error TS6133: 'isActive' is declared but its value is never read.
+src/hooks/use-polling-manager.test.ts(246,11): error TS6133: 'firstPoll' is declared but its value is never read.
+src/hooks/use-retry-logic.test.ts(93,31): error TS6133: 'circuitState' is declared but its value is never read.
+src/hooks/useAuth.ts(201,76): error TS6133: 'rememberMe' is declared but its value is never read.
+src/hooks/useAuth.ts(208,39): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/hooks/useAuth.ts(208,62): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api-client-base.ts(196,15): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api-client-base.ts(200,15): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api-client-base.ts(204,15): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api-client-base.ts(208,15): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/api-client-base.ts(212,15): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/queryClient.ts(16,30): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/pages/ImplementationPortal.tsx(2,23): error TS2305: Module '"wouter"' has no exported member 'useSearch'.
+src/services/verificationPolling.ts(15,13): error TS6138: Property 'interval' is declared but its value is never read.
+src/services/verificationPolling.ts(106,30): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/services/verificationWebSocket.ts(107,28): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/services/verificationWebSocket.ts(113,32): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/stores/dashboard.store.ts(8,24): error TS2307: Cannot find module 'zustand' or its corresponding type declarations.
+src/stores/dashboard.store.ts(43,58): error TS7006: Parameter 'set' implicitly has an 'any' type.
+src/stores/dashboard.store.ts(43,63): error TS7006: Parameter 'get' implicitly has an 'any' type.
+src/stores/dashboard.store.ts(50,23): error TS7006: Parameter 'status' implicitly has an 'any' type.
+src/stores/dashboard.store.ts(52,21): error TS7006: Parameter 'data' implicitly has an 'any' type.
+src/stores/dashboard.store.ts(100,21): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/utils/mockPlatformData.ts(47,15): error TS2352: Conversion of type 'string' to type 'PlatformStatus' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/mockPlatformData.ts(57,15): error TS2352: Conversion of type 'string' to type 'PlatformStatus' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/mockPlatformData.ts(67,15): error TS2352: Conversion of type 'string' to type 'PlatformStatus' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/mockPlatformData.ts(77,15): error TS2352: Conversion of type 'string' to type 'PlatformStatus' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/utils/mockPlatformData.ts(91,18): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(95,18): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(120,18): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(124,18): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(130,44): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(133,7): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(135,17): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(176,18): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(180,18): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(184,18): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(184,44): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockPlatformData.ts(184,68): error TS2367: This comparison appears to be unintentional because the types 'PlatformStatus' and 'string' have no overlap.
+src/utils/mockReconciliationData.ts(17,7): error TS2322: Type '"verified"' is not assignable to type '"warning" | "critical" | "healthy"'.
+src/utils/mockReconciliationData.ts(26,7): error TS2322: Type '"partial"' is not assignable to type '"warning" | "critical" | "healthy"'.
+src/utils/mockReconciliationData.ts(35,7): error TS2322: Type '"partial"' is not assignable to type '"warning" | "critical" | "healthy"'.
+src/utils/mockReconciliationData.ts(44,7): error TS2322: Type '"verified"' is not assignable to type '"warning" | "critical" | "healthy"'.
+src/utils/mockReconciliationData.ts(65,7): error TS2322: Type '"investigating"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(77,7): error TS2322: Type '"variance_detected"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(89,7): error TS2322: Type '"pending_data"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(101,7): error TS2322: Type '"investigating"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(113,7): error TS2322: Type '"variance_detected"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(125,7): error TS2322: Type '"pending_data"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(139,7): error TS2322: Type '"investigating"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(151,7): error TS2322: Type '"variance_detected"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(163,7): error TS2322: Type '"pending_data"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(175,7): error TS2322: Type '"investigating"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(189,7): error TS2322: Type '"pending_data"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(201,7): error TS2322: Type '"variance_detected"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(213,7): error TS2322: Type '"investigating"' is not assignable to type 'ReconciliationState'.
+src/utils/mockReconciliationData.ts(221,74): error TS2339: Property 'totalTransactions' does not exist on type 'PlatformVariance'.
+src/utils/mockReconciliationData.ts(222,70): error TS2339: Property 'totalTransactions' does not exist on type 'PlatformVariance'.
+src/utils/mockReconciliationData.ts(222,92): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/utils/mockReconciliationData.ts(225,71): error TS2551: Property 'unmatchedCount' does not exist on type 'PlatformVariance'. Did you mean 'unmatched_count'?
+src/utils/mockReconciliationData.ts(228,5): error TS2353: Object literal may only specify known properties, and 'matchPercentage' does not exist in type 'DataReconciliationStatus'.
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.10.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.10.0
+npm notice To update run: npm install -g npm@11.10.0
+npm notice

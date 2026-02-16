@@ -1,3 +1,5 @@
+SELECT set_config('search_path', '', false);
+
 CREATE SCHEMA security;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
@@ -8,16 +10,16 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
+            tolerance_cents INTEGER := 1;
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
-            WHERE id = COALESCE(NEW.event_id, OLD.event_id);
+            WHERE id = COALESCE(event_id, event_id);
 
             SELECT COALESCE(SUM(allocated_revenue_cents), 0) INTO allocated_sum
             FROM attribution_allocations
-            WHERE event_id = COALESCE(NEW.event_id, OLD.event_id)
-              AND model_version = COALESCE(NEW.model_version, OLD.model_version);
+            WHERE event_id = COALESCE(event_id, event_id)
+              AND model_version = COALESCE(model_version, model_version);
 
             IF ABS(allocated_sum - event_revenue) > tolerance_cents THEN
                 RAISE EXCEPTION 'Allocation sum mismatch: allocated=% expected=% drift=%',
@@ -50,16 +52,16 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON e.tenant_id = a.tenant_id
-             AND e.id = a.event_id
+              ON tenant_id = tenant_id
+             AND id = event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE aa.tenant_id = a.tenant_id
-                  AND aa.event_id = a.event_id
-                  AND aa.model_version = a.model_version
+                WHERE tenant_id = tenant_id
+                  AND event_id = event_id
+                  AND model_version = model_version
             ) s
-            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
+            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -95,16 +97,16 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON e.tenant_id = a.tenant_id
-             AND e.id = a.event_id
+              ON tenant_id = tenant_id
+             AND id = event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE aa.tenant_id = a.tenant_id
-                  AND aa.event_id = a.event_id
-                  AND aa.model_version = a.model_version
+                WHERE tenant_id = tenant_id
+                  AND event_id = event_id
+                  AND model_version = model_version
             ) s
-            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
+            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -144,16 +146,16 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON e.tenant_id = a.tenant_id
-             AND e.id = a.event_id
+              ON tenant_id = tenant_id
+             AND id = event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE aa.tenant_id = a.tenant_id
-                  AND aa.event_id = a.event_id
-                  AND aa.model_version = a.model_version
+                WHERE tenant_id = tenant_id
+                  AND event_id = event_id
+                  AND model_version = model_version
             ) s
-            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
+            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -257,12 +259,11 @@ CREATE FUNCTION public.fn_events_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-            -- Allow migration_owner for emergency repairs (optional)
+
             IF current_user = 'migration_owner' THEN
-                RETURN NULL; -- Allow operation
+                RETURN NULL;
             END IF;
 
-            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'attribution_events is append-only; updates and deletes are not allowed. Use INSERT with correlation_id for corrections.';
         END;
         $$;
@@ -271,12 +272,11 @@ CREATE FUNCTION public.fn_ledger_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-            -- Allow migration_owner for emergency repairs (optional)
+
             IF current_user = 'migration_owner' THEN
-                RETURN NULL; -- Allow operation
+                RETURN NULL;
             END IF;
 
-            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'revenue_ledger is immutable; updates and deletes are not allowed. Use INSERT for corrections.';
         END;
         $$;
@@ -296,10 +296,9 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
             correction_by_val VARCHAR(255);
             correction_reason_val TEXT;
         BEGIN
-            -- Only log if the 'channel_code' column actually changed
+
             IF (NEW.channel_code IS DISTINCT FROM OLD.channel_code) THEN
-                -- Read session variables set by application layer
-                -- Fall back to 'system' if unset (indicates bypass attempt)
+
                 correction_by_val := COALESCE(
                     current_setting('app.correction_by', true),
                     'system'
@@ -309,7 +308,6 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     'No reason provided'
                 );
 
-                -- Insert audit record
                 INSERT INTO channel_assignment_corrections (
                     tenant_id,
                     entity_type,
@@ -343,10 +341,9 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
             change_by_val VARCHAR(255);
             change_reason_val TEXT;
         BEGIN
-            -- Only log if the 'state' column actually changed
+
             IF (NEW.state IS DISTINCT FROM OLD.state) THEN
-                -- Read session variables set by application layer
-                -- Fall back to 'system' if unset (indicates bypass attempt)
+
                 change_by_val := COALESCE(
                     current_setting('app.channel_state_change_by', true),
                     'system'
@@ -356,7 +353,6 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     ''
                 );
 
-                -- Insert audit record
                 INSERT INTO channel_state_transitions (
                     channel_code,
                     from_state,
@@ -412,15 +408,15 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             rec RECORD;
             detected_key_var TEXT;
         BEGIN
-            -- Scan attribution_events.raw_payload
+
             FOR rec IN
                 SELECT id, raw_payload
                 FROM attribution_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(rec.raw_payload) key
+                FROM jsonb_object_keys(raw_payload) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -443,21 +439,20 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                     'raw_payload',
                     rec.id,
                     detected_key_var,
-                    'Redacted for security'  -- Do not log actual PII values
+                    'Redacted for security'
                 );
 
                 finding_count := finding_count + 1;
             END LOOP;
 
-            -- Scan dead_events.raw_payload
             FOR rec IN
                 SELECT id, raw_payload
                 FROM dead_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(rec.raw_payload) key
+                FROM jsonb_object_keys(raw_payload) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -486,15 +481,14 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                 finding_count := finding_count + 1;
             END LOOP;
 
-            -- Scan revenue_ledger.metadata (only non-NULL)
             FOR rec IN
                 SELECT id, metadata
                 FROM revenue_ledger
                 WHERE metadata IS NOT NULL AND fn_detect_pii_keys(metadata)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(rec.metadata) key
+                FROM jsonb_object_keys(metadata) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -537,8 +531,8 @@ CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETUR
             t.stripe_webhook_secret,
             t.paypal_webhook_secret,
             t.woocommerce_webhook_secret
-          FROM public.tenants t
-          WHERE t.api_key_hash = $1
+          FROM tenants t
+          WHERE api_key_hash = $1
           LIMIT 1
         $_$;
 
@@ -552,7 +546,7 @@ CREATE TABLE public.attribution_allocations (
     event_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    channel_code text CONSTRAINT attribution_allocations_channel_not_null NOT NULL,
+    channel_code text NOT NULL,
     allocated_revenue_cents integer DEFAULT 0 NOT NULL,
     model_metadata jsonb,
     correlation_id uuid,
@@ -1029,26 +1023,26 @@ CREATE SEQUENCE public.message_id_sequence
 
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
-CREATE MATERIALIZED VIEW public.mv_allocation_summary AS
- SELECT aa.tenant_id,
-    aa.event_id,
-    aa.model_version,
-    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
-    e.revenue_cents AS event_revenue_cents,
+CREATE MATERIALIZED VIEW mv_allocation_summary AS
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
         END AS drift_cents
-   FROM (public.attribution_allocations aa
-     LEFT JOIN public.attribution_events e ON ((aa.event_id = e.id)))
-  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+   FROM (attribution_allocations aa
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
   WITH NO DATA;
 
-CREATE MATERIALIZED VIEW public.mv_channel_performance AS
+CREATE MATERIALIZED VIEW mv_channel_performance AS
  SELECT tenant_id,
     channel_code,
     date_trunc('day'::text, created_at) AS allocation_date,
@@ -1056,7 +1050,7 @@ CREATE MATERIALIZED VIEW public.mv_channel_performance AS
     sum(allocated_revenue_cents) AS total_revenue_cents,
     avg(confidence_score) AS avg_confidence_score,
     count(*) AS total_allocations
-   FROM public.attribution_allocations
+   FROM attribution_allocations
   WHERE (created_at >= (CURRENT_DATE - '90 days'::interval))
   GROUP BY tenant_id, channel_code, (date_trunc('day'::text, created_at))
   WITH NO DATA;
@@ -1097,24 +1091,24 @@ CREATE TABLE public.revenue_ledger (
 
 ALTER TABLE ONLY public.revenue_ledger FORCE ROW LEVEL SECURITY;
 
-CREATE MATERIALIZED VIEW public.mv_daily_revenue_summary AS
+CREATE MATERIALIZED VIEW mv_daily_revenue_summary AS
  SELECT tenant_id,
     date_trunc('day'::text, verification_timestamp) AS revenue_date,
     state,
     currency,
     sum(amount_cents) AS total_amount_cents,
     count(*) AS transaction_count
-   FROM public.revenue_ledger
+   FROM revenue_ledger
   WHERE ((state)::text = ANY ((ARRAY['captured'::character varying, 'refunded'::character varying, 'chargeback'::character varying])::text[]))
   GROUP BY tenant_id, (date_trunc('day'::text, verification_timestamp)), state, currency
   WITH NO DATA;
 
-CREATE MATERIALIZED VIEW public.mv_realtime_revenue AS
+CREATE MATERIALIZED VIEW mv_realtime_revenue AS
  SELECT tenant_id,
     ((COALESCE(sum(COALESCE(amount_cents, revenue_cents)), (0)::bigint))::numeric / 100.0) AS total_revenue,
     bool_or(COALESCE(is_verified, false)) AS verified,
     (EXTRACT(epoch FROM (now() - max(updated_at))))::integer AS data_freshness_seconds
-   FROM public.revenue_ledger rl
+   FROM revenue_ledger rl
   GROUP BY tenant_id
   WITH NO DATA;
 
@@ -1133,16 +1127,16 @@ CREATE TABLE public.reconciliation_runs (
 
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
-CREATE MATERIALIZED VIEW public.mv_reconciliation_status AS
- SELECT rr.tenant_id,
-    rr.state,
-    rr.last_run_at,
-    rr.id AS reconciliation_run_id
-   FROM (public.reconciliation_runs rr
-     JOIN ( SELECT reconciliation_runs.tenant_id,
-            max(reconciliation_runs.last_run_at) AS max_last_run_at
-           FROM public.reconciliation_runs
-          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+CREATE MATERIALIZED VIEW mv_reconciliation_status AS
+ SELECT tenant_id,
+    state,
+    last_run_at,
+    id AS reconciliation_run_id
+   FROM (reconciliation_runs rr
+     JOIN ( SELECT tenant_id,
+            max(last_run_at) AS max_last_run_at
+           FROM reconciliation_runs
+          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.pii_audit_findings (
@@ -1297,25 +1291,25 @@ CREATE TABLE public.tenants (
 );
 
 CREATE TABLE public.worker_failed_jobs (
-    id uuid CONSTRAINT celery_task_failures_id_not_null NOT NULL,
-    task_id character varying(155) CONSTRAINT celery_task_failures_task_id_not_null NOT NULL,
-    task_name character varying(255) CONSTRAINT celery_task_failures_task_name_not_null NOT NULL,
+    id uuid NOT NULL,
+    task_id character varying(155) NOT NULL,
+    task_name character varying(255) NOT NULL,
     queue character varying(100),
     worker character varying(255),
     task_args jsonb,
     task_kwargs jsonb,
     tenant_id uuid,
-    error_type character varying(100) CONSTRAINT celery_task_failures_error_type_not_null NOT NULL,
-    exception_class character varying(255) CONSTRAINT celery_task_failures_exception_class_not_null NOT NULL,
-    error_message text CONSTRAINT celery_task_failures_error_message_not_null NOT NULL,
+    error_type character varying(100) NOT NULL,
+    exception_class character varying(255) NOT NULL,
+    error_message text NOT NULL,
     traceback text,
-    retry_count integer DEFAULT 0 CONSTRAINT celery_task_failures_retry_count_not_null NOT NULL,
+    retry_count integer DEFAULT 0 NOT NULL,
     last_retry_at timestamp with time zone,
-    status character varying(50) DEFAULT '''pending'''::character varying CONSTRAINT celery_task_failures_status_not_null NOT NULL,
+    status character varying(50) DEFAULT '''pending'''::character varying NOT NULL,
     remediation_notes text,
     resolved_at timestamp with time zone,
     correlation_id uuid,
-    failed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP CONSTRAINT celery_task_failures_failed_at_not_null NOT NULL,
+    failed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_worker_failed_jobs_retry_count_positive CHECK ((retry_count >= 0)),
     CONSTRAINT ck_worker_failed_jobs_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying, 'resolved'::character varying, 'abandoned'::character varying])::text[])))
 );

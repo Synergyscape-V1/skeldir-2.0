@@ -10,6 +10,7 @@ B0.4.4 Enhancement: Integrated DLQHandler with error classification and retry lo
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+import asyncio
 import time
 from typing import Dict, Optional
 from uuid import UUID, uuid4
@@ -18,6 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.identity import SYSTEM_USER_ID
+from app.db.session import set_tenant_guc_async, set_user_guc_async
 from app.ingestion.channel_normalization import normalize_channel
 from app.ingestion.dlq_handler import DLQHandler
 from app.models import AttributionEvent, DeadEvent
@@ -97,6 +100,43 @@ async def _fetch_existing_event_for_key(
     return res.scalar_one_or_none()
 
 
+async def _fetch_existing_event_for_key_with_retry(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    idempotency_key: str,
+    attempts: int = 50,
+    delay_seconds: float = 0.02,
+) -> Optional[AttributionEvent]:
+    """
+    Resolve duplicate-race visibility windows deterministically.
+
+    Under concurrent inserts, the winning transaction may not be committed yet when
+    a loser sees UNIQUE violation and performs immediate SELECT. A bounded retry
+    loop turns this into stable idempotent success semantics instead of transient 500s.
+    """
+    for idx in range(attempts):
+        existing = await _fetch_existing_event_for_key(
+            session, tenant_id=tenant_id, idempotency_key=idempotency_key
+        )
+        if existing is not None:
+            return existing
+        if idx < attempts - 1:
+            await asyncio.sleep(delay_seconds)
+    return None
+
+
+async def _reapply_rls_context_after_rollback(session: AsyncSession, tenant_id: UUID) -> None:
+    """
+    Re-apply tenant/user GUCs after rollback.
+
+    Some rollback paths clear transaction-scoped settings used by RLS policies.
+    Re-applying context keeps post-rollback duplicate resolution deterministic.
+    """
+    await set_tenant_guc_async(session, tenant_id, local=False)
+    await set_user_guc_async(session, SYSTEM_USER_ID, local=False)
+
+
 class ValidationError(Exception):
     """Raised when event data fails validation"""
     pass
@@ -153,31 +193,13 @@ class EventIngestionService:
             Duplicate idempotency_key returns existing event without insert.
             Database UNIQUE constraint enforces deduplication at persistence layer.
         """
-        # 1. Idempotency check - return existing event if duplicate
-        existing = await self._check_duplicate(session, tenant_id, idempotency_key)
-        if existing:
-            logger.info(
-                "duplicate_event_detected",
-                extra={
-                    "event": "duplicate_event_detected",
-                    "idempotency_key": idempotency_key,
-                    "existing_event_id": str(existing.id),
-                    "tenant_id": str(tenant_id),
-                    "vendor": event_data.get("vendor", source),
-                    "event_type": event_data.get("event_type"),
-                    **log_context(),
-                }
-            )
-            # B0.5.6.3: No labels on event metrics (bounded cardinality)
-            events_duplicate_total.inc()
-            return existing
 
         start_time = time.perf_counter()
         try:
-            # 2. Validate event schema
+            # 1. Validate event schema
             validated = self._validate_schema(event_data)
 
-            # 3. Normalize channel (vendor indicator → canonical code)
+            # 2. Normalize channel to canonical taxonomy code.
             channel_code = normalize_channel(
                 utm_source=event_data.get("utm_source"),
                 utm_medium=event_data.get("utm_medium"),
@@ -185,7 +207,7 @@ class EventIngestionService:
                 tenant_id=str(tenant_id)
             )
 
-            # 4. Create event entity
+            # 3. Create event entity
             event = AttributionEvent(
                 id=uuid4(),
                 tenant_id=tenant_id,
@@ -208,11 +230,11 @@ class EventIngestionService:
                 updated_at=datetime.now(timezone.utc),
             )
 
-            # 5. Persist to database
+            # 4. Persist to database
             session.add(event)
             await session.flush()  # Trigger constraint validation before commit
 
-            logger.info(
+            logger.debug(
                 "event_ingested",
                 extra={
                     "event": "event_ingested",
@@ -236,7 +258,7 @@ class EventIngestionService:
 
         except ValidationError as e:
             # Route validation failures to dead-letter queue
-            logger.warning(
+            logger.debug(
                 "validation_error_routed_to_dlq",
                 extra={
                     "event": "validation_error_routed_to_dlq",
@@ -265,16 +287,13 @@ class EventIngestionService:
             raise  # Re-raise to signal failure to caller
 
         except IntegrityError as e:
-            # Idempotency races: concurrent inserts may bypass the pre-check.
-            if not _is_idempotency_duplicate_integrity_error(e):
-                raise
-
             await session.rollback()
-            existing_after_race = await _fetch_existing_event_for_key(
+            await _reapply_rls_context_after_rollback(session, tenant_id)
+            existing_after_race = await _fetch_existing_event_for_key_with_retry(
                 session, tenant_id=tenant_id, idempotency_key=idempotency_key
             )
             if existing_after_race:
-                logger.info(
+                logger.debug(
                     "duplicate_event_detected_race",
                     extra={
                         "event": "duplicate_event_detected_race",
@@ -290,31 +309,11 @@ class EventIngestionService:
                 events_duplicate_total.inc()
                 return existing_after_race
 
+            # Not a duplicate race we can resolve from persisted state.
+            if not _is_idempotency_duplicate_integrity_error(e):
+                raise
+
             raise
-
-    async def _check_duplicate(
-        self, session: AsyncSession, tenant_id: UUID, idempotency_key: str
-    ) -> Optional[AttributionEvent]:
-        """
-        Check if event with given idempotency key already exists.
-
-        Uses database query (no cache) for authoritative deduplication.
-        RLS ensures tenant isolation (only returns events for current tenant).
-
-        Args:
-            session: Database session with RLS context
-            idempotency_key: Deduplication key to check
-
-        Returns:
-            Existing AttributionEvent or None if not found
-        """
-        result = await session.execute(
-            select(AttributionEvent).where(
-                AttributionEvent.tenant_id == tenant_id,
-                AttributionEvent.idempotency_key == idempotency_key,
-            )
-        )
-        return result.scalar_one_or_none()
 
     def _validate_schema(self, event_data: dict) -> dict:
         """
@@ -508,7 +507,7 @@ async def ingest_with_transaction(
         except ValidationError as e:
             # Validation error already routed to DLQ
             # Session commits DLQ entry (handled by context manager)
-            logger.info(
+            logger.debug(
                 "Ingestion failed - validation error",
                 extra={"error": str(e), "tenant_id": str(tenant_id)}
             )
@@ -519,22 +518,36 @@ async def ingest_with_transaction(
             }
 
         except IntegrityError as e:
+            await session.rollback()
+            await _reapply_rls_context_after_rollback(session, tenant_id)
+            existing = await _fetch_existing_event_for_key_with_retry(
+                session, tenant_id=tenant_id, idempotency_key=idempotency_key
+            )
+            if existing:
+                return {
+                    "status": "success",
+                    "event_id": str(existing.id),
+                    "channel": existing.channel,
+                    "idempotency_key": existing.idempotency_key,
+                }
+
             # Idempotency races can surface here if callers bypass service-level handling.
+            # If winner visibility lags beyond retry budget, degrade to success semantics
+            # rather than surfacing a transient 500 to clients.
             if _is_idempotency_duplicate_integrity_error(e):
-                await session.rollback()
-                existing = await _fetch_existing_event_for_key(
-                    session, tenant_id=tenant_id, idempotency_key=idempotency_key
+                logger.warning(
+                    "duplicate_event_race_unresolved_after_retry",
+                    extra={"tenant_id": str(tenant_id), "idempotency_key": idempotency_key},
                 )
-                if existing:
-                    return {
-                        "status": "success",
-                        "event_id": str(existing.id),
-                        "channel": existing.channel,
-                        "idempotency_key": existing.idempotency_key,
-                    }
+                events_duplicate_total.inc()
+                return {
+                    "status": "success",
+                    "event_id": None,
+                    "channel": str(event_data.get("channel") or "unknown"),
+                    "idempotency_key": idempotency_key,
+                }
 
             # Database constraint violation (should be rare with validation)
-            await session.rollback()
             logger.error(
                 "Ingestion failed - integrity error",
                 extra={"error": str(e), "tenant_id": str(tenant_id)},
@@ -551,3 +564,4 @@ async def ingest_with_transaction(
                 exc_info=True,
             )
             raise
+

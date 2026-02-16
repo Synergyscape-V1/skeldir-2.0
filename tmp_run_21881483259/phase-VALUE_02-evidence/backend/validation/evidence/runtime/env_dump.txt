@@ -1,0 +1,87 @@
+﻿2025-11-20 13:46:49
+=== Environment Variables ===
+
+Name                           Value                                                                                   
+----                           -----                                                                                   
+ALLUSERSPROFILE                C:\ProgramData                                                                          
+APPDATA                        C:\Users\ayewhy\AppData\Roaming                                                         
+ChocolateyInstall              C:\ProgramData\chocolatey                                                               
+ChocolateyLastPathUpdate       134055214260822553                                                                      
+CHROME_CRASHPAD_PIPE_NAME      \\.\pipe\crashpad_24816_CPDZLABRPSDIZCRG                                                
+CommonProgramFiles             C:\Program Files\Common Files                                                           
+CommonProgramFiles(x86)        C:\Program Files (x86)\Common Files                                                     
+CommonProgramW6432             C:\Program Files\Common Files                                                           
+COMPOSER_NO_INTERACTION        1                                                                                       
+COMPUTERNAME                   WORKSTATION                                                                             
+ComSpec                        C:\WINDOWS\system32\cmd.exe                                                             
+CURSOR_AGENT                   1                                                                                       
+CURSOR_TRACE_ID                1804b44504d942c491746144e9b71c90                                                        
+DriverData                     C:\Windows\System32\Drivers\DriverData                                                  
+EFC_8952_1592913036            1                                                                                       
+FORCE_COLOR                    0                                                                                       
+HOMEDRIVE                      C:                                                                                      
+HOMEPATH                       \Users\ayewhy                                                                           
+JAVA_HOME                      C:\Program Files\Eclipse Adoptium\jre-17.0.17.10-hotspot\                               
+LOCALAPPDATA                   C:\Users\ayewhy\AppData\Local                                                           
+LOGONSERVER                    \\WORKSTATION                                                                           
+NO_COLOR                       1                                                                                       
+NUMBER_OF_PROCESSORS           12                                                                                      
+OneDrive                       C:\Users\ayewhy\OneDrive                                                                
+OneDriveConsumer               C:\Users\ayewhy\OneDrive                                                                
+ORIGINAL_XDG_CURRENT_DESKTOP   undefined                                                                               
+OS                             Windows_NT                                                                              
+Path                           C:\Program Files\Eclipse Adoptium\jre-17.0.17.10-hotspot\bin;C:\WINDOWS\system32;C:\W...
+PATHEXT                        .COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL                              
+PROCESSOR_ARCHITECTURE         AMD64                                                                                   
+PROCESSOR_IDENTIFIER           AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD                                       
+PROCESSOR_LEVEL                25                                                                                      
+PROCESSOR_REVISION             2102                                                                                    
+ProgramData                    C:\ProgramData                                                                          
+ProgramFiles                   C:\Program Files                                                                        
+ProgramFiles(x86)              C:\Program Files (x86)                                                                  
+ProgramW6432                   C:\Program Files                                                                        
+PSExecutionPolicyPreference    Bypass                                                                                  
+PSModulePath                   C:\Users\ayewhy\Documents\WindowsPowerShell\Modules;C:\Program Files\WindowsPowerShel...
+PUBLIC                         C:\Users\Public                                                                         
+SESSIONNAME                    Console                                                                                 
+SystemDrive                    C:                                                                                      
+SystemRoot                     C:\WINDOWS                                                                              
+TEMP                           C:\Users\ayewhy\AppData\Local\Temp                                                      
+TERM                           dumb                                                                                    
+TMP                            C:\Users\ayewhy\AppData\Local\Temp                                                      
+USERDOMAIN                     WORKSTATION                                                                             
+USERDOMAIN_ROAMINGPROFILE      WORKSTATION                                                                             
+USERNAME                       ayewhy                                                                                  
+USERPROFILE                    C:\Users\ayewhy                                                                         
+VSCODE_CODE_CACHE_PATH         C:\Users\ayewhy\AppData\Roaming\Cursor\CachedData\ba90f2f88e4911312761abab9492c424421...
+VSCODE_CRASH_REPORTER_PROCE... extensionHost                                                                           
+VSCODE_CWD                     C:\Program Files\cursor                                                                 
+VSCODE_ESM_ENTRYPOINT          vs/workbench/api/node/extensionHostProcess                                              
+VSCODE_HANDLES_UNCAUGHT_ERRORS true                                                                                    
+VSCODE_IPC_HOOK                \\.\pipe\a8bf5e3f-2.0.77-main-sock                                                      
+VSCODE_NLS_CONFIG              {"userLocale":"en-us","osLocale":"en-us","resolvedLanguage":"en","defaultMessagesFile...
+VSCODE_PID                     24816                                                                                   
+VSCODE_PROCESS_TITLE           extension-host  [1-2]                                                                   
+windir                         C:\WINDOWS                                                                              
+
+
+
+=== PATH ===
+C:\Program Files\Eclipse Adoptium\jre-17.0.17.10-hotspot\bin
+C:\WINDOWS\system32
+C:\WINDOWS
+C:\WINDOWS\System32\Wbem
+C:\WINDOWS\System32\WindowsPowerShell\v1.0\
+C:\WINDOWS\System32\OpenSSH\
+C:\Program Files\dotnet\
+C:\Program Files\cursor\resources\app\bin
+C:\Program Files\Git\cmd
+C:\ProgramData\chocolatey\bin
+C:\Program Files\nodejs\
+C:\Program Files\PostgreSQL\18\bin
+C:\Program Files\Docker\Docker\resources\bin
+C:\Program Files\Void\bin
+C:\Program Files\GitHub CLI\
+C:\Users\ayewhy\AppData\Local\Microsoft\WindowsApps
+C:\Users\ayewhy\AppData\Roaming\npm
+C:\Users\ayewhy\AppData\Local\Python\bin

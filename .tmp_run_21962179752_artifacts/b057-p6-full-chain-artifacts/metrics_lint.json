@@ -1,0 +1,21 @@
+{
+  "api": {
+    "label_keys": [
+      "le",
+      "queue",
+      "state"
+    ],
+    "uuid_like_values": [],
+    "violations": []
+  },
+  "worker": {
+    "label_keys": [
+      "le",
+      "outcome",
+      "task_name",
+      "view_name"
+    ],
+    "uuid_like_values": [],
+    "violations": []
+  }
+}

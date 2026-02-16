@@ -133,3 +133,12 @@
   max-height: 0 !important;
   margin-top: 0 !important;
 }
+
+/* D2-P2: Token-backed background classes (replace inline theming styles) */
+.banner-bg-default {
+  background-color: hsl(var(--brand-alice) / 0.9);
+}
+
+.banner-bg-critical {
+  background: linear-gradient(to right, hsl(var(--brand-critical) / 0.05), hsl(var(--brand-alice) / 0.9));
+}

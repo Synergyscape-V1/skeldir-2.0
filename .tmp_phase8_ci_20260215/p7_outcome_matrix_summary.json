@@ -1,0 +1,129 @@
+{
+  "api_rows": [
+    {
+      "block_reason": null,
+      "failure_reason": "provider_timeout",
+      "provider_attempted": true,
+      "request_id": "p7-timeout-9eefe835",
+      "status": "failed",
+      "was_cached": false
+    },
+    {
+      "block_reason": null,
+      "failure_reason": null,
+      "provider_attempted": true,
+      "request_id": "p7-success-369a05a9",
+      "status": "success",
+      "was_cached": false
+    },
+    {
+      "block_reason": "provider_kill_switch",
+      "failure_reason": null,
+      "provider_attempted": false,
+      "request_id": "p7-kill-117aaeee",
+      "status": "blocked",
+      "was_cached": false
+    },
+    {
+      "block_reason": null,
+      "failure_reason": null,
+      "provider_attempted": false,
+      "request_id": "p7-cache-hit-bff29163",
+      "status": "success",
+      "was_cached": true
+    },
+    {
+      "block_reason": null,
+      "failure_reason": null,
+      "provider_attempted": true,
+      "request_id": "p7-cache-seed-48b44fdc",
+      "status": "success",
+      "was_cached": false
+    },
+    {
+      "block_reason": "monthly_cap_exceeded",
+      "failure_reason": null,
+      "provider_attempted": false,
+      "request_id": "p7-budget-823799a0",
+      "status": "blocked",
+      "was_cached": false
+    },
+    {
+      "block_reason": "breaker_open",
+      "failure_reason": null,
+      "provider_attempted": false,
+      "request_id": "p7-breaker-fc04bfc2",
+      "status": "blocked",
+      "was_cached": false
+    },
+    {
+      "block_reason": null,
+      "failure_reason": "provider_error:RuntimeError",
+      "provider_attempted": true,
+      "request_id": "p7-error-7b209173",
+      "status": "failed",
+      "was_cached": false
+    }
+  ],
+  "audit_rows": [
+    {
+      "decision": "ALLOW",
+      "prompt_fingerprint": "4e38d468b28e427ea4d1af356abf827a85db66e5152259af0e5820119f34df1f",
+      "reason": "provider_timeout",
+      "request_id": "p7-timeout-9eefe835"
+    },
+    {
+      "decision": "ALLOW",
+      "prompt_fingerprint": "68f5c0b396ef9dbc5adcfbfe8e3e1fbcab1686bf0af1189b62ef08a4aa2432cd",
+      "reason": "success",
+      "request_id": "p7-success-369a05a9"
+    },
+    {
+      "decision": "BLOCK",
+      "prompt_fingerprint": "87ed1dc969b1c92201b049d221127eecfac840d3947f9451bd2e71b37301be7e",
+      "reason": "provider_kill_switch",
+      "request_id": "p7-kill-117aaeee"
+    },
+    {
+      "decision": "ALLOW",
+      "prompt_fingerprint": "c59fca9eb23e9944740a06f67ae0f91ea8dd6fa418e3086b3a76870c7fa41f10",
+      "reason": "cache_hit",
+      "request_id": "p7-cache-hit-bff29163"
+    },
+    {
+      "decision": "ALLOW",
+      "prompt_fingerprint": "c59fca9eb23e9944740a06f67ae0f91ea8dd6fa418e3086b3a76870c7fa41f10",
+      "reason": "success",
+      "request_id": "p7-cache-seed-48b44fdc"
+    },
+    {
+      "decision": "BLOCK",
+      "prompt_fingerprint": "c74bc928458a12c99c7bd83e355b5c4d6c01d67dcd326d2573d25629efdc7086",
+      "reason": "monthly_cap_exceeded",
+      "request_id": "p7-budget-823799a0"
+    },
+    {
+      "decision": "BLOCK",
+      "prompt_fingerprint": "c74bc928458a12c99c7bd83e355b5c4d6c01d67dcd326d2573d25629efdc7086",
+      "reason": "breaker_open",
+      "request_id": "p7-breaker-fc04bfc2"
+    },
+    {
+      "decision": "ALLOW",
+      "prompt_fingerprint": "d89bab25cd66f7ca6a9f88a8691cf8e19feecbf4b6bf4b4c7dd9fb137ecd8648",
+      "reason": "provider_error:RuntimeError",
+      "request_id": "p7-error-7b209173"
+    }
+  ],
+  "outcomes": {
+    "p7-breaker-fc04bfc2": "blocked",
+    "p7-budget-823799a0": "blocked",
+    "p7-cache-hit-bff29163": "accepted",
+    "p7-cache-seed-48b44fdc": "accepted",
+    "p7-error-7b209173": "failed",
+    "p7-kill-117aaeee": "blocked",
+    "p7-success-369a05a9": "accepted",
+    "p7-timeout-9eefe835": "failed"
+  },
+  "provider_calls": 4
+}

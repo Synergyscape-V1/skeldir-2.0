@@ -1,0 +1,122 @@
+# HELP celery_task_duration_seconds Duration of Celery tasks in seconds
+# TYPE celery_task_duration_seconds histogram
+celery_task_duration_seconds_sum{task_name="app.tasks.attribution.recompute_window"} 0.1839448820000058
+celery_task_duration_seconds_bucket{le="0.01",task_name="app.tasks.attribution.recompute_window"} 0.0
+celery_task_duration_seconds_bucket{le="0.05",task_name="app.tasks.attribution.recompute_window"} 0.0
+celery_task_duration_seconds_bucket{le="0.1",task_name="app.tasks.attribution.recompute_window"} 0.0
+celery_task_duration_seconds_bucket{le="0.25",task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_bucket{le="0.5",task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_bucket{le="1.0",task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_bucket{le="2.0",task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_bucket{le="5.0",task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_bucket{le="10.0",task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_bucket{le="+Inf",task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_count{task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_duration_seconds_sum{task_name="app.tasks.matviews.refresh_all_for_tenant"} 0.0990505139999982
+celery_task_duration_seconds_bucket{le="0.01",task_name="app.tasks.matviews.refresh_all_for_tenant"} 0.0
+celery_task_duration_seconds_bucket{le="0.05",task_name="app.tasks.matviews.refresh_all_for_tenant"} 0.0
+celery_task_duration_seconds_bucket{le="0.1",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_bucket{le="0.25",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_bucket{le="0.5",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_bucket{le="1.0",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_bucket{le="2.0",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_bucket{le="5.0",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_bucket{le="10.0",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_bucket{le="+Inf",task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+celery_task_duration_seconds_count{task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+# HELP matview_refresh_duration_seconds Materialized view refresh duration in seconds
+# TYPE matview_refresh_duration_seconds histogram
+matview_refresh_duration_seconds_sum{outcome="success",view_name="mv_allocation_summary"} 0.014
+matview_refresh_duration_seconds_bucket{le="0.01",outcome="success",view_name="mv_allocation_summary"} 0.0
+matview_refresh_duration_seconds_bucket{le="0.05",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.1",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.25",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.5",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="1.0",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="2.0",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="5.0",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="10.0",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="30.0",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="60.0",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="+Inf",outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_count{outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_duration_seconds_sum{outcome="success",view_name="mv_channel_performance"} 0.014
+matview_refresh_duration_seconds_bucket{le="0.01",outcome="success",view_name="mv_channel_performance"} 0.0
+matview_refresh_duration_seconds_bucket{le="0.05",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.1",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.25",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.5",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="1.0",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="2.0",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="5.0",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="10.0",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="30.0",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="60.0",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_bucket{le="+Inf",outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_count{outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_duration_seconds_sum{outcome="success",view_name="mv_daily_revenue_summary"} 0.013
+matview_refresh_duration_seconds_bucket{le="0.01",outcome="success",view_name="mv_daily_revenue_summary"} 0.0
+matview_refresh_duration_seconds_bucket{le="0.05",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.1",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.25",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.5",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="1.0",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="2.0",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="5.0",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="10.0",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="30.0",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="60.0",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_bucket{le="+Inf",outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_count{outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_duration_seconds_sum{outcome="success",view_name="mv_realtime_revenue"} 0.013
+matview_refresh_duration_seconds_bucket{le="0.01",outcome="success",view_name="mv_realtime_revenue"} 0.0
+matview_refresh_duration_seconds_bucket{le="0.05",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.1",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.25",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.5",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="1.0",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="2.0",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="5.0",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="10.0",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="30.0",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="60.0",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_bucket{le="+Inf",outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_count{outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_duration_seconds_sum{outcome="success",view_name="mv_reconciliation_status"} 0.012
+matview_refresh_duration_seconds_bucket{le="0.01",outcome="success",view_name="mv_reconciliation_status"} 0.0
+matview_refresh_duration_seconds_bucket{le="0.05",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.1",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.25",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="0.5",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="1.0",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="2.0",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="5.0",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="10.0",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="30.0",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="60.0",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_bucket{le="+Inf",outcome="success",view_name="mv_reconciliation_status"} 1.0
+matview_refresh_duration_seconds_count{outcome="success",view_name="mv_reconciliation_status"} 1.0
+# HELP multiproc_orphan_files_detected_total Total multiprocess shard *.db files detected for non-live PIDs (before pruning grace window)
+# TYPE multiproc_orphan_files_detected_total counter
+multiproc_orphan_files_detected_total 0.0
+# HELP multiproc_pruned_files_total Total multiprocess shard *.db files pruned for stale, non-live PIDs
+# TYPE multiproc_pruned_files_total counter
+multiproc_pruned_files_total 0.0
+# HELP multiproc_dir_overflow_total Total times multiprocess shard file count exceeded configured threshold
+# TYPE multiproc_dir_overflow_total counter
+multiproc_dir_overflow_total 0.0
+# HELP celery_task_started_total Total Celery tasks started
+# TYPE celery_task_started_total counter
+celery_task_started_total{task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_started_total{task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+# HELP celery_task_success_total Total Celery tasks succeeded
+# TYPE celery_task_success_total counter
+celery_task_success_total{task_name="app.tasks.attribution.recompute_window"} 1.0
+celery_task_success_total{task_name="app.tasks.matviews.refresh_all_for_tenant"} 1.0
+# HELP matview_refresh_total Total materialized view refresh attempts
+# TYPE matview_refresh_total counter
+matview_refresh_total{outcome="success",view_name="mv_allocation_summary"} 1.0
+matview_refresh_total{outcome="success",view_name="mv_channel_performance"} 1.0
+matview_refresh_total{outcome="success",view_name="mv_daily_revenue_summary"} 1.0
+matview_refresh_total{outcome="success",view_name="mv_realtime_revenue"} 1.0
+matview_refresh_total{outcome="success",view_name="mv_reconciliation_status"} 1.0

@@ -1,0 +1,51 @@
+=== Privacy Infrastructure Baseline ===
+Timestamp: 2025-11-20 13:52:00
+
+=== Database Layer (Confirmed via evidence-mapping.md) ===
+
+Layer 2: Database Guardrail Triggers
+- Migration: alembic/versions/002_pii_controls/202511161200_add_pii_guardrail_triggers.py
+- Function: fn_detect_pii_keys(payload JSONB) - Detects PII keys in JSONB
+- Function: fn_enforce_pii_guardrail() - Trigger function raising EXCEPTION
+- Triggers installed on:
+  * trg_pii_guardrail_attribution_events (attribution_events.raw_payload)
+  * trg_pii_guardrail_dead_events (dead_events.raw_payload)
+  * trg_pii_guardrail_revenue_ledger (revenue_ledger.metadata)
+
+Layer 3: Audit & Monitoring
+- Migration: alembic/versions/002_pii_controls/202511161210_add_pii_audit_table.py
+- Table: pii_audit_findings - Stores PII detection findings
+- Function: fn_scan_pii_contamination() - Batch scanning function
+- Validation script: scripts/database/validate-pii-guardrails.sh
+
+=== Application Layer (Search Results) ===
+
+Middleware Status: NOT FOUND
+- Searched backend/app/ for PII stripping middleware
+- No PIIStrippingMiddleware found
+- No middleware directory exists
+- FastAPI app (backend/app/main.py) only has CORS middleware
+
+Backend Route Inspection:
+- backend/app/api/auth.py - No PII stripping logic visible
+- backend/app/api/attribution.py - No PII stripping logic visible
+
+=== Gap Analysis ===
+
+PRESENT:
+✓ Database triggers block PII keys at persistence layer
+✓ PII audit scanning infrastructure exists
+✓ Validation scripts operational
+
+MISSING:
+✗ Runtime PII stripping middleware
+✗ Application-layer PII filtering before DB
+✗ Defense-in-depth at ingestion layer
+
+=== Conclusion ===
+Current privacy defense: SINGLE LAYER (database only)
+Required: DEFENSE-IN-DEPTH (runtime + database)
+
+Phase G will implement missing runtime middleware to achieve defense-in-depth.
+Database triggers provide backup defense if middleware is bypassed.
+

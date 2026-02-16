@@ -1,0 +1,18 @@
+EXPLAIN ANALYZE SELECT * FROM attribution_allocations ORDER BY created_at DESC LIMIT 10;
+
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=1.08..1.09 rows=4 width=302) (actual time=0.052..0.053 rows=4.00 loops=1)
+   Buffers: shared hit=4
+   ->  Sort  (cost=1.08..1.09 rows=4 width=302) (actual time=0.050..0.051 rows=4.00 loops=1)
+         Sort Key: created_at DESC
+         Sort Method: quicksort  Memory: 26kB
+         Buffers: shared hit=4
+         ->  Seq Scan on attribution_allocations  (cost=0.00..1.04 rows=4 width=302) (actual time=0.019..0.020 rows=4.00 loops=1)
+               Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=262
+ Planning Time: 2.537 ms
+ Execution Time: 0.109 ms
+(12 rows)
+

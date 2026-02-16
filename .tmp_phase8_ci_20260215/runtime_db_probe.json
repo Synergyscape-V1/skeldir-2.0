@@ -1,0 +1,37 @@
+{
+  "tenant_id": "58ad3193-eb59-47cf-9e32-741e88635016",
+  "primary_user_id": "df406bf8-d85f-40aa-994d-77a5f8de2d67",
+  "breaker_user_id": "f60cb229-ce17-4f05-81db-642c950a17c6",
+  "shutoff_user_id": "3d381baa-e27a-42f4-a6e0-4ce234804470",
+  "task_rows": {
+    "route": {
+      "endpoint": "app.tasks.llm.route",
+      "request_id": "b07-p4-route-a03aded586",
+      "status": "success",
+      "provider": "stub"
+    },
+    "explanation": {
+      "endpoint": "app.tasks.llm.explanation",
+      "request_id": "b07-p4-explanation-add266ab8a",
+      "status": "success",
+      "provider": "stub"
+    },
+    "investigation": {
+      "endpoint": "app.tasks.llm.investigation",
+      "request_id": "b07-p4-investigation-ab11ea1180",
+      "status": "success",
+      "provider": "stub"
+    },
+    "budget_optimization": {
+      "endpoint": "app.tasks.llm.budget_optimization",
+      "request_id": "b07-p4-budget_optimization-4d5466b305",
+      "status": "success",
+      "provider": "stub"
+    }
+  },
+  "cache_request_id": "b07-p4-cache-b-348517c8",
+  "breaker_blocked_request_id": "b07-p4-breaker-block-6959986a",
+  "kill_switch_request_id": "b07-p4-kill-switch-dca022bb",
+  "shutoff_request_id": "b07-p4-shutoff-244e48e4",
+  "generated_at": "2026-02-14T23:01:32.919781+00:00"
+}

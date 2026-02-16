@@ -1,0 +1,18 @@
+EXPLAIN ANALYZE SELECT * FROM attribution_events ORDER BY occurred_at DESC LIMIT 10;
+
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=1.05..1.06 rows=3 width=785) (actual time=0.044..0.044 rows=3.00 loops=1)
+   Buffers: shared hit=4
+   ->  Sort  (cost=1.05..1.06 rows=3 width=785) (actual time=0.042..0.042 rows=3.00 loops=1)
+         Sort Key: occurred_at DESC
+         Sort Method: quicksort  Memory: 26kB
+         Buffers: shared hit=4
+         ->  Seq Scan on attribution_events  (cost=0.00..1.03 rows=3 width=785) (actual time=0.019..0.020 rows=3.00 loops=1)
+               Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=232 dirtied=2
+ Planning Time: 2.189 ms
+ Execution Time: 0.080 ms
+(12 rows)
+

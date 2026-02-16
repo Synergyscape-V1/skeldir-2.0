@@ -1,0 +1,12 @@
+D3.7 TypeCheck Scope — Evidence
+
+Command: npx tsc --noEmit
+Filter: findstr /i "canonical-data-table CanonicalDataTable tables icons"
+
+Result: No matches in error output
+→ D3.7 files (src/stories/canonical-data-table.stories.tsx,
+  src/components/tables/CanonicalDataTable.tsx, src/components/icons/README.md,
+  src/stories/shadcn-theme.stories.tsx, src/stories/tremor-theme.stories.tsx)
+  have 0 TypeScript errors.
+
+Total project errors: 328+ (all pre-existing, none from D3.7 scope).

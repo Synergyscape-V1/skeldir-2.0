@@ -1,0 +1,5 @@
+{
+  "status": "failure",
+  "timestamp": "2026-02-10T20:10:54.936965+00:00",
+  "error": "Command python scripts/ci/phase2_schema_closure_gate.py --evidence-dir /home/runner/work/skeldir-2.0/skeldir-2.0/backend/validation/evidence/database/phase2_b03 failed (see /home/runner/work/skeldir-2.0/skeldir-2.0/backend/validation/evidence/database/phase2_schema_closure_gate.log)"
+}

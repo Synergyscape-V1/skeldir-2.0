@@ -1,0 +1,53 @@
+{
+  "phase": "B0.3",
+  "timestamp": "2026-02-10T20:17:55.457885+00:00",
+  "status": "success",
+  "canonical": "C:\\Users\\ayewhy\\II SKELDIR II\\db\\schema\\canonical_schema.sql",
+  "contract": "C:\\Users\\ayewhy\\II SKELDIR II\\contracts-internal\\llm\\b03_phase2_ledger_schema_contract.json",
+  "evidence_dir": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_local_ephemeral",
+  "gates": [
+    {
+      "gate": "runtime_schema_mutation",
+      "passed": true,
+      "details": {
+        "diff_path": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_local_ephemeral\\artifacts\\runtime_vs_migrated.diff"
+      }
+    },
+    {
+      "gate": "EG2.1",
+      "passed": true,
+      "details": {
+        "canonical": "C:\\Users\\ayewhy\\II SKELDIR II\\db\\schema\\canonical_schema.sql",
+        "diff_path": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_local_ephemeral\\artifacts\\eg2_1_parity.diff"
+      }
+    },
+    {
+      "gate": "EG2.2",
+      "passed": true,
+      "details": {
+        "diff_path": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_local_ephemeral\\artifacts\\eg2_2_determinism.diff"
+      }
+    },
+    {
+      "gate": "EG2.3",
+      "passed": true,
+      "details": {
+        "probe": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_local_ephemeral\\artifacts\\eg2_3_eg2_4_structural_probe.json"
+      }
+    },
+    {
+      "gate": "EG2.4",
+      "passed": true,
+      "details": {
+        "probe": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_local_ephemeral\\artifacts\\eg2_3_eg2_4_structural_probe.json"
+      }
+    },
+    {
+      "gate": "EG2.5",
+      "passed": true,
+      "details": {
+        "probe": "C:\\Users\\ayewhy\\II SKELDIR II\\backend\\validation\\evidence\\database\\phase2_b03_local_ephemeral\\artifacts\\eg2_5_contract_probe.json"
+      }
+    }
+  ]
+}

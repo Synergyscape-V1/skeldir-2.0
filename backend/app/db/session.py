@@ -69,6 +69,7 @@ if _USE_NULL_POOL:
 else:
     engine_kwargs["pool_size"] = settings.DATABASE_POOL_SIZE
     engine_kwargs["max_overflow"] = settings.DATABASE_MAX_OVERFLOW
+    engine_kwargs["pool_timeout"] = settings.DATABASE_POOL_TIMEOUT_SECONDS
 
 # Engine is configured for asyncpg with explicit pool sizing controls.
 engine = create_async_engine(
@@ -102,15 +103,11 @@ async def get_session(
         resolved_user_id = resolve_user_id(user_id)
         await session.execute(
             text(
-                "SELECT set_config('app.current_tenant_id', :tenant_id, false)"
+                "SELECT "
+                "set_config('app.current_tenant_id', :tenant_id, false), "
+                "set_config('app.current_user_id', :user_id, false)"
             ),
-            {"tenant_id": str(tenant_id)},
-        )
-        await session.execute(
-            text(
-                "SELECT set_config('app.current_user_id', :user_id, false)"
-            ),
-            {"user_id": str(resolved_user_id)},
+            {"tenant_id": str(tenant_id), "user_id": str(resolved_user_id)},
         )
         try:
             yield session

@@ -1,0 +1,59 @@
+D3.7 Integration Baseline Verifier
+===================================
+
+[1] shadcn primitive inventory
+  PASS  ui/button.tsx exists
+  PASS  ui/input.tsx exists
+  PASS  ui/card.tsx exists
+  PASS  ui/dialog.tsx exists
+  PASS  ui/select.tsx exists
+  PASS  ui/form.tsx exists
+  PASS  ui/table.tsx exists
+  PASS  ui/tabs.tsx exists
+  PASS  ui/accordion.tsx exists
+  PASS  ui/alert.tsx exists
+  PASS  ui/badge.tsx exists
+  PASS  ui/progress.tsx exists
+  PASS  ui/skeleton.tsx exists
+  PASS  ui/tooltip.tsx exists
+  PASS  ui/avatar.tsx exists
+  PASS  ui/checkbox.tsx exists
+  PASS  ui/radio-group.tsx exists
+  PASS  ui/switch.tsx exists
+
+[2] Tremor version
+  PASS  @tremor/react is 3.x.x (got 3.18.7)
+
+[3] index.css token mapping
+  PASS  --background defined with HSL channels
+  PASS  --foreground defined with HSL channels
+  PASS  --primary defined with HSL channels
+  PASS  --primary-foreground defined with HSL channels
+  PASS  --secondary defined with HSL channels
+  PASS  --muted defined with HSL channels
+  PASS  --accent defined with HSL channels
+  PASS  --destructive defined with HSL channels
+  PASS  --border defined with HSL channels
+  PASS  --input defined with HSL channels
+  PASS  --ring defined with HSL channels
+  PASS  Stale @layer base shadcn defaults removed
+
+[4] Tailwind Tremor theme keys
+  PASS  tremor-brand → --primary
+  PASS  tremor-background → --background
+  PASS  tremor-content → --foreground
+  PASS  tremor-ring → --primary
+
+[5] Integration deliverables
+  PASS  CanonicalDataTable.tsx exists
+  PASS  canonical-data-table.stories.tsx exists
+  PASS  shadcn-theme.stories.tsx exists
+  PASS  tremor-theme.stories.tsx exists
+
+[6] Icon usage guide
+  PASS  src/components/icons/README.md exists
+
+===================================
+Results: 40 passed, 0 failed
+
+D3.7 VERIFICATION PASSED

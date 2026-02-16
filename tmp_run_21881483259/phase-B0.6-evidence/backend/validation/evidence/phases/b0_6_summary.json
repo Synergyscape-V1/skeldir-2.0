@@ -1,0 +1,6 @@
+{
+  "phase": "B0.6",
+  "status": "failure",
+  "timestamp": "2026-02-10T20:39:09.956316+00:00",
+  "error": "Command python -m pytest backend/tests/test_b060_phase3_realtime_revenue_cache.py -v failed (see /home/runner/work/skeldir-2.0/skeldir-2.0/backend/validation/evidence/phases/b0_6_realtime_revenue_cache.log)"
+}

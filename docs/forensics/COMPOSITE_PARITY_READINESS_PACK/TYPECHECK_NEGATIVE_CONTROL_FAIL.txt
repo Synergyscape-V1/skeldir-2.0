@@ -1,0 +1,10 @@
+
+> skeldir-frontend@1.0.0 typecheck:design-system
+> tsc -p tsconfig.design-system.json --noEmit
+
+src/components/ConfidenceTooltip.tsx(74,13): error TS6133: 'viewportHeight' is declared but its value is never read.
+src/components/ConfidenceTooltip.tsx(123,15): error TS6133: 'viewportHeight' is declared but its value is never read.
+src/components/ui/badge.tsx(34,3): error TS2322: Type 'Element' is not assignable to type 'number'.
+src/contexts/VerificationSyncContext.tsx(37,5): error TS6133: 'syncState' is declared but its value is never read.
+src/contexts/VerificationSyncContext.tsx(44,10): error TS6133: 'toastQueue' is declared but its value is never read.
+src/services/verificationPolling.ts(15,13): error TS6138: Property 'interval' is declared but its value is never read.

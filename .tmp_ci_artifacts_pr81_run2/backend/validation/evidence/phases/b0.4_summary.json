@@ -1,0 +1,12 @@
+{
+  "phase": "B0.4",
+  "candidate_sha": "0d2cb92c1741426b536a6fe49d9e6e8c4056e07d",
+  "ci_run_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21960135135",
+  "timestamp": "2026-02-12T19:09:29.420330+00:00",
+  "command": [
+    "python",
+    "scripts/phase_gates/b0_4_gate.py"
+  ],
+  "status": "success",
+  "missing_artifacts": []
+}

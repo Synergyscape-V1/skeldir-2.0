@@ -1,0 +1,9 @@
+D3.7 Investigation Protocol — Step A: Network & Path Diagnostics
+
+Curl was not executed because:
+- Storybook dev server prompted for port 6007 (6006 in use) and exited in non-interactive mode
+- Build-storybook was used instead to capture the actual failure
+
+The build-storybook command revealed the root cause before HTTP diagnostics were needed:
+  Rollup failed to resolve import "@radix-ui/react-select" from select.tsx
+  → Missing npm dependency, not path/HTTP issue

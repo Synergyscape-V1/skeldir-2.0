@@ -1,0 +1,11 @@
+skeldir-frontend@1.0.0 C:\Users\ayewhy\II SKELDIR II\frontend
+├─┬ @hookform/resolvers@5.2.2
+│ └── react-hook-form@7.71.1 deduped
+├── @tanstack/react-table@8.21.3
+├─┬ @tremor/react@3.18.7
+│ └── recharts@2.15.4 deduped
+├── lucide-react@0.309.0
+├── react-hook-form@7.71.1
+├── recharts@2.15.4
+└── zod@4.3.6
+

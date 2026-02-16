@@ -1,0 +1,5 @@
+/**
+ * A1-SENTINEL Type Re-exports
+ * All types come from the shared contract — no agent-specific type inventions.
+ */
+export * from '../../shared-types';

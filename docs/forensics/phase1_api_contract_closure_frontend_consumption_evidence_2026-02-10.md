@@ -11,6 +11,7 @@ The **authoritative final status** is:
 
 - Phase 1 remediation is asserted on `main`.
 - Required Phase 1 checks are configured as merge-blocking in `main` branch protection.
+- `main` CI is globally green after forensic remediation of unrelated red jobs.
 - Main-branch run evidence exists for:
   - `Validate Contracts`
   - `Frontend Contract Consumption Gate`
@@ -21,24 +22,22 @@ The **authoritative final status** is:
 Authoritative references:
 - Merge PR: `https://github.com/Muk223/skeldir-2.0/pull/66`
 - Merge PR (runtime conformance gate addition): `https://github.com/Muk223/skeldir-2.0/pull/68`
+- Merge PR (global main CI remediation): `https://github.com/Muk223/skeldir-2.0/pull/70`
 - Main run: `https://github.com/Muk223/skeldir-2.0/actions/runs/21874004656`
 - Main run (post-PR68): `https://github.com/Muk223/skeldir-2.0/actions/runs/21875741998`
+- Main run (post-PR70, globally green): `https://github.com/Muk223/skeldir-2.0/actions/runs/21877158093`
 - Branch protection API evidence:
   - `gh api repos/Muk223/skeldir-2.0/branches/main/protection`
 
 ## Executive Verdict
-The hypothesis "Phase 1 is fully and completely completed" is **not validated** yet.
+The hypothesis "Phase 1 is fully and completely completed" is **validated**.
 
 What is validated:
-- The required Phase 1 code and workflow remediations are implemented in this worktree.
-- Local runtime conformance checks pass for Phase 1 frontend-critical surfaces.
-- Local frontend contract compile gate passes.
-- Local Prism mock usability smoke passes for required key endpoints.
-
-What is not yet validated:
-- Changes are **not committed/pushed to `main`**.
-- There are **no CI run links on `main`** proving required checks are green and merge-blocking in production branch context.
-- Non-vacuous negative controls are only partially demonstrated locally (not in remote required-check context).
+- Phase 1 remediations are merged to `main` with merge-blocking required checks.
+- Required Phase 1 checks are green in `main` branch context.
+- Non-vacuous negative controls are demonstrated in CI.
+- Dedicated runtime conformance gate exists and is required.
+- `main` CI run is globally green (`success`) after forensic closure of unrelated failing jobs.
 
 ## Canonical Contract Artifact (A)
 The canonical contract artifact is: `api-contracts/dist/openapi/v1/*.bundled.yaml` produced by `scripts/contracts/bundle.sh` and consumed by `.github/workflows/ci.yml` jobs `validate-contracts`, `frontend-contract-consumption`, and `mock-usability-gate`.
@@ -287,3 +286,48 @@ Forensic result:
 
 Conclusion:
 - The hypothesis is refuted. Runtime conformance is now an explicit, dedicated, merge-blocking required check on `main`, and it has passing `main`-branch execution evidence.
+
+## Post-Remediation Update III (2026-02-10) - Global `main` CI Green Closure
+
+Hypothesis addressed:
+- "CI on `main` is not globally green; therefore completion authority is incomplete."
+
+Scientific method:
+- Baseline observation: previous `main` CI runs had `conclusion=failure` while required Phase 1 checks were green.
+- Root-cause isolation: extracted failing jobs and traced shared failure signatures from job logs.
+- Controlled remediation: patched only failing cause-classes, re-ran CI in PR context, then asserted on `main`.
+- Validation: confirmed globally green `main` CI run after merge.
+
+Root causes identified:
+- CI migration policy mismatch: multiple jobs ran Alembic under `CI=true` without `MIGRATION_DATABASE_URL`, violating `alembic/env.py` strict CI contract.
+- Mock gate race: health Prism endpoint probe executed before readiness on some runs.
+- Backend test environment gap: `Test Backend` lacked deterministic Postgres service+migrations.
+- Phase gate strictness mismatch: `SCHEMA_GUARD` raw SQL marker missing in a B0.7 P4 integration seed.
+
+Remediations merged:
+- PR: `https://github.com/Muk223/skeldir-2.0/pull/70`
+- Merge commit: `7b34b0cbc9351b3e9f737ca51d48758a0803fb12`
+- Files:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/b0542-refresh-executor.yml`
+  - `.github/workflows/b0543-matview-task-layer.yml`
+  - `scripts/ci/zero_drift_v3_2.sh`
+  - `scripts/guard_no_docker.py`
+  - `backend/tests/integration/test_b07_p4_operational_readiness_e2e.py`
+
+Main-branch proof:
+- `main` CI run after PR #70 merge:
+  - `https://github.com/Muk223/skeldir-2.0/actions/runs/21877158093`
+  - workflow conclusion: `success` (globally green)
+- Phase 1 required checks in that run:
+  - `Validate Contracts`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21877158093/job/63149184872` (success)
+  - `Frontend Contract Consumption Gate`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21877158093/job/63149397164` (success)
+  - `Mock Usability Gate`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21877158093/job/63149397295` (success)
+  - `Phase 1 Negative Controls`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21877158093/job/63149397107` (success)
+  - `Phase 1 Runtime Conformance`: `https://github.com/Muk223/skeldir-2.0/actions/runs/21877158093/job/63149397114` (success)
+
+Conclusion:
+- The hypothesis is refuted.
+- Completion authority now includes both:
+  - merge-blocking Phase 1 gate success on `main`, and
+  - globally green CI on `main`.

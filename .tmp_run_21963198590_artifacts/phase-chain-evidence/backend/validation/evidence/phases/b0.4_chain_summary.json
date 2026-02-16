@@ -1,0 +1,25 @@
+{
+  "target": "B0.4",
+  "candidate_sha": "165889cabe8f71ca7e1953f176e26627f6341a65",
+  "ci_run_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21963198590",
+  "status": "success",
+  "timestamp": "2026-02-12T20:45:50.280222+00:00",
+  "chain": [
+    {
+      "phase": "B0.1",
+      "exit_code": 0
+    },
+    {
+      "phase": "B0.3",
+      "exit_code": 0
+    },
+    {
+      "phase": "SCHEMA_GUARD",
+      "exit_code": 0
+    },
+    {
+      "phase": "B0.4",
+      "exit_code": 0
+    }
+  ]
+}

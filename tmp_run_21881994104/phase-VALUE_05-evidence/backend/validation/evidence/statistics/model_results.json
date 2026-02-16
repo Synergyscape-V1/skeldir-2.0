@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-11-20T20:23:00.221228",
+  "python_version": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "imports": {
+    "numpy": "SUCCESS",
+    "pandas": "SUCCESS",
+    "scipy": "SUCCESS",
+    "matplotlib": "SUCCESS",
+    "pymc": "SUCCESS",
+    "arviz": "SUCCESS"
+  },
+  "computation_tests": {
+    "basic_stats": {
+      "status": "SUCCESS",
+      "mean": 100.28998083733488,
+      "std": 14.680893116210314,
+      "skew": 0.11680083110533536,
+      "kurtosis": 0.06620589292148438
+    },
+    "linear_regression": {
+      "status": "SUCCESS",
+      "slope": 2.527586534673315,
+      "intercept": 2.6543742918452367,
+      "r_squared": 0.9433841050846627,
+      "parameter_recovery": true
+    }
+  },
+  "sampling_tests": {
+    "pymc_sampling": {
+      "status": "SUCCESS",
+      "slope_rhat": 1.0,
+      "intercept_rhat": 1.0,
+      "slope_ess": 838.0,
+      "intercept_ess": 817.0,
+      "convergence": true
+    }
+  },
+  "exit_code": 0
+}

@@ -1,0 +1,12 @@
+{
+  "phase": "SCHEMA_GUARD",
+  "candidate_sha": "28beff276c6ad90caef67a563d491376e0ac7dfb",
+  "ci_run_url": "https://github.com/Muk223/skeldir-2.0/actions/runs/21882221211",
+  "timestamp": "2026-02-10T21:06:10.606820+00:00",
+  "command": [
+    "python",
+    "scripts/phase_gates/schema_guard_gate.py"
+  ],
+  "status": "failure",
+  "missing_artifacts": []
+}

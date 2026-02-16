@@ -1,0 +1,1274 @@
+[
+  {
+    "columns": [
+      "version_num"
+    ],
+    "constraint_name": "alembic_version_pkc",
+    "constraint_type": "p",
+    "table_name": "alembic_version"
+  },
+  {
+    "columns": [
+      "allocated_revenue_cents"
+    ],
+    "constraint_name": "attribution_allocations_allocated_revenue_cents_check",
+    "constraint_type": "c",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "attribution_allocations_pkey",
+    "constraint_type": "p",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "attribution_allocations_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "confidence_score"
+    ],
+    "constraint_name": "ck_allocations_confidence_score",
+    "constraint_type": "c",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "allocation_ratio"
+    ],
+    "constraint_name": "ck_attribution_allocations_allocation_ratio_bounds",
+    "constraint_type": "c",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "allocated_revenue_cents"
+    ],
+    "constraint_name": "ck_attribution_allocations_revenue_positive",
+    "constraint_type": "c",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "event_id"
+    ],
+    "constraint_name": "fk_allocations_event_id_set_null",
+    "constraint_type": "f",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "channel_code"
+    ],
+    "constraint_name": "fk_attribution_allocations_channel_code",
+    "constraint_type": "f",
+    "table_name": "attribution_allocations"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "attribution_events_pkey",
+    "constraint_type": "p",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "revenue_cents"
+    ],
+    "constraint_name": "attribution_events_revenue_cents_check",
+    "constraint_type": "c",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "attribution_events_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "processing_status"
+    ],
+    "constraint_name": "ck_attribution_events_processing_status_valid",
+    "constraint_type": "c",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "retry_count"
+    ],
+    "constraint_name": "ck_attribution_events_retry_count_positive",
+    "constraint_type": "c",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "revenue_cents"
+    ],
+    "constraint_name": "ck_attribution_events_revenue_positive",
+    "constraint_type": "c",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "channel"
+    ],
+    "constraint_name": "fk_attribution_events_channel",
+    "constraint_type": "f",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "idempotency_key"
+    ],
+    "constraint_name": "uq_attribution_events_tenant_idempotency_key",
+    "constraint_type": "u",
+    "table_name": "attribution_events"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "attribution_recompute_jobs_pkey",
+    "constraint_type": "p",
+    "table_name": "attribution_recompute_jobs"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "attribution_recompute_jobs_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "attribution_recompute_jobs"
+  },
+  {
+    "columns": [
+      "run_count"
+    ],
+    "constraint_name": "ck_attribution_recompute_jobs_run_count_positive",
+    "constraint_type": "c",
+    "table_name": "attribution_recompute_jobs"
+  },
+  {
+    "columns": [
+      "status"
+    ],
+    "constraint_name": "ck_attribution_recompute_jobs_status_valid",
+    "constraint_type": "c",
+    "table_name": "attribution_recompute_jobs"
+  },
+  {
+    "columns": [
+      "window_end",
+      "window_start"
+    ],
+    "constraint_name": "ck_attribution_recompute_jobs_window_bounds_valid",
+    "constraint_type": "c",
+    "table_name": "attribution_recompute_jobs"
+  },
+  {
+    "columns": [
+      "cost_cents"
+    ],
+    "constraint_name": "budget_optimization_jobs_cost_cents_check",
+    "constraint_type": "c",
+    "table_name": "budget_optimization_jobs"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "budget_optimization_jobs_pkey",
+    "constraint_type": "p",
+    "table_name": "budget_optimization_jobs"
+  },
+  {
+    "columns": [
+      "status"
+    ],
+    "constraint_name": "budget_optimization_jobs_status_check",
+    "constraint_type": "c",
+    "table_name": "budget_optimization_jobs"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "budget_optimization_jobs_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "budget_optimization_jobs"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "celery_taskmeta_pkey",
+    "constraint_type": "p",
+    "table_name": "celery_taskmeta"
+  },
+  {
+    "columns": [
+      "task_id"
+    ],
+    "constraint_name": "celery_taskmeta_task_id_key",
+    "constraint_type": "u",
+    "table_name": "celery_taskmeta"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "celery_tasksetmeta_pkey",
+    "constraint_type": "p",
+    "table_name": "celery_tasksetmeta"
+  },
+  {
+    "columns": [
+      "taskset_id"
+    ],
+    "constraint_name": "celery_tasksetmeta_taskset_id_key",
+    "constraint_type": "u",
+    "table_name": "celery_tasksetmeta"
+  },
+  {
+    "columns": [
+      "entity_type"
+    ],
+    "constraint_name": "channel_assignment_corrections_entity_type_check",
+    "constraint_type": "c",
+    "table_name": "channel_assignment_corrections"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "channel_assignment_corrections_pkey",
+    "constraint_type": "p",
+    "table_name": "channel_assignment_corrections"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "channel_assignment_corrections_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "channel_assignment_corrections"
+  },
+  {
+    "columns": [
+      "to_channel"
+    ],
+    "constraint_name": "channel_assignment_corrections_to_channel_fkey",
+    "constraint_type": "f",
+    "table_name": "channel_assignment_corrections"
+  },
+  {
+    "columns": [
+      "channel_code"
+    ],
+    "constraint_name": "channel_state_transitions_channel_code_fkey",
+    "constraint_type": "f",
+    "table_name": "channel_state_transitions"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "channel_state_transitions_pkey",
+    "constraint_type": "p",
+    "table_name": "channel_state_transitions"
+  },
+  {
+    "columns": [
+      "code"
+    ],
+    "constraint_name": "channel_taxonomy_pkey",
+    "constraint_type": "p",
+    "table_name": "channel_taxonomy"
+  },
+  {
+    "columns": [
+      "state"
+    ],
+    "constraint_name": "channel_taxonomy_state_check",
+    "constraint_type": "c",
+    "table_name": "channel_taxonomy"
+  },
+  {
+    "columns": [
+      "remediation_status"
+    ],
+    "constraint_name": "ck_dead_events_remediation_status_valid",
+    "constraint_type": "c",
+    "table_name": "dead_events"
+  },
+  {
+    "columns": [
+      "retry_count"
+    ],
+    "constraint_name": "ck_dead_events_retry_count_positive",
+    "constraint_type": "c",
+    "table_name": "dead_events"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "dead_events_pkey",
+    "constraint_type": "p",
+    "table_name": "dead_events"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "dead_events_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "dead_events"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "dead_events_quarantine_pkey",
+    "constraint_type": "p",
+    "table_name": "dead_events_quarantine"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "dead_events_quarantine_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "dead_events_quarantine"
+  },
+  {
+    "columns": [
+      "cache_hit_count"
+    ],
+    "constraint_name": "explanation_cache_cache_hit_count_check",
+    "constraint_type": "c",
+    "table_name": "explanation_cache"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "explanation_cache_pkey",
+    "constraint_type": "p",
+    "table_name": "explanation_cache"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "entity_type",
+      "entity_id"
+    ],
+    "constraint_name": "explanation_cache_tenant_id_entity_type_entity_id_key",
+    "constraint_type": "u",
+    "table_name": "explanation_cache"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "explanation_cache_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "explanation_cache"
+  },
+  {
+    "columns": [
+      "status",
+      "approved_at"
+    ],
+    "constraint_name": "ck_investigation_jobs_approved_before_completed",
+    "constraint_type": "c",
+    "table_name": "investigation_jobs"
+  },
+  {
+    "columns": [
+      "status",
+      "ready_for_review_at"
+    ],
+    "constraint_name": "ck_investigation_jobs_ready_before_approved",
+    "constraint_type": "c",
+    "table_name": "investigation_jobs"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "investigation_jobs_pkey",
+    "constraint_type": "p",
+    "table_name": "investigation_jobs"
+  },
+  {
+    "columns": [
+      "status"
+    ],
+    "constraint_name": "investigation_jobs_status_check",
+    "constraint_type": "c",
+    "table_name": "investigation_jobs"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "investigation_jobs_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "investigation_jobs"
+  },
+  {
+    "columns": [
+      "investigation_id"
+    ],
+    "constraint_name": "investigation_tool_calls_investigation_id_fkey",
+    "constraint_type": "f",
+    "table_name": "investigation_tool_calls"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "investigation_tool_calls_pkey",
+    "constraint_type": "p",
+    "table_name": "investigation_tool_calls"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "investigation_tool_calls_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "investigation_tool_calls"
+  },
+  {
+    "columns": [
+      "cost_cents"
+    ],
+    "constraint_name": "investigations_cost_cents_check",
+    "constraint_type": "c",
+    "table_name": "investigations"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "investigations_pkey",
+    "constraint_type": "p",
+    "table_name": "investigations"
+  },
+  {
+    "columns": [
+      "status"
+    ],
+    "constraint_name": "investigations_status_check",
+    "constraint_type": "c",
+    "table_name": "investigations"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "investigations_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "investigations"
+  },
+  {
+    "columns": [
+      "queue_id"
+    ],
+    "constraint_name": "fk_kombu_message_queue",
+    "constraint_type": "f",
+    "table_name": "kombu_message"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "kombu_message_pkey",
+    "constraint_type": "p",
+    "table_name": "kombu_message"
+  },
+  {
+    "columns": [
+      "name"
+    ],
+    "constraint_name": "kombu_queue_name_key",
+    "constraint_type": "u",
+    "table_name": "kombu_queue"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "kombu_queue_pkey",
+    "constraint_type": "p",
+    "table_name": "kombu_queue"
+  },
+  {
+    "columns": [
+      "breaker_state"
+    ],
+    "constraint_name": "ck_llm_api_calls_breaker_state_valid",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "budget_reservation_cents"
+    ],
+    "constraint_name": "ck_llm_api_calls_budget_reservation_nonnegative",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "budget_settled_cents"
+    ],
+    "constraint_name": "ck_llm_api_calls_budget_settled_nonnegative",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "status"
+    ],
+    "constraint_name": "ck_llm_api_calls_status_valid",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "cost_cents"
+    ],
+    "constraint_name": "llm_api_calls_cost_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "input_tokens"
+    ],
+    "constraint_name": "llm_api_calls_input_tokens_check",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "latency_ms"
+    ],
+    "constraint_name": "llm_api_calls_latency_ms_check",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "output_tokens"
+    ],
+    "constraint_name": "llm_api_calls_output_tokens_check",
+    "constraint_type": "c",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_api_calls_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_api_calls_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "request_id",
+      "endpoint"
+    ],
+    "constraint_name": "uq_llm_api_calls_tenant_request_endpoint",
+    "constraint_type": "u",
+    "table_name": "llm_api_calls"
+  },
+  {
+    "columns": [
+      "failure_count"
+    ],
+    "constraint_name": "llm_breaker_state_failure_count_check",
+    "constraint_type": "c",
+    "table_name": "llm_breaker_state"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_breaker_state_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_breaker_state"
+  },
+  {
+    "columns": [
+      "state"
+    ],
+    "constraint_name": "llm_breaker_state_state_check",
+    "constraint_type": "c",
+    "table_name": "llm_breaker_state"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_breaker_state_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_breaker_state"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "user_id",
+      "breaker_key"
+    ],
+    "constraint_name": "llm_breaker_state_tenant_id_user_id_breaker_key_key",
+    "constraint_type": "u",
+    "table_name": "llm_breaker_state"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_budget_reservations_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_budget_reservations"
+  },
+  {
+    "columns": [
+      "reserved_cents"
+    ],
+    "constraint_name": "llm_budget_reservations_reserved_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_budget_reservations"
+  },
+  {
+    "columns": [
+      "settled_cents"
+    ],
+    "constraint_name": "llm_budget_reservations_settled_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_budget_reservations"
+  },
+  {
+    "columns": [
+      "state"
+    ],
+    "constraint_name": "llm_budget_reservations_state_check",
+    "constraint_type": "c",
+    "table_name": "llm_budget_reservations"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_budget_reservations_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_budget_reservations"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "user_id",
+      "endpoint",
+      "request_id"
+    ],
+    "constraint_name": "llm_budget_reservations_tenant_id_user_id_endpoint_request__key",
+    "constraint_type": "u",
+    "table_name": "llm_budget_reservations"
+  },
+  {
+    "columns": [
+      "decision"
+    ],
+    "constraint_name": "llm_call_audit_decision_check",
+    "constraint_type": "c",
+    "table_name": "llm_call_audit"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_call_audit_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_call_audit"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_call_audit_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_call_audit"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_hourly_shutoff_state_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_hourly_shutoff_state"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_hourly_shutoff_state_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_hourly_shutoff_state"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "user_id",
+      "hour_start"
+    ],
+    "constraint_name": "llm_hourly_shutoff_state_tenant_id_user_id_hour_start_key",
+    "constraint_type": "u",
+    "table_name": "llm_hourly_shutoff_state"
+  },
+  {
+    "columns": [
+      "threshold_cents"
+    ],
+    "constraint_name": "llm_hourly_shutoff_state_threshold_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_hourly_shutoff_state"
+  },
+  {
+    "columns": [
+      "total_calls"
+    ],
+    "constraint_name": "llm_hourly_shutoff_state_total_calls_check",
+    "constraint_type": "c",
+    "table_name": "llm_hourly_shutoff_state"
+  },
+  {
+    "columns": [
+      "total_cost_cents"
+    ],
+    "constraint_name": "llm_hourly_shutoff_state_total_cost_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_hourly_shutoff_state"
+  },
+  {
+    "columns": [
+      "cap_cents"
+    ],
+    "constraint_name": "llm_monthly_budget_state_cap_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_monthly_budget_state"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_monthly_budget_state_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_monthly_budget_state"
+  },
+  {
+    "columns": [
+      "reserved_cents"
+    ],
+    "constraint_name": "llm_monthly_budget_state_reserved_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_monthly_budget_state"
+  },
+  {
+    "columns": [
+      "spent_cents"
+    ],
+    "constraint_name": "llm_monthly_budget_state_spent_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_monthly_budget_state"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_monthly_budget_state_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_monthly_budget_state"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "user_id",
+      "month"
+    ],
+    "constraint_name": "llm_monthly_budget_state_tenant_id_user_id_month_key",
+    "constraint_type": "u",
+    "table_name": "llm_monthly_budget_state"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_monthly_costs_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_monthly_costs"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_monthly_costs_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_monthly_costs"
+  },
+  {
+    "columns": [
+      "total_calls"
+    ],
+    "constraint_name": "llm_monthly_costs_total_calls_check",
+    "constraint_type": "c",
+    "table_name": "llm_monthly_costs"
+  },
+  {
+    "columns": [
+      "total_cost_cents"
+    ],
+    "constraint_name": "llm_monthly_costs_total_cost_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_monthly_costs"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "user_id",
+      "month"
+    ],
+    "constraint_name": "uq_llm_monthly_costs_tenant_user_month",
+    "constraint_type": "u",
+    "table_name": "llm_monthly_costs"
+  },
+  {
+    "columns": [
+      "cost_cents"
+    ],
+    "constraint_name": "llm_semantic_cache_cost_cents_check",
+    "constraint_type": "c",
+    "table_name": "llm_semantic_cache"
+  },
+  {
+    "columns": [
+      "hit_count"
+    ],
+    "constraint_name": "llm_semantic_cache_hit_count_check",
+    "constraint_type": "c",
+    "table_name": "llm_semantic_cache"
+  },
+  {
+    "columns": [
+      "input_tokens"
+    ],
+    "constraint_name": "llm_semantic_cache_input_tokens_check",
+    "constraint_type": "c",
+    "table_name": "llm_semantic_cache"
+  },
+  {
+    "columns": [
+      "output_tokens"
+    ],
+    "constraint_name": "llm_semantic_cache_output_tokens_check",
+    "constraint_type": "c",
+    "table_name": "llm_semantic_cache"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_semantic_cache_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_semantic_cache"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_semantic_cache_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_semantic_cache"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "user_id",
+      "endpoint",
+      "cache_key"
+    ],
+    "constraint_name": "llm_semantic_cache_tenant_id_user_id_endpoint_cache_key_key",
+    "constraint_type": "u",
+    "table_name": "llm_semantic_cache"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "llm_validation_failures_pkey",
+    "constraint_type": "p",
+    "table_name": "llm_validation_failures"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "llm_validation_failures_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "llm_validation_failures"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "pii_audit_findings_pkey",
+    "constraint_type": "p",
+    "table_name": "pii_audit_findings"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "platform_connections_pkey",
+    "constraint_type": "p",
+    "table_name": "platform_connections"
+  },
+  {
+    "columns": [
+      "status"
+    ],
+    "constraint_name": "platform_connections_status_check",
+    "constraint_type": "c",
+    "table_name": "platform_connections"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "platform_connections_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "platform_connections"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "platform_credentials_pkey",
+    "constraint_type": "p",
+    "table_name": "platform_credentials"
+  },
+  {
+    "columns": [
+      "platform_connection_id"
+    ],
+    "constraint_name": "platform_credentials_platform_connection_id_fkey",
+    "constraint_type": "f",
+    "table_name": "platform_credentials"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "platform_credentials_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "platform_credentials"
+  },
+  {
+    "columns": [
+      "attempt_no"
+    ],
+    "constraint_name": "r4_crash_barriers_attempt_no_check",
+    "constraint_type": "c",
+    "table_name": "r4_crash_barriers"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "r4_crash_barriers_pkey",
+    "constraint_type": "p",
+    "table_name": "r4_crash_barriers"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "r4_crash_barriers_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "r4_crash_barriers"
+  },
+  {
+    "columns": [
+      "scenario",
+      "task_id"
+    ],
+    "constraint_name": "r4_recovery_exclusions_pkey",
+    "constraint_type": "p",
+    "table_name": "r4_recovery_exclusions"
+  },
+  {
+    "columns": [
+      "attempt_no"
+    ],
+    "constraint_name": "r4_task_attempts_attempt_no_check",
+    "constraint_type": "c",
+    "table_name": "r4_task_attempts"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "r4_task_attempts_pkey",
+    "constraint_type": "p",
+    "table_name": "r4_task_attempts"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "r4_task_attempts_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "r4_task_attempts"
+  },
+  {
+    "columns": [
+      "state"
+    ],
+    "constraint_name": "ck_reconciliation_runs_state_valid",
+    "constraint_type": "c",
+    "table_name": "reconciliation_runs"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "reconciliation_runs_pkey",
+    "constraint_type": "p",
+    "table_name": "reconciliation_runs"
+  },
+  {
+    "columns": [
+      "state"
+    ],
+    "constraint_name": "reconciliation_runs_state_check",
+    "constraint_type": "c",
+    "table_name": "reconciliation_runs"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "reconciliation_runs_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "reconciliation_runs"
+  },
+  {
+    "columns": [
+      "tenant_id",
+      "cache_key"
+    ],
+    "constraint_name": "revenue_cache_entries_pkey",
+    "constraint_type": "p",
+    "table_name": "revenue_cache_entries"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "revenue_cache_entries_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "revenue_cache_entries"
+  },
+  {
+    "columns": [
+      "amount_cents"
+    ],
+    "constraint_name": "ck_revenue_ledger_amount_positive",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "claimed_total_cents"
+    ],
+    "constraint_name": "ck_revenue_ledger_claimed_positive",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "discrepancy_bps"
+    ],
+    "constraint_name": "ck_revenue_ledger_discrepancy_positive",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "ghost_revenue_cents"
+    ],
+    "constraint_name": "ck_revenue_ledger_ghost_positive",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "revenue_cents"
+    ],
+    "constraint_name": "ck_revenue_ledger_revenue_positive",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "state"
+    ],
+    "constraint_name": "ck_revenue_ledger_state_valid",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "verified_total_cents"
+    ],
+    "constraint_name": "ck_revenue_ledger_verified_positive",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "allocation_id"
+    ],
+    "constraint_name": "revenue_ledger_allocation_id_fkey",
+    "constraint_type": "f",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "revenue_ledger_pkey",
+    "constraint_type": "p",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "revenue_cents"
+    ],
+    "constraint_name": "revenue_ledger_revenue_cents_check",
+    "constraint_type": "c",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "revenue_ledger_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "revenue_ledger"
+  },
+  {
+    "columns": [
+      "ledger_id"
+    ],
+    "constraint_name": "revenue_state_transitions_ledger_id_fkey",
+    "constraint_type": "f",
+    "table_name": "revenue_state_transitions"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "revenue_state_transitions_pkey",
+    "constraint_type": "p",
+    "table_name": "revenue_state_transitions"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "revenue_state_transitions_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "revenue_state_transitions"
+  },
+  {
+    "columns": [
+      "name"
+    ],
+    "constraint_name": "ck_tenants_name_not_empty",
+    "constraint_type": "c",
+    "table_name": "tenants"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "tenants_pkey",
+    "constraint_type": "p",
+    "table_name": "tenants"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "celery_task_failures_pkey",
+    "constraint_type": "p",
+    "table_name": "worker_failed_jobs"
+  },
+  {
+    "columns": [
+      "retry_count"
+    ],
+    "constraint_name": "ck_worker_failed_jobs_retry_count_positive",
+    "constraint_type": "c",
+    "table_name": "worker_failed_jobs"
+  },
+  {
+    "columns": [
+      "status"
+    ],
+    "constraint_name": "ck_worker_failed_jobs_status_valid",
+    "constraint_type": "c",
+    "table_name": "worker_failed_jobs"
+  },
+  {
+    "columns": [
+      "id"
+    ],
+    "constraint_name": "worker_side_effects_pkey",
+    "constraint_type": "p",
+    "table_name": "worker_side_effects"
+  },
+  {
+    "columns": [
+      "tenant_id"
+    ],
+    "constraint_name": "worker_side_effects_tenant_id_fkey",
+    "constraint_type": "f",
+    "table_name": "worker_side_effects"
+  }
+]

@@ -1,0 +1,99 @@
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+python_gc_objects_collected_total{generation="0"} 919.0
+python_gc_objects_collected_total{generation="1"} 316.0
+python_gc_objects_collected_total{generation="2"} 25.0
+# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC
+# TYPE python_gc_objects_uncollectable_total counter
+python_gc_objects_uncollectable_total{generation="0"} 0.0
+python_gc_objects_uncollectable_total{generation="1"} 0.0
+python_gc_objects_uncollectable_total{generation="2"} 0.0
+# HELP python_gc_collections_total Number of times this generation was collected
+# TYPE python_gc_collections_total counter
+python_gc_collections_total{generation="0"} 290.0
+python_gc_collections_total{generation="1"} 26.0
+python_gc_collections_total{generation="2"} 2.0
+# HELP python_info Python platform information
+# TYPE python_info gauge
+python_info{implementation="CPython",major="3",minor="11",patchlevel="14",version="3.11.14"} 1.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 2.11980288e+08
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 9.9074048e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.77092646323e+09
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 1.05
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 19.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 65536.0
+# HELP events_ingested_total Total successfully ingested events
+# TYPE events_ingested_total counter
+events_ingested_total 0.0
+# HELP events_ingested_created Total successfully ingested events
+# TYPE events_ingested_created gauge
+events_ingested_created 1.7709264644144173e+09
+# HELP events_duplicate_total Total duplicate events detected by idempotency
+# TYPE events_duplicate_total counter
+events_duplicate_total 0.0
+# HELP events_duplicate_created Total duplicate events detected by idempotency
+# TYPE events_duplicate_created gauge
+events_duplicate_created 1.7709264644144368e+09
+# HELP events_dlq_total Total events routed to DLQ
+# TYPE events_dlq_total counter
+events_dlq_total 0.0
+# HELP events_dlq_created Total events routed to DLQ
+# TYPE events_dlq_created gauge
+events_dlq_created 1.7709264644144473e+09
+# HELP ingestion_duration_seconds Ingestion duration per event
+# TYPE ingestion_duration_seconds histogram
+ingestion_duration_seconds_bucket{le="0.05"} 0.0
+ingestion_duration_seconds_bucket{le="0.1"} 0.0
+ingestion_duration_seconds_bucket{le="0.25"} 0.0
+ingestion_duration_seconds_bucket{le="0.5"} 0.0
+ingestion_duration_seconds_bucket{le="1.0"} 0.0
+ingestion_duration_seconds_bucket{le="2.0"} 0.0
+ingestion_duration_seconds_bucket{le="5.0"} 0.0
+ingestion_duration_seconds_bucket{le="+Inf"} 0.0
+ingestion_duration_seconds_count 0.0
+ingestion_duration_seconds_sum 0.0
+# HELP ingestion_duration_seconds_created Ingestion duration per event
+# TYPE ingestion_duration_seconds_created gauge
+ingestion_duration_seconds_created 1.7709264644144654e+09
+# HELP celery_queue_messages Celery queue depth derived from kombu tables (broker truth)
+# TYPE celery_queue_messages gauge
+celery_queue_messages{queue="attribution",state="visible"} 0.0
+celery_queue_messages{queue="attribution",state="invisible"} 0.0
+celery_queue_messages{queue="attribution",state="total"} 0.0
+celery_queue_messages{queue="housekeeping",state="visible"} 0.0
+celery_queue_messages{queue="housekeeping",state="invisible"} 0.0
+celery_queue_messages{queue="housekeeping",state="total"} 0.0
+celery_queue_messages{queue="llm",state="visible"} 0.0
+celery_queue_messages{queue="llm",state="invisible"} 0.0
+celery_queue_messages{queue="llm",state="total"} 0.0
+celery_queue_messages{queue="maintenance",state="visible"} 0.0
+celery_queue_messages{queue="maintenance",state="invisible"} 0.0
+celery_queue_messages{queue="maintenance",state="total"} 0.0
+celery_queue_messages{queue="unknown",state="visible"} 0.0
+celery_queue_messages{queue="unknown",state="invisible"} 0.0
+celery_queue_messages{queue="unknown",state="total"} 0.0
+# HELP celery_queue_max_age_seconds Age in seconds of the oldest visible message in each Celery queue (broker truth)
+# TYPE celery_queue_max_age_seconds gauge
+celery_queue_max_age_seconds{queue="attribution"} 0.0
+celery_queue_max_age_seconds{queue="housekeeping"} 0.0
+celery_queue_max_age_seconds{queue="llm"} 0.0
+celery_queue_max_age_seconds{queue="maintenance"} 0.0
+celery_queue_max_age_seconds{queue="unknown"} 0.0
+# HELP celery_queue_stats_last_refresh_timestamp_seconds Unix timestamp (seconds) of the last successful broker truth refresh
+# TYPE celery_queue_stats_last_refresh_timestamp_seconds gauge
+celery_queue_stats_last_refresh_timestamp_seconds 1.7709264647311122e+09
+# HELP celery_queue_stats_refresh_errors_total Total broker truth refresh errors in this process
+# TYPE celery_queue_stats_refresh_errors_total counter
+celery_queue_stats_refresh_errors_total 0.0
