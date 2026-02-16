@@ -298,6 +298,10 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, str]:
 
     try:
         run_step(
+            "runner_physics_probe",
+            [sys.executable, "scripts/common/runner_probe.py"],
+        )
+        run_step(
             "compose_up_substrate",
             ["docker", "compose", "-f", "docker-compose.e2e.yml", "up", "-d", "--build", "postgres", "mock_platform"],
         )

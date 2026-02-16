@@ -9,7 +9,7 @@ on:
 
 jobs:
   b07_phase8_closure_pack:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # Targeting Enterprise runner (expecting 4+ vCPU)
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       B07_P8_ARTIFACT_DIR: artifacts/b07-phase8

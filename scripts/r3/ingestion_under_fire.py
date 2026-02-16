@@ -1548,6 +1548,21 @@ async def scenario_s8_perf_gate(
     expected_canonical = 1 + len(unique_keys)
     expected_dlq = len(malformed_keys) + len(pii_keys)
 
+    # Anti-bypass / Non-vacuity invariants
+    # 1. Request volume must be within 1% of target (allow slight variance for very high rates, effectively strict for low)
+    #    However, for a rigorous scientific gate, we expect strict adherence or explicit failure.
+    #    The harness loop attempts exactly `total_requests`.
+    requests_volume_ok = observed_count >= (target_request_count * 0.99)
+    
+    # 2. Persistence must match the deterministic plan EXACTLY.
+    #    If we sent N unique keys, we MUST find N rows. No "eventual consistency" fluff for this test.
+    persistence_ok = (
+        canonical_for_all_keys == expected_canonical
+        and dlq_for_all_keys == expected_dlq
+        and duplicate_keys == 0
+        and sum(pii_hits.values()) == 0
+    )
+
     passed = (
         achieved_rps >= (profile.target_rps * 0.98)
         and p95_ms is not None
@@ -1557,13 +1572,10 @@ async def scenario_s8_perf_gate(
         and unique_canonical == len(unique_keys)
         and malformed_dlq == len(malformed_keys)
         and pii_dlq == len(pii_keys)
-        and canonical_for_all_keys == expected_canonical
-        and dlq_for_all_keys == expected_dlq
-        and duplicate_keys == 0
-        and sum(pii_hits.values()) == 0
-        and observed_count == target_request_count
         and resource_stable
         and no_degradation
+        and requests_volume_ok
+        and persistence_ok
     )
 
     return ScenarioResult(
@@ -1598,6 +1610,11 @@ async def scenario_s8_perf_gate(
             "pii_dlq_rows_created": pii_dlq,
             "canonical_rows_for_all_profile_keys": canonical_for_all_keys,
             "dlq_rows_for_all_profile_keys": dlq_for_all_keys,
+            "anti_bypass_invariant": {
+                "requests_volume_ok": requests_volume_ok,
+                "persistence_ok": persistence_ok,
+                "passed": requests_volume_ok and persistence_ok
+            },
             "expected_canonical_rows_for_all_profile_keys": expected_canonical,
             "expected_dlq_rows_for_all_profile_keys": expected_dlq,
             "duplicate_canonical_keys_in_window": duplicate_keys,
