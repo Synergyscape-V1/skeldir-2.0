@@ -715,12 +715,17 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         worker_peak_depth = int(worker_summary.get("max_total_messages", 0) or 0)
         worker_final_depth = int(worker_summary.get("final_total_messages", 0) or 0)
         worker_drain_rate = float(worker_summary.get("drain_rate_messages_per_s", 0.0) or 0.0)
+        worker_drain_observed = worker_drain_rate > 0 or worker_final_depth < worker_peak_depth
         if worker_sample_count <= 0:
             raise RuntimeError("Worker liveness probe invalid: no queue samples captured")
         if worker_peak_depth <= 0:
             raise RuntimeError("Worker liveness probe invalid: queue depth never increased above zero")
-        if cfg.full_physics and worker_drain_rate <= 0 and worker_final_depth >= worker_peak_depth:
-            raise RuntimeError("Worker liveness probe invalid: queue drain rate is non-positive")
+        # Kombu's SQL transport can keep rows invisible and stable while workers still consume tasks.
+        # For full-physics, require either explicit queue drain or composed worker activity evidence.
+        if cfg.full_physics and not worker_drain_observed and perf_llm_calls <= 0:
+            raise RuntimeError(
+                "Worker liveness probe invalid: no queue drain observed and no composed LLM activity evidence"
+            )
 
         # CI subset is a sanity gate only; authoritative EG3.4 certification is full physics only.
         gates[_eg85_gate_name(run_authority)] = "pass"
@@ -751,6 +756,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "peak_queue_depth": worker_peak_depth,
                 "final_queue_depth": worker_final_depth,
                 "drain_rate_messages_per_s": worker_drain_rate,
+                "drain_observed": worker_drain_observed,
                 "probe_artifact": str(queue_probe_artifact.relative_to(cfg.artifact_dir)),
             },
             "router_engaged": any(
