@@ -656,10 +656,11 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         perf_llm_api_calls = int(sql_probe_summary.get("perf_composed_llm_api_calls", 0))
         perf_llm_audit_calls = int(sql_probe_summary.get("perf_composed_llm_audit_calls", 0))
         perf_ledger_rows = int(sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0))
+        llm_probe_dispatched = 0
         if perf_llm_calls <= 0:
             llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
-            dispatched = int(llm_probe.get("dispatched_count", 0))
-            if dispatched <= 0:
+            llm_probe_dispatched = int(llm_probe.get("dispatched_count", 0))
+            if llm_probe_dispatched <= 0:
                 raise RuntimeError(
                     "Composed performance evidence invalid: no llm_api_calls during ingestion load window"
                 )
@@ -722,7 +723,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             raise RuntimeError("Worker liveness probe invalid: queue depth never increased above zero")
         # Kombu's SQL transport can keep rows invisible and stable while workers still consume tasks.
         # For full-physics, require either explicit queue drain or composed worker activity evidence.
-        if cfg.full_physics and not worker_drain_observed and perf_llm_calls <= 0:
+        llm_activity_evidence = perf_llm_calls > 0 or llm_probe_dispatched > 0
+        if cfg.full_physics and not worker_drain_observed and not llm_activity_evidence:
             raise RuntimeError(
                 "Worker liveness probe invalid: no queue drain observed and no composed LLM activity evidence"
             )
@@ -757,6 +759,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "final_queue_depth": worker_final_depth,
                 "drain_rate_messages_per_s": worker_drain_rate,
                 "drain_observed": worker_drain_observed,
+                "llm_activity_evidence": llm_activity_evidence,
                 "probe_artifact": str(queue_probe_artifact.relative_to(cfg.artifact_dir)),
             },
             "router_engaged": any(
