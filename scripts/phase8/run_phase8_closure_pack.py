@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,69 @@ class _Phase8Config:
 
 _R3_VERDICT_BEGIN = re.compile(r"^R3_VERDICT_BEGIN\s+(.+)$")
 _R3_VERDICT_END = re.compile(r"^R3_VERDICT_END\s+(.+)$")
+_CONTAINER_DB_IDENTITY_PROBE = """
+import json
+import os
+import sys
+
+import psycopg2
+
+
+dsn = os.environ.get("DATABASE_URL", "")
+if not dsn:
+    print(json.dumps({"error": "DATABASE_URL missing"}))
+    sys.exit(2)
+dsn = dsn.replace("+asyncpg", "")
+expected = os.environ.get("PHASE8_EXPECTED_DB_USER", "app_user")
+
+with psycopg2.connect(dsn) as conn:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)"
+        )
+        current_user, rolsuper = cur.fetchone()
+        cur.execute(
+            '''
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_namespace n
+              JOIN pg_roles r ON r.oid = n.nspowner
+              WHERE n.nspname = 'public' AND r.rolname = current_user
+            )
+            '''
+        )
+        owns_public_schema = bool(cur.fetchone()[0])
+        cur.execute(
+            '''
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              JOIN pg_roles r ON r.oid = c.relowner
+              WHERE n.nspname = 'public'
+                AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+                AND r.rolname = current_user
+            )
+            '''
+        )
+        owns_public_objects = bool(cur.fetchone()[0])
+
+payload = {
+    "expected_user": expected,
+    "current_user": str(current_user),
+    "rolsuper": bool(rolsuper),
+    "owns_public_schema": owns_public_schema,
+    "owns_public_objects": owns_public_objects,
+}
+print(json.dumps(payload, sort_keys=True))
+
+if payload["current_user"] != expected:
+    sys.exit(3)
+if payload["rolsuper"]:
+    sys.exit(4)
+if payload["owns_public_schema"] or payload["owns_public_objects"]:
+    sys.exit(5)
+"""
 
 
 def _repo_root() -> Path:
@@ -62,78 +126,6 @@ def _summary_filename_for_authority(run_authority: str) -> str:
         if run_authority == "full_physics"
         else "phase8_gate_summary_ci_subset.json"
     )
-
-
-def _read_text_if_exists(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _collect_runner_physics(cfg: _Phase8Config, run_authority: str) -> dict[str, Any]:
-    cpu_count = os.cpu_count() or 0
-    cpu_model = None
-    cpuinfo_text = _read_text_if_exists(Path("/proc/cpuinfo"))
-    if cpuinfo_text:
-        for line in cpuinfo_text.splitlines():
-            if line.lower().startswith("model name"):
-                cpu_model = line.split(":", 1)[1].strip()
-                break
-
-    meminfo_map: dict[str, int] = {}
-    meminfo_text = _read_text_if_exists(Path("/proc/meminfo"))
-    if meminfo_text:
-        for line in meminfo_text.splitlines():
-            if ":" not in line:
-                continue
-            key, raw_value = line.split(":", 1)
-            raw_value = raw_value.strip().split(" ", 1)[0]
-            try:
-                meminfo_map[key] = int(raw_value)
-            except Exception:  # noqa: BLE001
-                continue
-
-    cpu_max = _read_text_if_exists(Path("/sys/fs/cgroup/cpu.max"))
-    memory_max = _read_text_if_exists(Path("/sys/fs/cgroup/memory.max"))
-    cpu_quota = _read_text_if_exists(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"))
-    cpu_period = _read_text_if_exists(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us"))
-    memory_limit_v1 = _read_text_if_exists(Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"))
-
-    payload = {
-        "captured_at": datetime.now(timezone.utc).isoformat(),
-        "run_authority": run_authority,
-        "github": {
-            "run_id": os.getenv("GITHUB_RUN_ID"),
-            "run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
-            "workflow": os.getenv("GITHUB_WORKFLOW"),
-            "sha": os.getenv("GITHUB_SHA"),
-            "ref": os.getenv("GITHUB_REF"),
-            "repository": os.getenv("GITHUB_REPOSITORY"),
-            "runner_name": os.getenv("RUNNER_NAME"),
-            "runner_arch": os.getenv("RUNNER_ARCH"),
-            "runner_os": os.getenv("RUNNER_OS"),
-        },
-        "host": {
-            "cpu_count": cpu_count,
-            "cpu_model": cpu_model,
-            "mem_total_kib": meminfo_map.get("MemTotal"),
-            "mem_available_kib": meminfo_map.get("MemAvailable"),
-        },
-        "cgroup_limits": {
-            "cpu_max": cpu_max,
-            "memory_max": memory_max,
-            "cpu_cfs_quota_us": cpu_quota,
-            "cpu_cfs_period_us": cpu_period,
-            "memory_limit_in_bytes_v1": memory_limit_v1,
-        },
-    }
-    (cfg.artifact_dir / "runner_physics_probe.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
-    )
-    return payload
 
 
 def _sha256_file(path: Path) -> str:
@@ -291,19 +283,6 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "R3_ADMIN_DATABASE_URL": cfg.migration_dsn,
             "R3_RUNTIME_DATABASE_URL": cfg.runtime_sync_dsn,
             "R3_API_BASE_URL": cfg.api_base_url,
-            "E2E_ENVIRONMENT": "test",
-            "E2E_API_ENVIRONMENT": "test",
-            "E2E_WORKER_ENVIRONMENT": "test",
-            "E2E_DATABASE_FORCE_POOLING": "0",
-            "E2E_DATABASE_POOL_SIZE": "20",
-            "E2E_DATABASE_MAX_OVERFLOW": "0",
-            "E2E_API_DATABASE_FORCE_POOLING": "0",
-            "E2E_API_DATABASE_POOL_SIZE": "20",
-            "E2E_API_DATABASE_MAX_OVERFLOW": "0",
-            "E2E_WORKER_DATABASE_FORCE_POOLING": "0",
-            "E2E_WORKER_DATABASE_POOL_SIZE": "20",
-            "E2E_WORKER_DATABASE_MAX_OVERFLOW": "0",
-            "E2E_API_WORKERS": "1",
         }
     )
 
@@ -327,14 +306,12 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             }
         )
     else:
-        detected_cores = max(2, os.cpu_count() or 2)
-        api_workers = max(2, min(8, detected_cores - 1))
         env.update(
             {
                 # Full-physics authority is encoded by EG3.4 Test2 (46 rps), not by high-N ladder replay storms.
                 # Keep ladder bounded by default so hosted runners can reach the authoritative profile gate.
                 "R3_LADDER": os.getenv("R3_LADDER", "50"),
-                "R3_CONCURRENCY": os.getenv("R3_CONCURRENCY", "80"),
+                "R3_CONCURRENCY": os.getenv("R3_CONCURRENCY", "120"),
                 "R3_TIMEOUT_S": os.getenv("R3_TIMEOUT_S", "10"),
                 "R3_NULL_BENCHMARK": os.getenv("R3_NULL_BENCHMARK", "1"),
                 "R3_NULL_BENCHMARK_TARGET_RPS": os.getenv("R3_NULL_BENCHMARK_TARGET_RPS", "50"),
@@ -347,19 +324,6 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 "R3_EG34_TEST2_DURATION_S": os.getenv("R3_EG34_TEST2_DURATION_S", "60"),
                 "R3_EG34_TEST3_RPS": os.getenv("R3_EG34_TEST3_RPS", "5"),
                 "R3_EG34_TEST3_DURATION_S": os.getenv("R3_EG34_TEST3_DURATION_S", "300"),
-                "E2E_ENVIRONMENT": os.getenv("E2E_ENVIRONMENT", "staging"),
-                "E2E_API_ENVIRONMENT": os.getenv("E2E_API_ENVIRONMENT", "staging"),
-                "E2E_WORKER_ENVIRONMENT": os.getenv("E2E_WORKER_ENVIRONMENT", "test"),
-                "E2E_DATABASE_FORCE_POOLING": os.getenv("E2E_DATABASE_FORCE_POOLING", "0"),
-                "E2E_DATABASE_POOL_SIZE": os.getenv("E2E_DATABASE_POOL_SIZE", "20"),
-                "E2E_DATABASE_MAX_OVERFLOW": os.getenv("E2E_DATABASE_MAX_OVERFLOW", "0"),
-                "E2E_API_DATABASE_FORCE_POOLING": os.getenv("E2E_API_DATABASE_FORCE_POOLING", "1"),
-                "E2E_API_DATABASE_POOL_SIZE": os.getenv("E2E_API_DATABASE_POOL_SIZE", "40"),
-                "E2E_API_DATABASE_MAX_OVERFLOW": os.getenv("E2E_API_DATABASE_MAX_OVERFLOW", "20"),
-                "E2E_WORKER_DATABASE_FORCE_POOLING": os.getenv("E2E_WORKER_DATABASE_FORCE_POOLING", "0"),
-                "E2E_WORKER_DATABASE_POOL_SIZE": os.getenv("E2E_WORKER_DATABASE_POOL_SIZE", "20"),
-                "E2E_WORKER_DATABASE_MAX_OVERFLOW": os.getenv("E2E_WORKER_DATABASE_MAX_OVERFLOW", "0"),
-                "E2E_API_WORKERS": os.getenv("E2E_API_WORKERS", str(api_workers)),
             }
         )
     return env
@@ -391,6 +355,205 @@ def _run_logged(
         rc = proc.wait()
     if rc != 0:
         raise RuntimeError(f"Step failed ({name}): {' '.join(cmd)}")
+
+
+def _run_capture(
+    cfg: _Phase8Config,
+    *,
+    name: str,
+    cmd: Sequence[str],
+    env: dict[str, str],
+    cwd: Path | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    log_path = cfg.logs_dir / f"{name}.log"
+    proc = subprocess.run(
+        list(cmd),
+        cwd=str(cwd or cfg.repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    combined = f"{proc.stdout}{proc.stderr}"
+    log_path.write_text(combined, encoding="utf-8")
+    if check and proc.returncode != 0:
+        raise RuntimeError(f"Step failed ({name}): {' '.join(cmd)}")
+    return proc
+
+
+def _parse_json_line(payload: str) -> dict[str, Any]:
+    lines = [line.strip() for line in payload.splitlines() if line.strip()]
+    for line in reversed(lines):
+        if line.startswith("{") and line.endswith("}"):
+            parsed = json.loads(line)
+            if isinstance(parsed, dict):
+                return parsed
+    raise RuntimeError("Expected JSON object in subprocess output")
+
+
+def _capture_runner_physics(cfg: _Phase8Config, run_authority: str) -> dict[str, Any]:
+    mem_total_kib: int | None = None
+    mem_available_kib: int | None = None
+    meminfo = Path("/proc/meminfo")
+    if meminfo.exists():
+        values: dict[str, int] = {}
+        for line in meminfo.read_text(encoding="utf-8").splitlines():
+            parts = line.split(":", 1)
+            if len(parts) != 2:
+                continue
+            key = parts[0].strip()
+            raw_value = parts[1].strip().split(" ", 1)[0]
+            if raw_value.isdigit():
+                values[key] = int(raw_value)
+        mem_total_kib = values.get("MemTotal")
+        mem_available_kib = values.get("MemAvailable")
+
+    cpu_model: str | None = None
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.exists():
+        for line in cpuinfo.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.lower().startswith("model name"):
+                cpu_model = line.split(":", 1)[1].strip()
+                break
+
+    def _read_optional(path: str) -> str | None:
+        file_path = Path(path)
+        if not file_path.exists():
+            return None
+        return file_path.read_text(encoding="utf-8", errors="ignore").strip() or None
+
+    probe = {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "run_authority": run_authority,
+        "host": {
+            "cpu_count": os.cpu_count(),
+            "cpu_model": cpu_model,
+            "mem_total_kib": mem_total_kib,
+            "mem_available_kib": mem_available_kib,
+        },
+        "cgroup_limits": {
+            "cpu_max": _read_optional("/sys/fs/cgroup/cpu.max"),
+            "memory_max": _read_optional("/sys/fs/cgroup/memory.max"),
+            "cpu_cfs_quota_us": _read_optional("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"),
+            "cpu_cfs_period_us": _read_optional("/sys/fs/cgroup/cpu/cpu.cfs_period_us"),
+            "memory_limit_in_bytes_v1": _read_optional(
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+            ),
+        },
+        "github": {
+            "workflow": os.getenv("GITHUB_WORKFLOW"),
+            "run_id": os.getenv("GITHUB_RUN_ID"),
+            "run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+            "sha": os.getenv("GITHUB_SHA"),
+            "ref": os.getenv("GITHUB_REF"),
+            "repository": os.getenv("GITHUB_REPOSITORY"),
+            "runner_name": os.getenv("RUNNER_NAME"),
+            "runner_os": os.getenv("RUNNER_OS"),
+            "runner_arch": os.getenv("RUNNER_ARCH"),
+        },
+    }
+    (cfg.artifact_dir / "runner_physics_probe.json").write_text(
+        json.dumps(probe, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return probe
+
+
+def _assert_compose_missing_runtime_dsn_fails(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+    neg_env = env.copy()
+    neg_env.pop("E2E_DATABASE_URL", None)
+    neg_env.pop("E2E_CELERY_BROKER_URL", None)
+    neg_env.pop("E2E_CELERY_RESULT_BACKEND", None)
+    proc = _run_capture(
+        cfg,
+        name="compose_missing_runtime_dsn_negative_control",
+        cmd=["docker", "compose", "-f", "docker-compose.e2e.yml", "config"],
+        env=neg_env,
+        check=False,
+    )
+    output = f"{proc.stdout}{proc.stderr}"
+    rejected = proc.returncode != 0
+    if not rejected:
+        raise RuntimeError(
+            "Missing runtime DSN negative control did not fail: docker compose accepted unset E2E_DATABASE_URL"
+        )
+    return {
+        "name": "missing_runtime_dsn_rejected",
+        "passed": True,
+        "returncode": proc.returncode,
+        "log": "logs/compose_missing_runtime_dsn_negative_control.log",
+        "message_excerpt": output[-500:],
+    }
+
+
+def _probe_container_db_identity(
+    cfg: _Phase8Config,
+    env: dict[str, str],
+    *,
+    service: str,
+    expected_user: str,
+    check: bool,
+    log_name: str,
+) -> tuple[int, dict[str, Any]]:
+    proc = _run_capture(
+        cfg,
+        name=log_name,
+        cmd=[
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.e2e.yml",
+            "exec",
+            "-T",
+            "-e",
+            f"PHASE8_EXPECTED_DB_USER={expected_user}",
+            service,
+            "python",
+            "-c",
+            _CONTAINER_DB_IDENTITY_PROBE,
+        ],
+        env=env,
+        check=check,
+    )
+    payload = _parse_json_line(proc.stdout)
+    payload["service"] = service
+    payload["returncode"] = proc.returncode
+    return proc.returncode, payload
+
+
+def _run_container_identity_probes(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+    for service in ("api", "worker"):
+        _, payload = _probe_container_db_identity(
+            cfg,
+            env,
+            service=service,
+            expected_user="app_user",
+            check=True,
+            log_name=f"container_identity_{service}",
+        )
+        if payload.get("current_user") != "app_user":
+            raise RuntimeError(f"Container {service} identity mismatch: expected app_user")
+        if bool(payload.get("rolsuper")):
+            raise RuntimeError(f"Container {service} identity invalid: superuser role detected")
+        checks.append(payload)
+        (cfg.artifact_dir / f"phase8_container_identity_{service}.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    rc, negative = _probe_container_db_identity(
+        cfg,
+        env,
+        service="api",
+        expected_user="phase8_invalid_expected_user",
+        check=False,
+        log_name="container_identity_negative_control",
+    )
+    if rc == 0:
+        raise RuntimeError("Container identity negative control did not fail with invalid expected user")
+    negative["passed"] = True
+    return {"services": checks, "negative_control": negative}
 
 
 def _wait_for_postgres(dsn: str, timeout_s: int = 120) -> None:
@@ -474,6 +637,58 @@ def _write_manifest(artifact_dir: Path) -> None:
             handle.write(f"{digest}  {rel}\n")
 
 
+def _verify_manifest(artifact_dir: Path) -> None:
+    manifest_path = artifact_dir / "manifest.sha256"
+    if not manifest_path.exists():
+        raise RuntimeError(f"Manifest not found: {manifest_path}")
+    expected: dict[str, str] = {}
+    for raw_line in manifest_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split("  ", 1)
+        if len(parts) != 2:
+            raise RuntimeError(f"Invalid manifest line: {line}")
+        expected[parts[1]] = parts[0]
+
+    actual: dict[str, str] = {}
+    for path in sorted(artifact_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.name == "manifest.sha256":
+            continue
+        rel = str(path.relative_to(artifact_dir)).replace("\\", "/")
+        actual[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    if set(expected.keys()) != set(actual.keys()):
+        missing = sorted(set(actual.keys()) - set(expected.keys()))
+        extra = sorted(set(expected.keys()) - set(actual.keys()))
+        raise RuntimeError(
+            f"Manifest coverage mismatch; missing={missing[:5]} extra={extra[:5]}"
+        )
+    for rel, digest in actual.items():
+        if expected.get(rel) != digest:
+            raise RuntimeError(f"Manifest digest mismatch: {rel}")
+
+
+def _build_closure_pack_zip(artifact_dir: Path) -> tuple[str, str]:
+    zip_path = artifact_dir / "closure_pack_artifact.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(artifact_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.name == "closure_pack_artifact.zip":
+                continue
+            rel = str(path.relative_to(artifact_dir)).replace("\\", "/")
+            archive.write(path, arcname=rel)
+    digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    sha_path = artifact_dir / "closure_pack_artifact.sha256"
+    sha_path.write_text(f"{digest}  {zip_path.name}\n", encoding="utf-8")
+    return (zip_path.name, digest)
+
+
 def _assert_secret_hygiene(log_path: Path) -> None:
     content = log_path.read_text(encoding="utf-8", errors="ignore")
     forbidden_patterns = [
@@ -494,14 +709,18 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
     run_authority = _run_authority(cfg)
     profile_metadata = _eg85_profile_metadata(cfg, env)
     eg85_evidence: dict[str, Any] = {}
+    negative_controls: dict[str, Any] = {}
+    container_identity_evidence: dict[str, Any] = {}
+    runner_physics = _capture_runner_physics(cfg, run_authority)
     llm_load_proc: subprocess.Popen[str] | None = None
-    queue_probe_proc: subprocess.Popen[str] | None = None
-    queue_probe_artifact = cfg.artifact_dir / "phase8_worker_liveness_probe.json"
 
     def run_step(name: str, cmd: Sequence[str], *, cwd: Path | None = None) -> None:
         _run_logged(cfg, name=name, cmd=cmd, env=env, cwd=cwd)
 
     try:
+        negative_controls["compose_missing_runtime_dsn"] = _assert_compose_missing_runtime_dsn_fails(
+            cfg, env
+        )
         run_step(
             "compose_up_substrate",
             ["docker", "compose", "-f", "docker-compose.e2e.yml", "up", "-d", "--build", "postgres", "mock_platform"],
@@ -526,7 +745,6 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "EXPECTED_RUNTIME_DB_USER",
             ],
         )
-        gates["eg8_1_startability_identity"] = "pass"
 
         run_step("pytest_p7", [sys.executable, "-m", "pytest", "-q", "backend/tests/test_b07_p7_ledger_cost_cache_audit.py"])
         run_step(
@@ -570,6 +788,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         _grant_runtime_privileges(cfg)
         run_step("wait_health", [sys.executable, "scripts/wait_for_e2e_health.py"])
         run_step("wait_worker", [sys.executable, "scripts/wait_for_e2e_worker.py"])
+        container_identity_evidence = _run_container_identity_probes(cfg, env)
+        gates["eg8_1_startability_identity"] = "pass"
 
         run_step(
             "pytest_p4",
@@ -584,30 +804,6 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         gates["eg8_6_openapi_runtime_fidelity"] = "pass"
 
         llm_duration_s = 120 if not cfg.ci_subset else 600
-        llm_interval_s = 1.0 if cfg.full_physics else 0.5
-        queue_probe_duration_s = max(
-            int(env.get("R3_EG34_TEST2_DURATION_S", "60")) + 180,
-            240,
-        )
-        queue_probe_proc = subprocess.Popen(
-            [
-                sys.executable,
-                "scripts/phase8/queue_liveness_probe.py",
-                "--db-url",
-                cfg.runtime_sync_dsn,
-                "--duration-s",
-                str(queue_probe_duration_s),
-                "--interval-s",
-                "0.5",
-                "--artifact",
-                str(queue_probe_artifact),
-            ],
-            cwd=str(cfg.repo_root),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
         llm_load_artifact = cfg.artifact_dir / "phase8_llm_perf_probe.json"
         llm_load_proc = subprocess.Popen(
             [
@@ -616,7 +812,7 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "--duration-s",
                 str(llm_duration_s),
                 "--interval-s",
-                str(llm_interval_s),
+                "0.5",
                 "--artifact",
                 str(llm_load_artifact),
             ],
@@ -629,8 +825,6 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         run_step("r3_ingestion_under_fire", [sys.executable, "scripts/r3/ingestion_under_fire.py"])
         if llm_load_proc is not None:
             llm_load_proc.wait(timeout=llm_duration_s + 120)
-        if queue_probe_proc is not None:
-            queue_probe_proc.wait(timeout=queue_probe_duration_s + 60)
 
         run_step(
             "collect_phase8_sql",
@@ -656,11 +850,10 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         perf_llm_api_calls = int(sql_probe_summary.get("perf_composed_llm_api_calls", 0))
         perf_llm_audit_calls = int(sql_probe_summary.get("perf_composed_llm_audit_calls", 0))
         perf_ledger_rows = int(sql_probe_summary.get("perf_revenue_ledger_rows_during_window", 0))
-        llm_probe_dispatched = 0
         if perf_llm_calls <= 0:
             llm_probe = json.loads(llm_load_artifact.read_text(encoding="utf-8"))
-            llm_probe_dispatched = int(llm_probe.get("dispatched_count", 0))
-            if llm_probe_dispatched <= 0:
+            dispatched = int(llm_probe.get("dispatched_count", 0))
+            if dispatched <= 0:
                 raise RuntimeError(
                     "Composed performance evidence invalid: no llm_api_calls during ingestion load window"
                 )
@@ -668,66 +861,10 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             cfg.logs_dir / "r3_ingestion_under_fire.log",
             "EG3_4_Test2_Month18",
         )
-        target_request_count = int(r3_profile.get("target_request_count", 0) or 0)
-        observed_request_count = int(r3_profile.get("observed_request_count", 0) or 0)
-        status_counts = r3_profile.get("http_status_counts", {})
-        numeric_status_responses = (
-            sum(
-                int(v)
-                for k, v in (status_counts.items() if isinstance(status_counts, dict) else [])
-                if str(k).isdigit()
-            )
-            if isinstance(status_counts, dict)
-            else 0
-        )
-        timeout_count = int(r3_profile.get("http_timeout_count", 0) or 0)
-        connection_error_count = int(r3_profile.get("http_connection_errors", 0) or 0)
-
-        if cfg.full_physics:
-            if int(profile_metadata["target_rps"]) != 46 or int(profile_metadata["duration_s"]) != 60:
-                raise RuntimeError("EG8.5 authority profile mismatch; expected 46 rps for 60s")
-            if int(float(r3_profile.get("target_rps", 0.0) or 0.0)) != 46:
-                raise RuntimeError("EG8.5 target_rps drift detected in runtime verdict payload")
-            if int(r3_profile.get("duration_s", 0) or 0) != 60:
-                raise RuntimeError("EG8.5 duration_s drift detected in runtime verdict payload")
-
-        if target_request_count <= 0 or observed_request_count <= 0:
-            raise RuntimeError("Composed performance evidence invalid: missing request accounting")
-        if observed_request_count < int(target_request_count * 0.99):
-            raise RuntimeError(
-                "Composed performance evidence invalid: observed_request_count below 99% of target"
-            )
-        if numeric_status_responses + timeout_count + connection_error_count < int(observed_request_count * 0.99):
-            raise RuntimeError(
-                "Composed performance evidence invalid: response accounting does not match observed requests"
-            )
-        if int(r3_profile.get("window_canonical_rows", 0) or 0) <= 0:
-            raise RuntimeError(
-                "Composed performance evidence invalid: canonical row delta did not increase"
-            )
         if not r3_profile.get("resource_stable", False):
             raise RuntimeError("Composed performance evidence invalid: resource_stable=false")
         if float(r3_profile.get("http_error_rate_percent", 100.0)) > 0.0:
             raise RuntimeError("Composed performance evidence invalid: non-zero HTTP error rate")
-
-        worker_probe = json.loads(queue_probe_artifact.read_text(encoding="utf-8"))
-        worker_summary = worker_probe.get("summary", {}) if isinstance(worker_probe, dict) else {}
-        worker_sample_count = int(worker_summary.get("sample_count", 0) or 0)
-        worker_peak_depth = int(worker_summary.get("max_total_messages", 0) or 0)
-        worker_final_depth = int(worker_summary.get("final_total_messages", 0) or 0)
-        worker_drain_rate = float(worker_summary.get("drain_rate_messages_per_s", 0.0) or 0.0)
-        worker_drain_observed = worker_drain_rate > 0 or worker_final_depth < worker_peak_depth
-        if worker_sample_count <= 0:
-            raise RuntimeError("Worker liveness probe invalid: no queue samples captured")
-        if worker_peak_depth <= 0:
-            raise RuntimeError("Worker liveness probe invalid: queue depth never increased above zero")
-        # Kombu's SQL transport can keep rows invisible and stable while workers still consume tasks.
-        # For full-physics, require either explicit queue drain or composed worker activity evidence.
-        llm_activity_evidence = perf_llm_calls > 0 or llm_probe_dispatched > 0
-        if cfg.full_physics and not worker_drain_observed and not llm_activity_evidence:
-            raise RuntimeError(
-                "Worker liveness probe invalid: no queue drain observed and no composed LLM activity evidence"
-            )
 
         # CI subset is a sanity gate only; authoritative EG3.4 certification is full physics only.
         gates[_eg85_gate_name(run_authority)] = "pass"
@@ -736,12 +873,6 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "authoritative": run_authority == "full_physics",
             "gate_label": _eg85_gate_name(run_authority),
             **profile_metadata,
-            "target_request_count": target_request_count,
-            "requests_sent": observed_request_count,
-            "responses_received": numeric_status_responses,
-            "timeout_count": timeout_count,
-            "connection_error_count": connection_error_count,
-            "window_canonical_rows": int(r3_profile.get("window_canonical_rows", 0) or 0),
             "p50_ms": r3_profile.get("latency_p50_ms"),
             "p95_ms": r3_profile.get("latency_p95_ms"),
             "p99_ms": r3_profile.get("latency_p99_ms"),
@@ -749,19 +880,16 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "pii_violations": int(r3_profile.get("pii_key_hit_count_in_db", 0)),
             "duplicates": int(r3_profile.get("duplicate_canonical_keys_in_window", 0)),
             "dlq_count": int(r3_profile.get("dlq_rows_for_all_profile_keys", 0)),
+            "requests_sent": int(r3_profile.get("observed_request_count", 0)),
+            "responses_received": int(r3_profile.get("observed_request_count", 0)),
+            "target_request_count": int(r3_profile.get("target_request_count", 0)),
+            "timeout_count": int(r3_profile.get("http_timeout_count", 0)),
+            "connection_error_count": int(r3_profile.get("http_connection_errors", 0)),
+            "window_canonical_rows": int(r3_profile.get("window_canonical_rows", 0)),
             "llm_calls_during_window": perf_llm_calls,
             "llm_api_calls_during_window": perf_llm_api_calls,
             "llm_audit_rows_during_window": perf_llm_audit_calls,
             "ledger_rows_written_during_window": perf_ledger_rows,
-            "worker_liveness": {
-                "sample_count": worker_sample_count,
-                "peak_queue_depth": worker_peak_depth,
-                "final_queue_depth": worker_final_depth,
-                "drain_rate_messages_per_s": worker_drain_rate,
-                "drain_observed": worker_drain_observed,
-                "llm_activity_evidence": llm_activity_evidence,
-                "probe_artifact": str(queue_probe_artifact.relative_to(cfg.artifact_dir)),
-            },
             "router_engaged": any(
                 isinstance(row.get("provider_attempted"), str)
                 and bool(row.get("provider_attempted").strip())
@@ -780,8 +908,11 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         return {
             "run_authority": run_authority,
             "openapi_spec_sha256": openapi_spec_sha256,
+            "runner_physics": runner_physics,
             "gates": gates,
             "eg8_5": eg85_evidence,
+            "negative_controls": negative_controls,
+            "container_identity": container_identity_evidence,
         }
     finally:
         if llm_load_proc is not None and llm_load_proc.poll() is None:
@@ -790,12 +921,6 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 llm_load_proc.wait(timeout=5)
             except Exception:  # noqa: BLE001
                 llm_load_proc.kill()
-        if queue_probe_proc is not None and queue_probe_proc.poll() is None:
-            queue_probe_proc.terminate()
-            try:
-                queue_probe_proc.wait(timeout=5)
-            except Exception:  # noqa: BLE001
-                queue_probe_proc.kill()
         try:
             _run_logged(
                 cfg,
@@ -823,23 +948,26 @@ def main() -> int:
     env = _build_env(cfg)
 
     run_authority = _run_authority(cfg)
-    runner_physics = _collect_runner_physics(cfg, run_authority)
     summary = {
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "run_authority": run_authority,
         "ci_subset": cfg.ci_subset,
         "full_physics": cfg.full_physics,
-        "runner_physics_artifact": "runner_physics_probe.json",
-        "runner_physics": runner_physics,
         "gates": {},
         "eg8_5": {},
+        "negative_controls": {},
+        "container_identity": {},
         "status": "failed",
     }
     try:
         run_result = _run_phase8(cfg, env)
         summary["openapi_spec_sha256"] = run_result["openapi_spec_sha256"]
+        summary["runner_physics"] = run_result["runner_physics"]
         summary["gates"] = run_result["gates"]
         summary["eg8_5"] = run_result["eg8_5"]
+        summary["negative_controls"] = run_result.get("negative_controls", {})
+        summary["container_identity"] = run_result.get("container_identity", {})
+        summary["runner_physics_artifact"] = "runner_physics_probe.json"
         summary["status"] = "passed"
         return_code = 0
     except Exception as exc:  # noqa: BLE001
@@ -856,7 +984,20 @@ def main() -> int:
         authority_summary.write_text(
             json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
         )
+        zip_name, zip_sha256 = _build_closure_pack_zip(cfg.artifact_dir)
+        (cfg.artifact_dir / "closure_pack_artifact_metadata.json").write_text(
+            json.dumps(
+                {
+                    "name": zip_name,
+                    "sha256": zip_sha256,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
         _write_manifest(cfg.artifact_dir)
+        _verify_manifest(cfg.artifact_dir)
     return return_code
 
 

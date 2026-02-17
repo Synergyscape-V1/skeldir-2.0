@@ -38,14 +38,11 @@ services:
     container_name: skeldir-api-e2e
     environment:
       CI: "true"
-      ENVIRONMENT: ${E2E_API_ENVIRONMENT:-${E2E_ENVIRONMENT:-test}}
+      ENVIRONMENT: test
       LOG_LEVEL: INFO
-      DATABASE_URL: ${E2E_DATABASE_URL:-postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
-      DATABASE_POOL_SIZE: ${E2E_API_DATABASE_POOL_SIZE:-${E2E_DATABASE_POOL_SIZE:-20}}
-      DATABASE_MAX_OVERFLOW: ${E2E_API_DATABASE_MAX_OVERFLOW:-${E2E_DATABASE_MAX_OVERFLOW:-0}}
-      DATABASE_FORCE_POOLING: ${E2E_API_DATABASE_FORCE_POOLING:-${E2E_DATABASE_FORCE_POOLING:-0}}
-      CELERY_BROKER_URL: ${E2E_CELERY_BROKER_URL:-sqla+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
-      CELERY_RESULT_BACKEND: ${E2E_CELERY_RESULT_BACKEND:-db+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
+      DATABASE_URL: ${E2E_DATABASE_URL?missing E2E_DATABASE_URL}
+      CELERY_BROKER_URL: ${E2E_CELERY_BROKER_URL?missing E2E_CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${E2E_CELERY_RESULT_BACKEND?missing E2E_CELERY_RESULT_BACKEND}
       AUTH_JWT_SECRET: e2e-secret
       AUTH_JWT_ALGORITHM: HS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
@@ -58,11 +55,6 @@ services:
       REALTIME_REVENUE_ERROR_COOLDOWN_SECONDS: 5
       REALTIME_REVENUE_SINGLEFLIGHT_WAIT_SECONDS: 2
       REALTIME_REVENUE_SINGLEFLIGHT_POLL_SECONDS: 0.05
-    command: >
-      uvicorn app.main:app
-      --host 0.0.0.0
-      --port 8000
-      --workers ${E2E_API_WORKERS:-1}
     ports:
       - "8000:8000"
     depends_on:
@@ -83,14 +75,11 @@ services:
     container_name: skeldir-worker-e2e
     environment:
       CI: "true"
-      ENVIRONMENT: ${E2E_WORKER_ENVIRONMENT:-${E2E_ENVIRONMENT:-test}}
+      ENVIRONMENT: test
       LOG_LEVEL: INFO
-      DATABASE_URL: ${E2E_DATABASE_URL:-postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
-      DATABASE_POOL_SIZE: ${E2E_WORKER_DATABASE_POOL_SIZE:-${E2E_DATABASE_POOL_SIZE:-20}}
-      DATABASE_MAX_OVERFLOW: ${E2E_WORKER_DATABASE_MAX_OVERFLOW:-${E2E_DATABASE_MAX_OVERFLOW:-0}}
-      DATABASE_FORCE_POOLING: ${E2E_WORKER_DATABASE_FORCE_POOLING:-${E2E_DATABASE_FORCE_POOLING:-0}}
-      CELERY_BROKER_URL: ${E2E_CELERY_BROKER_URL:-sqla+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
-      CELERY_RESULT_BACKEND: ${E2E_CELERY_RESULT_BACKEND:-db+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e}
+      DATABASE_URL: ${E2E_DATABASE_URL?missing E2E_DATABASE_URL}
+      CELERY_BROKER_URL: ${E2E_CELERY_BROKER_URL?missing E2E_CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${E2E_CELERY_RESULT_BACKEND?missing E2E_CELERY_RESULT_BACKEND}
       AUTH_JWT_SECRET: e2e-secret
       AUTH_JWT_ALGORITHM: HS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
