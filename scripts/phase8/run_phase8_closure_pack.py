@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,67 @@ class _Phase8Config:
 
 _R3_VERDICT_BEGIN = re.compile(r"^R3_VERDICT_BEGIN\s+(.+)$")
 _R3_VERDICT_END = re.compile(r"^R3_VERDICT_END\s+(.+)$")
+_CONTAINER_DB_IDENTITY_PROBE = """
+import json
+import os
+import sys
+
+import psycopg2
+
+
+dsn = os.environ.get("DATABASE_URL", "")
+if not dsn:
+    print(json.dumps({"error": "DATABASE_URL missing"}))
+    sys.exit(2)
+dsn = dsn.replace("+asyncpg", "")
+expected = os.environ.get("PHASE8_EXPECTED_DB_USER", "app_user")
+
+with psycopg2.connect(dsn) as conn:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)"
+        )
+        current_user, rolsuper = cur.fetchone()
+        cur.execute(
+            '''
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_namespace n
+              JOIN pg_roles r ON r.oid = n.nspowner
+              WHERE n.nspname = 'public' AND r.rolname = current_user
+            )
+            '''
+        )
+        owns_public_schema = bool(cur.fetchone()[0])
+        cur.execute(
+            '''
+            SELECT EXISTS (
+              SELECT 1
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              JOIN pg_roles r ON r.oid = c.relowner
+              WHERE n.nspname = 'public'
+                AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+                AND r.rolname = current_user
+            )
+            '''
+        )
+        owns_public_objects = bool(cur.fetchone()[0])
+
+payload = {
+    "expected_user": expected,
+    "current_user": str(current_user),
+    "rolsuper": bool(rolsuper),
+    "owns_public_schema": owns_public_schema,
+    "owns_public_objects": owns_public_objects,
+}
+print(json.dumps(payload, sort_keys=True))
+
+if payload["current_user"] != expected:
+    sys.exit(3)
+if payload["rolsuper"]:
+    sys.exit(4)
+"""
 
 
 def _repo_root() -> Path:
@@ -393,6 +455,140 @@ def _run_logged(
         raise RuntimeError(f"Step failed ({name}): {' '.join(cmd)}")
 
 
+def _run_capture(
+    cfg: _Phase8Config,
+    *,
+    name: str,
+    cmd: Sequence[str],
+    env: dict[str, str],
+    cwd: Path | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    log_path = cfg.logs_dir / f"{name}.log"
+    proc = subprocess.run(
+        list(cmd),
+        cwd=str(cwd or cfg.repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    combined = f"{proc.stdout}{proc.stderr}"
+    log_path.write_text(combined, encoding="utf-8")
+    if check and proc.returncode != 0:
+        raise RuntimeError(f"Step failed ({name}): {' '.join(cmd)}")
+    return proc
+
+
+def _parse_json_line(payload: str) -> dict[str, Any]:
+    lines = [line.strip() for line in payload.splitlines() if line.strip()]
+    for line in reversed(lines):
+        if line.startswith("{") and line.endswith("}"):
+            parsed = json.loads(line)
+            if isinstance(parsed, dict):
+                return parsed
+    raise RuntimeError("Expected JSON object in subprocess output")
+
+
+def _assert_compose_missing_runtime_dsn_fails(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+    neg_env = env.copy()
+    neg_env.pop("E2E_DATABASE_URL", None)
+    neg_env.pop("E2E_CELERY_BROKER_URL", None)
+    neg_env.pop("E2E_CELERY_RESULT_BACKEND", None)
+    proc = _run_capture(
+        cfg,
+        name="compose_missing_runtime_dsn_negative_control",
+        cmd=["docker", "compose", "-f", "docker-compose.e2e.yml", "config"],
+        env=neg_env,
+        check=False,
+    )
+    if proc.returncode == 0:
+        raise RuntimeError(
+            "Missing runtime DSN negative control did not fail: docker compose accepted unset E2E_DATABASE_URL"
+        )
+    return {
+        "name": "missing_runtime_dsn_rejected",
+        "passed": True,
+        "returncode": proc.returncode,
+        "log": "logs/compose_missing_runtime_dsn_negative_control.log",
+        "message_excerpt": f"{proc.stdout}{proc.stderr}"[-500:],
+    }
+
+
+def _probe_container_db_identity(
+    cfg: _Phase8Config,
+    env: dict[str, str],
+    *,
+    service: str,
+    expected_user: str,
+    check: bool,
+    log_name: str,
+) -> tuple[int, dict[str, Any]]:
+    proc = _run_capture(
+        cfg,
+        name=log_name,
+        cmd=[
+            "docker",
+            "compose",
+            "-f",
+            "docker-compose.e2e.yml",
+            "exec",
+            "-T",
+            "-e",
+            f"PHASE8_EXPECTED_DB_USER={expected_user}",
+            service,
+            "python",
+            "-c",
+            _CONTAINER_DB_IDENTITY_PROBE,
+        ],
+        env=env,
+        check=check,
+    )
+    payload = _parse_json_line(proc.stdout)
+    payload["service"] = service
+    payload["returncode"] = proc.returncode
+    return proc.returncode, payload
+
+
+def _run_container_identity_probes(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+    for service in ("api", "worker"):
+        _, payload = _probe_container_db_identity(
+            cfg,
+            env,
+            service=service,
+            expected_user="app_user",
+            check=True,
+            log_name=f"container_identity_{service}",
+        )
+        if payload.get("current_user") != "app_user":
+            raise RuntimeError(f"Container {service} identity mismatch: expected app_user")
+        if bool(payload.get("rolsuper")):
+            raise RuntimeError(f"Container {service} identity invalid: superuser role detected")
+        checks.append(payload)
+        (cfg.artifact_dir / f"phase8_container_identity_{service}.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    rc, negative = _probe_container_db_identity(
+        cfg,
+        env,
+        service="api",
+        expected_user="phase8_invalid_expected_user",
+        check=False,
+        log_name="container_identity_negative_control",
+    )
+    if rc == 0:
+        raise RuntimeError("Container identity negative control did not fail with invalid expected user")
+    negative["passed"] = True
+    probe_payload = {"services": checks, "negative_control": negative}
+    (cfg.artifact_dir / "container_identity_probe.json").write_text(
+        json.dumps(probe_payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return probe_payload
+
+
 def _wait_for_postgres(dsn: str, timeout_s: int = 120) -> None:
     deadline = time.time() + timeout_s
     last_error: Exception | None = None
@@ -474,6 +670,56 @@ def _write_manifest(artifact_dir: Path) -> None:
             handle.write(f"{digest}  {rel}\n")
 
 
+def _verify_manifest(artifact_dir: Path) -> None:
+    manifest_path = artifact_dir / "manifest.sha256"
+    if not manifest_path.exists():
+        raise RuntimeError(f"Manifest not found: {manifest_path}")
+    expected: dict[str, str] = {}
+    for raw_line in manifest_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split("  ", 1)
+        if len(parts) != 2:
+            raise RuntimeError(f"Invalid manifest line: {line}")
+        expected[parts[1]] = parts[0]
+
+    actual: dict[str, str] = {}
+    for path in sorted(artifact_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.name == "manifest.sha256":
+            continue
+        rel = str(path.relative_to(artifact_dir)).replace("\\", "/")
+        actual[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    if set(expected.keys()) != set(actual.keys()):
+        missing = sorted(set(actual.keys()) - set(expected.keys()))
+        extra = sorted(set(expected.keys()) - set(actual.keys()))
+        raise RuntimeError(f"Manifest coverage mismatch; missing={missing[:5]} extra={extra[:5]}")
+    for rel, digest in actual.items():
+        if expected.get(rel) != digest:
+            raise RuntimeError(f"Manifest digest mismatch: {rel}")
+
+
+def _build_closure_pack_zip(artifact_dir: Path) -> tuple[str, str]:
+    zip_path = artifact_dir / "closure_pack_artifact.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(artifact_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.name == "closure_pack_artifact.zip":
+                continue
+            rel = str(path.relative_to(artifact_dir)).replace("\\", "/")
+            archive.write(path, arcname=rel)
+    digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    sha_path = artifact_dir / "closure_pack_artifact.sha256"
+    sha_path.write_text(f"{digest}  {zip_path.name}\n", encoding="utf-8")
+    return (zip_path.name, digest)
+
+
 def _assert_secret_hygiene(log_path: Path) -> None:
     content = log_path.read_text(encoding="utf-8", errors="ignore")
     forbidden_patterns = [
@@ -494,6 +740,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
     run_authority = _run_authority(cfg)
     profile_metadata = _eg85_profile_metadata(cfg, env)
     eg85_evidence: dict[str, Any] = {}
+    negative_controls: dict[str, Any] = {}
+    container_identity_evidence: dict[str, Any] = {}
     llm_load_proc: subprocess.Popen[str] | None = None
     queue_probe_proc: subprocess.Popen[str] | None = None
     queue_probe_artifact = cfg.artifact_dir / "phase8_worker_liveness_probe.json"
@@ -502,6 +750,9 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         _run_logged(cfg, name=name, cmd=cmd, env=env, cwd=cwd)
 
     try:
+        negative_controls["compose_missing_runtime_dsn"] = _assert_compose_missing_runtime_dsn_fails(
+            cfg, env
+        )
         run_step(
             "compose_up_substrate",
             ["docker", "compose", "-f", "docker-compose.e2e.yml", "up", "-d", "--build", "postgres", "mock_platform"],
@@ -526,7 +777,6 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
                 "EXPECTED_RUNTIME_DB_USER",
             ],
         )
-        gates["eg8_1_startability_identity"] = "pass"
 
         run_step("pytest_p7", [sys.executable, "-m", "pytest", "-q", "backend/tests/test_b07_p7_ledger_cost_cache_audit.py"])
         run_step(
@@ -570,6 +820,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
         _grant_runtime_privileges(cfg)
         run_step("wait_health", [sys.executable, "scripts/wait_for_e2e_health.py"])
         run_step("wait_worker", [sys.executable, "scripts/wait_for_e2e_worker.py"])
+        container_identity_evidence = _run_container_identity_probes(cfg, env)
+        gates["eg8_1_startability_identity"] = "pass"
 
         run_step(
             "pytest_p4",
@@ -782,6 +1034,8 @@ def _run_phase8(cfg: _Phase8Config, env: dict[str, str]) -> dict[str, Any]:
             "openapi_spec_sha256": openapi_spec_sha256,
             "gates": gates,
             "eg8_5": eg85_evidence,
+            "negative_controls": negative_controls,
+            "container_identity": container_identity_evidence,
         }
     finally:
         if llm_load_proc is not None and llm_load_proc.poll() is None:
@@ -833,6 +1087,8 @@ def main() -> int:
         "runner_physics": runner_physics,
         "gates": {},
         "eg8_5": {},
+        "negative_controls": {},
+        "container_identity": {},
         "status": "failed",
     }
     try:
@@ -840,6 +1096,8 @@ def main() -> int:
         summary["openapi_spec_sha256"] = run_result["openapi_spec_sha256"]
         summary["gates"] = run_result["gates"]
         summary["eg8_5"] = run_result["eg8_5"]
+        summary["negative_controls"] = run_result.get("negative_controls", {})
+        summary["container_identity"] = run_result.get("container_identity", {})
         summary["status"] = "passed"
         return_code = 0
     except Exception as exc:  # noqa: BLE001
@@ -856,7 +1114,20 @@ def main() -> int:
         authority_summary.write_text(
             json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
         )
+        zip_name, zip_sha256 = _build_closure_pack_zip(cfg.artifact_dir)
+        (cfg.artifact_dir / "closure_pack_artifact_metadata.json").write_text(
+            json.dumps(
+                {
+                    "name": zip_name,
+                    "sha256": zip_sha256,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
         _write_manifest(cfg.artifact_dir)
+        _verify_manifest(cfg.artifact_dir)
     return return_code
 
 

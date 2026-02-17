@@ -50,6 +50,44 @@ jobs:
             --full-physics \
             --artifact-dir "${B07_P8_ARTIFACT_DIR}"
 
+      - name: Verify Phase 8 manifest integrity
+        if: always()
+        run: |
+          test -f "${B07_P8_ARTIFACT_DIR}/manifest.sha256"
+          (cd "${B07_P8_ARTIFACT_DIR}" && sha256sum -c manifest.sha256)
+          test -f "${B07_P8_ARTIFACT_DIR}/closure_pack_artifact.sha256"
+          (cd "${B07_P8_ARTIFACT_DIR}" && sha256sum -c closure_pack_artifact.sha256)
+
+      - name: Assert required full-physics artifacts exist
+        if: always()
+        run: |
+          test -f "${B07_P8_ARTIFACT_DIR}/phase8_gate_summary.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/phase8_gate_summary_full_physics.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/runner_physics_probe.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/container_identity_probe.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/phase8_container_identity_api.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/phase8_container_identity_worker.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/closure_pack_artifact.zip"
+          test -f "${B07_P8_ARTIFACT_DIR}/closure_pack_artifact_metadata.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/logs/r3_ingestion_under_fire.log"
+          test -f "${B07_P8_ARTIFACT_DIR}/logs/pytest_p8_topology.log"
+          test -f "${B07_P8_ARTIFACT_DIR}/logs/compose_missing_runtime_dsn_negative_control.log"
+
+      - name: Assert enterprise runner capacity (>=4 CPU)
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          probe = Path(os.environ["B07_P8_ARTIFACT_DIR"]) / "runner_physics_probe.json"
+          payload = json.loads(probe.read_text(encoding="utf-8"))
+          cpu_count = int(payload.get("host", {}).get("cpu_count") or 0)
+          if cpu_count < 4:
+              raise SystemExit(f"runner_physics_probe cpu_count={cpu_count} < 4")
+          print(f"runner_physics_probe cpu_count={cpu_count} (>=4)")
+          PY
+
       - name: Upload full-physics Phase 8 artifacts
         if: always()
         uses: actions/upload-artifact@v4
