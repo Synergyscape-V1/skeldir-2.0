@@ -59,6 +59,7 @@ jobs:
           test -f "${B07_P8_ARTIFACT_DIR}/phase8_gate_summary.json"
           test -f "${B07_P8_ARTIFACT_DIR}/phase8_gate_summary_ci_subset.json"
           test -f "${B07_P8_ARTIFACT_DIR}/runner_physics_probe.json"
+          test -f "${B07_P8_ARTIFACT_DIR}/container_identity_probe.json"
           test -f "${B07_P8_ARTIFACT_DIR}/phase8_container_identity_api.json"
           test -f "${B07_P8_ARTIFACT_DIR}/phase8_container_identity_worker.json"
           test -f "${B07_P8_ARTIFACT_DIR}/closure_pack_artifact.zip"
