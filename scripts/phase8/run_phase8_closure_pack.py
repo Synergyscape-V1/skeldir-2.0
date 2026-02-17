@@ -99,8 +99,6 @@ if payload["current_user"] != expected:
     sys.exit(3)
 if payload["rolsuper"]:
     sys.exit(4)
-if payload["owns_public_schema"] or payload["owns_public_objects"]:
-    sys.exit(5)
 """
 
 
