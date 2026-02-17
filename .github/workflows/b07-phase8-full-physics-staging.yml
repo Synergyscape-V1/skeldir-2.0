@@ -78,8 +78,9 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
-          probe = Path("${B07_P8_ARTIFACT_DIR}") / "runner_physics_probe.json"
+          probe = Path(os.environ["B07_P8_ARTIFACT_DIR"]) / "runner_physics_probe.json"
           payload = json.loads(probe.read_text(encoding="utf-8"))
           cpu_count = int(payload.get("host", {}).get("cpu_count") or 0)
           if cpu_count < 4:
