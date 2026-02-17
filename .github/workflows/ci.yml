@@ -1128,9 +1128,9 @@ jobs:
       E2E_API_BASE_URL: http://127.0.0.1:8000
       E2E_MOCK_BASE_URL: http://127.0.0.1:8080
       E2E_DB_URL: postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
-      E2E_DATABASE_URL: postgresql+asyncpg://app_user:app_user@postgres:5432/skeldir_e2e
-      E2E_CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@postgres:5432/skeldir_e2e
-      E2E_CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@postgres:5432/skeldir_e2e
+      E2E_DATABASE_URL: postgresql+asyncpg://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e
+      E2E_CELERY_BROKER_URL: sqla+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e
+      E2E_CELERY_RESULT_BACKEND: db+postgresql://skeldir:skeldir_e2e@postgres:5432/skeldir_e2e
       MIGRATION_DATABASE_URL: postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
       B060_PHASE6_ADMIN_DATABASE_URL: postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
       B060_PHASE6_API_BASE_URL: http://127.0.0.1:8000
