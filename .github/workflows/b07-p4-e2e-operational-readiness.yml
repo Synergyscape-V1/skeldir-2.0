@@ -21,6 +21,9 @@ jobs:
       B07_P4_ARTIFACT_DIR: artifacts/b07-p4
       E2E_API_BASE_URL: http://127.0.0.1:8000
       E2E_WAIT_TIMEOUT_S: "120"
+      E2E_DATABASE_URL: postgresql+asyncpg://app_user:app_user@postgres:5432/skeldir_e2e
+      E2E_CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@postgres:5432/skeldir_e2e
+      E2E_CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@postgres:5432/skeldir_e2e
 
     steps:
       - uses: actions/checkout@v4
