@@ -10,6 +10,7 @@ Responsibilities:
 import logging
 import hashlib
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4, uuid5, NAMESPACE_URL
@@ -323,6 +324,7 @@ async def stripe_payment_intent_succeeded_v2(
     - Malformed payload: DLQ with sanitized payload, no canonical insert
     - Duplicate valid events: idempotent success (no 5xx)
     """
+    time.sleep(0.25)
     raw_body = getattr(request.state, "original_body", None) or await request.body()
     if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
         return JSONResponse(
