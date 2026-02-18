@@ -238,7 +238,7 @@ async def get_platform_reconciliation_status(
         "connection_status": _connection_status_for_count(events_processed),
         "last_sync": last_sync_value.isoformat().replace("+00:00", "Z"),
         "events_processed": events_processed,
-        "revenue_verified": round(verified_total_cents / 100.0, 2),
+        "revenue_verified": round((verified_total_cents / 100.0) * -1, 2),
     }
 
 
