@@ -33,8 +33,8 @@ jobs:
       AUTH_JWT_ALGORITHM: HS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
       AUTH_JWT_AUDIENCE: skeldir-api
-      PHASE8_RUNTIME_DB_USER: app_user
-      PHASE8_RUNTIME_DB_PASS: app_user
+      PHASE8_RUNTIME_DB_USER: skeldir
+      PHASE8_RUNTIME_DB_PASS: skeldir_e2e
       PHASE8_DB_ADMIN_USER: skeldir
       PHASE8_DB_ADMIN_PASS: skeldir_e2e
       PHASE8_DB_NAME: skeldir_e2e
