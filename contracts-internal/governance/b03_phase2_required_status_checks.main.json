@@ -1,7 +1,7 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
   "contract_version": "1.0.0",
-  "repository": "Muk223/skeldir-2.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
   "required_contexts": [
@@ -13,6 +13,7 @@
     "Phase 1 Negative Controls",
     "Phase 1 Runtime Conformance",
     "B0.6 Phase 2 Adjudication",
-    "Phase Gates (B0.3)"
+    "Phase Gates (B0.3)",
+    "Phase 8 Regression Gate (Full Physics)"
   ]
 }

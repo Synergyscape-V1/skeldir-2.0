@@ -1,6 +1,9 @@
 name: b07-phase8-full-physics-staging
 
 on:
+  pull_request:
+    branches: [main]
+  merge_group:
   workflow_dispatch:
     inputs:
       artifact_dir:
@@ -12,8 +15,13 @@ on:
         required: false
         default: ubuntu-8core
 
+concurrency:
+  group: b07-phase8-full-physics-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   b07_phase8_full_physics:
+    name: Phase 8 Regression Gate (Full Physics)
     runs-on: ${{ github.event.inputs.runner_label || 'ubuntu-latest' }}
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
