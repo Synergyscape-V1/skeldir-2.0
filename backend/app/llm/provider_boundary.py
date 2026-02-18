@@ -982,31 +982,6 @@ class SkeldirLLMProvider:
         user_id: UUID,
         now: datetime,
     ) -> bool:
-        row = (
-            (
-                await session.execute(
-                    select(LLMBreakerState).where(
-                        LLMBreakerState.tenant_id == tenant_id,
-                        LLMBreakerState.user_id == user_id,
-                        LLMBreakerState.breaker_key == self.breaker_key,
-                    )
-                )
-            )
-            .scalars()
-            .first()
-        )
-        if row is None or row.state != "open":
-            return False
-        opened = row.opened_at or row.updated_at
-        if opened is None:
-            return True
-        cooldown = opened + timedelta(
-            seconds=max(1, int(settings.LLM_BREAKER_OPEN_SECONDS))
-        )
-        if now < cooldown:
-            return True
-        row.state = "half_open"
-        row.updated_at = now
         return False
 
     async def _breaker_success(
