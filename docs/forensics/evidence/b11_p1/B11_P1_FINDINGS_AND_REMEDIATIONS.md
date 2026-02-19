@@ -5,13 +5,13 @@ Scope: Secret taxonomy SSOT, environment namespacing, AWS control-plane IaC skel
 
 ## Executive Result
 
-B1.1-P1 is remediated and evidenced for Gates 1-4 in local execution with live AWS verification.
+B1.1-P1 is remediated and evidenced for Gates 1-5, including CI adjudication on `main`.
 
 - Gate 1 (SSOT Contract): MET
 - Gate 2 (Namespace Boundary + non-vacuous deny): MET
 - Gate 3 (IaC state/import evidence): MET (local)
 - Gate 4 (CloudTrail audit evidence): MET
-- Gate 5 (CI adjudication on `main`): PENDING (workflow exists locally but is not yet present on remote `main`)
+- Gate 5 (CI adjudication on `main`): MET
 
 ## Findings (Empirical)
 
@@ -128,11 +128,16 @@ Evidence:
 
 ### Gate 5: CI adjudication on `main`
 Observed:
-- Workflow file exists locally: `.github/workflows/b11-p1-control-plane-adjudication.yml`
-- Workflow is not discoverable on remote `main` yet, so no run URL/ID can be produced from remote.
+- PR merged to `main`: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/101`
+- Merge commit on `main`: `b47cab2756adc1196f79b9d34e5c127666ef2bca`
+- Main push run passed: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22202994436`
+- Job results on that main run:
+  - `ssot-contract-gate`: PASS
+  - `terraform-control-plane-gate`: PASS
+  - `aws-proof-gate`: PASS (OIDC auth + deny proof enforcement + artifact upload)
 
 Status:
-- PENDING external governance action (merge/push workflow to `main`, then run).
+- MET
 
 ## Evidence Inventory
 
@@ -149,13 +154,4 @@ Status:
 
 ## Residual Risk and Closure Action
 
-Residual blocker:
-- Gate 5 requires CI adjudication proof on remote `main`.
-
-Single closure action:
-1. Merge/push `.github/workflows/b11-p1-control-plane-adjudication.yml` to `main`.
-2. Execute the workflow on `main`.
-3. Record run URL/ID and artifact names in `docs/forensics/evidence/b11_p1/PROOF_INDEX.md`.
-
-Once this is done, B1.1-P1 is fully closed under the directive definition.
-
+No unresolved gate blocker remains for B1.1-P1. Follow-on risk is operational drift outside this phase scope; controls are now codified and adjudicated in CI.
