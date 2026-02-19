@@ -3,7 +3,7 @@
 Detailed report:
 - `docs/forensics/evidence/b11_p1/B11_P1_FINDINGS_AND_REMEDIATIONS.md`
 
-Generated: 2026-02-19 (local workspace, Windows)
+Generated: 2026-02-19 (local workspace + mainline CI adjudication)
 
 ## Hypothesis Test Sequence
 
@@ -57,13 +57,23 @@ Standalone hypothesis artifact:
   - CloudTrail `LookupEvents` returns `GetParametersByPath` entries for controlled reads
 
 5. Exit Gate 5 - CI Adjudication on `main`
-- Status: PENDING (external run required)
+- Status: MET
 - Workflow:
   - `.github/workflows/b11-p1-control-plane-adjudication.yml`
-- Required completion evidence to append:
-  - CI run URL
-  - CI run ID
-  - Artifact names from SSOT / IaC / AWS proof jobs
+- Merge proof:
+  - PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/101`
+  - Merge commit: `b47cab2756adc1196f79b9d34e5c127666ef2bca`
+- Main CI adjudication proof:
+  - Run URL: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22202994436`
+  - Run ID: `22202994436`
+  - Job IDs:
+    - `ssot-contract-gate`: `64220346739`
+    - `terraform-control-plane-gate`: `64220346764`
+    - `aws-proof-gate`: `64220346770`
+  - Result summary:
+    - `ssot-contract-gate`: PASS
+    - `terraform-control-plane-gate`: PASS
+    - `aws-proof-gate`: PASS (OIDC + deny proof enforcement)
 
 ## IAM Policy Artifacts
 - `docs/forensics/evidence/b11_p1/iam_policy_skeldir-ci-deploy.json`
@@ -77,6 +87,5 @@ Standalone hypothesis artifact:
 - AWS deny proof: PASS
 - CloudTrail audit proof: PASS
 - Terraform state/import proof: PASS
-- Remaining blocker: CI adjudication run on `main` (governance closure)
-
+- CI adjudication on `main`: PASS
 
