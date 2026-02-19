@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Playfair_Display } from "next/font/google";
 import "./globals.css";
+import { NavigationWrapper } from "@/components/layout/NavigationWrapper";
 
 const dmSans = DM_Sans({
   variable: "--font-dm-sans",
@@ -33,13 +34,20 @@ export default function RootLayout({
           rel="preload"
           as="image"
           href="/assets/images/hero/hero-800w.jpg"
-          // @ts-expect-error - imagesrcset/imagesizes are valid for preload but not in React types
-          imagesrcset="/assets/images/hero/hero-400w.jpg 400w, /assets/images/hero/hero-800w.jpg 800w, /assets/images/hero/hero-1200w.jpg 1200w"
-          imagesizes="(max-width: 767px) 100vw, (max-width: 1023px) 80vw, 1200px"
+          imageSrcSet="/assets/images/hero/hero-400w.jpg 400w, /assets/images/hero/hero-800w.jpg 800w, /assets/images/hero/hero-1200w.jpg 1200w"
+          imageSizes="(max-width: 767px) 100vw, (max-width: 1023px) 80vw, 1200px"
           fetchPriority="high"
+        />
+        {/* Preload solution articulation image — early fetch avoids waterfall */}
+        <link
+          rel="preload"
+          as="image"
+          type="image/png"
+          href="/assets/images/solution-articulation/solution-articulation-full.png"
         />
       </head>
       <body className={`${dmSans.variable} ${playfairDisplay.variable} font-sans antialiased`}>
+        <NavigationWrapper />
         {children}
       </body>
     </html>

@@ -806,7 +806,7 @@ export function PricingTiers() {
     <section
       className="pricing-tiers-section"
       style={{
-        backgroundColor: "#E9ECEF",
+        backgroundColor: "#FFFFFF",
         paddingTop: "80px",
         paddingBottom: "80px",
         paddingLeft: "0px",
@@ -823,7 +823,7 @@ export function PricingTiers() {
           left: 0,
           right: 0,
           height: "120px",
-          background: "linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.8) 20%, rgba(233, 236, 239, 0.6) 50%, rgba(233, 236, 239, 1) 100%)",
+          background: "linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 100%)",
           pointerEvents: "none",
           zIndex: 1,
         }}

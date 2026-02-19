@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { Manrope } from "next/font/google";
-import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 import { ResourcesHero } from "@/components/resources/ResourcesHero";
 import { ArticleGrid } from "@/components/resources/ArticleGrid";
@@ -58,7 +57,6 @@ export default function ResourcesPage() {
 
     return (
         <div className="min-h-screen flex flex-col bg-white">
-            <Navigation forceVisible={true} />
 
             <main className="flex-grow pt-20">
                 {/* Page Header */}

@@ -167,7 +167,7 @@ export function InteractiveDemo() {
       style={{
         width: "100%",
         padding: "80px 48px",
-        backgroundColor: "#F8FAFC",
+        backgroundColor: "#FFFFFF",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -183,7 +183,7 @@ export function InteractiveDemo() {
           left: 0,
           right: 0,
           height: "120px",
-          background: "linear-gradient(to bottom, rgba(233, 236, 239, 1) 0%, rgba(233, 236, 239, 0.8) 20%, rgba(248, 250, 252, 0.6) 50%, rgba(248, 250, 252, 1) 100%)",
+          background: "linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 100%)",
           pointerEvents: "none",
           zIndex: 1,
         }}

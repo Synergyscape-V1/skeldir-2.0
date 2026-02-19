@@ -317,6 +317,8 @@ export function PostHeroValidation() {
                   <img
                     src="/agencies/final-image-3-1.png"
                     alt="Bayesian Confidence Range UI"
+                    loading="lazy"
+                    decoding="async"
                     style={{
                       width: "100%",
                       height: "100%",
@@ -341,8 +343,7 @@ export function PostHeroValidation() {
                       maxWidth: "100%",
                       maxHeight: "100%",
                       borderRadius: "inherit",
-                    }}
-                  />
+                    }} loading="lazy" decoding="async" />
                 ) : i === 2 ? (
                   <img
                     src="/agencies/final-image-2-2.png"
@@ -353,8 +354,7 @@ export function PostHeroValidation() {
                       objectFit: "cover",
                       objectPosition: "center",
                       display: "block",
-                    }}
-                  />
+                    }} loading="lazy" decoding="async" />
                 ) : (
                   /* Wireframe placeholder */
                   <div

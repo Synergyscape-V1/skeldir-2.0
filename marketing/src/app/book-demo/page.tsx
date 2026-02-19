@@ -1,6 +1,5 @@
 "use client";
 
-import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 import { useSearchParams, useRouter } from "next/navigation";
 import Script from "next/script";
@@ -151,7 +150,6 @@ function BookDemoContent() {
           clip: "rect(0,0,0,0)",
         }}
       />
-      <Navigation forceVisible={true} />
 
       <main className="flex-grow pt-8">
         {/* Hero Section with Split Layout */}

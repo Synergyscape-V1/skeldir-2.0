@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -10,7 +9,7 @@ export function HeroSection() {
       <div className="container mx-auto px-4 md:px-6">
         <div className="grid gap-12 lg:grid-cols-2 lg:gap-12 items-center">
           {/* Left: Text Content */}
-          <div className="flex flex-col justify-center space-y-8 text-center lg:text-left lg:pr-8 lg:-ml-[20%]">
+          <div className="flex flex-col justify-center space-y-8 text-left lg:pr-8 lg:-ml-[20%] hero-text-column">
             <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl md:text-6xl leading-tight hero-headline" style={{ color: 'white' }}>
               <span>Stop guessing where</span> <span>your ad budget works—</span><span style={{ 
                 color: '#111827', 
@@ -18,17 +17,18 @@ export function HeroSection() {
                 fontWeight: 700,
                 lineHeight: 1.2,
                 letterSpacing: '-0.025em'
-              }}>know with confidence</span>
+              }}>know with statistical confidence</span>
             </h1>
 
-            <p className="max-w-[600px] text-lg text-white md:text-xl/relaxed mx-auto lg:mx-0 hero-subheadline">
-              See exactly where Ad platforms are over-reporting revenue, Leverage AI to get budget recommendations you can confidently defend to your teams<br />
-              Live in 48 hours, not 6 months
+            <p className="max-w-[600px] text-white mx-auto lg:mx-0 hero-subheadline" style={{ fontSize: '16px', lineHeight: 1.5 }}>
+              Skeldir compares Facebook/Google/TikTok claims against your actual Stripe/Shopify revenue<br />
+              <span style={{ display: 'inline-block', marginTop: '2px' }}>See platform over-reporting—then act on statistical confidence ranges, not black-box numbers.</span><br />
+              <span style={{ display: 'inline-block', marginTop: '2px' }}>Live in 48 hours, not months.</span>
             </p>
 
             <div className="flex flex-col items-center lg:items-start gap-4 hero-cta-container">
               <div className="flex flex-col sm:flex-row items-center gap-4 hero-buttons">
-              <Link href="/signup" className="hero-cta-link-primary">
+              <Link href="/book-demo" className="hero-cta-link-primary">
                 <Button
                     className="transition-all hero-cta-button hero-cta-button-primary"
                     style={{
@@ -37,8 +37,10 @@ export function HeroSection() {
                       fontFamily: 'Inter, sans-serif',
                       fontSize: '16px',
                       fontWeight: 700,
-                      width: '160px',
+                      minWidth: '260px',
                       height: '48px',
+                      paddingLeft: '20px',
+                      paddingRight: '20px',
                       borderRadius: '8px',
                       boxShadow: '0 2px 8px rgba(37, 99, 235, 0.2)',
                       cursor: 'pointer',
@@ -52,10 +54,10 @@ export function HeroSection() {
                       e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 99, 235, 0.2)';
                     }}
                 >
-                  Get Started
+                  See your revenue discrepancies
                 </Button>
               </Link>
-              <Link href="/book-demo" className="hero-cta-link-secondary">
+              <Link href="/signup" className="hero-cta-link-secondary">
                 <Button
                   className="transition-all hero-cta-button hero-cta-button-secondary"
                   style={{
@@ -65,8 +67,10 @@ export function HeroSection() {
                     fontFamily: 'Inter, sans-serif',
                     fontSize: '16px',
                     fontWeight: 600,
-                    width: '160px',
+                    minWidth: '260px',
                     height: '48px',
+                    paddingLeft: '20px',
+                    paddingRight: '20px',
                     borderRadius: '8px',
                     cursor: 'pointer',
                   }}
@@ -81,7 +85,7 @@ export function HeroSection() {
                     e.currentTarget.style.color = '#000000';
                   }}
                 >
-                  Book Demo
+                  Start your 48-Hour Deployment
                 </Button>
               </Link>
               </div>
@@ -92,8 +96,8 @@ export function HeroSection() {
             </div>
           </div>
 
-          {/* Right: Product Visual */}
-          <div className="relative mx-auto w-full max-w-[950px] lg:max-w-none lg:ml-[20%] hero-image-container">
+          {/* Right: Product Visual - responsive home product hero screenshot */}
+          <div className="relative mx-auto w-full max-w-[950px] lg:max-w-none lg:ml-[20%] hero-image-container home-product-hero">
             <div 
               className="relative rounded-2xl overflow-visible hero-image-glass"
               style={{
@@ -106,13 +110,15 @@ export function HeroSection() {
               }}
             >
               <div className="overflow-hidden rounded-2xl">
-                <Image
-                  src="/images/Channel Comp IOS 3.png"
-                  alt="Channel Comparison Dashboard"
-                  width={950}
-                  height={713}
+                <img
+                  src="/assets/images/home-product-hero/home-product-hero-800w.jpg"
+                  srcSet="/assets/images/home-product-hero/home-product-hero-400w.jpg 400w, /assets/images/home-product-hero/home-product-hero-800w.jpg 800w, /assets/images/home-product-hero/home-product-hero-1200w.jpg 1200w"
+                  sizes="(max-width: 600px) 100vw, (max-width: 960px) 80vw, 950px"
+                  alt="Channel Comparison Dashboard — Skeldir ad channel ROAS and budget shift recommendations"
                   className="w-full h-auto object-contain hero-dashboard-image"
-                  priority
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
                 />
               </div>
             </div>
@@ -146,14 +152,18 @@ export function HeroSection() {
               transform: scale(1.1);
             }
 
-            /* Mobile-first responsive styles for HeroSection */
+            /* Mobile: same structure as desktop (left-aligned, same hierarchy) */
             @media (max-width: 767px) {
+              .hero-text-column {
+                align-items: flex-start !important;
+              }
               .hero-headline {
                 font-size: 32px !important;
                 line-height: 1.25 !important;
                 letter-spacing: -0.03em !important;
                 font-weight: 800 !important;
                 margin-bottom: 20px !important;
+                text-align: left !important;
               }
               
               .hero-headline span {
@@ -163,91 +173,80 @@ export function HeroSection() {
 
               .hero-subheadline {
                 font-size: 14px !important;
-                line-height: 1.5 !important;
-                padding: 0 16px !important;
+                line-height: 1.45 !important;
+                padding: 0 !important;
                 margin-bottom: 20px !important;
+                text-align: left !important;
               }
 
               .hero-cta-container {
                 width: 100% !important;
                 max-width: 100% !important;
-                padding: 0 16px !important;
+                padding: 0 !important;
                 box-sizing: border-box !important;
                 overflow-x: hidden !important;
+                align-items: flex-start !important;
               }
 
               .hero-buttons {
-                width: 100% !important;
-                max-width: 100% !important;
                 display: flex !important;
                 flex-direction: row !important;
                 align-items: center !important;
-                justify-content: center !important;
+                justify-content: flex-start !important;
                 gap: 12px !important;
-                flex-wrap: nowrap !important;
+                flex-wrap: wrap !important;
                 padding: 0 !important;
                 margin: 0 !important;
               }
 
               .hero-cta-link-primary,
               .hero-cta-link-secondary {
-                display: flex !important;
-                flex: 1 1 auto !important;
-                min-width: 0 !important;
-                max-width: 100% !important;
+                display: inline-flex !important;
               }
 
               .hero-cta-button-primary {
                 display: inline-flex !important;
-                flex-direction: column !important;
                 align-items: center !important;
                 justify-content: center !important;
-                width: 100% !important;
-                max-width: 100% !important;
-                min-width: 0 !important;
-                height: 56px !important;
-                min-height: 56px !important;
+                min-width: 260px !important;
+                width: auto !important;
+                height: 48px !important;
+                min-height: 48px !important;
                 padding: 0 20px !important;
-                border-radius: 999px !important;
+                border-radius: 8px !important;
                 background: #2563EB !important;
                 color: #FFFFFF !important;
-                font-size: 15px !important;
-                font-weight: 600 !important;
-                box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35) !important;
+                font-size: 16px !important;
+                font-weight: 700 !important;
+                box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2) !important;
                 transition: all 200ms ease-out !important;
                 line-height: 1.2 !important;
                 border: none !important;
                 white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
               }
 
               .hero-cta-button-primary:hover {
-                background: #1D4ED8 !important;
-                box-shadow: 0 10px 30px rgba(37, 99, 235, 0.45) !important;
-                transform: translateY(-1px) !important;
+                background: #1E40AF !important;
+                box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4) !important;
               }
 
               .hero-cta-button-secondary {
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                width: 100% !important;
-                max-width: 100% !important;
-                min-width: 0 !important;
-                height: 56px !important;
-                min-height: 56px !important;
+                min-width: 260px !important;
+                width: auto !important;
+                height: 48px !important;
+                min-height: 48px !important;
                 padding: 0 20px !important;
-                border-radius: 999px !important;
+                border-radius: 8px !important;
                 border: 2px solid #000000 !important;
                 color: #000000 !important;
                 background: transparent !important;
-                font-size: 15px !important;
+                font-size: 16px !important;
                 font-weight: 600 !important;
                 transition: all 180ms ease-out !important;
                 white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
               }
 
               .hero-cta-button-secondary:hover {
@@ -256,28 +255,27 @@ export function HeroSection() {
                 color: #000000 !important;
               }
 
-              /* For very small screens, ensure buttons don't clip */
               @media (max-width: 360px) {
                 .hero-buttons {
                   gap: 8px !important;
                 }
                 .hero-cta-button-primary,
                 .hero-cta-button-secondary {
-                  padding: 0 16px !important;
+                  min-width: 220px !important;
                   font-size: 14px !important;
                 }
               }
 
               .hero-tagline {
                 font-size: 14px !important;
-                text-align: center !important;
-                padding: 0 16px !important;
+                text-align: left !important;
+                padding: 0 !important;
               }
 
               .hero-image-container {
                 width: 100% !important;
                 max-width: 100% !important;
-                padding: 0 16px !important;
+                padding: 0 !important;
                 margin-top: 32px !important;
               }
 

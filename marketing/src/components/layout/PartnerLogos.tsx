@@ -1,12 +1,12 @@
 "use client";
 
 const logos = [
-  { name: "Callaway", src: "/images/Callaway_1_transparent.png", height: "3.125rem" },
-  { name: "Fresh Clean Threads", src: "/images/FreshCleanThreads_transparent.png", height: "7.9820559rem" },
-  { name: "NordicTrack", src: "/images/Nordictrack_transparent.png", height: "7.6750597rem" },
-  { name: "bareMinerals", src: "/images/Baremin_transparent.png", height: "6.334965rem" },
-  { name: "TUMI", src: "/images/TUMI_transparent.png", height: "2.5rem" },
-  { name: "Pacsun", src: "/images/Pacsun_transparent.png", height: "2.625rem" },
+  { name: "Callaway", srcWebP: "/images/Callaway_1_transparent.webp", srcFallback: "/images/Callaway_1_transparent.png", height: "3.125rem" },
+  { name: "Fresh Clean Threads", srcWebP: "/images/FreshCleanThreads_transparent.webp", srcFallback: "/images/FreshCleanThreads_transparent.png", height: "7.9820559rem" },
+  { name: "NordicTrack", srcWebP: "/images/Nordictrack_transparent.webp", srcFallback: "/images/Nordictrack_transparent.png", height: "7.6750597rem" },
+  { name: "bareMinerals", srcWebP: "/images/Baremin_transparent.webp", srcFallback: "/images/Baremin_transparent.png", height: "6.334965rem" },
+  { name: "TUMI", srcWebP: "/images/TUMI_transparent.webp", srcFallback: "/images/TUMI_transparent.png", height: "2.5rem" },
+  { name: "Pacsun", srcWebP: "/images/Pacsun_transparent.webp", srcFallback: "/images/Pacsun_transparent.png", height: "2.625rem" },
 ];
 
 export function PartnerLogos() {
@@ -89,34 +89,38 @@ export function PartnerLogos() {
       {/* Carousel track */}
       <div className="logo-carousel-track">
         {duplicatedLogos.map((logo, index) => (
-          <img
-            key={`${logo.name}-${index}`}
-            src={logo.src}
-            alt={logo.name}
-            className={
-              logo.name === "TUMI" 
-                ? "tumi-logo" 
-                : logo.name === "Fresh Clean Threads" 
-                ? "fresh-clean-threads-logo"
-                : logo.name === "Callaway"
-                ? "callaway-logo"
-                : logo.name === "Pacsun"
-                ? "pacsun-logo"
-                : ""
-            }
-            style={{
-              height: logo.height,
-              width: "auto",
-              objectFit: "contain",
-              filter: "grayscale(100%)",
-              opacity: 0.7,
-              flexShrink: 0,
-              background: "transparent",
-              border: "none",
-              outline: "none",
-              boxShadow: "none",
-            }}
-          />
+          <picture key={`${logo.name}-${index}`}>
+            <source srcSet={logo.srcWebP} type="image/webp" />
+            <img
+              src={logo.srcFallback}
+              alt={logo.name}
+              className={
+                logo.name === "TUMI"
+                  ? "tumi-logo"
+                  : logo.name === "Fresh Clean Threads"
+                  ? "fresh-clean-threads-logo"
+                  : logo.name === "Callaway"
+                  ? "callaway-logo"
+                  : logo.name === "Pacsun"
+                  ? "pacsun-logo"
+                  : ""
+              }
+              loading="lazy"
+              decoding="async"
+              style={{
+                height: logo.height,
+                width: "auto",
+                objectFit: "contain",
+                filter: "grayscale(100%)",
+                opacity: 0.7,
+                flexShrink: 0,
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                boxShadow: "none",
+              }}
+            />
+          </picture>
         ))}
       </div>
     </div>

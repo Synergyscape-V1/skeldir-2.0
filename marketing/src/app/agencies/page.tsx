@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Navigation } from "@/components/layout/Navigation";
 import { AgenciesHeroSection } from "@/components/layout/AgenciesHeroSection";
 import { AgenciesPostHeroSection } from "@/components/layout/AgenciesPostHeroSection";
 import { AgenciesScalabilitySection } from "@/components/layout/AgenciesScalabilitySection";
@@ -15,9 +14,6 @@ export const metadata: Metadata = {
 export default function AgenciesPage() {
   return (
     <main className="min-h-screen flex flex-col font-sans">
-      {/* Navigation — same translucent behavior as homepage */}
-      <Navigation />
-
       {/* Hero Section */}
       <AgenciesHeroSection />
 
