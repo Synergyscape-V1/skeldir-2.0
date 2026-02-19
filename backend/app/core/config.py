@@ -11,11 +11,18 @@ from typing import Optional
 from dotenv import load_dotenv
 from pydantic import AliasChoices, Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from app.core.control_plane import (
+    hydrate_settings_from_control_plane,
+    preload_environment_from_control_plane,
+    resolve_control_plane_env,
+)
 
 # Load local .env without overriding explicit environment variables.
 # Skip in CI environments (CI=true) to prevent local dev credentials from interfering.
 if os.getenv("CI") != "true":
     load_dotenv(dotenv_path=".env", override=False)
+
+preload_environment_from_control_plane()
 
 
 class Settings(BaseSettings):
@@ -96,7 +103,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    ENVIRONMENT: str = Field("development", description="Deployment environment")
+    ENVIRONMENT: str = Field("dev", description="Deployment environment")
     LOG_LEVEL: str = Field("INFO", description="Application log level")
 
     # LLM Provider (future enablement)
@@ -331,6 +338,11 @@ class Settings(BaseSettings):
             raise ValueError("LLM_COMPLEXITY_POLICY_PATH cannot be empty")
         return cleaned
 
+    @field_validator("ENVIRONMENT")
+    @classmethod
+    def validate_environment(cls, value: str) -> str:
+        return resolve_control_plane_env(value)
+
     @field_validator("IDEMPOTENCY_CACHE_TTL")
     @classmethod
     def validate_idempotency_ttl(cls, value: int) -> int:
@@ -424,6 +436,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_llm_provider_config(self) -> "Settings":
+        hydrate_settings_from_control_plane(self)
         if self.LLM_PROVIDER_ENABLED and not self.LLM_PROVIDER_API_KEY:
             raise ValueError("LLM_PROVIDER_ENABLED requires LLM_PROVIDER_API_KEY")
         if self.BAYESIAN_TASK_TIME_LIMIT_S <= self.BAYESIAN_TASK_SOFT_TIME_LIMIT_S:

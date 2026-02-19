@@ -1,0 +1,26 @@
+{
+  "exit_code": 0,
+  "expected_scope": {
+    "allowed_secrets": [
+      "arn:aws:secretsmanager:us-east-2:326730685463:secret:/skeldir/stage/secret/*"
+    ],
+    "allowed_ssm": [
+      "arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/stage/config/*"
+    ],
+    "denied_secrets": [
+      "arn:aws:secretsmanager:us-east-2:326730685463:secret:/skeldir/prod/*",
+      "arn:aws:secretsmanager:us-east-2:326730685463:secret:/skeldir/ci/*",
+      "arn:aws:secretsmanager:us-east-2:326730685463:secret:/skeldir/dev/*",
+      "arn:aws:secretsmanager:us-east-2:326730685463:secret:/skeldir/local/*"
+    ],
+    "denied_ssm": [
+      "arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/*",
+      "arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/ci/*",
+      "arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/dev/*",
+      "arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/local/*"
+    ]
+  },
+  "role_name": "skeldir-app-runtime-stage",
+  "stderr": "",
+  "stdout": "{\n    \"AttachedPolicies\": []\n}"
+}

@@ -1,0 +1,125 @@
+name: b11-p1-control-plane-adjudication
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ssot-contract-gate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Enforce SSOT contract + snapshot drift
+        run: |
+          python scripts/security/b11_p1_ssot_guard.py --check-drift
+
+      - name: Run non-vacuous SSOT tests
+        run: |
+          cd backend
+          pytest tests/test_b11_p1_ssot_contract.py -q
+
+      - name: Upload SSOT evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b11-p1-ssot-evidence
+          path: |
+            docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json
+            docs/forensics/evidence/b11_p1/PROOF_INDEX.md
+
+  terraform-control-plane-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt/validate
+        run: |
+          cd infra/b11_p1/terraform
+          terraform fmt -check
+          terraform init -backend=false
+          terraform validate
+
+      - name: Capture IaC state proof scaffold
+        run: |
+          python scripts/security/b11_p1_iac_state_proof.py
+
+      - name: Upload IaC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b11-p1-iac-evidence
+          path: |
+            docs/forensics/evidence/b11_p1/iac_state_proof.txt
+            docs/forensics/evidence/b11_p1/PROOF_INDEX.md
+
+  aws-proof-gate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-east-2
+      B11_P1_ENV: ci
+      B11_P1_ROLE_NAME: skeldir-ci-deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
+          aws-region: us-east-2
+
+      - name: Generate deny/audit/iam proof artifacts
+        run: |
+          python scripts/security/b11_p1_generate_proofs.py
+
+      - name: Enforce non-vacuous deny proof
+        run: |
+          grep -q "RESULT=PASS" docs/forensics/evidence/b11_p1/deny_proof_cross_env.txt
+
+      - name: Upload AWS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b11-p1-aws-evidence
+          path: |
+            docs/forensics/evidence/b11_p1/deny_proof_cross_env.txt
+            docs/forensics/evidence/b11_p1/cloudtrail_audit_proof.txt
+            docs/forensics/evidence/b11_p1/iam_policy_skeldir-ci-deploy.json
+            docs/forensics/evidence/b11_p1/iam_policy_skeldir-app-runtime-prod.json
+            docs/forensics/evidence/b11_p1/iam_policy_skeldir-app-runtime-stage.json
+            docs/forensics/evidence/b11_p1/iam_policy_skeldir-rotation-lambda.json
+            docs/forensics/evidence/b11_p1/PROOF_INDEX.md

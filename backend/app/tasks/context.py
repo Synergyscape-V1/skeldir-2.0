@@ -89,6 +89,9 @@ async def _set_tenant_guc_global(tenant_id: UUID, user_id: UUID) -> None:
             "user_id": str(user_id),
         },
     )
+    # Defensive pool reset prevents asyncpg pool reuse across mismatched loops
+    # in worker process topologies where the engine was first touched elsewhere.
+    await engine.dispose()
     async with engine.begin() as conn:
         # Use SET LOCAL semantics so the value is scoped to this transaction only.
         # This prevents connection pool reuse from leaking a previous tenant_id into

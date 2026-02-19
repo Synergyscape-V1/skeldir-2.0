@@ -1,0 +1,73 @@
+timestamp_utc=2026-02-19T19:48:41.443472+00:00
+queries=GetParametersByPath,GetSecretValue
+
+[lookup:GetParametersByPath]
+exit_code=0
+stdout={
+    "Events": [
+        {
+            "EventId": "a097b5f7-852c-4eaa-bb3d-51b17cf932fd",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "AKIAUYEVKTQLZTLJAFMN",
+            "EventTime": 1771530298.0,
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "skeldir-p1-ops-session",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"IAMUser\",\"principalId\":\"AIDAUYEVKTQLYHF26FDX3\",\"arn\":\"arn:aws:iam::326730685463:user/skeldir-p1-ops-session\",\"accountId\":\"326730685463\",\"accessKeyId\":\"AKIAUYEVKTQLZTLJAFMN\",\"userName\":\"skeldir-p1-ops-session\"},\"eventTime\":\"2026-02-19T19:44:58Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"73.37.237.48\",\"userAgent\":\"aws-cli/1.44.42 md/Botocore#1.42.52 ua/2.1 os/windows#10 md/arch#amd64 lang/python#3.11.9 md/pyimpl#CPython m/g,D,Z,b cfg/retry-mode#legacy botocore/1.42.52\",\"errorCode\":\"AccessDenied\",\"errorMessage\":\"User: arn:aws:iam::326730685463:user/skeldir-p1-ops-session is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ with an explicit deny in an identity-based policy\",\"requestParameters\":null,\"responseElements\":null,\"requestID\":\"13168b84-a4aa-49e9-a634-cbf8a7c631d8\",\"eventID\":\"a097b5f7-852c-4eaa-bb3d-51b17cf932fd\",\"readOnly\":true,\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "8d64949e-6255-4db7-a79d-ccc1b74dc96b",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "AKIAUYEVKTQLZTLJAFMN",
+            "EventTime": 1771530296.0,
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "skeldir-p1-ops-session",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"IAMUser\",\"principalId\":\"AIDAUYEVKTQLYHF26FDX3\",\"arn\":\"arn:aws:iam::326730685463:user/skeldir-p1-ops-session\",\"accountId\":\"326730685463\",\"accessKeyId\":\"AKIAUYEVKTQLZTLJAFMN\",\"userName\":\"skeldir-p1-ops-session\"},\"eventTime\":\"2026-02-19T19:44:56Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"73.37.237.48\",\"userAgent\":\"aws-cli/1.44.42 md/Botocore#1.42.52 ua/2.1 os/windows#10 md/arch#amd64 lang/python#3.11.9 md/pyimpl#CPython m/b,g,Z,D cfg/retry-mode#legacy botocore/1.42.52\",\"requestParameters\":{\"path\":\"/skeldir/ci/config/\",\"recursive\":true,\"maxResults\":1},\"responseElements\":null,\"requestID\":\"ae2f2f67-ab54-4506-a68b-8835f5273a43\",\"eventID\":\"8d64949e-6255-4db7-a79d-ccc1b74dc96b\",\"readOnly\":true,\"resources\":[{\"accountId\":\"326730685463\",\"ARN\":\"arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/ci/config/\"}],\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "1090d619-0377-42af-a23d-10b26ea85062",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "AKIAUYEVKTQLZTLJAFMN",
+            "EventTime": 1771530277.0,
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "skeldir-p1-ops-session",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"IAMUser\",\"principalId\":\"AIDAUYEVKTQLYHF26FDX3\",\"arn\":\"arn:aws:iam::326730685463:user/skeldir-p1-ops-session\",\"accountId\":\"326730685463\",\"accessKeyId\":\"AKIAUYEVKTQLZTLJAFMN\",\"userName\":\"skeldir-p1-ops-session\"},\"eventTime\":\"2026-02-19T19:44:37Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"73.37.237.48\",\"userAgent\":\"aws-cli/1.44.42 md/Botocore#1.42.52 ua/2.1 os/windows#10 md/arch#amd64 lang/python#3.11.9 md/pyimpl#CPython m/b,Z,D,g cfg/retry-mode#legacy botocore/1.42.52\",\"requestParameters\":{\"path\":\"/skeldir/ci/config/\",\"recursive\":true,\"maxResults\":1},\"responseElements\":null,\"requestID\":\"6d72c9a0-f4fe-4265-a5db-04d41e1f8e35\",\"eventID\":\"1090d619-0377-42af-a23d-10b26ea85062\",\"readOnly\":true,\"resources\":[{\"accountId\":\"326730685463\",\"ARN\":\"arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/ci/config/\"}],\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "cf63934e-41b6-4e2a-a787-42d02d96bad1",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "AKIAUYEVKTQLZTLJAFMN",
+            "EventTime": 1771530277.0,
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "skeldir-p1-ops-session",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"IAMUser\",\"principalId\":\"AIDAUYEVKTQLYHF26FDX3\",\"arn\":\"arn:aws:iam::326730685463:user/skeldir-p1-ops-session\",\"accountId\":\"326730685463\",\"accessKeyId\":\"AKIAUYEVKTQLZTLJAFMN\",\"userName\":\"skeldir-p1-ops-session\"},\"eventTime\":\"2026-02-19T19:44:37Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"73.37.237.48\",\"userAgent\":\"aws-cli/1.44.42 md/Botocore#1.42.52 ua/2.1 os/windows#10 md/arch#amd64 lang/python#3.11.9 md/pyimpl#CPython m/Z,b,D,g cfg/retry-mode#legacy botocore/1.42.52\",\"errorCode\":\"AccessDenied\",\"errorMessage\":\"User: arn:aws:iam::326730685463:user/skeldir-p1-ops-session is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ with an explicit deny in an identity-based policy\",\"requestParameters\":null,\"responseElements\":null,\"requestID\":\"9e50c14c-f698-44c4-a4be-538b3e872c97\",\"eventID\":\"cf63934e-41b6-4e2a-a787-42d02d96bad1\",\"readOnly\":true,\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "d6fc00cd-c6f4-4476-946f-9799ab2c0790",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "AKIAUYEVKTQLZTLJAFMN",
+            "EventTime": 1771529758.0,
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "skeldir-p1-ops-session",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"IAMUser\",\"principalId\":\"AIDAUYEVKTQLYHF26FDX3\",\"arn\":\"arn:aws:iam::326730685463:user/skeldir-p1-ops-session\",\"accountId\":\"326730685463\",\"accessKeyId\":\"AKIAUYEVKTQLZTLJAFMN\",\"userName\":\"skeldir-p1-ops-session\"},\"eventTime\":\"2026-02-19T19:35:58Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"3.128.24.225\",\"userAgent\":\"aws-cli/2.33.23 md/awscrt#0.31.1 ua/2.1 os/linux#6.1.161-183.298.amzn2023.x86_64 md/arch#x86_64 lang/python#3.13.11 md/pyimpl#CPython exec-env/CloudShell m/b,C,E,g,Z cfg/retry-mode#standard md/installer#exe md/distrib#amzn.2023 md/prompt#off md/command#ssm.get-parameters-by-path\",\"errorCode\":\"AccessDenied\",\"errorMessage\":\"User: arn:aws:iam::326730685463:user/skeldir-p1-ops-session is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ with an explicit deny in an identity-based policy\",\"requestParameters\":null,\"responseElements\":null,\"requestID\":\"c3deba12-4ef8-4df4-bd38-5901446654ca\",\"eventID\":\"d6fc00cd-c6f4-4476-946f-9799ab2c0790\",\"readOnly\":true,\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        }
+    ],
+    "NextToken": "zBeE0nmFYNpjjGgS3AqZF+lKxfUxpLzn1QkjFFwCjrzfvmRluRoTiXxQmlPp2vHX"
+}
+stderr=<empty>
+
+[lookup:GetSecretValue]
+exit_code=0
+stdout={
+    "Events": []
+}
+stderr=<empty>
