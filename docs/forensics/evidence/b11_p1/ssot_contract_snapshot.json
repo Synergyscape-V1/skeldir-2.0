@@ -1,0 +1,882 @@
+{
+  "allowed_envs": [
+    "prod",
+    "stage",
+    "ci",
+    "dev",
+    "local"
+  ],
+  "keys_total": 51,
+  "records": [
+    {
+      "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
+      "call_sites": [
+        "backend/app/security/auth.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "AUTH_JWT_ALGORITHM",
+      "owner": "platform-security",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/auth/jwt-audience",
+      "call_sites": [
+        "backend/app/security/auth.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "AUTH_JWT_AUDIENCE",
+      "owner": "platform-security",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/auth/jwt-issuer",
+      "call_sites": [
+        "backend/app/security/auth.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "AUTH_JWT_ISSUER",
+      "owner": "platform-security",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/auth/jwks-url",
+      "call_sites": [
+        "backend/app/security/auth.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "AUTH_JWT_JWKS_URL",
+      "owner": "platform-security",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/auth/jwt-secret",
+      "call_sites": [
+        "backend/app/security/auth.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "AUTH_JWT_SECRET",
+      "owner": "platform-security",
+      "rotation_criticality": "critical"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/bayesian-task-soft-time-limit-s",
+      "call_sites": [
+        "backend/app/tasks/bayesian.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "BAYESIAN_TASK_SOFT_TIME_LIMIT_S",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/bayesian-task-time-limit-s",
+      "call_sites": [
+        "backend/app/tasks/bayesian.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "BAYESIAN_TASK_TIME_LIMIT_S",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/broker-engine-max-overflow",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_BROKER_ENGINE_MAX_OVERFLOW",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/broker-engine-pool-size",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_BROKER_ENGINE_POOL_SIZE",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/broker-recovery-sweep-interval-s",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/broker-recovery-task-name-filter",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_BROKER_RECOVERY_TASK_NAME_FILTER",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/celery/broker-url",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_BROKER_URL",
+      "owner": "backend-platform",
+      "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/broker-visibility-timeout-s",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_BROKER_VISIBILITY_TIMEOUT_S",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/chord-unlock-max-retries",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_CHORD_UNLOCK_MAX_RETRIES",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/chord-unlock-retry-delay-s",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_CHORD_UNLOCK_RETRY_DELAY_S",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/celery/result-backend-url",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_RESULT_BACKEND",
+      "owner": "backend-platform",
+      "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/result-backend-engine-pool-size",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_RESULT_BACKEND_ENGINE_POOL_SIZE",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/task-acks-late",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_TASK_ACKS_LATE",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/task-acks-on-failure-or-timeout",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_TASK_ACKS_ON_FAILURE_OR_TIMEOUT",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/task-reject-on-worker-lost",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_TASK_REJECT_ON_WORKER_LOST",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/task-soft-time-limit-s",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_TASK_SOFT_TIME_LIMIT_S",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/task-time-limit-s",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_TASK_TIME_LIMIT_S",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/worker-max-memory-per-child-kb",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/worker-max-tasks-per-child",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_WORKER_MAX_TASKS_PER_CHILD",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/celery/worker-prefetch-multiplier",
+      "call_sites": [
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "CELERY_WORKER_PREFETCH_MULTIPLIER",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/database/max-overflow",
+      "call_sites": [
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "DATABASE_MAX_OVERFLOW",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/database/pool-size",
+      "call_sites": [
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "DATABASE_POOL_SIZE",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/database/pool-timeout-seconds",
+      "call_sites": [
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "DATABASE_POOL_TIMEOUT_SECONDS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/database/pool-total-cap",
+      "call_sites": [
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "DATABASE_POOL_TOTAL_CAP",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/database/runtime-url",
+      "call_sites": [
+        "backend/app/db/session.py",
+        "backend/app/celery_app.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "DATABASE_URL",
+      "owner": "platform-security",
+      "rotation_criticality": "critical"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/runtime/environment",
+      "call_sites": [
+        "backend/app/core/config.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "ENVIRONMENT",
+      "owner": "platform-security",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/ingestion/idempotency-cache-ttl",
+      "call_sites": [
+        "backend/app/core/config.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "IDEMPOTENCY_CACHE_TTL",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/ingestion/followup-tasks-enabled",
+      "call_sites": [
+        "backend/app/api/webhooks.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "INGESTION_FOLLOWUP_TASKS_ENABLED",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/breaker-failure-threshold",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_BREAKER_FAILURE_THRESHOLD",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/breaker-open-seconds",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_BREAKER_OPEN_SECONDS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/complexity-policy-path",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_COMPLEXITY_POLICY_PATH",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/hourly-shutoff-cents",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_HOURLY_SHUTOFF_CENTS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/monthly-cap-cents",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_MONTHLY_CAP_CENTS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/llm/provider-api-key",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_PROVIDER_API_KEY",
+      "owner": "ai-platform",
+      "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/provider-enabled",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_PROVIDER_ENABLED",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/provider-kill-switch",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_PROVIDER_KILL_SWITCH",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/provider-model",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_PROVIDER_MODEL",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/provider-timeout-ms",
+      "call_sites": [
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_PROVIDER_TIMEOUT_MS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/runtime/log-level",
+      "call_sites": [
+        "backend/app/main.py",
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LOG_LEVEL",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/platform/supported-platforms",
+      "call_sites": [
+        "backend/app/api/platforms.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "PLATFORM_SUPPORTED_PLATFORMS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/platform/token-encryption-key",
+      "call_sites": [
+        "backend/app/api/platforms.py",
+        "backend/app/services/realtime_revenue_providers.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "PLATFORM_TOKEN_ENCRYPTION_KEY",
+      "owner": "platform-security",
+      "rotation_criticality": "critical"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/platform/token-key-id",
+      "call_sites": [
+        "backend/app/api/platforms.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "PLATFORM_TOKEN_KEY_ID",
+      "owner": "platform-security",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/platform/stripe-base-url",
+      "call_sites": [
+        "backend/app/services/realtime_revenue_providers.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "STRIPE_BASE_URL",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/tenant/api-key-header",
+      "call_sites": [
+        "backend/app/api/webhooks.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "TENANT_API_KEY_HEADER",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/tenant/secrets-cache-max-entries",
+      "call_sites": [
+        "backend/app/core/config.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "TENANT_SECRETS_CACHE_MAX_ENTRIES",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/tenant/secrets-cache-ttl-seconds",
+      "call_sites": [
+        "backend/app/core/config.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "TENANT_SECRETS_CACHE_TTL_SECONDS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    }
+  ]
+}

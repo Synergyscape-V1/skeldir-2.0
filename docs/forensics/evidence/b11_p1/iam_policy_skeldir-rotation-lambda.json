@@ -1,0 +1,16 @@
+{
+  "exit_code": 0,
+  "expected_scope": {
+    "allowed_secrets": [
+      "arn:aws:secretsmanager:us-east-2:326730685463:secret:/skeldir/*"
+    ],
+    "allowed_ssm": [
+      "arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/*"
+    ],
+    "denied_secrets": [],
+    "denied_ssm": []
+  },
+  "role_name": "skeldir-rotation-lambda",
+  "stderr": "",
+  "stdout": "{\n    \"AttachedPolicies\": []\n}"
+}
