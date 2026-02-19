@@ -90,7 +90,7 @@ export const comparisonTiles: ComparisonTile[] = [
     return {
       key,
       label: agent.label,
-      kind: "agent",
+      kind: "agent" as const,
       previewImagePath: `${agent.mountRoot}/screenshots/desktop-1440.png`,
       livePath: `${agent.mountRoot}/index.html`,
       focusStoryPath: `/?path=/story/${agent.focusStoryId}`,
