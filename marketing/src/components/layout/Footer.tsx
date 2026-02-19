@@ -7,6 +7,20 @@
 // ============================================================================
 
 export function Footer() {
+  const askAiQuery =
+    "As a digital advertising leader responsible for significant performance marketing budgets, I want to understand how Skeldir’s attribution intelligence AI platform can help my organization deploy statistically rigorous, privacy‑first, and operationally simple AI decisioning on our revenue data—so we can reduce wasted ad spend and replace black‑box reporting platforms";
+  const askAiEncoded = encodeURIComponent(askAiQuery);
+
+  // URL formats for pre-filling prompts. ChatGPT, Claude, Perplexity, Grok use ?q=.
+  // Gemini: direct to gemini.google.com with ?q= (works with Chrome extension or if native support exists).
+  const askAiHrefs = {
+    chatgpt: `https://chatgpt.com/?q=${askAiEncoded}`,
+    claude: `https://claude.ai/new?q=${askAiEncoded}`,
+    gemini: `https://gemini.google.com/app?q=${askAiEncoded}`,
+    perplexity: `https://www.perplexity.ai/search?q=${askAiEncoded}`,
+    grok: `https://grok.com/?q=${askAiEncoded}`,
+  };
+
   const footerLinks = {
     product: {
       title: "PRODUCT",
@@ -78,6 +92,8 @@ export function Footer() {
             <img
               src="/images/skeldir-logo-shield-only.png"
               alt="Skeldir Logo"
+              loading="lazy"
+              decoding="async"
               style={{
                 width: "100%",
                 height: "auto",
@@ -232,47 +248,47 @@ export function Footer() {
               >
                 {/* OpenAI / ChatGPT — official logo */}
                 <a
-                  href="https://chat.openai.com"
+                  href={askAiHrefs.chatgpt}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="OpenAI ChatGPT"
                   style={{ display: "flex", width: 20, height: 20, filter: "brightness(0) invert(1)" }}
                 >
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/e/ef/ChatGPT-Logo.svg" alt="" width={20} height={20} style={{ display: "block" }} />
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/e/ef/ChatGPT-Logo.svg" alt="" width={20} height={20} loading="lazy" decoding="async" style={{ display: "block" }} />
                 </a>
                 {/* Claude AI — product logo (not Anthropic company logo) */}
                 <a
-                  href="https://claude.ai"
+                  href={askAiHrefs.claude}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Claude"
                   style={{ display: "flex", width: 20, height: 20, filter: "brightness(0) invert(1)" }}
                 >
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Claude_AI_symbol.svg" alt="" width={20} height={20} style={{ display: "block" }} />
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/b/b0/Claude_AI_symbol.svg" alt="" width={20} height={20} loading="lazy" decoding="async" style={{ display: "block" }} />
                 </a>
                 {/* Google Gemini */}
                 <a
-                  href="https://gemini.google.com"
+                  href={askAiHrefs.gemini}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Google Gemini"
                   style={{ display: "flex", width: 20, height: 20, filter: "brightness(0) invert(1)" }}
                 >
-                  <img src="https://cdn.simpleicons.org/googlegemini/FFFFFF" alt="" width={20} height={20} style={{ display: "block" }} />
+                  <img src="https://cdn.simpleicons.org/googlegemini/FFFFFF" alt="" width={20} height={20} loading="lazy" decoding="async" style={{ display: "block" }} />
                 </a>
                 {/* Perplexity */}
                 <a
-                  href="https://perplexity.ai"
+                  href={askAiHrefs.perplexity}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Perplexity"
                   style={{ display: "flex", width: 20, height: 20, filter: "brightness(0) invert(1)" }}
                 >
-                  <img src="https://cdn.simpleicons.org/perplexity/FFFFFF" alt="" width={20} height={20} style={{ display: "block" }} />
+                  <img src="https://cdn.simpleicons.org/perplexity/FFFFFF" alt="" width={20} height={20} loading="lazy" decoding="async" style={{ display: "block" }} />
                 </a>
                 {/* Grok AI — symbol only (no wordmark), Feb 2025 Grok logo */}
                 <a
-                  href="https://x.ai/grok"
+                  href={askAiHrefs.grok}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Grok AI"

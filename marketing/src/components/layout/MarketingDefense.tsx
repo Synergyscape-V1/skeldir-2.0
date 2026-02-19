@@ -66,6 +66,7 @@ function InvestigateCard() {
                         <path d="M14 14L11.1 11.1" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span
+                        className="investigate-card-search-text"
                         style={{
                             fontSize: "14px",
                             color: "#0F172A",
@@ -91,13 +92,13 @@ function InvestigateCard() {
                     <svg width="12" height="8" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M1 1L6 6L11 1" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    <span style={{ fontSize: "13px", color: "#64748B", fontWeight: 500 }}>
+                    <span className="investigate-card-show-thinking" style={{ fontSize: "13px", color: "#64748B", fontWeight: 500 }}>
                         Show thinking • 4 sources
                     </span>
                 </div>
 
                 {/* Checklist Items */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "24px" }}>
+                <div className="investigate-card-checklist" style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "24px" }}>
                     {/* Item 1 */}
                     <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
                         <div style={{ marginTop: "2px", flexShrink: 0 }}>
@@ -106,7 +107,7 @@ function InvestigateCard() {
                                 <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                         </div>
-                        <span style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
+                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
                             Querying attribution database: Fetched Meta attribution: ROAS 1.8 [1.2-2.4], 12% allocation
                         </span>
                     </div>
@@ -119,7 +120,7 @@ function InvestigateCard() {
                                 <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                         </div>
-                        <span style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
+                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
                             Checking commerce webhooks: Verified revenue: $1.35K vs Platform claimed $6.6K (-80% discrepancy)
                         </span>
                     </div>
@@ -132,7 +133,7 @@ function InvestigateCard() {
                                 <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                         </div>
-                        <span style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
+                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
                             Cross-referencing UTM parameters: Meta uses 7-day attribution window (your config: 30-day)
                         </span>
                     </div>
@@ -145,7 +146,7 @@ function InvestigateCard() {
                                 <path d="M5 8L7 10L11 6" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                         </div>
-                        <span style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
+                        <span className="investigate-card-item-text" style={{ fontSize: "13px", lineHeight: "1.5", color: "#334155" }}>
                             Platform documentation lookup: Meta includes unconfigured view-through conversions
                         </span>
                     </div>
@@ -159,7 +160,7 @@ function InvestigateCard() {
                     <p style={{ fontSize: "13px", color: "#64748B", marginBottom: "12px" }}>
                         Based on verified revenue data, attribution models, and platform behavior:
                     </p>
-                    <p style={{ fontSize: "14px", fontWeight: 600, color: "#0F172A", marginBottom: "8px" }}>
+                    <p className="investigate-card-analysis-title" style={{ fontSize: "14px", fontWeight: 600, color: "#0F172A", marginBottom: "8px" }}>
                         Meta Revenue Discrepancy Analysis:
                     </p>
                     <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: "13px", color: "#334155", display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -184,8 +185,8 @@ function InvestigateCard() {
 
                 {/* Recommendation */}
                 <div className="recommendation-container" style={{ marginBottom: "24px" }}>
-                    <p className="recommendation-text" style={{ fontSize: "13px", color: "#0F172A", fontWeight: 500 }}>
-                        Recommendation: Reduce Meta 40% → Google (headroom available)
+                    <p className="recommendation-text" style={{ fontSize: "13px", color: "#0F172A", fontWeight: 700 }}>
+                        Recommendation: Reduce Meta 40% → Google
                     </p>
                 </div>
 
@@ -436,7 +437,7 @@ export function MarketingDefense() {
             }
             
             h2 {
-              fontSize: 32px !important;
+              fontSize: 28px !important;
               line-height: 1.25 !important;
               margin-bottom: 32px !important;
             }
@@ -454,6 +455,21 @@ export function MarketingDefense() {
               margin: 0 auto !important;
               left: 0 !important;
               right: 0 !important;
+            }
+
+            /* InvestigateCard: smaller font on mobile */
+            .investigate-card-analysis-title {
+              font-size: 12px !important;
+            }
+            .investigate-card-search-text {
+              font-size: 12px !important;
+            }
+            .investigate-card-show-thinking {
+              font-size: 11px !important;
+            }
+            .investigate-card-item-text {
+              font-size: 11px !important;
+              line-height: 1.45 !important;
             }
 
             /* Fix button alignment on mobile */

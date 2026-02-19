@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Script from "next/script";
 import { notFound } from "next/navigation";
 import { Manrope, DM_Sans, Fira_Code } from "next/font/google";
-import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 import { ArticleHeader } from "@/components/article/ArticleHeader";
 import { TableOfContents, getTOCItemsBySlug } from "@/components/article/TableOfContents";
@@ -132,8 +131,6 @@ export default function ArticlePage({ params }: ArticlePageProps) {
 
             {/* Reading Progress Bar */}
             <ReadingProgressBar />
-
-            <Navigation forceVisible={true} />
 
             <main className="flex-grow pt-20">
                 {/* Article Header */}

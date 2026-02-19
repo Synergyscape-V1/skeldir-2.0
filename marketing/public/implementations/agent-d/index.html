@@ -1,0 +1,51 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Agent D - Solution Articulation</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111827}.wrap{max-width:1440px;margin:0 auto;padding:26px 24px 44px;position:relative}.title{font-size:62px;line-height:1.05;text-align:center;font-weight:800;margin:8px 0 12px}.subtitle{font-size:39px;text-align:center;color:#4b5563;margin:0 0 50px}
+.stageRow{display:grid;grid-template-columns:1fr 2.1fr 1fr 1fr;gap:16px;position:relative}.card{min-height:380px;border-radius:18px;border:2px solid #d7dee6;background:#eef2f7;box-shadow:0 8px 20px rgba(15,23,42,.12)}.head{text-align:center;margin-bottom:10px}.head .s{font-size:20px;color:#6b7280}.head .t{font-size:46px;font-weight:800}.head .d{font-size:39px;line-height:1.1}
+.s1{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:14px}.logo{border-radius:16px;background:#fff;display:grid;place-items:center;font-size:52px;font-weight:700}.logo.black{background:#000;color:#fff}.logo.yellow{background:#ffef3f}
+.s2{border:4px solid #2b7ec9;background:linear-gradient(180deg,#dcecf8,#e8f6fb);padding:12px;position:relative}.engine{height:100%;border:2px solid #7aa9cf;border-radius:16px;padding:14px}.engine h3{margin:4px 0 14px;font-size:44px;text-align:center}.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.mod{padding:10px;border-radius:12px;background:rgba(191,221,244,.75);border:2px solid #6ea8d1;text-align:center}.mod i{display:block;width:56px;height:56px;margin:0 auto 8px;border-radius:12px;border:2px solid #84b8db;background:#e9f4fc}.mod p{margin:0;font-size:35px;line-height:1.08}.call{position:absolute;top:18px;right:14px;background:#2f79c8;color:#fff;padding:10px 14px;border-radius:14px;font-size:29px;line-height:1.1;box-shadow:0 8px 16px rgba(37,99,235,.32)}
+.s3{padding:14px;position:relative}.tw{display:grid;grid-template-columns:1fr 1fr;gap:12px}.tile{height:108px;background:#f3f4f6;border-radius:14px;display:grid;place-items:center;font-size:56px}.shield{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:132px;height:162px;background:#33c27f;clip-path:polygon(50% 0,90% 18%,90% 58%,50% 100%,10% 58%,10% 18%);display:grid;place-items:center;color:#fff;font-size:72px;font-weight:800}.badge{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:30px;line-height:1.05;background:#9dddb7;border:2px solid #6fb58d;border-radius:12px;padding:8px 12px}
+.s4{padding:14px;border:4px solid #86d9ad;background:#edf9f2}.win{height:100%;border-radius:12px;background:#fff;box-shadow:0 10px 22px rgba(2,6,23,.18);padding:12px}.dots{display:flex;gap:7px}.dot{width:9px;height:9px;border-radius:50%}.r{background:#ef4444}.y{background:#f59e0b}.g{background:#22c55e}.kpi{font-size:42px;margin:10px 0}.rng{font-size:64px;font-weight:800;text-align:center;padding:10px;background:linear-gradient(90deg,#def7eb,#b4efcd,#def7eb);margin:12px 0}.pill{display:inline-block;font-size:34px;font-weight:700;background:#b9efcd;border:2px solid #7fc29a;border-radius:14px;padding:4px 12px}.note{font-size:36px;line-height:1.14;margin-top:10px}
+.preview{display:grid;grid-template-columns:1fr 1.15fr;gap:20px;align-items:center;margin-top:30px}.preview h4{margin:0;text-align:right;line-height:1.03;font-size:58px}.miniWrap{display:flex;align-items:center}.mini{max-width:500px;border-radius:12px;border:2px solid #cbd5e1;background:#fff;box-shadow:0 8px 18px rgba(2,6,23,.13);padding:12px}.anno{font-size:39px;line-height:1.2;margin-left:16px}
+#flowCanvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+@media (max-width:1200px){.title{font-size:34px}.subtitle{font-size:22px}.stageRow{grid-template-columns:1fr}.preview{grid-template-columns:1fr}.preview h4{text-align:left;font-size:42px}#flowCanvas{display:none}}
+</style>
+</head>
+<body>
+<main class="wrap" id="root">
+<h1 class="title">Decision Intelligence, Not Just Dashboards.</h1>
+<p class="subtitle">Traditional tools use deterministic pixels. Skeldir uses Bayesian Inference—calibrated against real cash transactions.</p>
+<section class="stageRow" id="stageRow">
+<canvas id="flowCanvas"></canvas>
+<article><div class="head"><div class="s">STAGE 1</div><div class="t">CONNECT</div><div class="d">All platform signals, unified</div></div><div class="card s1"><div class="logo">∞</div><div class="logo">G</div><div class="logo black">♪</div><div class="logo yellow">👻</div></div></article>
+<article><div class="head"><div class="s">STAGE 2</div><div class="t">RECONCILE</div><div class="d">We calculate what actually caused the sale.</div></div><div class="card s2"><div class="call">Historical priors + live data<br/>= true incremental lift</div><div class="engine"><h3>BAYESIAN ENGINE</h3><div class="mods"><div class="mod"><i></i><p>Deduplication</p></div><div class="mod"><i></i><p>Refund<br/>Adjustment</p></div><div class="mod"><i></i><p>Probabilistic<br/>Modeling</p></div></div></div></div></article>
+<article><div class="head"><div class="s">STAGE 3</div><div class="t">VERIFY</div><div class="d">Reconciled against real cash transactions.</div></div><div class="card s3"><div class="tw"><div class="tile">🏛️</div><div class="tile">🛍️</div></div><div class="shield">✓</div><div class="badge">Verified against<br/>bank transactions</div></div></article>
+<article><div class="head"><div class="s">STAGE 4</div><div class="t">DECIDE</div><div class="d">Decision intelligence, not just dashboards.</div></div><div class="card s4"><div class="win"><div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div><div class="kpi">ROAS (30-day)</div><div class="rng">4.2 — 4.8</div><div class="pill">Confidence: 94%</div><div class="note">Narrow range = high confidence.<br/>Wide range = wait for more data.</div></div></div></article>
+</section>
+<section class="preview"><h4>Confidence Interval<br/>Preview</h4><div class="miniWrap"><div class="mini"><div class="kpi">ROAS (30-day)</div><div class="rng">4.2 — 4.8</div><div class="pill">Confidence: 94%</div><div class="note">Narrow range = high confidence.<br/>Wide range = wait for more data.</div></div><p class="anno">Narrow range = high confidence.<br/>Wide range = wait for more data.<br/>Competitors show: 4.5 ← false precision</p></div></section>
+</main>
+<script>
+(function(){
+  const row=document.getElementById('stageRow');
+  const canvas=document.getElementById('flowCanvas');
+  const ctx=canvas.getContext('2d');
+  let phase=0;
+  function draw(){
+    const rect=row.getBoundingClientRect();
+    canvas.width=rect.width*window.devicePixelRatio; canvas.height=rect.height*window.devicePixelRatio;
+    canvas.style.width=rect.width+'px'; canvas.style.height=rect.height+'px';
+    ctx.setTransform(window.devicePixelRatio,0,0,window.devicePixelRatio,0,0);
+    ctx.clearRect(0,0,rect.width,rect.height);
+    const y=rect.height*0.56; const x1=rect.width*0.18; const x2=rect.width*0.96;
+    const grad=ctx.createLinearGradient(x1,0,x2,0); grad.addColorStop(0,'#2d7fd0'); grad.addColorStop(0.55,'#7fd3e8'); grad.addColorStop(1,'#58c98b');
+    ctx.strokeStyle=grad; ctx.lineWidth=24; ctx.lineCap='round'; ctx.globalAlpha=0.45; ctx.beginPath(); ctx.moveTo(x1,y); ctx.lineTo(x2,y); ctx.stroke();
+    ctx.globalAlpha=1; ctx.lineWidth=6; for(let x=x1+20+phase;x<x2-24;x+=95){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+36,y);ctx.stroke(); ctx.beginPath();ctx.moveTo(x+36,y);ctx.lineTo(x+26,y-7);ctx.moveTo(x+36,y);ctx.lineTo(x+26,y+7);ctx.stroke();}
+    phase=(phase+1)%95; requestAnimationFrame(draw);
+  }
+  draw(); window.addEventListener('resize',draw);
+})();
+</script>
+</body></html>

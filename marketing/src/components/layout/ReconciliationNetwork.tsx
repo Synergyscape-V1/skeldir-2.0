@@ -285,7 +285,7 @@ export function ReconciliationNetwork() {
             }
             
             h2 {
-              fontSize: 32px !important;
+              fontSize: 28px !important;
               line-height: 1.25 !important;
               margin-bottom: 32px !important;
             }

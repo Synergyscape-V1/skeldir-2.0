@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 
 export function AgenciesHeroSection() {
   return (
@@ -27,7 +26,6 @@ export function AgenciesHeroSection() {
         width={1200}
         height={661}
         loading="eager"
-                decoding="sync"
         fetchPriority="high"
         style={{
           position: 'absolute',
@@ -38,8 +36,6 @@ export function AgenciesHeroSection() {
           objectFit: 'cover',
           objectPosition: 'center',
           display: 'block',
-                    willChange: 'transform',
-                    opacity: 1,
           zIndex: 0,
         }}
       />
@@ -234,8 +230,8 @@ export function AgenciesHeroSection() {
           </div>
         </div>
 
-          {/* Right Column: Product Visual */}
-          <div className="relative mx-auto w-full max-w-[1600px] agencies-hero-visual" style={{ marginTop: '-250px' }}>
+          {/* Right Column: Product Visual — responsive agencies product hero screenshot */}
+          <div className="relative mx-auto w-full max-w-[1600px] agencies-hero-visual agencies-product-hero" style={{ marginTop: '-250px' }}>
             <div 
               className="relative rounded-2xl overflow-visible agencies-hero-image-glass"
               style={{
@@ -248,13 +244,15 @@ export function AgenciesHeroSection() {
               }}
             >
               <div className="overflow-hidden rounded-2xl">
-                <Image
-                  src="/images/Final Agency Hero Image.png"
-                  alt="Agency Command Center Dashboard"
-                  width={1600}
-                  height={1200}
+                <img
+                  src="/assets/images/agencies-product-hero/agencies-product-hero-800w.jpg"
+                  srcSet="/assets/images/agencies-product-hero/agencies-product-hero-400w.jpg 400w, /assets/images/agencies-product-hero/agencies-product-hero-800w.jpg 800w, /assets/images/agencies-product-hero/agencies-product-hero-1200w.jpg 1200w"
+                  sizes="(max-width: 600px) 100vw, (max-width: 960px) 80vw, (max-width: 1280px) 60vw, 950px"
+                  alt="Command Center — Skeldir agency dashboard with revenue, ROAS, priority actions, and channel performance"
                   className="w-full h-auto object-contain agencies-hero-dashboard-image"
-                  priority
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
                 />
               </div>
             </div>

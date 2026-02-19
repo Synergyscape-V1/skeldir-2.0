@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 import { CheckCircle2 } from "lucide-react";
 
@@ -17,7 +16,6 @@ export default function BookDemoThankYouPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Navigation forceVisible={true} />
       <main className="flex-grow pt-8 flex items-center justify-center px-4">
         <div
           style={{

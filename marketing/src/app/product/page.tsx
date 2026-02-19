@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 import { MarketingDefense } from "@/components/layout/MarketingDefense";
 import { ReconciliationNetwork } from "@/components/layout/ReconciliationNetwork";
@@ -293,11 +292,11 @@ export default function ProductPage() {
           }
         }
 
-        /* Mobile */
+        /* Mobile - reduced top spacing between nav and hero content */
         @media (max-width: 767px) {
           .product-hero-section {
-            padding: 100px 20px 60px 20px !important;
-            margin-top: 80px !important;
+            padding: 48px 20px 60px 20px !important;
+            margin-top: 48px !important;
           }
           .product-hero__text-column {
             padding: 0 !important;
@@ -337,7 +336,6 @@ export default function ProductPage() {
           }
         }
       `}</style>
-      <Navigation />
 
       {/* Hero Section with Background */}
       <section className="product-hero-section">
@@ -512,6 +510,8 @@ export default function ProductPage() {
             <img
               src="/images/4. Command Center .png"
               alt="Skeldir Command Center"
+              loading="lazy"
+              decoding="async"
             />
           </div>
         </div>

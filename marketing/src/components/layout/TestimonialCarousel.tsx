@@ -92,8 +92,7 @@ function AdobeLogo() {
           border: "none",
           outline: "none",
           mixBlendMode: "multiply",
-        }}
-      />
+        }} loading="lazy" decoding="async" />
     </div>
   );
 }
@@ -112,8 +111,7 @@ function SalesforceLogo() {
           border: "none",
           outline: "none",
           mixBlendMode: "multiply",
-        }}
-      />
+        }} loading="lazy" decoding="async" />
     </div>
   );
 }
@@ -132,8 +130,7 @@ function HubSpotLogo() {
           border: "none",
           outline: "none",
           mixBlendMode: "multiply",
-        }}
-      />
+        }} loading="lazy" decoding="async" />
     </div>
   );
 }
@@ -152,8 +149,7 @@ function ShopifyLogo() {
           border: "none",
           outline: "none",
           mixBlendMode: "multiply",
-        }}
-      />
+        }} loading="lazy" decoding="async" />
     </div>
   );
 }
@@ -172,8 +168,7 @@ function StripeLogo() {
           border: "none",
           outline: "none",
           mixBlendMode: "multiply",
-        }}
-      />
+        }} loading="lazy" decoding="async" />
     </div>
   );
 }

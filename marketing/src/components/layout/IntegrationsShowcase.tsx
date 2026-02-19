@@ -305,6 +305,8 @@ function LogoItem({ logo }: { logo: any }) {
                 <img
                     src={logo.src}
                     alt={logo.name}
+                    loading="lazy"
+                    decoding="async"
                     style={{
                         height: logo.height,
                         width: "auto",

@@ -1,4 +1,4 @@
-import { Navigation } from "@/components/layout/Navigation";
+import type { Metadata } from "next";
 import { HeroSection } from "@/components/layout/HeroSection";
 import { PartnerLogos } from "@/components/layout/PartnerLogos";
 import { ProblemStatement } from "@/components/layout/ProblemStatement";
@@ -9,6 +9,8 @@ import { TestimonialCarousel } from "@/components/layout/TestimonialCarousel";
 import { InteractiveDemo } from "@/components/layout/InteractiveDemo";
 import { FinalCTA } from "@/components/layout/FinalCTA";
 import { Footer } from "@/components/layout/Footer";
+
+// Image preload is handled in layout.tsx
 
 export default function Home() {
   return (
@@ -32,7 +34,6 @@ export default function Home() {
           width={1200}
           height={661}
           loading="eager"
-                  decoding="sync"
           fetchPriority="high"
           style={{
             position: "absolute",
@@ -42,16 +43,12 @@ export default function Home() {
             height: "100%",
             objectFit: "cover",
             objectPosition: "center",
-                      display: "block",
-                      willChange: "transform",
-                      opacity: 1,
-          
+            display: "block",
             zIndex: 0,
           }}
         />
         {/* Overlay content - preserved z-index above image */}
         <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <Navigation />
           <section className="relative flex flex-col overflow-hidden flex-1">
             <HeroSection />
             <div className="container mx-auto px-4 md:px-6 pb-16 lg:pb-24 partner-logos-section">

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 
 const navLinks = [
   { href: "/product", label: "Product" },
@@ -14,24 +15,36 @@ const navLinks = [
 ];
 
 export function Navigation({ forceVisible = false }: { forceVisible?: boolean }) {
+  const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const toggleHandledByPointer = useRef(false);
+
+  // Pages with white backgrounds need solid nav from the start
+  const pagesWithWhiteBackground = ['/pricing', '/resources'];
+  const shouldForceVisible = forceVisible || pagesWithWhiteBackground.some(path => pathname?.startsWith(path));
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
   useEffect(() => {
+    // Skip scroll detection for pages that need solid nav
+    if (shouldForceVisible) {
+      setScrolled(true);
+      return;
+    }
+
     const handleScroll = () => {
-      const isScrolled = window.scrollY > 100;
+      const isScrolled = window.scrollY > 50;
       setScrolled(isScrolled);
     };
 
+    handleScroll();
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [shouldForceVisible]);
 
   // H01/H02: When mobile nav is open, prevent scroll on the page behind (overflow only — no position:fixed so the menu open tap is not blocked on mobile).
   useEffect(() => {
@@ -46,17 +59,17 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
     };
   }, [mobileMenuOpen]);
 
-  const isVisible = forceVisible || scrolled;
+  const isVisible = shouldForceVisible || scrolled;
 
   return (
     <header
       className="fixed top-0 z-[9999] w-full pb-2 transition-all duration-300"
       style={{
-        // Visible state (scrolled or forceVisible): solid + blur + subtle border
-        backgroundColor: isVisible ? "rgba(255, 255, 255, 0.95)" : "transparent",
-        boxShadow: isVisible ? "0 4px 20px rgba(0, 0, 0, 0.1)" : "none",
-        borderBottom: isVisible ? "1px solid rgba(229, 231, 235, 0.4)" : "none",
-        backdropFilter: isVisible ? "blur(12px)" : "none",
+        // Visible state (scrolled or forceVisible): solid white to prevent overlap with content
+        backgroundColor: isVisible ? "#FFFFFF" : "transparent",
+        boxShadow: isVisible ? "0 4px 20px rgba(0, 0, 0, 0.08)" : "none",
+        borderBottom: isVisible ? "1px solid rgba(229, 231, 235, 0.6)" : "none",
+        backdropFilter: isVisible ? "none" : "none",
       }}
     >
       <nav className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
