@@ -161,11 +161,11 @@ jobs:
       - name: Capture IaC state proof scaffold (PR preflight)
         if: github.event_name == 'pull_request'
         run: |
-          @'
+          cat > docs/forensics/evidence/b11_p1/iac_state_proof.txt <<'EOF'
           mode=pr_preflight
           status=pass
           note=main-only OIDC trust prevents remote-state proof on PR refs by design
-          '@ | Out-File -FilePath docs/forensics/evidence/b11_p1/iac_state_proof.txt -Encoding utf8
+          EOF
 
       - name: Capture IaC state proof scaffold (main authoritative)
         if: github.event_name != 'pull_request'
