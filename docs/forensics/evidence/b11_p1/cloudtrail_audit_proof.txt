@@ -1,12 +1,73 @@
-timestamp_utc=2026-02-20T20:56:42.588320+00:00
+timestamp_utc=2026-02-20T21:44:57.410147+00:00
 queries=GetParametersByPath,GetSecretValue
 
 [lookup:GetParametersByPath]
-exit_code=254
-stdout=<empty>
-stderr=An error occurred (AccessDeniedException) when calling the LookupEvents operation: User: arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions is not authorized to perform: cloudtrail:LookupEvents because no identity-based policy allows the cloudtrail:LookupEvents action
+exit_code=0
+stdout={
+    "Events": [
+        {
+            "EventId": "256e4587-dce1-4fe8-8285-5eb6befa8664",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "ASIAUYEVKTQLQDDVKCL7",
+            "EventTime": "2026-02-20T20:56:42+00:00",
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "GitHubActions",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"AssumedRole\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN:GitHubActions\",\"arn\":\"arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions\",\"accountId\":\"326730685463\",\"accessKeyId\":\"ASIAUYEVKTQLQDDVKCL7\",\"sessionContext\":{\"sessionIssuer\":{\"type\":\"Role\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN\",\"arn\":\"arn:aws:iam::326730685463:role/skeldir-ci-deploy\",\"accountId\":\"326730685463\",\"userName\":\"skeldir-ci-deploy\"},\"webIdFederationData\":{\"federatedProvider\":\"arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com\",\"attributes\":{}},\"attributes\":{\"creationDate\":\"2026-02-20T20:56:37Z\",\"mfaAuthenticated\":\"false\"}}},\"eventTime\":\"2026-02-20T20:56:42Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"64.236.134.228\",\"userAgent\":\"aws-cli/2.33.12 md/awscrt#0.31.1 ua/2.1 os/linux#6.11.0-1018-azure md/arch#x86_64 lang/python#3.13.11 md/pyimpl#CPython m/Z,E,b,g cfg/retry-mode#standard md/installer#exe md/distrib#ubuntu.24 md/prompt#off md/command#ssm.get-parameters-by-path\",\"errorCode\":\"AccessDenied\",\"errorMessage\":\"User: arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ because no identity-based policy allows the ssm:GetParametersByPath action\",\"requestParameters\":null,\"responseElements\":null,\"requestID\":\"1c11faba-7eb2-480a-a1ef-d5f0b0ac197e\",\"eventID\":\"256e4587-dce1-4fe8-8285-5eb6befa8664\",\"readOnly\":true,\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "15645877-d45d-4469-a556-a2ff9a54721a",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "ASIAUYEVKTQLQDDVKCL7",
+            "EventTime": "2026-02-20T20:56:41+00:00",
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "GitHubActions",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"AssumedRole\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN:GitHubActions\",\"arn\":\"arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions\",\"accountId\":\"326730685463\",\"accessKeyId\":\"ASIAUYEVKTQLQDDVKCL7\",\"sessionContext\":{\"sessionIssuer\":{\"type\":\"Role\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN\",\"arn\":\"arn:aws:iam::326730685463:role/skeldir-ci-deploy\",\"accountId\":\"326730685463\",\"userName\":\"skeldir-ci-deploy\"},\"webIdFederationData\":{\"federatedProvider\":\"arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com\",\"attributes\":{}},\"attributes\":{\"creationDate\":\"2026-02-20T20:56:37Z\",\"mfaAuthenticated\":\"false\"}}},\"eventTime\":\"2026-02-20T20:56:41Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"64.236.134.228\",\"userAgent\":\"aws-cli/2.33.12 md/awscrt#0.31.1 ua/2.1 os/linux#6.11.0-1018-azure md/arch#x86_64 lang/python#3.13.11 md/pyimpl#CPython m/g,E,b,Z cfg/retry-mode#standard md/installer#exe md/distrib#ubuntu.24 md/prompt#off md/command#ssm.get-parameters-by-path\",\"requestParameters\":{\"path\":\"/skeldir/ci/config/\",\"recursive\":true,\"maxResults\":1},\"responseElements\":null,\"requestID\":\"5fd354a2-3b26-459b-aac5-f08885b6cbbc\",\"eventID\":\"15645877-d45d-4469-a556-a2ff9a54721a\",\"readOnly\":true,\"resources\":[{\"accountId\":\"326730685463\",\"ARN\":\"arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/ci/config/\"}],\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "90d40fc5-c1cd-4f3b-b928-090974dd4c51",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "ASIAUYEVKTQL3OKXZNRP",
+            "EventTime": "2026-02-20T20:38:45+00:00",
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "GitHubActions",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"AssumedRole\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN:GitHubActions\",\"arn\":\"arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions\",\"accountId\":\"326730685463\",\"accessKeyId\":\"ASIAUYEVKTQL3OKXZNRP\",\"sessionContext\":{\"sessionIssuer\":{\"type\":\"Role\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN\",\"arn\":\"arn:aws:iam::326730685463:role/skeldir-ci-deploy\",\"accountId\":\"326730685463\",\"userName\":\"skeldir-ci-deploy\"},\"webIdFederationData\":{\"federatedProvider\":\"arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com\",\"attributes\":{}},\"attributes\":{\"creationDate\":\"2026-02-20T20:38:40Z\",\"mfaAuthenticated\":\"false\"}}},\"eventTime\":\"2026-02-20T20:38:45Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"64.236.134.48\",\"userAgent\":\"aws-cli/2.33.12 md/awscrt#0.31.1 ua/2.1 os/linux#6.11.0-1018-azure md/arch#x86_64 lang/python#3.13.11 md/pyimpl#CPython m/b,Z,E,g cfg/retry-mode#standard md/installer#exe md/distrib#ubuntu.24 md/prompt#off md/command#ssm.get-parameters-by-path\",\"errorCode\":\"AccessDenied\",\"errorMessage\":\"User: arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ because no identity-based policy allows the ssm:GetParametersByPath action\",\"requestParameters\":null,\"responseElements\":null,\"requestID\":\"75b02897-8c81-40b7-af2c-29c8812acda0\",\"eventID\":\"90d40fc5-c1cd-4f3b-b928-090974dd4c51\",\"readOnly\":true,\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "b28d2ba4-71bd-4fcb-b102-88a938d05b95",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "ASIAUYEVKTQL3OKXZNRP",
+            "EventTime": "2026-02-20T20:38:44+00:00",
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "GitHubActions",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"AssumedRole\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN:GitHubActions\",\"arn\":\"arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions\",\"accountId\":\"326730685463\",\"accessKeyId\":\"ASIAUYEVKTQL3OKXZNRP\",\"sessionContext\":{\"sessionIssuer\":{\"type\":\"Role\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN\",\"arn\":\"arn:aws:iam::326730685463:role/skeldir-ci-deploy\",\"accountId\":\"326730685463\",\"userName\":\"skeldir-ci-deploy\"},\"webIdFederationData\":{\"federatedProvider\":\"arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com\",\"attributes\":{}},\"attributes\":{\"creationDate\":\"2026-02-20T20:38:40Z\",\"mfaAuthenticated\":\"false\"}}},\"eventTime\":\"2026-02-20T20:38:44Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"64.236.134.48\",\"userAgent\":\"aws-cli/2.33.12 md/awscrt#0.31.1 ua/2.1 os/linux#6.11.0-1018-azure md/arch#x86_64 lang/python#3.13.11 md/pyimpl#CPython m/Z,g,E,b cfg/retry-mode#standard md/installer#exe md/distrib#ubuntu.24 md/prompt#off md/command#ssm.get-parameters-by-path\",\"requestParameters\":{\"path\":\"/skeldir/ci/config/\",\"recursive\":true,\"maxResults\":1},\"responseElements\":null,\"requestID\":\"49522719-2218-47e5-be83-33a9552422c9\",\"eventID\":\"b28d2ba4-71bd-4fcb-b102-88a938d05b95\",\"readOnly\":true,\"resources\":[{\"accountId\":\"326730685463\",\"ARN\":\"arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/ci/config/\"}],\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        },
+        {
+            "EventId": "d6e17469-5e5f-49e4-8aa5-02a97d8095ba",
+            "EventName": "GetParametersByPath",
+            "ReadOnly": "true",
+            "AccessKeyId": "ASIAUYEVKTQLVR6RDD5E",
+            "EventTime": "2026-02-20T18:29:01+00:00",
+            "EventSource": "ssm.amazonaws.com",
+            "Username": "GitHubActions",
+            "Resources": [],
+            "CloudTrailEvent": "{\"eventVersion\":\"1.11\",\"userIdentity\":{\"type\":\"AssumedRole\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN:GitHubActions\",\"arn\":\"arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions\",\"accountId\":\"326730685463\",\"accessKeyId\":\"ASIAUYEVKTQLVR6RDD5E\",\"sessionContext\":{\"sessionIssuer\":{\"type\":\"Role\",\"principalId\":\"AROAUYEVKTQLWEA2RJXDN\",\"arn\":\"arn:aws:iam::326730685463:role/skeldir-ci-deploy\",\"accountId\":\"326730685463\",\"userName\":\"skeldir-ci-deploy\"},\"webIdFederationData\":{\"federatedProvider\":\"arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com\",\"attributes\":{}},\"attributes\":{\"creationDate\":\"2026-02-20T18:28:58Z\",\"mfaAuthenticated\":\"false\"}}},\"eventTime\":\"2026-02-20T18:29:01Z\",\"eventSource\":\"ssm.amazonaws.com\",\"eventName\":\"GetParametersByPath\",\"awsRegion\":\"us-east-2\",\"sourceIPAddress\":\"68.220.61.4\",\"userAgent\":\"aws-cli/2.33.12 md/awscrt#0.31.1 ua/2.1 os/linux#6.11.0-1018-azure md/arch#x86_64 lang/python#3.13.11 md/pyimpl#CPython m/b,g,E,Z cfg/retry-mode#standard md/installer#exe md/distrib#ubuntu.24 md/prompt#off md/command#ssm.get-parameters-by-path\",\"errorCode\":\"AccessDenied\",\"errorMessage\":\"User: arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ because no identity-based policy allows the ssm:GetParametersByPath action\",\"requestParameters\":null,\"responseElements\":null,\"requestID\":\"e9338820-c8d5-43ea-bcd3-76e095cf085b\",\"eventID\":\"d6e17469-5e5f-49e4-8aa5-02a97d8095ba\",\"readOnly\":true,\"eventType\":\"AwsApiCall\",\"managementEvent\":true,\"recipientAccountId\":\"326730685463\",\"eventCategory\":\"Management\",\"tlsDetails\":{\"tlsVersion\":\"TLSv1.2\",\"cipherSuite\":\"ECDHE-RSA-AES128-GCM-SHA256\",\"clientProvidedHostHeader\":\"ssm.us-east-2.amazonaws.com\"}}"
+        }
+    ],
+    "NextToken": "KxWrlGC4F0d1ayYHEQiGDF/I7IFwVGqQvxOxSrzWPMhP4He4l90x6pfHw4am3OKH"
+}
+stderr=<empty>
 
 [lookup:GetSecretValue]
-exit_code=254
-stdout=<empty>
-stderr=An error occurred (AccessDeniedException) when calling the LookupEvents operation: User: arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions is not authorized to perform: cloudtrail:LookupEvents because no identity-based policy allows the cloudtrail:LookupEvents action
+exit_code=0
+stdout={
+    "Events": []
+}
+stderr=<empty>

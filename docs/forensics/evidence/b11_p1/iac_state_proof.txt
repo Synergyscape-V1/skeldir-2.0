@@ -1,4 +1,4 @@
-timestamp_utc=2026-02-20T20:56:50.967113+00:00
+timestamp_utc=2026-02-20T21:45:12.929692+00:00
 terraform_dir=/home/runner/work/skeldir-2.0/skeldir-2.0/infra/b11_p1/terraform
 aws_region=us-east-2
 state_bucket=skeldir-b11-p1-tfstate-326730685463-us-east-2
@@ -53,6 +53,10 @@ data.aws_iam_role.rotation_lambda_live
 data.aws_iam_role.runtime_prod_live
 data.aws_iam_role.runtime_stage_live
 aws_iam_openid_connect_provider.github_actions
+aws_iam_role.ci_deploy
+aws_iam_role.rotation_lambda
+aws_iam_role.runtime_prod
+aws_iam_role.runtime_stage
 stderr=<empty>
 
 $ skip import aws_iam_openid_connect_provider.github_actions (already in state)
@@ -60,108 +64,24 @@ exit_code=0
 stdout=already_in_state
 stderr=<empty>
 
-$ terraform import -input=false -var environment=ci aws_iam_role.runtime_prod skeldir-app-runtime-prod
+$ skip import aws_iam_role.runtime_prod (already in state)
 exit_code=0
-stdout=[0m[1mdata.aws_iam_role.rotation_lambda_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Read complete after 0s [id=326730685463][0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Read complete after 0s [id=skeldir-rotation-lambda][0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Read complete after 0s [id=skeldir-app-runtime-stage][0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Read complete after 0s [id=skeldir-app-runtime-prod][0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Read complete after 0s [id=skeldir-ci-deploy][0m
-[0m[1maws_iam_role.runtime_prod: Importing from ID "skeldir-app-runtime-prod"...[0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Read complete after 0s [id=arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com][0m
-[0m[1m[32maws_iam_role.runtime_prod: Import prepared![0m
-[0m[32m  Prepared aws_iam_role for import[0m
-[0m[1maws_iam_role.runtime_prod: Refreshing state... [id=skeldir-app-runtime-prod][0m
-[0m[32m
-Import successful!
-
-The resources that were imported are shown above. These resources are now in
-your Terraform state and will henceforth be managed by Terraform.
-[0m
+stdout=already_in_state
 stderr=<empty>
 
-$ terraform import -input=false -var environment=ci aws_iam_role.runtime_stage skeldir-app-runtime-stage
+$ skip import aws_iam_role.runtime_stage (already in state)
 exit_code=0
-stdout=[0m[1mdata.aws_iam_role.rotation_lambda_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Reading...[0m[0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Read complete after 0s [id=326730685463][0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Read complete after 0s [id=skeldir-app-runtime-prod][0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Read complete after 0s [id=skeldir-rotation-lambda][0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Read complete after 0s [id=skeldir-ci-deploy][0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Read complete after 0s [id=skeldir-app-runtime-stage][0m
-[0m[1maws_iam_role.runtime_stage: Importing from ID "skeldir-app-runtime-stage"...[0m
-[0m[1m[32maws_iam_role.runtime_stage: Import prepared![0m
-[0m[32m  Prepared aws_iam_role for import[0m
-[0m[1maws_iam_role.runtime_stage: Refreshing state... [id=skeldir-app-runtime-stage][0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Read complete after 0s [id=arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com][0m
-[0m[32m
-Import successful!
-
-The resources that were imported are shown above. These resources are now in
-your Terraform state and will henceforth be managed by Terraform.
-[0m
+stdout=already_in_state
 stderr=<empty>
 
-$ terraform import -input=false -var environment=ci aws_iam_role.ci_deploy skeldir-ci-deploy
+$ skip import aws_iam_role.ci_deploy (already in state)
 exit_code=0
-stdout=[0m[1mdata.aws_caller_identity.current: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Read complete after 0s [id=326730685463][0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Read complete after 0s [id=skeldir-rotation-lambda][0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Read complete after 0s [id=skeldir-app-runtime-stage][0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Read complete after 0s [id=skeldir-ci-deploy][0m
-[0m[1maws_iam_role.ci_deploy: Importing from ID "skeldir-ci-deploy"...[0m
-[0m[1m[32maws_iam_role.ci_deploy: Import prepared![0m
-[0m[32m  Prepared aws_iam_role for import[0m
-[0m[1maws_iam_role.ci_deploy: Refreshing state... [id=skeldir-ci-deploy][0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Read complete after 0s [id=arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com][0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Read complete after 0s [id=skeldir-app-runtime-prod][0m
-[0m[32m
-Import successful!
-
-The resources that were imported are shown above. These resources are now in
-your Terraform state and will henceforth be managed by Terraform.
-[0m
+stdout=already_in_state
 stderr=<empty>
 
-$ terraform import -input=false -var environment=ci aws_iam_role.rotation_lambda skeldir-rotation-lambda
+$ skip import aws_iam_role.rotation_lambda (already in state)
 exit_code=0
-stdout=[0m[1mdata.aws_iam_role.runtime_prod_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Read complete after 0s [id=326730685463][0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Read complete after 0s [id=skeldir-ci-deploy][0m
-[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Read complete after 0s [id=arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com][0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Read complete after 0s [id=skeldir-app-runtime-prod][0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Read complete after 0s [id=skeldir-rotation-lambda][0m
-[0m[1maws_iam_role.rotation_lambda: Importing from ID "skeldir-rotation-lambda"...[0m
-[0m[1m[32maws_iam_role.rotation_lambda: Import prepared![0m
-[0m[32m  Prepared aws_iam_role for import[0m
-[0m[1maws_iam_role.rotation_lambda: Refreshing state... [id=skeldir-rotation-lambda][0m
-[0m[1mdata.aws_iam_role.runtime_stage_live: Read complete after 0s [id=skeldir-app-runtime-stage][0m
-[0m[32m
-Import successful!
-
-The resources that were imported are shown above. These resources are now in
-your Terraform state and will henceforth be managed by Terraform.
-[0m
+stdout=already_in_state
 stderr=<empty>
 
 $ terraform state list
@@ -714,23 +634,23 @@ stderr=<empty>
 
 $ terraform plan -detailed-exitcode -lock=true -input=false -var environment=ci -var manage_prefix_policies=false -var manage_namespace_placeholders=false
 exit_code=0
-stdout=[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Reading...[0m[0m
-[0m[1mdata.aws_caller_identity.current: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.ci_deploy_live: Reading...[0m[0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Reading...[0m[0m
+stdout=[0m[1mdata.aws_iam_role.ci_deploy_live: Reading...[0m[0m
 [0m[1mdata.aws_iam_role.runtime_prod_live: Reading...[0m[0m
+[0m[1mdata.aws_caller_identity.current: Reading...[0m[0m
+[0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Reading...[0m[0m
+[0m[1mdata.aws_iam_role.rotation_lambda_live: Reading...[0m[0m
 [0m[1mdata.aws_iam_role.runtime_stage_live: Reading...[0m[0m
 [0m[1mdata.aws_caller_identity.current: Read complete after 0s [id=326730685463][0m
+[0m[1mdata.aws_iam_role.rotation_lambda_live: Read complete after 0s [id=skeldir-rotation-lambda][0m
+[0m[1maws_iam_role.rotation_lambda: Refreshing state... [id=skeldir-rotation-lambda][0m
 [0m[1mdata.aws_iam_role.ci_deploy_live: Read complete after 0s [id=skeldir-ci-deploy][0m
-[0m[1mdata.aws_iam_role.runtime_prod_live: Read complete after 0s [id=skeldir-app-runtime-prod][0m
 [0m[1maws_iam_role.ci_deploy: Refreshing state... [id=skeldir-ci-deploy][0m
+[0m[1mdata.aws_iam_role.runtime_prod_live: Read complete after 0s [id=skeldir-app-runtime-prod][0m
 [0m[1maws_iam_role.runtime_prod: Refreshing state... [id=skeldir-app-runtime-prod][0m
 [0m[1mdata.aws_iam_role.runtime_stage_live: Read complete after 0s [id=skeldir-app-runtime-stage][0m
 [0m[1maws_iam_role.runtime_stage: Refreshing state... [id=skeldir-app-runtime-stage][0m
 [0m[1mdata.aws_iam_openid_connect_provider.github_actions_live: Read complete after 0s [id=arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com][0m
-[0m[1mdata.aws_iam_role.rotation_lambda_live: Read complete after 0s [id=skeldir-rotation-lambda][0m
 [0m[1maws_iam_openid_connect_provider.github_actions: Refreshing state... [id=arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com][0m
-[0m[1maws_iam_role.rotation_lambda: Refreshing state... [id=skeldir-rotation-lambda][0m
 
 [0m[1m[32mNo changes.[0m[1m Your infrastructure matches the configuration.[0m
 

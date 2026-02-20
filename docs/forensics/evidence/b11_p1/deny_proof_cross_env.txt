@@ -1,4 +1,4 @@
-timestamp_utc=2026-02-20T20:56:38.532348+00:00
+timestamp_utc=2026-02-20T21:44:55.080009+00:00
 role_name=skeldir-ci-deploy
 region=us-east-2
 allowed_ssm_path=/skeldir/ci/config/

@@ -1,7 +1,7 @@
 # B11_P1_CORRECTIVE_REMEDIATION_REPORT
 
 Date: 2026-02-20
-Final status: IN_PROGRESS (Gate 4 blocked)
+Final status: COMPLETE
 
 ## Hypothesis Validation (H01-H05)
 
@@ -37,7 +37,7 @@ Final status: IN_PROGRESS (Gate 4 blocked)
 - AWS proof script now enforces CI-tethered CloudTrail evidence and fails closed when:
   - lookup cannot execute, or
   - events are not tied to `assumed-role/skeldir-ci-deploy/...`.
-- Workflow now enforces `RESULT=PASS` in both:
+- Workflow enforces `RESULT=PASS` in both:
   - `deny_proof_cross_env.txt`
   - `cloudtrail_audit_proof.txt`
 
@@ -61,19 +61,21 @@ This artifact contains:
 - non-empty state proof
 - no-op plan proof
 
-## Definitive Gate Statements (Current)
+## Definitive Gate Statements
 
 - Gate 3 now CI-verifiable: TRUE
 - Gate 5 now non-bypassable: TRUE (control-plane and workflow structure)
-- Gate 4 audit evidence tethered from CI role: BLOCKED (permission gap)
-
-## Explicit Unblock Request
-
-- Resource: IAM role `skeldir-ci-deploy`
-- Required action: allow `cloudtrail:LookupEvents`
-- Reason: `docs/forensics/evidence/b11_p1/cloudtrail_audit_proof.txt` currently shows CI-role `AccessDeniedException`, preventing reproducible audit-event evidence generation.
-- Verification after grant: rerun `b11-p1-control-plane-adjudication` on `main`; confirm `aws-proof-gate` passes with `cloudtrail_audit_proof.txt` containing `RESULT=PASS`.
+- Gate 4 audit evidence tethered from CI role: TRUE
 
 ## Corrective Directive Judgment
 
-Phase B1.1-P1 corrective remediation directive is not fully complete until Gate 4 unblocks and fresh authoritative CI evidence is published on `main`.
+Phase B1.1-P1 corrective remediation directive is fully complete.
+
+## Final Authoritative Run
+
+- Run URL: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22242378414`
+- Result:
+  - `ssot-contract-gate`: PASS
+  - `env-boundary-gate`: PASS
+  - `terraform-control-plane-gate`: PASS
+  - `aws-proof-gate`: PASS

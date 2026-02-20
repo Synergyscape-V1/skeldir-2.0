@@ -1,22 +1,22 @@
 # B1.1-P1 Findings and Remediations
 
 Date: 2026-02-20
-Scope: Corrective re-remediation after GitHub analyst adjudication
+Scope: Corrective closure after GitHub analyst adjudication + main re-adjudication
 
 ## Executive Status
 
 - Gate 1: MET
 - Gate 2: MET
 - Gate 3: MET
-- Gate 4: BLOCKED
-- Gate 5: REMEDIATED (pending fresh authoritative run on latest commit)
+- Gate 4: MET
+- Gate 5: MET
 
-B1.1-P1 corrective directive is not yet fully complete due Gate 4 blocker.
+B1.1-P1 corrective directive is COMPLETE.
 
-## Historical Baseline (Last Green)
+## Final Adjudication Evidence
 
 Authoritative `main` run:
-- `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22240863314`
+- `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22242378414`
 
 Observed:
 - `ssot-contract-gate`: PASS
@@ -50,14 +50,13 @@ Additional control-plane hardening applied:
 - `required_pull_request_reviews.required_approving_review_count=1` on `main` (direct-push bypass closed).
 - Workflow updated to run authoritative backend/state proof in PR adjudication path (removed PR-mode `-backend=false` route).
 
-## Gate 4 Blocker (Current)
+## Gate 4 Closure (Audit Tether)
 
-- `docs/forensics/evidence/b11_p1/cloudtrail_audit_proof.txt` is now CI-role tethered, but currently shows:
-  - `AccessDeniedException` for `cloudtrail:LookupEvents` under `assumed-role/skeldir-ci-deploy/GitHubActions`.
-- This prevents reproducible in-repo CloudTrail event evidence from CI identity.
-
-Minimum unblock action:
-- Grant `cloudtrail:LookupEvents` to `skeldir-ci-deploy`, rerun `b11-p1-control-plane-adjudication` on `main`, and republish artifact-derived `cloudtrail_audit_proof.txt`.
+- `cloudtrail:LookupEvents` permission was added to `skeldir-ci-deploy` (`tf-backend-access` inline policy).
+- `aws-proof-gate` is now passing with CI-role-tethered CloudTrail events:
+  - identity includes `arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions`
+  - lookup execution returns `exit_code=0`
+  - proof artifact evaluates `RESULT=PASS`
 
 ## Evidence Inventory
 
@@ -76,4 +75,4 @@ Minimum unblock action:
 
 ## Conclusion
 
-Gate 3 is CI-verifiable and Gate 5 structural bypass vectors are remediated. Gate 4 remains BLOCKED pending CI-role CloudTrail lookup permission and a fresh authoritative passing run on `main`.
+All corrective gates are now adjudicated as passing on `main` with CI-derived evidence.
