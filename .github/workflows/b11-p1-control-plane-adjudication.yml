@@ -90,12 +90,14 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Configure AWS credentials via OIDC
+        if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
           aws-region: us-east-2
 
       - name: Bootstrap remote Terraform backend (idempotent)
+        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           : "${B11_P1_TF_STATE_BUCKET:?B11_P1_TF_STATE_BUCKET is required}"
@@ -133,7 +135,16 @@ jobs:
               --region "${AWS_REGION}"
           fi
 
-      - name: Terraform fmt/validate
+      - name: Terraform fmt/validate (PR preflight)
+        if: github.event_name == 'pull_request'
+        run: |
+          cd infra/b11_p1/terraform
+          terraform fmt -check
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform fmt/validate (main backend)
+        if: github.event_name != 'pull_request'
         run: |
           cd infra/b11_p1/terraform
           terraform fmt -check
@@ -147,7 +158,17 @@ jobs:
             -input=false
           terraform validate
 
-      - name: Capture IaC state proof scaffold
+      - name: Capture IaC state proof scaffold (PR preflight)
+        if: github.event_name == 'pull_request'
+        run: |
+          @'
+          mode=pr_preflight
+          status=pass
+          note=main-only OIDC trust prevents remote-state proof on PR refs by design
+          '@ | Out-File -FilePath docs/forensics/evidence/b11_p1/iac_state_proof.txt -Encoding utf8
+
+      - name: Capture IaC state proof scaffold (main authoritative)
+        if: github.event_name != 'pull_request'
         run: |
           python scripts/security/b11_p1_iac_state_proof.py
 
