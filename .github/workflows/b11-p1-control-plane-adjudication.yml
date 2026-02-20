@@ -79,7 +79,7 @@ jobs:
           pytest tests/test_b11_p1_ssot_contract.py -q -k "control_plane_env_is_fail_closed or all_paths_resolve_with_canonical_prefix"
 
   terraform-control-plane-gate:
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'pull_request_target') && (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       id-token: write
