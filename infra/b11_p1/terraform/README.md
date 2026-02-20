@@ -19,10 +19,17 @@ Authoritative IaC for managed secret/config namespace and IAM prefix boundaries.
 1. Export context:
 - `AWS_PROFILE=<profile>`
 - `TF_VAR_environment=ci` (or `prod|stage|dev|local`)
+- `TF_VAR_manage_prefix_policies=false` for CI state-verification runs
+- `TF_VAR_manage_namespace_placeholders=false` for CI state-verification runs
 
 2. Run plan:
 ```bash
-terraform init
+terraform init \
+  -backend-config="bucket=<state-bucket>" \
+  -backend-config="key=b11-p1/terraform.tfstate" \
+  -backend-config="region=us-east-2" \
+  -backend-config="dynamodb_table=<lock-table>" \
+  -backend-config="encrypt=true"
 terraform fmt -check
 terraform validate
 terraform plan -out=tfplan
@@ -45,6 +52,20 @@ terraform import aws_iam_role.rotation_lambda skeldir-rotation-lambda
 ```
 
 Then run `terraform plan` and review managed policy attachment changes.
+
+## CI State Verification Mode
+
+`b11-p1-control-plane-adjudication` validates imported state deterministically with:
+- remote S3 backend + DynamoDB state lock (no `-backend=false`)
+- imports for OIDC + 4 IAM roles if state is missing
+- `terraform state list` and `terraform state show` proof artifacts
+- `terraform plan -detailed-exitcode` expected to return `0` (no changes)
+
+This run intentionally keeps:
+- `manage_prefix_policies=false`
+- `manage_namespace_placeholders=false`
+
+to verify imported control-plane skeleton state without creating non-imported placeholder resources in CI.
 
 ## Enforcement
 - `environment` is fail-closed to `prod|stage|ci|dev|local`.
