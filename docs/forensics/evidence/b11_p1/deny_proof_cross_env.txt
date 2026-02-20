@@ -1,4 +1,4 @@
-timestamp_utc=2026-02-19T19:48:37.816190+00:00
+timestamp_utc=2026-02-20T21:44:55.080009+00:00
 role_name=skeldir-ci-deploy
 region=us-east-2
 allowed_ssm_path=/skeldir/ci/config/
@@ -12,8 +12,8 @@ stdout={
 stderr=<empty>
 
 [deny_check] aws ssm get-parameters-by-path
-exit_code=255
+exit_code=254
 stdout=<empty>
-stderr=An error occurred (AccessDeniedException) when calling the GetParametersByPath operation: User: arn:aws:iam::326730685463:user/skeldir-p1-ops-session is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ with an explicit deny in an identity-based policy
+stderr=An error occurred (AccessDeniedException) when calling the GetParametersByPath operation: User: arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions is not authorized to perform: ssm:GetParametersByPath on resource: arn:aws:ssm:us-east-2:326730685463:parameter/skeldir/prod/config/ because no identity-based policy allows the ssm:GetParametersByPath action
 
 RESULT=PASS

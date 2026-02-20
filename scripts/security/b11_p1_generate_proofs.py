@@ -180,6 +180,9 @@ def main() -> None:
         "queries=GetParametersByPath,GetSecretValue",
         "",
     ]
+    cloudtrail_fail_reasons: list[str] = []
+    cloudtrail_has_ci_identity = False
+    cloudtrail_has_events = False
 
     for event_name in ("GetParametersByPath", "GetSecretValue"):
         cloudtrail_lines.append(f"[lookup:{event_name}]")
@@ -199,6 +202,43 @@ def main() -> None:
         cloudtrail_lines.append("stdout=" + (q_out or "<empty>"))
         cloudtrail_lines.append("stderr=" + (q_err or "<empty>"))
         cloudtrail_lines.append("")
+
+        if q_code != 0:
+            cloudtrail_fail_reasons.append(f"{event_name}:lookup_failed")
+            continue
+
+        try:
+            payload = json.loads(q_out) if q_out else {}
+        except json.JSONDecodeError:
+            cloudtrail_fail_reasons.append(f"{event_name}:invalid_json")
+            continue
+
+        events = payload.get("Events") or []
+        if events:
+            cloudtrail_has_events = True
+
+        for event in events:
+            cloudtrail_event = event.get("CloudTrailEvent", "")
+            if not isinstance(cloudtrail_event, str):
+                continue
+            if f"assumed-role/{role_name}/" in cloudtrail_event:
+                cloudtrail_has_ci_identity = True
+
+    if not cloudtrail_has_events:
+        cloudtrail_fail_reasons.append("no_cloudtrail_events_found")
+    if not cloudtrail_has_ci_identity:
+        cloudtrail_fail_reasons.append("events_not_tethered_to_ci_assumed_role")
+
+    if cloudtrail_fail_reasons:
+        cloudtrail_lines.append("RESULT=BLOCKED")
+        cloudtrail_lines.append("reason=" + ",".join(sorted(set(cloudtrail_fail_reasons))))
+        cloudtrail_lines.append(
+            "unblock_request=Grant cloudtrail:LookupEvents to skeldir-ci-deploy and ensure lookup returns events for CI assumed-role reads"
+        )
+        cloudtrail_blocked = True
+    else:
+        cloudtrail_lines.append("RESULT=PASS")
+        cloudtrail_blocked = False
 
     _write(out_dir / "cloudtrail_audit_proof.txt", "\n".join(cloudtrail_lines))
 
@@ -229,6 +269,9 @@ def main() -> None:
             )
             + "\n",
         )
+
+    if "RESULT=PASS" not in "\n".join(deny_lines) or cloudtrail_blocked:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

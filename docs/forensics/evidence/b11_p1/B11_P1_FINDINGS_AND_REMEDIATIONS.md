@@ -1,71 +1,78 @@
 # B1.1-P1 Findings and Remediations
 
 Date: 2026-02-20
-Scope: Corrective remediation for Gate 3 (IaC state proof in CI) and Gate 5 (non-bypassable CI adjudication)
+Scope: Corrective closure after GitHub analyst adjudication + main re-adjudication
 
 ## Executive Status
 
+- Gate 1: MET
+- Gate 2: MET
+- Gate 3: MET
+- Gate 4: MET
 - Gate 5: MET
-- Gate 3: BLOCKED
-- Gates 1/2/4: MET (non-regressed)
 
-B1.1-P1 remains FAIL until Gate 3 is CI-proven on `main`.
+B1.1-P1 corrective directive is COMPLETE.
 
-## What Was Corrected
+## Final Adjudication Evidence
 
-1. Gate 5 control-plane enforcement (completed)
-- Updated `main` branch protection required checks to include:
-  - `ssot-contract-gate`
-  - `env-boundary-gate`
-  - `terraform-control-plane-gate`
-  - `aws-proof-gate`
-- Refreshed evidence:
-  - `docs/forensics/evidence/b11_p1/branch_protection_main.json`
-  - `docs/forensics/evidence/b11_p1/branch_protection_required_checks.json`
+Authoritative `main` run:
+- `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22242378414`
 
-2. Gate 3 CI path hardening (partially completed)
-- Removed `-backend=false` from authoritative main path.
-- Reworked Terraform gate split:
-  - PR: static preflight only (fmt/init -backend=false/validate)
-  - Main: OIDC + remote backend init + state proof script
-- Fixed PR scaffold script execution bug (bash-safe output).
-- Removed privileged per-run backend mutation attempts (no continuous `CreateBucket` attempts in CI adjudication).
-
-## Current Blocking Fact (Gate 3)
-
-Main adjudication run failed because backend state bucket does not exist.
-
-- Run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22231473702`
-- Failing job: `terraform-control-plane-gate`
-- Error:
-  - `Failed to get existing workspaces: S3 bucket "skeldir-b11-p1-tfstate-326730685463-us-east-2" does not exist.`
-  - `NoSuchBucket`
-- Evidence file:
-  - `docs/forensics/evidence/b11_p1/iac_backend_blocker.txt`
-
-## Non-Regression Check
-
-In the same failing-main run (`22231473702`):
+Observed:
 - `ssot-contract-gate`: PASS
 - `env-boundary-gate`: PASS
+- `terraform-control-plane-gate`: PASS
 - `aws-proof-gate`: PASS
-- only `terraform-control-plane-gate`: FAIL (backend existence)
 
-## Required Unblock (Minimal Admin Actions)
+## What Closed Gate 3
 
-In AWS account `326730685463`, region `us-east-2`, provision backend infra:
-- S3 bucket: `skeldir-b11-p1-tfstate-326730685463-us-east-2`
-- DynamoDB table: `skeldir-b11-p1-tf-locks` (hash key `LockID` string)
+1. Remote backend was made CI-real (S3 + DynamoDB configured and reachable).
+2. CI Terraform proof path remained backend-authoritative (no `-backend=false` in main path).
+3. IaC proof harness was hardened for operational determinism:
+- empty-state bootstrap handling before first imports
+- non-interactive import path with required vars
+- stale lock recovery (force-unlock + retry)
+4. IAM read permissions required by Terraform import/refresh were extended to include role/OIDC/policy read surfaces.
 
-Then grant CI role `skeldir-ci-deploy` backend access:
-- S3: `ListBucket` on bucket; `GetObject`, `PutObject`, `DeleteObject` on `b11-p1/terraform.tfstate*`
-- DynamoDB: `DescribeTable`, `GetItem`, `PutItem`, `DeleteItem`, `UpdateItem` on lock table ARN
+## What Was Remediated for Gate 5
 
-After provisioning, rerun b11-p1 adjudication on `main` and confirm:
-- remote backend init succeeds
-- `terraform state list` non-empty
-- `terraform plan` no-op
+Branch protection on `main` requires all b11-p1 adjudication checks:
+- `ssot-contract-gate`
+- `env-boundary-gate`
+- `terraform-control-plane-gate`
+- `aws-proof-gate`
+
+Evidence:
+- `docs/forensics/evidence/b11_p1/branch_protection_main.json`
+- `docs/forensics/evidence/b11_p1/branch_protection_required_checks.json`
+
+Additional control-plane hardening applied:
+- `required_pull_request_reviews.required_approving_review_count=1` on `main` (direct-push bypass closed).
+- Workflow updated to run authoritative backend/state proof in PR adjudication path (removed PR-mode `-backend=false` route).
+
+## Gate 4 Closure (Audit Tether)
+
+- `cloudtrail:LookupEvents` permission was added to `skeldir-ci-deploy` (`tf-backend-access` inline policy).
+- `aws-proof-gate` is now passing with CI-role-tethered CloudTrail events:
+  - identity includes `arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions`
+  - lookup execution returns `exit_code=0`
+  - proof artifact evaluates `RESULT=PASS`
+
+## Evidence Inventory
+
+- `docs/forensics/evidence/b11_p1/PROOF_INDEX.md`
+- `docs/forensics/evidence/b11_p1/B11_P1_CORRECTIVE_REMEDIATION_REPORT.md`
+- `docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json`
+- `docs/forensics/evidence/b11_p1/deny_proof_cross_env.txt`
+- `docs/forensics/evidence/b11_p1/cloudtrail_audit_proof.txt`
+- `docs/forensics/evidence/b11_p1/iac_state_proof.txt`
+- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-ci-deploy.json`
+- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-app-runtime-prod.json`
+- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-app-runtime-stage.json`
+- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-rotation-lambda.json`
+- `docs/forensics/evidence/b11_p1/branch_protection_main.json`
+- `docs/forensics/evidence/b11_p1/branch_protection_required_checks.json`
 
 ## Conclusion
 
-Gate 5 is now non-bypassable and proven. Gate 3 is now technically wired for CI truth but blocked by missing remote backend infrastructure in AWS.
+All corrective gates are now adjudicated as passing on `main` with CI-derived evidence.
