@@ -1,157 +1,71 @@
-﻿# B1.1-P1 Findings and Remediations
+# B1.1-P1 Findings and Remediations
 
-Date: 2026-02-19
-Scope: Secret taxonomy SSOT, environment namespacing, AWS control-plane IaC skeleton, adjudication proofs
+Date: 2026-02-20
+Scope: Corrective remediation for Gate 3 (IaC state proof in CI) and Gate 5 (non-bypassable CI adjudication)
 
-## Executive Result
+## Executive Status
 
-B1.1-P1 is remediated and evidenced for Gates 1-5, including CI adjudication on `main`.
+- Gate 5: MET
+- Gate 3: BLOCKED
+- Gates 1/2/4: MET (non-regressed)
 
-- Gate 1 (SSOT Contract): MET
-- Gate 2 (Namespace Boundary + non-vacuous deny): MET
-- Gate 3 (IaC state/import evidence): MET (local)
-- Gate 4 (CloudTrail audit evidence): MET
-- Gate 5 (CI adjudication on `main`): MET
+B1.1-P1 remains FAIL until Gate 3 is CI-proven on `main`.
 
-## Findings (Empirical)
+## What Was Corrected
 
-1. Initial credential package was invalid
-- Symptom: `SignatureDoesNotMatch` / `InvalidSignatureException` across STS/IAM/SSM/CloudTrail.
-- Impact: No AWS proof execution possible.
+1. Gate 5 control-plane enforcement (completed)
+- Updated `main` branch protection required checks to include:
+  - `ssot-contract-gate`
+  - `env-boundary-gate`
+  - `terraform-control-plane-gate`
+  - `aws-proof-gate`
+- Refreshed evidence:
+  - `docs/forensics/evidence/b11_p1/branch_protection_main.json`
+  - `docs/forensics/evidence/b11_p1/branch_protection_required_checks.json`
 
-2. Second credential package was valid but under-privileged
-- Symptom: STS identity succeeded, but IAM/CloudTrail actions denied by permission boundary.
-- Impact: Could not complete IAM introspection, CloudTrail evidence, or Terraform IAM data reads.
+2. Gate 3 CI path hardening (partially completed)
+- Removed `-backend=false` from authoritative main path.
+- Reworked Terraform gate split:
+  - PR: static preflight only (fmt/init -backend=false/validate)
+  - Main: OIDC + remote backend init + state proof script
+- Fixed PR scaffold script execution bug (bash-safe output).
+- Removed privileged per-run backend mutation attempts (no continuous `CreateBucket` attempts in CI adjudication).
 
-3. V3 remediation resolved both credential validity and permission boundary ceiling
-- Symptom after V3: live checks pass for identity, IAM role read, CloudTrail lookup, SSM allow/deny probes.
-- Impact: Gates 2 and 4 became provable and reproducible.
+## Current Blocking Fact (Gate 3)
 
-## Remediations Implemented
+Main adjudication run failed because backend state bucket does not exist.
 
-### A) Contract-as-Code SSOT (no dual-source taxonomy)
-- Added `backend/app/core/managed_settings_contract.py`
-- Added `backend/app/core/managed_settings_guard.py`
-- Added `scripts/security/b11_p1_ssot_guard.py`
-- Added `backend/tests/test_b11_p1_ssot_contract.py`
+- Run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22231473702`
+- Failing job: `terraform-control-plane-gate`
+- Error:
+  - `Failed to get existing workspaces: S3 bucket "skeldir-b11-p1-tfstate-326730685463-us-east-2" does not exist.`
+  - `NoSuchBucket`
+- Evidence file:
+  - `docs/forensics/evidence/b11_p1/iac_backend_blocker.txt`
 
-What this enforces:
-- Every `Settings` key must have SSOT metadata.
-- Classification must be `secret|config`.
-- Path templates must be canonical and env-scoped.
-- Snapshot drift is detected (`--check-drift`).
+## Non-Regression Check
 
-### B) Runtime environment boundary + fail-closed control plane
-- Added `backend/app/core/control_plane.py`
-- Updated `backend/app/core/config.py`
+In the same failing-main run (`22231473702`):
+- `ssot-contract-gate`: PASS
+- `env-boundary-gate`: PASS
+- `aws-proof-gate`: PASS
+- only `terraform-control-plane-gate`: FAIL (backend existence)
 
-What this enforces:
-- Allowed envs: `prod|stage|ci|dev|local`.
-- Canonical path resolution only: `/skeldir/{env}/(config|secret)/*`.
-- Optional control-plane preloading/hydration for managed keys.
+## Required Unblock (Minimal Admin Actions)
 
-### C) IaC control-plane skeleton with importable state resources
-- Updated `infra/b11_p1/terraform/main.tf`
-- Updated `infra/b11_p1/terraform/variables.tf`
-- Updated `infra/b11_p1/terraform/outputs.tf`
-- Updated `infra/b11_p1/terraform/README.md`
+In AWS account `326730685463`, region `us-east-2`, provision backend infra:
+- S3 bucket: `skeldir-b11-p1-tfstate-326730685463-us-east-2`
+- DynamoDB table: `skeldir-b11-p1-tf-locks` (hash key `LockID` string)
 
-What this enforces:
-- Importable resources for OIDC + required IAM roles.
-- Env-scoped IAM allow and explicit deny policy skeletons.
-- Deterministic placeholder SSM/Secrets namespace resources.
-- Role tag drift suppression for imported legacy roles (`lifecycle.ignore_changes` on tags).
-- OIDC URL normalization for Terraform provider constraints.
+Then grant CI role `skeldir-ci-deploy` backend access:
+- S3: `ListBucket` on bucket; `GetObject`, `PutObject`, `DeleteObject` on `b11-p1/terraform.tfstate*`
+- DynamoDB: `DescribeTable`, `GetItem`, `PutItem`, `DeleteItem`, `UpdateItem` on lock table ARN
 
-### D) Adjudication and proof harnessing
-- Added `.github/workflows/b11-p1-control-plane-adjudication.yml`
-- Added `scripts/security/b11_p1_generate_proofs.py`
-- Added `scripts/security/b11_p1_iac_state_proof.py`
-- Added/updated evidence under `docs/forensics/evidence/b11_p1/`
+After provisioning, rerun b11-p1 adjudication on `main` and confirm:
+- remote backend init succeeds
+- `terraform state list` non-empty
+- `terraform plan` no-op
 
-## Scientific Verification Summary
+## Conclusion
 
-### Gate 1: SSOT Contract Enforced
-Commands:
-- `python scripts/security/b11_p1_ssot_guard.py --check-drift`
-- `pytest backend/tests/test_b11_p1_ssot_contract.py -q`
-
-Observed:
-- Guard PASS (`keys=51`)
-- Tests PASS (`3 passed`)
-
-Evidence:
-- `docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json`
-
-### Gate 2: Namespace Boundary Proven (non-vacuous)
-Commands:
-- Allow read: `aws ssm get-parameters-by-path --path /skeldir/ci/config/ --recursive --max-results 1`
-- Deny read: `aws ssm get-parameters-by-path --path /skeldir/prod/config/ --recursive --max-results 1`
-
-Observed:
-- Allow succeeded.
-- Deny returned `AccessDeniedException` with explicit deny text.
-
-Evidence:
-- `docs/forensics/evidence/b11_p1/deny_proof_cross_env.txt`
-
-### Gate 3: IaC State + Imports
-Commands:
-- `terraform fmt -check`
-- `terraform init -backend=false`
-- `terraform validate`
-- `terraform import aws_iam_openid_connect_provider.github_actions ...`
-- `terraform import aws_iam_role.runtime_prod ...`
-- `terraform import aws_iam_role.runtime_stage ...`
-- `terraform import aws_iam_role.ci_deploy ...`
-- `terraform import aws_iam_role.rotation_lambda ...`
-- `terraform state list`
-
-Observed:
-- fmt/init/validate PASS.
-- Imports succeeded for OIDC + 4 roles.
-- State list includes imported resources.
-
-Evidence:
-- `docs/forensics/evidence/b11_p1/iac_state_proof.txt`
-
-### Gate 4: Audit Evidence Produced
-Commands:
-- `aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=GetParametersByPath --max-results 5`
-- `aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=GetSecretValue --max-results 5`
-
-Observed:
-- CloudTrail returns `GetParametersByPath` events for controlled reads, including explicit deny events.
-
-Evidence:
-- `docs/forensics/evidence/b11_p1/cloudtrail_audit_proof.txt`
-
-### Gate 5: CI adjudication on `main`
-Observed:
-- PR merged to `main`: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/101`
-- Merge commit on `main`: `b47cab2756adc1196f79b9d34e5c127666ef2bca`
-- Main push run passed: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22202994436`
-- Job results on that main run:
-  - `ssot-contract-gate`: PASS
-  - `terraform-control-plane-gate`: PASS
-  - `aws-proof-gate`: PASS (OIDC auth + deny proof enforcement + artifact upload)
-
-Status:
-- MET
-
-## Evidence Inventory
-
-- `docs/forensics/evidence/b11_p1/PROOF_INDEX.md`
-- `docs/forensics/evidence/b11_p1/ssot_contract_snapshot.json`
-- `docs/forensics/evidence/b11_p1/deny_proof_cross_env.txt`
-- `docs/forensics/evidence/b11_p1/cloudtrail_audit_proof.txt`
-- `docs/forensics/evidence/b11_p1/iac_state_proof.txt`
-- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-ci-deploy.json`
-- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-app-runtime-prod.json`
-- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-app-runtime-stage.json`
-- `docs/forensics/evidence/b11_p1/iam_policy_skeldir-rotation-lambda.json`
-- `docs/forensics/evidence/b11_p1/hypothesis_validation_session_credentials.txt`
-
-## Residual Risk and Closure Action
-
-No unresolved gate blocker remains for B1.1-P1. Follow-on risk is operational drift outside this phase scope; controls are now codified and adjudicated in CI.
+Gate 5 is now non-bypassable and proven. Gate 3 is now technically wired for CI truth but blocked by missing remote backend infrastructure in AWS.
