@@ -91,7 +91,14 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
     if get_secret("DATABASE_URL") is None:
         missing.append("DATABASE_URL")
 
-    if role in {"api", "readiness"}:
+    auth_required = (
+        role in {"api", "readiness"}
+        and (
+            os.getenv("SKELDIR_REQUIRE_AUTH_SECRETS", "0").strip() in {"1", "true", "yes", "on"}
+            or _read_setting("ENVIRONMENT") in {"prod", "stage"}
+        )
+    )
+    if auth_required:
         jwt_cfg = get_jwt_validation_config()
         if jwt_cfg.secret is None and jwt_cfg.jwks_url is None:
             missing.extend(["AUTH_JWT_SECRET|AUTH_JWT_JWKS_URL"])

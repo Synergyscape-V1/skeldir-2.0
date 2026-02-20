@@ -18,6 +18,7 @@ async def api_client():
 
 @pytest.mark.asyncio
 async def test_readiness_fails_closed_when_jwt_secret_missing(monkeypatch, api_client):
+    monkeypatch.setenv("SKELDIR_REQUIRE_AUTH_SECRETS", "1")
     monkeypatch.setattr(settings, "AUTH_JWT_SECRET", None)
     monkeypatch.setattr(settings, "AUTH_JWT_JWKS_URL", None)
 
