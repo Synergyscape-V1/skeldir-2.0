@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,6 +141,24 @@ def main() -> None:
         lines.append("stdout=" + (out or "<empty>"))
         lines.append("stderr=" + (err or "<empty>"))
         lines.append("")
+        if code != 0 and "Error acquiring the state lock" in (err or ""):
+            lock_match = re.search(r"ID:\s+([A-Za-z0-9-]+)", err or "")
+            if lock_match:
+                lock_id = lock_match.group(1)
+                unlock_cmd = ["terraform", "force-unlock", "-force", lock_id]
+                lines.append("$ " + " ".join(unlock_cmd))
+                unlock_code, unlock_out, unlock_err = _run(unlock_cmd, tf_dir)
+                lines.append(f"exit_code={unlock_code}")
+                lines.append("stdout=" + (unlock_out or "<empty>"))
+                lines.append("stderr=" + (unlock_err or "<empty>"))
+                lines.append("")
+                if unlock_code == 0:
+                    lines.append("$ " + " ".join(import_cmd) + "  # retry_after_unlock")
+                    code, out, err = _run(import_cmd, tf_dir)
+                    lines.append(f"exit_code={code}")
+                    lines.append("stdout=" + (out or "<empty>"))
+                    lines.append("stderr=" + (err or "<empty>"))
+                    lines.append("")
         if code != 0:
             lines.append("status=failed")
             out_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
