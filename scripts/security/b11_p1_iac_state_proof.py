@@ -84,12 +84,16 @@ def main() -> None:
     lines.append("stdout=" + (out or "<empty>"))
     lines.append("stderr=" + (err or "<empty>"))
     lines.append("")
-    if code != 0:
+
+    # A brand-new remote backend returns "No state file was found".
+    # Treat that as empty state and continue to imports.
+    no_state_yet = code != 0 and "No state file was found" in (err or "")
+    if code != 0 and not no_state_yet:
         lines.append("status=failed")
         out_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
         raise SystemExit(code)
 
-    current_state = set((out or "").splitlines())
+    current_state = set((out or "").splitlines()) if code == 0 else set()
     import_targets = [
         (
             "aws_iam_openid_connect_provider.github_actions",
