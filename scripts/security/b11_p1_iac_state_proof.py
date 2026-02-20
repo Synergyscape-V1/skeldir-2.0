@@ -34,11 +34,11 @@ def main() -> None:
         f"state_key={state_key}",
         "",
         "# Import commands (executed only when state entries are missing):",
-        "terraform import aws_iam_openid_connect_provider.github_actions arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com",
-        "terraform import aws_iam_role.runtime_prod skeldir-app-runtime-prod",
-        "terraform import aws_iam_role.runtime_stage skeldir-app-runtime-stage",
-        "terraform import aws_iam_role.ci_deploy skeldir-ci-deploy",
-        "terraform import aws_iam_role.rotation_lambda skeldir-rotation-lambda",
+        "terraform import -input=false -var environment=ci aws_iam_openid_connect_provider.github_actions arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com",
+        "terraform import -input=false -var environment=ci aws_iam_role.runtime_prod skeldir-app-runtime-prod",
+        "terraform import -input=false -var environment=ci aws_iam_role.runtime_stage skeldir-app-runtime-stage",
+        "terraform import -input=false -var environment=ci aws_iam_role.ci_deploy skeldir-ci-deploy",
+        "terraform import -input=false -var environment=ci aws_iam_role.rotation_lambda skeldir-rotation-lambda",
         "",
     ]
 
@@ -100,14 +100,29 @@ def main() -> None:
             [
                 "terraform",
                 "import",
+                "-input=false",
+                "-var",
+                "environment=ci",
                 "aws_iam_openid_connect_provider.github_actions",
                 "arn:aws:iam::326730685463:oidc-provider/token.actions.githubusercontent.com",
             ],
         ),
-        ("aws_iam_role.runtime_prod", ["terraform", "import", "aws_iam_role.runtime_prod", "skeldir-app-runtime-prod"]),
-        ("aws_iam_role.runtime_stage", ["terraform", "import", "aws_iam_role.runtime_stage", "skeldir-app-runtime-stage"]),
-        ("aws_iam_role.ci_deploy", ["terraform", "import", "aws_iam_role.ci_deploy", "skeldir-ci-deploy"]),
-        ("aws_iam_role.rotation_lambda", ["terraform", "import", "aws_iam_role.rotation_lambda", "skeldir-rotation-lambda"]),
+        (
+            "aws_iam_role.runtime_prod",
+            ["terraform", "import", "-input=false", "-var", "environment=ci", "aws_iam_role.runtime_prod", "skeldir-app-runtime-prod"],
+        ),
+        (
+            "aws_iam_role.runtime_stage",
+            ["terraform", "import", "-input=false", "-var", "environment=ci", "aws_iam_role.runtime_stage", "skeldir-app-runtime-stage"],
+        ),
+        (
+            "aws_iam_role.ci_deploy",
+            ["terraform", "import", "-input=false", "-var", "environment=ci", "aws_iam_role.ci_deploy", "skeldir-ci-deploy"],
+        ),
+        (
+            "aws_iam_role.rotation_lambda",
+            ["terraform", "import", "-input=false", "-var", "environment=ci", "aws_iam_role.rotation_lambda", "skeldir-rotation-lambda"],
+        ),
     ]
 
     for state_addr, import_cmd in import_targets:
