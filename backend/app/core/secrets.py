@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Literal
+import os
 
 from app.core.config import settings
 from app.core.managed_settings_contract import MANAGED_SETTINGS_CONTRACT
@@ -90,19 +91,23 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
     if get_secret("DATABASE_URL") is None:
         missing.append("DATABASE_URL")
 
-    jwt_cfg = get_jwt_validation_config()
-
-    if jwt_cfg.secret is None and jwt_cfg.jwks_url is None:
-        missing.extend(["AUTH_JWT_SECRET|AUTH_JWT_JWKS_URL"])
-    if (jwt_cfg.secret is not None or jwt_cfg.jwks_url is not None) and jwt_cfg.algorithm is None:
-        missing.append("AUTH_JWT_ALGORITHM")
     if role in {"api", "readiness"}:
+        jwt_cfg = get_jwt_validation_config()
+        if jwt_cfg.secret is None and jwt_cfg.jwks_url is None:
+            missing.extend(["AUTH_JWT_SECRET|AUTH_JWT_JWKS_URL"])
+        if (jwt_cfg.secret is not None or jwt_cfg.jwks_url is not None) and jwt_cfg.algorithm is None:
+            missing.append("AUTH_JWT_ALGORITHM")
         if jwt_cfg.issuer is None:
             missing.append("AUTH_JWT_ISSUER")
         if jwt_cfg.audience is None:
             missing.append("AUTH_JWT_AUDIENCE")
 
-    if role in {"api", "readiness"} and get_secret("PLATFORM_TOKEN_ENCRYPTION_KEY") is None:
+    platform_key_id = _read_setting("PLATFORM_TOKEN_KEY_ID")
+    platform_required = (
+        os.getenv("SKELDIR_REQUIRE_PLATFORM_TOKEN_KEY", "0").strip() in {"1", "true", "yes", "on"}
+        or platform_key_id is not None
+    )
+    if role in {"api", "readiness"} and platform_required and get_secret("PLATFORM_TOKEN_ENCRYPTION_KEY") is None:
         missing.append("PLATFORM_TOKEN_ENCRYPTION_KEY")
 
     return RuntimeSecretValidationResult(
