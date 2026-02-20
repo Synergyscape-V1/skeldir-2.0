@@ -1,0 +1,11 @@
+Run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22231473702
+Job: terraform-control-plane-gate (64311999437)
+Step: Terraform fmt/validate (main backend)
+
+Observed error:
+Error: Failed to get existing workspaces: S3 bucket "skeldir-b11-p1-tfstate-326730685463-us-east-2" does not exist.
+Error: operation error S3: ListObjectsV2 ... NoSuchBucket
+
+Interpretation:
+Gate 3 remains blocked because remote backend state bucket is absent in account 326730685463/us-east-2.
+The CI role skeldir-ci-deploy can assume via OIDC, but cannot bootstrap missing backend infra by policy.
