@@ -15,6 +15,7 @@ from sqlalchemy.engine.url import make_url
 
 from app.celery_app import celery_app
 from app.matviews.executor import RefreshOutcome, RefreshResult, refresh_all_for_tenant, refresh_single
+from app.core.secrets import get_database_url
 from app.observability import metrics
 from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.observability.metrics_policy import normalize_view_name
@@ -90,8 +91,7 @@ def _normalize_tenant_id(value: UUID | str) -> UUID:
 
 
 def _build_sync_dsn() -> str:
-    from app.core.config import settings
-    url = make_url(settings.DATABASE_URL.unicode_string())
+    url = make_url(get_database_url())
     query = dict(url.query)
     query.pop("channel_binding", None)
     url = url.set(query=query)

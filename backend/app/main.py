@@ -34,6 +34,7 @@ from app.api.problem_details import problem_details_response
 from app.middleware import PIIStrippingMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.security.auth import AuthError
+from app.core.secrets import assert_runtime_secret_contract
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -76,6 +77,11 @@ app.include_router(webhooks.router, prefix="/api", tags=["Webhooks"])
 # - /health/live: Pure liveness (no deps)
 # - /health/ready: Readiness (DB + RLS + GUC)
 # - /health/worker: Worker capability (data-plane probe)
+
+@app.on_event("startup")
+async def _startup_secret_contract_guard() -> None:
+    """Fail closed at boot when required security secrets are unavailable."""
+    assert_runtime_secret_contract("api")
 
 
 @app.get("/")

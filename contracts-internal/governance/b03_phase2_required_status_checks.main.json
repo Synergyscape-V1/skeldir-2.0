@@ -14,6 +14,8 @@
     "Phase 1 Runtime Conformance",
     "B0.6 Phase 2 Adjudication",
     "Phase Gates (B0.3)",
-    "Phase 8 Regression Gate (Full Physics)"
+    "Phase 8 Regression Gate (Full Physics)",
+    "b11-p2-secret-chokepoint-gate",
+    "b11-p2-readiness-gate"
   ]
 }

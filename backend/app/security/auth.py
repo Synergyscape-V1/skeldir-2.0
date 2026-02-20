@@ -8,7 +8,7 @@ from fastapi import Header, Request
 import jwt
 from jwt import InvalidTokenError, PyJWKClient
 
-from app.core.config import settings
+from app.core.secrets import get_jwt_validation_config
 from app.core.identity import resolve_user_id
 from app.observability.context import set_tenant_id, set_user_id
 
@@ -52,8 +52,9 @@ def _get_bearer_token(authorization: str | None) -> str:
 
 
 def _ensure_auth_configured() -> None:
-    if settings.AUTH_JWT_SECRET or settings.AUTH_JWT_JWKS_URL:
-        if not settings.AUTH_JWT_ALGORITHM:
+    jwt_cfg = get_jwt_validation_config()
+    if jwt_cfg.secret or jwt_cfg.jwks_url:
+        if not jwt_cfg.algorithm:
             raise AuthError(
                 status_code=500,
                 title="Internal Server Error",
@@ -71,26 +72,27 @@ def _ensure_auth_configured() -> None:
 
 def _decode_token(token: str) -> dict[str, Any]:
     _ensure_auth_configured()
+    jwt_cfg = get_jwt_validation_config()
     options = {"require": ["exp"]}
     decode_kwargs: dict[str, Any] = {"options": options}
-    if settings.AUTH_JWT_ISSUER:
-        decode_kwargs["issuer"] = settings.AUTH_JWT_ISSUER
-    if settings.AUTH_JWT_AUDIENCE:
-        decode_kwargs["audience"] = settings.AUTH_JWT_AUDIENCE
+    if jwt_cfg.issuer:
+        decode_kwargs["issuer"] = jwt_cfg.issuer
+    if jwt_cfg.audience:
+        decode_kwargs["audience"] = jwt_cfg.audience
 
-    if settings.AUTH_JWT_JWKS_URL:
-        jwks_client = PyJWKClient(settings.AUTH_JWT_JWKS_URL)
+    if jwt_cfg.jwks_url:
+        jwks_client = PyJWKClient(jwt_cfg.jwks_url)
         signing_key = jwks_client.get_signing_key_from_jwt(token).key
         return jwt.decode(
             token,
             signing_key,
-            algorithms=[settings.AUTH_JWT_ALGORITHM],
+            algorithms=[jwt_cfg.algorithm],
             **decode_kwargs,
         )
     return jwt.decode(
         token,
-        settings.AUTH_JWT_SECRET,
-        algorithms=[settings.AUTH_JWT_ALGORITHM],
+        jwt_cfg.secret,
+        algorithms=[jwt_cfg.algorithm],
         **decode_kwargs,
     )
 

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.problem_details import problem_details_response
 from app.core.config import settings
+from app.core.secrets import get_platform_token_encryption_key
 from app.security.auth import AuthContext, get_auth_context
 from app.db.deps import get_db_session
 from app.schemas.attribution import (
@@ -156,7 +157,9 @@ async def upsert_platform_credentials(
             type_url="https://api.skeldir.com/problems/validation-error",
         )
 
-    if not settings.PLATFORM_TOKEN_ENCRYPTION_KEY:
+    try:
+        encryption_key = get_platform_token_encryption_key()
+    except RuntimeError:
         return problem_details_response(
             request,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -178,7 +181,7 @@ async def upsert_platform_credentials(
             scope=payload.scope,
             token_type=payload.token_type,
             key_id=settings.PLATFORM_TOKEN_KEY_ID or "default",
-            encryption_key=settings.PLATFORM_TOKEN_ENCRYPTION_KEY,
+            encryption_key=encryption_key,
         )
     except PlatformConnectionNotFoundError:
         return problem_details_response(
