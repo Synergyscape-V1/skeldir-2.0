@@ -55,6 +55,9 @@ locals {
 
   github_oidc_live_url = data.aws_iam_openid_connect_provider.github_actions_live.url
   github_oidc_url      = startswith(local.github_oidc_live_url, "https://") ? local.github_oidc_live_url : "https://${local.github_oidc_live_url}"
+
+  effective_secret_placeholder_records = var.manage_namespace_placeholders ? local.secret_placeholder_records : []
+  effective_config_placeholder_records = var.manage_namespace_placeholders ? local.config_placeholder_records : []
 }
 
 data "aws_caller_identity" "current" {}
@@ -150,6 +153,8 @@ resource "aws_iam_role" "rotation_lambda" {
 }
 
 resource "aws_iam_policy" "runtime_prod_secret_read" {
+  count = var.manage_prefix_policies ? 1 : 0
+
   name        = "skeldir-runtime-prod-secret-read"
   description = "Least-privilege read access to /skeldir/prod config/secret namespaces"
 
@@ -203,6 +208,8 @@ resource "aws_iam_policy" "runtime_prod_secret_read" {
 }
 
 resource "aws_iam_policy" "runtime_stage_secret_read" {
+  count = var.manage_prefix_policies ? 1 : 0
+
   name        = "skeldir-runtime-stage-secret-read"
   description = "Least-privilege read access to /skeldir/stage config/secret namespaces"
 
@@ -256,6 +263,8 @@ resource "aws_iam_policy" "runtime_stage_secret_read" {
 }
 
 resource "aws_iam_policy" "ci_secret_read" {
+  count = var.manage_prefix_policies ? 1 : 0
+
   name        = "skeldir-ci-secret-read"
   description = "CI read access constrained to /skeldir/ci namespaces"
 
@@ -309,23 +318,29 @@ resource "aws_iam_policy" "ci_secret_read" {
 }
 
 resource "aws_iam_role_policy_attachment" "runtime_prod_secret_read" {
+  count = var.manage_prefix_policies ? 1 : 0
+
   role       = aws_iam_role.runtime_prod.name
-  policy_arn = aws_iam_policy.runtime_prod_secret_read.arn
+  policy_arn = aws_iam_policy.runtime_prod_secret_read[0].arn
 }
 
 resource "aws_iam_role_policy_attachment" "runtime_stage_secret_read" {
+  count = var.manage_prefix_policies ? 1 : 0
+
   role       = aws_iam_role.runtime_stage.name
-  policy_arn = aws_iam_policy.runtime_stage_secret_read.arn
+  policy_arn = aws_iam_policy.runtime_stage_secret_read[0].arn
 }
 
 resource "aws_iam_role_policy_attachment" "ci_secret_read" {
+  count = var.manage_prefix_policies ? 1 : 0
+
   role       = aws_iam_role.ci_deploy.name
-  policy_arn = aws_iam_policy.ci_secret_read.arn
+  policy_arn = aws_iam_policy.ci_secret_read[0].arn
 }
 
 resource "aws_secretsmanager_secret" "managed_placeholders" {
   for_each = {
-    for rec in local.secret_placeholder_records :
+    for rec in local.effective_secret_placeholder_records :
     rec.key => rec
   }
 
@@ -336,7 +351,7 @@ resource "aws_secretsmanager_secret" "managed_placeholders" {
 
 resource "aws_ssm_parameter" "managed_config_placeholders" {
   for_each = {
-    for rec in local.config_placeholder_records :
+    for rec in local.effective_config_placeholder_records :
     rec.key => rec
   }
 

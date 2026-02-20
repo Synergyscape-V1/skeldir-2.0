@@ -66,3 +66,15 @@ variable "tags" {
     phase  = "b11-p1"
   }
 }
+
+variable "manage_prefix_policies" {
+  description = "Whether Terraform should create/attach env prefix IAM policies."
+  type        = bool
+  default     = false
+}
+
+variable "manage_namespace_placeholders" {
+  description = "Whether Terraform should create SSM/Secrets placeholder resources."
+  type        = bool
+  default     = false
+}
