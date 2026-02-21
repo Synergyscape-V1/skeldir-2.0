@@ -106,8 +106,8 @@ def main() -> int:
     out_dir = Path(args.out_dir).resolve()
     aws = _aws_bin()
     now = datetime.now(timezone.utc).isoformat()
-    lookback_hours = int(os.getenv("B11_P4_CLOUDTRAIL_LOOKBACK_HOURS", "168"))
-    max_pages = int(os.getenv("B11_P4_CLOUDTRAIL_MAX_PAGES", "20"))
+    lookback_hours = int(os.getenv("B11_P4_CLOUDTRAIL_LOOKBACK_HOURS", "2160"))
+    max_pages = int(os.getenv("B11_P4_CLOUDTRAIL_MAX_PAGES", "50"))
     start_time = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     failures: list[str] = []
 
