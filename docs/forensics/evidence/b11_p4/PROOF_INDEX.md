@@ -45,5 +45,5 @@
   - `docs/forensics/evidence/b11_p4/rotation_drill_provider_key.txt`
 
 ## CI Run Mapping
-- `RUN_ID=PENDING` until first passing run of `b11-p4-db-provider-ci-audit-adjudication` on `main`.
-- Replace with immutable run URL + artifact IDs after merge execution.
+- Generated at adjudication runtime by `scripts/security/b11_p4_generate_audit_proofs.py`.
+- Includes immutable `run_id`, `run_url`, `event`, and `head_sha` in artifact copies of this file.
