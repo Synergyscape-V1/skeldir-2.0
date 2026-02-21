@@ -22,18 +22,33 @@ jobs:
     name: Deploy Migrations to Neon Production
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-east-2
+      SKELDIR_ENV: prod
     steps:
-      - name: Guard Neon secrets (skip deploy if missing)
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
+          aws-region: us-east-2
+
+      - name: Guard Neon control-plane secrets (skip deploy if missing)
         id: neon-guard
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
         run: |
+          set -euo pipefail
+          NEON_API_KEY=$(aws secretsmanager get-secret-value --secret-id "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)
+          NEON_PROJECT_ID=$(aws ssm get-parameter --name "/skeldir/${SKELDIR_ENV}/config/ci/neon-project-id" --with-decryption --query Parameter.Value --output text --region "${AWS_REGION}" 2>/dev/null || true)
           if [ -z "${NEON_API_KEY}" ] || [ -z "${NEON_PROJECT_ID}" ]; then
-            echo "Neon secrets missing; skipping production schema deployment."
+            echo "Neon control-plane values missing; skipping production schema deployment."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "::add-mask::${NEON_API_KEY}"
+          echo "NEON_API_KEY=${NEON_API_KEY}" >> "$GITHUB_ENV"
+          echo "NEON_PROJECT_ID=${NEON_PROJECT_ID}" >> "$GITHUB_ENV"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Checkout code
@@ -66,10 +81,8 @@ jobs:
       - name: Get Neon connection string
         id: neon-connection
         if: steps.neon-guard.outputs.enabled == 'true'
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
         run: |
+          set -euo pipefail
           RESPONSE=$(curl -s "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
             -H "Authorization: Bearer ${NEON_API_KEY}" \
             -H "Accept: application/json")

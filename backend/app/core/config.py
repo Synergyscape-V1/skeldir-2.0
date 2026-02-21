@@ -36,6 +36,13 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: PostgresDsn = Field(..., description="Async PostgreSQL DSN")
+    MIGRATION_DATABASE_URL: Optional[PostgresDsn] = Field(
+        None,
+        description=(
+            "Sync PostgreSQL DSN for Alembic migrations. "
+            "In stage/prod this must be sourced from control-plane secrets."
+        ),
+    )
     DATABASE_POOL_SIZE: int = Field(20, description="Base connection pool size")
     DATABASE_MAX_OVERFLOW: int = Field(
         0, description="Additional connections allowed beyond pool size"
@@ -258,6 +265,15 @@ class Settings(BaseSettings):
         """
         if value.scheme not in {"postgresql+asyncpg", "postgresql"}:
             raise ValueError("DATABASE_URL must use postgresql+asyncpg scheme")
+        return value
+
+    @field_validator("MIGRATION_DATABASE_URL")
+    @classmethod
+    def validate_migration_database_url(cls, value: Optional[PostgresDsn]) -> Optional[PostgresDsn]:
+        if value is None:
+            return None
+        if value.scheme != "postgresql":
+            raise ValueError("MIGRATION_DATABASE_URL must use postgresql scheme")
         return value
 
     @field_validator("DATABASE_POOL_SIZE", "DATABASE_MAX_OVERFLOW")
