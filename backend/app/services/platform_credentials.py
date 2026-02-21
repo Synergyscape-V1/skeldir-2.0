@@ -12,9 +12,11 @@ from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import text
 
 from app.models.platform_connection import PlatformConnection
 from app.models.platform_credential import PlatformCredential
+from app.core.secrets import resolve_platform_encryption_key_by_id
 from app.services.platform_connections import PlatformConnectionNotFoundError
 
 
@@ -99,15 +101,13 @@ class PlatformCredentialStore:
         tenant_id: UUID,
         platform: str,
         platform_account_id: str,
-        encryption_key: str,
     ) -> dict:
         query = (
             select(
                 PlatformCredential.expires_at,
                 PlatformCredential.updated_at,
-                func.pgp_sym_decrypt(
-                    PlatformCredential.encrypted_access_token, encryption_key
-                ).label("access_token"),
+                PlatformCredential.key_id,
+                PlatformCredential.encrypted_access_token,
             )
             .join(
                 PlatformConnection,
@@ -130,8 +130,18 @@ class PlatformCredentialStore:
         if expires_at and expires_at <= datetime.now(timezone.utc):
             raise PlatformCredentialExpiredError()
 
+        key_id = str(row["key_id"])
+        key = resolve_platform_encryption_key_by_id(key_id)
+        access_token = await _decrypt_ciphertext_once(
+            session,
+            ciphertext=row["encrypted_access_token"],
+            key=key,
+        )
+        if access_token is None:
+            raise PlatformCredentialNotFoundError()
+
         return {
-            "access_token": row["access_token"],
+            "access_token": access_token,
             "expires_at": expires_at,
             "updated_at": row["updated_at"],
         }
@@ -156,22 +166,14 @@ class PlatformCredentialService:
         connection_id: UUID,
         encryption_key: Optional[str] = None,
     ) -> PlatformCredentials:
-        key = (encryption_key or "").strip()
-        if not key:
-            raise RuntimeError("Platform token encryption key is not configured.")
-
         query = (
             select(
                 PlatformCredential.expires_at,
                 PlatformCredential.scope,
                 PlatformCredential.token_type,
                 PlatformCredential.key_id,
-                func.pgp_sym_decrypt(
-                    PlatformCredential.encrypted_access_token, key
-                ).label("access_token"),
-                func.pgp_sym_decrypt(
-                    PlatformCredential.encrypted_refresh_token, key
-                ).label("refresh_token"),
+                PlatformCredential.encrypted_access_token,
+                PlatformCredential.encrypted_refresh_token,
             )
             .join(
                 PlatformConnection,
@@ -193,8 +195,20 @@ class PlatformCredentialService:
         if expires_at and expires_at <= datetime.now(timezone.utc):
             raise PlatformCredentialExpiredError()
 
-        access_token = row.get("access_token")
-        refresh_token = row.get("refresh_token")
+        key_id = str(row.get("key_id"))
+        if not key_id:
+            raise PlatformCredentialNotFoundError()
+        key = resolve_platform_encryption_key_by_id(key_id)
+        access_token = await _decrypt_ciphertext_once(
+            session,
+            ciphertext=row.get("encrypted_access_token"),
+            key=key,
+        )
+        refresh_token = await _decrypt_ciphertext_once(
+            session,
+            ciphertext=row.get("encrypted_refresh_token"),
+            key=key,
+        )
 
         if access_token is None:
             raise PlatformCredentialNotFoundError()
@@ -205,5 +219,36 @@ class PlatformCredentialService:
             expires_at=expires_at,
             scope=row.get("scope"),
             token_type=row.get("token_type"),
-            key_id=str(row.get("key_id")),
+            key_id=key_id,
         )
+
+
+async def _decrypt_ciphertext_once(
+    session: AsyncSession,
+    *,
+    ciphertext: bytes | memoryview | None,
+    key: str,
+) -> str | None:
+    if ciphertext is None:
+        return None
+    if isinstance(ciphertext, memoryview):
+        cipher_bytes = bytes(ciphertext)
+    elif isinstance(ciphertext, bytes):
+        cipher_bytes = ciphertext
+    else:
+        cipher_bytes = bytes(ciphertext)
+    result = await session.execute(
+        text("SELECT pgp_sym_decrypt(CAST(:ciphertext AS bytea), CAST(:key AS text)) AS value"),
+        {"ciphertext": cipher_bytes, "key": key},
+    )
+    return _coerce_db_text(result.scalar_one_or_none())
+
+
+def _coerce_db_text(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
