@@ -56,6 +56,14 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         owner="platform-security",
         call_sites=("backend/app/db/session.py", "backend/app/celery_app.py"),
     ),
+    "MIGRATION_DATABASE_URL": _contract(
+        key="MIGRATION_DATABASE_URL",
+        classification="secret",
+        aws_path_template="/skeldir/{env}/secret/database/migration-url",
+        rotation_criticality="critical",
+        owner="platform-security",
+        call_sites=("alembic/env.py", "scripts/run_alembic.ps1"),
+    ),
     "DATABASE_POOL_SIZE": _contract(
         key="DATABASE_POOL_SIZE",
         classification="config",

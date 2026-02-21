@@ -1,0 +1,7 @@
+timestamp_utc=2026-02-21T21:33:25.892673+00:00
+region=us-east-2
+env=ci
+cmd=aws.cmd sts get-caller-identity --output json --region us-east-2
+exit_code=127
+stdout=<empty>
+stderr=FileNotFoundError: [WinError 2] The system cannot find the file specified
