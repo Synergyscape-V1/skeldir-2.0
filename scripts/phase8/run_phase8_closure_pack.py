@@ -391,6 +391,12 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
     else:
         detected_cores = max(2, os.cpu_count() or 2)
         api_workers = max(2, min(8, detected_cores - 1))
+        # In full-physics CI we typically do not wire control-plane credentials into compose runtime.
+        # Default API env to test unless control-plane is explicitly enabled by the caller.
+        control_plane_enabled = env.get("SKELDIR_CONTROL_PLANE_ENABLED", "0") == "1"
+        default_api_environment = "staging" if control_plane_enabled else "test"
+        default_worker_environment = "test"
+        default_shared_environment = "staging" if control_plane_enabled else "test"
         env.update(
             {
                 # Full-physics authority is encoded by EG3.4 Test2 (46 rps), not by high-N ladder replay storms.
@@ -409,9 +415,9 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
                 "R3_EG34_TEST2_DURATION_S": os.getenv("R3_EG34_TEST2_DURATION_S", "60"),
                 "R3_EG34_TEST3_RPS": os.getenv("R3_EG34_TEST3_RPS", "5"),
                 "R3_EG34_TEST3_DURATION_S": os.getenv("R3_EG34_TEST3_DURATION_S", "300"),
-                "E2E_ENVIRONMENT": os.getenv("E2E_ENVIRONMENT", "staging"),
-                "E2E_API_ENVIRONMENT": os.getenv("E2E_API_ENVIRONMENT", "staging"),
-                "E2E_WORKER_ENVIRONMENT": os.getenv("E2E_WORKER_ENVIRONMENT", "test"),
+                "E2E_ENVIRONMENT": os.getenv("E2E_ENVIRONMENT", default_shared_environment),
+                "E2E_API_ENVIRONMENT": os.getenv("E2E_API_ENVIRONMENT", default_api_environment),
+                "E2E_WORKER_ENVIRONMENT": os.getenv("E2E_WORKER_ENVIRONMENT", default_worker_environment),
                 "E2E_DATABASE_FORCE_POOLING": os.getenv("E2E_DATABASE_FORCE_POOLING", "0"),
                 "E2E_DATABASE_POOL_SIZE": os.getenv("E2E_DATABASE_POOL_SIZE", "20"),
                 "E2E_DATABASE_MAX_OVERFLOW": os.getenv("E2E_DATABASE_MAX_OVERFLOW", "0"),

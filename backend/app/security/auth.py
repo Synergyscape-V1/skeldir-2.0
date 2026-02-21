@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -8,7 +9,11 @@ from fastapi import Header, Request
 import jwt
 from jwt import InvalidTokenError, PyJWKClient
 
-from app.core.secrets import get_jwt_validation_config
+from app.core.secrets import (
+    get_jwt_signing_material,
+    get_jwt_validation_config,
+    resolve_jwt_verification_keys,
+)
 from app.core.identity import resolve_user_id
 from app.observability.context import set_tenant_id, set_user_id
 
@@ -89,11 +94,58 @@ def _decode_token(token: str) -> dict[str, Any]:
             algorithms=[jwt_cfg.algorithm],
             **decode_kwargs,
         )
-    return jwt.decode(
-        token,
-        jwt_cfg.secret,
-        algorithms=[jwt_cfg.algorithm],
-        **decode_kwargs,
+    kid: str | None = None
+    try:
+        header = jwt.get_unverified_header(token)
+        kid_value = header.get("kid")
+        kid = str(kid_value).strip() if kid_value is not None else None
+    except InvalidTokenError:
+        kid = None
+    primary_key, fallback_keys, requires_kid = resolve_jwt_verification_keys(kid=kid)
+    if requires_kid and not kid:
+        raise InvalidTokenError("JWT is missing required 'kid' header.")
+    attempted_keys = [primary_key, *fallback_keys]
+    for key in attempted_keys:
+        try:
+            return jwt.decode(
+                token,
+                key,
+                algorithms=[jwt_cfg.algorithm],
+                **decode_kwargs,
+            )
+        except InvalidTokenError:
+            continue
+    raise InvalidTokenError("Invalid or expired JWT token.")
+
+
+def mint_internal_jwt(
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    expires_in_seconds: int = 300,
+    additional_claims: Optional[dict[str, Any]] = None,
+) -> str:
+    """Mint internal JWTs using rotation-safe current key material and `kid` header."""
+    signing = get_jwt_signing_material()
+    now = datetime.now(timezone.utc)
+    payload: dict[str, Any] = {
+        "tenant_id": str(tenant_id),
+        "sub": str(user_id),
+        "user_id": str(user_id),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=max(1, expires_in_seconds))).timestamp()),
+    }
+    if signing.issuer:
+        payload["iss"] = signing.issuer
+    if signing.audience:
+        payload["aud"] = signing.audience
+    if additional_claims:
+        payload.update(additional_claims)
+    return jwt.encode(
+        payload,
+        signing.key,
+        algorithm=signing.algorithm,
+        headers={"kid": signing.kid},
     )
 
 

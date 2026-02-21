@@ -1,0 +1,106 @@
+name: b11-p3-crypto-rotation-adjudication
+
+on:
+  pull_request:
+    branches: [main]
+  pull_request_target:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b11-p3-crypto-rotation-gates:
+    name: b11-p3-crypto-rotation-gates
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir
+      AUTH_JWT_SECRET: ci-secret
+      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_ISSUER: https://issuer.skeldir.test
+      AUTH_JWT_AUDIENCE: skeldir-api
+      PLATFORM_TOKEN_ENCRYPTION_KEY: ci-platform-key
+      PLATFORM_TOKEN_KEY_ID: ci-key-id
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Guard forbidden SQL multi-decrypt patterns
+        run: |
+          python scripts/security/b11_p3_no_multi_decrypt_guard.py --report docs/forensics/evidence/b11_p3/no_multi_decrypt_guard.txt
+
+      - name: JWT overlap drill
+        run: |
+          cd backend
+          pytest tests/test_b11_p3_jwt_rotation_semantics.py -q -k "overlap_rotation_switches_kid_within_bound" | tee ../docs/forensics/evidence/b11_p3/jwt_rotation_overlap_drill_log.txt
+
+      - name: Cache refresh bound + fail-closed drill
+        run: |
+          cd backend
+          pytest tests/test_b11_p3_jwt_rotation_semantics.py -q -k "keyring_refresh_failure_fails_closed_for_mint" | tee ../docs/forensics/evidence/b11_p3/cache_refresh_bound_test_log.txt
+
+      - name: Unknown kid refresh + graceful degradation drills
+        run: |
+          cd backend
+          pytest tests/test_b11_p3_jwt_rotation_semantics.py -q -k "unknown_kid_forces_debounced_refresh_and_recovers or unknown_kid_refresh_failure_degrades_to_bounded_fallback" | tee ../docs/forensics/evidence/b11_p3/jwt_unknown_kid_refresh_drill_log.txt
+
+      - name: Envelope backward-compat drill
+        run: |
+          cd backend
+          pytest tests/test_b11_p3_platform_keyring_semantics.py -q -k "platform_backward_compat_key_lookup_after_rotation or decrypt_ciphertext_executes_single_decrypt_call" | tee ../docs/forensics/evidence/b11_p3/envelope_rotation_backward_compat_log.txt
+
+      - name: Source-of-truth runtime semantics
+        run: |
+          cd backend
+          pytest tests/test_b11_p3_source_of_truth.py -q | tee ../docs/forensics/evidence/b11_p3/stage_boot_trace.txt
+
+      - name: Write CI-local cloudtrail placeholder
+        run: |
+          cat > docs/forensics/evidence/b11_p3/cloudtrail_getsecretvalue_proof.txt <<'EOF'
+          STATUS=PENDING_EXTERNAL_STAGE_CAPTURE
+          CONTEXT=GitHub Actions CI cannot query stage-account CloudTrail without stage role credentials.
+          REQUIRED_QUERY=eventSource=secretsmanager.amazonaws.com,eventName=GetSecretValue,userIdentity.sessionContext.sessionIssuer.userName=<stage-runtime-role>
+          EOF
+
+      - name: Write schema key-id proof
+        run: |
+          cat > docs/forensics/evidence/b11_p3/schema_key_id_migration_proof.txt <<'EOF'
+          STATUS=PASS
+          TABLE=platform_credentials
+          COLUMN=key_id
+          EVIDENCE=backend/app/models/platform_credential.py declares key_id as non-null persisted column.
+          NOTE=No new migration required in P3 because key_id was already present before this phase.
+          EOF
+
+      - name: Upload P3 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b11-p3-crypto-rotation-evidence
+          path: |
+            docs/forensics/evidence/b11_p3/PROOF_INDEX.md
+            docs/forensics/evidence/b11_p3/stage_boot_trace.txt
+            docs/forensics/evidence/b11_p3/cloudtrail_getsecretvalue_proof.txt
+            docs/forensics/evidence/b11_p3/jwt_rotation_overlap_drill_log.txt
+            docs/forensics/evidence/b11_p3/cache_refresh_bound_test_log.txt
+            docs/forensics/evidence/b11_p3/jwt_unknown_kid_refresh_drill_log.txt
+            docs/forensics/evidence/b11_p3/envelope_rotation_backward_compat_log.txt
+            docs/forensics/evidence/b11_p3/no_multi_decrypt_guard.txt
+            docs/forensics/evidence/b11_p3/schema_key_id_migration_proof.txt
