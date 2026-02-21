@@ -27,6 +27,7 @@ def _jwt_ring_payload(*, current_kid: str, keys: dict[str, str], previous_kids: 
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch):
     monkeypatch.setenv("SKELDIR_JWT_KEY_RING_MAX_STALENESS_SECONDS", "1")
+    monkeypatch.setenv("SKELDIR_JWT_UNKNOWN_KID_REFRESH_DEBOUNCE_SECONDS", "1")
     monkeypatch.setattr(settings, "AUTH_JWT_ALGORITHM", "HS256")
     monkeypatch.setattr(settings, "AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
     monkeypatch.setattr(settings, "AUTH_JWT_AUDIENCE", "skeldir-api")
@@ -110,3 +111,69 @@ def test_unbounded_keyring_is_rejected(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="exceeds max accepted keys"):
         mint_internal_jwt(tenant_id=uuid4(), user_id=uuid4(), expires_in_seconds=60)
+
+
+def test_unknown_kid_forces_debounced_refresh_and_recovers(monkeypatch):
+    from app.core import secrets as secrets_module
+
+    old_ring = _jwt_ring_payload(current_kid="kid-old", keys={"kid-old": "secret-old"})
+    rotated_ring = _jwt_ring_payload(
+        current_kid="kid-new",
+        keys={"kid-old": "secret-old", "kid-new": "secret-new"},
+        previous_kids=["kid-old"],
+    )
+    monkeypatch.setattr(settings, "AUTH_JWT_SECRET", old_ring)
+    reset_crypto_secret_caches_for_testing()
+    _ = mint_internal_jwt(tenant_id=uuid4(), user_id=uuid4(), expires_in_seconds=180)
+
+    calls = {"count": 0}
+
+    def _refreshing_fetch(key: str) -> str | None:
+        if key == "AUTH_JWT_SECRET":
+            calls["count"] += 1
+            return rotated_ring
+        return getattr(settings, key, None)
+
+    monkeypatch.setattr(secrets_module, "_read_secret_source_of_truth_value", _refreshing_fetch)
+    payload = {
+        "tenant_id": str(uuid4()),
+        "sub": str(uuid4()),
+        "exp": int(time.time()) + 120,
+        "iss": settings.AUTH_JWT_ISSUER,
+        "aud": settings.AUTH_JWT_AUDIENCE,
+    }
+    token = jwt.encode(payload, "secret-new", algorithm=settings.AUTH_JWT_ALGORITHM, headers={"kid": "kid-new"})
+    decoded = _decode_token(token)
+    assert decoded["tenant_id"] == payload["tenant_id"]
+    assert calls["count"] == 1
+
+
+def test_unknown_kid_refresh_failure_degrades_to_bounded_fallback(monkeypatch):
+    from app.core import secrets as secrets_module
+
+    monkeypatch.setattr(
+        settings,
+        "AUTH_JWT_SECRET",
+        _jwt_ring_payload(
+            current_kid="kid-current",
+            keys={"kid-current": "secret-current", "kid-prev": "secret-prev"},
+            previous_kids=["kid-prev"],
+        ),
+    )
+    reset_crypto_secret_caches_for_testing()
+    _ = mint_internal_jwt(tenant_id=uuid4(), user_id=uuid4(), expires_in_seconds=180)
+
+    def _boom(_: str) -> str | None:
+        raise RuntimeError("simulated refresh failure")
+
+    monkeypatch.setattr(secrets_module, "_read_secret_source_of_truth_value", _boom)
+    payload = {
+        "tenant_id": str(uuid4()),
+        "sub": str(uuid4()),
+        "exp": int(time.time()) + 120,
+        "iss": settings.AUTH_JWT_ISSUER,
+        "aud": settings.AUTH_JWT_AUDIENCE,
+    }
+    token = jwt.encode(payload, "secret-current", algorithm=settings.AUTH_JWT_ALGORITHM, headers={"kid": "kid-unknown"})
+    decoded = _decode_token(token)
+    assert decoded["tenant_id"] == payload["tenant_id"]

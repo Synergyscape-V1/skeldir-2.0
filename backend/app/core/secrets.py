@@ -3,13 +3,14 @@ from __future__ import annotations
 """Single secret retrieval choke point and runtime secret contract validation."""
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from hashlib import sha256
 import json
 from threading import Lock
 from typing import Any, Literal
 import os
 
+from app.core import clock as clock_module
 from app.core.config import settings
 from app.core.control_plane import (
     resolve_aws_path_for_key,
@@ -85,7 +86,7 @@ class _CryptoKeyRingCache:
         return max(1, parsed)
 
     def _is_stale(self, fetched_at: datetime) -> bool:
-        age_seconds = (datetime.now(timezone.utc) - fetched_at).total_seconds()
+        age_seconds = (clock_module.utcnow() - fetched_at).total_seconds()
         return age_seconds > self._max_staleness_seconds()
 
     def current(self) -> JwtKeyRing | PlatformEncryptionKeyRing | None:
@@ -120,6 +121,8 @@ _PLATFORM_KEY_RING_CACHE = _CryptoKeyRingCache(
     max_staleness_env="SKELDIR_PLATFORM_KEY_RING_MAX_STALENESS_SECONDS",
     default_staleness_seconds=60,
 )
+_JWT_UNKNOWN_KID_REFRESH_LOCK = Lock()
+_JWT_UNKNOWN_KID_LAST_REFRESH_AT: datetime | None = None
 
 
 def _contract_for(key: str):
@@ -233,7 +236,7 @@ def _parse_jwt_key_ring_payload(raw_value: str, source: str) -> JwtKeyRing:
             current_kid=legacy_kid,
             keys={legacy_kid: raw_value},
             previous_kids=tuple(),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=clock_module.utcnow(),
             source=source,
             requires_kid=False,
         )
@@ -261,7 +264,7 @@ def _parse_jwt_key_ring_payload(raw_value: str, source: str) -> JwtKeyRing:
         current_kid=current_kid,
         keys=keys,
         previous_kids=previous_kids,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=clock_module.utcnow(),
         source=source,
         requires_kid=True,
     )
@@ -282,7 +285,7 @@ def _parse_platform_key_ring_payload(raw_value: str, source: str) -> PlatformEnc
             current_key_id=default_key_id,
             keys={default_key_id: raw_value},
             previous_key_ids=tuple(),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=clock_module.utcnow(),
             source=source,
         )
 
@@ -313,7 +316,7 @@ def _parse_platform_key_ring_payload(raw_value: str, source: str) -> PlatformEnc
         current_key_id=current_key_id,
         keys=keys,
         previous_key_ids=previous_key_ids,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=clock_module.utcnow(),
         source=source,
     )
 
@@ -391,6 +394,15 @@ def resolve_jwt_verification_keys(*, kid: str | None) -> tuple[str, list[str], b
         selected = ring.keys.get(kid)
         if selected:
             return selected, [], ring.requires_kid
+        if _should_attempt_unknown_kid_refresh():
+            try:
+                refreshed = _refresh_jwt_ring()
+            except Exception:
+                refreshed = ring
+            selected_after_refresh = refreshed.keys.get(kid)
+            if selected_after_refresh:
+                return selected_after_refresh, [], refreshed.requires_kid
+            ring = refreshed
     fallback_order = [ring.current_kid, *ring.previous_kids]
     fallback_keys = [ring.keys[k] for k in fallback_order if k in ring.keys]
     bounded = fallback_keys[:MAX_ACCEPTED_CRYPTO_KEYS]
@@ -421,8 +433,28 @@ def resolve_platform_encryption_key_by_id(key_id: str) -> str:
 
 
 def reset_crypto_secret_caches_for_testing() -> None:
+    global _JWT_UNKNOWN_KID_LAST_REFRESH_AT
     _JWT_KEY_RING_CACHE.clear()
     _PLATFORM_KEY_RING_CACHE.clear()
+    with _JWT_UNKNOWN_KID_REFRESH_LOCK:
+        _JWT_UNKNOWN_KID_LAST_REFRESH_AT = None
+
+
+def _should_attempt_unknown_kid_refresh() -> bool:
+    global _JWT_UNKNOWN_KID_LAST_REFRESH_AT
+    raw = os.getenv("SKELDIR_JWT_UNKNOWN_KID_REFRESH_DEBOUNCE_SECONDS", "5").strip()
+    try:
+        debounce_seconds = max(0, int(raw))
+    except ValueError:
+        debounce_seconds = 5
+
+    with _JWT_UNKNOWN_KID_REFRESH_LOCK:
+        now = clock_module.utcnow()
+        last = _JWT_UNKNOWN_KID_LAST_REFRESH_AT
+        if last is not None and (now - last).total_seconds() < debounce_seconds:
+            return False
+        _JWT_UNKNOWN_KID_LAST_REFRESH_AT = now
+        return True
 
 
 def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidationResult:

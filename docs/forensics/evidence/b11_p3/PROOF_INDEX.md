@@ -12,6 +12,7 @@
 
 ## Exit Gate 2 - Bounded-Staleness Cache Safety
 - Cache refresh + fail-closed mint log: `docs/forensics/evidence/b11_p3/cache_refresh_bound_test_log.txt`
+- Unknown `kid` forced refresh + graceful degradation log: `docs/forensics/evidence/b11_p3/jwt_unknown_kid_refresh_drill_log.txt`
 - Test source: `backend/tests/test_b11_p3_jwt_rotation_semantics.py`
 
 ## Exit Gate 3 - JWT Rotation Overlap Drill (Non-Vacuous)
@@ -34,6 +35,7 @@
   - `docs/forensics/evidence/b11_p3/cloudtrail_getsecretvalue_proof.txt`
   - `docs/forensics/evidence/b11_p3/jwt_rotation_overlap_drill_log.txt`
   - `docs/forensics/evidence/b11_p3/cache_refresh_bound_test_log.txt`
+  - `docs/forensics/evidence/b11_p3/jwt_unknown_kid_refresh_drill_log.txt`
   - `docs/forensics/evidence/b11_p3/envelope_rotation_backward_compat_log.txt`
   - `docs/forensics/evidence/b11_p3/no_multi_decrypt_guard.txt`
   - `docs/forensics/evidence/b11_p3/schema_key_id_migration_proof.txt`
