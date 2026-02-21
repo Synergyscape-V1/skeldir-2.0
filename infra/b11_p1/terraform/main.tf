@@ -178,7 +178,10 @@ resource "aws_iam_policy" "runtime_prod_secret_read" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/prod/secret/*"
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/prod/secret/*",
+          "/skeldir/prod/secret/*"
+        ]
       },
       {
         Sid    = "DenyReadNonProd"
@@ -198,7 +201,11 @@ resource "aws_iam_policy" "runtime_prod_secret_read" {
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/stage/*",
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/ci/*",
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/dev/*",
-          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/local/*"
+          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/local/*",
+          "/skeldir/stage/*",
+          "/skeldir/ci/*",
+          "/skeldir/dev/*",
+          "/skeldir/local/*"
         ]
       }
     ]
@@ -233,7 +240,10 @@ resource "aws_iam_policy" "runtime_stage_secret_read" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/stage/secret/*"
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/stage/secret/*",
+          "/skeldir/stage/secret/*"
+        ]
       },
       {
         Sid    = "DenyReadNonStage"
@@ -253,7 +263,11 @@ resource "aws_iam_policy" "runtime_stage_secret_read" {
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/prod/*",
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/ci/*",
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/dev/*",
-          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/local/*"
+          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/local/*",
+          "/skeldir/prod/*",
+          "/skeldir/ci/*",
+          "/skeldir/dev/*",
+          "/skeldir/local/*"
         ]
       }
     ]
@@ -288,7 +302,10 @@ resource "aws_iam_policy" "ci_secret_read" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/ci/secret/*"
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/ci/secret/*",
+          "/skeldir/ci/secret/*"
+        ]
       },
       {
         Sid    = "DenyReadNonCi"
@@ -308,7 +325,11 @@ resource "aws_iam_policy" "ci_secret_read" {
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/prod/*",
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/stage/*",
           "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/dev/*",
-          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/local/*"
+          "arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:/skeldir/local/*",
+          "/skeldir/prod/*",
+          "/skeldir/stage/*",
+          "/skeldir/dev/*",
+          "/skeldir/local/*"
         ]
       }
     ]
