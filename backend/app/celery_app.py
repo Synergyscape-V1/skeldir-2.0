@@ -29,6 +29,7 @@ from app.observability.logging_config import configure_logging
 from app.observability.metrics_runtime_config import get_multiproc_dir, get_multiproc_prune_policy
 from app.observability.multiprocess_shard_pruner import prune_stale_multiproc_shards
 from app.observability.metrics_policy import normalize_task_name
+from app.core.secrets import assert_runtime_secret_contract, get_database_url, get_secret
 from app.observability.celery_task_lifecycle import (
     configure_task_lifecycle_loggers,
     emit_lifecycle_event,
@@ -91,10 +92,11 @@ def _build_broker_url() -> str:
     Build broker URL using SQLAlchemy transport over Postgres (sqla+postgresql://...).
     Defaults to DATABASE_URL-derived sync DSN when CELERY_BROKER_URL is unset.
     """
-    settings = _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
-    if settings.CELERY_BROKER_URL:
-        return settings.CELERY_BROKER_URL
-    base = _sync_sqlalchemy_url(settings.DATABASE_URL.unicode_string())
+    _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
+    broker_secret = get_secret("CELERY_BROKER_URL")
+    if broker_secret:
+        return broker_secret
+    base = _sync_sqlalchemy_url(get_database_url())
     return f"sqla+{base}"
 
 
@@ -103,10 +105,11 @@ def _build_result_backend() -> str:
     Build result backend URL using Celery database backend over Postgres (db+postgresql://...).
     Defaults to DATABASE_URL-derived sync DSN when CELERY_RESULT_BACKEND is unset.
     """
-    settings = _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
-    if settings.CELERY_RESULT_BACKEND:
-        return settings.CELERY_RESULT_BACKEND
-    base = _sync_sqlalchemy_url(settings.DATABASE_URL.unicode_string())
+    _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
+    result_secret = get_secret("CELERY_RESULT_BACKEND")
+    if result_secret:
+        return result_secret
+    base = _sync_sqlalchemy_url(get_database_url())
     return f"db+{base}"
 
 
@@ -139,6 +142,7 @@ def _ensure_celery_configured():
 
     from kombu import Queue
     settings = _get_settings()  # Lazy settings access
+    assert_runtime_secret_contract("worker")
 
     broker_url = _build_broker_url()
     broker_transport_options: dict[str, object] = {
@@ -363,7 +367,7 @@ def _start_kombu_visibility_recovery_thread() -> None:
     if not str(celery_app.conf.broker_url or "").startswith("sqla+"):
         return
 
-    dsn = _sync_sqlalchemy_url(settings.DATABASE_URL.unicode_string())
+    dsn = _sync_sqlalchemy_url(get_database_url())
     visibility_timeout_s = int(settings.CELERY_BROKER_VISIBILITY_TIMEOUT_S)
     sweep_interval_s = float(settings.CELERY_BROKER_RECOVERY_SWEEP_INTERVAL_S)
     task_name_filter = settings.CELERY_BROKER_RECOVERY_TASK_NAME_FILTER
@@ -665,7 +669,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
 
         # G4-AUTH: Build sync DSN with 127.0.0.1 normalization for CI determinism
         # Step 1: Get raw DATABASE_URL from settings
-        raw_database_url = settings.DATABASE_URL.unicode_string()
+        raw_database_url = get_database_url()
 
         # G4-AUTH DIAGNOSTIC: Log raw DATABASE_URL (password redacted) BEFORE make_url parsing
         if os.getenv("CI") == "true":
@@ -686,7 +690,7 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
             else:
                 redacted_raw = raw_database_url
             logger.info(
-                f"[G4-AUTH-RAW] settings.DATABASE_URL.unicode_string() = {redacted_raw}",
+                f"[G4-AUTH-RAW] database_url = {redacted_raw}",
                 extra={"raw_dsn_redacted": redacted_raw}
             )
 

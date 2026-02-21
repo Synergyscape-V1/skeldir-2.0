@@ -18,7 +18,7 @@ from sqlalchemy import text
 
 from app.celery_app import celery_app
 from app.db.session import engine, set_tenant_guc
-from app.core.config import settings
+from app.core.secrets import get_database_url
 from app.observability.context import set_request_correlation_id, set_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def _fetch_db_user_sync(tenant_id: Optional[UUID] = None) -> str:
     Sync path for DB user check using psycopg2 (avoids event loop interference in eager tests).
     """
     import os
-    url = make_url(settings.DATABASE_URL.unicode_string())
+    url = make_url(get_database_url())
     query = dict(url.query)
     query.pop("channel_binding", None)
     url = url.set(query=query)

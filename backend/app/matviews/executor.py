@@ -20,6 +20,7 @@ from sqlalchemy.engine.url import make_url
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 from app.core.pg_locks import RefreshLockKey, build_refresh_lock_key, try_acquire_refresh_xact_lock
+from app.core.secrets import get_database_url
 from app.db.session import engine, set_tenant_guc
 from app.matviews import registry
 
@@ -71,8 +72,7 @@ def _now_utc() -> datetime:
 
 
 def _build_sync_dsn() -> str:
-    from app.core.config import settings
-    url = make_url(settings.DATABASE_URL.unicode_string())
+    url = make_url(get_database_url())
     query = dict(url.query)
     query.pop("channel_binding", None)
     url = url.set(query=query)

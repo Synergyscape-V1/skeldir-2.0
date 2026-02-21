@@ -28,11 +28,12 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.identity import resolve_user_id
+from app.core.secrets import get_database_url
 
 
 # Normalize DSN to ensure asyncpg driver is used and map unsupported parameters to connect_args.
 def _build_async_database_url_and_args() -> tuple[str, dict]:
-    raw_url = settings.DATABASE_URL.unicode_string()
+    raw_url = get_database_url()
     parsed = urlsplit(raw_url)
     query_params = dict(parse_qsl(parsed.query))
 

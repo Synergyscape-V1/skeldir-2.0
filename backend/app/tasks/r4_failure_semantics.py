@@ -19,7 +19,7 @@ import psycopg2
 from celery.exceptions import SoftTimeLimitExceeded
 
 from app.celery_app import _sync_sqlalchemy_url, celery_app
-from app.core.config import settings
+from app.core.secrets import get_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def _now_utc_iso() -> str:
 
 
 def _sync_dsn() -> str:
-    return _sync_sqlalchemy_url(settings.DATABASE_URL.unicode_string())
+    return _sync_sqlalchemy_url(get_database_url())
 
 
 def _require_uuid(value: str | UUID, *, name: str) -> UUID:

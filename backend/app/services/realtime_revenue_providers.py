@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clock as clock_module
 from app.core.config import settings
+from app.core.secrets import get_platform_token_encryption_key
 from app.db.session import set_tenant_guc_async
 from app.models.platform_connection import PlatformConnection
 from app.services.platform_credentials import (
@@ -430,6 +431,7 @@ async def _fetch_realtime_revenue_snapshot(
         )
 
     results: list[ProviderRevenueResult] = []
+    encryption_key = get_platform_token_encryption_key()
     for connection in supported_connections:
         provider = registry.get(connection.platform)
         try:
@@ -437,7 +439,7 @@ async def _fetch_realtime_revenue_snapshot(
                 session,
                 tenant_id=tenant_id,
                 connection_id=connection.id,
-                encryption_key=settings.PLATFORM_TOKEN_ENCRYPTION_KEY,
+                encryption_key=encryption_key,
             )
         except (PlatformCredentialNotFoundError, PlatformCredentialExpiredError) as exc:
             raise ProviderFetchError(

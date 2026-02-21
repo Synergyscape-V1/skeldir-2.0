@@ -17,13 +17,15 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional, Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.db.session import engine
 from app.celery_app import celery_app
+from app.core.secrets import validate_runtime_secret_contract
+from app.api.problem_details import problem_details_response
 from app.security.auth import AuthContext, get_auth_context
 
 router = APIRouter()
@@ -217,8 +219,25 @@ async def health_alias(response: Response) -> dict:
 
 
 @router.get("/api/health")
-async def api_health(response: Response) -> dict:
-    """Contract endpoint for OpenAPI health bundle (/api/health)."""
+async def api_health(request: Request) -> dict:
+    """Contract endpoint with readiness-aligned security semantics."""
+    readiness_result = _evaluate_security_readiness()
+    if readiness_result["status"] != "ok":
+        correlation_raw = request.headers.get("X-Correlation-ID")
+        try:
+            correlation_id = UUID(correlation_raw) if correlation_raw else uuid4()
+        except Exception:
+            correlation_id = uuid4()
+        missing = ", ".join(readiness_result["missing_required_secrets"]) or "unknown"
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            title="Service Unavailable",
+            detail=f"Required runtime secrets are missing: {missing}",
+            correlation_id=correlation_id,
+            type_url="https://api.skeldir.com/problems/service-unavailable",
+        )
+
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return {
         "status": "healthy",
@@ -229,6 +248,7 @@ async def api_health(response: Response) -> dict:
             "api": "up",
             "cache": "up",
             "queue": "up",
+            "security": "up",
         },
     }
 
@@ -265,9 +285,16 @@ async def api_health_detailed(
 
 
 @router.get("/api/health/ready")
-async def api_readiness() -> dict:
+async def api_readiness(response: Response) -> dict:
     """Contract alias to readiness semantics."""
-    return {"ready": True}
+    readiness_result = _evaluate_security_readiness()
+    if readiness_result["status"] != "ok":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return {
+        "ready": readiness_result["status"] == "ok",
+        "status": readiness_result["status"],
+        "checks": readiness_result,
+    }
 
 
 @router.get("/api/health/live")
@@ -290,13 +317,31 @@ async def readiness(response: Response) -> dict:
     
     Use for: Kubernetes readiness probe, traffic routing decisions.
     """
-    result = {
+    result = await _evaluate_readiness()
+    if result["status"] != "ok":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return result
+
+
+async def _evaluate_readiness() -> dict[str, object]:
+    result: dict[str, object] = {
         "status": "ok",
         "database": "ok",
         "rls": "ok",
         "tenant_guc": "ok",
+        "secrets": "ok",
+        "missing_required_secrets": [],
     }
-    
+
+    secret_validation = validate_runtime_secret_contract("readiness")
+    if not secret_validation.ok:
+        result["secrets"] = "error"
+        result["status"] = "unhealthy"
+        result["missing_required_secrets"] = list(secret_validation.missing)
+
+    if result["secrets"] != "ok":
+        return result
+
     try:
         async with engine.begin() as conn:
             # 1. Basic DB connectivity
@@ -328,7 +373,7 @@ async def readiness(response: Response) -> dict:
                 result["tenant_guc"] = "error"
                 raise RuntimeError("Tenant context GUC not set correctly")
                 
-    except Exception as exc:
+    except Exception:
         logger.error("readiness_failed", exc_info=True)
         # Determine which component failed based on current state
         if result["database"] != "ok":
@@ -342,8 +387,21 @@ async def readiness(response: Response) -> dict:
             result["database"] = "error"
         
         result["status"] = "unhealthy"
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    
+
+    return result
+
+
+def _evaluate_security_readiness() -> dict[str, object]:
+    result: dict[str, object] = {
+        "status": "ok",
+        "secrets": "ok",
+        "missing_required_secrets": [],
+    }
+    secret_validation = validate_runtime_secret_contract("readiness")
+    if not secret_validation.ok:
+        result["secrets"] = "error"
+        result["status"] = "unhealthy"
+        result["missing_required_secrets"] = list(secret_validation.missing)
     return result
 
 
