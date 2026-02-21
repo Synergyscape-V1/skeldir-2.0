@@ -16,6 +16,8 @@
     "Phase Gates (B0.3)",
     "Phase 8 Regression Gate (Full Physics)",
     "b11-p2-secret-chokepoint-gate",
-    "b11-p2-readiness-gate"
+    "b11-p2-readiness-gate",
+    "b11-p4-static-and-runtime-gate",
+    "b11-p4-ci-audit-gate"
   ]
 }

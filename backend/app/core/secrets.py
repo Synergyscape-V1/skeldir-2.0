@@ -175,7 +175,7 @@ def get_secret(key: str) -> str | None:
     contract = _contract_for(key)
     if contract.classification != "secret":
         raise ValueError(f"{key} is not classified as secret")
-    return _read_setting(key)
+    return _read_secret_source_of_truth_value(key)
 
 
 def require_secret(key: str) -> str:
@@ -187,6 +187,16 @@ def require_secret(key: str) -> str:
 
 def get_database_url() -> str:
     return require_secret("DATABASE_URL")
+
+
+def get_migration_database_url() -> str:
+    value = get_secret("MIGRATION_DATABASE_URL")
+    if value is not None:
+        return value
+    env_name = _read_setting("ENVIRONMENT")
+    if env_name in {"local", "dev", "ci"}:
+        return require_secret("DATABASE_URL")
+    raise RuntimeError("required secret missing: MIGRATION_DATABASE_URL")
 
 
 def get_platform_token_encryption_key() -> str:
@@ -432,6 +442,10 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
 
     if get_secret("DATABASE_URL") is None:
         missing.append("DATABASE_URL")
+    if role in {"readiness", "worker"} and get_secret("MIGRATION_DATABASE_URL") is None:
+        env_name = _read_setting("ENVIRONMENT")
+        if env_name not in {"local", "dev", "ci"}:
+            missing.append("MIGRATION_DATABASE_URL")
 
     auth_required = (
         role in {"api", "readiness"}
@@ -473,11 +487,30 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
             missing.append("PLATFORM_TOKEN_ENCRYPTION_KEY")
 
     env_name = _read_setting("ENVIRONMENT")
+    llm_required = bool(_read_setting("LLM_PROVIDER_ENABLED")) and (
+        env_name in {"stage", "prod"}
+        or os.getenv("SKELDIR_REQUIRE_PROVIDER_SECRETS", "0").strip().lower() in {"1", "true", "yes", "on"}
+    )
+    if role in {"api", "worker", "readiness"} and llm_required:
+        llm_secret = get_secret("LLM_PROVIDER_API_KEY")
+        if llm_secret is None:
+            missing.append("LLM_PROVIDER_API_KEY")
+
     if env_name in {"prod", "stage"}:
         if not should_enable_control_plane():
             missing.append("SKELDIR_CONTROL_PLANE_ENABLED")
         else:
-            for key in ("AUTH_JWT_SECRET", "PLATFORM_TOKEN_ENCRYPTION_KEY"):
+            control_plane_keys = [
+                "DATABASE_URL",
+                "MIGRATION_DATABASE_URL",
+                "CELERY_BROKER_URL",
+                "CELERY_RESULT_BACKEND",
+                "AUTH_JWT_SECRET",
+                "PLATFORM_TOKEN_ENCRYPTION_KEY",
+            ]
+            if llm_required:
+                control_plane_keys.append("LLM_PROVIDER_API_KEY")
+            for key in control_plane_keys:
                 try:
                     _read_secret_source_of_truth_value(key)
                 except Exception:

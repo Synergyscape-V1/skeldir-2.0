@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 51,
+  "keys_total": 52,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
@@ -757,6 +757,24 @@
       "key": "LOG_LEVEL",
       "owner": "backend-platform",
       "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/database/migration-url",
+      "call_sites": [
+        "alembic/env.py",
+        "scripts/run_alembic.ps1"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "MIGRATION_DATABASE_URL",
+      "owner": "platform-security",
+      "rotation_criticality": "critical"
     },
     {
       "aws_path_template": "/skeldir/{env}/config/platform/supported-platforms",

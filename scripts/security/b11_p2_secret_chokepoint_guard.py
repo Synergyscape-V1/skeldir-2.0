@@ -5,12 +5,17 @@ from __future__ import annotations
 
 import argparse
 import ast
+import sys
 from pathlib import Path
 from typing import Iterable
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = REPO_ROOT / "backend"
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
 from app.core.managed_settings_contract import MANAGED_SETTINGS_CONTRACT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = REPO_ROOT / "backend" / "app"
 ALLOWED_FILES = {
     "backend/app/core/secrets.py",

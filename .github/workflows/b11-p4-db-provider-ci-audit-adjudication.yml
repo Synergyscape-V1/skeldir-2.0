@@ -1,0 +1,139 @@
+name: b11-p4-db-provider-ci-audit-adjudication
+
+on:
+  pull_request:
+    branches: [main]
+  pull_request_target:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  b11-p4-static-and-runtime-gate:
+    name: b11-p4-static-and-runtime-gate
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir
+      AUTH_JWT_SECRET: ci-secret
+      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_ISSUER: https://issuer.skeldir.test
+      AUTH_JWT_AUDIENCE: skeldir-api
+      PLATFORM_TOKEN_ENCRYPTION_KEY: ci-platform-key
+      PLATFORM_TOKEN_KEY_ID: ci-key-id
+      LLM_PROVIDER_ENABLED: "true"
+      LLM_PROVIDER_API_KEY: ci-llm-key
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Generate static scan evidence and enforce fail-closed policy
+        run: |
+          python scripts/security/b11_p4_generate_static_scans.py --out-dir docs/forensics/evidence/b11_p4
+
+      - name: Execute static negative controls (non-vacuous)
+        run: |
+          cd backend
+          pytest tests/test_b11_p4_static_scans.py -q | tee ../docs/forensics/evidence/b11_p4/ci_non_vacuous_static_scan_test_log.txt
+
+      - name: Execute DB/provider contract tests
+        run: |
+          cd backend
+          pytest tests/test_b11_p4_db_provider_contract.py -q | tee ../docs/forensics/evidence/b11_p4/rotation_drill_provider_key.txt
+
+      - name: Execute DB rotation drill proof
+        run: |
+          cd backend
+          pytest tests/test_b11_p4_db_provider_contract.py -q -k "database_rotation_contract_reloads_on_process_restart" | tee ../docs/forensics/evidence/b11_p4/rotation_drill_db_credentials.txt
+
+      - name: Upload P4 static/runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b11-p4-static-runtime-evidence
+          path: |
+            docs/forensics/evidence/b11_p4/workflow_plaintext_secret_scan.txt
+            docs/forensics/evidence/b11_p4/db_dsn_callsite_scan.txt
+            docs/forensics/evidence/b11_p4/provider_key_callsite_scan.txt
+            docs/forensics/evidence/b11_p4/ci_non_vacuous_static_scan_test_log.txt
+            docs/forensics/evidence/b11_p4/rotation_drill_db_credentials.txt
+            docs/forensics/evidence/b11_p4/rotation_drill_provider_key.txt
+            docs/forensics/evidence/b11_p4/PROOF_INDEX.md
+
+  b11-p4-ci-audit-gate:
+    name: b11-p4-ci-audit-gate
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-east-2
+      B11_P4_ENV: ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Configure AWS credentials via OIDC
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
+          aws-region: us-east-2
+
+      - name: Generate CI audit evidence
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python scripts/security/b11_p4_generate_audit_proofs.py --out-dir docs/forensics/evidence/b11_p4 --strict
+
+      - name: Generate workflow_dispatch scaffold evidence (non-main)
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          cat > docs/forensics/evidence/b11_p4/ci_oidc_assume_role_log.txt <<'EOF'
+          status=workflow_dispatch_preflight
+          note=non-main workflow_dispatch preflight scaffold
+          EOF
+          cat > docs/forensics/evidence/b11_p4/ci_secret_retrieval_log.txt <<'EOF'
+          status=workflow_dispatch_preflight
+          note=non-main workflow_dispatch preflight scaffold
+          EOF
+          cat > docs/forensics/evidence/b11_p4/cloudtrail_ci_secret_reads.txt <<'EOF'
+          status=workflow_dispatch_preflight
+          note=non-main workflow_dispatch preflight scaffold
+          EOF
+          cat > docs/forensics/evidence/b11_p4/cloudtrail_stage_secret_reads.txt <<'EOF'
+          status=workflow_dispatch_preflight
+          note=non-main workflow_dispatch preflight scaffold
+          EOF
+
+      - name: Upload P4 CI audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b11-p4-ci-audit-evidence
+          path: |
+            docs/forensics/evidence/b11_p4/ci_oidc_assume_role_log.txt
+            docs/forensics/evidence/b11_p4/ci_secret_retrieval_log.txt
+            docs/forensics/evidence/b11_p4/cloudtrail_ci_secret_reads.txt
+            docs/forensics/evidence/b11_p4/cloudtrail_stage_secret_reads.txt
+            docs/forensics/evidence/b11_p4/PROOF_INDEX.md
