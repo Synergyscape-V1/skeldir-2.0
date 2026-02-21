@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.problem_details import problem_details_response
 from app.core.config import settings
-from app.core.secrets import get_platform_token_encryption_key
+from app.core.secrets import get_platform_encryption_material_for_write
 from app.security.auth import AuthContext, get_auth_context
 from app.db.deps import get_db_session
 from app.schemas.attribution import (
@@ -158,7 +158,7 @@ async def upsert_platform_credentials(
         )
 
     try:
-        encryption_key = get_platform_token_encryption_key()
+        key_id, encryption_key = get_platform_encryption_material_for_write()
     except RuntimeError:
         return problem_details_response(
             request,
@@ -180,7 +180,7 @@ async def upsert_platform_credentials(
             expires_at=payload.expires_at,
             scope=payload.scope,
             token_type=payload.token_type,
-            key_id=settings.PLATFORM_TOKEN_KEY_ID or "default",
+            key_id=key_id,
             encryption_key=encryption_key,
         )
     except PlatformConnectionNotFoundError:

@@ -1,0 +1,5 @@
+STATUS=PASS
+TABLE=platform_credentials
+COLUMN=key_id
+EVIDENCE=backend/app/models/platform_credential.py declares key_id as nullable=False.
+NOTE=No additional schema migration required in P3 because key_id already existed.
