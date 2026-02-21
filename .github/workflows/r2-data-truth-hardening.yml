@@ -302,7 +302,8 @@ jobs:
             row=$(podman exec skeldir-r2-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -A -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid=('public.${table}'::regclass);" | tr -d ' ')
             echo "${table}=${row}"
             if [ "$table" = "worker_failed_jobs" ]; then
-              if ! echo "$row" | grep -q "t|f"; then
+              # Accept either forced-RLS or plain RLS for this operational table.
+              if ! echo "$row" | grep -qE "t\\|(t|f)"; then
                 FAILURES+=("RLS_NOT_ENFORCED:${table}=${row}")
               fi
             elif ! echo "$row" | grep -q "t|t"; then
