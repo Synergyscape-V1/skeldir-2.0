@@ -51,24 +51,24 @@ Definition evidence:
 
 ## CI Run Mapping (Merged Mainline Deterministic References)
 
-- pr_url=https://github.com/Synergyscape-V1/skeldir-2.0/pull/119
-- pr_merged_at_utc=2026-02-22T20:05:22Z
-- merge_commit_sha=32904d835fa8142060bb1f40de3501948176763f
-- p4_workflow_run_id=22284347436
+- pr_url=https://github.com/Synergyscape-V1/skeldir-2.0/pull/120
+- pr_merged_at_utc=2026-02-22T21:18:21Z
+- merge_commit_sha=97a6b88f95208e2175a4739bee39da6d93989f13
+- p4_workflow_run_id=22285543552
 - p4_workflow_run_attempt=1
-- p4_workflow_run_url=https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347436
+- p4_workflow_run_url=https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22285543552
 - p4_workflow_status=completed
 - p4_workflow_conclusion=success
-- main_ci_run_id=22284347431
+- main_ci_run_id=22285543559
 - main_ci_run_attempt=1
-- main_ci_run_url=https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347431
+- main_ci_run_url=https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22285543559
 - main_ci_status=completed
 - main_ci_conclusion=success
 
 ## Artifact Bundle Immutability (GitHub Actions Artifacts)
 
-- run_id=22284347436 artifact_id=5608974638 name=b11-p4-ci-audit-evidence sha256_zip=B10D79A4932AC5085BE9288DE842C6A1DB52BCFADC76539507B33B5466D52C6B
-- run_id=22284347436 artifact_id=5608976621 name=b11-p4-static-runtime-evidence sha256_zip=7DBE5AD84A49E61EF4B9DCC23B9921E93038453E2E845AC4D932B391592D2D2B
+- run_id=22285543552 artifact_id=5609341659 name=b11-p4-ci-audit-evidence sha256_zip=86A7A2940AD692C51CCBC27A234672E3E24712818DC82AFBE8281CCDF34D7571
+- run_id=22285543552 artifact_id=5609344195 name=b11-p4-static-runtime-evidence sha256_zip=5FB02623605547D4F123F7B9B0F768EB769ED064A2ABED53903CECF4F320501B
 
 ## Artifact Checksums
 
@@ -78,7 +78,7 @@ Definition evidence:
 - workflow_plaintext_secret_scan.txt: sha256=78ad893410439ace8fc763409f2b3f9b6046de6ad5a46ba7b16ce9f38916110d bytes=53
 - rotation_drill_db_credentials_ci.txt: sha256=2a0d78ed44e9103286eacc17e3235fca6b305edc8637f50b45692edd5b48ce71 bytes=384
 - rotation_drill_provider_key_ci.txt: sha256=fc379eeb1fc79db69e12b26685b1331f734b08cb8b631d86438aa918860849ff bytes=138
-- ci_oidc_assume_role_log.txt: sha256=e90899112ea7c75521ec856ba8d166dac26f29bea0b77bea02a6806cf1a90f9e bytes=342
-- ci_secret_retrieval_log.txt: sha256=3263d81ffbcc15c3de3d7dbfc365324f57629707a7afe0a2055293c6ab8ae358 bytes=415
-- cloudtrail_ci_secret_reads.txt: sha256=f5c767ba73676c7f7f8ca181473578114c5aeedcd445ceaebc9d8b93fc046bdf bytes=287
-- cloudtrail_stage_secret_reads.txt: sha256=0cb88df527a203af1fd55238aa4eb3ed43d8690713003965c00a9f8a19bd22c4 bytes=458
+- ci_oidc_assume_role_log.txt: sha256=5d45a321afaac556745d9a07b23bbf2810499717319c84f284eba1c51815106c bytes=342
+- ci_secret_retrieval_log.txt: sha256=862e295d1608a459c7e072241dc1774c5a135c2661d8ffc95e9f8c53730babdb bytes=415
+- cloudtrail_ci_secret_reads.txt: sha256=e4b10dc03a52ef9013251171ce6c7ff32b0ac1617413a5d21aaaa81832367bde bytes=287
+- cloudtrail_stage_secret_reads.txt: sha256=174356fc2afb83712c6c701ad99020e1da51732930ea7fa237de27346e703d38 bytes=458

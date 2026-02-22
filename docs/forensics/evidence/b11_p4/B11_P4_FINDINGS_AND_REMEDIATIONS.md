@@ -85,6 +85,17 @@ Evidence:
   - `alembic/env.py`
   - `scripts/ci/phase2_schema_closure_gate.py` (now reads both through choke point helpers).
 
+4. Gate 4 forensic durability remediation:
+- Replaced stale Windows-local placeholder artifacts with CI-generated Ubuntu artifacts for:
+  - `docs/forensics/evidence/b11_p4/ci_oidc_assume_role_log.txt`
+  - `docs/forensics/evidence/b11_p4/ci_secret_retrieval_log.txt`
+  - `docs/forensics/evidence/b11_p4/cloudtrail_ci_secret_reads.txt`
+  - `docs/forensics/evidence/b11_p4/cloudtrail_stage_secret_reads.txt`
+- Corrected `PROOF_INDEX.md` artifact digest mappings to canonical GitHub artifact digests for run `22285543552`.
+- Verified committed CloudTrail files now contain:
+  - CI identity tether: `identity_tether=skeldir-ci-deploy`
+  - Stage runtime identity tether: `identity_tether=skeldir-app-runtime-stage`
+
 ## Validation Executed Locally
 
 1. Static scan gate:
@@ -114,3 +125,8 @@ Mainline closure evidence:
 - Merge commit: `32904d835fa8142060bb1f40de3501948176763f`
 - P4 adjudication on merged commit: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347436` (`success`)
 - Main CI adjudication on merged commit: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347431` (`success`)
+
+Gate 4 durable-evidence refresh on latest mainline:
+- Merge commit: `97a6b88f95208e2175a4739bee39da6d93989f13`
+- P4 adjudication run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22285543552` (`success`)
+- Main CI run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22285543559` (`success`)

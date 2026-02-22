@@ -1,7 +1,11 @@
-timestamp_utc=2026-02-21T21:33:25.892673+00:00
+timestamp_utc=2026-02-22T21:18:34.781302+00:00
 region=us-east-2
 env=ci
-cmd=aws.cmd sts get-caller-identity --output json --region us-east-2
-exit_code=127
-stdout=<empty>
-stderr=FileNotFoundError: [WinError 2] The system cannot find the file specified
+cmd=aws sts get-caller-identity --output json --region us-east-2
+exit_code=0
+stdout={
+    "UserId": "AROAUYEVKTQLWEA2RJXDN:GitHubActions",
+    "Account": "326730685463",
+    "Arn": "arn:aws:sts::326730685463:assumed-role/skeldir-ci-deploy/GitHubActions"
+}
+stderr=<empty>
