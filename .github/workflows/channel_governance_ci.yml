@@ -66,7 +66,7 @@ jobs:
       - name: Run normalization golden tests
         run: |
           cd backend
-          pytest tests/test_channel_normalization.py -v --tb=short --cov=app/ingestion/channel_normalization --cov-report=term-missing
+          pytest tests/test_channel_normalization.py -v --tb=short --cov=app.ingestion.channel_normalization --cov-report=term-missing
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
@@ -75,7 +75,7 @@ jobs:
       - name: Verify test coverage
         run: |
           cd backend
-          pytest tests/test_channel_normalization.py --cov=app/ingestion/channel_normalization --cov-fail-under=80
+          pytest tests/test_channel_normalization.py --cov=app.ingestion.channel_normalization --cov-fail-under=80
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
@@ -241,5 +241,4 @@ jobs:
           "
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
-
 
