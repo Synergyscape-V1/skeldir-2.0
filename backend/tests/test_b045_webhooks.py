@@ -23,6 +23,7 @@ os.environ["DATABASE_URL"] = "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lu
 from app.main import app  # noqa: E402
 from app.db.session import engine, get_session  # noqa: E402
 from app.models import AttributionEvent, DeadEvent  # noqa: E402
+from app.core.secrets import get_database_url  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 
@@ -45,7 +46,7 @@ async def create_tenant_with_secrets():
         "paypal_webhook_secret": "paypal_secret",
         "woocommerce_webhook_secret": "woo_secret",
     }
-    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+    conn = await asyncpg.connect(get_database_url())
     # RAW_SQL_ALLOWLIST: legacy webhook contract test seeds tenant secrets
     await conn.execute(
         """

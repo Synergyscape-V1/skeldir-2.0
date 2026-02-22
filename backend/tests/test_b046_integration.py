@@ -33,6 +33,7 @@ os.environ["DATABASE_URL"] = "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lu
 from app.main import app
 from app.db.session import engine, get_session
 from app.models import AttributionEvent, DeadEvent
+from app.core.secrets import get_database_url
 
 pytestmark = pytest.mark.asyncio
 
@@ -60,7 +61,7 @@ async def test_tenant_with_secrets():
         "woocommerce": "woo_integration_secret",
     }
 
-    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+    conn = await asyncpg.connect(get_database_url())
     # RAW_SQL_ALLOWLIST: legacy integration test seeds tenants with webhook secrets
     await conn.execute(
         """
@@ -109,7 +110,7 @@ async def create_tenant_with_secrets(name_prefix: str):
         "woocommerce": f"{name_prefix.lower()}_woo_secret",
     }
 
-    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+    conn = await asyncpg.connect(get_database_url())
     # RAW_SQL_ALLOWLIST: legacy integration test seeds tenants with webhook secrets
     await conn.execute(
         """

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 from pathlib import Path
+from scripts.security.db_secret_access import resolve_runtime_database_url
 
 
 QUERIES = [
@@ -46,9 +46,7 @@ def run_query(database_url: str, query: str) -> dict:
 
 def main() -> int:
     args = parse_args()
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise SystemExit("DATABASE_URL is required")
+    database_url = resolve_runtime_database_url()
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

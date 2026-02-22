@@ -1,9 +1,9 @@
 import asyncio
 import asyncpg
-import os
+from app.core.secrets import get_database_url
 
 async def check_webhook_columns():
-    conn = await asyncpg.connect(os.environ['DATABASE_URL'])
+    conn = await asyncpg.connect(get_database_url())
 
     # Check for webhook-related columns in tenants table
     cols = await conn.fetch("""

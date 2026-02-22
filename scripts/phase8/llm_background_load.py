@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from scripts.security.db_secret_access import resolve_runtime_database_url
 
 from sqlalchemy import create_engine, text
 
@@ -17,9 +18,7 @@ def _runtime_sync_db_url() -> str:
     explicit = os.getenv("B07_P8_RUNTIME_DATABASE_URL")
     if explicit:
         return explicit
-    runtime = os.getenv("DATABASE_URL")
-    if not runtime:
-        raise RuntimeError("DATABASE_URL or B07_P8_RUNTIME_DATABASE_URL is required")
+    runtime = resolve_runtime_database_url()
     if runtime.startswith("postgresql+asyncpg://"):
         return runtime.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime

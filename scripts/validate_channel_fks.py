@@ -20,9 +20,9 @@ Related Documents:
 Phase: 6 - Governance & Monitoring
 """
 
-import os
 import sys
 from typing import Dict, List, Tuple
+from scripts.security.db_secret_access import resolve_runtime_database_url
 
 # Database connection (would use actual connection in production)
 # For now, we'll simulate or require psycopg2
@@ -47,21 +47,8 @@ def get_db_connection():
     if not HAS_PSYCOPG2:
         raise RuntimeError("psycopg2 is required for database validation")
     
-    # Try DATABASE_URL first
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url:
-        return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
-    
-    # Fallback to individual environment variables
-    connection_params = {
-        'host': os.environ.get('DB_HOST', 'localhost'),
-        'port': os.environ.get('DB_PORT', '5432'),
-        'dbname': os.environ.get('DB_NAME', 'skeldir'),
-        'user': os.environ.get('DB_USER', 'postgres'),
-        'password': os.environ.get('DB_PASSWORD', ''),
-    }
-    
-    return psycopg2.connect(**connection_params, cursor_factory=RealDictCursor)
+    database_url = resolve_runtime_database_url().replace("postgresql+asyncpg://", "postgresql://", 1)
+    return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
 
 
 def validate_fk_exists(

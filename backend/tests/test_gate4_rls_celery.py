@@ -15,9 +15,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 import ssl
+from app.core.secrets import get_database_url
 
-runtime_dsn = os.getenv("DATABASE_URL")
-if not runtime_dsn:
+try:
+    runtime_dsn = get_database_url()
+except Exception:
     pytest.skip("DATABASE_URL is required for Celery RLS gate tests", allow_module_level=True)
 
 if runtime_dsn.startswith("postgresql://"):
@@ -25,8 +27,8 @@ if runtime_dsn.startswith("postgresql://"):
 
 # Must set env before importing celery_app
 os.environ["DATABASE_URL"] = runtime_dsn
-os.environ.setdefault("CELERY_BROKER_URL", os.getenv("CELERY_BROKER_URL", "memory://"))
-os.environ.setdefault("CELERY_RESULT_BACKEND", os.getenv("CELERY_RESULT_BACKEND", "cache+memory://"))
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 
 from app.celery_app import celery_app
 from app.tasks.context import tenant_task

@@ -29,6 +29,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 import asyncpg
 from sqlalchemy import event as sa_event
+from scripts.security.db_secret_access import resolve_runtime_database_url
 
 # PYTHONPATH=backend
 from app.db.session import engine  # noqa: E402
@@ -598,7 +599,7 @@ async def main() -> int:
         "hw": {"cpu_count": os.cpu_count(), "mem_total_kb": _meminfo_total_kb()},
         "db": db_snapshot,
         "dsn": {
-            "DATABASE_URL": _dsn_fingerprint(os.getenv("DATABASE_URL", "")),
+            "DATABASE_URL": _dsn_fingerprint(resolve_runtime_database_url()),
             "R5_ADMIN_DATABASE_URL": _dsn_fingerprint(admin_db_url),
         },
     }

@@ -21,6 +21,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from scripts.security.db_secret_access import resolve_runtime_database_url
 
 try:
     import psycopg2
@@ -534,7 +535,7 @@ def main():
     )
     parser.add_argument(
         '--database-url',
-        default=os.environ.get('DATABASE_URL'),
+        default=None,
         help='PostgreSQL connection string (or use DATABASE_URL env var)'
     )
     parser.add_argument(
@@ -555,8 +556,7 @@ def main():
     args = parser.parse_args()
     
     if not args.database_url:
-        print("ERROR: DATABASE_URL not provided (use --database-url or set DATABASE_URL env var)", file=sys.stderr)
-        sys.exit(1)
+        args.database_url = resolve_runtime_database_url()
     
     validator = SchemaValidator(args.database_url, args.canonical_spec)
     

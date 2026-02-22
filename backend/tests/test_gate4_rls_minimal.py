@@ -14,9 +14,13 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 import ssl
+from app.core.secrets import get_database_url
 
 # Test DSN using app_user (the role that will enforce RLS)
-TEST_DSN = os.getenv("DATABASE_URL")
+try:
+    TEST_DSN = get_database_url()
+except Exception:
+    TEST_DSN = None
 if TEST_DSN and TEST_DSN.startswith("postgresql://"):
     TEST_DSN = TEST_DSN.replace("postgresql://", "postgresql+asyncpg://", 1)
 if not TEST_DSN:

@@ -13,6 +13,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable
+from scripts.security.db_secret_access import resolve_runtime_database_url
 
 
 REQUIRED_FILES = [
@@ -293,7 +294,7 @@ def main() -> int:
         bundle_dir = repo_root() / bundle_dir
 
     if args.command == "generate":
-        db_url = args.database_url or os.environ.get("DATABASE_URL")
+        db_url = args.database_url or resolve_runtime_database_url()
         if not db_url:
             raise RuntimeError("DATABASE_URL not set and --database-url not provided")
         generate(bundle_dir, db_url)

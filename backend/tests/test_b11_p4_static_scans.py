@@ -11,10 +11,12 @@ def _repo_root() -> Path:
 
 def test_b11_p4_static_scan_negative_control(tmp_path: Path):
     root = _repo_root()
-    violating_py = tmp_path / "violating.py"
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    violating_py = scripts_dir / "violating.py"
     violating_wf = tmp_path / "violating.yml"
     violating_py.write_text(
-        "import os\nfrom app.core.config import settings\nx=settings.DATABASE_URL\ny=os.getenv('LLM_PROVIDER_API_KEY')\n",
+        "import os\nx=os.getenv('DATABASE_URL')\n",
         encoding="utf-8",
     )
     violating_wf.write_text(

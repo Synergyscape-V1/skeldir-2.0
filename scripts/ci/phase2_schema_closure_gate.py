@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg2
+from scripts.security.db_secret_access import resolve_migration_database_url, resolve_runtime_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -615,8 +616,8 @@ def main() -> int:
     parser.add_argument("--evidence-dir", default="backend/validation/evidence/database/phase2_b03")
     args = parser.parse_args()
 
-    migration_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
-    runtime_url = os.environ.get("DATABASE_URL") or migration_url
+    migration_url = resolve_migration_database_url()
+    runtime_url = resolve_runtime_database_url()
     if not migration_url or not runtime_url:
         print("MIGRATION_DATABASE_URL or DATABASE_URL must be set", file=sys.stderr)
         return 2

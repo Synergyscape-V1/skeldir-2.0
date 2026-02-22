@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
+from app.core.secrets import get_database_url
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ def _runtime_sync_db_url() -> str:
     explicit = os.getenv("B057_P4_RUNTIME_DATABASE_URL")
     if explicit:
         return explicit
-    runtime_url = _require_env("DATABASE_URL")
+    runtime_url = get_database_url()
     if runtime_url.startswith("postgresql+asyncpg://"):
         return runtime_url.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime_url

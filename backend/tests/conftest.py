@@ -37,14 +37,17 @@ if os.getenv("CI") == "true":
         )
 
     # Validate CI DSN is localhost (not Neon production)
-    if "neon.tech" in os.environ["DATABASE_URL"]:
+    from app.core.secrets import get_database_url
+
+    ci_runtime_dsn = get_database_url()
+    if "neon.tech" in ci_runtime_dsn:
         raise RuntimeError(
             f"[B0.5.3.3 Gate C] CI DSN MUST be localhost; "
-            f"resolved={os.environ['DATABASE_URL'].split('@')[1].split('/')[0]}"
+            f"resolved={ci_runtime_dsn.split('@')[1].split('/')[0]}"
         )
 
     # Diagnostic logging for CI DSN transparency
-    dsn = os.environ["DATABASE_URL"]
+    dsn = ci_runtime_dsn
     if "@" in dsn and "/" in dsn:
         host = dsn.split('@')[1].split('/')[0]
         print(f"[B0.5.3.3 Gate C] CI DATABASE_URL host: {host}")
@@ -65,9 +68,8 @@ if os.getenv("CI") == "true":
 else:
     # Local dev fallback (only when NOT in CI)
     if "DATABASE_URL" not in os.environ:
-        # Local dev default (should be overridden by .env or explicit export)
-        os.environ["DATABASE_URL"] = "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-        print("[B0.5.3.3 Gate C] Local dev: Using Neon DSN fallback (override with DATABASE_URL env var)")
+        os.environ["DATABASE_URL"] = "postgresql://app_user:app_user@127.0.0.1:5432/skeldir"
+        print("[B0.5.3.3 Gate C] Local dev: Using localhost DSN fallback (override with DATABASE_URL env var)")
 
 from app.db.session import engine
 
@@ -77,6 +79,18 @@ from app.celery_app import _ensure_celery_configured
 _ensure_celery_configured()
 
 _RUNTIME_IDENTITY_VERIFIED = False
+
+
+def _managed_runtime_dsn() -> str:
+    from app.core.secrets import get_database_url
+
+    return get_database_url()
+
+
+def _managed_migration_dsn() -> str:
+    from app.core.secrets import get_migration_database_url
+
+    return get_migration_database_url()
 
 
 def _is_runtime_proof_test(node) -> bool:
@@ -104,8 +118,8 @@ def _assert_runtime_identity_parity(request: pytest.FixtureRequest) -> None:
     if not _is_runtime_proof_test(request.node):
         return
 
-    runtime_dsn = os.getenv("DATABASE_URL")
-    migration_dsn = os.getenv("MIGRATION_DATABASE_URL")
+    runtime_dsn = _managed_runtime_dsn()
+    migration_dsn = _managed_migration_dsn()
     expected_runtime_user = os.getenv("EXPECTED_RUNTIME_DB_USER")
 
     if not runtime_dsn:

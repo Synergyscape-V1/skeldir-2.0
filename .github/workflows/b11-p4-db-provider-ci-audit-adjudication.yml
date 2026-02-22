@@ -17,6 +17,20 @@ jobs:
     name: b11-p4-static-and-runtime-gate
     if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       PYTHONPATH: ${{ github.workspace }}/backend
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir
@@ -29,6 +43,7 @@ jobs:
       PLATFORM_TOKEN_KEY_ID: ci-key-id
       LLM_PROVIDER_ENABLED: "true"
       LLM_PROVIDER_API_KEY: ci-llm-key
+      B11_P4_ROTATION_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,12 +72,15 @@ jobs:
       - name: Execute DB/provider contract tests
         run: |
           cd backend
-          pytest tests/test_b11_p4_db_provider_contract.py -q | tee ../docs/forensics/evidence/b11_p4/rotation_drill_provider_key.txt
+          pytest tests/test_b11_p4_db_provider_contract.py -q | tee ../docs/forensics/evidence/b11_p4/contract_fail_closed_tests.txt
 
-      - name: Execute DB rotation drill proof
+      - name: Execute non-vacuous CI rotation drills
         run: |
-          cd backend
-          pytest tests/test_b11_p4_db_provider_contract.py -q -k "database_rotation_contract_reloads_on_process_restart" | tee ../docs/forensics/evidence/b11_p4/rotation_drill_db_credentials.txt
+          python scripts/security/b11_p4_rotation_drills_ci.py --out-dir docs/forensics/evidence/b11_p4
+
+      - name: Update immutable proof index mappings
+        run: |
+          python scripts/security/b11_p4_update_proof_index.py --out-dir docs/forensics/evidence/b11_p4
 
       - name: Upload P4 static/runtime evidence
         if: always()
@@ -72,10 +90,14 @@ jobs:
           path: |
             docs/forensics/evidence/b11_p4/workflow_plaintext_secret_scan.txt
             docs/forensics/evidence/b11_p4/db_dsn_callsite_scan.txt
+            docs/forensics/evidence/b11_p4/db_dsn_fallback_scan.txt
             docs/forensics/evidence/b11_p4/provider_key_callsite_scan.txt
             docs/forensics/evidence/b11_p4/ci_non_vacuous_static_scan_test_log.txt
+            docs/forensics/evidence/b11_p4/contract_fail_closed_tests.txt
             docs/forensics/evidence/b11_p4/rotation_drill_db_credentials.txt
             docs/forensics/evidence/b11_p4/rotation_drill_provider_key.txt
+            docs/forensics/evidence/b11_p4/rotation_drill_db_credentials_ci.txt
+            docs/forensics/evidence/b11_p4/rotation_drill_provider_key_ci.txt
             docs/forensics/evidence/b11_p4/PROOF_INDEX.md
 
   b11-p4-ci-audit-gate:
@@ -105,6 +127,11 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           python scripts/security/b11_p4_generate_audit_proofs.py --out-dir docs/forensics/evidence/b11_p4 --strict
+
+      - name: Update immutable proof index mappings
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python scripts/security/b11_p4_update_proof_index.py --out-dir docs/forensics/evidence/b11_p4
 
       - name: Generate pre-merge policy evidence (PR)
         if: github.event_name == 'pull_request'
