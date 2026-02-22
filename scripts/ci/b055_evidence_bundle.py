@@ -15,6 +15,22 @@ from pathlib import Path
 from typing import Dict, Iterable
 
 
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_runtime_database_url
+        return resolve_runtime_database_url
+    except ModuleNotFoundError:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_runtime_database_url
+                return resolve_runtime_database_url
+        raise
+
+
+resolve_runtime_database_url = _import_db_secret_access()
+
+
 REQUIRED_FILES = [
     "MANIFEST.json",
     "SCHEMA/schema.sql",
@@ -293,7 +309,7 @@ def main() -> int:
         bundle_dir = repo_root() / bundle_dir
 
     if args.command == "generate":
-        db_url = args.database_url or os.environ.get("DATABASE_URL")
+        db_url = args.database_url or resolve_runtime_database_url()
         if not db_url:
             raise RuntimeError("DATABASE_URL not set and --database-url not provided")
         generate(bundle_dir, db_url)

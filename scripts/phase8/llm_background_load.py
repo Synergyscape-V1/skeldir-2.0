@@ -8,7 +8,24 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from uuid import uuid4
+
+
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_runtime_database_url
+        return resolve_runtime_database_url
+    except ModuleNotFoundError:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_runtime_database_url
+                return resolve_runtime_database_url
+        raise
+
+
+resolve_runtime_database_url = _import_db_secret_access()
 
 from sqlalchemy import create_engine, text
 
@@ -17,9 +34,7 @@ def _runtime_sync_db_url() -> str:
     explicit = os.getenv("B07_P8_RUNTIME_DATABASE_URL")
     if explicit:
         return explicit
-    runtime = os.getenv("DATABASE_URL")
-    if not runtime:
-        raise RuntimeError("DATABASE_URL or B07_P8_RUNTIME_DATABASE_URL is required")
+    runtime = resolve_runtime_database_url()
     if runtime.startswith("postgresql+asyncpg://"):
         return runtime.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime

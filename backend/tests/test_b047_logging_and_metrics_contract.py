@@ -13,6 +13,7 @@ from httpx import AsyncClient, ASGITransport
 import logging
 
 from app.main import app  # noqa: E402
+from app.core.secrets import get_database_url  # noqa: E402
 
 os.environ["TESTING"] = "1"
 os.environ["DATABASE_URL"] = "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
@@ -27,7 +28,7 @@ async def tenant_with_secret():
     api_key = f"obs_key_{uuid4()}"
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     secret = "shopify_secret"
-    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+    conn = await asyncpg.connect(get_database_url())
     # RAW_SQL_ALLOWLIST: legacy logging/metrics contract test seeds tenant with webhook secret
     await conn.execute(
         """

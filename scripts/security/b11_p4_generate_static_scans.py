@@ -57,8 +57,12 @@ def _scan_python_file(path: Path) -> tuple[list[str], list[str]]:
     rel = _repo_rel(path)
     if rel in ALLOWED_PATHS:
         return [], []
-    text = path.read_text(encoding="utf-8")
-    tree = ast.parse(text, filename=str(path))
+    text = path.read_text(encoding="utf-8-sig")
+    try:
+        tree = ast.parse(text, filename=str(path))
+    except SyntaxError as exc:
+        msg = f"{rel}:{getattr(exc, 'lineno', 0) or 0}: parse_error={exc.msg}"
+        return [msg], [msg]
     db_hits: list[str] = []
     provider_hits: list[str] = []
 
@@ -82,6 +86,8 @@ def _scan_python_file(path: Path) -> tuple[list[str], list[str]]:
                     _add(key, f"{rel}:{node.lineno}: forbidden env secret access {name}('{key}')")
         if isinstance(node, ast.Subscript):
             if (
+                isinstance(node.ctx, ast.Load)
+                and
                 isinstance(node.value, ast.Attribute)
                 and isinstance(node.value.value, ast.Name)
                 and node.value.value.id == "os"
@@ -140,6 +146,8 @@ def main() -> int:
         py_files = [Path(item).resolve() for item in args.python_paths]
     else:
         py_files = sorted((REPO_ROOT / "backend" / "app").rglob("*.py"))
+        py_files.extend(sorted((REPO_ROOT / "backend" / "tests").rglob("*.py")))
+        py_files.extend(sorted((REPO_ROOT / "scripts").rglob("*.py")))
         py_files.append(REPO_ROOT / "alembic" / "env.py")
 
     db_violations: list[str] = []
@@ -158,6 +166,7 @@ def main() -> int:
     workflow_violations = _scan_workflows(workflow_paths)
 
     _write_report(out_dir / "db_dsn_callsite_scan.txt", "b11_p4_db_dsn_callsite_scan", db_violations)
+    _write_report(out_dir / "db_dsn_fallback_scan.txt", "b11_p4_db_dsn_fallback_scan", db_violations)
     _write_report(
         out_dir / "provider_key_callsite_scan.txt",
         "b11_p4_provider_key_callsite_scan",
@@ -170,6 +179,7 @@ def main() -> int:
     )
 
     print((out_dir / "db_dsn_callsite_scan.txt").as_posix())
+    print((out_dir / "db_dsn_fallback_scan.txt").as_posix())
     print((out_dir / "provider_key_callsite_scan.txt").as_posix())
     print((out_dir / "workflow_plaintext_secret_scan.txt").as_posix())
 

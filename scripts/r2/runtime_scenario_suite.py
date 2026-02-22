@@ -34,6 +34,22 @@ from pathlib import Path
 from typing import Awaitable, Callable
 from uuid import UUID, uuid4
 
+
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_runtime_database_url
+        return resolve_runtime_database_url
+    except ModuleNotFoundError:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_runtime_database_url
+                return resolve_runtime_database_url
+        raise
+
+
+resolve_runtime_database_url = _import_db_secret_access()
+
 from sqlalchemy import text
 
 
@@ -332,9 +348,7 @@ async def _scenario_5_worker_context_db_roundtrip(
         from sqlalchemy.pool import NullPool
         from sqlalchemy import event as sa_event
 
-        db_url = os.getenv("DATABASE_URL")
-        if not db_url:
-            raise RuntimeError("DATABASE_URL is required for worker context probe")
+        db_url = resolve_runtime_database_url()
         if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
@@ -473,11 +487,8 @@ def main() -> int:
     parser.add_argument("--orm-verdict-json", required=False)
     args = parser.parse_args()
 
-    if os.getenv("DATABASE_URL") is None:
-        print("ERROR: DATABASE_URL is required for R2 runtime scenario suite", file=sys.stderr)
-        return 2
-
     try:
+        resolve_runtime_database_url()
         return asyncio.run(_run_suite(args.candidate_sha, args.window_id, args.orm_verdict_json))
     except KeyboardInterrupt:
         return 130

@@ -225,7 +225,7 @@ async def test_ping_task_runs_and_persists_result(celery_worker_proc):
     result = celery_app.send_task("app.tasks.housekeeping.ping", queue="housekeeping", kwargs={})
     payload = result.get(timeout=30)
     assert payload["status"] == "ok"
-    expected_user = make_url(os.environ["CELERY_RESULT_BACKEND"].replace("db+", "")).username
+    expected_user = make_url(str(celery_app.conf.result_backend).replace("db+", "")).username
     assert payload["db_user"] == expected_user
 
     async with engine.begin() as conn:

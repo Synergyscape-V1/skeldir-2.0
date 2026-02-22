@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import create_engine, text
 
 from app.celery_app import celery_app
+from app.core.secrets import get_database_url, get_migration_database_url
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.services.llm_dispatch import enqueue_llm_task
 
@@ -42,7 +43,7 @@ def _runtime_sync_db_url() -> str:
     explicit = os.getenv("B07_P2_RUNTIME_DATABASE_URL")
     if explicit:
         return explicit
-    runtime_url = _require_env("DATABASE_URL")
+    runtime_url = get_database_url()
     if runtime_url.startswith("postgresql+asyncpg://"):
         return runtime_url.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime_url
@@ -55,10 +56,7 @@ def _runtime_async_db_url(runtime_sync: str) -> str:
 
 
 def _migration_sync_db_url() -> str:
-    explicit = os.getenv("MIGRATION_DATABASE_URL")
-    if explicit:
-        return explicit
-    return _runtime_sync_db_url()
+    return get_migration_database_url()
 
 
 def _artifact_dir() -> Path:

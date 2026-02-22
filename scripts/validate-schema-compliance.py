@@ -22,6 +22,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_runtime_database_url
+        return resolve_runtime_database_url
+    except ModuleNotFoundError:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_runtime_database_url
+                return resolve_runtime_database_url
+        raise
+
+
+resolve_runtime_database_url = _import_db_secret_access()
+
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -534,7 +550,7 @@ def main():
     )
     parser.add_argument(
         '--database-url',
-        default=os.environ.get('DATABASE_URL'),
+        default=None,
         help='PostgreSQL connection string (or use DATABASE_URL env var)'
     )
     parser.add_argument(
@@ -555,8 +571,7 @@ def main():
     args = parser.parse_args()
     
     if not args.database_url:
-        print("ERROR: DATABASE_URL not provided (use --database-url or set DATABASE_URL env var)", file=sys.stderr)
-        sys.exit(1)
+        args.database_url = resolve_runtime_database_url()
     
     validator = SchemaValidator(args.database_url, args.canonical_spec)
     

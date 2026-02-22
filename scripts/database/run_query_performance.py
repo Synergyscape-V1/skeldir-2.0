@@ -7,9 +7,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 from pathlib import Path
+import sys
+
+
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_runtime_database_url
+        return resolve_runtime_database_url
+    except ModuleNotFoundError:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_runtime_database_url
+                return resolve_runtime_database_url
+        raise
+
+
+resolve_runtime_database_url = _import_db_secret_access()
 
 
 QUERIES = [
@@ -46,9 +62,7 @@ def run_query(database_url: str, query: str) -> dict:
 
 def main() -> int:
     args = parse_args()
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise SystemExit("DATABASE_URL is required")
+    database_url = resolve_runtime_database_url()
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

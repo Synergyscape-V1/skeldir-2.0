@@ -13,13 +13,14 @@ from sqlalchemy import text
 os.environ["DATABASE_URL"] = "postgresql://neondb_owner:npg_ETLZ7UxM3obe@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 from app.core.config import settings
+from app.core.secrets import get_database_url
 from app.db.session import engine, get_session, validate_database_connection
 
 
 @pytest.mark.asyncio
 async def test_qg11_configuration_loads():
     """QG1.1: Configuration loads from environment"""
-    assert settings.DATABASE_URL is not None
+    assert get_database_url() is not None
     assert settings.TENANT_API_KEY_HEADER == "X-Skeldir-Tenant-Key"
     assert settings.DATABASE_POOL_SIZE == 10
     assert settings.DATABASE_MAX_OVERFLOW == 20

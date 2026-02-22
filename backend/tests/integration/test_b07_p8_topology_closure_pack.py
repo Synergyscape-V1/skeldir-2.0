@@ -21,6 +21,7 @@ from sqlalchemy import create_engine, text
 
 from app.db.session import engine as async_engine
 from app.db.session import set_tenant_guc_async
+from app.core.secrets import get_database_url
 from app.services.revenue_reconciliation import (
     PlatformClaim,
     RevenueReconciliationService,
@@ -54,9 +55,7 @@ def _runtime_sync_db_url() -> str:
     explicit = os.getenv("B07_P8_RUNTIME_DATABASE_URL")
     if explicit:
         return explicit
-    runtime = os.getenv("DATABASE_URL")
-    if not runtime:
-        raise RuntimeError("DATABASE_URL or B07_P8_RUNTIME_DATABASE_URL is required")
+    runtime = get_database_url()
     if runtime.startswith("postgresql+asyncpg://"):
         return runtime.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime

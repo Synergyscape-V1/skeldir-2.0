@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import create_engine, text
 
 from app.celery_app import celery_app
+from app.core.secrets import get_database_url
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.services.llm_dispatch import enqueue_llm_task
 
@@ -38,9 +39,7 @@ def _runtime_sync_db_url() -> str:
     explicit = os.getenv("B07_P4_RUNTIME_DATABASE_URL")
     if explicit:
         return explicit
-    runtime_url = os.getenv("DATABASE_URL")
-    if not runtime_url:
-        raise RuntimeError("DATABASE_URL or B07_P4_RUNTIME_DATABASE_URL is required")
+    runtime_url = get_database_url()
     if runtime_url.startswith("postgresql+asyncpg://"):
         return runtime_url.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime_url

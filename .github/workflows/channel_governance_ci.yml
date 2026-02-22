@@ -32,6 +32,20 @@ jobs:
   normalization_tests:
     name: Channel Normalization Golden Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: skeldir_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     
     steps:
       - name: Checkout code
@@ -45,21 +59,27 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov pyyaml
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+          pip install pytest-cov
       
       - name: Run normalization golden tests
         run: |
           cd backend
-          pytest tests/test_channel_normalization.py -v --tb=short --cov=app/ingestion/channel_normalization --cov-report=term-missing
+          pytest tests/test_channel_normalization.py -v --tb=short --cov=app.ingestion.channel_normalization --cov-report=term-missing
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
       
       - name: Verify test coverage
         run: |
           cd backend
-          pytest tests/test_channel_normalization.py --cov=app/ingestion/channel_normalization --cov-fail-under=80
+          pytest tests/test_channel_normalization.py --cov=app.ingestion.channel_normalization --cov-fail-under=80
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
   
   schema_validation:
     name: Channel FK Schema Validation
@@ -92,6 +112,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
           pip install alembic psycopg2-binary sqlalchemy
       
       - name: Run Alembic migrations
@@ -99,6 +120,7 @@ jobs:
           alembic upgrade head
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
       
       - name: Validate channel FK constraints
         run: |
@@ -137,6 +159,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
           pip install alembic psycopg2-binary sqlalchemy
       
       - name: Run Alembic migrations
@@ -144,6 +167,7 @@ jobs:
           alembic upgrade head
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
       
       - name: Run data flow test
         run: |
@@ -217,9 +241,4 @@ jobs:
           "
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
-
-
-
-
-
 

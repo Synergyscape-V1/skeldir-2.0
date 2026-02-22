@@ -20,9 +20,26 @@ Related Documents:
 Phase: 6 - Governance & Monitoring
 """
 
-import os
 import sys
 from typing import List, Dict
+
+
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_runtime_database_url
+        return resolve_runtime_database_url
+    except ModuleNotFoundError:
+        from pathlib import Path
+
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_runtime_database_url
+                return resolve_runtime_database_url
+        raise
+
+
+resolve_runtime_database_url = _import_db_secret_access()
 
 # Database connection
 try:
@@ -46,21 +63,8 @@ def get_db_connection():
     if not HAS_PSYCOPG2:
         raise RuntimeError("psycopg2 is required for database validation")
     
-    # Try DATABASE_URL first
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url:
-        return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
-    
-    # Fallback to individual environment variables
-    connection_params = {
-        'host': os.environ.get('DB_HOST', 'localhost'),
-        'port': os.environ.get('DB_PORT', '5432'),
-        'dbname': os.environ.get('DB_NAME', 'skeldir'),
-        'user': os.environ.get('DB_USER', 'postgres'),
-        'password': os.environ.get('DB_PASSWORD', ''),
-    }
-    
-    return psycopg2.connect(**connection_params, cursor_factory=RealDictCursor)
+    database_url = resolve_runtime_database_url().replace("postgresql+asyncpg://", "postgresql://", 1)
+    return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
 
 
 def validate_events_channel_integrity(conn) -> tuple[bool, int, List[Dict]]:

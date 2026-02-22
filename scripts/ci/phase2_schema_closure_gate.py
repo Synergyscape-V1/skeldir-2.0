@@ -30,6 +30,22 @@ from typing import Any
 import psycopg2
 
 
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_migration_database_url, resolve_runtime_database_url
+        return resolve_migration_database_url, resolve_runtime_database_url
+    except ModuleNotFoundError:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_migration_database_url, resolve_runtime_database_url
+                return resolve_migration_database_url, resolve_runtime_database_url
+        raise
+
+
+resolve_migration_database_url, resolve_runtime_database_url = _import_db_secret_access()
+
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -615,8 +631,8 @@ def main() -> int:
     parser.add_argument("--evidence-dir", default="backend/validation/evidence/database/phase2_b03")
     args = parser.parse_args()
 
-    migration_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
-    runtime_url = os.environ.get("DATABASE_URL") or migration_url
+    migration_url = resolve_migration_database_url()
+    runtime_url = resolve_runtime_database_url()
     if not migration_url or not runtime_url:
         print("MIGRATION_DATABASE_URL or DATABASE_URL must be set", file=sys.stderr)
         return 2
