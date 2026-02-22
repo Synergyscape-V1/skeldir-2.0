@@ -49,12 +49,26 @@ Definition evidence:
 - Hypothesis adjudication: `docs/forensics/evidence/b11_p4/B11_P4_CORRECTIVE_HYPOTHESIS_ADJUDICATION.md`
 - Checksum updater: `scripts/security/b11_p4_update_proof_index.py`
 
-## CI Run Mapping (to be populated by PR #119 adjudication run)
+## CI Run Mapping (Merged Mainline Deterministic References)
 
-- run_id=PENDING_PR119
-- run_attempt=PENDING_PR119
-- run_url=PENDING_PR119
-- head_sha=PENDING_PR119
+- pr_url=https://github.com/Synergyscape-V1/skeldir-2.0/pull/119
+- pr_merged_at_utc=2026-02-22T20:05:22Z
+- merge_commit_sha=32904d835fa8142060bb1f40de3501948176763f
+- p4_workflow_run_id=22284347436
+- p4_workflow_run_attempt=1
+- p4_workflow_run_url=https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347436
+- p4_workflow_status=completed
+- p4_workflow_conclusion=success
+- main_ci_run_id=22284347431
+- main_ci_run_attempt=1
+- main_ci_run_url=https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347431
+- main_ci_status=completed
+- main_ci_conclusion=success
+
+## Artifact Bundle Immutability (GitHub Actions Artifacts)
+
+- run_id=22284347436 artifact_id=5608974638 name=b11-p4-ci-audit-evidence sha256_zip=B10D79A4932AC5085BE9288DE842C6A1DB52BCFADC76539507B33B5466D52C6B
+- run_id=22284347436 artifact_id=5608976621 name=b11-p4-static-runtime-evidence sha256_zip=7DBE5AD84A49E61EF4B9DCC23B9921E93038453E2E845AC4D932B391592D2D2B
 
 ## Artifact Checksums
 
