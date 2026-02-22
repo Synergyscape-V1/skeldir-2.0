@@ -99,6 +99,7 @@ jobs:
           alembic upgrade head
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
       
       - name: Validate channel FK constraints
         run: |
@@ -144,6 +145,7 @@ jobs:
           alembic upgrade head
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/skeldir_test
       
       - name: Run data flow test
         run: |
@@ -217,7 +219,6 @@ jobs:
           "
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
-
 
 
 

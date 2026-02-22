@@ -28,7 +28,22 @@ from pathlib import Path
 from typing import Any
 
 import psycopg2
-from scripts.security.db_secret_access import resolve_migration_database_url, resolve_runtime_database_url
+
+
+def _import_db_secret_access():
+    try:
+        from scripts.security.db_secret_access import resolve_migration_database_url, resolve_runtime_database_url
+        return resolve_migration_database_url, resolve_runtime_database_url
+    except ModuleNotFoundError:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "scripts" / "security" / "db_secret_access.py").exists():
+                sys.path.insert(0, str(parent))
+                from scripts.security.db_secret_access import resolve_migration_database_url, resolve_runtime_database_url
+                return resolve_migration_database_url, resolve_runtime_database_url
+        raise
+
+
+resolve_migration_database_url, resolve_runtime_database_url = _import_db_secret_access()
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
