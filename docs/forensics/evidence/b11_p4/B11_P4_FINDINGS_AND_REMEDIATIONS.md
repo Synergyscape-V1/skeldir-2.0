@@ -105,5 +105,12 @@ Evidence:
 
 ## Completion State
 
-Code remediation status for requested blockers (`H01/H02/H06/H07/H09`): **COMPLETE** on branch.  
-Phase closure on `main`: **PENDING CI adjudication + merge** for PR #119.
+Code remediation status for requested blockers (`H01/H02/H06/H07/H09`): **COMPLETE**.  
+Phase closure on `main`: **COMPLETE**.
+
+Mainline closure evidence:
+- PR merged: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/119`
+- Merge timestamp (UTC): `2026-02-22T20:05:22Z`
+- Merge commit: `32904d835fa8142060bb1f40de3501948176763f`
+- P4 adjudication on merged commit: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347436` (`success`)
+- Main CI adjudication on merged commit: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22284347431` (`success`)
