@@ -4,6 +4,7 @@
 - Phase: `B1.1-P4 - DB Credentials + Provider Keys Migration + CI/CD Audited Retrieval`
 - Primary workflow: `.github/workflows/b11-p4-db-provider-ci-audit-adjudication.yml`
 - Local verification date: `2026-02-21`
+- Corrective adjudication table: `docs/forensics/evidence/b11_p4/B11_P4_CORRECTIVE_HYPOTHESIS_ADJUDICATION.md`
 
 ## Exit Gate 1 - DB Credentials Migrated + Choke Point Enforced
 - DB call-site static scan: `docs/forensics/evidence/b11_p4/db_dsn_callsite_scan.txt`
@@ -33,6 +34,7 @@
 
 ## Exit Gate 6 - Evidence Pack Published
 - This index: `docs/forensics/evidence/b11_p4/PROOF_INDEX.md`
+- Branch protection evidence: `docs/forensics/evidence/b11_p4/branch_protection_required_checks.json`
 - Required files present:
   - `docs/forensics/evidence/b11_p4/workflow_plaintext_secret_scan.txt`
   - `docs/forensics/evidence/b11_p4/db_dsn_callsite_scan.txt`
@@ -45,5 +47,10 @@
   - `docs/forensics/evidence/b11_p4/rotation_drill_provider_key.txt`
 
 ## CI Run Mapping
-- Generated at adjudication runtime by `scripts/security/b11_p4_generate_audit_proofs.py`.
-- Includes immutable `run_id`, `run_url`, `event`, and `head_sha` in artifact copies of this file.
+- run_id=22281720456
+- run_attempt=1
+- run_url=https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22281720456
+- workflow=b11-p4-db-provider-ci-audit-adjudication
+- event=workflow_dispatch
+- head_sha=948957aec71f5a412801863d6eb65048efc982fc
+- generated_utc=2026-02-22T17:20:32.627208+00:00

@@ -80,7 +80,7 @@ jobs:
 
   b11-p4-ci-audit-gate:
     name: b11-p4-ci-audit-gate
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -106,24 +106,24 @@ jobs:
         run: |
           python scripts/security/b11_p4_generate_audit_proofs.py --out-dir docs/forensics/evidence/b11_p4 --strict
 
-      - name: Generate workflow_dispatch scaffold evidence (non-main)
-        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+      - name: Generate pre-merge policy evidence (PR)
+        if: github.event_name == 'pull_request'
         run: |
           cat > docs/forensics/evidence/b11_p4/ci_oidc_assume_role_log.txt <<'EOF'
-          status=workflow_dispatch_preflight
-          note=non-main workflow_dispatch preflight scaffold
+          status=premerge_policy_context
+          note=aws_oidc_and_cloudtrail_tether_enforced_on_main_push_or_main_dispatch
           EOF
           cat > docs/forensics/evidence/b11_p4/ci_secret_retrieval_log.txt <<'EOF'
-          status=workflow_dispatch_preflight
-          note=non-main workflow_dispatch preflight scaffold
+          status=premerge_policy_context
+          note=secrets_retrieval_proof_is_main_only_to_preserve_oidc_trust_constraints
           EOF
           cat > docs/forensics/evidence/b11_p4/cloudtrail_ci_secret_reads.txt <<'EOF'
-          status=workflow_dispatch_preflight
-          note=non-main workflow_dispatch preflight scaffold
+          status=premerge_policy_context
+          note=cloudtrail_tether_validation_is_main_only
           EOF
           cat > docs/forensics/evidence/b11_p4/cloudtrail_stage_secret_reads.txt <<'EOF'
-          status=workflow_dispatch_preflight
-          note=non-main workflow_dispatch preflight scaffold
+          status=premerge_policy_context
+          note=stage_tether_validation_is_main_only
           EOF
 
       - name: Upload P4 CI audit evidence
