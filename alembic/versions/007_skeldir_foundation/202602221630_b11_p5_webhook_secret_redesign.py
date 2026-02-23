@@ -56,9 +56,21 @@ def _resolve_platform_encryption_material() -> tuple[str, str]:
     return current_key_id, raw
 
 
+def _count_plaintext_rows(bind) -> int:
+    where_clause = " OR ".join(
+        f"({provider}_webhook_secret IS NOT NULL AND btrim({provider}_webhook_secret) <> '')"
+        for provider in PROVIDERS
+    )
+    return int(
+        bind.execute(
+            text(f"SELECT COUNT(*) FROM public.tenants WHERE {where_clause}")
+        ).scalar()
+        or 0
+    )
+
+
 def upgrade() -> None:
     bind = op.get_bind()
-    current_key_id, current_key = _resolve_platform_encryption_material()
 
     for provider in PROVIDERS:
         op.execute(
@@ -77,23 +89,28 @@ def upgrade() -> None:
                 """
             )
         )
-        bind.execute(
-            text(
-                f"""
-                UPDATE public.tenants
-                SET
-                  {provider}_webhook_secret_ciphertext = pgp_sym_encrypt({provider}_webhook_secret, :current_key),
-                  {provider}_webhook_secret_key_id = :current_key_id
-                WHERE {provider}_webhook_secret IS NOT NULL
-                  AND btrim({provider}_webhook_secret) <> ''
-                  AND (
-                    {provider}_webhook_secret_ciphertext IS NULL
-                    OR {provider}_webhook_secret_key_id IS NULL
-                  )
-                """
-            ),
-            {"current_key": current_key, "current_key_id": current_key_id},
-        )
+
+    plaintext_row_count = _count_plaintext_rows(bind)
+    if plaintext_row_count > 0:
+        current_key_id, current_key = _resolve_platform_encryption_material()
+        for provider in PROVIDERS:
+            bind.execute(
+                text(
+                    f"""
+                    UPDATE public.tenants
+                    SET
+                      {provider}_webhook_secret_ciphertext = pgp_sym_encrypt({provider}_webhook_secret, :current_key),
+                      {provider}_webhook_secret_key_id = :current_key_id
+                    WHERE {provider}_webhook_secret IS NOT NULL
+                      AND btrim({provider}_webhook_secret) <> ''
+                      AND (
+                        {provider}_webhook_secret_ciphertext IS NULL
+                        OR {provider}_webhook_secret_key_id IS NULL
+                      )
+                    """
+                ),
+                {"current_key": current_key, "current_key_id": current_key_id},
+            )
 
     op.execute("DROP FUNCTION IF EXISTS security.resolve_tenant_webhook_secrets(text)")
     op.execute(
