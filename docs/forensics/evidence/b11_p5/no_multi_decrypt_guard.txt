@@ -1,0 +1,4 @@
+b11_p3_no_multi_decrypt_guard
+scanned_files=395
+result=PASS
+no forbidden multi-decrypt SQL patterns detected

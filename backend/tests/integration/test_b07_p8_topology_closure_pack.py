@@ -22,6 +22,7 @@ from sqlalchemy import create_engine, text
 from app.db.session import engine as async_engine
 from app.db.session import set_tenant_guc_async
 from app.core.secrets import get_database_url
+from tests.helpers.webhook_secret_seed import webhook_secret_insert_params
 from app.services.revenue_reconciliation import (
     PlatformClaim,
     RevenueReconciliationService,
@@ -130,21 +131,15 @@ def _seed_tenant(runtime_db_url: str) -> _TenantFixture:
     tenant_key = f"b07_p8_tenant_key_{tenant_id.hex[:10]}"
     api_key_hash = hashlib.sha256(tenant_key.encode("utf-8")).hexdigest()
     stripe_secret = "whsec_b07_p8_stripe"
+    secret_insert = webhook_secret_insert_params(
+        shopify_secret="phase8_shopify_secret",
+        stripe_secret=stripe_secret,
+        paypal_secret="phase8_paypal_secret",
+        woocommerce_secret="phase8_woo_secret",
+    )
     now = datetime.now(timezone.utc)
     engine = create_engine(runtime_db_url)
     with engine.begin() as conn:
-        available = set(
-            conn.execute(
-                text(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                      AND table_name = 'tenants'
-                    """
-                )
-            ).scalars()
-        )
         required = set(
             conn.execute(
                 text(
@@ -169,24 +164,47 @@ def _seed_tenant(runtime_db_url: str) -> _TenantFixture:
         "stripe_webhook_secret": stripe_secret,
         "paypal_webhook_secret": "phase8_paypal_secret",
         "woocommerce_webhook_secret": "phase8_woo_secret",
+        "webhook_secret_key": secret_insert["webhook_secret_key"],
+        "webhook_secret_key_id": secret_insert["webhook_secret_key_id"],
         "created_at": now,
         "updated_at": now,
     }
-    insert_cols = [col for col in payload if col in available]
-    missing = sorted(col for col in required if col not in payload)
+    required_payload = {
+        "id": payload["id"],
+        "name": payload["name"],
+        "api_key_hash": payload["api_key_hash"],
+        "notification_email": payload["notification_email"],
+        "created_at": payload["created_at"],
+        "updated_at": payload["updated_at"],
+    }
+    missing = sorted(col for col in required if col not in required_payload and col != "id")
     if missing:
         raise RuntimeError(f"Missing required tenant columns: {', '.join(missing)}")
-    if "id" not in insert_cols:
-        insert_cols.insert(0, "id")
-    if "name" not in insert_cols:
-        insert_cols.append("name")
-    placeholders = ", ".join(f":{col}" for col in insert_cols)
-    # RAW_SQL_ALLOWLIST: phase8 topology probe seeds a tenant fixture directly.
-    sql = text(
-        f"INSERT INTO tenants ({', '.join(insert_cols)}) VALUES ({placeholders})"
-    )
+
     with engine.begin() as conn:
-        conn.execute(sql, payload)
+        # RAW_SQL_ALLOWLIST: phase8 topology probe seeds a tenant fixture directly.
+        conn.execute(
+            text(
+                """
+                INSERT INTO tenants (
+                    id, name, api_key_hash, notification_email,
+                    shopify_webhook_secret_ciphertext, shopify_webhook_secret_key_id,
+                    stripe_webhook_secret_ciphertext, stripe_webhook_secret_key_id,
+                    paypal_webhook_secret_ciphertext, paypal_webhook_secret_key_id,
+                    woocommerce_webhook_secret_ciphertext, woocommerce_webhook_secret_key_id,
+                    created_at, updated_at
+                ) VALUES (
+                    :id, :name, :api_key_hash, :notification_email,
+                    pgp_sym_encrypt(:shopify_webhook_secret, :webhook_secret_key), :webhook_secret_key_id,
+                    pgp_sym_encrypt(:stripe_webhook_secret, :webhook_secret_key), :webhook_secret_key_id,
+                    pgp_sym_encrypt(:paypal_webhook_secret, :webhook_secret_key), :webhook_secret_key_id,
+                    pgp_sym_encrypt(:woocommerce_webhook_secret, :webhook_secret_key), :webhook_secret_key_id,
+                    :created_at, :updated_at
+                )
+                """
+            ),
+            payload,
+        )
     return _TenantFixture(
         tenant_id=tenant_id,
         tenant_key=tenant_key,

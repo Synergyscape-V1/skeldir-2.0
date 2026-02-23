@@ -1,0 +1,4 @@
+b11_p5_webhook_plaintext_guard
+scanned_files=190
+result=PASS
+no plaintext webhook secret references detected

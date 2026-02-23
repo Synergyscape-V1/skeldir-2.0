@@ -345,6 +345,10 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "AUTH_JWT_ALGORITHM": os.getenv("AUTH_JWT_ALGORITHM", "HS256"),
             "AUTH_JWT_ISSUER": os.getenv("AUTH_JWT_ISSUER", "https://issuer.skeldir.test"),
             "AUTH_JWT_AUDIENCE": os.getenv("AUTH_JWT_AUDIENCE", "skeldir-api"),
+            "PLATFORM_TOKEN_ENCRYPTION_KEY": os.getenv(
+                "PLATFORM_TOKEN_ENCRYPTION_KEY", "e2e-platform-key"
+            ),
+            "PLATFORM_TOKEN_KEY_ID": os.getenv("PLATFORM_TOKEN_KEY_ID", "e2e-key"),
             "INGESTION_FOLLOWUP_TASKS_ENABLED": "true",
             "E2E_DATABASE_URL": cfg.compose_runtime_async_dsn,
             "E2E_CELERY_BROKER_URL": cfg.compose_broker_dsn,

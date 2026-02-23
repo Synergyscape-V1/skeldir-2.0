@@ -24,6 +24,10 @@ from app.main import app  # noqa: E402
 from app.db.session import engine, get_session  # noqa: E402
 from app.models import AttributionEvent, DeadEvent  # noqa: E402
 from app.core.secrets import get_database_url  # noqa: E402
+from tests.helpers.webhook_secret_seed import (
+    webhook_secret_insert_params,
+    webhook_secret_insert_columns,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -47,14 +51,24 @@ async def create_tenant_with_secrets():
         "woocommerce_webhook_secret": "woo_secret",
     }
     conn = await asyncpg.connect(get_database_url())
+    secret_insert = webhook_secret_insert_params(
+        shopify_secret=secrets["shopify_webhook_secret"],
+        stripe_secret=secrets["stripe_webhook_secret"],
+        paypal_secret=secrets["paypal_webhook_secret"],
+        woocommerce_secret=secrets["woocommerce_webhook_secret"],
+    )
     # RAW_SQL_ALLOWLIST: legacy webhook contract test seeds tenant secrets
     await conn.execute(
         """
         INSERT INTO tenants (id, api_key_hash, name, notification_email,
-                             shopify_webhook_secret, stripe_webhook_secret,
-                             paypal_webhook_secret, woocommerce_webhook_secret,
+                             """ + webhook_secret_insert_columns() + """,
                              created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        VALUES ($1, $2, $3, $4,
+                pgp_sym_encrypt($5, $9), $10,
+                pgp_sym_encrypt($6, $9), $10,
+                pgp_sym_encrypt($7, $9), $10,
+                pgp_sym_encrypt($8, $9), $10,
+                NOW(), NOW())
         """,
         str(tenant_id),
         api_key_hash,
@@ -64,6 +78,8 @@ async def create_tenant_with_secrets():
         secrets["stripe_webhook_secret"],
         secrets["paypal_webhook_secret"],
         secrets["woocommerce_webhook_secret"],
+        secret_insert["webhook_secret_key"],
+        secret_insert["webhook_secret_key_id"],
     )
     await conn.close()
     return tenant_id, api_key, secrets

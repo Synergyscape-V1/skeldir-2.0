@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy import create_engine, text
 from app.core.secrets import get_database_url
+from tests.helpers.webhook_secret_seed import webhook_secret_insert_params
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,12 @@ def _seed_tenant(admin_db_url: str, label: str, include_shopify_secret: bool) ->
     tenant_key = f"b057_p5_tenant_key_{label}_{tenant_id.hex[:8]}"
     api_key_hash = hashlib.sha256(tenant_key.encode("utf-8")).hexdigest()
     shopify_secret = f"b057-p5-shopify-{label}"
+    secret_insert = webhook_secret_insert_params(
+        shopify_secret=shopify_secret,
+        stripe_secret="unused_stripe_secret",
+        paypal_secret="unused_paypal_secret",
+        woocommerce_secret="unused_woocommerce_secret",
+    )
     notification_email = f"b057-p5-{label}-{tenant_id.hex[:8]}@example.invalid"
 
     engine = create_engine(admin_db_url)
@@ -226,14 +233,22 @@ def _seed_tenant(admin_db_url: str, label: str, include_shopify_secret: bool) ->
                   name,
                   api_key_hash,
                   notification_email,
-                  shopify_webhook_secret
+                  shopify_webhook_secret_ciphertext,
+                  shopify_webhook_secret_key_id
                 )
                 VALUES (
                   :id,
                   :name,
                   :api_key_hash,
                   :notification_email,
-                  :shopify_webhook_secret
+                  CASE
+                    WHEN :shopify_webhook_secret IS NULL THEN NULL::bytea
+                    ELSE pgp_sym_encrypt(:shopify_webhook_secret, :webhook_secret_key)
+                  END,
+                  CASE
+                    WHEN :shopify_webhook_secret IS NULL THEN NULL
+                    ELSE :webhook_secret_key_id
+                  END
                 )
                 """
             ),
@@ -243,6 +258,8 @@ def _seed_tenant(admin_db_url: str, label: str, include_shopify_secret: bool) ->
                 "api_key_hash": api_key_hash,
                 "notification_email": notification_email,
                 "shopify_webhook_secret": shopify_secret if include_shopify_secret else None,
+                "webhook_secret_key": secret_insert["webhook_secret_key"],
+                "webhook_secret_key_id": secret_insert["webhook_secret_key_id"],
             },
         )
 

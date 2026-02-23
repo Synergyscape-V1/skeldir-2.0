@@ -17,6 +17,7 @@ os.environ["DATABASE_URL"] = "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lu
 
 from app.main import app  # noqa: E402
 from app.core.secrets import get_database_url  # noqa: E402
+from tests.helpers.webhook_secret_seed import webhook_secret_insert_params  # noqa: E402
 
 
 pytestmark = pytest.mark.asyncio
@@ -28,18 +29,30 @@ async def tenant_with_secret():
     api_key = f"obs_key_{uuid4()}"
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     secret = "shopify_secret"
+    secret_insert = webhook_secret_insert_params(
+        shopify_secret=secret,
+        stripe_secret="unused_stripe_secret",
+        paypal_secret="unused_paypal_secret",
+        woocommerce_secret="unused_woocommerce_secret",
+    )
     conn = await asyncpg.connect(get_database_url())
     # RAW_SQL_ALLOWLIST: legacy observability test creates tenant with webhook secret
     await conn.execute(
         """
-        INSERT INTO tenants (id, api_key_hash, name, notification_email, shopify_webhook_secret, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+        INSERT INTO tenants (
+            id, api_key_hash, name, notification_email,
+            shopify_webhook_secret_ciphertext, shopify_webhook_secret_key_id,
+            created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, pgp_sym_encrypt($5, $6), $7, NOW(), NOW())
         """,
         str(tenant_id),
         api_key_hash,
         f"Obs Tenant {str(tenant_id)[:8]}",
         f"obs_{str(tenant_id)[:8]}@test.local",
         secret,
+        secret_insert["webhook_secret_key"],
+        secret_insert["webhook_secret_key_id"],
     )
     await conn.close()
     return tenant_id, api_key, secret

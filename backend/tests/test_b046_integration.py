@@ -34,6 +34,7 @@ from app.main import app
 from app.db.session import engine, get_session
 from app.models import AttributionEvent, DeadEvent
 from app.core.secrets import get_database_url
+from tests.helpers.webhook_secret_seed import webhook_secret_insert_params
 
 pytestmark = pytest.mark.asyncio
 
@@ -62,14 +63,27 @@ async def test_tenant_with_secrets():
     }
 
     conn = await asyncpg.connect(get_database_url())
+    secret_insert = webhook_secret_insert_params(
+        shopify_secret=secrets["shopify"],
+        stripe_secret=secrets["stripe"],
+        paypal_secret=secrets["paypal"],
+        woocommerce_secret=secrets["woocommerce"],
+    )
     # RAW_SQL_ALLOWLIST: legacy integration test seeds tenants with webhook secrets
     await conn.execute(
         """
         INSERT INTO tenants (id, api_key_hash, name, notification_email,
-                             shopify_webhook_secret, stripe_webhook_secret,
-                             paypal_webhook_secret, woocommerce_webhook_secret,
+                             shopify_webhook_secret_ciphertext, shopify_webhook_secret_key_id,
+                             stripe_webhook_secret_ciphertext, stripe_webhook_secret_key_id,
+                             paypal_webhook_secret_ciphertext, paypal_webhook_secret_key_id,
+                             woocommerce_webhook_secret_ciphertext, woocommerce_webhook_secret_key_id,
                              created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        VALUES ($1, $2, $3, $4,
+                pgp_sym_encrypt($5, $9), $10,
+                pgp_sym_encrypt($6, $9), $10,
+                pgp_sym_encrypt($7, $9), $10,
+                pgp_sym_encrypt($8, $9), $10,
+                NOW(), NOW())
         """,
         str(tenant_id),
         api_key_hash,
@@ -79,6 +93,8 @@ async def test_tenant_with_secrets():
         secrets["stripe"],
         secrets["paypal"],
         secrets["woocommerce"],
+        secret_insert["webhook_secret_key"],
+        secret_insert["webhook_secret_key_id"],
     )
     await conn.close()
 
@@ -111,14 +127,27 @@ async def create_tenant_with_secrets(name_prefix: str):
     }
 
     conn = await asyncpg.connect(get_database_url())
+    secret_insert = webhook_secret_insert_params(
+        shopify_secret=secrets["shopify"],
+        stripe_secret=secrets["stripe"],
+        paypal_secret=secrets["paypal"],
+        woocommerce_secret=secrets["woocommerce"],
+    )
     # RAW_SQL_ALLOWLIST: legacy integration test seeds tenants with webhook secrets
     await conn.execute(
         """
         INSERT INTO tenants (id, api_key_hash, name, notification_email,
-                             shopify_webhook_secret, stripe_webhook_secret,
-                             paypal_webhook_secret, woocommerce_webhook_secret,
+                             shopify_webhook_secret_ciphertext, shopify_webhook_secret_key_id,
+                             stripe_webhook_secret_ciphertext, stripe_webhook_secret_key_id,
+                             paypal_webhook_secret_ciphertext, paypal_webhook_secret_key_id,
+                             woocommerce_webhook_secret_ciphertext, woocommerce_webhook_secret_key_id,
                              created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        VALUES ($1, $2, $3, $4,
+                pgp_sym_encrypt($5, $9), $10,
+                pgp_sym_encrypt($6, $9), $10,
+                pgp_sym_encrypt($7, $9), $10,
+                pgp_sym_encrypt($8, $9), $10,
+                NOW(), NOW())
         """,
         str(tenant_id),
         api_key_hash,
@@ -128,6 +157,8 @@ async def create_tenant_with_secrets(name_prefix: str):
         secrets["stripe"],
         secrets["paypal"],
         secrets["woocommerce"],
+        secret_insert["webhook_secret_key"],
+        secret_insert["webhook_secret_key_id"],
     )
     await conn.close()
 

@@ -15,6 +15,7 @@ import httpx
 import pytest
 from sqlalchemy import create_engine, text
 from app.core.secrets import get_database_url
+from tests.helpers.webhook_secret_seed import webhook_secret_insert_params
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,12 @@ def _seed_tenant(admin_db_url: str) -> _WebhookFixture:
     tenant_key = f"b057_p3_test_tenant_key_{tenant_id.hex[:8]}"
     api_key_hash = hashlib.sha256(tenant_key.encode("utf-8")).hexdigest()
     stripe_secret = "whsec_b057_p3_stripe"
+    secret_insert = webhook_secret_insert_params(
+        shopify_secret="unused_shopify_secret",
+        stripe_secret=stripe_secret,
+        paypal_secret="unused_paypal_secret",
+        woocommerce_secret="unused_woocommerce_secret",
+    )
 
     # Keep the value synthetic/non-human to avoid PII in CI artifacts.
     notification_email = f"tenant-{tenant_id.hex[:8]}@example.invalid"
@@ -86,14 +93,16 @@ def _seed_tenant(admin_db_url: str) -> _WebhookFixture:
                   name,
                   api_key_hash,
                   notification_email,
-                  stripe_webhook_secret
+                  stripe_webhook_secret_ciphertext,
+                  stripe_webhook_secret_key_id
                 )
                 VALUES (
                   :id,
                   :name,
                   :api_key_hash,
                   :notification_email,
-                  :stripe_webhook_secret
+                  pgp_sym_encrypt(:stripe_webhook_secret, :webhook_secret_key),
+                  :webhook_secret_key_id
                 )
                 """
             ),
@@ -103,6 +112,8 @@ def _seed_tenant(admin_db_url: str) -> _WebhookFixture:
                 "api_key_hash": api_key_hash,
                 "notification_email": notification_email,
                 "stripe_webhook_secret": stripe_secret,
+                "webhook_secret_key": secret_insert["webhook_secret_key"],
+                "webhook_secret_key_id": secret_insert["webhook_secret_key_id"],
             },
         )
 
@@ -172,14 +183,15 @@ def test_b057_p3_least_privilege_tenants_denied(b057_p3_fixture: _WebhookFixture
 def test_b057_p3_mediated_resolution_callable(b057_p3_fixture: _WebhookFixture):
     engine = create_engine(_runtime_sync_db_url())
     with engine.begin() as conn:
-        secret = conn.execute(
+        row = conn.execute(
             text(
-                "SELECT stripe_webhook_secret "
+                "SELECT stripe_webhook_secret_ciphertext, stripe_webhook_secret_key_id "
                 "FROM security.resolve_tenant_webhook_secrets(:api_key_hash)"
             ),
             {"api_key_hash": b057_p3_fixture.api_key_hash},
-        ).scalar_one()
-        assert secret == b057_p3_fixture.stripe_secret
+        ).mappings().one()
+        assert row["stripe_webhook_secret_ciphertext"] is not None
+        assert row["stripe_webhook_secret_key_id"] is not None
 
 
 def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
