@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.db.session import engine
+from app.services.tenant_webhook_secrets import resolve_tenant_webhook_secrets_from_row
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,7 @@ async def get_tenant_with_webhook_secrets(api_key: str) -> dict:
         res = await conn.execute(
             text(
                 """
-                SELECT
-                  tenant_id,
-                  shopify_webhook_secret,
-                  stripe_webhook_secret,
-                  paypal_webhook_secret,
-                  woocommerce_webhook_secret
+                SELECT *
                 FROM security.resolve_tenant_webhook_secrets(:api_key_hash)
                 """
             ),
@@ -66,16 +62,17 @@ async def get_tenant_with_webhook_secrets(api_key: str) -> dict:
         )
         row = res.mappings().first()
 
-    if not row:
-        raise HTTPException(status_code=401, detail={"status": "invalid_tenant_key"})
+        if not row:
+            raise HTTPException(status_code=401, detail={"status": "invalid_tenant_key"})
 
-    return {
-        "tenant_id": UUID(str(row["tenant_id"])),
-        "shopify_webhook_secret": row.get("shopify_webhook_secret"),
-        "stripe_webhook_secret": row.get("stripe_webhook_secret"),
-        "paypal_webhook_secret": row.get("paypal_webhook_secret"),
-        "woocommerce_webhook_secret": row.get("woocommerce_webhook_secret"),
-    }
+        tenant_id = UUID(str(row["tenant_id"]))
+        decrypted = await resolve_tenant_webhook_secrets_from_row(
+            conn,
+            tenant_id=tenant_id,
+            row=dict(row),
+        )
+
+    return {"tenant_id": tenant_id, **decrypted}
 
 
 def derive_tenant_id_from_request(request: Request) -> Optional[UUID]:
@@ -237,5 +234,3 @@ async def tenant_context_middleware(request: Request, call_next):
         # SET LOCAL is automatically cleared on transaction end
         # Explicit rollback not needed unless we want to ensure cleanup
         pass
-
-
