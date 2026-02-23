@@ -40,6 +40,8 @@ jobs:
     env:
       CI: "true"
       PYTHONPATH: backend
+      PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
+      PLATFORM_TOKEN_KEY_ID: e2e-key
       TENANT_API_KEY_HEADER: X-Skeldir-Tenant-Key
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/r3
       MIGRATION_DATABASE_URL: postgresql://r3:r3@127.0.0.1:5432/r3
