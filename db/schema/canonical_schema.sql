@@ -520,24 +520,28 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
         $$;
 
 CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETURNS TABLE(tenant_id uuid, tenant_updated_at timestamp with time zone, shopify_webhook_secret_ciphertext bytea, shopify_webhook_secret_key_id text, stripe_webhook_secret_ciphertext bytea, stripe_webhook_secret_key_id text, paypal_webhook_secret_ciphertext bytea, paypal_webhook_secret_key_id text, woocommerce_webhook_secret_ciphertext bytea, woocommerce_webhook_secret_key_id text)
-    LANGUAGE sql SECURITY DEFINER
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
-    AS $_$
-          SELECT
-            t.id AS tenant_id,
-            t.updated_at AS tenant_updated_at,
-            t.shopify_webhook_secret_ciphertext,
-            t.shopify_webhook_secret_key_id,
-            t.stripe_webhook_secret_ciphertext,
-            t.stripe_webhook_secret_key_id,
-            t.paypal_webhook_secret_ciphertext,
-            t.paypal_webhook_secret_key_id,
-            t.woocommerce_webhook_secret_ciphertext,
-            t.woocommerce_webhook_secret_key_id
-          FROM tenants t
-          WHERE api_key_hash = $1
-          LIMIT 1
-        $_$;
+    AS $$
+        BEGIN
+          RETURN QUERY EXECUTE
+            'SELECT
+               t.id AS tenant_id,
+               t.updated_at AS tenant_updated_at,
+               t.shopify_webhook_secret_ciphertext,
+               t.shopify_webhook_secret_key_id,
+               t.stripe_webhook_secret_ciphertext,
+               t.stripe_webhook_secret_key_id,
+               t.paypal_webhook_secret_ciphertext,
+               t.paypal_webhook_secret_key_id,
+               t.woocommerce_webhook_secret_ciphertext,
+               t.woocommerce_webhook_secret_key_id
+             FROM public.tenants t
+             WHERE t.api_key_hash = $1
+             LIMIT 1'
+            USING api_key_hash;
+        END;
+        $$;
 
 CREATE TABLE public.alembic_version (
     version_num character varying(32) NOT NULL

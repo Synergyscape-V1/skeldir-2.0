@@ -21,6 +21,8 @@ jobs:
     env:
       CI: "true"
       PYTHONPATH: backend
+      PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
+      PLATFORM_TOKEN_KEY_ID: e2e-key
       R7_PG_HOST: 127.0.0.1
       R7_PG_PORT: "5432"
       R7_PG_ADMIN_USER: r7_admin
