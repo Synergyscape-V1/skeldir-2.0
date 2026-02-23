@@ -1,7 +1,9 @@
 ﻿# B11_P5 Proof Index
 
 Date: 2026-02-23
-Branch: working tree (`main` local)
+Branch: `b11-p4-db-provider-migration`
+PR: https://github.com/Synergyscape-V1/skeldir-2.0/pull/122
+Head SHA: `8ad35dfc2dbd8519ccb9141293e562111f85c614`
 
 ## Exit Gate 1 - Plaintext columns eliminated
 - Artifact: `docs/forensics/evidence/b11_p5/psql_tenants_schema.txt`
@@ -37,7 +39,8 @@ Branch: working tree (`main` local)
 - Artifact: `docs/forensics/evidence/b11_p5/no_plaintext_webhook_guard.txt`
 - Artifact: `docs/forensics/evidence/b11_p5/no_multi_decrypt_guard.txt`
 - Workflow: `.github/workflows/b11-p5-webhook-secret-redesign-adjudication.yml`
-- Result: PASS locally for static guards/tests; authoritative CI run pending push.
+- Artifact: `docs/forensics/evidence/b11_p5/ci_b11_gate_runs.txt`
+- Result: PASS for B11 adjudication workflows on PR head (b11-p1..b11-p5 all completed/success).
 
 ## Exit Gate 8 - Evidence pack published
 - Directory: `docs/forensics/evidence/b11_p5/`
@@ -47,3 +50,4 @@ Branch: working tree (`main` local)
 - Zero-downtime invariant addressed by strict expand/contract split across two Alembic revisions.
 - App resolver is compatibility-safe during rollout (`SELECT *` from resolver function, supports legacy plaintext fallback only during expand window).
 - Cache invalidation is synchronous on tenant mutation via `tenant_updated_at` version change (not TTL-only).
+- Repository-wide CI contains unrelated failing checks outside the B11 gate set on this PR; authoritative merge-to-main closure is pending those required checks.
