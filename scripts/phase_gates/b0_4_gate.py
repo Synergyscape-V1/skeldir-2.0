@@ -46,6 +46,8 @@ def main() -> int:
     if "DATABASE_URL" not in env:
         print("DATABASE_URL is required.", file=os.sys.stderr)
         return 1
+    env.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "e2e-platform-key")
+    env.setdefault("PLATFORM_TOKEN_KEY_ID", "e2e-key")
     summary_path = EVIDENCE_DIR / "b0_4_summary.json"
     try:
         run(["alembic", "upgrade", "202511131121"], "b0_4_alembic_core.log", env=env)
