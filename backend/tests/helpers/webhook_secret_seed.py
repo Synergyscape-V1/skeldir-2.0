@@ -73,6 +73,7 @@ def enrich_params_with_webhook_secrets(
 
 
 def tenant_insert_with_webhook_secret_sql(base_columns: str, base_values: str) -> str:
+    # RAW_SQL_ALLOWLIST: centralized test fixture helper for tenant webhook secret seeding.
     return (
         "INSERT INTO tenants ("
         f"{base_columns}, {webhook_secret_insert_columns()}"
