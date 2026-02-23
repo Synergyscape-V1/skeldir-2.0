@@ -139,6 +139,64 @@ async def _set_tenant_context(conn: asyncpg.Connection, tenant_id: UUID) -> None
 
 
 async def seed_tenant(conn: asyncpg.Connection, seed: TenantSeed) -> None:
+    tenant_id = str(seed.tenant_id)
+    tenant_name = f"R3 Tenant {tenant_id[:8]}"
+    tenant_email = f"r3_{tenant_id[:8]}@test.invalid"
+    cols = await conn.fetch(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'tenants'
+        """
+    )
+    tenant_columns = {str(row["column_name"]) for row in cols}
+
+    encrypted_cols = {
+        "shopify_webhook_secret_ciphertext",
+        "shopify_webhook_secret_key_id",
+        "stripe_webhook_secret_ciphertext",
+        "stripe_webhook_secret_key_id",
+        "paypal_webhook_secret_ciphertext",
+        "paypal_webhook_secret_key_id",
+        "woocommerce_webhook_secret_ciphertext",
+        "woocommerce_webhook_secret_key_id",
+    }
+    if encrypted_cols.issubset(tenant_columns):
+        webhook_key = _env("PLATFORM_TOKEN_ENCRYPTION_KEY", "e2e-platform-key")
+        webhook_key_id = _env("PLATFORM_TOKEN_KEY_ID", "e2e-key")
+        await conn.execute(
+            """
+            INSERT INTO tenants (
+              id, api_key_hash, name, notification_email,
+              shopify_webhook_secret_ciphertext, shopify_webhook_secret_key_id,
+              stripe_webhook_secret_ciphertext, stripe_webhook_secret_key_id,
+              paypal_webhook_secret_ciphertext, paypal_webhook_secret_key_id,
+              woocommerce_webhook_secret_ciphertext, woocommerce_webhook_secret_key_id,
+              created_at, updated_at
+            )
+            VALUES (
+              $1,$2,$3,$4,
+              pgp_sym_encrypt($5, $9), $10,
+              pgp_sym_encrypt($6, $9), $10,
+              pgp_sym_encrypt($7, $9), $10,
+              pgp_sym_encrypt($8, $9), $10,
+              NOW(),NOW()
+            )
+            ON CONFLICT (id) DO NOTHING
+            """,
+            tenant_id,
+            seed.api_key_hash,
+            tenant_name,
+            tenant_email,
+            seed.secrets["shopify"],
+            seed.secrets["stripe"],
+            seed.secrets["paypal"],
+            seed.secrets["woocommerce"],
+            webhook_key,
+            webhook_key_id,
+        )
+        return
+
     await conn.execute(
         """
         INSERT INTO tenants (
@@ -150,10 +208,10 @@ async def seed_tenant(conn: asyncpg.Connection, seed: TenantSeed) -> None:
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),NOW())
         ON CONFLICT (id) DO NOTHING
         """,
-        str(seed.tenant_id),
+        tenant_id,
         seed.api_key_hash,
-        f"R3 Tenant {str(seed.tenant_id)[:8]}",
-        f"r3_{str(seed.tenant_id)[:8]}@test.invalid",
+        tenant_name,
+        tenant_email,
         seed.secrets["shopify"],
         seed.secrets["stripe"],
         seed.secrets["paypal"],
