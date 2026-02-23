@@ -27,10 +27,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.execute("CREATE SCHEMA IF NOT EXISTS security")
+    op.execute("DROP FUNCTION IF EXISTS security.resolve_tenant_webhook_secrets(text)")
 
     op.execute(
         """
-        CREATE OR REPLACE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text)
+        CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text)
         RETURNS TABLE (
           tenant_id uuid,
           shopify_webhook_secret text,
