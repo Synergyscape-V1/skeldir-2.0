@@ -37,5 +37,6 @@ Phase: B1.1-P5 Tenant Webhook Secret Redesign
 - Gate 8: `PROOF_INDEX.md`
 
 ## Pending Authoritative Closure
-- Push branch and execute authoritative pre-merge CI adjudication run.
-- Merge to `main` and record immutable CI run/artifact IDs in `PROOF_INDEX.md`.
+- Pre-merge B11 adjudication is complete and green on PR head `5766fea7d80c92641045409178331d50d98ad591` (see `ci_b11_gate_runs.txt`).
+- Merge to `main` is currently blocked by repository-required checks outside B11 scope (`4 of 16 required status checks are failing` from GitHub merge API on 2026-02-23).
+- After required checks are green, merge PR 122 and capture post-merge `main` CI run IDs in `PROOF_INDEX.md`.
