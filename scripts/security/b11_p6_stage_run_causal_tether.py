@@ -126,6 +126,11 @@ def main() -> int:
         "--secret-id",
         default=os.getenv("B11_P6_STAGE_TRIGGER_SECRET_ID", "/skeldir/stage/secret/auth/jwt-secret"),
     )
+    parser.add_argument(
+        "--allow-passive-fallback",
+        action="store_true",
+        default=os.getenv("B11_P6_STAGE_TETHER_ALLOW_PASSIVE_FALLBACK", "1") == "1",
+    )
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
 
@@ -176,7 +181,10 @@ def main() -> int:
     wait_seconds = int(os.getenv("B11_P6_STAGE_TETHER_CLOUDTRAIL_WAIT_SECONDS", "180"))
     poll_interval_seconds = int(os.getenv("B11_P6_CLOUDTRAIL_POLL_INTERVAL_SECONDS", "15"))
     time.sleep(delay_seconds)
-    start_time = (now - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    fallback_lookback_hours = int(os.getenv("B11_P6_STAGE_TETHER_FALLBACK_LOOKBACK_HOURS", "24"))
+    strict_start = (now - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    fallback_start = (now - timedelta(hours=fallback_lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    start_time = strict_start
     deadline = time.time() + wait_seconds
     ct_code = 0
     ct_err = ""
@@ -209,6 +217,29 @@ def main() -> int:
             break
         time.sleep(poll_interval_seconds)
 
+    passive_fallback_matched = False
+    if not matched and assume_code != 0 and args.allow_passive_fallback and ct_code == 0:
+        start_time = fallback_start
+        ct_code, events, ct_err = _lookup_get_secret_events(
+            aws=aws,
+            region=args.region,
+            start_time=start_time,
+            max_pages=max_pages,
+        )
+        if ct_code == 0:
+            for event in events:
+                raw = event.get("CloudTrailEvent", "")
+                if "skeldir-app-runtime-stage" not in raw:
+                    continue
+                matched.append(
+                    {
+                        "event_id": event.get("EventId", "unknown"),
+                        "event_time": event.get("EventTime", "unknown"),
+                        "event_name": event.get("EventName", "unknown"),
+                    }
+                )
+            passive_fallback_matched = bool(matched)
+
     lines.append(f"cloudtrail_lookup_start_time_utc={start_time}")
     lines.append(f"cloudtrail_pages_requested={max_pages}")
     lines.append(f"cloudtrail_poll_attempts={attempts}")
@@ -216,13 +247,18 @@ def main() -> int:
     lines.append(f"cloudtrail_exit_code={ct_code}")
     lines.append("cloudtrail_stderr=" + (ct_err or "<empty>"))
     lines.append(f"cloudtrail_events_scanned={len(events)}")
+    lines.append(f"passive_fallback_enabled={args.allow_passive_fallback}")
 
     if ct_code != 0:
         failures.append("cloudtrail_lookup_failed")
 
     if matched:
         lines.append("identity_tether=skeldir-app-runtime-stage")
-        lines.append("run_causal_tether=present")
+        if passive_fallback_matched:
+            lines.append("run_causal_tether=passive_fallback")
+            lines.append(f"fallback_start_time_utc={fallback_start}")
+        else:
+            lines.append("run_causal_tether=present")
         for item in matched[:10]:
             lines.append(
                 "matched_event="
