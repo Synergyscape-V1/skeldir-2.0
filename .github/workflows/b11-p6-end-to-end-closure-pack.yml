@@ -58,6 +58,10 @@ jobs:
       LLM_PROVIDER_API_KEY: ci-llm-key
       AWS_REGION: us-east-2
       B11_P4_ENV: ci
+      B11_P6_EVIDENCE_S3_BUCKET: ${{ vars.B11_P6_EVIDENCE_S3_BUCKET || vars.B11_P1_TF_STATE_BUCKET }}
+      B11_P6_EVIDENCE_S3_PREFIX: ${{ vars.B11_P6_EVIDENCE_S3_PREFIX || 'security/b11_p6' }}
+      B11_P6_STAGE_RUNTIME_ROLE_ARN: ${{ vars.B11_P6_STAGE_RUNTIME_ROLE_ARN || 'arn:aws:iam::326730685463:role/skeldir-app-runtime-stage' }}
+      B11_P6_STAGE_TRIGGER_SECRET_ID: ${{ vars.B11_P6_STAGE_TRIGGER_SECRET_ID || '/skeldir/stage/secret/auth/jwt-secret' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -153,20 +157,96 @@ jobs:
           role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
           aws-region: us-east-2
 
-      - name: Gate 6.4 CI audited retrieval + CloudTrail tether (main only)
+      - name: Gate 6.4 CI audited retrieval proof (main only)
         if: github.ref == 'refs/heads/main'
         run: |
-          python scripts/security/b11_p4_generate_audit_proofs.py --out-dir docs/forensics/evidence/b11_p6 --strict
-          cp docs/forensics/evidence/b11_p6/cloudtrail_ci_secret_reads.txt docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt
-          {
-            echo "## ci"
-            cat docs/forensics/evidence/b11_p6/cloudtrail_ci_secret_reads.txt
-            echo
-            echo "## stage"
-            cat docs/forensics/evidence/b11_p6/cloudtrail_stage_secret_reads.txt
-          } > docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt
+          python scripts/security/b11_p6_ci_audit_retrieval.py --out-dir docs/forensics/evidence/b11_p6 --strict
 
-      - name: Gate 6.4 pre-merge policy artifact stubs (PR)
+      - name: Gate 6.4 stage run-causal CloudTrail tether (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python scripts/security/b11_p6_stage_run_causal_tether.py \
+            --out docs/forensics/evidence/b11_p6/cloudtrail_stage_run_causal.txt \
+            --strict
+
+      - name: Main-only durable evidence publication to S3 + manifest/index
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -z "${B11_P6_EVIDENCE_S3_BUCKET}" ]; then
+            echo "B11_P6_EVIDENCE_S3_BUCKET is required for durable publication"
+            exit 1
+          fi
+
+          bundle_dir="tmp/b11_p6_bundle"
+          bundle_zip="tmp/b11-p6-closure-pack-evidence.zip"
+          rm -rf "$bundle_dir" "$bundle_zip"
+          mkdir -p "$bundle_dir"
+
+          cp docs/forensics/evidence/b11_p6/rotation_drill_jwt_envelope.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/no_secrets_repo_scan.json "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/workflow_plaintext_scan.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/db_no_plaintext_webhook_secrets.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/readiness_fail_closed_test.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/ci_oidc_assume_role_log.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/cloudtrail_stage_run_causal.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/webhook_e2e_valid_invalid.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/log_redaction_integrity.txt "$bundle_dir/"
+
+          (cd "$bundle_dir" && zip -rq "../b11-p6-closure-pack-evidence.zip" .)
+
+          s3_key="${B11_P6_EVIDENCE_S3_PREFIX}/${GITHUB_SHA}/run-${GITHUB_RUN_ID}/b11-p6-closure-pack-evidence.zip"
+          put_json=$(aws s3api put-object \
+            --bucket "${B11_P6_EVIDENCE_S3_BUCKET}" \
+            --key "${s3_key}" \
+            --body "$bundle_zip" \
+            --server-side-encryption AES256 \
+            --metadata "commit_sha=${GITHUB_SHA},workflow_run_id=${GITHUB_RUN_ID}" \
+            --output json)
+
+          bundle_uri="s3://${B11_P6_EVIDENCE_S3_BUCKET}/${s3_key}"
+          bundle_version_id=$(echo "$put_json" | jq -r '.VersionId // "null"')
+          bundle_etag=$(echo "$put_json" | jq -r '.ETag // "null"' | tr -d '"')
+
+          python scripts/security/b11_p6_finalize_evidence.py \
+            --evidence-dir docs/forensics/evidence/b11_p6 \
+            --bundle-path "$bundle_zip" \
+            --bundle-uri "$bundle_uri" \
+            --bundle-version-id "$bundle_version_id" \
+            --bundle-etag "$bundle_etag"
+
+          cp docs/forensics/evidence/b11_p6/PROOF_INDEX.md "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/MANIFEST.json "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/sha256SUMS.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/evidence_bundle_pointer.txt "$bundle_dir/"
+          cp docs/forensics/evidence/b11_p6/p6_authoritative_main_run.txt "$bundle_dir/"
+
+          (cd "$bundle_dir" && zip -rq "../b11-p6-closure-pack-evidence.zip" .)
+
+          put_json=$(aws s3api put-object \
+            --bucket "${B11_P6_EVIDENCE_S3_BUCKET}" \
+            --key "${s3_key}" \
+            --body "$bundle_zip" \
+            --server-side-encryption AES256 \
+            --metadata "commit_sha=${GITHUB_SHA},workflow_run_id=${GITHUB_RUN_ID}" \
+            --output json)
+
+          bundle_version_id=$(echo "$put_json" | jq -r '.VersionId // "null"')
+          bundle_etag=$(echo "$put_json" | jq -r '.ETag // "null"' | tr -d '"')
+
+          python scripts/security/b11_p6_finalize_evidence.py \
+            --evidence-dir docs/forensics/evidence/b11_p6 \
+            --bundle-path "$bundle_zip" \
+            --bundle-uri "$bundle_uri" \
+            --bundle-version-id "$bundle_version_id" \
+            --bundle-etag "$bundle_etag"
+
+      - name: Verify durable evidence bundle chain (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python scripts/security/verify_b11_p6_evidence.py --evidence-dir docs/forensics/evidence/b11_p6
+
+      - name: Gate 6.4/6.7 pre-merge policy artifact stubs (PR)
         if: github.event_name == 'pull_request'
         run: |
           cat > docs/forensics/evidence/b11_p6/ci_oidc_assume_role_log.txt <<'EOF'
@@ -175,12 +255,12 @@ jobs:
           EOF
           cat > docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt <<'EOF'
           status=premerge_policy_context
-          note=cloudtrail_ci_and_stage_tether_validation_is_main_only
+          note=cloudtrail_ci_tether_validation_is_main_only
           EOF
-
-      - name: Gate 6.7 generate immutable PROOF_INDEX
-        run: |
-          python scripts/security/b11_p6_generate_proof_index.py --evidence-dir docs/forensics/evidence/b11_p6
+          cat > docs/forensics/evidence/b11_p6/cloudtrail_stage_run_causal.txt <<'EOF'
+          status=premerge_policy_context
+          note=run_causal_stage_tether_validation_is_main_only
+          EOF
 
       - name: Upload B11-P6 closure pack
         if: always()
@@ -189,6 +269,9 @@ jobs:
           name: b11-p6-closure-pack-evidence
           path: |
             docs/forensics/evidence/b11_p6/PROOF_INDEX.md
+            docs/forensics/evidence/b11_p6/MANIFEST.json
+            docs/forensics/evidence/b11_p6/sha256SUMS.txt
+            docs/forensics/evidence/b11_p6/evidence_bundle_pointer.txt
             docs/forensics/evidence/b11_p6/p6_authoritative_main_run.txt
             docs/forensics/evidence/b11_p6/rotation_drill_jwt_envelope.txt
             docs/forensics/evidence/b11_p6/no_secrets_repo_scan.json
@@ -197,5 +280,6 @@ jobs:
             docs/forensics/evidence/b11_p6/readiness_fail_closed_test.txt
             docs/forensics/evidence/b11_p6/ci_oidc_assume_role_log.txt
             docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt
+            docs/forensics/evidence/b11_p6/cloudtrail_stage_run_causal.txt
             docs/forensics/evidence/b11_p6/webhook_e2e_valid_invalid.txt
             docs/forensics/evidence/b11_p6/log_redaction_integrity.txt
