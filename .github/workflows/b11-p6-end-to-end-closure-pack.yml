@@ -1,0 +1,201 @@
+name: b11-p6-end-to-end-closure-pack
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  b11-p6-closure-gates:
+    name: b11-p6-closure-gates
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+      CI: "true"
+      DB_NAME: skeldir_b11_p6
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_SUPERUSER: postgres
+      DB_SUPERPASS: postgres
+      MIGRATION_USER: migration_owner
+      MIGRATION_PASS: migration_owner
+      RUNTIME_USER: app_user
+      RUNTIME_PASS: app_user
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b11_p6
+      B057_P3_RUNTIME_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b11_p6
+      B057_P3_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b11_p6
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b11_p6
+      B11_P6_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b11_p6
+      B11_P4_ROTATION_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      AUTH_JWT_SECRET: ci-secret
+      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_ISSUER: https://issuer.skeldir.test
+      AUTH_JWT_AUDIENCE: skeldir-api
+      PLATFORM_TOKEN_ENCRYPTION_KEY: ci-platform-key
+      PLATFORM_TOKEN_KEY_ID: ci-key-id
+      LLM_PROVIDER_ENABLED: "true"
+      LLM_PROVIDER_API_KEY: ci-llm-key
+      AWS_REGION: us-east-2
+      B11_P4_ENV: ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Provision database and roles
+        env:
+          PGPASSWORD: ${{ env.DB_SUPERPASS }}
+        run: |
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_rw NOLOGIN;" || true
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE ROLE app_ro NOLOGIN;" || true
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${RUNTIME_USER} WITH PASSWORD '${RUNTIME_PASS}';" || true
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE USER ${MIGRATION_USER} WITH PASSWORD '${MIGRATION_PASS}';" || true
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT app_rw TO ${RUNTIME_USER}; GRANT app_ro TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "GRANT ${RUNTIME_USER} TO ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${DB_NAME};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${MIGRATION_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "GRANT ALL ON SCHEMA public TO ${MIGRATION_USER}; GRANT ALL ON SCHEMA public TO ${RUNTIME_USER};"
+          psql -h "${DB_HOST}" -U "${DB_SUPERUSER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Apply migrations
+        run: |
+          python -m alembic upgrade head
+
+      - name: Prepare P6 evidence directory
+        run: |
+          mkdir -p docs/forensics/evidence/b11_p6
+
+      - name: Gate 6.2 repo secret scanner (non-vacuous)
+        run: |
+          python scripts/security/b11_p6_repo_secret_scan.py --output docs/forensics/evidence/b11_p6/no_secrets_repo_scan.json
+
+      - name: Gate 6.2 workflow plaintext secret scanner
+        run: |
+          python scripts/security/b11_p4_generate_static_scans.py --out-dir docs/forensics/evidence/b11_p6
+          cp docs/forensics/evidence/b11_p6/workflow_plaintext_secret_scan.txt docs/forensics/evidence/b11_p6/workflow_plaintext_scan.txt
+
+      - name: Enforce E2E drill purity (no monkeypatch/mocking)
+        run: |
+          if rg -n "\\bmonkeypatch\\b|pytest-mock|unittest\\.mock|from mock import|MagicMock|\\bMock\\(" scripts/security/b11_p6_live_e2e_drills.py backend/tests/integration/test_b057_p3_webhook_ingestion_unblocking.py; then
+            echo "E2E drill purity violation: monkeypatch/mocking usage detected"
+            exit 1
+          fi
+
+      - name: P1 + P2 contract gates
+        run: |
+          pytest backend/tests/test_b11_p1_ssot_contract.py -q
+          pytest backend/tests/test_b11_p2_secret_chokepoint.py -q
+
+      - name: Gate 6.1 + 6.3 live E2E runtime drills (no monkeypatch/mocking)
+        run: |
+          python scripts/security/b11_p6_live_e2e_drills.py \
+            --readiness-out docs/forensics/evidence/b11_p6/readiness_fail_closed_test.txt \
+            --rotation-out docs/forensics/evidence/b11_p6/rotation_drill_jwt_envelope.txt
+
+      - name: P4 contract and rotation non-vacuous checks
+        run: |
+          pytest backend/tests/test_b11_p4_static_scans.py -q
+          pytest backend/tests/test_b11_p4_db_provider_contract.py -q
+
+      - name: Gate 6.5 webhook E2E valid/invalid + encrypted secret resolution
+        run: |
+          pytest backend/tests/integration/test_b057_p3_webhook_ingestion_unblocking.py -q -k "mediated_resolution_callable or webhook_e2e_persists_under_runtime_identity" | tee docs/forensics/evidence/b11_p6/webhook_e2e_valid_invalid.txt
+
+      - name: Gate 6.5 DB plaintext webhook secret absence proof
+        run: |
+          python scripts/security/b11_p5_webhook_plaintext_guard.py --report docs/forensics/evidence/b11_p6/no_plaintext_webhook_guard.txt
+          python scripts/security/b11_p6_db_plaintext_webhook_proof.py --output docs/forensics/evidence/b11_p6/db_no_plaintext_webhook_secrets.txt
+
+      - name: Gate 6.6 log redaction integrity
+        run: |
+          pytest backend/tests/test_b11_p6_log_redaction_integrity.py -q | tee docs/forensics/evidence/b11_p6/log_redaction_integrity.txt
+
+      - name: Configure AWS credentials via OIDC (main only)
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
+          aws-region: us-east-2
+
+      - name: Gate 6.4 CI audited retrieval + CloudTrail tether (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python scripts/security/b11_p4_generate_audit_proofs.py --out-dir docs/forensics/evidence/b11_p6 --strict
+          cp docs/forensics/evidence/b11_p6/cloudtrail_ci_secret_reads.txt docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt
+          {
+            echo "## ci"
+            cat docs/forensics/evidence/b11_p6/cloudtrail_ci_secret_reads.txt
+            echo
+            echo "## stage"
+            cat docs/forensics/evidence/b11_p6/cloudtrail_stage_secret_reads.txt
+          } > docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt
+
+      - name: Gate 6.4 pre-merge policy artifact stubs (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          cat > docs/forensics/evidence/b11_p6/ci_oidc_assume_role_log.txt <<'EOF'
+          status=premerge_policy_context
+          note=aws_oidc_and_cloudtrail_tether_enforced_on_main_push_or_main_dispatch
+          EOF
+          cat > docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt <<'EOF'
+          status=premerge_policy_context
+          note=cloudtrail_ci_and_stage_tether_validation_is_main_only
+          EOF
+
+      - name: Gate 6.7 generate immutable PROOF_INDEX
+        run: |
+          python scripts/security/b11_p6_generate_proof_index.py --evidence-dir docs/forensics/evidence/b11_p6
+
+      - name: Upload B11-P6 closure pack
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b11-p6-closure-pack-evidence
+          path: |
+            docs/forensics/evidence/b11_p6/PROOF_INDEX.md
+            docs/forensics/evidence/b11_p6/p6_authoritative_main_run.txt
+            docs/forensics/evidence/b11_p6/rotation_drill_jwt_envelope.txt
+            docs/forensics/evidence/b11_p6/no_secrets_repo_scan.json
+            docs/forensics/evidence/b11_p6/workflow_plaintext_scan.txt
+            docs/forensics/evidence/b11_p6/db_no_plaintext_webhook_secrets.txt
+            docs/forensics/evidence/b11_p6/readiness_fail_closed_test.txt
+            docs/forensics/evidence/b11_p6/ci_oidc_assume_role_log.txt
+            docs/forensics/evidence/b11_p6/cloudtrail_ci_reads.txt
+            docs/forensics/evidence/b11_p6/webhook_e2e_valid_invalid.txt
+            docs/forensics/evidence/b11_p6/log_redaction_integrity.txt
