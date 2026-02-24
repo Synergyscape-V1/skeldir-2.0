@@ -60,6 +60,9 @@ jobs:
       B11_P4_ENV: ci
       B11_P6_EVIDENCE_S3_BUCKET: ${{ vars.B11_P6_EVIDENCE_S3_BUCKET || vars.B11_P1_TF_STATE_BUCKET }}
       B11_P6_EVIDENCE_S3_PREFIX: ${{ vars.B11_P6_EVIDENCE_S3_PREFIX || 'security/b11_p6' }}
+      B11_P6_STAGE_TRIGGER_MODE: ${{ vars.B11_P6_STAGE_TRIGGER_MODE || '' }}
+      B11_P6_STAGE_TRIGGER_LAMBDA_ARN: ${{ vars.B11_P6_STAGE_TRIGGER_LAMBDA_ARN || '' }}
+      B11_P6_STAGE_TRIGGER_STATE_MACHINE_ARN: ${{ vars.B11_P6_STAGE_TRIGGER_STATE_MACHINE_ARN || '' }}
       B11_P6_STAGE_RUNTIME_ROLE_ARN: ${{ vars.B11_P6_STAGE_RUNTIME_ROLE_ARN || 'arn:aws:iam::326730685463:role/skeldir-app-runtime-stage' }}
       B11_P6_STAGE_TRIGGER_SECRET_ID: ${{ vars.B11_P6_STAGE_TRIGGER_SECRET_ID || '/skeldir/stage/secret/auth/jwt-secret' }}
     steps:
@@ -165,6 +168,10 @@ jobs:
       - name: Gate 6.4 stage run-causal CloudTrail tether (main only)
         if: github.ref == 'refs/heads/main'
         run: |
+          if [ -z "${B11_P6_STAGE_TRIGGER_MODE}" ]; then
+            echo "B11_P6_STAGE_TRIGGER_MODE must be set to lambda or stepfunctions for run-causal stage tether"
+            exit 1
+          fi
           python scripts/security/b11_p6_stage_run_causal_tether.py \
             --out docs/forensics/evidence/b11_p6/cloudtrail_stage_run_causal.txt \
             --strict

@@ -37,7 +37,8 @@ TELEMETRY_PATTERNS = {
     "cloudtrail_stage_run_causal.txt": [
         "identity_tether=skeldir-app-runtime-stage",
         "correlation_marker=P6_RUN_ID=",
-        "run_causal_tether=",
+        "run_causal_tether=present",
+        "trigger_event_tether=present",
     ],
 }
 
