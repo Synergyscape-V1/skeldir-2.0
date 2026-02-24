@@ -51,7 +51,7 @@ def _run_readiness_fail_closed() -> dict[str, Any]:
     env["SKELDIR_REQUIRE_AUTH_SECRETS"] = "1"
     env["DATABASE_URL"] = env.get("DATABASE_URL", "postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b11_p6")
     env["MIGRATION_DATABASE_URL"] = env.get("MIGRATION_DATABASE_URL", "postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b11_p6")
-    env["PLATFORM_TOKEN_ENCRYPTION_KEY"] = ""
+    env["PLATFORM_TOKEN_ENCRYPTION_KEY"] = env.get("PLATFORM_TOKEN_ENCRYPTION_KEY", "ci-platform-key")
     env["AUTH_JWT_SECRET"] = ""
     env["AUTH_JWT_JWKS_URL"] = ""
 
@@ -79,7 +79,13 @@ def _run_readiness_fail_closed() -> dict[str, Any]:
         r1 = httpx.get(f"{base_url}/health/ready", timeout=5.0)
         r2 = httpx.get(f"{base_url}/api/health", timeout=5.0)
         r3 = httpx.get(f"{base_url}/api/health/ready", timeout=5.0)
+        boot_output = ""
     finally:
+        if proc.stdout is not None:
+            try:
+                boot_output = proc.stdout.read()[-2000:]
+            except Exception:  # pragma: no cover
+                boot_output = ""
         proc.send_signal(signal.SIGTERM)
         try:
             proc.wait(timeout=10)
@@ -89,7 +95,7 @@ def _run_readiness_fail_closed() -> dict[str, Any]:
 
     if not (r1.status_code == 503 and r2.status_code == 503 and r3.status_code == 503):
         raise RuntimeError(
-            f"readiness fail-closed violated: /health/ready={r1.status_code} /api/health={r2.status_code} /api/health/ready={r3.status_code}"
+            f"readiness fail-closed violated: /health/ready={r1.status_code} /api/health={r2.status_code} /api/health/ready={r3.status_code} boot_output_tail={boot_output}"
         )
     missing = r1.json().get("missing_required_secrets", [])
     return {
