@@ -9,6 +9,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+IGNORED_PATHS = {
+    "scripts/security/b11_p6_repo_secret_scan.py",
+}
 
 PATTERNS: dict[str, re.Pattern[str]] = {
     "aws_access_key_id": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -53,6 +56,9 @@ def _scan_repo() -> tuple[int, list[dict[str, object]]]:
     for path in _git_tracked_files():
         if not path.is_file():
             continue
+        rel = str(path.relative_to(REPO_ROOT).as_posix())
+        if rel in IGNORED_PATHS:
+            continue
         try:
             content = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -62,7 +68,7 @@ def _scan_repo() -> tuple[int, list[dict[str, object]]]:
         for hit in hits:
             matches.append(
                 {
-                    "path": str(path.relative_to(REPO_ROOT).as_posix()),
+                    "path": rel,
                     "pattern": str(hit["pattern"]),
                     "excerpt": str(hit["excerpt"]),
                 }
