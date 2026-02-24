@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -122,25 +123,37 @@ def main() -> int:
             failures.append(f"secret_read_failed:{secret_id}")
     _write(out_dir / "ci_secret_retrieval_log.txt", retrieval_lines)
 
-    ct_code, events, ct_err = _lookup_get_secret_events(
-        aws=aws,
-        region=args.region,
-        start_time=start_time,
-        max_pages=max_pages,
-    )
-
+    wait_seconds = int(os.getenv("B11_P6_CLOUDTRAIL_WAIT_SECONDS", "120"))
+    poll_interval_seconds = int(os.getenv("B11_P6_CLOUDTRAIL_POLL_INTERVAL_SECONDS", "15"))
+    deadline = time.time() + wait_seconds
+    ct_code = 0
+    ct_err = ""
+    events: list[dict] = []
     matched: list[dict[str, str]] = []
-    for event in events:
-        raw = event.get("CloudTrailEvent", "")
-        if "skeldir-ci-deploy" not in raw:
-            continue
-        matched.append(
-            {
-                "event_id": event.get("EventId", "unknown"),
-                "event_time": event.get("EventTime", "unknown"),
-                "event_name": event.get("EventName", "unknown"),
-            }
+    attempts = 0
+    while True:
+        attempts += 1
+        ct_code, events, ct_err = _lookup_get_secret_events(
+            aws=aws,
+            region=args.region,
+            start_time=start_time,
+            max_pages=max_pages,
         )
+        matched = []
+        for event in events:
+            raw = event.get("CloudTrailEvent", "")
+            if "skeldir-ci-deploy" not in raw:
+                continue
+            matched.append(
+                {
+                    "event_id": event.get("EventId", "unknown"),
+                    "event_time": event.get("EventTime", "unknown"),
+                    "event_name": event.get("EventName", "unknown"),
+                }
+            )
+        if ct_code != 0 or matched or time.time() >= deadline:
+            break
+        time.sleep(poll_interval_seconds)
 
     lines = [
         f"timestamp_utc={now_iso}",
@@ -148,6 +161,8 @@ def main() -> int:
         f"region={args.region}",
         f"pages_requested={max_pages}",
         f"events_scanned={len(events)}",
+        f"cloudtrail_poll_attempts={attempts}",
+        f"cloudtrail_wait_seconds={wait_seconds}",
         f"exit_code={ct_code}",
         "stderr=" + (ct_err or "<empty>"),
         "required_role=skeldir-ci-deploy",
