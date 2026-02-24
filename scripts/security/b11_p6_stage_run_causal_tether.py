@@ -173,36 +173,49 @@ def main() -> int:
 
     max_pages = int(os.getenv("B11_P6_CLOUDTRAIL_MAX_PAGES", "30"))
     delay_seconds = int(os.getenv("B11_P6_STAGE_TETHER_CLOUDTRAIL_DELAY_SECONDS", "20"))
+    wait_seconds = int(os.getenv("B11_P6_STAGE_TETHER_CLOUDTRAIL_WAIT_SECONDS", "180"))
+    poll_interval_seconds = int(os.getenv("B11_P6_CLOUDTRAIL_POLL_INTERVAL_SECONDS", "15"))
     time.sleep(delay_seconds)
     start_time = (now - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    ct_code, events, ct_err = _lookup_get_secret_events(
-        aws=aws,
-        region=args.region,
-        start_time=start_time,
-        max_pages=max_pages,
-    )
+    deadline = time.time() + wait_seconds
+    ct_code = 0
+    ct_err = ""
+    events: list[dict] = []
+    matched: list[dict[str, str]] = []
+    attempts = 0
+    while True:
+        attempts += 1
+        ct_code, events, ct_err = _lookup_get_secret_events(
+            aws=aws,
+            region=args.region,
+            start_time=start_time,
+            max_pages=max_pages,
+        )
+        matched = []
+        for event in events:
+            raw = event.get("CloudTrailEvent", "")
+            if "skeldir-app-runtime-stage" not in raw:
+                continue
+            if session_name not in raw and args.secret_id not in raw:
+                continue
+            matched.append(
+                {
+                    "event_id": event.get("EventId", "unknown"),
+                    "event_time": event.get("EventTime", "unknown"),
+                    "event_name": event.get("EventName", "unknown"),
+                }
+            )
+        if ct_code != 0 or matched or time.time() >= deadline:
+            break
+        time.sleep(poll_interval_seconds)
 
     lines.append(f"cloudtrail_lookup_start_time_utc={start_time}")
     lines.append(f"cloudtrail_pages_requested={max_pages}")
+    lines.append(f"cloudtrail_poll_attempts={attempts}")
+    lines.append(f"cloudtrail_wait_seconds={wait_seconds}")
     lines.append(f"cloudtrail_exit_code={ct_code}")
     lines.append("cloudtrail_stderr=" + (ct_err or "<empty>"))
     lines.append(f"cloudtrail_events_scanned={len(events)}")
-
-    matched: list[dict[str, str]] = []
-    for event in events:
-        raw = event.get("CloudTrailEvent", "")
-        if "skeldir-app-runtime-stage" not in raw:
-            continue
-        if session_name not in raw and args.secret_id not in raw:
-            continue
-        matched.append(
-            {
-                "event_id": event.get("EventId", "unknown"),
-                "event_time": event.get("EventTime", "unknown"),
-                "event_name": event.get("EventName", "unknown"),
-            }
-        )
 
     if ct_code != 0:
         failures.append("cloudtrail_lookup_failed")
