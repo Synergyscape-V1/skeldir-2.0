@@ -2,8 +2,11 @@
 
 This directory is the authoritative output target for the `b11-p6-end-to-end-closure-pack` workflow.
 
-The workflow generates:
+Durable closure outputs are generated on `main` and include:
 - `PROOF_INDEX.md`
+- `MANIFEST.json`
+- `sha256SUMS.txt`
+- `evidence_bundle_pointer.txt`
 - `p6_authoritative_main_run.txt`
 - `rotation_drill_jwt_envelope.txt`
 - `no_secrets_repo_scan.json`
@@ -12,5 +15,10 @@ The workflow generates:
 - `readiness_fail_closed_test.txt`
 - `ci_oidc_assume_role_log.txt`
 - `cloudtrail_ci_reads.txt`
+- `cloudtrail_stage_run_causal.txt`
 - `webhook_e2e_valid_invalid.txt`
 - `log_redaction_integrity.txt`
+
+Durability model:
+- CI publishes the closure zip to S3 using OIDC.
+- Repo stores run mapping + bundle pointer + digests for independent re-audit.

@@ -1,0 +1,4 @@
+# B11-P6 PROOF_INDEX
+
+status=pending_authoritative_main_run
+note=generated_on_main_by_b11-p6-end-to-end-closure-pack
