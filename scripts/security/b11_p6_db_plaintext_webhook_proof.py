@@ -2,22 +2,25 @@
 from __future__ import annotations
 
 import argparse
-import os
+import sys
 from pathlib import Path
 
 import psycopg2
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_DIR = REPO_ROOT / "backend"
 
 
 def _resolve_dsn() -> str:
-    return (
-        os.getenv("B11_P6_ADMIN_DATABASE_URL")
-        or os.getenv("MIGRATION_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    )
+    if str(BACKEND_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKEND_DIR))
+    from app.core.secrets import get_database_url, get_migration_database_url  # noqa: WPS433
+
+    migration = get_migration_database_url()
+    if migration:
+        return migration
+    return get_database_url()
 
 
 def main() -> int:

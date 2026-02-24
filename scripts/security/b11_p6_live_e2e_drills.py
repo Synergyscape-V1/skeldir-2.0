@@ -159,9 +159,9 @@ def _run_rotation_jwt_and_envelope() -> dict[str, Any]:
     secrets_module, _ = _reload_crypto_modules()
     secrets_module.reset_crypto_secret_caches_for_testing()
 
-    admin_dsn = _sync_dsn(
-        os.getenv("B11_P6_ADMIN_DATABASE_URL") or os.getenv("MIGRATION_DATABASE_URL") or os.getenv("DATABASE_URL") or ""
-    )
+    from app.core.secrets import get_database_url, get_migration_database_url  # noqa: WPS433
+
+    admin_dsn = _sync_dsn(get_migration_database_url() or get_database_url())
     if not admin_dsn:
         raise RuntimeError("rotation drill requires B11_P6_ADMIN_DATABASE_URL or MIGRATION_DATABASE_URL or DATABASE_URL")
 
