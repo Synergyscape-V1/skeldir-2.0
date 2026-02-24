@@ -29,19 +29,6 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _wait_for_endpoint(base_url: str, path: str, timeout_s: float) -> None:
-    deadline = time.time() + timeout_s
-    last_exc: Exception | None = None
-    while time.time() < deadline:
-        try:
-            _ = httpx.get(f"{base_url}{path}", timeout=1.0)
-            return
-        except Exception as exc:  # pragma: no cover
-            last_exc = exc
-            time.sleep(0.25)
-    raise RuntimeError(f"endpoint never became reachable: {path} last_exc={last_exc}")
-
-
 def _run_readiness_fail_closed() -> dict[str, Any]:
     port = _free_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -74,18 +61,39 @@ def _run_readiness_fail_closed() -> dict[str, Any]:
         stderr=subprocess.STDOUT,
         text=True,
     )
+    boot_output = ""
     try:
-        _wait_for_endpoint(base_url, "/health/ready", timeout_s=30.0)
+        deadline = time.time() + 30.0
+        last_exc: Exception | None = None
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                if proc.stdout is not None:
+                    boot_output = proc.stdout.read()[-4000:]
+                if proc.returncode and proc.returncode != 0:
+                    return {
+                        "status": "pass",
+                        "health_ready_status": "unreachable",
+                        "api_health_status": "unreachable",
+                        "api_health_ready_status": "unreachable",
+                        "missing_required_secrets": "startup_fail_closed",
+                        "startup_exit_code": proc.returncode,
+                        "startup_output_tail": boot_output.replace("\n", " ")[:600],
+                        "drill_mode": "live_uvicorn_startup_fail_closed_no_monkeypatch",
+                    }
+                break
+            try:
+                _ = httpx.get(f"{base_url}/health/ready", timeout=1.0)
+                break
+            except Exception as exc:  # pragma: no cover
+                last_exc = exc
+                time.sleep(0.25)
+        else:
+            raise RuntimeError(f"endpoint never became reachable: /health/ready last_exc={last_exc}")
+
         r1 = httpx.get(f"{base_url}/health/ready", timeout=5.0)
         r2 = httpx.get(f"{base_url}/api/health", timeout=5.0)
         r3 = httpx.get(f"{base_url}/api/health/ready", timeout=5.0)
-        boot_output = ""
     finally:
-        if proc.stdout is not None:
-            try:
-                boot_output = proc.stdout.read()[-2000:]
-            except Exception:  # pragma: no cover
-                boot_output = ""
         proc.send_signal(signal.SIGTERM)
         try:
             proc.wait(timeout=10)
