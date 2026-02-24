@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -62,6 +63,40 @@ def _lookup_get_secret_events(aws: str, region: str, start_time: str, max_pages:
     return 0, events, ""
 
 
+def _lookup_events_by_name(
+    aws: str, region: str, event_name: str, start_time: str, max_pages: int
+) -> tuple[int, list[dict], str]:
+    events: list[dict] = []
+    next_token: str | None = None
+    for _ in range(max_pages):
+        cmd = [
+            aws,
+            "cloudtrail",
+            "lookup-events",
+            "--lookup-attributes",
+            f"AttributeKey=EventName,AttributeValue={event_name}",
+            "--start-time",
+            start_time,
+            "--max-results",
+            "50",
+            "--region",
+            region,
+            "--output",
+            "json",
+        ]
+        if next_token:
+            cmd.extend(["--next-token", next_token])
+        code, out, err = _run(cmd)
+        if code != 0:
+            return code, events, err
+        payload = json.loads(out or "{}")
+        events.extend(payload.get("Events", []))
+        next_token = payload.get("NextToken")
+        if not next_token:
+            break
+    return 0, events, ""
+
+
 def _assume_stage_role(aws: str, region: str, role_arn: str, session_name: str) -> tuple[int, dict, str]:
     cmd = [
         aws,
@@ -82,6 +117,58 @@ def _assume_stage_role(aws: str, region: str, role_arn: str, session_name: str) 
     if code != 0:
         return code, {}, err
     return 0, json.loads(out or "{}"), ""
+
+
+def _invoke_lambda_trigger(
+    aws: str, region: str, function_arn: str, payload: dict[str, str]
+) -> tuple[int, str, str]:
+    with tempfile.NamedTemporaryFile(prefix="b11_p6_lambda_", suffix=".json", delete=False) as tmp:
+        out_file = tmp.name
+    cmd = [
+        aws,
+        "lambda",
+        "invoke",
+        "--function-name",
+        function_arn,
+        "--invocation-type",
+        "RequestResponse",
+        "--payload",
+        json.dumps(payload, separators=(",", ":"), ensure_ascii=True),
+        "--cli-binary-format",
+        "raw-in-base64-out",
+        "--region",
+        region,
+        "--output",
+        "json",
+        out_file,
+    ]
+    code, out, err = _run(cmd)
+    response_payload = ""
+    if Path(out_file).exists():
+        response_payload = Path(out_file).read_text(encoding="utf-8", errors="replace").strip()
+        Path(out_file).unlink(missing_ok=True)
+    return code, response_payload or out, err
+
+
+def _start_stepfn_trigger(
+    aws: str, region: str, state_machine_arn: str, execution_name: str, payload: dict[str, str]
+) -> tuple[int, str, str]:
+    cmd = [
+        aws,
+        "stepfunctions",
+        "start-execution",
+        "--state-machine-arn",
+        state_machine_arn,
+        "--name",
+        execution_name,
+        "--input",
+        json.dumps(payload, separators=(",", ":"), ensure_ascii=True),
+        "--region",
+        region,
+        "--output",
+        "json",
+    ]
+    return _run(cmd)
 
 
 def _invoke_stage_secret_read_with_assumed_role(
@@ -127,9 +214,18 @@ def main() -> int:
         default=os.getenv("B11_P6_STAGE_TRIGGER_SECRET_ID", "/skeldir/stage/secret/auth/jwt-secret"),
     )
     parser.add_argument(
-        "--allow-passive-fallback",
-        action="store_true",
-        default=os.getenv("B11_P6_STAGE_TETHER_ALLOW_PASSIVE_FALLBACK", "1") == "1",
+        "--trigger-mode",
+        default=os.getenv("B11_P6_STAGE_TRIGGER_MODE", "").strip().lower(),
+        choices=["", "lambda", "stepfunctions", "assume_role_direct"],
+        help="CI-driven trigger mode for stage secret read causality",
+    )
+    parser.add_argument(
+        "--trigger-lambda-arn",
+        default=os.getenv("B11_P6_STAGE_TRIGGER_LAMBDA_ARN", "").strip(),
+    )
+    parser.add_argument(
+        "--trigger-state-machine-arn",
+        default=os.getenv("B11_P6_STAGE_TRIGGER_STATE_MACHINE_ARN", "").strip(),
     )
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
@@ -140,50 +236,90 @@ def main() -> int:
     run_attempt = os.getenv("GITHUB_RUN_ATTEMPT", "unknown")
     marker = f"P6_RUN_ID={run_id};ATTEMPT={run_attempt}"
     session_name = f"p6-{run_id}-{run_attempt}".replace("_", "-")[:64]
+    execution_name = session_name
 
     failures: list[str] = []
+    if args.strict and args.trigger_mode == "assume_role_direct":
+        failures.append("trigger_mode_assume_role_direct_not_allowed_in_strict")
     lines = [
         f"timestamp_utc={now.isoformat()}",
         f"region={args.region}",
         f"correlation_marker={marker}",
-        f"trigger_mode=assume_role_direct",
+        f"trigger_mode={args.trigger_mode or '<unset>'}",
         f"runtime_role_arn={args.runtime_role_arn}",
         f"trigger_secret_id={args.secret_id}",
         f"trigger_start_time_utc={now.strftime('%Y-%m-%dT%H:%M:%SZ')}",
     ]
 
-    assume_code, assume_payload, assume_err = _assume_stage_role(
-        aws=aws,
-        region=args.region,
-        role_arn=args.runtime_role_arn,
-        session_name=session_name,
-    )
-    lines.append(f"assume_role_exit_code={assume_code}")
-    lines.append(f"assume_role_session_name={session_name}")
-    lines.append("assume_role_stderr=" + (assume_err or "<empty>"))
-    if assume_code != 0:
-        failures.append("assume_role_failed")
-    else:
-        trigger_code, trigger_out, trigger_err = _invoke_stage_secret_read_with_assumed_role(
+    trigger_event_names: list[str] = []
+    if args.trigger_mode == "lambda":
+        if not args.trigger_lambda_arn:
+            failures.append("missing_lambda_trigger_arn")
+        else:
+            payload = {"correlation_marker": marker, "secret_id": args.secret_id}
+            trigger_code, trigger_out, trigger_err = _invoke_lambda_trigger(
+                aws=aws, region=args.region, function_arn=args.trigger_lambda_arn, payload=payload
+            )
+            lines.append(f"trigger_lambda_arn={args.trigger_lambda_arn}")
+            lines.append(f"trigger_lambda_exit_code={trigger_code}")
+            lines.append("trigger_lambda_stderr=" + (trigger_err or "<empty>"))
+            lines.append("trigger_lambda_response=" + (trigger_out or "<empty>"))
+            if trigger_code != 0:
+                failures.append("trigger_lambda_failed")
+            trigger_event_names.append("Invoke")
+    elif args.trigger_mode == "stepfunctions":
+        if not args.trigger_state_machine_arn:
+            failures.append("missing_stepfunctions_trigger_arn")
+        else:
+            payload = {"correlation_marker": marker, "secret_id": args.secret_id}
+            trigger_code, trigger_out, trigger_err = _start_stepfn_trigger(
+                aws=aws,
+                region=args.region,
+                state_machine_arn=args.trigger_state_machine_arn,
+                execution_name=execution_name,
+                payload=payload,
+            )
+            lines.append(f"trigger_state_machine_arn={args.trigger_state_machine_arn}")
+            lines.append(f"trigger_stepfunctions_exit_code={trigger_code}")
+            lines.append("trigger_stepfunctions_stderr=" + (trigger_err or "<empty>"))
+            lines.append("trigger_stepfunctions_response=" + (trigger_out or "<empty>"))
+            if trigger_code != 0:
+                failures.append("trigger_stepfunctions_failed")
+            trigger_event_names.append("StartExecution")
+    elif args.trigger_mode == "assume_role_direct":
+        assume_code, assume_payload, assume_err = _assume_stage_role(
             aws=aws,
             region=args.region,
-            creds_payload=assume_payload,
-            secret_id=args.secret_id,
+            role_arn=args.runtime_role_arn,
+            session_name=session_name,
         )
-        lines.append(f"trigger_get_secret_exit_code={trigger_code}")
-        lines.append("trigger_get_secret_stdout=<redacted>" if trigger_out else "trigger_get_secret_stdout=<empty>")
-        lines.append("trigger_get_secret_stderr=" + (trigger_err or "<empty>"))
-        if trigger_code != 0:
-            failures.append("trigger_get_secret_failed")
+        lines.append(f"assume_role_exit_code={assume_code}")
+        lines.append(f"assume_role_session_name={session_name}")
+        lines.append("assume_role_stderr=" + (assume_err or "<empty>"))
+        if assume_code != 0:
+            failures.append("assume_role_failed")
+        else:
+            trigger_code, trigger_out, trigger_err = _invoke_stage_secret_read_with_assumed_role(
+                aws=aws,
+                region=args.region,
+                creds_payload=assume_payload,
+                secret_id=args.secret_id,
+            )
+            lines.append(f"trigger_get_secret_exit_code={trigger_code}")
+            lines.append("trigger_get_secret_stdout=<redacted>" if trigger_out else "trigger_get_secret_stdout=<empty>")
+            lines.append("trigger_get_secret_stderr=" + (trigger_err or "<empty>"))
+            if trigger_code != 0:
+                failures.append("trigger_get_secret_failed")
+            trigger_event_names.append("AssumeRole")
+    else:
+        failures.append("trigger_mode_not_configured")
 
     max_pages = int(os.getenv("B11_P6_CLOUDTRAIL_MAX_PAGES", "30"))
     delay_seconds = int(os.getenv("B11_P6_STAGE_TETHER_CLOUDTRAIL_DELAY_SECONDS", "20"))
     wait_seconds = int(os.getenv("B11_P6_STAGE_TETHER_CLOUDTRAIL_WAIT_SECONDS", "180"))
     poll_interval_seconds = int(os.getenv("B11_P6_CLOUDTRAIL_POLL_INTERVAL_SECONDS", "15"))
     time.sleep(delay_seconds)
-    fallback_lookback_hours = int(os.getenv("B11_P6_STAGE_TETHER_FALLBACK_LOOKBACK_HOURS", "24"))
     strict_start = (now - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    fallback_start = (now - timedelta(hours=fallback_lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     start_time = strict_start
     deadline = time.time() + wait_seconds
     ct_code = 0
@@ -217,28 +353,36 @@ def main() -> int:
             break
         time.sleep(poll_interval_seconds)
 
-    passive_fallback_matched = False
-    if not matched and assume_code != 0 and args.allow_passive_fallback and ct_code == 0:
-        start_time = fallback_start
-        ct_code, events, ct_err = _lookup_get_secret_events(
+    trigger_evidence: list[dict[str, str]] = []
+    trigger_lookup_failures = 0
+    for event_name in trigger_event_names:
+        t_code, t_events, t_err = _lookup_events_by_name(
             aws=aws,
             region=args.region,
+            event_name=event_name,
             start_time=start_time,
             max_pages=max_pages,
         )
-        if ct_code == 0:
-            for event in events:
-                raw = event.get("CloudTrailEvent", "")
-                if "skeldir-app-runtime-stage" not in raw:
-                    continue
-                matched.append(
-                    {
-                        "event_id": event.get("EventId", "unknown"),
-                        "event_time": event.get("EventTime", "unknown"),
-                        "event_name": event.get("EventName", "unknown"),
-                    }
-                )
-            passive_fallback_matched = bool(matched)
+        lines.append(f"trigger_event_lookup_{event_name}_exit_code={t_code}")
+        lines.append(f"trigger_event_lookup_{event_name}_stderr={t_err or '<empty>'}")
+        if t_code != 0:
+            trigger_lookup_failures += 1
+            continue
+        for event in t_events:
+            raw = event.get("CloudTrailEvent", "")
+            if marker not in raw and session_name not in raw and execution_name not in raw:
+                continue
+            trigger_evidence.append(
+                {
+                    "event_id": event.get("EventId", "unknown"),
+                    "event_time": event.get("EventTime", "unknown"),
+                    "event_name": event.get("EventName", "unknown"),
+                }
+            )
+            if len(trigger_evidence) >= 10:
+                break
+        if len(trigger_evidence) >= 10:
+            break
 
     lines.append(f"cloudtrail_lookup_start_time_utc={start_time}")
     lines.append(f"cloudtrail_pages_requested={max_pages}")
@@ -247,23 +391,30 @@ def main() -> int:
     lines.append(f"cloudtrail_exit_code={ct_code}")
     lines.append("cloudtrail_stderr=" + (ct_err or "<empty>"))
     lines.append(f"cloudtrail_events_scanned={len(events)}")
-    lines.append(f"passive_fallback_enabled={args.allow_passive_fallback}")
 
     if ct_code != 0:
         failures.append("cloudtrail_lookup_failed")
+    if trigger_lookup_failures:
+        failures.append("trigger_event_lookup_failed")
 
     if matched:
         lines.append("identity_tether=skeldir-app-runtime-stage")
-        if passive_fallback_matched:
-            lines.append("run_causal_tether=passive_fallback")
-            lines.append(f"fallback_start_time_utc={fallback_start}")
-        else:
-            lines.append("run_causal_tether=present")
+        lines.append("run_causal_tether=present")
         for item in matched[:10]:
             lines.append(
                 "matched_event="
                 + json.dumps(item, sort_keys=True, separators=(",", ":"))
             )
+        if trigger_evidence:
+            lines.append("trigger_event_tether=present")
+            for item in trigger_evidence:
+                lines.append(
+                    "trigger_event="
+                    + json.dumps(item, sort_keys=True, separators=(",", ":"))
+                )
+        else:
+            lines.append("trigger_event_tether=missing")
+            failures.append("trigger_event_tether_missing")
     else:
         lines.append("identity_tether=missing")
         lines.append("run_causal_tether=missing")
