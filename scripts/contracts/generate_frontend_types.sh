@@ -19,7 +19,7 @@ mkdir -p "$OUTPUT_DIR"
 
 install_openapi_typescript() {
   local repo_root="$1"
-  local version="6.7.6"
+  local version="7.10.1"
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
     if npm install --no-save --prefix "$repo_root" "openapi-typescript@${version}"; then
       return 0
