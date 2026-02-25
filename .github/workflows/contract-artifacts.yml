@@ -46,7 +46,17 @@ jobs:
           cache: 'npm'
       
       - name: Install Node dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
       
       - name: Bundle contracts
         run: bash scripts/contracts/bundle.sh
@@ -85,7 +95,17 @@ jobs:
           path: api-contracts/dist/openapi/v1
       
       - name: Install Prism CLI
-        run: npm install -g @stoplight/prism-cli
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm install -g @stoplight/prism-cli; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Prism CLI install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
       
       - name: Install Python dependencies
         run: |
@@ -165,16 +185,23 @@ jobs:
           python-version: '3.11'
       
       - name: Install Node dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
       
       - name: Download bundled artifacts
         uses: actions/download-artifact@v4
         with:
           name: contract-bundles
           path: api-contracts/dist/openapi/v1
-      
-      - name: Install Redocly CLI
-        run: npm install -g @redocly/cli
       
       - name: Install Python dependencies (for validation)
         run: pip install pyyaml
@@ -242,5 +269,4 @@ jobs:
             echo "  - Implementation conforms to contracts"
             echo "  - Documentation built and validated"
           fi
-
 

@@ -415,11 +415,29 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
           # Guard against transient 403s from Microsoft apt repos on ubuntu-latest runners.
           # Playwright `--with-deps` runs `apt-get update`; remove these sources to keep CI deterministic.
           sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/*microsoft*.list
-          npx playwright install --with-deps chromium
+          for attempt in 1 2 3 4 5; do
+            if npx playwright install --with-deps chromium; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "playwright install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           go install github.com/oasdiff/oasdiff@v1.11.7
@@ -521,11 +539,29 @@ jobs:
           go-version: '1.24'
       - name: Install dependencies
         run: |
-          npm ci
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
           # Guard against transient 403s from Microsoft apt repos on ubuntu-latest runners.
           # Playwright `--with-deps` runs `apt-get update`; remove these sources to keep CI deterministic.
           sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/*microsoft*.list
-          npx playwright install --with-deps chromium
+          for attempt in 1 2 3 4 5; do
+            if npx playwright install --with-deps chromium; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "playwright install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           go install github.com/oasdiff/oasdiff@v1.11.7
@@ -714,6 +750,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
+          for attempt in 1 2 3 4 5; do
+            if npm install --no-save @stoplight/prism-cli@5.14.2; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to install Prism CLI after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install PostgreSQL client
         run: |
@@ -837,7 +883,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/b07-p2
           test -f "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}"
-          npx -y @stoplight/prism-cli@5.14.2 mock "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" -h 127.0.0.1 -p 4012 > artifacts/b07-p2/prism_preflight.log 2>&1 &
+          ./node_modules/.bin/prism mock "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" -h 127.0.0.1 -p 4012 > artifacts/b07-p2/prism_preflight.log 2>&1 &
           PRISM_PREFLIGHT_PID=$!
           trap 'kill "${PRISM_PREFLIGHT_PID}" 2>/dev/null || true' EXIT
           sleep 3
@@ -851,7 +897,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/b07-p2
-          npx -y @stoplight/prism-cli@5.14.2 mock "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" -h 127.0.0.1 -p 4010 > artifacts/b07-p2/prism_mock.log 2>&1 &
+          ./node_modules/.bin/prism mock "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" -h 127.0.0.1 -p 4010 > artifacts/b07-p2/prism_mock.log 2>&1 &
           PRISM_PID=$!
           trap 'kill "${PRISM_PID}" 2>/dev/null || true' EXIT
 
@@ -881,7 +927,7 @@ jobs:
           cp "${PHASE0_CONTRACT_BUNDLE_OF_RECORD}" /tmp/phase0_invalid_openapi.yaml
           printf "\ninvalid_yaml: [\n" >> /tmp/phase0_invalid_openapi.yaml
           set +e
-          timeout 15s npx -y @stoplight/prism-cli@5.14.2 mock /tmp/phase0_invalid_openapi.yaml -h 127.0.0.1 -p 4011 > artifacts/b07-p2/prism_negative_control.log 2>&1
+          timeout 15s ./node_modules/.bin/prism mock /tmp/phase0_invalid_openapi.yaml -h 127.0.0.1 -p 4011 > artifacts/b07-p2/prism_negative_control.log 2>&1
           STATUS=$?
           set -e
           if [ "${STATUS}" -eq 0 ] || [ "${STATUS}" -eq 124 ]; then
@@ -1977,7 +2023,16 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "frontend npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Run ESLint
         run: |
@@ -2003,7 +2058,16 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "frontend npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Validate token naming and values
         run: |
@@ -2053,7 +2117,17 @@ jobs:
           node-version: '20'
       
       - name: Install dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "root npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Start mock servers
         run: |
