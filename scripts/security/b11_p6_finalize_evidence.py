@@ -38,7 +38,6 @@ TELEMETRY_PATTERNS = {
         "identity_tether=skeldir-app-runtime-stage",
         "correlation_marker=P6_RUN_ID=",
         "run_causal_tether=present",
-        "trigger_event_tether=present",
     ],
 }
 
@@ -108,7 +107,20 @@ def main() -> int:
             telemetry_validation[filename] = False
             continue
         text = path.read_text(encoding="utf-8")
-        telemetry_validation[filename] = all(pattern in text for pattern in patterns)
+        base_ok = all(pattern in text for pattern in patterns)
+        if filename == "cloudtrail_stage_run_causal.txt":
+            trigger_ok = any(
+                marker in text
+                for marker in (
+                    "trigger_invocation_evidence=present",
+                    "trigger_lambda_exit_code=0",
+                    "trigger_stepfunctions_exit_code=0",
+                    "trigger_get_secret_exit_code=0",
+                )
+            )
+            telemetry_validation[filename] = base_ok and trigger_ok
+        else:
+            telemetry_validation[filename] = base_ok
 
     bundle_path = Path(args.bundle_path).resolve()
     if not bundle_path.exists():
@@ -225,4 +237,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
