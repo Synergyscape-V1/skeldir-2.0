@@ -17,6 +17,27 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
+install_openapi_typescript() {
+  local repo_root="$1"
+  for attempt in 1 2 3 4 5; do
+    if npm install --no-save --prefix "$repo_root" openapi-typescript@7.10.1; then
+      return 0
+    fi
+    if [[ "$attempt" -eq 5 ]]; then
+      echo "[frontend-typegen] Failed to install openapi-typescript after 5 attempts"
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+install_openapi_typescript "$REPO_ROOT"
+OPENAPI_TYPESCRIPT_BIN="$REPO_ROOT/node_modules/.bin/openapi-typescript"
+if [[ ! -x "$OPENAPI_TYPESCRIPT_BIN" ]]; then
+  echo "[frontend-typegen] Missing generator binary: $OPENAPI_TYPESCRIPT_BIN"
+  exit 1
+fi
+
 generate() {
   local input_bundle="$1"
   local output_file="$2"
@@ -29,7 +50,7 @@ generate() {
   fi
 
   echo "[frontend-typegen] $input_bundle -> $output_file"
-  npx --yes openapi-typescript@7.10.1 "$input_path" -o "$output_path"
+  "$OPENAPI_TYPESCRIPT_BIN" "$input_path" -o "$output_path"
 }
 
 generate "auth.bundled.yaml" "auth.ts"

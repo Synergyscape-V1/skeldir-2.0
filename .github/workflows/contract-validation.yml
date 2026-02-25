@@ -35,7 +35,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Bundle all contracts
         run: |
@@ -70,11 +79,29 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install OpenAPI Generator CLI
         run: |
-          npm install -g @openapitools/openapi-generator-cli
+          for attempt in 1 2 3 4 5; do
+            if npm install -g @openapitools/openapi-generator-cli; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "OpenAPI Generator CLI install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Bundle contracts
         run: |
@@ -152,11 +179,29 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install Spectral
         run: |
-          npm install -g @stoplight/spectral-cli
+          for attempt in 1 2 3 4 5; do
+            if npm install -g @stoplight/spectral-cli; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Spectral CLI install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Lint contracts with Spectral
         run: |
@@ -210,7 +255,16 @@ jobs:
 
       - name: Install Node dependencies
         run: |
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install Python dependencies
         run: |
@@ -253,7 +307,16 @@ jobs:
 
       - name: Install Node dependencies
         run: |
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install Python dependencies
         run: |
@@ -355,7 +418,16 @@ jobs:
 
       - name: Install Node dependencies
         run: |
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install Python dependencies
         run: |
@@ -470,7 +542,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
           pip install pyyaml
 
       - name: Bundle contracts

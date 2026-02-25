@@ -82,7 +82,16 @@ jobs:
       
       - name: Install OpenAPI Generator CLI
         run: |
-          npm install -g @openapitools/openapi-generator-cli
+          for attempt in 1 2 3 4 5; do
+            if npm install -g @openapitools/openapi-generator-cli; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "OpenAPI Generator CLI install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
       
       - name: Bundle contracts
         run: |
@@ -152,7 +161,17 @@ jobs:
           node-version: '20'
 
       - name: Install root dependencies
-        run: npm ci
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "root npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Bundle canonical OpenAPI artifacts
         run: |
@@ -169,7 +188,16 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd frontend
-          npm ci
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "frontend npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Compile frontend contract consumption gate
         run: |
@@ -192,7 +220,30 @@ jobs:
           node-version: '20'
 
       - name: Install root dependencies
-        run: npm ci
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "root npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install Prism CLI
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm install --no-save @stoplight/prism-cli@5.14.2; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Prism CLI install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Bundle canonical OpenAPI artifacts
         run: |
@@ -201,9 +252,9 @@ jobs:
       - name: Start Prism mocks (revenue + health) and run usability smoke
         run: |
           set -euo pipefail
-          npx @stoplight/prism-cli mock -h 127.0.0.1 -p 4011 api-contracts/dist/openapi/v1/attribution.bundled.yaml > /tmp/prism-attribution.log 2>&1 &
+          ./node_modules/.bin/prism mock -h 127.0.0.1 -p 4011 api-contracts/dist/openapi/v1/attribution.bundled.yaml > /tmp/prism-attribution.log 2>&1 &
           ATTR_PID=$!
-          npx @stoplight/prism-cli mock -h 127.0.0.1 -p 4014 api-contracts/dist/openapi/v1/health.bundled.yaml > /tmp/prism-health.log 2>&1 &
+          ./node_modules/.bin/prism mock -h 127.0.0.1 -p 4014 api-contracts/dist/openapi/v1/health.bundled.yaml > /tmp/prism-health.log 2>&1 &
           HEALTH_PID=$!
 
           cleanup() {
@@ -284,7 +335,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           pip install pyyaml
@@ -750,6 +810,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
+          for attempt in 1 2 3 4 5; do
+            if npm install --no-save @stoplight/prism-cli@5.14.2; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to install Prism CLI after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
           for attempt in 1 2 3 4 5; do
             if npm install --no-save @stoplight/prism-cli@5.14.2; then
               break
@@ -2093,7 +2163,16 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm install
+          for attempt in 1 2 3 4 5; do
+            if npm install; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "frontend npm install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Run tests
         run: |
@@ -2129,11 +2208,24 @@ jobs:
             sleep 2
           done
 
+      - name: Install Prism CLI
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm install --no-save @stoplight/prism-cli@5.14.2; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Prism CLI install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
+
       - name: Start mock servers
         run: |
           # Native mock servers using Prism (Architecture Guide compliant)
-          npx @stoplight/prism-cli mock contracts/attribution/v1/attribution.yaml --host 127.0.0.1 --port 4011 &
-          npx @stoplight/prism-cli mock contracts/health/v1/health.yaml --host 127.0.0.1 --port 4014 &
+          ./node_modules/.bin/prism mock contracts/attribution/v1/attribution.yaml --host 127.0.0.1 --port 4011 &
+          ./node_modules/.bin/prism mock contracts/health/v1/health.yaml --host 127.0.0.1 --port 4014 &
 
       - name: Wait for mock servers
         run: |
