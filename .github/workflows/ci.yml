@@ -830,6 +830,16 @@ jobs:
             fi
             sleep 2
           done
+          for attempt in 1 2 3 4 5; do
+            if npm install --no-save @stoplight/prism-cli@5.14.2; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to install Prism CLI after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install PostgreSQL client
         run: |
