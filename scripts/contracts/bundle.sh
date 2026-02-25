@@ -10,7 +10,7 @@ CONTRACTS_DIR="$REPO_ROOT/api-contracts"
 DIST_DIR="$REPO_ROOT/api-contracts/dist/openapi/v1"
 
 log() {
-    printf '[bundle] %s\n' "$1"
+    printf '[bundle] %s\n' "$1" >&2
 }
 
 retry() {
@@ -40,7 +40,7 @@ resolve_redocly() {
     fi
 
     log "Installing Redocly CLI locally (single install; no repeated npx fetches)..."
-    if ! retry 5 npm install --no-save --prefix "$CONTRACTS_DIR" @redocly/cli@2.19.2; then
+    if ! retry 5 npm install --no-save --prefix "$CONTRACTS_DIR" @redocly/cli@2.19.2 >&2; then
         log "ERROR: failed to install @redocly/cli after retries"
         return 1
     fi
