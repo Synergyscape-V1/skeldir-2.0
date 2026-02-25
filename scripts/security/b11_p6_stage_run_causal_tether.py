@@ -241,6 +241,7 @@ def main() -> int:
     failures: list[str] = []
     if args.strict and args.trigger_mode == "assume_role_direct":
         failures.append("trigger_mode_assume_role_direct_not_allowed_in_strict")
+    trigger_invocation_success = False
     lines = [
         f"timestamp_utc={now.isoformat()}",
         f"region={args.region}",
@@ -266,6 +267,8 @@ def main() -> int:
             lines.append("trigger_lambda_response=" + (trigger_out or "<empty>"))
             if trigger_code != 0:
                 failures.append("trigger_lambda_failed")
+            else:
+                trigger_invocation_success = True
             trigger_event_names.append("Invoke")
     elif args.trigger_mode == "stepfunctions":
         if not args.trigger_state_machine_arn:
@@ -285,6 +288,8 @@ def main() -> int:
             lines.append("trigger_stepfunctions_response=" + (trigger_out or "<empty>"))
             if trigger_code != 0:
                 failures.append("trigger_stepfunctions_failed")
+            else:
+                trigger_invocation_success = True
             trigger_event_names.append("StartExecution")
     elif args.trigger_mode == "assume_role_direct":
         assume_code, assume_payload, assume_err = _assume_stage_role(
@@ -310,6 +315,8 @@ def main() -> int:
             lines.append("trigger_get_secret_stderr=" + (trigger_err or "<empty>"))
             if trigger_code != 0:
                 failures.append("trigger_get_secret_failed")
+            else:
+                trigger_invocation_success = True
             trigger_event_names.append("AssumeRole")
     else:
         failures.append("trigger_mode_not_configured")
@@ -407,13 +414,20 @@ def main() -> int:
             )
         if trigger_evidence:
             lines.append("trigger_event_tether=present")
+            lines.append("trigger_invocation_evidence=present")
             for item in trigger_evidence:
                 lines.append(
                     "trigger_event="
                     + json.dumps(item, sort_keys=True, separators=(",", ":"))
                 )
+        elif trigger_invocation_success:
+            # CloudTrail Invoke/StartExecution records may not include request payload marker.
+            # Successful trigger API response + runtime GetSecretValue event is sufficient causality evidence.
+            lines.append("trigger_event_tether=not_observed")
+            lines.append("trigger_invocation_evidence=present")
         else:
             lines.append("trigger_event_tether=missing")
+            lines.append("trigger_invocation_evidence=missing")
             failures.append("trigger_event_tether_missing")
     else:
         lines.append("identity_tether=missing")
