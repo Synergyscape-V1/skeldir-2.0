@@ -416,7 +416,6 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          npm install -g @openapitools/openapi-generator-cli @redocly/cli
           # Guard against transient 403s from Microsoft apt repos on ubuntu-latest runners.
           # Playwright `--with-deps` runs `apt-get update`; remove these sources to keep CI deterministic.
           sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/*microsoft*.list
@@ -523,7 +522,6 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          npm install -g @openapitools/openapi-generator-cli @redocly/cli
           # Guard against transient 403s from Microsoft apt repos on ubuntu-latest runners.
           # Playwright `--with-deps` runs `apt-get update`; remove these sources to keep CI deterministic.
           sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/*microsoft*.list
