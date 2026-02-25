@@ -239,7 +239,16 @@ jobs:
       
       - name: Install Node dependencies
         run: |
-          npm install -g @openapitools/openapi-generator-cli
+          for attempt in 1 2 3 4 5; do
+            if npm install -g @openapitools/openapi-generator-cli; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to install openapi-generator-cli after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
       
       - name: Phase 2.1 - OpenAPI Validation
         run: |
@@ -252,7 +261,7 @@ jobs:
           for f in api-contracts/dist/openapi/v1/*.bundled.yaml; do
             if [ -f "$f" ]; then
               echo "=== VALIDATING $(basename $f) ===" >> evidence_registry/contracts/openapi_validation_raw.txt
-              if npx @openapitools/openapi-generator-cli validate -i "$f" >> evidence_registry/contracts/openapi_validation_raw.txt 2>&1; then
+              if openapi-generator-cli validate -i "$f" >> evidence_registry/contracts/openapi_validation_raw.txt 2>&1; then
                 echo "✓ $(basename $f) - VALID"
               else
                 echo "✗ $(basename $f) - INVALID"

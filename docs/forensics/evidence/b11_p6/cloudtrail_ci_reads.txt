@@ -1,0 +1,15 @@
+timestamp_utc=2026-02-25T17:41:19.129212+00:00
+start_time_utc=2026-02-25T17:21:19Z
+region=us-east-2
+pages_requested=30
+events_scanned=4
+cloudtrail_poll_attempts=1
+cloudtrail_wait_seconds=120
+exit_code=0
+stderr=<empty>
+required_role=skeldir-ci-deploy
+required_event=secretsmanager:GetSecretValue
+identity_tether=skeldir-ci-deploy
+matched_event={"event_id":"14c981ba-b3ef-4295-b680-27e06345a3ba","event_name":"GetSecretValue","event_time":"2026-02-25T17:34:59+00:00"}
+matched_event={"event_id":"6bbc67e1-e53b-4e11-a272-4656a70834ed","event_name":"GetSecretValue","event_time":"2026-02-25T17:34:58+00:00"}
+matched_event={"event_id":"6f5b7af1-4381-4db1-bfe3-75d34aee547c","event_name":"GetSecretValue","event_time":"2026-02-25T17:34:57+00:00"}

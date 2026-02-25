@@ -26,6 +26,16 @@ CONTRACT_DIR="api-contracts/dist/openapi/v1"
 PID_DIR="/tmp/skeldir-mocks"
 mkdir -p "$PID_DIR"
 
+resolve_prism_cmd() {
+    if command -v prism >/dev/null 2>&1; then
+        echo "prism"
+    else
+        echo "npx -y @stoplight/prism-cli"
+    fi
+}
+
+PRISM_CMD="$(resolve_prism_cmd)"
+
 # Function to check if a port is in use
 check_port() {
     local port=$1
@@ -59,7 +69,7 @@ start_prism_server() {
     
     # Start Prism mock server in background
     echo -e "${BLUE}→ Starting: $name (port $port)${NC}"
-    npx @stoplight/prism-cli mock -h 0.0.0.0 -p $port "$contract" > "$PID_DIR/prism_$port.log" 2>&1 &
+    $PRISM_CMD mock -h 0.0.0.0 -p $port "$contract" > "$PID_DIR/prism_$port.log" 2>&1 &
     local pid=$!
     echo $pid > "$pid_file"
     
@@ -81,15 +91,15 @@ echo "Pre-flight Checks:"
 echo "------------------"
 
 # Check if Prism is available
-if ! command -v npx &> /dev/null; then
-    echo -e "${RED}✗ npx not found - Node.js required${NC}"
+if ! command -v npx &> /dev/null && ! command -v prism &> /dev/null; then
+    echo -e "${RED}✗ neither prism nor npx found - Node.js required${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ npx available${NC}"
+echo -e "${GREEN}✓ prism command resolver ready${NC}"
 
 # Check Prism version
-PRISM_VERSION=$(npx @stoplight/prism-cli --version 2>/dev/null || echo "unknown")
+PRISM_VERSION=$($PRISM_CMD --version 2>/dev/null || echo "unknown")
 echo -e "${GREEN}✓ Prism CLI version: $PRISM_VERSION${NC}"
 
 # Check contract directory

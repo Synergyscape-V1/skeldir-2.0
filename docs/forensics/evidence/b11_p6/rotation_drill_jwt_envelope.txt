@@ -1,0 +1,6 @@
+status=pass
+old_jwt_kid=kid-old
+new_jwt_kid=kid-new
+old_jwt_valid_during_overlap=True
+oauth_decrypt_across_envelope_rotation=True
+drill_mode=live_modules_live_postgres_no_monkeypatch

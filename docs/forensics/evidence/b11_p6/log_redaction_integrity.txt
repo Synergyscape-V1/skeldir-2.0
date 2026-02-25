@@ -1,0 +1,5 @@
+
+backend/tests/test_b11_p6_log_redaction_integrity.py::test_b11_p6_redact_text_masks_secret_material PASSED [ 50%]
+backend/tests/test_b11_p6_log_redaction_integrity.py::test_b11_p6_redaction_filter_masks_exception_path PASSED [100%]
+
+============================== 2 passed in 0.15s ===============================

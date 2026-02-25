@@ -1,4 +1,59 @@
 {
-  "status": "pending_authoritative_main_run",
-  "note": "generated_on_main_by_b11-p6-end-to-end-closure-pack"
+  "artifact_hashes": {
+    "ci_oidc_assume_role_log.txt": "0c43285b8fa67ee0d4dc7d45fefa589174f7b37f6e2b76444e9319761e2ee29b",
+    "cloudtrail_ci_reads.txt": "fa0e2e1090fc105ac056e509dbd2d1571f72f736d56a854208d084c58e607acb",
+    "cloudtrail_stage_run_causal.txt": "2d1de10b0e034215ab465b4773f152e625fb8229a2543ad0601fa7fa7364540e",
+    "db_no_plaintext_webhook_secrets.txt": "0d99819e0af7bfa246d36c16ff0d6a56e0c0bfde3d19e90f5b92d4a6f7ab8593",
+    "log_redaction_integrity.txt": "cd51168d995ceb92012457e42d489d05f022c36e2e7382d2fd61ddd5c937105c",
+    "no_secrets_repo_scan.json": "1aca7532bf2b4ed24b6f7867c358e754864adf22f41126e120339638191917a7",
+    "p6_authoritative_main_run.txt": "880abdfa05c20eee155d133fc19312d8f48a936618e8d4ba00f26dcc254b65fe",
+    "readiness_fail_closed_test.txt": "1172dc4ba68f320a52f9364c9780bf9b3c93f5638eb2486a32f1845aa42e860b",
+    "rotation_drill_jwt_envelope.txt": "c35b3d4304efa56dc208afb63594feb783f6646fa2435c95c7fe0d179bb8a35d",
+    "webhook_e2e_valid_invalid.txt": "f4ccda5031f7f12c3689c06bf10a4e1b42df18c607e23e8db685903fdf392584",
+    "workflow_plaintext_scan.txt": "f8e18b7b9fe4553f38a27581ecb5788610904c9fb36720c824cffdc3e0f40de4"
+  },
+  "bundle": {
+    "etag": "be80a6dd46cc5471b3eb3e2f97ed1092",
+    "filename": "b11-p6-closure-pack-evidence.zip",
+    "sha256": "18c2a9b338ed25e5c1505db0bb0696c8c4dcb3a63dd2136ff1f768b9ebb1d3cd",
+    "uri": "s3://skeldir-b11-p1-tfstate-326730685463-us-east-2/security/b11_p6/9e524c6c9576511ef478f7f6e79a56889712fc6c/run-22408597678/b11-p6-closure-pack-evidence.zip",
+    "version_id": "si5Mqqw2hcs8p9jvCJUL5lGXwEsL08w6"
+  },
+  "canonical_subset": {
+    "deterministic_artifact_hashes": {
+      "db_no_plaintext_webhook_secrets.txt": "0d99819e0af7bfa246d36c16ff0d6a56e0c0bfde3d19e90f5b92d4a6f7ab8593",
+      "no_secrets_repo_scan.json": "1aca7532bf2b4ed24b6f7867c358e754864adf22f41126e120339638191917a7",
+      "readiness_fail_closed_test.txt": "1172dc4ba68f320a52f9364c9780bf9b3c93f5638eb2486a32f1845aa42e860b",
+      "rotation_drill_jwt_envelope.txt": "c35b3d4304efa56dc208afb63594feb783f6646fa2435c95c7fe0d179bb8a35d",
+      "workflow_plaintext_scan.txt": "f8e18b7b9fe4553f38a27581ecb5788610904c9fb36720c824cffdc3e0f40de4"
+    },
+    "required_files": [
+      "p6_authoritative_main_run.txt",
+      "rotation_drill_jwt_envelope.txt",
+      "no_secrets_repo_scan.json",
+      "workflow_plaintext_scan.txt",
+      "db_no_plaintext_webhook_secrets.txt",
+      "readiness_fail_closed_test.txt",
+      "ci_oidc_assume_role_log.txt",
+      "cloudtrail_ci_reads.txt",
+      "cloudtrail_stage_run_causal.txt",
+      "webhook_e2e_valid_invalid.txt",
+      "log_redaction_integrity.txt"
+    ],
+    "schema_version": "2026-02-24.b11_p6.v1"
+  },
+  "commit_sha": "9e524c6c9576511ef478f7f6e79a56889712fc6c",
+  "manifest_digest": "8860e5c129023a49e6634dea9ebd8b53b4573c1b5f25be473b8e6d8117c320b2",
+  "missing_artifacts": [],
+  "ref": "refs/heads/main",
+  "schema_version": "2026-02-24.b11_p6.v1",
+  "telemetry_validation": {
+    "ci_oidc_assume_role_log.txt": true,
+    "cloudtrail_ci_reads.txt": true,
+    "cloudtrail_stage_run_causal.txt": true
+  },
+  "workflow_name": "b11-p6-end-to-end-closure-pack",
+  "workflow_run_attempt": "1",
+  "workflow_run_id": "22408597678",
+  "workflow_run_url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22408597678"
 }

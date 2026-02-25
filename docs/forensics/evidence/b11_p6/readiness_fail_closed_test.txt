@@ -1,0 +1,8 @@
+status=pass
+health_ready_status=unreachable
+api_health_status=unreachable
+api_health_ready_status=unreachable
+missing_required_secrets=startup_fail_closed
+startup_exit_code=3
+startup_output_tail={"level": "INFO", "logger": "app.celery_app", "message": "celery_app_configured"} ERROR:    Traceback (most recent call last):   File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/starlette/routing.py", line 694, in lifespan     async with self.lifespan_context(app) as maybe_state:   File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/contextlib.py", line 210, in __aenter__     return await anext(self.gen)            ^^^^^^^^^^^^^^^^^^^^^   File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/fastapi/routing.py", line 201, in merged_lifesp
+drill_mode=live_uvicorn_startup_fail_closed_no_monkeypatch
