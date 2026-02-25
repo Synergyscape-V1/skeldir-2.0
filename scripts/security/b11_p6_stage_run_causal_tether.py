@@ -428,14 +428,6 @@ def main() -> int:
         else:
             lines.append("trigger_event_tether=missing")
             lines.append("trigger_invocation_evidence=missing")
-        elif trigger_invocation_success:
-            # CloudTrail Invoke/StartExecution records may not include request payload marker.
-            # Successful trigger API response + runtime GetSecretValue event is sufficient causality evidence.
-            lines.append("trigger_event_tether=not_observed")
-            lines.append("trigger_invocation_evidence=present")
-        else:
-            lines.append("trigger_event_tether=missing")
-            lines.append("trigger_invocation_evidence=missing")
             failures.append("trigger_event_tether_missing")
     else:
         lines.append("identity_tether=missing")
