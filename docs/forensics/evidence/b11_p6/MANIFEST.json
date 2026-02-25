@@ -1,28 +1,28 @@
 {
   "artifact_hashes": {
-    "ci_oidc_assume_role_log.txt": "0c43285b8fa67ee0d4dc7d45fefa589174f7b37f6e2b76444e9319761e2ee29b",
-    "cloudtrail_ci_reads.txt": "fa0e2e1090fc105ac056e509dbd2d1571f72f736d56a854208d084c58e607acb",
-    "cloudtrail_stage_run_causal.txt": "2d1de10b0e034215ab465b4773f152e625fb8229a2543ad0601fa7fa7364540e",
+    "ci_oidc_assume_role_log.txt": "a6074546e27fbf4227ed2dee3b82869d2f38a68e58f3d5b89e6e38863a9680f7",
+    "cloudtrail_ci_reads.txt": "cde336efca5d818195511931871c27af27760b1cf8283e283f3fe9c74c538240",
+    "cloudtrail_stage_run_causal.txt": "b3223effa3c13fb1e1ee3dc9fcb324ad0dd74db60a857da5e3fb3f8a5842d58f",
     "db_no_plaintext_webhook_secrets.txt": "0d99819e0af7bfa246d36c16ff0d6a56e0c0bfde3d19e90f5b92d4a6f7ab8593",
-    "log_redaction_integrity.txt": "cd51168d995ceb92012457e42d489d05f022c36e2e7382d2fd61ddd5c937105c",
-    "no_secrets_repo_scan.json": "1aca7532bf2b4ed24b6f7867c358e754864adf22f41126e120339638191917a7",
-    "p6_authoritative_main_run.txt": "880abdfa05c20eee155d133fc19312d8f48a936618e8d4ba00f26dcc254b65fe",
+    "log_redaction_integrity.txt": "d8f40b3f061e9239d1b6e026be37144a4d6654f38ca48c603bb0a47bca097fc1",
+    "no_secrets_repo_scan.json": "94911f49ec5122ca285e18ffe959da8614c367a65a69fd83e523a6869b6e6fc4",
+    "p6_authoritative_main_run.txt": "78befc2b6d9e99277454ccd76a2ae2b31690896617f7ca5f3c181fd96d646e4a",
     "readiness_fail_closed_test.txt": "1172dc4ba68f320a52f9364c9780bf9b3c93f5638eb2486a32f1845aa42e860b",
     "rotation_drill_jwt_envelope.txt": "c35b3d4304efa56dc208afb63594feb783f6646fa2435c95c7fe0d179bb8a35d",
-    "webhook_e2e_valid_invalid.txt": "f4ccda5031f7f12c3689c06bf10a4e1b42df18c607e23e8db685903fdf392584",
+    "webhook_e2e_valid_invalid.txt": "78adb5bb85c171d5b4b30ce790bbdecfb8bc587d7d17a8140b1dad333c456a00",
     "workflow_plaintext_scan.txt": "f8e18b7b9fe4553f38a27581ecb5788610904c9fb36720c824cffdc3e0f40de4"
   },
   "bundle": {
-    "etag": "be80a6dd46cc5471b3eb3e2f97ed1092",
+    "etag": "36858bd88b142e5aa7d5aba0856300ca",
     "filename": "b11-p6-closure-pack-evidence.zip",
-    "sha256": "18c2a9b338ed25e5c1505db0bb0696c8c4dcb3a63dd2136ff1f768b9ebb1d3cd",
-    "uri": "s3://skeldir-b11-p1-tfstate-326730685463-us-east-2/security/b11_p6/9e524c6c9576511ef478f7f6e79a56889712fc6c/run-22408597678/b11-p6-closure-pack-evidence.zip",
-    "version_id": "si5Mqqw2hcs8p9jvCJUL5lGXwEsL08w6"
+    "sha256": "9df4646639c8f5e89e3d5c5cf042050701f72aaadcf62c76d1ca38a5986c0f7b",
+    "uri": "s3://skeldir-b11-p1-tfstate-326730685463-us-east-2/security/b11_p6/7e8f50ad9b4b7c48a812a384110996feaaeba411/run-22413052351/b11-p6-closure-pack-evidence.zip",
+    "version_id": "cA.a.5kFUUo8pRWu_U7T9s68zkzHo1Xr"
   },
   "canonical_subset": {
     "deterministic_artifact_hashes": {
       "db_no_plaintext_webhook_secrets.txt": "0d99819e0af7bfa246d36c16ff0d6a56e0c0bfde3d19e90f5b92d4a6f7ab8593",
-      "no_secrets_repo_scan.json": "1aca7532bf2b4ed24b6f7867c358e754864adf22f41126e120339638191917a7",
+      "no_secrets_repo_scan.json": "94911f49ec5122ca285e18ffe959da8614c367a65a69fd83e523a6869b6e6fc4",
       "readiness_fail_closed_test.txt": "1172dc4ba68f320a52f9364c9780bf9b3c93f5638eb2486a32f1845aa42e860b",
       "rotation_drill_jwt_envelope.txt": "c35b3d4304efa56dc208afb63594feb783f6646fa2435c95c7fe0d179bb8a35d",
       "workflow_plaintext_scan.txt": "f8e18b7b9fe4553f38a27581ecb5788610904c9fb36720c824cffdc3e0f40de4"
@@ -42,8 +42,8 @@
     ],
     "schema_version": "2026-02-24.b11_p6.v1"
   },
-  "commit_sha": "9e524c6c9576511ef478f7f6e79a56889712fc6c",
-  "manifest_digest": "8860e5c129023a49e6634dea9ebd8b53b4573c1b5f25be473b8e6d8117c320b2",
+  "commit_sha": "7e8f50ad9b4b7c48a812a384110996feaaeba411",
+  "manifest_digest": "fef432297727ba617ee0bda540d942ac39c1ae4061798f332382b9b5d9d2b2d9",
   "missing_artifacts": [],
   "ref": "refs/heads/main",
   "schema_version": "2026-02-24.b11_p6.v1",
@@ -54,6 +54,6 @@
   },
   "workflow_name": "b11-p6-end-to-end-closure-pack",
   "workflow_run_attempt": "1",
-  "workflow_run_id": "22408597678",
-  "workflow_run_url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22408597678"
+  "workflow_run_id": "22413052351",
+  "workflow_run_url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22413052351"
 }
