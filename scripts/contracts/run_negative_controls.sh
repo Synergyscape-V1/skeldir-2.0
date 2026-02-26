@@ -166,8 +166,8 @@ from pathlib import Path
 
 path = Path("backend/app/security/auth.py")
 text = path.read_text(encoding="utf-8")
-needle = "if not tenant_id:"
-replacement = "if False and not tenant_id:"
+needle = 'tenant_id = claims.get("tenant_id")'
+replacement = 'tenant_id = claims.get("tenant_id") or "00000000-0000-0000-0000-000000000000"'
 if needle not in text:
     raise SystemExit("Unable to apply JWT tenant invariant negative control mutation")
 path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
