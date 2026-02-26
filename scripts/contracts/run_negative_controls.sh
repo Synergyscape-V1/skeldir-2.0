@@ -9,10 +9,25 @@ echo "[negative-control] Start"
 ORIG_RT="backend/app/services/realtime_revenue_response.py"
 BACKUP_RT="$(mktemp)"
 cp "$ORIG_RT" "$BACKUP_RT"
+ORIG_ATTR="api-contracts/openapi/v1/attribution.yaml"
+BACKUP_ATTR="$(mktemp)"
+cp "$ORIG_ATTR" "$BACKUP_ATTR"
+ORIG_BASE="api-contracts/openapi/v1/_common/base.yaml"
+BACKUP_BASE="$(mktemp)"
+cp "$ORIG_BASE" "$BACKUP_BASE"
+ORIG_AUTH="backend/app/security/auth.py"
+BACKUP_AUTH="$(mktemp)"
+cp "$ORIG_AUTH" "$BACKUP_AUTH"
 
 cleanup() {
   cp "$BACKUP_RT" "$ORIG_RT" || true
+  cp "$BACKUP_ATTR" "$ORIG_ATTR" || true
+  cp "$BACKUP_BASE" "$ORIG_BASE" || true
+  cp "$BACKUP_AUTH" "$ORIG_AUTH" || true
   rm -f "$BACKUP_RT" || true
+  rm -f "$BACKUP_ATTR" || true
+  rm -f "$BACKUP_BASE" || true
+  rm -f "$BACKUP_AUTH" || true
   rm -f frontend/src/contract-consumption-negative-control.ts || true
   rm -f frontend/tsconfig.contract-gate.negative.json || true
   rm -f /tmp/auth.breaking.yaml || true
@@ -100,5 +115,68 @@ if grep -q "0 changes" "$OASDIFF_OUT"; then
   exit 1
 fi
 rm -f "$OASDIFF_OUT"
+
+echo "[negative-control] 4/6 Auth topology drift should fail contract adjudication"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("api-contracts/openapi/v1/attribution.yaml")
+text = path.read_text(encoding="utf-8")
+needle = "security:\n  - bearerAuth: []\n"
+replacement = "security: []\n"
+if needle not in text:
+    raise SystemExit("Unable to apply auth topology negative control mutation")
+path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+bash scripts/contracts/bundle.sh
+if DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest tests/contract/test_contract_semantics.py -q -k test_contract_auth_topology_and_error_surface; then
+  echo "[negative-control] ERROR: contract adjudication did not fail under auth topology drift"
+  exit 1
+fi
+cp "$BACKUP_ATTR" "$ORIG_ATTR"
+bash scripts/contracts/bundle.sh
+
+echo "[negative-control] 5/6 401 schema drift should fail contract adjudication"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("api-contracts/openapi/v1/_common/base.yaml")
+text = path.read_text(encoding="utf-8")
+needle = "application/problem+json:"
+replacement = "application/json:"
+if needle not in text:
+    raise SystemExit("Unable to apply error schema negative control mutation")
+path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+bash scripts/contracts/bundle.sh
+if DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest tests/contract/test_contract_semantics.py -q -k test_contract_auth_topology_and_error_surface; then
+  echo "[negative-control] ERROR: contract adjudication did not fail under error schema drift"
+  exit 1
+fi
+cp "$BACKUP_BASE" "$ORIG_BASE"
+bash scripts/contracts/bundle.sh
+
+echo "[negative-control] 6/6 JWT missing-tenant invariant should fail under bypass mutation"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("backend/app/security/auth.py")
+text = path.read_text(encoding="utf-8")
+needle = 'tenant_id = claims.get("tenant_id")'
+replacement = 'tenant_id = claims.get("tenant_id") or "00000000-0000-0000-0000-000000000000"'
+if needle not in text:
+    raise SystemExit("Unable to apply JWT tenant invariant negative control mutation")
+path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+if pytest tests/test_b060_phase1_auth_tenant.py -q -k test_missing_tenant_claim_returns_401; then
+  echo "[negative-control] ERROR: JWT tenant-context invariant did not fail under bypass mutation"
+  exit 1
+fi
+cp "$BACKUP_AUTH" "$ORIG_AUTH"
 
 echo "[negative-control] PASS"

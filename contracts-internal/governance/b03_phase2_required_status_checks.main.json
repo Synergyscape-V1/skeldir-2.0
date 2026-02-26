@@ -12,6 +12,7 @@
     "Mock Usability Gate",
     "Phase 1 Negative Controls",
     "Phase 1 Runtime Conformance",
+    "JWT Tenant Context Invariants",
     "B0.6 Phase 2 Adjudication",
     "Phase Gates (B0.3)",
     "Phase 8 Regression Gate (Full Physics)",

@@ -264,3 +264,8 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: JWT Bearer token authentication
+    tenantKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Skeldir-Tenant-Key
+      description: Tenant API key authentication for webhook/HMAC route families

@@ -409,7 +409,7 @@ components:
       type: apiKey
       in: header
       name: X-Skeldir-Tenant-Key
-      description: Tenant API key required for webhook ingestion
+      description: Tenant API key authentication for webhook/HMAC route families
   responses:
     WebhookAccepted:
       description: Webhook processed successfully

@@ -1,0 +1,85 @@
+{
+  "bundles": [
+    "attribution.bundled.yaml",
+    "auth.bundled.yaml",
+    "export.bundled.yaml",
+    "health.bundled.yaml",
+    "llm-budget.bundled.yaml",
+    "llm-explanations.bundled.yaml",
+    "llm-investigations.bundled.yaml",
+    "reconciliation.bundled.yaml",
+    "revenue.bundled.yaml",
+    "webhooks.paypal.bundled.yaml",
+    "webhooks.shopify.bundled.yaml",
+    "webhooks.stripe.bundled.yaml",
+    "webhooks.woocommerce.bundled.yaml"
+  ],
+  "scheme_inventory": {
+    "attribution.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "auth.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "export.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "health.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "llm-budget.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "llm-explanations.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "llm-investigations.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "reconciliation.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "revenue.bundled.yaml": [
+      "bearerAuth"
+    ],
+    "webhooks.paypal.bundled.yaml": [
+      "tenantKeyAuth"
+    ],
+    "webhooks.shopify.bundled.yaml": [
+      "tenantKeyAuth"
+    ],
+    "webhooks.stripe.bundled.yaml": [
+      "tenantKeyAuth"
+    ],
+    "webhooks.woocommerce.bundled.yaml": [
+      "tenantKeyAuth"
+    ]
+  },
+  "counts": {
+    "operations_total": 42,
+    "jwt_operations": 18,
+    "webhook_operations": 15,
+    "jwt_with_bearer": 18,
+    "webhook_with_tenant_key": 15,
+    "webhook_with_bearer": 0,
+    "operations_with_401_problem": 37,
+    "operations_with_403_problem": 0
+  },
+  "required_contexts": [
+    "B0.7 P2 Runtime Proof (LLM + Redaction)",
+    "Celery Foundation B0.5.1",
+    "Validate Contracts",
+    "Frontend Contract Consumption Gate",
+    "Mock Usability Gate",
+    "Phase 1 Negative Controls",
+    "Phase 1 Runtime Conformance",
+    "JWT Tenant Context Invariants",
+    "B0.6 Phase 2 Adjudication",
+    "Phase Gates (B0.3)",
+    "Phase 8 Regression Gate (Full Physics)",
+    "b11-p2-secret-chokepoint-gate",
+    "b11-p2-readiness-gate",
+    "b11-p4-static-and-runtime-gate",
+    "b11-p4-ci-audit-gate"
+  ]
+}

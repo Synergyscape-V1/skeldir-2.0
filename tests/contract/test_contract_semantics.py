@@ -18,7 +18,7 @@ import time
 import pytest
 import schemathesis
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Tuple
 import yaml
 from fastapi.testclient import TestClient
 from schemathesis.core.failures import FailureGroup
@@ -94,6 +94,59 @@ def is_in_scope(path: str) -> bool:
 
 # Test each bundled specification
 bundled_specs = get_bundled_specs()
+JWT_PROTECTED_PREFIXES = (
+    "/api/auth",
+    "/api/attribution",
+    "/api/v1/revenue",
+    "/api/reconciliation",
+    "/api/export",
+    "/api/health",
+    "/api/llm",
+)
+PUBLIC_ROUTE_ALLOWLIST = {
+    ("POST", "/api/auth/login"),
+    ("GET", "/api/health"),
+    ("GET", "/api/health/live"),
+    ("GET", "/api/health/ready"),
+    ("GET", "/api/health/version"),
+}
+PROBLEM_REQUIRED_FIELDS = {
+    "type",
+    "title",
+    "status",
+    "detail",
+    "instance",
+    "correlation_id",
+    "timestamp",
+}
+
+
+def _load_yaml(path: Path) -> Dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def _iter_operations(spec: Dict[str, Any]) -> List[Tuple[str, str, Dict[str, Any], List[Dict[str, Any]]]]:
+    operations: List[Tuple[str, str, Dict[str, Any], List[Dict[str, Any]]]] = []
+    top_level_security = spec.get("security")
+    for route_path, path_item in (spec.get("paths") or {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method in ("get", "post", "put", "patch", "delete"):
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            effective_security = operation.get("security", top_level_security)
+            operations.append((method.upper(), route_path, operation, effective_security or []))
+    return operations
+
+
+def _extract_security_scheme_names(security: List[Dict[str, Any]]) -> set[str]:
+    names: set[str] = set()
+    for requirement in security:
+        if isinstance(requirement, dict):
+            names.update(requirement.keys())
+    return names
 
 
 @pytest.mark.parametrize("spec_path", bundled_specs, ids=lambda p: p.name)
@@ -307,6 +360,63 @@ def test_coverage_report():
     print(f"  Routes:")
     for route in sorted(in_scope_routes):
         print(f"    - {route}")
+
+
+@pytest.mark.parametrize("spec_path", bundled_specs, ids=lambda p: p.name)
+def test_contract_auth_topology_and_error_surface(spec_path: Path):
+    """
+    Static adjudication for auth topology + canonical error shape.
+
+    This closes vacuity by failing on:
+    - JWT route losing bearerAuth declaration
+    - webhook route gaining bearerAuth or losing tenantKeyAuth
+    - 401/403 responses drifting away from RFC7807 ProblemDetails surface
+    """
+    spec = _load_yaml(spec_path)
+    security_schemes = ((spec.get("components") or {}).get("securitySchemes") or {})
+
+    for method, route_path, operation, effective_security in _iter_operations(spec):
+        security_names = _extract_security_scheme_names(effective_security)
+        is_webhook = route_path.startswith("/api/webhooks/")
+        is_jwt_family = route_path.startswith(JWT_PROTECTED_PREFIXES)
+        is_public_allowlisted = (method, route_path) in PUBLIC_ROUTE_ALLOWLIST
+
+        if is_webhook:
+            assert "tenantKeyAuth" in security_names, (
+                f"{method} {route_path} must declare tenantKeyAuth"
+            )
+            assert "bearerAuth" not in security_names, (
+                f"{method} {route_path} must not declare bearerAuth"
+            )
+            assert "tenantKeyAuth" in security_schemes, (
+                f"{spec_path.name} must publish tenantKeyAuth in components.securitySchemes"
+            )
+
+        if is_jwt_family and not is_webhook and not is_public_allowlisted:
+            assert "bearerAuth" in security_names, (
+                f"{method} {route_path} must declare bearerAuth"
+            )
+
+        responses = operation.get("responses") or {}
+        for code in ("401", "403"):
+            if code not in responses:
+                continue
+            response_spec = responses[code] or {}
+            content = response_spec.get("content") or {}
+            problem_content = content.get("application/problem+json")
+            assert problem_content, (
+                f"{method} {route_path} {code} must expose application/problem+json"
+            )
+            schema = problem_content.get("schema") or {}
+            if "$ref" in schema:
+                assert schema["$ref"].endswith("/ProblemDetails"), (
+                    f"{method} {route_path} {code} must reference ProblemDetails"
+                )
+            else:
+                required_fields = set(schema.get("required") or [])
+                assert PROBLEM_REQUIRED_FIELDS.issubset(required_fields), (
+                    f"{method} {route_path} {code} must require canonical ProblemDetails fields"
+                )
 
 
 # Negative test scenarios (documented in negative_tests_dynamic.md)
