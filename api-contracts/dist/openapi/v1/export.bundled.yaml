@@ -93,11 +93,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_6
+                required: &ref_8
                   - generated_at
                   - date_range
                   - data
-                properties: &ref_7
+                properties: &ref_9
                   generated_at:
                     type: string
                     format: date-time
@@ -165,12 +165,12 @@ paths:
                 format: binary
         '400':
           description: Bad Request - validation failed
-          headers: &ref_8
+          headers: &ref_10
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_9
+          content: &ref_11
             application/problem+json:
               schema:
                 type: object
@@ -246,6 +246,20 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_6
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_7
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
   /api/export/csv:
     get:
       summary: Export data as CSV
@@ -290,6 +304,10 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_6
+          content: *ref_7
   /api/export/json:
     get:
       summary: Export data as JSON
@@ -322,8 +340,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_6
-                properties: *ref_7
+                required: *ref_8
+                properties: *ref_9
               example:
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
@@ -344,6 +362,10 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_6
+          content: *ref_7
   /api/export/excel:
     get:
       summary: Export data as Excel
@@ -385,12 +407,16 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_6
+          content: *ref_7
 components:
   schemas:
     ExportData:
       type: object
-      required: *ref_6
-      properties: *ref_7
+      required: *ref_8
+      properties: *ref_9
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -418,9 +444,13 @@ components:
   responses:
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_8
-      content: *ref_9
+      headers: *ref_10
+      content: *ref_11
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_4
       content: *ref_5
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
+      headers: *ref_6
+      content: *ref_7

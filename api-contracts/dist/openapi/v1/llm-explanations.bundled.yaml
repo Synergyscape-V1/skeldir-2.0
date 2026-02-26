@@ -237,8 +237,8 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
-        '404':
-          description: Resource not found
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: &ref_12
             X-Correlation-ID:
               schema:
@@ -251,14 +251,28 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
-        '500':
-          description: Internal server error
+        '404':
+          description: Resource not found
           headers: &ref_14
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
           content: &ref_15
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '500':
+          description: Internal server error
+          headers: &ref_16
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_17
             application/problem+json:
               schema:
                 type: object
@@ -332,11 +346,15 @@ components:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_10
       content: *ref_11
-    NotFoundError:
-      description: Resource not found
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
       headers: *ref_12
       content: *ref_13
-    ServerError:
-      description: Internal server error
+    NotFoundError:
+      description: Resource not found
       headers: *ref_14
       content: *ref_15
+    ServerError:
+      description: Internal server error
+      headers: *ref_16
+      content: *ref_17

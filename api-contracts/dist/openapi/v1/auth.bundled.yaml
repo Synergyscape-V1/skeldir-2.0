@@ -171,9 +171,23 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_5
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_6
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '429':
           description: Too Many Requests - rate limit exceeded
-          headers: &ref_8
+          headers: &ref_10
             X-Correlation-ID:
               schema:
                 type: string
@@ -182,7 +196,7 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: &ref_9
+          content: &ref_11
             application/problem+json:
               schema:
                 type: object
@@ -247,6 +261,10 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_3
           content: *ref_4
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_5
+          content: *ref_6
   /api/auth/logout:
     post:
       summary: User logout
@@ -265,7 +283,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: &ref_5
+          schema: &ref_7
             type: string
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
@@ -280,10 +298,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_6
+                required: &ref_8
                   - success
                   - correlation_id
-                properties: &ref_7
+                properties: &ref_9
                   success:
                     type: boolean
                   correlation_id:
@@ -299,6 +317,10 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_3
           content: *ref_4
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_5
+          content: *ref_6
   /api/auth/verify:
     get:
       summary: Verify token validity
@@ -317,7 +339,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: *ref_5
+          schema: *ref_7
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
         '200':
@@ -352,6 +374,10 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_3
           content: *ref_4
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_5
+          content: *ref_6
 components:
   securitySchemes:
     bearerAuth:
@@ -370,7 +396,7 @@ components:
       name: Authorization
       in: header
       required: true
-      schema: *ref_5
+      schema: *ref_7
       description: Bearer token for authentication (format - Bearer <token>)
   schemas:
     ProblemDetails:
@@ -380,14 +406,18 @@ components:
       properties: *ref_1
     SuccessResponse:
       type: object
-      required: *ref_6
-      properties: *ref_7
+      required: *ref_8
+      properties: *ref_9
   responses:
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_3
       content: *ref_4
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
+      headers: *ref_5
+      content: *ref_6
     RateLimitError:
       description: Too Many Requests - rate limit exceeded
-      headers: *ref_8
-      content: *ref_9
+      headers: *ref_10
+      content: *ref_11

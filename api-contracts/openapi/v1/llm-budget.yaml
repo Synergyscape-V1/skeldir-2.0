@@ -107,6 +107,8 @@ paths:
                 status_url: https://api.skeldir.com/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
       x-latency-requirement: 200ms
       x-cost-budget: 0.00
       x-complexity-score: 3

@@ -55,10 +55,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_8
+                required: &ref_10
                   - platforms
                   - overall_status
-                properties: &ref_9
+                properties: &ref_11
                   platforms:
                     type: array
                     items:
@@ -207,14 +207,28 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
-        '500':
-          description: Internal server error
-          headers: &ref_10
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_8
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_11
+          content: &ref_9
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '500':
+          description: Internal server error
+          headers: &ref_12
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_13
             application/problem+json:
               schema:
                 type: object
@@ -272,14 +286,18 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_6
           content: *ref_7
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_8
+          content: *ref_9
         '404':
           description: Resource not found
-          headers: &ref_12
+          headers: &ref_14
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
+          content: &ref_15
             application/problem+json:
               schema:
                 type: object
@@ -358,12 +376,16 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_6
           content: *ref_7
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_8
+          content: *ref_9
 components:
   schemas:
     ReconciliationStatusResponse:
       type: object
-      required: *ref_8
-      properties: *ref_9
+      required: *ref_10
+      properties: *ref_11
     PlatformStatus:
       type: object
       required: *ref_4
@@ -397,11 +419,15 @@ components:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_6
       content: *ref_7
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
+      headers: *ref_8
+      content: *ref_9
     ServerError:
       description: Internal server error
-      headers: *ref_10
-      content: *ref_11
-    NotFoundError:
-      description: Resource not found
       headers: *ref_12
       content: *ref_13
+    NotFoundError:
+      description: Resource not found
+      headers: *ref_14
+      content: *ref_15

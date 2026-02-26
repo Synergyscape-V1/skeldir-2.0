@@ -68,6 +68,8 @@ paths:
                 last_full_sync: '2025-11-26T10:00:00Z'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '500':
           $ref: './_common/base.yaml#/components/responses/ServerError'
 
@@ -110,6 +112,8 @@ paths:
                 next_scheduled_sync: '2025-11-26T14:00:00Z'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
 
@@ -173,6 +177,8 @@ paths:
                 estimated_completion: '2025-11-26T15:00:00Z'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
 components:
   schemas:

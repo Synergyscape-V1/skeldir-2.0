@@ -105,6 +105,8 @@ paths:
                 format: binary
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '400':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
 
@@ -142,6 +144,8 @@ paths:
                 2025-11-25,Google,12450.00,98,0.89
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/export/json:
     get:
@@ -185,6 +189,8 @@ paths:
                     confidence: 0.89
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/export/excel:
     get:
@@ -217,6 +223,8 @@ paths:
                 format: binary
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
 components:
   schemas:

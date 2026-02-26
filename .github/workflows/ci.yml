@@ -120,27 +120,27 @@ jobs:
       
       - name: Detect breaking changes
         run: |
-          echo "Checking for breaking changes against baselines..."
+          echo "Checking for breaking changes against origin/main bundled contracts..."
           set -e
-          if [ -d "api-contracts/baselines/v1.0.0" ]; then
-            for baseline in api-contracts/baselines/v1.0.0/*.yaml api-contracts/baselines/v1.0.0/webhooks/*.yaml; do
-              if [ -f "$baseline" ]; then
-                name=$(basename "$baseline" .yaml)
-                if [[ "$baseline" == */webhooks/* ]]; then
-                  current="api-contracts/dist/openapi/v1/webhooks.${name}.bundled.yaml"
-                else
-                  current="api-contracts/dist/openapi/v1/${name}.bundled.yaml"
-                fi
-                if [ ! -f "$current" ]; then
-                  echo "Skipping $name: current contract not found at $current"
-                  continue
-                fi
-                echo "Comparing $current against $(basename "$baseline")..."
-                oasdiff breaking "$baseline" "$current"
-              fi
-            done
-          else
-            echo "Baseline directory api-contracts/baselines/v1.0.0 missing"
+          git fetch origin main --depth=1
+          mkdir -p /tmp/main-contracts
+          current_count=0
+          for current in api-contracts/dist/openapi/v1/*.bundled.yaml; do
+            [ -f "$current" ] || continue
+            current_count=$((current_count + 1))
+            name=$(basename "$current")
+            main_path="api-contracts/dist/openapi/v1/${name}"
+            if ! git cat-file -e "origin/main:${main_path}" 2>/dev/null; then
+              echo "ERROR: Missing origin/main bundled contract for ${name} at ${main_path}"
+              exit 1
+            fi
+            baseline="/tmp/main-contracts/${name}"
+            git show "origin/main:${main_path}" > "$baseline"
+            echo "Comparing ${name} (origin/main -> PR)..."
+            oasdiff breaking "$baseline" "$current"
+          done
+          if [ "$current_count" -eq 0 ]; then
+            echo "ERROR: no bundled contracts found under api-contracts/dist/openapi/v1"
             exit 1
           fi
           echo "Breaking change detection complete"

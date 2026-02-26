@@ -101,6 +101,8 @@ paths:
                   query_latency_ms: 12.3
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/health/ready:
     get:

@@ -173,9 +173,23 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_8
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_9
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '429':
           description: Too Many Requests - rate limit exceeded
-          headers: &ref_8
+          headers: &ref_10
             X-Correlation-ID:
               schema:
                 type: string
@@ -184,7 +198,7 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: &ref_9
+          content: &ref_11
             application/problem+json:
               schema:
                 type: object
@@ -193,12 +207,12 @@ paths:
                 properties: *ref_1
         '500':
           description: Internal server error
-          headers: &ref_10
+          headers: &ref_12
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_11
+          content: &ref_13
             application/problem+json:
               schema:
                 type: object
@@ -240,11 +254,15 @@ components:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_6
       content: *ref_7
-    RateLimitError:
-      description: Too Many Requests - rate limit exceeded
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
       headers: *ref_8
       content: *ref_9
-    ServerError:
-      description: Internal server error
+    RateLimitError:
+      description: Too Many Requests - rate limit exceeded
       headers: *ref_10
       content: *ref_11
+    ServerError:
+      description: Internal server error
+      headers: *ref_12
+      content: *ref_13

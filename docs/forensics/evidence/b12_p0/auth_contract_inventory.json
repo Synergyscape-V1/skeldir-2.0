@@ -63,7 +63,7 @@
     "webhook_with_tenant_key": 15,
     "webhook_with_bearer": 0,
     "operations_with_401_problem": 37,
-    "operations_with_403_problem": 0
+    "operations_with_403_problem": 22
   },
   "required_contexts": [
     "B0.7 P2 Runtime Proof (LLM + Redaction)",
@@ -81,5 +81,23 @@
     "b11-p2-readiness-gate",
     "b11-p4-static-and-runtime-gate",
     "b11-p4-ci-audit-gate"
-  ]
+  ],
+  "oasdiff_coverage": {
+    "mode": "origin/main bundled contract comparison",
+    "families": [
+      "attribution.bundled.yaml",
+      "auth.bundled.yaml",
+      "export.bundled.yaml",
+      "health.bundled.yaml",
+      "llm-budget.bundled.yaml",
+      "llm-explanations.bundled.yaml",
+      "llm-investigations.bundled.yaml",
+      "reconciliation.bundled.yaml",
+      "revenue.bundled.yaml",
+      "webhooks.paypal.bundled.yaml",
+      "webhooks.shopify.bundled.yaml",
+      "webhooks.stripe.bundled.yaml",
+      "webhooks.woocommerce.bundled.yaml"
+    ]
+  }
 }

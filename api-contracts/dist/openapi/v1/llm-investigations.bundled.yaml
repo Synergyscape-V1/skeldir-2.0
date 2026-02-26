@@ -197,6 +197,20 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_12
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_13
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
       x-latency-requirement: 200ms
       x-cost-budget: 0
       x-complexity-score: 3
@@ -322,12 +336,12 @@ paths:
                 tool_calls_used: 6
         '404':
           description: Resource not found
-          headers: &ref_12
+          headers: &ref_14
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
+          content: &ref_15
             application/problem+json:
               schema:
                 type: object
@@ -380,7 +394,11 @@ components:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_10
       content: *ref_11
-    NotFoundError:
-      description: Resource not found
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
       headers: *ref_12
       content: *ref_13
+    NotFoundError:
+      description: Resource not found
+      headers: *ref_14
+      content: *ref_15

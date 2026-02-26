@@ -31,14 +31,14 @@ paths:
         - name: X-Correlation-ID
           in: header
           required: true
-          schema: &ref_0
+          schema: &ref_2
             type: string
             format: uuid
           description: Unique request correlation ID for distributed tracing
         - name: Authorization
           in: header
           required: true
-          schema: &ref_1
+          schema: &ref_3
             type: string
           description: Bearer token for authentication (format - Bearer <token>)
       requestBody:
@@ -128,7 +128,7 @@ paths:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: &ref_2
+                required: &ref_0
                   - type
                   - title
                   - status
@@ -136,7 +136,7 @@ paths:
                   - instance
                   - correlation_id
                   - timestamp
-                properties: &ref_3
+                properties: &ref_1
                   type:
                     type: string
                     format: uri
@@ -184,6 +184,20 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_10
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_11
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
       x-latency-requirement: 200ms
       x-cost-budget: 0
       x-complexity-score: 3
@@ -206,12 +220,12 @@ paths:
         - name: X-Correlation-ID
           in: header
           required: true
-          schema: *ref_0
+          schema: *ref_2
           description: Unique request correlation ID for distributed tracing
         - name: Authorization
           in: header
           required: true
-          schema: *ref_1
+          schema: *ref_3
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
         '200':
@@ -329,18 +343,18 @@ paths:
                 progress_percentage: 65
         '404':
           description: Resource not found
-          headers: &ref_10
+          headers: &ref_12
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_11
+          content: &ref_13
             application/problem+json:
               schema:
                 type: object
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: *ref_2
-                properties: *ref_3
+                required: *ref_0
+                properties: *ref_1
       x-latency-requirement: 200ms
       x-cost-budget: 0
       x-complexity-score: 2
@@ -357,8 +371,8 @@ components:
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required: *ref_2
-      properties: *ref_3
+      required: *ref_0
+      properties: *ref_1
   securitySchemes:
     bearerAuth:
       type: http
@@ -370,20 +384,24 @@ components:
       name: X-Correlation-ID
       in: header
       required: true
-      schema: *ref_0
+      schema: *ref_2
       description: Unique request correlation ID for distributed tracing
     Authorization:
       name: Authorization
       in: header
       required: true
-      schema: *ref_1
+      schema: *ref_3
       description: Bearer token for authentication (format - Bearer <token>)
   responses:
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_8
       content: *ref_9
-    NotFoundError:
-      description: Resource not found
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
       headers: *ref_10
       content: *ref_11
+    NotFoundError:
+      description: Resource not found
+      headers: *ref_12
+      content: *ref_13
