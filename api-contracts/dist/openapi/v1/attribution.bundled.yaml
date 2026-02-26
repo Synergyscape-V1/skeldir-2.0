@@ -51,7 +51,7 @@ paths:
         - name: If-None-Match
           in: header
           required: false
-          schema: &ref_29
+          schema: &ref_31
             type: string
           description: ETag from previous response for cache validation
       responses:
@@ -76,14 +76,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_23
+                required: &ref_25
                   - total_revenue
                   - event_count
                   - last_updated
                   - data_freshness_seconds
                   - verified
                   - tenant_id
-                properties: &ref_24
+                properties: &ref_26
                   total_revenue:
                     type: number
                     format: double
@@ -214,9 +214,23 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_6
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_7
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '429':
           description: Too Many Requests - rate limit exceeded
-          headers: &ref_30
+          headers: &ref_32
             X-Correlation-ID:
               schema:
                 type: string
@@ -225,7 +239,7 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: &ref_31
+          content: &ref_33
             application/problem+json:
               schema:
                 type: object
@@ -234,12 +248,12 @@ paths:
                 properties: *ref_1
         '500':
           description: Internal server error
-          headers: &ref_6
+          headers: &ref_8
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_7
+          content: &ref_9
             application/problem+json:
               schema:
                 type: object
@@ -301,12 +315,12 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: &ref_25
+                      required: &ref_27
                         - channel_name
                         - revenue
                         - conversion_count
                         - confidence_score
-                      properties: &ref_26
+                      properties: &ref_28
                         channel_name:
                           type: string
                           enum:
@@ -376,6 +390,10 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_6
+          content: *ref_7
   /api/attribution/explain/{entity_type}/{entity_id}:
     get:
       summary: Get natural language explanation for attribution entities
@@ -428,12 +446,12 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_27
+                required: &ref_29
                   - explanation
                   - citations
                   - confidence
                   - generated_at
-                properties: &ref_28
+                properties: &ref_30
                   explanation:
                     type: string
                     minLength: 150
@@ -491,14 +509,18 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_6
+          content: *ref_7
         '404':
           description: Resource not found
-          headers: &ref_12
+          headers: &ref_14
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
+          content: &ref_15
             application/problem+json:
               schema:
                 type: object
@@ -507,8 +529,8 @@ paths:
                 properties: *ref_1
         '500':
           description: Internal server error
-          headers: *ref_6
-          content: *ref_7
+          headers: *ref_8
+          content: *ref_9
       x-latency-requirement: 500ms
       x-cost-budget: 0.02
       x-complexity-score: 5
@@ -540,14 +562,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_16
+              required: &ref_18
                 - platform
                 - platform_account_id
-              properties: &ref_17
+              properties: &ref_19
                 platform:
                   type: string
                   description: Supported platform identifier
-                  enum: &ref_8
+                  enum: &ref_10
                     - google_ads
                     - meta_ads
                     - tiktok_ads
@@ -562,7 +584,7 @@ paths:
                 status:
                   type: string
                   description: Connection lifecycle state
-                  enum: &ref_9
+                  enum: &ref_11
                     - pending
                     - active
                     - disabled
@@ -582,7 +604,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_10
+                required: &ref_12
                   - id
                   - tenant_id
                   - platform
@@ -590,7 +612,7 @@ paths:
                   - status
                   - created_at
                   - updated_at
-                properties: &ref_11
+                properties: &ref_13
                   id:
                     type: string
                     format: uuid
@@ -600,13 +622,13 @@ paths:
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_8
+                    enum: *ref_10
                   platform_account_id:
                     type: string
                   status:
                     type: string
                     description: Connection lifecycle state
-                    enum: *ref_9
+                    enum: *ref_11
                   created_at:
                     type: string
                     format: date-time
@@ -623,12 +645,12 @@ paths:
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: &ref_14
+          headers: &ref_16
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_15
+          content: &ref_17
             application/problem+json:
               schema:
                 type: object
@@ -639,10 +661,14 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
-        '500':
-          description: Internal server error
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_6
           content: *ref_7
+        '500':
+          description: Internal server error
+          headers: *ref_8
+          content: *ref_9
   /api/attribution/platform-connections/{platform}:
     get:
       summary: Get platform connection status
@@ -670,7 +696,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum: *ref_8
+            enum: *ref_10
           description: Platform identifier
         - name: platform_account_id
           in: query
@@ -690,8 +716,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_10
-                properties: *ref_11
+                required: *ref_12
+                properties: *ref_13
               example:
                 id: 11111111-1111-1111-1111-111111111111
                 tenant_id: 00000000-0000-0000-0000-000000000000
@@ -704,14 +730,18 @@ paths:
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
-        '404':
-          description: Resource not found
-          headers: *ref_12
-          content: *ref_13
-        '500':
-          description: Internal server error
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_6
           content: *ref_7
+        '404':
+          description: Resource not found
+          headers: *ref_14
+          content: *ref_15
+        '500':
+          description: Internal server error
+          headers: *ref_8
+          content: *ref_9
   /api/attribution/platform-credentials:
     post:
       summary: Store or update platform credentials
@@ -740,15 +770,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_18
+              required: &ref_20
                 - platform
                 - platform_account_id
                 - access_token
-              properties: &ref_19
+              properties: &ref_21
                 platform:
                   type: string
                   description: Supported platform identifier
-                  enum: *ref_8
+                  enum: *ref_10
                 platform_account_id:
                   type: string
                 access_token:
@@ -781,26 +811,26 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_21
+                required: &ref_23
                   - tenant_id
                   - platform
                   - platform_account_id
                   - status
                   - updated_at
-                properties: &ref_22
+                properties: &ref_24
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_8
+                    enum: *ref_10
                   platform_account_id:
                     type: string
                   status:
                     type: string
                     description: Credential storage status
-                    enum: &ref_20
+                    enum: &ref_22
                       - stored
                       - expired
                       - missing
@@ -820,62 +850,66 @@ paths:
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_14
-          content: *ref_15
+          headers: *ref_16
+          content: *ref_17
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
-        '404':
-          description: Resource not found
-          headers: *ref_12
-          content: *ref_13
-        '500':
-          description: Internal server error
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_6
           content: *ref_7
+        '404':
+          description: Resource not found
+          headers: *ref_14
+          content: *ref_15
+        '500':
+          description: Internal server error
+          headers: *ref_8
+          content: *ref_9
 components:
   schemas:
     Platform:
       type: string
       description: Supported platform identifier
-      enum: *ref_8
+      enum: *ref_10
     PlatformConnectionStatus:
       type: string
       description: Connection lifecycle state
-      enum: *ref_9
+      enum: *ref_11
     PlatformConnectionUpsertRequest:
-      type: object
-      required: *ref_16
-      properties: *ref_17
-    PlatformConnectionResponse:
-      type: object
-      required: *ref_10
-      properties: *ref_11
-    PlatformCredentialUpsertRequest:
       type: object
       required: *ref_18
       properties: *ref_19
+    PlatformConnectionResponse:
+      type: object
+      required: *ref_12
+      properties: *ref_13
+    PlatformCredentialUpsertRequest:
+      type: object
+      required: *ref_20
+      properties: *ref_21
     PlatformCredentialStatus:
       type: string
       description: Credential storage status
-      enum: *ref_20
+      enum: *ref_22
     PlatformCredentialStatusResponse:
-      type: object
-      required: *ref_21
-      properties: *ref_22
-    RealtimeRevenueCounter:
       type: object
       required: *ref_23
       properties: *ref_24
-    ChannelAttribution:
+    RealtimeRevenueCounter:
       type: object
       required: *ref_25
       properties: *ref_26
-    AttributionExplanation:
+    ChannelAttribution:
       type: object
       required: *ref_27
       properties: *ref_28
+    AttributionExplanation:
+      type: object
+      required: *ref_29
+      properties: *ref_30
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -904,26 +938,30 @@ components:
       name: If-None-Match
       in: header
       required: false
-      schema: *ref_29
+      schema: *ref_31
       description: ETag from previous response for cache validation
   responses:
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_4
       content: *ref_5
-    RateLimitError:
-      description: Too Many Requests - rate limit exceeded
-      headers: *ref_30
-      content: *ref_31
-    ServerError:
-      description: Internal server error
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
       headers: *ref_6
       content: *ref_7
+    RateLimitError:
+      description: Too Many Requests - rate limit exceeded
+      headers: *ref_32
+      content: *ref_33
+    ServerError:
+      description: Internal server error
+      headers: *ref_8
+      content: *ref_9
     NotFoundError:
       description: Resource not found
-      headers: *ref_12
-      content: *ref_13
-    ValidationError:
-      description: Bad Request - validation failed
       headers: *ref_14
       content: *ref_15
+    ValidationError:
+      description: Bad Request - validation failed
+      headers: *ref_16
+      content: *ref_17

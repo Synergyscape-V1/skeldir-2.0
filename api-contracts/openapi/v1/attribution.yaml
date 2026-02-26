@@ -85,6 +85,8 @@ paths:
                 type: string
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '429':
           $ref: './_common/base.yaml#/components/responses/RateLimitError'
         '500':
@@ -170,6 +172,8 @@ paths:
                   end: '2025-11-15'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/attribution/explain/{entity_type}/{entity_id}:
     get:
@@ -229,6 +233,8 @@ paths:
                 cost_cents: 1.8
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '500':
@@ -281,6 +287,8 @@ paths:
           $ref: './_common/base.yaml#/components/responses/ValidationError'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '500':
           $ref: './_common/base.yaml#/components/responses/ServerError'
 
@@ -331,6 +339,8 @@ paths:
                 updated_at: '2026-01-28T12:05:00Z'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '500':
@@ -379,6 +389,8 @@ paths:
           $ref: './_common/base.yaml#/components/responses/ValidationError'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '500':

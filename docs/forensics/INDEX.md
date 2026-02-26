@@ -35,6 +35,7 @@ This index enumerates evidence packs stored under `docs/forensics/`.
 | B1.2 context inventory report | docs/forensics/B1.2_Context_Inventory_Report.md | B1.2 context inventory with B1.2-P0 remediation execution notes and evidence pointers. | PR #135 / pending | pending |
 | B1.2-P0 adjudication map | docs/forensics/evidence/b12_p0/B1.2-P0_Adjudication_Map.md | One-page adjudication map: required checks, invariant mapping, and auth topology/error inventory counts. | PR #135 / pending | pending |
 | B1.2-P0 remediation evidence | docs/forensics/evidence/b12_p0/B1.2-P0_REMEDIATION_EVIDENCE.md | Findings/remediations + local/CI proof trails for contract authority and required-check lock. | PR #135 / pending | pending |
+| B1.2-P0 proof index | docs/forensics/evidence/b12_p0/PROOF_INDEX.md | Hypothesis verdict map (H01-H04) and exit-gate evidence pointers with reproducible commands. | PR #137 / pending | pending |
 | B0.3 Phase 2 hypothesis matrix | docs/forensics/b03_phase2_hypothesis_matrix.md | Hypothesis-driven adjudication of H2.* schema-closure risks with evidence pointers. | PR #71 / pending | pending |
 | B0.3 Phase 2 schema closure | docs/forensics/b03_phase2_schema_closure_evidence.md | Runtime-backed EG2.1-EG2.5 closure evidence for authoritative schema + ledger contract. | PR #71 / pending | pending |
 | B0.4 Phase 3 remediation | docs/forensics/b04_phase3_ingestion_integrity_remediation.md | Privacy ingestion integrity + revised customer-profile performance gate authority (EG3.1-EG3.5). | PR #72 / 20b3ffb | pending |

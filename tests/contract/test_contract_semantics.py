@@ -375,6 +375,9 @@ def test_contract_auth_topology_and_error_surface(spec_path: Path):
     spec = _load_yaml(spec_path)
     security_schemes = ((spec.get("components") or {}).get("securitySchemes") or {})
 
+    jwt_protected_operation_count = 0
+    jwt_operations_with_403_problem = 0
+
     for method, route_path, operation, effective_security in _iter_operations(spec):
         security_names = _extract_security_scheme_names(effective_security)
         is_webhook = route_path.startswith("/api/webhooks/")
@@ -393,8 +396,16 @@ def test_contract_auth_topology_and_error_surface(spec_path: Path):
             )
 
         if is_jwt_family and not is_webhook and not is_public_allowlisted:
+            jwt_protected_operation_count += 1
             assert "bearerAuth" in security_names, (
                 f"{method} {route_path} must declare bearerAuth"
+            )
+            responses = operation.get("responses") or {}
+            assert "401" in responses, (
+                f"{method} {route_path} must declare 401 Unauthorized"
+            )
+            assert "403" in responses, (
+                f"{method} {route_path} must declare 403 Forbidden"
             )
 
         responses = operation.get("responses") or {}
@@ -417,6 +428,13 @@ def test_contract_auth_topology_and_error_surface(spec_path: Path):
                 assert PROBLEM_REQUIRED_FIELDS.issubset(required_fields), (
                     f"{method} {route_path} {code} must require canonical ProblemDetails fields"
                 )
+            if code == "403" and is_jwt_family and not is_webhook and not is_public_allowlisted:
+                jwt_operations_with_403_problem += 1
+
+    if jwt_protected_operation_count > 0:
+        assert jwt_operations_with_403_problem == jwt_protected_operation_count, (
+            f"{spec_path.name} must expose canonical 403 ProblemDetails on every JWT-protected operation"
+        )
 
 
 # Negative test scenarios (documented in negative_tests_dynamic.md)

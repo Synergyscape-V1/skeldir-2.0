@@ -54,6 +54,8 @@ paths:
                 sources: []
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '429':
           $ref: './_common/base.yaml#/components/responses/RateLimitError'
         '500':

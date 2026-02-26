@@ -1,0 +1,118 @@
+{
+  "summary": {
+    "required_total": 15,
+    "satisfied_total": 15,
+    "unsatisfied": []
+  },
+  "rows": [
+    {
+      "name": "B0.7 P2 Runtime Proof (LLM + Redaction)",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Celery Foundation B0.5.1",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Validate Contracts",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Frontend Contract Consumption Gate",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Mock Usability Gate",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Phase 1 Negative Controls",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Phase 1 Runtime Conformance",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "B0.6 Phase 2 Adjudication",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Phase Gates (B0.3)",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "Phase 8 Regression Gate (Full Physics)",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "b11-p2-secret-chokepoint-gate",
+      "states": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "b11-p2-readiness-gate",
+      "states": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "b11-p4-static-and-runtime-gate",
+      "states": [
+        "SUCCESS",
+        "SUCCESS"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "b11-p4-ci-audit-gate",
+      "states": [
+        "SUCCESS",
+        "SKIPPED"
+      ],
+      "satisfied": true
+    },
+    {
+      "name": "JWT Tenant Context Invariants",
+      "states": [
+        "SUCCESS"
+      ],
+      "satisfied": true
+    }
+  ]
+}

@@ -97,6 +97,8 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '500':
           $ref: './_common/base.yaml#/components/responses/ServerError'
       x-latency-requirement: 500ms

@@ -18,16 +18,21 @@ cp "$ORIG_BASE" "$BACKUP_BASE"
 ORIG_AUTH="backend/app/security/auth.py"
 BACKUP_AUTH="$(mktemp)"
 cp "$ORIG_AUTH" "$BACKUP_AUTH"
+ORIG_TASK_CONTEXT="backend/app/tasks/context.py"
+BACKUP_TASK_CONTEXT="$(mktemp)"
+cp "$ORIG_TASK_CONTEXT" "$BACKUP_TASK_CONTEXT"
 
 cleanup() {
   cp "$BACKUP_RT" "$ORIG_RT" || true
   cp "$BACKUP_ATTR" "$ORIG_ATTR" || true
   cp "$BACKUP_BASE" "$ORIG_BASE" || true
   cp "$BACKUP_AUTH" "$ORIG_AUTH" || true
+  cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT" || true
   rm -f "$BACKUP_RT" || true
   rm -f "$BACKUP_ATTR" || true
   rm -f "$BACKUP_BASE" || true
   rm -f "$BACKUP_AUTH" || true
+  rm -f "$BACKUP_TASK_CONTEXT" || true
   rm -f frontend/src/contract-consumption-negative-control.ts || true
   rm -f frontend/tsconfig.contract-gate.negative.json || true
   rm -f /tmp/auth.breaking.yaml || true
@@ -116,7 +121,7 @@ if grep -q "0 changes" "$OASDIFF_OUT"; then
 fi
 rm -f "$OASDIFF_OUT"
 
-echo "[negative-control] 4/6 Auth topology drift should fail contract adjudication"
+echo "[negative-control] 4/8 Auth topology drift should fail contract adjudication"
 python - <<'PY'
 from pathlib import Path
 
@@ -138,7 +143,7 @@ fi
 cp "$BACKUP_ATTR" "$ORIG_ATTR"
 bash scripts/contracts/bundle.sh
 
-echo "[negative-control] 5/6 401 schema drift should fail contract adjudication"
+echo "[negative-control] 5/8 401 schema drift should fail contract adjudication"
 python - <<'PY'
 from pathlib import Path
 
@@ -160,7 +165,35 @@ fi
 cp "$BACKUP_BASE" "$ORIG_BASE"
 bash scripts/contracts/bundle.sh
 
-echo "[negative-control] 6/6 JWT missing-tenant invariant should fail under bypass mutation"
+echo "[negative-control] 6/8 403 schema drift should fail contract adjudication"
+python - <<'PY'
+from pathlib import Path
+import yaml
+
+path = Path("api-contracts/openapi/v1/_common/base.yaml")
+doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+responses = (((doc.get("components") or {}).get("responses")) or {})
+forbidden = responses.get("ForbiddenError")
+if not isinstance(forbidden, dict):
+    raise SystemExit("Unable to apply 403 schema negative control mutation: ForbiddenError response missing")
+content = forbidden.get("content")
+if not isinstance(content, dict) or "application/problem+json" not in content:
+    raise SystemExit("Unable to apply 403 schema negative control mutation: problem+json content missing")
+problem_schema = content.pop("application/problem+json")
+content["application/json"] = problem_schema
+path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+PY
+
+bash scripts/contracts/bundle.sh
+if DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest tests/contract/test_contract_semantics.py -q -k test_contract_auth_topology_and_error_surface; then
+  echo "[negative-control] ERROR: contract adjudication did not fail under 403 schema drift"
+  exit 1
+fi
+cp "$BACKUP_BASE" "$ORIG_BASE"
+bash scripts/contracts/bundle.sh
+
+echo "[negative-control] 7/8 JWT missing-tenant invariant should fail under bypass mutation"
 python - <<'PY'
 from pathlib import Path
 
@@ -178,5 +211,24 @@ if pytest tests/test_b060_phase1_auth_tenant.py -q -k test_missing_tenant_claim_
   exit 1
 fi
 cp "$BACKUP_AUTH" "$ORIG_AUTH"
+
+echo "[negative-control] 8/8 worker @tenant_task invariant should fail under bypass mutation"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("backend/app/tasks/context.py")
+text = path.read_text(encoding="utf-8")
+needle = "        if tenant_id_value is None:\n            raise ValueError(\"tenant_id is required for tenant-scoped tasks\")\n"
+replacement = "        if False and tenant_id_value is None:\n            raise ValueError(\"tenant_id is required for tenant-scoped tasks\")\n"
+if needle not in text:
+    raise SystemExit("Unable to apply worker tenant-task negative control mutation")
+path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+if pytest backend/tests/test_b07_p1_identity_guc.py -q -k test_worker_tenant_task_rejects_missing_tenant_envelope; then
+  echo "[negative-control] ERROR: worker tenant-task invariant did not fail under bypass mutation"
+  exit 1
+fi
+cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT"
 
 echo "[negative-control] PASS"

@@ -143,6 +143,10 @@ def main() -> int:
             "operations_with_403_problem": has_403_problem,
         },
         "required_contexts": required_contexts,
+        "oasdiff_coverage": {
+            "mode": "origin/main bundled contract comparison",
+            "families": [b.name for b in bundles],
+        },
     }
     OUTPUT_JSON.write_text(json.dumps(inventory, indent=2), encoding="utf-8")
 
@@ -180,6 +184,11 @@ Generated from repository state.
 ## Canonical Error Surface Inventory
 - Operations exposing `401` with `application/problem+json`: **{has_401_problem}**
 - Operations exposing `403` with `application/problem+json`: **{has_403_problem}**
+
+## Structural Diff Coverage (`oasdiff`)
+- Comparison mode: `origin/main` bundled contracts vs PR bundled contracts
+- Covered bundled families:
+{chr(10).join(f"- `{b.name}`" for b in bundles)}
 
 ## CI Adjudication Surface
 | Required Check | In Required Contexts Contract | Declared in CI Workflow |

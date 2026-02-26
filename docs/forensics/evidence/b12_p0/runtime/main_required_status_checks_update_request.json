@@ -1,0 +1,20 @@
+{
+  "strict": true,
+  "contexts": [
+    "B0.7 P2 Runtime Proof (LLM + Redaction)",
+    "Celery Foundation B0.5.1",
+    "Validate Contracts",
+    "Frontend Contract Consumption Gate",
+    "Mock Usability Gate",
+    "Phase 1 Negative Controls",
+    "Phase 1 Runtime Conformance",
+    "JWT Tenant Context Invariants",
+    "B0.6 Phase 2 Adjudication",
+    "Phase Gates (B0.3)",
+    "Phase 8 Regression Gate (Full Physics)",
+    "b11-p2-secret-chokepoint-gate",
+    "b11-p2-readiness-gate",
+    "b11-p4-static-and-runtime-gate",
+    "b11-p4-ci-audit-gate"
+  ]
+}

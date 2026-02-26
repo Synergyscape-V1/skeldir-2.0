@@ -194,7 +194,7 @@ paths:
         - name: Authorization
           in: header
           required: true
-          schema: &ref_10
+          schema: &ref_12
             type: string
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
@@ -273,6 +273,20 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_3
                 properties: *ref_4
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_10
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_11
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_3
+                properties: *ref_4
   /api/health/ready:
     get:
       summary: Kubernetes readiness probe
@@ -343,6 +357,10 @@ components:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_8
       content: *ref_9
+    ForbiddenError:
+      description: Forbidden - authenticated but insufficient permissions
+      headers: *ref_10
+      content: *ref_11
   securitySchemes:
     bearerAuth:
       type: http
@@ -360,5 +378,5 @@ components:
       name: Authorization
       in: header
       required: true
-      schema: *ref_10
+      schema: *ref_12
       description: Bearer token for authentication (format - Bearer <token>)

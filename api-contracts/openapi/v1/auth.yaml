@@ -102,6 +102,8 @@ paths:
                   username: testuser
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '429':
           $ref: './_common/base.yaml#/components/responses/RateLimitError'
 
@@ -157,6 +159,8 @@ paths:
                 expires_in: 3600
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/auth/logout:
     post:
@@ -188,6 +192,8 @@ paths:
                 message: Session terminated
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/auth/verify:
     get:
@@ -232,6 +238,8 @@ paths:
                 expires_at: '2025-11-26T15:30:00Z'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
 components:
   securitySchemes:
