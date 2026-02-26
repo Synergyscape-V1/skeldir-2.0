@@ -168,14 +168,20 @@ bash scripts/contracts/bundle.sh
 echo "[negative-control] 6/8 403 schema drift should fail contract adjudication"
 python - <<'PY'
 from pathlib import Path
+import yaml
 
 path = Path("api-contracts/openapi/v1/_common/base.yaml")
-text = path.read_text(encoding="utf-8")
-needle = "    ForbiddenError:\n      description: Authentication is valid but action is not permitted.\n      headers:\n        X-Correlation-ID:\n          $ref: '#/components/headers/X-Correlation-ID'\n      content:\n        application/problem+json:\n          schema:\n            $ref: '#/components/schemas/ProblemDetails'\n"
-replacement = "    ForbiddenError:\n      description: Authentication is valid but action is not permitted.\n      headers:\n        X-Correlation-ID:\n          $ref: '#/components/headers/X-Correlation-ID'\n      content:\n        application/json:\n          schema:\n            $ref: '#/components/schemas/ProblemDetails'\n"
-if needle not in text:
-    raise SystemExit("Unable to apply 403 schema negative control mutation")
-path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+responses = (((doc.get("components") or {}).get("responses")) or {})
+forbidden = responses.get("ForbiddenError")
+if not isinstance(forbidden, dict):
+    raise SystemExit("Unable to apply 403 schema negative control mutation: ForbiddenError response missing")
+content = forbidden.get("content")
+if not isinstance(content, dict) or "application/problem+json" not in content:
+    raise SystemExit("Unable to apply 403 schema negative control mutation: problem+json content missing")
+problem_schema = content.pop("application/problem+json")
+content["application/json"] = problem_schema
+path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 PY
 
 bash scripts/contracts/bundle.sh
