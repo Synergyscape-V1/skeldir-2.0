@@ -16,11 +16,12 @@ from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.celery_app import celery_app
+from app.core.secrets import get_database_url
 from app.db import session as db_session
 
 
 def _build_async_database_url_and_args() -> tuple[str, dict]:
-    raw_url = os.environ["DATABASE_URL"]
+    raw_url = get_database_url()
     parsed = urlsplit(raw_url)
     query_params = dict(parse_qsl(parsed.query))
     query_params.pop("sslmode", None)
