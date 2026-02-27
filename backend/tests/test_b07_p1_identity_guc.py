@@ -72,7 +72,7 @@ def test_worker_tenant_task_rejects_missing_tenant_envelope():
         celery_app.conf.task_eager_propagates = original_propagates
 
 
-def test_worker_tenant_task_attempts_guc_binding_before_task_sql(monkeypatch):
+def test_worker_tenant_task_no_legacy_pre_task_guc_side_transaction(monkeypatch):
     original_eager = celery_app.conf.task_always_eager
     original_propagates = celery_app.conf.task_eager_propagates
     celery_app.conf.task_always_eager = False
@@ -92,7 +92,7 @@ def test_worker_tenant_task_attempts_guc_binding_before_task_sql(monkeypatch):
         ).get(propagate=True)
         assert result["tenant_id"] == str(tenant_id)
         assert result["marker"] == "guc-before-task"
-        assert guc_call_count["count"] == 1
+        assert guc_call_count["count"] == 0
     finally:
         celery_app.conf.task_always_eager = original_eager
         celery_app.conf.task_eager_propagates = original_propagates

@@ -15,7 +15,7 @@ from typing import AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -25,10 +25,20 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session as SyncSession
 
 from app.core.config import settings
 from app.core.identity import resolve_user_id
 from app.core.secrets import get_database_url
+from app.observability.context import get_tenant_id, get_user_id
+
+_SESSION_INFO_TENANT_ID = "_skeldir_tenant_id"
+_SESSION_INFO_USER_ID = "_skeldir_user_id"
+
+# Mutation toggles used by CI negative controls.
+_MUTATION_FORCE_SESSION_SCOPED = "SKELDIR_B12_FORCE_SESSION_SCOPED_GUC"
+_MUTATION_DISABLE_TX_ENVELOPE = "SKELDIR_B12_DISABLE_TRANSACTION_ENVELOPE"
+_MUTATION_DISABLE_AFTER_BEGIN_BINDING = "SKELDIR_B12_DISABLE_AFTER_BEGIN_GUC_BINDING"
 
 
 # Normalize DSN to ensure asyncpg driver is used and map unsupported parameters to connect_args.
@@ -93,6 +103,38 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+def _resolve_guc_value(session: SyncSession, key: str, context_value: str | None) -> str | None:
+    value = session.info.get(key)
+    if value is not None:
+        return str(value)
+    if context_value:
+        return str(context_value)
+    return None
+
+
+@event.listens_for(AsyncSession.sync_session_class, "after_begin")
+def _bind_rls_context_after_begin(session: SyncSession, transaction, connection) -> None:
+    if os.getenv(_MUTATION_DISABLE_AFTER_BEGIN_BINDING) == "1":
+        return
+
+    tenant_id = _resolve_guc_value(session, _SESSION_INFO_TENANT_ID, get_tenant_id())
+    user_id = _resolve_guc_value(session, _SESSION_INFO_USER_ID, get_user_id())
+    if tenant_id is None and user_id is None:
+        return
+
+    is_local = os.getenv(_MUTATION_FORCE_SESSION_SCOPED) != "1"
+    if tenant_id is not None:
+        connection.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, :is_local)"),
+            {"tenant_id": tenant_id, "is_local": is_local},
+        )
+    if user_id is not None:
+        connection.execute(
+            text("SELECT set_config('app.current_user_id', :user_id, :is_local)"),
+            {"user_id": user_id, "is_local": is_local},
+        )
+
+
 @asynccontextmanager
 async def get_session(
     tenant_id: UUID,
@@ -101,34 +143,24 @@ async def get_session(
     """
     Yield an async session with tenant context set for RLS enforcement.
 
-    The session variables `app.current_tenant_id` and `app.current_user_id` are
-    set before yielding the session so all subsequent queries evaluate row-level
-    policies correctly.
-    Session lifecycle is managed automatically with rollback on exception and
-    closure on exit.
+    Tenant/user GUC binding is event-driven and executes after BEGIN on the same
+    connection that runs subsequent SQL. This guarantees transaction-local scope.
     """
     async with AsyncSessionLocal() as session:
         resolved_user_id = resolve_user_id(user_id)
-        await session.execute(
-            text(
-                "SELECT set_config('app.current_tenant_id', :tenant_id, false)"
-            ),
-            {"tenant_id": str(tenant_id)},
-        )
-        await session.execute(
-            text(
-                "SELECT set_config('app.current_user_id', :user_id, false)"
-            ),
-            {"user_id": str(resolved_user_id)},
-        )
+        session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)
+        session.info[_SESSION_INFO_USER_ID] = str(resolved_user_id)
+
+        if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) != "1":
+            await session.begin()
         try:
             yield session
-            await session.commit()
+            if session.in_transaction():
+                await session.commit()
         except Exception:
-            await session.rollback()
+            if session.in_transaction():
+                await session.rollback()
             raise
-        finally:
-            await session.close()
 
 
 async def validate_database_connection() -> None:

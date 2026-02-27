@@ -21,6 +21,9 @@ cp "$ORIG_AUTH" "$BACKUP_AUTH"
 ORIG_TASK_CONTEXT="backend/app/tasks/context.py"
 BACKUP_TASK_CONTEXT="$(mktemp)"
 cp "$ORIG_TASK_CONTEXT" "$BACKUP_TASK_CONTEXT"
+ORIG_DB_SESSION="backend/app/db/session.py"
+BACKUP_DB_SESSION="$(mktemp)"
+cp "$ORIG_DB_SESSION" "$BACKUP_DB_SESSION"
 
 cleanup() {
   cp "$BACKUP_RT" "$ORIG_RT" || true
@@ -28,11 +31,13 @@ cleanup() {
   cp "$BACKUP_BASE" "$ORIG_BASE" || true
   cp "$BACKUP_AUTH" "$ORIG_AUTH" || true
   cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT" || true
+  cp "$BACKUP_DB_SESSION" "$ORIG_DB_SESSION" || true
   rm -f "$BACKUP_RT" || true
   rm -f "$BACKUP_ATTR" || true
   rm -f "$BACKUP_BASE" || true
   rm -f "$BACKUP_AUTH" || true
   rm -f "$BACKUP_TASK_CONTEXT" || true
+  rm -f "$BACKUP_DB_SESSION" || true
   rm -f frontend/src/contract-consumption-negative-control.ts || true
   rm -f frontend/tsconfig.contract-gate.negative.json || true
   rm -f /tmp/auth.breaking.yaml || true
@@ -212,7 +217,7 @@ if pytest tests/test_b060_phase1_auth_tenant.py -q -k test_missing_tenant_claim_
 fi
 cp "$BACKUP_AUTH" "$ORIG_AUTH"
 
-echo "[negative-control] 8/8 worker @tenant_task invariant should fail under bypass mutation"
+echo "[negative-control] 8/11 worker @tenant_task invariant should fail under bypass mutation"
 python - <<'PY'
 from pathlib import Path
 
@@ -227,6 +232,39 @@ PY
 
 if pytest backend/tests/test_b07_p1_identity_guc.py -q -k test_worker_tenant_task_rejects_missing_tenant_envelope; then
   echo "[negative-control] ERROR: worker tenant-task invariant did not fail under bypass mutation"
+  exit 1
+fi
+cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT"
+
+echo "[negative-control] 9/11 API tenant binding should fail under session-scoped mutation"
+if SKELDIR_B12_FORCE_SESSION_SCOPED_GUC=1 \
+   pytest backend/tests/test_b12_p1_tenant_context_safety.py -q -k test_api_transaction_local_guc_ordering_and_no_pool_bleed; then
+  echo "[negative-control] ERROR: API tenant-context proof did not fail under session-scoped mutation"
+  exit 1
+fi
+
+echo "[negative-control] 10/11 API tenant binding should fail when after-begin binding is removed"
+if SKELDIR_B12_DISABLE_AFTER_BEGIN_GUC_BINDING=1 \
+   pytest backend/tests/test_b12_p1_tenant_context_safety.py -q -k test_api_transaction_local_guc_ordering_and_no_pool_bleed; then
+  echo "[negative-control] ERROR: API tenant-context proof did not fail when after-begin binding was removed"
+  exit 1
+fi
+
+echo "[negative-control] 11/11 worker tenant envelope proof should fail under decorator bypass mutation"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("backend/app/tasks/context.py")
+text = path.read_text(encoding="utf-8")
+needle = "        if tenant_id_value is None:\n            raise ValueError(\"tenant_id is required for tenant-scoped tasks\")\n"
+replacement = "        if False and tenant_id_value is None:\n            raise ValueError(\"tenant_id is required for tenant-scoped tasks\")\n"
+if needle not in text:
+    raise SystemExit("Unable to apply worker tenant-envelope bypass mutation")
+path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+if pytest backend/tests/test_b12_p1_tenant_context_safety.py -q -k test_worker_real_process_pool_reuse_no_bleed_and_tenant_envelope_required; then
+  echo "[negative-control] ERROR: worker tenant-envelope proof did not fail under bypass mutation"
   exit 1
 fi
 cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT"
