@@ -151,13 +151,16 @@ async def get_session(
         session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)
         session.info[_SESSION_INFO_USER_ID] = str(resolved_user_id)
 
-        if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) == "1":
-            # Intentional unsafe path for CI mutation tests.
+        if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) != "1":
+            await session.begin()
+        try:
             yield session
-            return
-
-        async with session.begin():
-            yield session
+            if session.in_transaction():
+                await session.commit()
+        except Exception:
+            if session.in_transaction():
+                await session.rollback()
+            raise
 
 
 async def validate_database_connection() -> None:
