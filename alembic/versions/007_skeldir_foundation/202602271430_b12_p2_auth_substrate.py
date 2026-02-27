@@ -208,15 +208,7 @@ def downgrade() -> None:
         "DROP POLICY IF EXISTS tenant_isolation_policy ON public.tenant_memberships"
     )
 
-    op.execute(
-        "DROP TABLE IF EXISTS public.tenant_membership_roles"
-    )  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
-    op.execute(
-        "DROP TABLE IF EXISTS public.tenant_memberships"
-    )  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
-    op.execute(
-        "DROP TABLE IF EXISTS public.users"
-    )  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
-    op.execute(
-        "DROP TABLE IF EXISTS public.roles"
-    )  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
+    op.execute("DROP TABLE IF EXISTS public.tenant_membership_roles")  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
+    op.execute("DROP TABLE IF EXISTS public.tenant_memberships")  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
+    op.execute("DROP TABLE IF EXISTS public.users")  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
+    op.execute("DROP TABLE IF EXISTS public.roles")  # CI:DESTRUCTIVE_OK - downgrade rollback for B1.2-P2 auth substrate
