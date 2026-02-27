@@ -41,6 +41,21 @@ def _sync_database_url() -> str:
     return url
 
 
+def _bootstrap_database_url() -> str:
+    """
+    Resolve an admin-capable URL for isolated test DB provisioning.
+
+    Prefer DATABASE_URL to avoid stale MIGRATION_DATABASE_URL values leaked
+    from earlier test modules within the same pytest process.
+    """
+    url = os.environ.get("DATABASE_URL") or os.environ.get("MIGRATION_DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL or MIGRATION_DATABASE_URL is required")
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    return url
+
+
 def _alembic_config(sync_url: str) -> Config:
     config = Config(str(_repo_root() / "alembic.ini"))
     config.set_main_option("sqlalchemy.url", sync_url)
@@ -98,7 +113,7 @@ def _isolated_database_url():
     Running this suite in an isolated DB prevents duplicate migration side effects
     (for example kombu transport tables already created by prior tests).
     """
-    base_url = _sync_database_url()
+    base_url = _bootstrap_database_url()
     parsed = make_url(base_url)
     admin_parsed = parsed.set(database="postgres")
     isolated_db_name = f"skeldir_b12_p2_{uuid4().hex[:12]}"
@@ -109,7 +124,11 @@ def _isolated_database_url():
         with admin_engine.connect() as conn:
             conn.execute(text(f'CREATE DATABASE "{isolated_db_name}"'))
         created = True
-    except Exception:
+    except Exception as exc:
+        if os.getenv("CI", "").lower() == "true":
+            raise RuntimeError(
+                "failed to provision isolated auth-substrate test database in CI"
+            ) from exc
         # Local environments may not grant CREATE DATABASE; fall back to provided DB.
         yield base_url
         return
