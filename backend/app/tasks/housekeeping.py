@@ -46,7 +46,7 @@ async def _fetch_db_user(tenant_id: Optional[UUID] = None) -> str:
     """
     async with engine.begin() as conn:
         if tenant_id:
-            await set_tenant_guc(conn, tenant_id, local=False)
+            await set_tenant_guc(conn, tenant_id, local=True)
         res = await conn.execute(text("SELECT current_user"))
         return res.scalar() or ""
 
@@ -89,7 +89,7 @@ def _fetch_db_user_sync(tenant_id: Optional[UUID] = None) -> str:
     try:
         cur = conn.cursor()
         if tenant_id:
-            cur.execute("SELECT set_config('app.current_tenant_id', %s, false)", (str(tenant_id),))
+            cur.execute("SELECT set_config('app.current_tenant_id', %s, true)", (str(tenant_id),))
         cur.execute("SELECT current_user")
         return cur.fetchone()[0]
     finally:

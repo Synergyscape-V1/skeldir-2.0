@@ -177,7 +177,7 @@ def refresh_matview_for_tenant(
 
 async def _validate_db_connection_for_tenant(tenant_id: UUID) -> str:
     async with engine.begin() as conn:
-        await set_tenant_guc(conn, tenant_id, local=False)
+        await set_tenant_guc(conn, tenant_id, local=True)
         res = await conn.execute(text("SELECT current_setting('app.current_tenant_id')"))
         return res.scalar() or ""
 
@@ -225,7 +225,7 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
     deleted. Retention enforcement must only operate on mutable tables.
     """
     async with engine.begin() as conn:
-        await set_tenant_guc(conn, tenant_id, local=False)
+        await set_tenant_guc(conn, tenant_id, local=True)
         allocations_deleted = (
             await conn.execute(
                 text("DELETE FROM attribution_allocations WHERE created_at < :cutoff"),

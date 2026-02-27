@@ -312,6 +312,24 @@ jobs:
     name: Phase 1 Negative Controls
     runs-on: ubuntu-latest
     needs: [checkout, validate-contracts]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -429,6 +447,7 @@ jobs:
         run: |
           pytest tests/test_b060_phase1_auth_tenant.py::test_missing_tenant_claim_returns_401 -q
           pytest backend/tests/test_b07_p1_identity_guc.py -q
+          pytest backend/tests/test_b12_p1_tenant_context_safety.py -q
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest
