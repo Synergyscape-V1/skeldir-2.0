@@ -269,4 +269,10 @@ if pytest backend/tests/test_b12_p1_tenant_context_safety.py -q -k test_worker_r
 fi
 cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT"
 
+echo "[negative-control] 12/12 auth PII guard should fail under synthetic violation"
+if python scripts/security/b12_p2_auth_pii_guard.py --simulate-violation; then
+  echo "[negative-control] ERROR: auth PII guard did not fail under synthetic violation"
+  exit 1
+fi
+
 echo "[negative-control] PASS"

@@ -6,6 +6,10 @@ Exposes all SQLAlchemy ORM models for B0.4 ingestion pipeline.
 Models:
     - Base: Declarative base for all models
     - TenantMixin: Common mixin for tenant-scoped tables
+    - UserIdentity: Opaque user identity registry (no raw email/IP)
+    - TenantMembership: User-to-tenant membership bindings
+    - Role: Role catalog (admin/manager/viewer)
+    - TenantMembershipRole: Tenant-scoped role assignments
     - AttributionEvent: Revenue-generating attribution events (RLS enabled)
     - DeadEvent: Dead-letter queue for failed ingestion (RLS enabled)
     - ChannelTaxonomy: Marketing channel reference data (no RLS)
@@ -25,6 +29,12 @@ Usage:
 """
 
 from app.models.attribution_event import AttributionEvent
+from app.models.auth_substrate import (
+    Role,
+    TenantMembership,
+    TenantMembershipRole,
+    UserIdentity,
+)
 from app.models.base import Base, TenantMixin
 from app.models.channel_taxonomy import ChannelTaxonomy
 from app.models.dead_event import DeadEvent
@@ -46,6 +56,10 @@ from app.models.revenue_cache import RevenueCacheEntry
 __all__ = [
     "Base",
     "TenantMixin",
+    "UserIdentity",
+    "TenantMembership",
+    "Role",
+    "TenantMembershipRole",
     "AttributionEvent",
     "DeadEvent",
     "ChannelTaxonomy",
