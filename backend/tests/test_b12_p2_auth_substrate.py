@@ -20,6 +20,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine.url import make_url
 
 
 P2_REVISION = "202602271430"
@@ -88,9 +89,61 @@ def _hash_identifier(value: str, pepper: str) -> str:
     return hashlib.sha256(f"{pepper}:{canonical}".encode("utf-8")).hexdigest()
 
 
+@pytest.fixture(scope="session")
+def _isolated_database_url():
+    """
+    Provision a per-session temporary database to avoid cross-test schema collisions.
+
+    In CI the JWT invariant job shares a Postgres service across multiple test modules.
+    Running this suite in an isolated DB prevents duplicate migration side effects
+    (for example kombu transport tables already created by prior tests).
+    """
+    base_url = _sync_database_url()
+    parsed = make_url(base_url)
+    admin_parsed = parsed.set(database="postgres")
+    isolated_db_name = f"skeldir_b12_p2_{uuid4().hex[:12]}"
+
+    created = False
+    admin_engine = create_engine(str(admin_parsed), isolation_level="AUTOCOMMIT")
+    try:
+        with admin_engine.connect() as conn:
+            conn.execute(text(f'CREATE DATABASE "{isolated_db_name}"'))
+        created = True
+    except Exception:
+        # Local environments may not grant CREATE DATABASE; fall back to provided DB.
+        yield base_url
+        return
+    finally:
+        admin_engine.dispose()
+
+    isolated_url = str(parsed.set(database=isolated_db_name))
+    try:
+        yield isolated_url
+    finally:
+        if not created:
+            return
+        cleanup_engine = create_engine(str(admin_parsed), isolation_level="AUTOCOMMIT")
+        try:
+            with cleanup_engine.connect() as conn:
+                conn.execute(
+                    text(
+                        """
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE datname = :db_name
+                          AND pid <> pg_backend_pid()
+                        """
+                    ),
+                    {"db_name": isolated_db_name},
+                )
+                conn.execute(text(f'DROP DATABASE IF EXISTS "{isolated_db_name}"'))
+        finally:
+            cleanup_engine.dispose()
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _migrate_head_once():
-    sync_url = _sync_database_url()
+def _migrate_head_once(_isolated_database_url):
+    sync_url = _isolated_database_url
     os.environ["MIGRATION_DATABASE_URL"] = sync_url
     os.environ["DATABASE_URL"] = sync_url
     try:
