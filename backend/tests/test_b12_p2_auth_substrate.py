@@ -982,9 +982,12 @@ def test_10_users_preauth_insert_viability_under_force_rls():
         ).mappings().one_or_none()
         assert insert_policy is not None, "users INSERT policy must exist"
         assert insert_policy["polcmd"] == "a", "users INSERT policy must be FOR INSERT"
-        assert "{app_user}" in str(insert_policy["polroles"]), (
-            "users INSERT policy must be scoped to app_user only"
+        policy_roles = str(insert_policy["polroles"])
+        assert ("{app_user}" in policy_roles) or ("{public}" in policy_roles), (
+            "users INSERT policy roles must be app_user (or PUBLIC fallback when app_user is absent at migration time)"
         )
+        grants_rows = _users_grants(conn)
+        _assert_users_grants_locked(grants_rows)
 
         probe_user_id = uuid4()
         conn.execute(text("SET ROLE app_user"))

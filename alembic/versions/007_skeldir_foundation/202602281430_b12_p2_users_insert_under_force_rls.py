@@ -55,22 +55,48 @@ def upgrade() -> None:
     op.execute("DROP POLICY IF EXISTS users_provision_insert_policy ON public.users")
     op.execute(
         """
-        CREATE POLICY users_provision_insert_policy ON public.users
-            FOR INSERT
-            TO app_user
-            WITH CHECK (
-                id IS NOT NULL
-                AND length(trim(login_identifier_hash)) > 0
-                AND auth_provider = ANY (
-                    ARRAY[
-                        'password'::text,
-                        'oauth_google'::text,
-                        'oauth_microsoft'::text,
-                        'oauth_github'::text,
-                        'sso'::text
-                    ]
-                )
-            )
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                EXECUTE $sql$
+                    CREATE POLICY users_provision_insert_policy ON public.users
+                        FOR INSERT
+                        TO app_user
+                        WITH CHECK (
+                            id IS NOT NULL
+                            AND length(trim(login_identifier_hash)) > 0
+                            AND auth_provider = ANY (
+                                ARRAY[
+                                    'password'::text,
+                                    'oauth_google'::text,
+                                    'oauth_microsoft'::text,
+                                    'oauth_github'::text,
+                                    'sso'::text
+                                ]
+                            )
+                        )
+                $sql$;
+            ELSE
+                EXECUTE $sql$
+                    CREATE POLICY users_provision_insert_policy ON public.users
+                        FOR INSERT
+                        WITH CHECK (
+                            id IS NOT NULL
+                            AND length(trim(login_identifier_hash)) > 0
+                            AND auth_provider = ANY (
+                                ARRAY[
+                                    'password'::text,
+                                    'oauth_google'::text,
+                                    'oauth_microsoft'::text,
+                                    'oauth_github'::text,
+                                    'sso'::text
+                                ]
+                            )
+                        )
+                $sql$;
+            END IF;
+        END
+        $$;
         """
     )
 
