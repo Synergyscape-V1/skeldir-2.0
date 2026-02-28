@@ -113,6 +113,50 @@ def _hash_identifier(value: str, pepper: str) -> str:
     return hashlib.sha256(f"{pepper}:{canonical}".encode("utf-8")).hexdigest()
 
 
+def _activate_rls_probe_role(conn) -> tuple[str | None, bool]:
+    """
+    Activate a non-bypass role for RLS assertions.
+
+    Prefer app_rw if present; otherwise provision a transient probe role when
+    permissions allow. Returns (active_role, created_transient_role).
+    """
+    has_app_rw = conn.execute(
+        text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw')")
+    ).scalar_one()
+    if bool(has_app_rw):
+        conn.execute(text("SET ROLE app_rw"))
+        return "app_rw", False
+
+    try:
+        conn.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'b12_p2_rls_probe') THEN
+                        CREATE ROLE b12_p2_rls_probe NOLOGIN;
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE tenant_memberships TO b12_p2_rls_probe"
+            )
+        )
+        conn.execute(
+            text(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE tenant_membership_roles TO b12_p2_rls_probe"
+            )
+        )
+        conn.execute(text("SET ROLE b12_p2_rls_probe"))
+        return "b12_p2_rls_probe", True
+    except Exception:
+        return None, False
+
+
 def _ensure_fallback_prerequisites(sync_url: str) -> None:
     """
     Provision minimal prerequisites when isolated DB creation is unavailable.
@@ -292,6 +336,8 @@ def test_02_auth_membership_rls_isolation():
     membership_b = uuid4()
 
     with engine.begin() as conn:
+        active_role: str | None = None
+        created_probe_role = False
         _seed_tenant(conn, tenant_a)
         _seed_tenant(conn, tenant_b)
 
@@ -356,7 +402,22 @@ def test_02_auth_membership_rls_isolation():
             },
         )
 
-        conn.execute(text("SET ROLE app_rw"))
+        active_role, created_probe_role = _activate_rls_probe_role(conn)
+        if active_role is None:
+            is_superuser = conn.execute(
+                text(
+                    """
+                    SELECT rolsuper
+                    FROM pg_roles
+                    WHERE rolname = current_user
+                    """
+                )
+            ).scalar_one()
+            if bool(is_superuser):
+                pytest.skip(
+                    "RLS probe requires a non-superuser role (app_rw or transient probe role)."
+                )
+
         conn.execute(
             text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
             {"tenant_id": str(tenant_a)},
@@ -400,7 +461,10 @@ def test_02_auth_membership_rls_isolation():
                 )
         finally:
             savepoint.rollback()
-        conn.execute(text("RESET ROLE"))
+        if active_role is not None:
+            conn.execute(text("RESET ROLE"))
+        if created_probe_role:
+            conn.execute(text("DROP ROLE IF EXISTS b12_p2_rls_probe"))
 
     assert memberships_visible_a == 1
     assert roles_visible_a == 1
