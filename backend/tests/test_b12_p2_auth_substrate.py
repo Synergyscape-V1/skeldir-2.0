@@ -5,6 +5,7 @@ Covers:
 - migration reversibility (upgrade -> downgrade -> re-upgrade)
 - tenant RLS isolation on membership and role-assignment tables
 - auth-substrate 0-PII scan (no raw email/IP columns or values)
+- users registry least-privilege (self-only RLS + tenantless lookup boundary)
 """
 
 from __future__ import annotations
@@ -26,8 +27,10 @@ from app.core.secrets import get_database_url, get_migration_database_url
 
 
 P2_REVISION = "202602271430"
+P2_CORRECTIVE_REVISION = "202602281100"
 PRE_P2_REVISION = "202602221700"
 AUTH_TABLES = ("users", "tenant_memberships", "roles", "tenant_membership_roles")
+RUNTIME_ROLES = ("app_user", "app_rw", "app_ro")
 
 
 def _repo_root() -> Path:
@@ -111,6 +114,76 @@ def _seed_tenant(conn, tenant_id: UUID) -> None:
 def _hash_identifier(value: str, pepper: str) -> str:
     canonical = value.strip().lower()
     return hashlib.sha256(f"{pepper}:{canonical}".encode("utf-8")).hexdigest()
+
+
+def _ensure_runtime_roles(conn) -> None:
+    """Provision deterministic runtime roles for least-privilege assertions."""
+    conn.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw') THEN
+                    CREATE ROLE app_rw NOLOGIN NOSUPERUSER NOBYPASSRLS;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_ro') THEN
+                    CREATE ROLE app_ro NOLOGIN NOSUPERUSER NOBYPASSRLS;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+                    CREATE ROLE app_user LOGIN PASSWORD 'app_user' NOSUPERUSER NOBYPASSRLS INHERIT;
+                END IF;
+            END
+            $$;
+            """
+        )
+    )
+    conn.execute(text("GRANT app_rw TO app_user"))
+    conn.execute(text("GRANT app_ro TO app_user"))
+
+
+def _role_posture_rows(conn, roles: tuple[str, ...] = RUNTIME_ROLES):
+    role_filter = ", ".join(f"'{role}'" for role in roles)
+    return conn.execute(
+        text(
+            """
+            SELECT rolname, rolsuper, rolbypassrls
+            FROM pg_roles
+            WHERE rolname IN ("""
+            + role_filter
+            + """)
+            ORDER BY rolname
+            """
+        )
+    ).mappings().all()
+
+
+def _users_grants(conn):
+    return conn.execute(
+        text(
+            """
+            SELECT grantee, privilege_type
+            FROM information_schema.role_table_grants
+            WHERE table_schema = 'public' AND table_name = 'users'
+            ORDER BY grantee, privilege_type
+            """
+        )
+    ).mappings().all()
+
+
+def _assert_runtime_role_posture_safe(posture_rows) -> None:
+    assert posture_rows, "runtime role posture query returned no rows"
+    for row in posture_rows:
+        assert bool(row["rolsuper"]) is False, f"{row['rolname']} must not be superuser"
+        assert bool(row["rolbypassrls"]) is False, (
+            f"{row['rolname']} must not have BYPASSRLS"
+        )
+
+
+def _assert_users_grants_locked(grants_rows) -> None:
+    grants = {(row["grantee"], row["privilege_type"]) for row in grants_rows}
+    assert ("app_rw", "SELECT") not in grants, "app_rw must not have SELECT on users"
+    assert ("app_ro", "SELECT") not in grants, "app_ro must not have SELECT on users"
+    assert ("app_user", "SELECT") in grants, "app_user must retain SELECT on users"
 
 
 def _activate_rls_probe_role(conn) -> tuple[str | None, bool]:
@@ -318,6 +391,10 @@ def _migrate_head_once(_isolated_database_url):
                 "Set MIGRATION_DATABASE_URL (preferred) or DATABASE_URL to a role that can run Alembic."
             ) from exc
         raise
+
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        _ensure_runtime_roles(conn)
 
 
 def test_01_auth_substrate_migration_reversibility():
@@ -656,3 +733,199 @@ def test_05_auth_pii_guard_detects_real_raw_value_injection():
             text("DELETE FROM users WHERE id = :user_id"),
             {"user_id": str(injected_user_id)},
         )
+
+
+def test_06_users_registry_least_privilege_contract():
+    """
+    Enforce B1.2-P2 corrective boundaries:
+    - runtime roles cannot bypass RLS
+    - users table is non-enumerable for app_rw/app_ro
+    - users RLS is ENABLE + FORCE
+    - tenantless lookup boundary exists via SECURITY DEFINER function
+
+    Negative control toggles (used by CI harness):
+    - SKELDIR_B12_USERS_FORCE_BYPASS_ROLE=1
+    - SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION=1
+    - SKELDIR_B12_USERS_FORCE_DISABLE_RLS=1
+    """
+    sync_url = _sync_database_url()
+    engine = create_engine(sync_url)
+
+    force_bypass = os.getenv("SKELDIR_B12_USERS_FORCE_BYPASS_ROLE") == "1"
+    force_grant_regression = (
+        os.getenv("SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION") == "1"
+    )
+    force_disable_rls = os.getenv("SKELDIR_B12_USERS_FORCE_DISABLE_RLS") == "1"
+    active_roles = RUNTIME_ROLES
+
+    with engine.begin() as conn:
+        _ensure_runtime_roles(conn)
+        if force_bypass:
+            conn.execute(
+                text(
+                    """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_roles WHERE rolname = 'b12_p2_runtime_bypass_probe'
+                        ) THEN
+                            CREATE ROLE b12_p2_runtime_bypass_probe NOLOGIN BYPASSRLS;
+                        END IF;
+                    END
+                    $$;
+                    """
+                )
+            )
+            active_roles = (*RUNTIME_ROLES, "b12_p2_runtime_bypass_probe")
+        if force_grant_regression:
+            conn.execute(text("GRANT SELECT ON TABLE public.users TO app_rw"))
+        if force_disable_rls:
+            conn.execute(text("ALTER TABLE public.users DISABLE ROW LEVEL SECURITY"))
+
+        posture_rows = _role_posture_rows(conn, active_roles)
+        grants_rows = _users_grants(conn)
+        rls_row = conn.execute(
+            text(
+                """
+                SELECT relrowsecurity, relforcerowsecurity
+                FROM pg_class
+                WHERE oid = 'public.users'::regclass
+                """
+            )
+        ).mappings().one()
+        lookup_row = conn.execute(
+            text(
+                """
+                SELECT routine_schema, routine_name, security_type
+                FROM information_schema.routines
+                WHERE routine_schema = 'auth'
+                  AND routine_name = 'lookup_user_by_login_hash'
+                """
+            )
+        ).mappings().one()
+
+        _assert_runtime_role_posture_safe(posture_rows)
+        _assert_users_grants_locked(grants_rows)
+        assert bool(rls_row["relrowsecurity"]) is True
+        assert bool(rls_row["relforcerowsecurity"]) is True
+        assert lookup_row["security_type"] == "DEFINER"
+        assert lookup_row["routine_schema"] == "auth"
+        assert lookup_row["routine_name"] == "lookup_user_by_login_hash"
+
+
+def test_07_users_registry_self_only_rls_and_non_enumerability():
+    sync_url = _sync_database_url()
+    engine = create_engine(sync_url)
+
+    user_a = uuid4()
+    user_b = uuid4()
+
+    with engine.begin() as conn:
+        _ensure_runtime_roles(conn)
+        conn.execute(
+            text(
+                """
+                INSERT INTO users (id, login_identifier_hash, external_subject_hash, auth_provider)
+                VALUES
+                    (:user_a, :hash_a, :sub_a, 'password'),
+                    (:user_b, :hash_b, :sub_b, 'password')
+                ON CONFLICT (id) DO NOTHING
+                """
+            ),
+            {
+                "user_a": str(user_a),
+                "hash_a": f"hash-{user_a}",
+                "sub_a": f"sub-{user_a}",
+                "user_b": str(user_b),
+                "hash_b": f"hash-{user_b}",
+                "sub_b": f"sub-{user_b}",
+            },
+        )
+
+        conn.execute(text("SET ROLE app_user"))
+        hidden_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
+        assert int(hidden_count) == 0
+
+        conn.execute(
+            text("SELECT set_config('app.current_user_id', :user_id, false)"),
+            {"user_id": str(user_a)},
+        )
+        visible_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
+        assert int(visible_count) == 1
+
+        cross_tenant_row = conn.execute(
+            text("SELECT id FROM users WHERE id = :user_b"),
+            {"user_b": str(user_b)},
+        ).scalar_one_or_none()
+        assert cross_tenant_row is None
+        conn.execute(text("RESET ROLE"))
+
+
+def test_08_tenantless_lookup_boundary_without_users_scan():
+    sync_url = _sync_database_url()
+    engine = create_engine(sync_url)
+
+    target_user = uuid4()
+    login_hash = f"lookup-hash-{target_user}"
+
+    with engine.begin() as conn:
+        _ensure_runtime_roles(conn)
+        conn.execute(
+            text(
+                """
+                INSERT INTO users (id, login_identifier_hash, external_subject_hash, auth_provider, is_active)
+                VALUES (:user_id, :login_hash, :subject_hash, 'password', true)
+                ON CONFLICT (id) DO NOTHING
+                """
+            ),
+            {
+                "user_id": str(target_user),
+                "login_hash": login_hash,
+                "subject_hash": f"subject-{target_user}",
+            },
+        )
+
+        conn.execute(text("SET ROLE app_user"))
+        lookup = conn.execute(
+            text(
+                """
+                SELECT user_id, is_active, auth_provider
+                FROM auth.lookup_user_by_login_hash(:login_hash)
+                """
+            ),
+            {"login_hash": login_hash},
+        ).mappings().one()
+        assert str(lookup["user_id"]) == str(target_user)
+        assert bool(lookup["is_active"]) is True
+        assert lookup["auth_provider"] == "password"
+
+        direct_scan_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
+        assert int(direct_scan_count) == 0
+        conn.execute(text("RESET ROLE"))
+
+        conn.execute(text("SET ROLE app_rw"))
+        savepoint = conn.begin_nested()
+        try:
+            with pytest.raises(Exception):
+                conn.execute(text("SELECT COUNT(*) FROM users"))
+        finally:
+            savepoint.rollback()
+        conn.execute(text("RESET ROLE"))
+
+
+def test_09_users_schema_invariant_no_tenant_id_column():
+    sync_url = _sync_database_url()
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        tenant_id_columns = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'users'
+                  AND column_name = 'tenant_id'
+                """
+            )
+        ).scalar_one()
+        assert int(tenant_id_columns) == 0

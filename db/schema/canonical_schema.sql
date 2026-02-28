@@ -1,6 +1,21 @@
+CREATE SCHEMA auth;
+
 CREATE SCHEMA security;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text)
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+            SELECT
+                u.id AS user_id,
+                u.is_active,
+                u.auth_provider
+            FROM public.users AS u
+            WHERE u.login_identifier_hash = p_login_identifier_hash
+            LIMIT 1
+        $$;
 
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql
@@ -1369,6 +1384,8 @@ CREATE TABLE public.users (
     CONSTRAINT ck_users_login_identifier_hash_not_empty CHECK ((length(TRIM(BOTH FROM login_identifier_hash)) > 0))
 );
 
+ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.worker_failed_jobs (
     id uuid NOT NULL,
     task_id character varying(155) NOT NULL,
@@ -2075,6 +2092,12 @@ CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY users_self_select_policy ON public.users FOR SELECT USING ((id = (current_setting('app.current_user_id'::text, true))::uuid));
+
+CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (current_setting('app.current_user_id'::text, true))::uuid)) WITH CHECK ((id = (current_setting('app.current_user_id'::text, true))::uuid));
 
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 
