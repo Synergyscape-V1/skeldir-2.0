@@ -113,6 +113,51 @@ def _hash_identifier(value: str, pepper: str) -> str:
     return hashlib.sha256(f"{pepper}:{canonical}".encode("utf-8")).hexdigest()
 
 
+def _ensure_fallback_prerequisites(sync_url: str) -> None:
+    """
+    Provision minimal prerequisites when isolated DB creation is unavailable.
+
+    Shared fallback databases in CI may not have run the full migration chain.
+    B1.2-P2 requires pgcrypto + tenants FK target to create auth tables.
+    """
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        # RAW_SQL_ALLOWLIST: deterministic fallback bootstrap for CI-shared DB mode.
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS public.tenants (
+                    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+                    name text NOT NULL,
+                    api_key_hash text,
+                    notification_email text,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+
+
+def _drop_auth_tables_best_effort(sync_url: str) -> None:
+    """Best-effort cleanup for partially provisioned auth substrate tables."""
+    engine = create_engine(sync_url)
+    with engine.begin() as conn:
+        for table_name in (
+            "tenant_membership_roles",
+            "tenant_memberships",
+            "users",
+            "roles",
+        ):
+            try:
+                conn.execute(text(f"DROP TABLE IF EXISTS public.{table_name} CASCADE"))
+            except Exception:
+                # Fallback mode may run under a role without ownership; if so,
+                # rely on existing objects and revision stamping below.
+                pass
+
+
 @pytest.fixture(scope="session")
 def _isolated_database_url():
     """
@@ -123,6 +168,12 @@ def _isolated_database_url():
     (for example kombu transport tables already created by prior tests).
     """
     base_url = _bootstrap_database_url()
+    if os.getenv("B12_P2_FORCE_SHARED_DB_FALLBACK") == "1":
+        os.environ["B12_P2_SHARED_DB_FALLBACK"] = "1"
+        print("[b12-p2] forced shared DB fallback mode enabled")
+        yield base_url
+        return
+
     parsed = make_url(base_url)
     admin_parsed = parsed.set(database="postgres")
     isolated_db_name = f"skeldir_b12_p2_{uuid4().hex[:12]}"
@@ -181,8 +232,18 @@ def _migrate_head_once(_isolated_database_url):
             # Shared DB fallback can contain runtime-created transport tables
             # that conflict with early Alembic revisions. Stamp to PRE_P2 then
             # upgrade only through the B1.2-P2 revision chain for setup.
-            command.stamp(config, PRE_P2_REVISION)
-        command.upgrade(config, "head")
+            _ensure_fallback_prerequisites(sync_url)
+            auth_tables_ready = all(_table_exists(sync_url, name) for name in AUTH_TABLES)
+            if auth_tables_ready:
+                # Existing auth substrate + stale revision metadata can occur in
+                # shared fallback DBs. Normalize revision pointer only.
+                command.stamp(config, "head")
+            else:
+                _drop_auth_tables_best_effort(sync_url)
+                command.stamp(config, PRE_P2_REVISION)
+                command.upgrade(config, "head")
+        else:
+            command.upgrade(config, "head")
     except Exception as exc:
         error_text = str(exc).lower()
         if "permission denied for table alembic_version" in error_text:
