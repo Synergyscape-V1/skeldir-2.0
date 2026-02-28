@@ -144,40 +144,48 @@ def _ensure_runtime_roles(conn) -> None:
 
 def _role_posture_rows(conn, roles: tuple[str, ...] = RUNTIME_ROLES):
     role_filter = ", ".join(f"'{role}'" for role in roles)
-    return conn.execute(
-        text(
-            """
+    return (
+        conn.execute(
+            text(
+                """
             SELECT rolname, rolsuper, rolbypassrls
             FROM pg_roles
             WHERE rolname IN ("""
-            + role_filter
-            + """)
+                + role_filter
+                + """)
             ORDER BY rolname
             """
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
 
 def _users_grants(conn):
-    return conn.execute(
-        text(
-            """
+    return (
+        conn.execute(
+            text(
+                """
             SELECT grantee, privilege_type
             FROM information_schema.role_table_grants
             WHERE table_schema = 'public' AND table_name = 'users'
             ORDER BY grantee, privilege_type
             """
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
 
 def _assert_runtime_role_posture_safe(posture_rows) -> None:
     assert posture_rows, "runtime role posture query returned no rows"
     for row in posture_rows:
         assert bool(row["rolsuper"]) is False, f"{row['rolname']} must not be superuser"
-        assert bool(row["rolbypassrls"]) is False, (
-            f"{row['rolname']} must not have BYPASSRLS"
-        )
+        assert (
+            bool(row["rolbypassrls"]) is False
+        ), f"{row['rolname']} must not have BYPASSRLS"
 
 
 def _assert_users_grants_locked(grants_rows) -> None:
@@ -237,7 +245,9 @@ def _activate_rls_probe_role(conn) -> tuple[str | None, bool]:
 def _cleanup_transient_rls_probe_role(conn) -> None:
     """Revoke transient role grants before dropping the probe role."""
     role_exists = conn.execute(
-        text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'b12_p2_rls_probe')")
+        text(
+            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'b12_p2_rls_probe')"
+        )
     ).scalar_one()
     if not bool(role_exists):
         return
@@ -376,7 +386,9 @@ def _migrate_head_once(_isolated_database_url):
             # that conflict with early Alembic revisions. Stamp to PRE_P2 then
             # upgrade only through the B1.2-P2 revision chain for setup.
             _ensure_fallback_prerequisites(sync_url)
-            auth_tables_ready = all(_table_exists(sync_url, name) for name in AUTH_TABLES)
+            auth_tables_ready = all(
+                _table_exists(sync_url, name) for name in AUTH_TABLES
+            )
             if auth_tables_ready:
                 # Existing auth substrate + stale revision metadata can occur in
                 # shared fallback DBs. Normalize revision pointer only.
@@ -752,6 +764,7 @@ def test_06_users_registry_least_privilege_contract():
     - SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION=1
     - SKELDIR_B12_USERS_FORCE_DISABLE_RLS=1
     - SKELDIR_B12_USERS_FORCE_LOOKUP_OWNER_BYPASS=1
+    - SKELDIR_B12_USERS_FORCE_LOOKUP_EXEC_CTX_WEAKEN=1
     """
     sync_url = _sync_database_url()
     engine = create_engine(sync_url)
@@ -763,6 +776,9 @@ def test_06_users_registry_least_privilege_contract():
     force_disable_rls = os.getenv("SKELDIR_B12_USERS_FORCE_DISABLE_RLS") == "1"
     force_lookup_owner_bypass = (
         os.getenv("SKELDIR_B12_USERS_FORCE_LOOKUP_OWNER_BYPASS") == "1"
+    )
+    force_lookup_exec_ctx_weaken = (
+        os.getenv("SKELDIR_B12_USERS_FORCE_LOOKUP_EXEC_CTX_WEAKEN") == "1"
     )
     active_roles = RUNTIME_ROLES
 
@@ -791,30 +807,51 @@ def test_06_users_registry_least_privilege_contract():
             conn.execute(text("ALTER TABLE public.users DISABLE ROW LEVEL SECURITY"))
         if force_lookup_owner_bypass:
             conn.execute(
-                text("ALTER FUNCTION auth.lookup_user_by_login_hash(text) OWNER TO postgres")
+                text(
+                    "ALTER FUNCTION auth.lookup_user_by_login_hash(text) OWNER TO postgres"
+                )
+            )
+        if force_lookup_exec_ctx_weaken:
+            conn.execute(
+                text(
+                    "ALTER FUNCTION auth.lookup_user_by_login_hash(text) RESET row_security"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER FUNCTION auth.lookup_user_by_login_hash(text) RESET search_path"
+                )
             )
 
         posture_rows = _role_posture_rows(conn, active_roles)
         grants_rows = _users_grants(conn)
-        rls_row = conn.execute(
-            text(
-                """
+        rls_row = (
+            conn.execute(
+                text(
+                    """
                 SELECT relrowsecurity, relforcerowsecurity
                 FROM pg_class
                 WHERE oid = 'public.users'::regclass
                 """
+                )
             )
-        ).mappings().one()
-        lookup_row = conn.execute(
-            text(
-                """
+            .mappings()
+            .one()
+        )
+        lookup_row = (
+            conn.execute(
+                text(
+                    """
                 SELECT routine_schema, routine_name, security_type
                 FROM information_schema.routines
                 WHERE routine_schema = 'auth'
                   AND routine_name = 'lookup_user_by_login_hash'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         insert_policy_count = conn.execute(
             text(
                 """
@@ -827,9 +864,10 @@ def test_06_users_registry_least_privilege_contract():
                 """
             )
         ).scalar_one()
-        lookup_owner_row = conn.execute(
-            text(
-                """
+        lookup_owner_row = (
+            conn.execute(
+                text(
+                    """
                 SELECT
                     r.rolname AS owner_role,
                     r.rolsuper,
@@ -841,8 +879,49 @@ def test_06_users_registry_least_privilege_contract():
                   AND p.proname = 'lookup_user_by_login_hash'
                   AND p.pronargs = 1
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
+        lookup_exec_ctx_row = (
+            conn.execute(
+                text(
+                    """
+                SELECT
+                    COALESCE(
+                        (
+                            SELECT split_part(cfg.setting, '=', 2)
+                            FROM unnest(COALESCE(p.proconfig, ARRAY[]::text[])) AS cfg(setting)
+                            WHERE cfg.setting LIKE 'row_security=%'
+                            LIMIT 1
+                        ),
+                        ''
+                    ) AS row_security_setting,
+                    COALESCE(
+                        replace(
+                            (
+                                SELECT split_part(cfg.setting, '=', 2)
+                                FROM unnest(COALESCE(p.proconfig, ARRAY[]::text[])) AS cfg(setting)
+                                WHERE cfg.setting LIKE 'search_path=%'
+                                LIMIT 1
+                            ),
+                            ' ',
+                            ''
+                        ),
+                        ''
+                    ) AS search_path_setting
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'auth'
+                  AND p.proname = 'lookup_user_by_login_hash'
+                  AND p.pronargs = 1
+                """
+                )
+            )
+            .mappings()
+            .one()
+        )
 
         _assert_runtime_role_posture_safe(posture_rows)
         _assert_users_grants_locked(grants_rows)
@@ -852,12 +931,18 @@ def test_06_users_registry_least_privilege_contract():
         assert lookup_row["security_type"] == "DEFINER"
         assert lookup_row["routine_schema"] == "auth"
         assert lookup_row["routine_name"] == "lookup_user_by_login_hash"
-        assert bool(lookup_owner_row["rolsuper"]) is False, (
-            "lookup function owner must not be superuser"
-        )
-        assert bool(lookup_owner_row["rolbypassrls"]) is False, (
-            "lookup function owner must not have BYPASSRLS"
-        )
+        assert (
+            bool(lookup_owner_row["rolsuper"]) is False
+        ), "lookup function owner must not be superuser"
+        assert (
+            bool(lookup_owner_row["rolbypassrls"]) is False
+        ), "lookup function owner must not have BYPASSRLS"
+        assert (
+            lookup_exec_ctx_row["row_security_setting"] == "on"
+        ), "lookup function must enforce row_security=on"
+        assert (
+            lookup_exec_ctx_row["search_path_setting"] == "pg_catalog,public"
+        ), "lookup function must pin search_path to pg_catalog, public"
 
 
 def test_07_users_registry_self_only_rls_and_non_enumerability():
@@ -933,20 +1018,26 @@ def test_08_tenantless_lookup_boundary_without_users_scan():
         )
 
         conn.execute(text("SET ROLE app_user"))
-        lookup = conn.execute(
-            text(
-                """
+        lookup = (
+            conn.execute(
+                text(
+                    """
                 SELECT user_id, is_active, auth_provider
                 FROM auth.lookup_user_by_login_hash(:login_hash)
                 """
-            ),
-            {"login_hash": login_hash},
-        ).mappings().one()
+                ),
+                {"login_hash": login_hash},
+            )
+            .mappings()
+            .one()
+        )
         assert str(lookup["user_id"]) == str(target_user)
         assert bool(lookup["is_active"]) is True
         assert lookup["auth_provider"] == "password"
 
-        direct_scan_count = conn.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
+        direct_scan_count = conn.execute(
+            text("SELECT COUNT(*) FROM users")
+        ).scalar_one()
         assert int(direct_scan_count) == 0
         conn.execute(text("RESET ROLE"))
 
@@ -997,25 +1088,31 @@ def test_10_users_preauth_insert_viability_under_force_rls():
         _ensure_runtime_roles(conn)
         if force_drop_insert_policy:
             conn.execute(
-                text("DROP POLICY IF EXISTS users_provision_insert_policy ON public.users")
+                text(
+                    "DROP POLICY IF EXISTS users_provision_insert_policy ON public.users"
+                )
             )
 
-        insert_policy = conn.execute(
-            text(
-                """
+        insert_policy = (
+            conn.execute(
+                text(
+                    """
                 SELECT polname, polcmd, polroles::regrole[]::text AS polroles
                 FROM pg_policy
                 WHERE polrelid = 'public.users'::regclass
                   AND polname = 'users_provision_insert_policy'
                 """
+                )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         assert insert_policy is not None, "users INSERT policy must exist"
         assert insert_policy["polcmd"] == "a", "users INSERT policy must be FOR INSERT"
         policy_roles = str(insert_policy["polroles"])
-        assert ("{app_user}" in policy_roles) or ("{public}" in policy_roles), (
-            "users INSERT policy roles must be app_user (or PUBLIC fallback when app_user is absent at migration time)"
-        )
+        assert ("{app_user}" in policy_roles) or (
+            "{public}" in policy_roles
+        ), "users INSERT policy roles must be app_user (or PUBLIC fallback when app_user is absent at migration time)"
         grants_rows = _users_grants(conn)
         _assert_users_grants_locked(grants_rows)
 
@@ -1042,7 +1139,8 @@ def test_10_users_preauth_insert_viability_under_force_rls():
         ).scalar_one_or_none()
         assert str(inserted_row) == str(probe_user_id)
         conn.execute(
-            text("DELETE FROM users WHERE id = :user_id"), {"user_id": str(probe_user_id)}
+            text("DELETE FROM users WHERE id = :user_id"),
+            {"user_id": str(probe_user_id)},
         )
 
         conn.execute(text("SET ROLE app_ro"))
