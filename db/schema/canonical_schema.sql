@@ -1070,7 +1070,7 @@ CREATE MATERIALIZED VIEW mv_allocation_summary AS
             ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON (((aa.event_id = e.id) AND (aa.tenant_id = e.tenant_id))))
+     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
   GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
   WITH NO DATA;
 
