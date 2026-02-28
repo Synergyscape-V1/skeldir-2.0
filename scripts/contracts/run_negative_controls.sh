@@ -269,9 +269,30 @@ if pytest backend/tests/test_b12_p1_tenant_context_safety.py -q -k test_worker_r
 fi
 cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT"
 
-echo "[negative-control] 12/12 auth PII guard should fail under synthetic violation"
+echo "[negative-control] 12/15 auth PII guard should fail under synthetic violation"
 if python scripts/security/b12_p2_auth_pii_guard.py --simulate-violation; then
   echo "[negative-control] ERROR: auth PII guard did not fail under synthetic violation"
+  exit 1
+fi
+
+echo "[negative-control] 13/15 users least-privilege should fail under BYPASSRLS role mutation"
+if SKELDIR_B12_USERS_FORCE_BYPASS_ROLE=1 \
+   pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
+  echo "[negative-control] ERROR: users least-privilege gate did not fail under BYPASSRLS role mutation"
+  exit 1
+fi
+
+echo "[negative-control] 14/15 users least-privilege should fail under grant regression mutation"
+if SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION=1 \
+   pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
+  echo "[negative-control] ERROR: users least-privilege gate did not fail under grant regression mutation"
+  exit 1
+fi
+
+echo "[negative-control] 15/15 users least-privilege should fail under RLS-disable mutation"
+if SKELDIR_B12_USERS_FORCE_DISABLE_RLS=1 \
+   pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
+  echo "[negative-control] ERROR: users least-privilege gate did not fail under RLS-disable mutation"
   exit 1
 fi
 
