@@ -28,6 +28,7 @@ from app.core.secrets import get_database_url, get_migration_database_url
 
 P2_REVISION = "202602271430"
 P2_CORRECTIVE_REVISION = "202602281100"
+P2_INSERT_CORRECTIVE_REVISION = "202602281430"
 PRE_P2_REVISION = "202602221700"
 AUTH_TABLES = ("users", "tenant_memberships", "roles", "tenant_membership_roles")
 RUNTIME_ROLES = ("app_user", "app_rw", "app_ro")
@@ -182,8 +183,11 @@ def _assert_runtime_role_posture_safe(posture_rows) -> None:
 def _assert_users_grants_locked(grants_rows) -> None:
     grants = {(row["grantee"], row["privilege_type"]) for row in grants_rows}
     assert ("app_rw", "SELECT") not in grants, "app_rw must not have SELECT on users"
+    assert ("app_rw", "INSERT") not in grants, "app_rw must not have INSERT on users"
     assert ("app_ro", "SELECT") not in grants, "app_ro must not have SELECT on users"
+    assert ("app_ro", "INSERT") not in grants, "app_ro must not have INSERT on users"
     assert ("app_user", "SELECT") in grants, "app_user must retain SELECT on users"
+    assert ("app_user", "INSERT") in grants, "app_user must retain INSERT on users"
 
 
 def _activate_rls_probe_role(conn) -> tuple[str | None, bool]:
@@ -803,11 +807,24 @@ def test_06_users_registry_least_privilege_contract():
                 """
             )
         ).mappings().one()
+        insert_policy_count = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM pg_policies
+                WHERE schemaname = 'public'
+                  AND tablename = 'users'
+                  AND policyname = 'users_provision_insert_policy'
+                  AND cmd = 'INSERT'
+                """
+            )
+        ).scalar_one()
 
         _assert_runtime_role_posture_safe(posture_rows)
         _assert_users_grants_locked(grants_rows)
         assert bool(rls_row["relrowsecurity"]) is True
         assert bool(rls_row["relforcerowsecurity"]) is True
+        assert int(insert_policy_count) == 1
         assert lookup_row["security_type"] == "DEFINER"
         assert lookup_row["routine_schema"] == "auth"
         assert lookup_row["routine_name"] == "lookup_user_by_login_hash"
@@ -929,3 +946,89 @@ def test_09_users_schema_invariant_no_tenant_id_column():
             )
         ).scalar_one()
         assert int(tenant_id_columns) == 0
+
+
+def test_10_users_preauth_insert_viability_under_force_rls():
+    """
+    Enforce B1.2-P2 corrective v3 boundaries:
+    - runtime writer role (app_user) can INSERT users pre-auth (no app.current_user_id)
+    - read-only runtime roles remain blocked from INSERT
+
+    Negative control toggle (used by CI harness):
+    - SKELDIR_B12_USERS_FORCE_DROP_INSERT_POLICY=1
+    """
+    sync_url = _sync_database_url()
+    engine = create_engine(sync_url)
+    force_drop_insert_policy = (
+        os.getenv("SKELDIR_B12_USERS_FORCE_DROP_INSERT_POLICY") == "1"
+    )
+
+    with engine.begin() as conn:
+        _ensure_runtime_roles(conn)
+        if force_drop_insert_policy:
+            conn.execute(
+                text("DROP POLICY IF EXISTS users_provision_insert_policy ON public.users")
+            )
+
+        insert_policy = conn.execute(
+            text(
+                """
+                SELECT polname, polcmd, polroles::regrole[]::text AS polroles
+                FROM pg_policy
+                WHERE polrelid = 'public.users'::regclass
+                  AND polname = 'users_provision_insert_policy'
+                """
+            )
+        ).mappings().one_or_none()
+        assert insert_policy is not None, "users INSERT policy must exist"
+        assert insert_policy["polcmd"] == "a", "users INSERT policy must be FOR INSERT"
+        assert "{app_user}" in str(insert_policy["polroles"]), (
+            "users INSERT policy must be scoped to app_user only"
+        )
+
+        probe_user_id = uuid4()
+        conn.execute(text("SET ROLE app_user"))
+        conn.execute(text("RESET app.current_user_id"))
+        conn.execute(
+            text(
+                """
+                INSERT INTO users (id, login_identifier_hash, external_subject_hash, auth_provider)
+                VALUES (:user_id, :login_hash, :subject_hash, 'password')
+                """
+            ),
+            {
+                "user_id": str(probe_user_id),
+                "login_hash": f"preauth-insert-hash-{probe_user_id}",
+                "subject_hash": f"preauth-insert-subject-{probe_user_id}",
+            },
+        )
+        conn.execute(text("RESET ROLE"))
+        inserted_row = conn.execute(
+            text("SELECT id FROM users WHERE id = :user_id"),
+            {"user_id": str(probe_user_id)},
+        ).scalar_one_or_none()
+        assert str(inserted_row) == str(probe_user_id)
+        conn.execute(
+            text("DELETE FROM users WHERE id = :user_id"), {"user_id": str(probe_user_id)}
+        )
+
+        conn.execute(text("SET ROLE app_ro"))
+        savepoint = conn.begin_nested()
+        try:
+            with pytest.raises(Exception):
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO users (id, login_identifier_hash, external_subject_hash, auth_provider)
+                        VALUES (:user_id, :login_hash, :subject_hash, 'password')
+                        """
+                    ),
+                    {
+                        "user_id": str(uuid4()),
+                        "login_hash": f"ro-insert-hash-{uuid4()}",
+                        "subject_hash": f"ro-insert-subject-{uuid4()}",
+                    },
+                )
+        finally:
+            savepoint.rollback()
+            conn.execute(text("RESET ROLE"))
