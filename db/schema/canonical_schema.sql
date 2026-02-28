@@ -1056,22 +1056,22 @@ CREATE SEQUENCE public.message_id_sequence
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
 CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT tenant_id,
-    event_id,
-    model_version,
-    sum(allocated_revenue_cents) AS total_allocated_cents,
-    revenue_cents AS event_revenue_cents,
+ SELECT aa.tenant_id,
+    aa.event_id,
+    aa.model_version,
+    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
+    e.revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(allocated_revenue_cents) = revenue_cents)
+            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
+            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((event_id = id)))
-  GROUP BY tenant_id, event_id, model_version, revenue_cents
+     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
+  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
   WITH NO DATA;
 
 CREATE MATERIALIZED VIEW mv_channel_performance AS
