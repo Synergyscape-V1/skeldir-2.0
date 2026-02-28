@@ -1056,22 +1056,22 @@ CREATE SEQUENCE public.message_id_sequence
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
 CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT aa.tenant_id,
-    aa.event_id,
-    aa.model_version,
-    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
-    e.revenue_cents AS event_revenue_cents,
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
-  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
   WITH NO DATA;
 
 CREATE MATERIALIZED VIEW mv_channel_performance AS
@@ -1160,15 +1160,15 @@ CREATE TABLE public.reconciliation_runs (
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
 CREATE MATERIALIZED VIEW mv_reconciliation_status AS
- SELECT rr.tenant_id,
-    rr.state,
-    rr.last_run_at,
-    rr.id AS reconciliation_run_id
+ SELECT tenant_id,
+    state,
+    last_run_at,
+    id AS reconciliation_run_id
    FROM (reconciliation_runs rr
      JOIN ( SELECT tenant_id,
             max(last_run_at) AS max_last_run_at
            FROM reconciliation_runs
-          GROUP BY tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.pii_audit_findings (
@@ -1290,6 +1290,14 @@ CREATE TABLE public.revenue_state_transitions (
 
 ALTER TABLE ONLY public.revenue_state_transitions FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.roles (
+    code text NOT NULL,
+    description text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_roles_code_lowercase CHECK ((code = lower(code))),
+    CONSTRAINT ck_roles_code_not_empty CHECK ((length(TRIM(BOTH FROM code)) > 0))
+);
+
 CREATE SEQUENCE public.task_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -1308,6 +1316,29 @@ CREATE SEQUENCE public.taskset_id_sequence
 
 ALTER SEQUENCE public.taskset_id_sequence OWNED BY public.celery_tasksetmeta.id;
 
+CREATE TABLE public.tenant_membership_roles (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    membership_id uuid NOT NULL,
+    role_code text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.tenant_membership_roles FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.tenant_memberships (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    membership_status text DEFAULT 'active'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_tenant_memberships_status_valid CHECK ((membership_status = ANY (ARRAY['active'::text, 'revoked'::text])))
+);
+
+ALTER TABLE ONLY public.tenant_memberships FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.tenants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name character varying(255) NOT NULL,
@@ -1324,6 +1355,18 @@ CREATE TABLE public.tenants (
     woocommerce_webhook_secret_ciphertext bytea,
     woocommerce_webhook_secret_key_id text,
     CONSTRAINT ck_tenants_name_not_empty CHECK ((length(TRIM(BOTH FROM name)) > 0))
+);
+
+CREATE TABLE public.users (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    login_identifier_hash text NOT NULL,
+    external_subject_hash text,
+    auth_provider text DEFAULT 'password'::text NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_users_auth_provider_valid CHECK ((auth_provider = ANY (ARRAY['password'::text, 'oauth_google'::text, 'oauth_microsoft'::text, 'oauth_github'::text, 'sso'::text]))),
+    CONSTRAINT ck_users_login_identifier_hash_not_empty CHECK ((length(TRIM(BOTH FROM login_identifier_hash)) > 0))
 );
 
 CREATE TABLE public.worker_failed_jobs (
@@ -1514,6 +1557,15 @@ ALTER TABLE ONLY public.revenue_ledger
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.roles
+    ADD CONSTRAINT roles_pkey PRIMARY KEY (code);
+
+ALTER TABLE ONLY public.tenant_membership_roles
+    ADD CONSTRAINT tenant_membership_roles_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.tenant_memberships
+    ADD CONSTRAINT tenant_memberships_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
 
@@ -1525,6 +1577,21 @@ ALTER TABLE ONLY public.llm_api_calls
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT uq_llm_monthly_costs_tenant_user_month UNIQUE (tenant_id, user_id, month);
+
+ALTER TABLE ONLY public.tenant_membership_roles
+    ADD CONSTRAINT uq_tenant_membership_roles_membership_role UNIQUE (membership_id, role_code);
+
+ALTER TABLE ONLY public.tenant_memberships
+    ADD CONSTRAINT uq_tenant_memberships_id_tenant UNIQUE (id, tenant_id);
+
+ALTER TABLE ONLY public.tenant_memberships
+    ADD CONSTRAINT uq_tenant_memberships_tenant_user UNIQUE (tenant_id, user_id);
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_login_identifier_hash_key UNIQUE (login_identifier_hash);
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_pkey PRIMARY KEY (id);
@@ -1675,6 +1742,12 @@ CREATE INDEX idx_revenue_state_transitions_ledger_id ON public.revenue_state_tra
 
 CREATE INDEX idx_revenue_state_transitions_tenant_id ON public.revenue_state_transitions USING btree (tenant_id, transitioned_at DESC);
 
+CREATE INDEX idx_tenant_membership_roles_tenant_created_at ON public.tenant_membership_roles USING btree (tenant_id, created_at DESC);
+
+CREATE INDEX idx_tenant_memberships_tenant_created_at ON public.tenant_memberships USING btree (tenant_id, created_at DESC);
+
+CREATE INDEX idx_tenant_memberships_user_created_at ON public.tenant_memberships USING btree (user_id, created_at DESC);
+
 CREATE UNIQUE INDEX idx_tenants_api_key_hash ON public.tenants USING btree (api_key_hash);
 
 CREATE INDEX idx_tenants_name ON public.tenants USING btree (name);
@@ -1783,6 +1856,9 @@ ALTER TABLE ONLY public.attribution_events
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT fk_kombu_message_queue FOREIGN KEY (queue_id) REFERENCES public.kombu_queue(id);
 
+ALTER TABLE ONLY public.tenant_membership_roles
+    ADD CONSTRAINT fk_tenant_membership_roles_membership_tenant FOREIGN KEY (membership_id, tenant_id) REFERENCES public.tenant_memberships(id, tenant_id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -1854,6 +1930,18 @@ ALTER TABLE ONLY public.revenue_state_transitions
 
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.tenant_membership_roles
+    ADD CONSTRAINT tenant_membership_roles_role_code_fkey FOREIGN KEY (role_code) REFERENCES public.roles(code) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.tenant_membership_roles
+    ADD CONSTRAINT tenant_membership_roles_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.tenant_memberships
+    ADD CONSTRAINT tenant_memberships_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.tenant_memberships
+    ADD CONSTRAINT tenant_memberships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
@@ -1972,6 +2060,10 @@ CREATE POLICY tenant_isolation_policy ON public.revenue_ledger USING ((tenant_id
 
 CREATE POLICY tenant_isolation_policy ON public.revenue_state_transitions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy ON public.tenant_membership_roles USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy ON public.tenant_memberships USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user USING (((tenant_id IS NULL) OR ((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))));
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
@@ -1979,6 +2071,10 @@ CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user 
 CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+
+ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 

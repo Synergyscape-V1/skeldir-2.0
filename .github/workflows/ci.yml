@@ -448,6 +448,7 @@ jobs:
           pytest tests/test_b060_phase1_auth_tenant.py::test_missing_tenant_claim_returns_401 -q
           pytest backend/tests/test_b07_p1_identity_guc.py -q
           pytest backend/tests/test_b12_p1_tenant_context_safety.py -q
+          pytest backend/tests/test_b12_p2_auth_substrate.py -q
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest
