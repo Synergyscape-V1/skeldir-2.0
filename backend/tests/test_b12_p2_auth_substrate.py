@@ -157,6 +157,28 @@ def _activate_rls_probe_role(conn) -> tuple[str | None, bool]:
         return None, False
 
 
+def _cleanup_transient_rls_probe_role(conn) -> None:
+    """Revoke transient role grants before dropping the probe role."""
+    role_exists = conn.execute(
+        text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'b12_p2_rls_probe')")
+    ).scalar_one()
+    if not bool(role_exists):
+        return
+
+    cleanup_statements = (
+        "REVOKE ALL PRIVILEGES ON TABLE tenant_memberships FROM b12_p2_rls_probe",
+        "REVOKE ALL PRIVILEGES ON TABLE tenant_membership_roles FROM b12_p2_rls_probe",
+        "DROP OWNED BY b12_p2_rls_probe",
+        "DROP ROLE b12_p2_rls_probe",
+    )
+    for statement in cleanup_statements:
+        try:
+            conn.execute(text(statement))
+        except Exception:
+            # Teardown must be best-effort in fallback CI database modes.
+            pass
+
+
 def _ensure_fallback_prerequisites(sync_url: str) -> None:
     """
     Provision minimal prerequisites when isolated DB creation is unavailable.
@@ -464,7 +486,7 @@ def test_02_auth_membership_rls_isolation():
         if active_role is not None:
             conn.execute(text("RESET ROLE"))
         if created_probe_role:
-            conn.execute(text("DROP ROLE IF EXISTS b12_p2_rls_probe"))
+            _cleanup_transient_rls_probe_role(conn)
 
     assert memberships_visible_a == 1
     assert roles_visible_a == 1
