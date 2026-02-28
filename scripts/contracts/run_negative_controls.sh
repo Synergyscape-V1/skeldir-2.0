@@ -269,34 +269,41 @@ if pytest backend/tests/test_b12_p1_tenant_context_safety.py -q -k test_worker_r
 fi
 cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT"
 
-echo "[negative-control] 12/15 auth PII guard should fail under synthetic violation"
+echo "[negative-control] 12/17 auth PII guard should fail under synthetic violation"
 if python scripts/security/b12_p2_auth_pii_guard.py --simulate-violation; then
   echo "[negative-control] ERROR: auth PII guard did not fail under synthetic violation"
   exit 1
 fi
 
-echo "[negative-control] 13/15 users least-privilege should fail under BYPASSRLS role mutation"
+echo "[negative-control] 13/17 users least-privilege should fail under BYPASSRLS role mutation"
 if SKELDIR_B12_USERS_FORCE_BYPASS_ROLE=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
   echo "[negative-control] ERROR: users least-privilege gate did not fail under BYPASSRLS role mutation"
   exit 1
 fi
 
-echo "[negative-control] 14/15 users least-privilege should fail under grant regression mutation"
+echo "[negative-control] 14/17 users least-privilege should fail under grant regression mutation"
 if SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
   echo "[negative-control] ERROR: users least-privilege gate did not fail under grant regression mutation"
   exit 1
 fi
 
-echo "[negative-control] 15/16 users least-privilege should fail under RLS-disable mutation"
+echo "[negative-control] 15/17 users least-privilege should fail under RLS-disable mutation"
 if SKELDIR_B12_USERS_FORCE_DISABLE_RLS=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
   echo "[negative-control] ERROR: users least-privilege gate did not fail under RLS-disable mutation"
   exit 1
 fi
 
-echo "[negative-control] 16/16 users pre-auth insert viability should fail when INSERT policy is removed"
+echo "[negative-control] 16/17 users lookup owner posture should fail when function owner is superuser"
+if SKELDIR_B12_USERS_FORCE_LOOKUP_OWNER_BYPASS=1 \
+   pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
+  echo "[negative-control] ERROR: users lookup-owner posture gate did not fail under superuser-owner mutation"
+  exit 1
+fi
+
+echo "[negative-control] 17/17 users pre-auth insert viability should fail when INSERT policy is removed"
 if SKELDIR_B12_USERS_FORCE_DROP_INSERT_POLICY=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_10_users_preauth_insert_viability_under_force_rls; then
   echo "[negative-control] ERROR: users pre-auth insert gate did not fail when INSERT policy was removed"

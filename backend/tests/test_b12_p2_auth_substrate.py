@@ -751,6 +751,7 @@ def test_06_users_registry_least_privilege_contract():
     - SKELDIR_B12_USERS_FORCE_BYPASS_ROLE=1
     - SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION=1
     - SKELDIR_B12_USERS_FORCE_DISABLE_RLS=1
+    - SKELDIR_B12_USERS_FORCE_LOOKUP_OWNER_BYPASS=1
     """
     sync_url = _sync_database_url()
     engine = create_engine(sync_url)
@@ -760,6 +761,9 @@ def test_06_users_registry_least_privilege_contract():
         os.getenv("SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION") == "1"
     )
     force_disable_rls = os.getenv("SKELDIR_B12_USERS_FORCE_DISABLE_RLS") == "1"
+    force_lookup_owner_bypass = (
+        os.getenv("SKELDIR_B12_USERS_FORCE_LOOKUP_OWNER_BYPASS") == "1"
+    )
     active_roles = RUNTIME_ROLES
 
     with engine.begin() as conn:
@@ -785,6 +789,10 @@ def test_06_users_registry_least_privilege_contract():
             conn.execute(text("GRANT SELECT ON TABLE public.users TO app_rw"))
         if force_disable_rls:
             conn.execute(text("ALTER TABLE public.users DISABLE ROW LEVEL SECURITY"))
+        if force_lookup_owner_bypass:
+            conn.execute(
+                text("ALTER FUNCTION auth.lookup_user_by_login_hash(text) OWNER TO postgres")
+            )
 
         posture_rows = _role_posture_rows(conn, active_roles)
         grants_rows = _users_grants(conn)
@@ -819,6 +827,22 @@ def test_06_users_registry_least_privilege_contract():
                 """
             )
         ).scalar_one()
+        lookup_owner_row = conn.execute(
+            text(
+                """
+                SELECT
+                    r.rolname AS owner_role,
+                    r.rolsuper,
+                    r.rolbypassrls
+                FROM pg_proc p
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                JOIN pg_roles r ON r.oid = p.proowner
+                WHERE n.nspname = 'auth'
+                  AND p.proname = 'lookup_user_by_login_hash'
+                  AND p.pronargs = 1
+                """
+            )
+        ).mappings().one()
 
         _assert_runtime_role_posture_safe(posture_rows)
         _assert_users_grants_locked(grants_rows)
@@ -828,6 +852,12 @@ def test_06_users_registry_least_privilege_contract():
         assert lookup_row["security_type"] == "DEFINER"
         assert lookup_row["routine_schema"] == "auth"
         assert lookup_row["routine_name"] == "lookup_user_by_login_hash"
+        assert bool(lookup_owner_row["rolsuper"]) is False, (
+            "lookup function owner must not be superuser"
+        )
+        assert bool(lookup_owner_row["rolbypassrls"]) is False, (
+            "lookup function owner must not have BYPASSRLS"
+        )
 
 
 def test_07_users_registry_self_only_rls_and_non_enumerability():
