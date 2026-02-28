@@ -2095,6 +2095,8 @@ ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
+CREATE POLICY users_provision_insert_policy ON public.users FOR INSERT TO app_user WITH CHECK (((id IS NOT NULL) AND (length(TRIM(BOTH FROM login_identifier_hash)) > 0) AND (auth_provider = ANY (ARRAY['password'::text, 'oauth_google'::text, 'oauth_microsoft'::text, 'oauth_github'::text, 'sso'::text]))));
+
 CREATE POLICY users_self_select_policy ON public.users FOR SELECT USING ((id = (current_setting('app.current_user_id'::text, true))::uuid));
 
 CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (current_setting('app.current_user_id'::text, true))::uuid)) WITH CHECK ((id = (current_setting('app.current_user_id'::text, true))::uuid));

@@ -74,6 +74,7 @@ Pepper requirements:
 - Tenant-scoped auth tables (`tenant_memberships`, `tenant_membership_roles`) must enforce RLS with `app.current_tenant_id`.
 - `public.users` must enforce `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`.
 - `public.users` access must be self-only (`id = current_setting('app.current_user_id', true)::uuid`) for post-auth reads/updates.
+- `public.users` pre-auth provisioning must be granted only through the dedicated INSERT policy `users_provision_insert_policy` scoped to `app_user` with strict `WITH CHECK` invariants (no broad read grants).
 - Runtime roles must not have bypass posture (`rolsuper=false`, `rolbypassrls=false`).
 - `public.users` must not contain `tenant_id`; multi-tenant affiliation is encoded only through `tenant_memberships`.
 - Pre-auth identity lookup must use the DB-enforced boundary function `auth.lookup_user_by_login_hash(...)` (SECURITY DEFINER, exact hash match, minimal result projection).

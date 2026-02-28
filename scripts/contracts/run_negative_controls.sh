@@ -289,10 +289,17 @@ if SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION=1 \
   exit 1
 fi
 
-echo "[negative-control] 15/15 users least-privilege should fail under RLS-disable mutation"
+echo "[negative-control] 15/16 users least-privilege should fail under RLS-disable mutation"
 if SKELDIR_B12_USERS_FORCE_DISABLE_RLS=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
   echo "[negative-control] ERROR: users least-privilege gate did not fail under RLS-disable mutation"
+  exit 1
+fi
+
+echo "[negative-control] 16/16 users pre-auth insert viability should fail when INSERT policy is removed"
+if SKELDIR_B12_USERS_FORCE_DROP_INSERT_POLICY=1 \
+   pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_10_users_preauth_insert_viability_under_force_rls; then
+  echo "[negative-control] ERROR: users pre-auth insert gate did not fail when INSERT policy was removed"
   exit 1
 fi
 
