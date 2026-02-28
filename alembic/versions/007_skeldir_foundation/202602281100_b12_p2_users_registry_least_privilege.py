@@ -81,7 +81,7 @@ def upgrade() -> None:
 
     op.execute(
         """
-        CREATE OR REPLACE FUNCTION auth.lookup_user_by_login_hash(login_identifier_hash text)
+        CREATE OR REPLACE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text)
         RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text)
         LANGUAGE sql
         SECURITY DEFINER
@@ -92,7 +92,7 @@ def upgrade() -> None:
                 u.is_active,
                 u.auth_provider
             FROM public.users AS u
-            WHERE u.login_identifier_hash = lookup_user_by_login_hash.login_identifier_hash
+            WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
         """
@@ -151,4 +151,4 @@ def downgrade() -> None:
     _grant_if_role_exists("app_rw", "GRANT SELECT, INSERT, UPDATE ON TABLE public.users TO app_rw")
     _grant_if_role_exists("app_ro", "GRANT SELECT ON TABLE public.users TO app_ro")
 
-    op.execute("DROP SCHEMA IF EXISTS auth")
+    # Keep auth schema to avoid destructive-DLL class operations in automated downgrade paths.
