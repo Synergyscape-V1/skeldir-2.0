@@ -66,10 +66,18 @@ def upgrade() -> None:
         "app_user",
         "GRANT SELECT, INSERT, UPDATE ON TABLE public.jwt_verification_cache TO app_user",
     )
+    _grant_if_role_exists(
+        "skeldir",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE public.jwt_verification_cache TO skeldir",
+    )
 
 
 def downgrade() -> None:
     _revoke_if_role_exists(
         "app_user",
         "REVOKE SELECT, INSERT, UPDATE ON TABLE public.jwt_verification_cache FROM app_user",
+    )
+    _revoke_if_role_exists(
+        "skeldir",
+        "REVOKE SELECT, INSERT, UPDATE ON TABLE public.jwt_verification_cache FROM skeldir",
     )

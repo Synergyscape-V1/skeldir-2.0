@@ -352,7 +352,7 @@ def _deterministic_refresh_jitter_seconds(
     max_jitter = _jwt_refresh_jitter_seconds()
     if max_jitter <= 0:
         return 0
-    bucket = int(now.timestamp()) // 5
+    bucket = int(now.timestamp() * 1000)
     seed = "|".join(
         (
             reason,
