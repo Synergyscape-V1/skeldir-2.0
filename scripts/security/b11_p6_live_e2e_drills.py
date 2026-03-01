@@ -140,17 +140,23 @@ def _run_rotation_jwt_and_envelope() -> dict[str, Any]:
     os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
     os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 
-    from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, _generate_test_keypair  # noqa: WPS433
+    from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, TEST_PUBLIC_KEY_PEM, _generate_test_keypair  # noqa: WPS433
 
-    new_private_key, _new_public_key = _generate_test_keypair()
-    old_ring = {"current_kid": "kid-old", "keys": {"kid-old": TEST_PRIVATE_KEY_PEM}}
-    overlap_ring = {
+    new_private_key, new_public_key = _generate_test_keypair()
+    old_signing_ring = {"current_kid": "kid-old", "keys": {"kid-old": TEST_PRIVATE_KEY_PEM}}
+    old_verification_ring = {"current_kid": "kid-old", "keys": {"kid-old": TEST_PUBLIC_KEY_PEM}}
+    overlap_signing_ring = {
         "current_kid": "kid-new",
         "keys": {"kid-old": TEST_PRIVATE_KEY_PEM, "kid-new": new_private_key},
         "previous_kids": ["kid-old"],
     }
-    os.environ["AUTH_JWT_SECRET"] = json.dumps(old_ring)
-    os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = json.dumps(old_ring)
+    overlap_verification_ring = {
+        "current_kid": "kid-new",
+        "keys": {"kid-old": TEST_PUBLIC_KEY_PEM, "kid-new": new_public_key},
+        "previous_kids": ["kid-old"],
+    }
+    os.environ["AUTH_JWT_SECRET"] = json.dumps(old_signing_ring)
+    os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = json.dumps(old_verification_ring)
 
     secrets_module, auth_module = _reload_crypto_modules()
     secrets_module.reset_crypto_secret_caches_for_testing()
@@ -159,8 +165,8 @@ def _run_rotation_jwt_and_envelope() -> dict[str, Any]:
     old_header = jwt.get_unverified_header(old_token)
     old_kid = old_header.get("kid")
 
-    os.environ["AUTH_JWT_SECRET"] = json.dumps(overlap_ring)
-    os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = json.dumps(overlap_ring)
+    os.environ["AUTH_JWT_SECRET"] = json.dumps(overlap_signing_ring)
+    os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = json.dumps(overlap_verification_ring)
     time.sleep(1.1)
     secrets_module, auth_module = _reload_crypto_modules()
     secrets_module.reset_crypto_secret_caches_for_testing()
