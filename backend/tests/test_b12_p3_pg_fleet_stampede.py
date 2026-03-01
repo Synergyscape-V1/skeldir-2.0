@@ -12,6 +12,7 @@ from jwt import InvalidTokenError
 
 from app.core.config import settings
 from app.core.secrets import (
+    get_database_url,
     get_jwt_verification_pg_cache_state_for_testing,
     reset_crypto_secret_caches_for_testing,
     reset_jwt_verification_pg_cache_for_testing,
@@ -53,7 +54,6 @@ def _spawn_worker_unknown_kid(
     disable_singleflight: bool,
     result_queue,
 ) -> None:
-    os.environ["DATABASE_URL"] = db_url
     os.environ["SKELDIR_JWT_UNKNOWN_KID_REFRESH_DEBOUNCE_SECONDS"] = "0"
     os.environ["SKELDIR_JWT_REFRESH_MIN_FLOOR_SECONDS"] = "30"
     os.environ["SKELDIR_JWT_REFRESH_JITTER_SECONDS"] = "0"
@@ -70,6 +70,7 @@ def _spawn_worker_unknown_kid(
     local_settings.AUTH_JWT_ALGORITHM = "RS256"
     local_settings.AUTH_JWT_ISSUER = "https://issuer.skeldir.test"
     local_settings.AUTH_JWT_AUDIENCE = "skeldir-api"
+    local_settings.DATABASE_URL = db_url
     local_settings.AUTH_JWT_PUBLIC_KEY_RING = old_public_ring
 
     def _refreshing_fetch(key: str) -> str | None:
@@ -127,7 +128,6 @@ def _setup(monkeypatch):
     reset_jwt_verification_pg_cache_for_testing()
 
 
-@pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="DATABASE_URL required for Postgres-backed stampede tests")
 def test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes(monkeypatch):
     old_public_ring = _ring_payload(current_kid="kid-old", key_material=TEST_PUBLIC_KEY_PEM)
     rotated_public_ring = _ring_payload(
@@ -143,7 +143,7 @@ def test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes(monkeypa
     workers = 8
     barrier = ctx.Barrier(workers)
     queue = ctx.Queue()
-    db_url = os.environ["DATABASE_URL"]
+    db_url = get_database_url()
     processes = [
         ctx.Process(
             target=_spawn_worker_unknown_kid,
@@ -164,7 +164,6 @@ def test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes(monkeypa
     assert state.refresh_event_count <= 1
 
 
-@pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="DATABASE_URL required for Postgres-backed stampede tests")
 def test_refresh_floor_blocks_repeated_unknown_kid_refresh(monkeypatch):
     from app.core import secrets as secrets_module
 
@@ -192,7 +191,6 @@ def test_refresh_floor_blocks_repeated_unknown_kid_refresh(monkeypatch):
     assert state_after_second.refresh_event_count == 1
 
 
-@pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="DATABASE_URL required for Postgres-backed stampede tests")
 def test_refresh_backoff_applies_after_failure(monkeypatch):
     from app.core import secrets as secrets_module
 
@@ -225,7 +223,6 @@ def test_refresh_backoff_applies_after_failure(monkeypatch):
     assert state_after_second.refresh_event_count == state_after_first.refresh_event_count
 
 
-@pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="DATABASE_URL required for Postgres-backed stampede tests")
 def test_refresh_jitter_changes_next_allowed_schedule(monkeypatch):
     from app.core import secrets as secrets_module
 
