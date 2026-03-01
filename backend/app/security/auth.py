@@ -75,13 +75,6 @@ def _ensure_auth_configured() -> None:
             detail="JWT algorithm is not configured.",
             type_url="https://api.skeldir.com/problems/internal-server-error",
         )
-    if jwt_cfg.algorithm != RS256_ALGORITHM:
-        raise AuthError(
-            status_code=500,
-            title="Internal Server Error",
-            detail="JWT algorithm must be RS256.",
-            type_url="https://api.skeldir.com/problems/internal-server-error",
-        )
 
 
 def _decode_token(token: str) -> dict[str, Any]:
