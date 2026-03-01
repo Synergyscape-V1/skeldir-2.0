@@ -1364,6 +1364,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      - name: Generate deterministic RS256 E2E JWT rings
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, TEST_PUBLIC_KEY_PEM
+
+          private_ring = json.dumps({"current_kid": "kid-1", "keys": {"kid-1": TEST_PRIVATE_KEY_PEM}})
+          public_ring = json.dumps({"current_kid": "kid-1", "keys": {"kid-1": TEST_PUBLIC_KEY_PEM}})
+
+          github_env = os.environ["GITHUB_ENV"]
+          with open(github_env, "a", encoding="utf-8") as handle:
+              for key, value in {
+                  "AUTH_JWT_SECRET": private_ring,
+                  "AUTH_JWT_PUBLIC_KEY_RING": public_ring,
+                  "B060_PHASE6_JWT_SECRET": private_ring,
+              }.items():
+                  handle.write(f"{key}<<EOF\n{value}\nEOF\n")
+          PY
+
       - name: Start B0.6 Phase 6 E2E stack
         run: |
           docker compose -f docker-compose.e2e.yml up -d --build postgres mock_platform api
