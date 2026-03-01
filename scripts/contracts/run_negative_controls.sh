@@ -303,17 +303,27 @@ if SKELDIR_B12_USERS_FORCE_DROP_INSERT_POLICY=1 \
   exit 1
 fi
 
-echo "[negative-control] 19/20 RS256-only gate should fail under algorithm-check bypass mutation"
+echo "[negative-control] 19/20 RS256-only gate should fail under verifier algorithm-gate bypass mutation"
 python - <<'PY'
 from pathlib import Path
 
 path = Path("backend/app/security/auth.py")
 text = path.read_text(encoding="utf-8")
-needle = "        if token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
-replacement = "        if False and token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
-if needle not in text:
-    raise SystemExit("Unable to apply RS256 gate bypass mutation")
-path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+needle_header = "        if token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
+needle_decode = "                algorithms=[RS256_ALGORITHM],\n"
+if needle_header not in text or needle_decode not in text:
+    raise SystemExit("Unable to apply RS256 verifier bypass mutation")
+text = text.replace(
+    needle_header,
+    "        if False and token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n",
+    1,
+)
+text = text.replace(
+    needle_decode,
+    "                algorithms=[RS256_ALGORITHM, \"HS256\"],\n",
+    1,
+)
+path.write_text(text, encoding="utf-8")
 PY
 
 if pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_hs256_token_is_rejected; then

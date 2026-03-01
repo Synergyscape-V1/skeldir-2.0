@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any, Optional
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from app.core.secrets import (
     get_jwt_validation_config,
     resolve_jwt_verification_keys,
 )
+from app.core import clock as clock_module
 from app.core.identity import resolve_user_id
 from app.observability.context import set_tenant_id, set_user_id
 
@@ -136,7 +137,7 @@ def mint_internal_jwt(
     signing = get_jwt_signing_material()
     if signing.algorithm != RS256_ALGORITHM:
         raise RuntimeError("AUTH_JWT_ALGORITHM must be RS256")
-    now = datetime.now(timezone.utc)
+    now = clock_module.utcnow()
     payload: dict[str, Any] = {
         "tenant_id": str(tenant_id),
         "sub": str(user_id),

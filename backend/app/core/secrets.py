@@ -213,8 +213,13 @@ def get_platform_token_encryption_key() -> str:
 
 
 def get_jwt_validation_config() -> JwtValidationConfig:
+    public_ring = _read_setting("AUTH_JWT_PUBLIC_KEY_RING")
+    if public_ring is None:
+        env_name = (_read_setting("ENVIRONMENT") or "").lower()
+        if env_name in {"local", "dev", "ci", "test"}:
+            public_ring = _read_setting("AUTH_JWT_SECRET")
     return JwtValidationConfig(
-        public_key_ring=_read_setting("AUTH_JWT_PUBLIC_KEY_RING"),
+        public_key_ring=public_ring,
         jwks_url=_read_setting("AUTH_JWT_JWKS_URL"),
         algorithm=_read_setting("AUTH_JWT_ALGORITHM"),
         issuer=_read_setting("AUTH_JWT_ISSUER"),
@@ -352,6 +357,10 @@ def _refresh_jwt_signing_ring() -> JwtKeyRing:
 
 def _refresh_jwt_verification_ring() -> JwtKeyRing:
     value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
+    if value is None:
+        env_name = (_read_setting("ENVIRONMENT") or "").lower()
+        if env_name in {"local", "dev", "ci", "test"}:
+            value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
     if value is None:
         raise RuntimeError("required secret missing: AUTH_JWT_PUBLIC_KEY_RING")
     source = "control_plane" if should_enable_control_plane() else "settings"

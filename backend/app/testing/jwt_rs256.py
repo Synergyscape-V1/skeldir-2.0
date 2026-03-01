@@ -2,44 +2,25 @@ from __future__ import annotations
 
 import json
 
-TEST_PRIVATE_KEY_PEM = """-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDHn+BCpGJJGkkC
-bVbuKbAiq1EKtMRlISVN8OQOYrOAqJWGu+ORI070/azG2UFMJQOc8GIZPYvMmbeN
-8+EbFs0AvwDpo+WSgeenLnpvoSvHHIr+fpkaqEfVcF2yp2g+f+WvtEsMV7HMUOYf
-/ZzlH9c1THcHh+xxXtNt0hyWa1dMebHnP+xw3SjkzMVsDGfIxai/KprZQOTX5cL/
-VXWZeIetIazZMoCWVRxz4/7N9Rbcd6NqZYmQ1qotImOs8EPlWUFIJKtaVqQlggLW
-BUE5XiLpSVAplaELXfxUUFBZ3dZTcD1DX0y+N0PcLtnYjHo0w4kl225aU54RYVhg
-GxzQzrfvAgMBAAECggEARdp/KjLFpdkJ1UyXj82MsgUK3dk1pEG+AREbbKFDOPFF
-KZmT31Tgq0AddpPNkqydIAzJ9xUfV2Au6ACAM+99mxY7ZoaQrfzBKDJOa8OVQx6M
-0NNSFg7u3BRu5TZJdx1gLWTEojQJpnpknKstfMvwjdkNCdiZd258Q8CzejtjmAGb
-bBcshMwJC8q6Yxf4SXAHiSmJ9GmjaGDt2Aic40voRuumRhNKXjnGWu6a+px0l6cH
-/gO+MO9BxpFb4OWF99i0oqwsCwTQR4WEJmqDfcCkVpI3PMzAx6HOuz46B3hX0/MT
-XnwKcPiP1U58WhZDGaZdkyXv/idxpJNrtS8D4NXwqQKBgQDnK9MdP1KPIVjINVf6
-GUehgXoO0uSm8EdeGZVg5ONDNGqPby98LOJmgC4K/MU1MVshLXlwo1LLKzu3rrqs
-KqMDXakvgsYxUBreM4ufyLjj4/1FcBKP9INptkNggIHzcPTZwNm4dZQSqx8bEjDz
-Pevo9C5lj/wXk+MBEQk6l5LKIwKBgQDdEKif88VGXfNsYzUfNJWr9Zk0NNjvGvQR
-O0aYaCzJeAkBEDMUeDnrF0a/gU+uuC/4QJB4NQrVnxAR/G4RTQodapcupem82fWs
-4/MYgyQZ2H5x2+e3dSbg7MiG/NeAYSkGXv8n4VMFoqE8XOISetPtpeYb46Hcmdud
-kqolStFZxQKBgQC356Ru6xZZ6ZSAyfcwbvYOZTveGSZwLE0Kbl3pFI47w7JWY4Sq
-S+bc1nJKqWaV96rgzRWEZ1oRaVZ7vVSibNT8c4GJ24aianDFfspAFmYIXjL6D7uk
-rEfzTF1zoyg+rAkORp6uYVOoOlxno+QvTn6j98YFZDOP6kW4bn4iD71mcwKBgQCS
-ryEUsY3u+RwyiUmQYTYHGjoEGCTx0zKr1GctbcJ6FHn1CKi8JmJYCePZ4pXa20CJ
-O14hRSDhSmBBbvwh4rqZdkbGnzSPKRkJFWASncHwnGSabE4+vy+DA9qzJ0ZfWxj7
-r0EjVzHdhWHzSbaAiJvjDre3Pb4DQNwmnFDl2dU7+QKBgG1Bg0PJ7RUH2uk3+p4+
-PgSLPL22tGc566NgkuMWkGuI3ZOuykqnvD9wTHnO8X/AB/PooBesP8a6k6imfNsQ
-1fQTqWhIaSq9LRMSjV3zTGCpl5idIR84hOoagi8eK4cAUUnLsLXIxuqI0ThB7QCB
-XuC30IrkE6IEqVD/+kJ1/Sfh
------END PRIVATE KEY-----"""
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
-TEST_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAx5/gQqRiSRpJAm1W7imw
-IqtRCrTEZSElTfDkDmKzgKiVhrvjkSNO9P2sxtlBTCUDnPBiGT2LzJm3jfPhGxbN
-AL8A6aPlkoHnpy56b6ErxxyK/n6ZGqhH1XBdsqdoPn/lr7RLDFexzFDmH/2c5R/X
-NUx3B4fscV7TbdIclmtXTHmx5z/scN0o5MzFbAxnyMWovyqa2UDk1+XC/1V1mXiH
-rSGs2TKAllUcc+P+zfUW3HejamWJkNaqLSJjrPBD5VlBSCSrWlakJYIC1gVBOV4i
-6UlQKZWhC138VFBQWd3WU3A9Q19MvjdD3C7Z2Ix6NMOJJdtuWlOeEWFYYBsc0M63
-7wIDAQAB
------END PUBLIC KEY-----"""
+
+def _generate_test_keypair() -> tuple[str, str]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+    return private_pem, public_pem
+
+
+TEST_PRIVATE_KEY_PEM, TEST_PUBLIC_KEY_PEM = _generate_test_keypair()
 
 
 def private_ring_payload(*, kid: str = "kid-1") -> str:
