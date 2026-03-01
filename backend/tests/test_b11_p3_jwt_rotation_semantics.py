@@ -10,7 +10,7 @@ import pytest
 from jwt import InvalidTokenError
 
 from app.core.config import settings
-from app.core.secrets import reset_crypto_secret_caches_for_testing
+from app.core.secrets import reset_crypto_secret_caches_for_testing, reset_jwt_verification_pg_cache_for_testing
 from app.security.auth import _decode_token, mint_internal_jwt
 from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, TEST_PUBLIC_KEY_PEM
 
@@ -50,8 +50,10 @@ def _reset(monkeypatch):
         _jwt_ring_payload(current_kid="kid-1", key_material=TEST_PUBLIC_KEY_PEM),
     )
     reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
     yield
     reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
 
 
 def test_jwt_overlap_rotation_switches_kid_within_bound(monkeypatch):

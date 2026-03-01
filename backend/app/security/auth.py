@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import Header, Request
 import jwt
-from jwt import InvalidTokenError
+from jwt import InvalidTokenError, PyJWTError
 
 from app.core.secrets import (
     get_jwt_signing_material,
@@ -95,7 +95,7 @@ def _decode_token(token: str) -> dict[str, Any]:
             raise InvalidTokenError("Invalid JWT algorithm.")
         kid_value = header.get("kid")
         kid = str(kid_value).strip() if kid_value is not None else None
-    except InvalidTokenError:
+    except PyJWTError:
         kid = None
     primary_key, fallback_keys, requires_kid = resolve_jwt_verification_keys(kid=kid)
     if requires_kid and not kid:
@@ -109,7 +109,7 @@ def _decode_token(token: str) -> dict[str, Any]:
                 algorithms=[RS256_ALGORITHM],
                 **decode_kwargs,
             )
-        except InvalidTokenError:
+        except PyJWTError:
             continue
     raise InvalidTokenError("Invalid or expired JWT token.")
 

@@ -328,6 +328,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
     steps:
@@ -368,6 +369,7 @@ jobs:
           pip install pyyaml
           go install github.com/oasdiff/oasdiff@v1.11.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          alembic upgrade head
 
       - name: Bundle canonical OpenAPI artifacts
         run: |
@@ -425,6 +427,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
     steps:
@@ -442,6 +445,7 @@ jobs:
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
+          alembic upgrade head
 
       - name: Execute JWT -> tenant context invariant tests
         run: |
@@ -451,6 +455,7 @@ jobs:
           pytest backend/tests/test_b12_p2_auth_substrate.py -q
           pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q
           pytest backend/tests/test_b11_p3_jwt_rotation_semantics.py -q -k "unknown_kid_forces_debounced_refresh_and_recovers or unknown_kid_refresh_is_debounced_under_flood"
+          pytest backend/tests/test_b12_p3_pg_fleet_stampede.py -q
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest
@@ -1324,6 +1329,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: checkout
     env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       E2E_API_BASE_URL: http://127.0.0.1:8000
       E2E_MOCK_BASE_URL: http://127.0.0.1:8080
       E2E_DB_URL: postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
@@ -1357,6 +1363,26 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
+
+      - name: Generate deterministic RS256 E2E JWT rings
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, TEST_PUBLIC_KEY_PEM
+
+          private_ring = json.dumps({"current_kid": "kid-1", "keys": {"kid-1": TEST_PRIVATE_KEY_PEM}})
+          public_ring = json.dumps({"current_kid": "kid-1", "keys": {"kid-1": TEST_PUBLIC_KEY_PEM}})
+
+          github_env = os.environ["GITHUB_ENV"]
+          with open(github_env, "a", encoding="utf-8") as handle:
+              for key, value in {
+                  "AUTH_JWT_SECRET": private_ring,
+                  "AUTH_JWT_PUBLIC_KEY_RING": public_ring,
+                  "B060_PHASE6_JWT_SECRET": private_ring,
+              }.items():
+                  handle.write(f"{key}<<EOF\n{value}\nEOF\n")
+          PY
 
       - name: Start B0.6 Phase 6 E2E stack
         run: |

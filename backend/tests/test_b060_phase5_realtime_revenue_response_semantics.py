@@ -10,15 +10,15 @@ import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, private_ring_payload, public_ring_payload
+from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
 
-os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
-os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
-os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
-os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
-os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
-os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
+os.environ["AUTH_JWT_SECRET"] = private_ring_payload()
+os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = public_ring_payload()
+os.environ["AUTH_JWT_ALGORITHM"] = "RS256"
+os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
+os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
+os.environ["PLATFORM_TOKEN_ENCRYPTION_KEY"] = "test-platform-key"
+os.environ["PLATFORM_TOKEN_KEY_ID"] = "test-key"
 
 import jwt
 import pytest
@@ -26,6 +26,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 from app.core import clock as clock_module
+from app.core.secrets import (
+    get_jwt_signing_material,
+    get_jwt_validation_config,
+    reset_crypto_secret_caches_for_testing,
+    reset_jwt_verification_pg_cache_for_testing,
+    seed_jwt_verification_pg_cache_for_testing,
+)
 from app.db.session import AsyncSessionLocal, set_tenant_guc_async
 from app.main import app
 from app.services import realtime_revenue_providers as providers
@@ -35,6 +42,21 @@ from tests.builders.core_builders import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _reset_jwt_verifier_state() -> None:
+    reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
+    try:
+        cfg = get_jwt_validation_config()
+        if cfg.public_key_ring:
+            seed_jwt_verification_pg_cache_for_testing(raw_ring=cfg.public_key_ring)
+    except Exception:
+        pass
+    yield
+    reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
 
 
 class FrozenClock:
@@ -53,20 +75,21 @@ def _parse_iso_datetime(value: str) -> datetime:
 
 
 def _build_token(tenant_id: UUID) -> str:
+    signing = get_jwt_signing_material()
     now = int(time.time())
     payload = {
         "sub": "user-1",
-        "iss": os.environ["AUTH_JWT_ISSUER"],
-        "aud": os.environ["AUTH_JWT_AUDIENCE"],
+        "iss": signing.issuer or os.environ["AUTH_JWT_ISSUER"],
+        "aud": signing.audience or os.environ["AUTH_JWT_AUDIENCE"],
         "iat": now,
         "exp": now + 3600,
         "tenant_id": str(tenant_id),
     }
     return jwt.encode(
         payload,
-        TEST_PRIVATE_KEY_PEM,
-        algorithm=os.environ["AUTH_JWT_ALGORITHM"],
-        headers={"kid": "kid-1"},
+        signing.key,
+        algorithm=signing.algorithm,
+        headers={"kid": signing.kid},
     )
 
 

@@ -10,7 +10,7 @@ from jwt import InvalidTokenError
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config import settings
-from app.core.secrets import reset_crypto_secret_caches_for_testing
+from app.core.secrets import reset_crypto_secret_caches_for_testing, reset_jwt_verification_pg_cache_for_testing
 from app.main import app
 from app.security.auth import _decode_token, decode_and_verify_jwt
 from app.tasks.context import decode_worker_auth_token
@@ -38,8 +38,10 @@ def _setup(monkeypatch):
     )
     monkeypatch.setenv("SKELDIR_JWT_KEY_RING_MAX_STALENESS_SECONDS", "300")
     reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
     yield
     reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
 
 
 def _payload() -> dict[str, object]:

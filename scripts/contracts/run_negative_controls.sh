@@ -311,7 +311,8 @@ path = Path("backend/app/security/auth.py")
 text = path.read_text(encoding="utf-8")
 needle_header = "        if token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
 needle_decode = "                algorithms=[RS256_ALGORITHM],\n"
-if needle_header not in text or needle_decode not in text:
+needle_keys = "    primary_key, fallback_keys, requires_kid = resolve_jwt_verification_keys(kid=kid)\n"
+if needle_header not in text or needle_decode not in text or needle_keys not in text:
     raise SystemExit("Unable to apply RS256 verifier bypass mutation")
 text = text.replace(
     needle_header,
@@ -321,6 +322,11 @@ text = text.replace(
 text = text.replace(
     needle_decode,
     "                algorithms=[RS256_ALGORITHM, \"HS256\"],\n",
+    1,
+)
+text = text.replace(
+    needle_keys,
+    "    if token_algorithm == \"HS256\":\n        primary_key, fallback_keys, requires_kid = \"hs-secret\", [], False\n    else:\n        primary_key, fallback_keys, requires_kid = resolve_jwt_verification_keys(kid=kid)\n",
     1,
 )
 path.write_text(text, encoding="utf-8")
@@ -343,6 +349,15 @@ echo "[negative-control] 21/21 HTTP no-secret-fetch gate should fail under force
 if SKELDIR_B12_P3_FORCE_PER_REQUEST_VERIFIER_REFRESH=1 \
    pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_http_plane_steady_state_does_not_read_secret_source; then
   echo "[negative-control] ERROR: HTTP no-secret-fetch gate did not fail under forced per-request refresh"
+  exit 1
+fi
+
+echo "[negative-control] 22/22 fleet singleflight gate should fail when Postgres singleflight is disabled"
+if SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT=1 \
+   SKELDIR_B12_P3_TEST_DISABLE_SINGLEFLIGHT=1 \
+   SKELDIR_B12_P3_TEST_REFRESH_FLOOR_SECONDS=0 \
+   pytest backend/tests/test_b12_p3_pg_fleet_stampede.py -q -k test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes; then
+  echo "[negative-control] ERROR: fleet singleflight gate did not fail under disabled Postgres singleflight mutation"
   exit 1
 fi
 
