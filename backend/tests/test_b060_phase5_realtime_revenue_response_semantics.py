@@ -26,6 +26,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 from app.core import clock as clock_module
+from app.core.secrets import (
+    reset_crypto_secret_caches_for_testing,
+    reset_jwt_verification_pg_cache_for_testing,
+    seed_jwt_verification_pg_cache_for_testing,
+)
 from app.db.session import AsyncSessionLocal, set_tenant_guc_async
 from app.main import app
 from app.services import realtime_revenue_providers as providers
@@ -35,6 +40,19 @@ from tests.builders.core_builders import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _reset_jwt_verifier_state() -> None:
+    reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
+    try:
+        seed_jwt_verification_pg_cache_for_testing(raw_ring=os.environ["AUTH_JWT_PUBLIC_KEY_RING"])
+    except Exception:
+        pass
+    yield
+    reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
 
 
 class FrozenClock:
