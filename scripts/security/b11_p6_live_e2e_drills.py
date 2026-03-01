@@ -136,17 +136,21 @@ def _sync_dsn(raw: str) -> str:
 def _run_rotation_jwt_and_envelope() -> dict[str, Any]:
     os.environ["SKELDIR_JWT_KEY_RING_MAX_STALENESS_SECONDS"] = "1"
     os.environ["SKELDIR_JWT_UNKNOWN_KID_REFRESH_DEBOUNCE_SECONDS"] = "1"
-    os.environ["AUTH_JWT_ALGORITHM"] = "HS256"
+    os.environ["AUTH_JWT_ALGORITHM"] = "RS256"
     os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
     os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 
-    old_ring = {"current_kid": "kid-old", "keys": {"kid-old": "secret-old"}}
+    from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, _generate_test_keypair  # noqa: WPS433
+
+    new_private_key, _new_public_key = _generate_test_keypair()
+    old_ring = {"current_kid": "kid-old", "keys": {"kid-old": TEST_PRIVATE_KEY_PEM}}
     overlap_ring = {
         "current_kid": "kid-new",
-        "keys": {"kid-old": "secret-old", "kid-new": "secret-new"},
+        "keys": {"kid-old": TEST_PRIVATE_KEY_PEM, "kid-new": new_private_key},
         "previous_kids": ["kid-old"],
     }
     os.environ["AUTH_JWT_SECRET"] = json.dumps(old_ring)
+    os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = json.dumps(old_ring)
 
     secrets_module, auth_module = _reload_crypto_modules()
     secrets_module.reset_crypto_secret_caches_for_testing()
@@ -156,6 +160,7 @@ def _run_rotation_jwt_and_envelope() -> dict[str, Any]:
     old_kid = old_header.get("kid")
 
     os.environ["AUTH_JWT_SECRET"] = json.dumps(overlap_ring)
+    os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = json.dumps(overlap_ring)
     time.sleep(1.1)
     secrets_module, auth_module = _reload_crypto_modules()
     secrets_module.reset_crypto_secret_caches_for_testing()
