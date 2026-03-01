@@ -831,6 +831,19 @@ CREATE TABLE public.investigations (
 
 ALTER TABLE ONLY public.investigations FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.jwt_verification_cache (
+    singleton_id smallint NOT NULL,
+    jwks_json text,
+    fetched_at timestamp with time zone,
+    next_allowed_refresh_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_refresh_error_at timestamp with time zone,
+    refresh_error_count integer DEFAULT 0 NOT NULL,
+    refresh_event_count bigint DEFAULT 0 NOT NULL,
+    last_refresh_reason text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT jwt_verification_cache_singleton_id_check CHECK ((singleton_id = 1))
+);
+
 CREATE TABLE public.kombu_message (
     id integer NOT NULL,
     visible boolean DEFAULT true NOT NULL,
@@ -1492,6 +1505,9 @@ ALTER TABLE ONLY public.investigation_tool_calls
 
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.jwt_verification_cache
+    ADD CONSTRAINT jwt_verification_cache_pkey PRIMARY KEY (singleton_id);
 
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT kombu_message_pkey PRIMARY KEY (id);
