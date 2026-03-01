@@ -144,6 +144,12 @@ def test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes(monkeypa
     token = jwt.encode(_payload(), TEST_PRIVATE_KEY_PEM, algorithm="RS256", headers={"kid": "kid-new"})
     ctx = multiprocessing.get_context("spawn")
     workers = 8
+    disable_singleflight = os.getenv("SKELDIR_B12_P3_TEST_DISABLE_SINGLEFLIGHT", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     refresh_floor_seconds = int(os.getenv("SKELDIR_B12_P3_TEST_REFRESH_FLOOR_SECONDS", "30"))
     barrier = ctx.Barrier(workers)
     queue = ctx.Queue()
@@ -157,7 +163,7 @@ def test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes(monkeypa
                 old_public_ring,
                 rotated_public_ring,
                 db_url,
-                False,
+                disable_singleflight,
                 refresh_floor_seconds,
                 queue,
             ),
