@@ -311,7 +311,8 @@ path = Path("backend/app/security/auth.py")
 text = path.read_text(encoding="utf-8")
 needle_header = "        if token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
 needle_decode = "                algorithms=[RS256_ALGORITHM],\n"
-if needle_header not in text or needle_decode not in text:
+needle_keys = "    primary_key, fallback_keys, requires_kid = resolve_jwt_verification_keys(kid=kid)\n"
+if needle_header not in text or needle_decode not in text or needle_keys not in text:
     raise SystemExit("Unable to apply RS256 verifier bypass mutation")
 text = text.replace(
     needle_header,
@@ -321,6 +322,11 @@ text = text.replace(
 text = text.replace(
     needle_decode,
     "                algorithms=[RS256_ALGORITHM, \"HS256\"],\n",
+    1,
+)
+text = text.replace(
+    needle_keys,
+    "    if token_algorithm == \"HS256\":\n        primary_key, fallback_keys, requires_kid = \"hs-secret\", [], False\n    else:\n        primary_key, fallback_keys, requires_kid = resolve_jwt_verification_keys(kid=kid)\n",
     1,
 )
 path.write_text(text, encoding="utf-8")
