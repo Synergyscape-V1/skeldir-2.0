@@ -1,16 +1,16 @@
-context	status	conclusion	url
-B0.7 P2 Runtime Proof (LLM + Redaction)	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175691
-Celery Foundation B0.5.1	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175745
-Validate Contracts	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175707
-Frontend Contract Consumption Gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255997
-Mock Usability Gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255989
-Phase 1 Negative Controls	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255996
-Phase 1 Runtime Conformance	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255981
-JWT Tenant Context Invariants	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255982
-B0.6 Phase 2 Adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103356/job/65268166768
-Phase Gates (B0.3)	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268188812
-Phase 8 Regression Gate (Full Physics)	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22546072511/job/65308616852
-b11-p2-secret-chokepoint-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166836
-b11-p2-readiness-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166824
-b11-p4-static-and-runtime-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166742
-b11-p4-ci-audit-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166760
+﻿context	source	state	started_at	completed_at	details_url
+B0.6 Phase 2 Adjudication	check_run	success	2026-03-01T17:19:13Z	2026-03-01T17:20:15Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458343/job/65314569209
+B0.7 P2 Runtime Proof (LLM + Redaction)	check_run	success	2026-03-01T17:19:29Z	2026-03-01T17:21:51Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314581777
+b11-p2-readiness-gate	check_run	success	2026-03-01T17:19:13Z	2026-03-01T17:19:50Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458353/job/65314569278
+b11-p2-secret-chokepoint-gate	check_run	success	2026-03-01T17:19:13Z	2026-03-01T17:19:48Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458353/job/65314569292
+b11-p4-ci-audit-gate	check_run	success	2026-03-01T17:19:13Z	2026-03-01T17:19:35Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458318/job/65314569274
+b11-p4-static-and-runtime-gate	check_run	success	2026-03-01T17:19:13Z	2026-03-01T17:20:13Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458318/job/65314569271
+Celery Foundation B0.5.1	check_run	success	2026-03-01T17:19:28Z	2026-03-01T17:21:31Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314581800
+Frontend Contract Consumption Gate	check_run	success	2026-03-01T17:21:15Z	2026-03-01T17:23:14Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669127
+JWT Tenant Context Invariants	check_run	success	2026-03-01T17:21:15Z	2026-03-01T17:22:25Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669131
+Mock Usability Gate	check_run	success	2026-03-01T17:21:15Z	2026-03-01T17:22:18Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669120
+Phase 1 Negative Controls	check_run	success	2026-03-01T17:21:15Z	2026-03-01T17:25:34Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669119
+Phase 1 Runtime Conformance	check_run	success	2026-03-01T17:21:15Z	2026-03-01T17:21:55Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669125
+Phase 8 Regression Gate (Full Physics)	check_run	success	2026-03-01T18:53:36Z	2026-03-01T19:05:30Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22550185316/job/65318836450
+Phase Gates (B0.3)	check_run	success	2026-03-01T17:19:46Z	2026-03-01T17:21:47Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314598308
+Validate Contracts	check_run	success	2026-03-01T17:19:29Z	2026-03-01T17:21:13Z	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314581781
