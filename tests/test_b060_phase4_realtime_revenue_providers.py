@@ -17,10 +17,6 @@ from httpx import ASGITransport, AsyncClient, MockTransport, Response, Timeout
 from sqlalchemy import text
 
 os.environ["TESTING"] = "1"
-os.environ["AUTH_JWT_SECRET"] = "test-secret"
-os.environ["AUTH_JWT_ALGORITHM"] = "HS256"
-os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
-os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
 os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
 os.environ.setdefault(
@@ -29,6 +25,17 @@ os.environ.setdefault(
 )
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+from app.testing.jwt_rs256 import (  # noqa: E402
+    TEST_PRIVATE_KEY_PEM,
+    private_ring_payload,
+    public_ring_payload,
+)
+
+os.environ["AUTH_JWT_SECRET"] = private_ring_payload()
+os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = public_ring_payload()
+os.environ["AUTH_JWT_ALGORITHM"] = "RS256"
+os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
+os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
@@ -65,8 +72,9 @@ def _build_token(tenant_id: UUID) -> str:
     }
     return jwt.encode(
         payload,
-        os.environ["AUTH_JWT_SECRET"],
+        TEST_PRIVATE_KEY_PEM,
         algorithm=os.environ["AUTH_JWT_ALGORITHM"],
+        headers={"kid": "kid-1"},
     )
 
 

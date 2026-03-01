@@ -1,0 +1,16 @@
+context	status	conclusion	url
+B0.7 P2 Runtime Proof (LLM + Redaction)	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175691
+Celery Foundation B0.5.1	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175745
+Validate Contracts	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175707
+Frontend Contract Consumption Gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255997
+Mock Usability Gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255989
+Phase 1 Negative Controls	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255996
+Phase 1 Runtime Conformance	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255981
+JWT Tenant Context Invariants	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255982
+B0.6 Phase 2 Adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103356/job/65268166768
+Phase Gates (B0.3)	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268188812
+Phase 8 Regression Gate (Full Physics)	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22546072511/job/65308616852
+b11-p2-secret-chokepoint-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166836
+b11-p2-readiness-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166824
+b11-p4-static-and-runtime-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166742
+b11-p4-ci-audit-gate	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166760

@@ -15,6 +15,7 @@ from uuid import UUID
 
 from app.core.identity import resolve_user_id
 from app.observability.context import set_request_correlation_id, set_tenant_id, set_user_id
+from app.security.auth import decode_and_verify_jwt
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,11 @@ def _normalize_tenant_id(value: Any) -> UUID:
     if isinstance(value, UUID):
         return value
     return UUID(str(value))
+
+
+def decode_worker_auth_token(token: str) -> dict[str, Any]:
+    """Worker-plane entrypoint for JWT verification parity with HTTP."""
+    return decode_and_verify_jwt(token)
 
 
 def tenant_task(task_fn: Callable) -> Callable:

@@ -49,7 +49,8 @@ jobs:
       B11_P6_ADMIN_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b11_p6
       B11_P4_ROTATION_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       AUTH_JWT_SECRET: ci-secret
-      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_PUBLIC_KEY_RING: ci-public-ring
+      AUTH_JWT_ALGORITHM: RS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
       AUTH_JWT_AUDIENCE: skeldir-api
       PLATFORM_TOKEN_ENCRYPTION_KEY: ci-platform-key

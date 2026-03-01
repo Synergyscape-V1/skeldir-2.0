@@ -128,6 +128,14 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         owner="platform-security",
         call_sites=("backend/app/security/auth.py",),
     ),
+    "AUTH_JWT_PUBLIC_KEY_RING": _contract(
+        key="AUTH_JWT_PUBLIC_KEY_RING",
+        classification="secret",
+        aws_path_template="/skeldir/{env}/secret/auth/jwt-public-key-ring",
+        rotation_criticality="critical",
+        owner="platform-security",
+        call_sites=("backend/app/security/auth.py",),
+    ),
     "AUTH_JWT_ALGORITHM": _contract(
         key="AUTH_JWT_ALGORITHM",
         classification="config",
