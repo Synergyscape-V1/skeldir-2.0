@@ -38,6 +38,15 @@ def main() -> int:
     if "DATABASE_URL" not in env:
         print("DATABASE_URL is required.", file=os.sys.stderr)
         return 1
+    env.setdefault("ENVIRONMENT", "test")
+    if not env.get("AUTH_JWT_SECRET") or not env.get("AUTH_JWT_PUBLIC_KEY_RING"):
+        from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload  # noqa: WPS433
+
+        env["AUTH_JWT_SECRET"] = private_ring_payload()
+        env["AUTH_JWT_PUBLIC_KEY_RING"] = public_ring_payload()
+    env["AUTH_JWT_ALGORITHM"] = "RS256"
+    env.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
+    env.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
     summary_path = EVIDENCE_DIR / "b0_6_summary.json"
     try:
         run(["alembic", "upgrade", "skeldir_foundation@head"], "b0_6_alembic.log", env=env)
