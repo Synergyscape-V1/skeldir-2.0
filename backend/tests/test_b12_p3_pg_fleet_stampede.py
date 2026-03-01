@@ -19,7 +19,9 @@ from app.core.secrets import (
     seed_jwt_verification_pg_cache_for_testing,
 )
 from app.security.auth import _decode_token
-from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, TEST_PUBLIC_KEY_PEM
+from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, TEST_PUBLIC_KEY_PEM, _generate_test_keypair
+
+_ALT_PRIVATE_KEY_PEM, _ALT_PUBLIC_KEY_PEM = _generate_test_keypair()
 
 
 def _ring_payload(*, current_kid: str, key_material: str, all_kids: list[str] | None = None) -> str:
@@ -168,7 +170,7 @@ def test_refresh_floor_blocks_repeated_unknown_kid_refresh(monkeypatch):
     from app.core import secrets as secrets_module
 
     monkeypatch.setenv("SKELDIR_JWT_REFRESH_MIN_FLOOR_SECONDS", "30")
-    old_public_ring = _ring_payload(current_kid="kid-old", key_material=TEST_PUBLIC_KEY_PEM)
+    old_public_ring = _ring_payload(current_kid="kid-old", key_material=_ALT_PUBLIC_KEY_PEM)
     monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", old_public_ring)
     seed_jwt_verification_pg_cache_for_testing(raw_ring=old_public_ring)
 
@@ -199,7 +201,7 @@ def test_refresh_backoff_applies_after_failure(monkeypatch):
     monkeypatch.setenv("SKELDIR_JWT_REFRESH_BACKOFF_BASE_SECONDS", "5")
     monkeypatch.setenv("SKELDIR_JWT_REFRESH_BACKOFF_MAX_SECONDS", "30")
 
-    old_public_ring = _ring_payload(current_kid="kid-old", key_material=TEST_PUBLIC_KEY_PEM)
+    old_public_ring = _ring_payload(current_kid="kid-old", key_material=_ALT_PUBLIC_KEY_PEM)
     monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", old_public_ring)
     seed_jwt_verification_pg_cache_for_testing(raw_ring=old_public_ring)
 
@@ -229,7 +231,7 @@ def test_refresh_jitter_changes_next_allowed_schedule(monkeypatch):
     monkeypatch.setenv("SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT", "1")
     monkeypatch.setenv("SKELDIR_JWT_REFRESH_MIN_FLOOR_SECONDS", "0")
     monkeypatch.setenv("SKELDIR_JWT_REFRESH_JITTER_SECONDS", "5")
-    old_public_ring = _ring_payload(current_kid="kid-old", key_material=TEST_PUBLIC_KEY_PEM)
+    old_public_ring = _ring_payload(current_kid="kid-old", key_material=_ALT_PUBLIC_KEY_PEM)
     monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", old_public_ring)
     seed_jwt_verification_pg_cache_for_testing(raw_ring=old_public_ring)
 

@@ -73,4 +73,3 @@ def downgrade() -> None:
         "app_user",
         "REVOKE SELECT, INSERT, UPDATE ON TABLE public.jwt_verification_cache FROM app_user",
     )
-    op.execute("DROP TABLE IF EXISTS public.jwt_verification_cache")

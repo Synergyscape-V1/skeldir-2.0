@@ -1329,6 +1329,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: checkout
     env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       E2E_API_BASE_URL: http://127.0.0.1:8000
       E2E_MOCK_BASE_URL: http://127.0.0.1:8080
       E2E_DB_URL: postgresql://skeldir:skeldir_e2e@127.0.0.1:5432/skeldir_e2e
