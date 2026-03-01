@@ -11,18 +11,23 @@ from uuid import UUID, uuid4
 
 from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, private_ring_payload, public_ring_payload
 
-os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
-os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
-os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
-os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
-os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
-os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
+os.environ["AUTH_JWT_SECRET"] = private_ring_payload()
+os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = public_ring_payload()
+os.environ["AUTH_JWT_ALGORITHM"] = "RS256"
+os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
+os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
+os.environ["PLATFORM_TOKEN_ENCRYPTION_KEY"] = "test-platform-key"
+os.environ["PLATFORM_TOKEN_KEY_ID"] = "test-key"
 
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.core.secrets import (
+    reset_crypto_secret_caches_for_testing,
+    reset_jwt_verification_pg_cache_for_testing,
+    seed_jwt_verification_pg_cache_for_testing,
+)
 from app.main import app
 from app.services import realtime_revenue_providers as providers
 from tests.builders.core_builders import (
@@ -31,6 +36,19 @@ from tests.builders.core_builders import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _reset_jwt_verifier_state() -> None:
+    reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
+    try:
+        seed_jwt_verification_pg_cache_for_testing(raw_ring=os.environ["AUTH_JWT_PUBLIC_KEY_RING"])
+    except Exception:
+        pass
+    yield
+    reset_crypto_secret_caches_for_testing()
+    reset_jwt_verification_pg_cache_for_testing()
 
 
 def _build_token(tenant_id: UUID) -> str:
