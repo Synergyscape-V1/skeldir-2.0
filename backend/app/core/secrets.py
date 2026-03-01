@@ -10,7 +10,6 @@ import json
 from threading import Lock
 from typing import Any, Literal
 import os
-import random
 
 import psycopg2
 
@@ -317,20 +316,54 @@ def _should_refresh_from_pg_state(
         return True
     if reason == "unknown_kid":
         return True
-    jitter = random.randint(0, _jwt_refresh_jitter_seconds())
+    jitter = _deterministic_refresh_jitter_seconds(
+        now=now,
+        reason=reason,
+        discriminator=state.fetched_at.isoformat(),
+    )
     return now >= state.fetched_at + timedelta(seconds=_jwt_max_staleness_seconds() + jitter)
 
 
 def _next_allowed_refresh_on_success(now: datetime) -> datetime:
-    jitter = random.randint(0, _jwt_refresh_jitter_seconds())
+    jitter = _deterministic_refresh_jitter_seconds(
+        now=now,
+        reason="success",
+    )
     return now + timedelta(seconds=_jwt_refresh_floor_seconds() + jitter)
 
 
 def _next_allowed_refresh_on_failure(now: datetime, failure_count: int) -> datetime:
     exp_delay = _jwt_refresh_backoff_base_seconds() * (2 ** max(0, failure_count - 1))
     bounded = min(_jwt_refresh_backoff_max_seconds(), exp_delay)
-    jitter = random.randint(0, _jwt_refresh_jitter_seconds())
+    jitter = _deterministic_refresh_jitter_seconds(
+        now=now,
+        reason="failure",
+        discriminator=str(failure_count),
+    )
     return now + timedelta(seconds=bounded + jitter)
+
+
+def _deterministic_refresh_jitter_seconds(
+    *,
+    now: datetime,
+    reason: str,
+    discriminator: str = "",
+) -> int:
+    max_jitter = _jwt_refresh_jitter_seconds()
+    if max_jitter <= 0:
+        return 0
+    bucket = int(now.timestamp()) // 5
+    seed = "|".join(
+        (
+            reason,
+            discriminator,
+            str(bucket),
+            str(os.getpid()),
+            os.getenv("HOSTNAME", ""),
+        )
+    )
+    digest = sha256(seed.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], byteorder="big", signed=False) % (max_jitter + 1)
 
 
 def _select_pg_jwt_cache_row(cursor) -> dict[str, Any] | None:
