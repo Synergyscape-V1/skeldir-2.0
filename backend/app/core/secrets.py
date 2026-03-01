@@ -3,12 +3,16 @@ from __future__ import annotations
 """Single secret retrieval choke point and runtime secret contract validation."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from contextlib import contextmanager
 from hashlib import sha256
 import json
 from threading import Lock
 from typing import Any, Literal
 import os
+import random
+
+import psycopg2
 
 from app.core import clock as clock_module
 from app.core.config import settings
@@ -66,6 +70,15 @@ class PlatformEncryptionKeyRing:
     previous_key_ids: tuple[str, ...]
     fetched_at: datetime
     source: str
+
+
+@dataclass(frozen=True)
+class JwtVerificationPgCacheState:
+    fetched_at: datetime | None
+    next_allowed_refresh_at: datetime | None
+    last_refresh_error_at: datetime | None
+    refresh_error_count: int
+    refresh_event_count: int
 
 
 class _CryptoKeyRingCache:
@@ -128,6 +141,14 @@ _PLATFORM_KEY_RING_CACHE = _CryptoKeyRingCache(
 )
 _JWT_UNKNOWN_KID_REFRESH_LOCK = Lock()
 _JWT_UNKNOWN_KID_LAST_REFRESH_AT: datetime | None = None
+_JWT_REFRESH_PG_LOCK_KEY = int.from_bytes(
+    sha256("skeldir_jwks_refresh_v1".encode("utf-8")).digest()[:8],
+    byteorder="big",
+    signed=True,
+)
+_JWT_PG_CACHE_TABLE = "public.jwt_verification_cache"
+_DATABASE_DSN_CACHE: str | None = None
+_DATABASE_DSN_CACHE_LOCK = Lock()
 
 
 def _contract_for(key: str):
@@ -176,6 +197,360 @@ def _read_secret_source_of_truth_value(key: str) -> str | None:
         _mark_control_plane_source(key)
         return cleaned
     return _read_setting(key)
+
+
+def _jwt_max_staleness_seconds() -> int:
+    raw = os.getenv("SKELDIR_JWT_KEY_RING_MAX_STALENESS_SECONDS", "60").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 60
+    return max(1, parsed)
+
+
+def _jwt_refresh_floor_seconds() -> int:
+    raw = os.getenv("SKELDIR_JWT_REFRESH_MIN_FLOOR_SECONDS", "5").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 5
+    return max(0, parsed)
+
+
+def _jwt_refresh_jitter_seconds() -> int:
+    raw = os.getenv("SKELDIR_JWT_REFRESH_JITTER_SECONDS", "3").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 3
+    return max(0, parsed)
+
+
+def _jwt_refresh_backoff_base_seconds() -> int:
+    raw = os.getenv("SKELDIR_JWT_REFRESH_BACKOFF_BASE_SECONDS", "2").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 2
+    return max(1, parsed)
+
+
+def _jwt_refresh_backoff_max_seconds() -> int:
+    raw = os.getenv("SKELDIR_JWT_REFRESH_BACKOFF_MAX_SECONDS", "60").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 60
+    return max(1, parsed)
+
+
+def _jwt_singleflight_mutation_enabled() -> bool:
+    return os.getenv("SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _database_url_for_sync_pg() -> str:
+    global _DATABASE_DSN_CACHE
+    with _DATABASE_DSN_CACHE_LOCK:
+        if _DATABASE_DSN_CACHE:
+            return _DATABASE_DSN_CACHE
+
+        candidate = _read_setting("DATABASE_URL")
+        if not candidate:
+            try:
+                from app.db import session as db_session  # local import avoids import-cycle during module init
+
+                candidate = getattr(db_session, "_ASYNC_DATABASE_URL", None)
+                if candidate:
+                    candidate = str(candidate).replace("postgresql+asyncpg://", "postgresql://", 1)
+            except Exception:
+                candidate = None
+        if not candidate:
+            candidate = require_secret("DATABASE_URL")
+
+        _DATABASE_DSN_CACHE = candidate
+        return _DATABASE_DSN_CACHE
+
+
+@contextmanager
+def _open_pg_conn():
+    conn = psycopg2.connect(_database_url_for_sync_pg())
+    conn.autocommit = False
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _pg_fetchone_dict(cursor) -> dict[str, Any] | None:
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    columns = [col.name for col in cursor.description]
+    return dict(zip(columns, row))
+
+
+def _pg_cache_state_from_row(row: dict[str, Any] | None) -> JwtVerificationPgCacheState:
+    if row is None:
+        return JwtVerificationPgCacheState(
+            fetched_at=None,
+            next_allowed_refresh_at=None,
+            last_refresh_error_at=None,
+            refresh_error_count=0,
+            refresh_event_count=0,
+        )
+    return JwtVerificationPgCacheState(
+        fetched_at=row.get("fetched_at"),
+        next_allowed_refresh_at=row.get("next_allowed_refresh_at"),
+        last_refresh_error_at=row.get("last_refresh_error_at"),
+        refresh_error_count=int(row.get("refresh_error_count") or 0),
+        refresh_event_count=int(row.get("refresh_event_count") or 0),
+    )
+
+
+def _should_refresh_from_pg_state(
+    *,
+    state: JwtVerificationPgCacheState,
+    now: datetime,
+    reason: str,
+) -> bool:
+    if state.fetched_at is None:
+        return True
+    if reason == "unknown_kid":
+        return True
+    jitter = random.randint(0, _jwt_refresh_jitter_seconds())
+    return now >= state.fetched_at + timedelta(seconds=_jwt_max_staleness_seconds() + jitter)
+
+
+def _next_allowed_refresh_on_success(now: datetime) -> datetime:
+    jitter = random.randint(0, _jwt_refresh_jitter_seconds())
+    return now + timedelta(seconds=_jwt_refresh_floor_seconds() + jitter)
+
+
+def _next_allowed_refresh_on_failure(now: datetime, failure_count: int) -> datetime:
+    exp_delay = _jwt_refresh_backoff_base_seconds() * (2 ** max(0, failure_count - 1))
+    bounded = min(_jwt_refresh_backoff_max_seconds(), exp_delay)
+    jitter = random.randint(0, _jwt_refresh_jitter_seconds())
+    return now + timedelta(seconds=bounded + jitter)
+
+
+def _select_pg_jwt_cache_row(cursor) -> dict[str, Any] | None:
+    cursor.execute(
+        f"""
+        SELECT singleton_id, jwks_json, fetched_at, next_allowed_refresh_at,
+               last_refresh_error_at, refresh_error_count, refresh_event_count
+          FROM {_JWT_PG_CACHE_TABLE}
+         WHERE singleton_id = 1
+        """
+    )
+    return _pg_fetchone_dict(cursor)
+
+
+def _ensure_pg_jwt_cache_table(cursor) -> None:
+    cursor.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_JWT_PG_CACHE_TABLE} (
+            singleton_id SMALLINT PRIMARY KEY CHECK (singleton_id = 1),
+            jwks_json TEXT NULL,
+            fetched_at TIMESTAMPTZ NULL,
+            next_allowed_refresh_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_refresh_error_at TIMESTAMPTZ NULL,
+            refresh_error_count INTEGER NOT NULL DEFAULT 0,
+            refresh_event_count BIGINT NOT NULL DEFAULT 0,
+            last_refresh_reason TEXT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+
+def _upsert_pg_jwt_cache_row_success(
+    cursor,
+    *,
+    jwks_json: str,
+    now: datetime,
+    next_allowed_refresh_at: datetime,
+    reason: str,
+) -> None:
+    cursor.execute(
+        f"""
+        INSERT INTO {_JWT_PG_CACHE_TABLE} (
+            singleton_id, jwks_json, fetched_at, next_allowed_refresh_at,
+            last_refresh_error_at, refresh_error_count, refresh_event_count, last_refresh_reason, updated_at
+        ) VALUES (
+            1, %(jwks_json)s, %(fetched_at)s, %(next_allowed_refresh_at)s,
+            NULL, 0, 1, %(reason)s, %(updated_at)s
+        )
+        ON CONFLICT (singleton_id)
+        DO UPDATE SET
+            jwks_json = EXCLUDED.jwks_json,
+            fetched_at = EXCLUDED.fetched_at,
+            next_allowed_refresh_at = EXCLUDED.next_allowed_refresh_at,
+            last_refresh_error_at = NULL,
+            refresh_error_count = 0,
+            refresh_event_count = {_JWT_PG_CACHE_TABLE}.refresh_event_count + 1,
+            last_refresh_reason = EXCLUDED.last_refresh_reason,
+            updated_at = EXCLUDED.updated_at
+        """,
+        {
+            "jwks_json": jwks_json,
+            "fetched_at": now,
+            "next_allowed_refresh_at": next_allowed_refresh_at,
+            "reason": reason,
+            "updated_at": now,
+        },
+    )
+
+
+def _upsert_pg_jwt_cache_row_failure(
+    cursor,
+    *,
+    now: datetime,
+    reason: str,
+) -> JwtVerificationPgCacheState:
+    current = _pg_cache_state_from_row(_select_pg_jwt_cache_row(cursor))
+    next_error_count = current.refresh_error_count + 1
+    next_allowed = _next_allowed_refresh_on_failure(now, next_error_count)
+    cursor.execute(
+        f"""
+        INSERT INTO {_JWT_PG_CACHE_TABLE} (
+            singleton_id, jwks_json, fetched_at, next_allowed_refresh_at,
+            last_refresh_error_at, refresh_error_count, refresh_event_count, last_refresh_reason, updated_at
+        ) VALUES (
+            1, NULL, NULL, %(next_allowed_refresh_at)s,
+            %(last_refresh_error_at)s, %(refresh_error_count)s, 1, %(reason)s, %(updated_at)s
+        )
+        ON CONFLICT (singleton_id)
+        DO UPDATE SET
+            next_allowed_refresh_at = EXCLUDED.next_allowed_refresh_at,
+            last_refresh_error_at = EXCLUDED.last_refresh_error_at,
+            refresh_error_count = {_JWT_PG_CACHE_TABLE}.refresh_error_count + 1,
+            refresh_event_count = {_JWT_PG_CACHE_TABLE}.refresh_event_count + 1,
+            last_refresh_reason = EXCLUDED.last_refresh_reason,
+            updated_at = EXCLUDED.updated_at
+        """,
+        {
+            "next_allowed_refresh_at": next_allowed,
+            "last_refresh_error_at": now,
+            "refresh_error_count": next_error_count,
+            "reason": reason,
+            "updated_at": now,
+        },
+    )
+    return JwtVerificationPgCacheState(
+        fetched_at=current.fetched_at,
+        next_allowed_refresh_at=next_allowed,
+        last_refresh_error_at=now,
+        refresh_error_count=next_error_count,
+        refresh_event_count=current.refresh_event_count + 1,
+    )
+
+
+def _parse_pg_jwt_ring(raw: str | None) -> JwtKeyRing | None:
+    if not raw:
+        return None
+    return _parse_jwt_key_ring_payload(raw, "postgres_cache")
+
+
+def _refresh_verification_ring_from_source_of_truth() -> tuple[JwtKeyRing, str]:
+    value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
+    if value is None:
+        env_name = (_read_setting("ENVIRONMENT") or "").lower()
+        if env_name in {"local", "dev", "ci", "test"}:
+            value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
+    if value is None:
+        raise RuntimeError("required secret missing: AUTH_JWT_PUBLIC_KEY_RING")
+    source = "control_plane" if should_enable_control_plane() else "settings"
+    ring = _parse_jwt_key_ring_payload(value, source)
+    return ring, value
+
+
+def _update_local_verification_ring_cache(ring: JwtKeyRing, raw_value: str) -> None:
+    _JWT_VERIFICATION_KEY_RING_CACHE.set(ring, fingerprint=_fingerprint(raw_value))
+
+
+def _resolve_verification_ring_via_postgres(*, reason: str, kid: str | None) -> JwtKeyRing:
+    now = clock_module.utcnow()
+    with _open_pg_conn() as conn:
+        with conn.cursor() as cursor:
+            row = _select_pg_jwt_cache_row(cursor)
+            state = _pg_cache_state_from_row(row)
+            cached_ring = _parse_pg_jwt_ring(row.get("jwks_json") if row else None)
+
+            if cached_ring is not None and not _should_refresh_from_pg_state(state=state, now=now, reason=reason):
+                conn.rollback()
+                _update_local_verification_ring_cache(cached_ring, row["jwks_json"])
+                return cached_ring
+
+            floor_blocked = (
+                not _jwt_singleflight_mutation_enabled()
+                and state.next_allowed_refresh_at is not None
+                and now < state.next_allowed_refresh_at
+            )
+            if floor_blocked and cached_ring is not None:
+                conn.rollback()
+                _update_local_verification_ring_cache(cached_ring, row["jwks_json"])
+                return cached_ring
+
+            lock_acquired = True
+            if not _jwt_singleflight_mutation_enabled():
+                cursor.execute("SELECT pg_try_advisory_lock(%s)", (_JWT_REFRESH_PG_LOCK_KEY,))
+                lock_acquired = bool(cursor.fetchone()[0])
+            if not lock_acquired:
+                conn.rollback()
+                if cached_ring is not None:
+                    _update_local_verification_ring_cache(cached_ring, row["jwks_json"])
+                    return cached_ring
+                fallback = _JWT_VERIFICATION_KEY_RING_CACHE.current()
+                if fallback is not None:
+                    return fallback
+                return _refresh_jwt_verification_ring()
+
+            try:
+                # Re-read under refresh lease to absorb concurrent winner updates.
+                row = _select_pg_jwt_cache_row(cursor)
+                state = _pg_cache_state_from_row(row)
+                cached_ring = _parse_pg_jwt_ring(row.get("jwks_json") if row else None)
+                if cached_ring is not None and kid and kid in cached_ring.keys:
+                    conn.rollback()
+                    _update_local_verification_ring_cache(cached_ring, row["jwks_json"])
+                    return cached_ring
+
+                now = clock_module.utcnow()
+                floor_blocked = (
+                    not _jwt_singleflight_mutation_enabled()
+                    and state.next_allowed_refresh_at is not None
+                    and now < state.next_allowed_refresh_at
+                )
+                if floor_blocked and cached_ring is not None:
+                    conn.rollback()
+                    _update_local_verification_ring_cache(cached_ring, row["jwks_json"])
+                    return cached_ring
+
+                ring, raw_value = _refresh_verification_ring_from_source_of_truth()
+                _upsert_pg_jwt_cache_row_success(
+                    cursor,
+                    jwks_json=raw_value,
+                    now=now,
+                    next_allowed_refresh_at=_next_allowed_refresh_on_success(now),
+                    reason=reason,
+                )
+                conn.commit()
+                _update_local_verification_ring_cache(ring, raw_value)
+                return ring
+            except Exception:
+                _upsert_pg_jwt_cache_row_failure(cursor, now=clock_module.utcnow(), reason=reason)
+                conn.commit()
+                if cached_ring is not None:
+                    _update_local_verification_ring_cache(cached_ring, row["jwks_json"])
+                    return cached_ring
+                fallback = _JWT_VERIFICATION_KEY_RING_CACHE.current()
+                if fallback is not None:
+                    return fallback
+                raise
+            finally:
+                if not _jwt_singleflight_mutation_enabled():
+                    cursor.execute("SELECT pg_advisory_unlock(%s)", (_JWT_REFRESH_PG_LOCK_KEY,))
+                    conn.commit()
 
 
 def get_secret(key: str) -> str | None:
@@ -356,16 +731,8 @@ def _refresh_jwt_signing_ring() -> JwtKeyRing:
 
 
 def _refresh_jwt_verification_ring() -> JwtKeyRing:
-    value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
-    if value is None:
-        env_name = (_read_setting("ENVIRONMENT") or "").lower()
-        if env_name in {"local", "dev", "ci", "test"}:
-            value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
-    if value is None:
-        raise RuntimeError("required secret missing: AUTH_JWT_PUBLIC_KEY_RING")
-    source = "control_plane" if should_enable_control_plane() else "settings"
-    ring = _parse_jwt_key_ring_payload(value, source)
-    _JWT_VERIFICATION_KEY_RING_CACHE.set(ring, fingerprint=_fingerprint(value))
+    ring, raw_value = _refresh_verification_ring_from_source_of_truth()
+    _JWT_VERIFICATION_KEY_RING_CACHE.set(ring, fingerprint=_fingerprint(raw_value))
     return ring
 
 
@@ -395,12 +762,15 @@ def get_jwt_signing_key_ring(*, require_fresh_for_mint: bool) -> JwtKeyRing:
 def get_jwt_verification_key_ring() -> JwtKeyRing:
     cached = _JWT_VERIFICATION_KEY_RING_CACHE.current()
     is_stale = _JWT_VERIFICATION_KEY_RING_CACHE.stale()
-    if cached is None or is_stale:
+    if cached is None:
         try:
-            return _refresh_jwt_verification_ring()
+            return _resolve_verification_ring_via_postgres(reason="cold_start", kid=None)
         except Exception:
-            if cached is None:
-                raise
+            return _refresh_jwt_verification_ring()
+    if is_stale:
+        try:
+            return _resolve_verification_ring_via_postgres(reason="ttl_stale", kid=None)
+        except Exception:
             return cached
     return cached
 
@@ -446,7 +816,7 @@ def resolve_jwt_verification_keys(*, kid: str | None) -> tuple[str, list[str], b
             return selected, [], ring.requires_kid
         if _should_attempt_unknown_kid_refresh():
             try:
-                refreshed = _refresh_jwt_verification_ring()
+                refreshed = _resolve_verification_ring_via_postgres(reason="unknown_kid", kid=kid)
             except Exception:
                 refreshed = ring
             selected_after_refresh = refreshed.keys.get(kid)
@@ -489,6 +859,73 @@ def reset_crypto_secret_caches_for_testing() -> None:
     _PLATFORM_KEY_RING_CACHE.clear()
     with _JWT_UNKNOWN_KID_REFRESH_LOCK:
         _JWT_UNKNOWN_KID_LAST_REFRESH_AT = None
+
+
+def reset_jwt_verification_pg_cache_for_testing() -> None:
+    try:
+        with _open_pg_conn() as conn:
+            with conn.cursor() as cursor:
+                _ensure_pg_jwt_cache_table(cursor)
+                cursor.execute(f"DELETE FROM {_JWT_PG_CACHE_TABLE} WHERE singleton_id = 1")
+            conn.commit()
+    except Exception:
+        # Some unit tests run without Postgres; keep tests that don't require DB unaffected.
+        return
+
+
+def seed_jwt_verification_pg_cache_for_testing(
+    *,
+    raw_ring: str,
+    fetched_at: datetime | None = None,
+    next_allowed_refresh_at: datetime | None = None,
+    refresh_error_count: int = 0,
+    refresh_event_count: int = 0,
+) -> None:
+    now = clock_module.utcnow()
+    fetched = fetched_at or now
+    next_allowed = next_allowed_refresh_at or now
+    with _open_pg_conn() as conn:
+        with conn.cursor() as cursor:
+            _ensure_pg_jwt_cache_table(cursor)
+            cursor.execute(
+                f"""
+                INSERT INTO {_JWT_PG_CACHE_TABLE} (
+                    singleton_id, jwks_json, fetched_at, next_allowed_refresh_at,
+                    last_refresh_error_at, refresh_error_count, refresh_event_count, last_refresh_reason, updated_at
+                ) VALUES (
+                    1, %(jwks_json)s, %(fetched_at)s, %(next_allowed_refresh_at)s,
+                    NULL, %(refresh_error_count)s, %(refresh_event_count)s, 'seed', %(updated_at)s
+                )
+                ON CONFLICT (singleton_id)
+                DO UPDATE SET
+                    jwks_json = EXCLUDED.jwks_json,
+                    fetched_at = EXCLUDED.fetched_at,
+                    next_allowed_refresh_at = EXCLUDED.next_allowed_refresh_at,
+                    last_refresh_error_at = NULL,
+                    refresh_error_count = EXCLUDED.refresh_error_count,
+                    refresh_event_count = EXCLUDED.refresh_event_count,
+                    last_refresh_reason = EXCLUDED.last_refresh_reason,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                {
+                    "jwks_json": raw_ring,
+                    "fetched_at": fetched,
+                    "next_allowed_refresh_at": next_allowed,
+                    "refresh_error_count": max(0, int(refresh_error_count)),
+                    "refresh_event_count": max(0, int(refresh_event_count)),
+                    "updated_at": now,
+                },
+            )
+        conn.commit()
+
+
+def get_jwt_verification_pg_cache_state_for_testing() -> JwtVerificationPgCacheState:
+    with _open_pg_conn() as conn:
+        with conn.cursor() as cursor:
+            _ensure_pg_jwt_cache_table(cursor)
+            row = _select_pg_jwt_cache_row(cursor)
+        conn.rollback()
+    return _pg_cache_state_from_row(row)
 
 
 def _should_attempt_unknown_kid_refresh() -> bool:
