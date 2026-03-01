@@ -33,7 +33,7 @@ class RuntimeSecretValidationResult:
 
 @dataclass(frozen=True)
 class JwtValidationConfig:
-    secret: str | None
+    public_key_ring: str | None
     jwks_url: str | None
     algorithm: str | None
     issuer: str | None
@@ -111,8 +111,13 @@ class _CryptoKeyRingCache:
         return self._is_stale(cached.fetched_at)
 
 
-_JWT_KEY_RING_CACHE = _CryptoKeyRingCache(
+_JWT_SIGNING_KEY_RING_CACHE = _CryptoKeyRingCache(
     secret_key="AUTH_JWT_SECRET",
+    max_staleness_env="SKELDIR_JWT_KEY_RING_MAX_STALENESS_SECONDS",
+    default_staleness_seconds=60,
+)
+_JWT_VERIFICATION_KEY_RING_CACHE = _CryptoKeyRingCache(
+    secret_key="AUTH_JWT_PUBLIC_KEY_RING",
     max_staleness_env="SKELDIR_JWT_KEY_RING_MAX_STALENESS_SECONDS",
     default_staleness_seconds=60,
 )
@@ -208,8 +213,13 @@ def get_platform_token_encryption_key() -> str:
 
 
 def get_jwt_validation_config() -> JwtValidationConfig:
+    public_ring = _read_setting("AUTH_JWT_PUBLIC_KEY_RING")
+    if public_ring is None:
+        env_name = (_read_setting("ENVIRONMENT") or "").lower()
+        if env_name in {"local", "dev", "ci", "test"}:
+            public_ring = _read_setting("AUTH_JWT_SECRET")
     return JwtValidationConfig(
-        secret=get_secret("AUTH_JWT_SECRET"),
+        public_key_ring=public_ring,
         jwks_url=_read_setting("AUTH_JWT_JWKS_URL"),
         algorithm=_read_setting("AUTH_JWT_ALGORITHM"),
         issuer=_read_setting("AUTH_JWT_ISSUER"),
@@ -335,13 +345,27 @@ def _fingerprint(raw_value: str) -> str:
     return sha256(raw_value.encode("utf-8")).hexdigest()
 
 
-def _refresh_jwt_ring() -> JwtKeyRing:
+def _refresh_jwt_signing_ring() -> JwtKeyRing:
     value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
     if value is None:
         raise RuntimeError("required secret missing: AUTH_JWT_SECRET")
     source = "control_plane" if should_enable_control_plane() else "settings"
     ring = _parse_jwt_key_ring_payload(value, source)
-    _JWT_KEY_RING_CACHE.set(ring, fingerprint=_fingerprint(value))
+    _JWT_SIGNING_KEY_RING_CACHE.set(ring, fingerprint=_fingerprint(value))
+    return ring
+
+
+def _refresh_jwt_verification_ring() -> JwtKeyRing:
+    value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
+    if value is None:
+        env_name = (_read_setting("ENVIRONMENT") or "").lower()
+        if env_name in {"local", "dev", "ci", "test"}:
+            value = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
+    if value is None:
+        raise RuntimeError("required secret missing: AUTH_JWT_PUBLIC_KEY_RING")
+    source = "control_plane" if should_enable_control_plane() else "settings"
+    ring = _parse_jwt_key_ring_payload(value, source)
+    _JWT_VERIFICATION_KEY_RING_CACHE.set(ring, fingerprint=_fingerprint(value))
     return ring
 
 
@@ -355,14 +379,27 @@ def _refresh_platform_ring() -> PlatformEncryptionKeyRing:
     return ring
 
 
-def get_jwt_key_ring(*, require_fresh_for_mint: bool) -> JwtKeyRing:
-    cached = _JWT_KEY_RING_CACHE.current()
-    is_stale = _JWT_KEY_RING_CACHE.stale()
+def get_jwt_signing_key_ring(*, require_fresh_for_mint: bool) -> JwtKeyRing:
+    cached = _JWT_SIGNING_KEY_RING_CACHE.current()
+    is_stale = _JWT_SIGNING_KEY_RING_CACHE.stale()
     if cached is None or is_stale:
         try:
-            return _refresh_jwt_ring()
+            return _refresh_jwt_signing_ring()
         except Exception:
             if require_fresh_for_mint or cached is None:
+                raise
+            return cached
+    return cached
+
+
+def get_jwt_verification_key_ring() -> JwtKeyRing:
+    cached = _JWT_VERIFICATION_KEY_RING_CACHE.current()
+    is_stale = _JWT_VERIFICATION_KEY_RING_CACHE.stale()
+    if cached is None or is_stale:
+        try:
+            return _refresh_jwt_verification_ring()
+        except Exception:
+            if cached is None:
                 raise
             return cached
     return cached
@@ -385,7 +422,7 @@ def get_jwt_signing_material() -> JwtSigningMaterial:
     cfg = get_jwt_validation_config()
     if not cfg.algorithm:
         raise RuntimeError("required config missing: AUTH_JWT_ALGORITHM")
-    ring = get_jwt_key_ring(require_fresh_for_mint=True)
+    ring = get_jwt_signing_key_ring(require_fresh_for_mint=True)
     key = ring.keys.get(ring.current_kid)
     if key is None:
         raise RuntimeError("JWT key ring current kid is missing key material")
@@ -399,14 +436,17 @@ def get_jwt_signing_material() -> JwtSigningMaterial:
 
 
 def resolve_jwt_verification_keys(*, kid: str | None) -> tuple[str, list[str], bool]:
-    ring = get_jwt_key_ring(require_fresh_for_mint=False)
+    if os.getenv("SKELDIR_B12_P3_FORCE_PER_REQUEST_VERIFIER_REFRESH", "0").strip() in {"1", "true", "yes", "on"}:
+        ring = _refresh_jwt_verification_ring()
+    else:
+        ring = get_jwt_verification_key_ring()
     if kid:
         selected = ring.keys.get(kid)
         if selected:
             return selected, [], ring.requires_kid
         if _should_attempt_unknown_kid_refresh():
             try:
-                refreshed = _refresh_jwt_ring()
+                refreshed = _refresh_jwt_verification_ring()
             except Exception:
                 refreshed = ring
             selected_after_refresh = refreshed.keys.get(kid)
@@ -444,7 +484,8 @@ def resolve_platform_encryption_key_by_id(key_id: str) -> str:
 
 def reset_crypto_secret_caches_for_testing() -> None:
     global _JWT_UNKNOWN_KID_LAST_REFRESH_AT
-    _JWT_KEY_RING_CACHE.clear()
+    _JWT_SIGNING_KEY_RING_CACHE.clear()
+    _JWT_VERIFICATION_KEY_RING_CACHE.clear()
     _PLATFORM_KEY_RING_CACHE.clear()
     with _JWT_UNKNOWN_KID_REFRESH_LOCK:
         _JWT_UNKNOWN_KID_LAST_REFRESH_AT = None
@@ -488,16 +529,25 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
     )
     if auth_required:
         jwt_cfg = get_jwt_validation_config()
-        jwt_secret = jwt_cfg.secret
+        jwt_private_ring = get_secret("AUTH_JWT_SECRET")
+        jwt_public_ring = jwt_cfg.public_key_ring
         if should_enable_control_plane():
             try:
-                jwt_secret = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
+                jwt_private_ring = _read_secret_source_of_truth_value("AUTH_JWT_SECRET")
             except Exception:
-                jwt_secret = None
-        if jwt_secret is None and jwt_cfg.jwks_url is None:
-            missing.extend(["AUTH_JWT_SECRET|AUTH_JWT_JWKS_URL"])
-        if (jwt_secret is not None or jwt_cfg.jwks_url is not None) and jwt_cfg.algorithm is None:
+                jwt_private_ring = None
+            try:
+                jwt_public_ring = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
+            except Exception:
+                jwt_public_ring = None
+        if jwt_private_ring is None:
+            missing.append("AUTH_JWT_SECRET")
+        if jwt_public_ring is None:
+            missing.append("AUTH_JWT_PUBLIC_KEY_RING")
+        if (jwt_private_ring is not None or jwt_public_ring is not None) and jwt_cfg.algorithm is None:
             missing.append("AUTH_JWT_ALGORITHM")
+        if jwt_cfg.algorithm is not None and jwt_cfg.algorithm != "RS256":
+            invalid.append("AUTH_JWT_ALGORITHM!=RS256")
         if jwt_cfg.issuer is None:
             missing.append("AUTH_JWT_ISSUER")
         if jwt_cfg.audience is None:
@@ -538,6 +588,7 @@ def validate_runtime_secret_contract(role: RuntimeRole) -> RuntimeSecretValidati
                 "CELERY_BROKER_URL",
                 "CELERY_RESULT_BACKEND",
                 "AUTH_JWT_SECRET",
+                "AUTH_JWT_PUBLIC_KEY_RING",
                 "PLATFORM_TOKEN_ENCRYPTION_KEY",
             ]
             if llm_required:

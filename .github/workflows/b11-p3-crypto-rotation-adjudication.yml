@@ -21,7 +21,8 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/backend
       DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir
       AUTH_JWT_SECRET: ci-secret
-      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_PUBLIC_KEY_RING: ci-public-ring
+      AUTH_JWT_ALGORITHM: RS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
       AUTH_JWT_AUDIENCE: skeldir-api
       PLATFORM_TOKEN_ENCRYPTION_KEY: ci-platform-key
@@ -60,6 +61,11 @@ jobs:
         run: |
           cd backend
           pytest tests/test_b11_p3_jwt_rotation_semantics.py -q -k "unknown_kid_forces_debounced_refresh_and_recovers or unknown_kid_refresh_failure_degrades_to_bounded_fallback" | tee ../docs/forensics/evidence/b11_p3/jwt_unknown_kid_refresh_drill_log.txt
+
+      - name: Unknown kid flood debounce drill
+        run: |
+          cd backend
+          pytest tests/test_b11_p3_jwt_rotation_semantics.py -q -k "unknown_kid_refresh_is_debounced_under_flood" | tee ../docs/forensics/evidence/b11_p3/jwt_unknown_kid_flood_debounce_log.txt
 
       - name: Envelope backward-compat drill
         run: |
@@ -101,6 +107,7 @@ jobs:
             docs/forensics/evidence/b11_p3/jwt_rotation_overlap_drill_log.txt
             docs/forensics/evidence/b11_p3/cache_refresh_bound_test_log.txt
             docs/forensics/evidence/b11_p3/jwt_unknown_kid_refresh_drill_log.txt
+            docs/forensics/evidence/b11_p3/jwt_unknown_kid_flood_debounce_log.txt
             docs/forensics/evidence/b11_p3/envelope_rotation_backward_compat_log.txt
             docs/forensics/evidence/b11_p3/no_multi_decrypt_guard.txt
             docs/forensics/evidence/b11_p3/schema_key_id_migration_proof.txt

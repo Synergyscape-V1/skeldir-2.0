@@ -17,7 +17,8 @@ def test_stage_requires_control_plane_for_crypto_secrets(monkeypatch):
     monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://app_user:app_user@127.0.0.1:5432/skeldir")
     monkeypatch.setattr(settings, "ENVIRONMENT", "stage")
     monkeypatch.setattr(settings, "AUTH_JWT_SECRET", "stage-local-fallback")
-    monkeypatch.setattr(settings, "AUTH_JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", "stage-public-fallback")
+    monkeypatch.setattr(settings, "AUTH_JWT_ALGORITHM", "RS256")
     monkeypatch.setattr(settings, "AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
     monkeypatch.setattr(settings, "AUTH_JWT_AUDIENCE", "skeldir-api")
     monkeypatch.setattr(settings, "PLATFORM_TOKEN_ENCRYPTION_KEY", "stage-platform-fallback")
@@ -34,10 +35,11 @@ def test_stage_accepts_control_plane_sourced_crypto_secrets(monkeypatch):
 
     monkeypatch.setattr(settings, "DATABASE_URL", "postgresql://app_user:app_user@127.0.0.1:5432/skeldir")
     monkeypatch.setattr(settings, "ENVIRONMENT", "stage")
-    monkeypatch.setattr(settings, "AUTH_JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(settings, "AUTH_JWT_ALGORITHM", "RS256")
     monkeypatch.setattr(settings, "AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
     monkeypatch.setattr(settings, "AUTH_JWT_AUDIENCE", "skeldir-api")
     monkeypatch.setattr(settings, "AUTH_JWT_SECRET", None)
+    monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", None)
     monkeypatch.setattr(settings, "PLATFORM_TOKEN_ENCRYPTION_KEY", None)
     monkeypatch.setenv("SKELDIR_CONTROL_PLANE_ENABLED", "1")
     reset_crypto_secret_caches_for_testing()
@@ -45,6 +47,8 @@ def test_stage_accepts_control_plane_sourced_crypto_secrets(monkeypatch):
     def _fake_cp_fetch(contract, _path):
         if contract.key == "AUTH_JWT_SECRET":
             return _ring_payload("kid-1", "current_kid", "jwt-secret")
+        if contract.key == "AUTH_JWT_PUBLIC_KEY_RING":
+            return _ring_payload("kid-1", "current_kid", "jwt-public")
         if contract.key == "PLATFORM_TOKEN_ENCRYPTION_KEY":
             return _ring_payload("platform-1", "current_key_id", "platform-secret")
         if contract.key == "DATABASE_URL":

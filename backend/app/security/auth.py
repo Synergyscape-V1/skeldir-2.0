@@ -1,21 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import Header, Request
 import jwt
-from jwt import InvalidTokenError, PyJWKClient
+from jwt import InvalidTokenError
 
 from app.core.secrets import (
     get_jwt_signing_material,
     get_jwt_validation_config,
     resolve_jwt_verification_keys,
 )
+from app.core import clock as clock_module
 from app.core.identity import resolve_user_id
 from app.observability.context import set_tenant_id, set_user_id
+
+RS256_ALGORITHM = "RS256"
 
 
 class AuthError(Exception):
@@ -58,21 +61,20 @@ def _get_bearer_token(authorization: str | None) -> str:
 
 def _ensure_auth_configured() -> None:
     jwt_cfg = get_jwt_validation_config()
-    if jwt_cfg.secret or jwt_cfg.jwks_url:
-        if not jwt_cfg.algorithm:
-            raise AuthError(
-                status_code=500,
-                title="Internal Server Error",
-                detail="JWT algorithm is not configured.",
-                type_url="https://api.skeldir.com/problems/internal-server-error",
-            )
-        return
-    raise AuthError(
-        status_code=500,
-        title="Internal Server Error",
-        detail="JWT validation is not configured.",
-        type_url="https://api.skeldir.com/problems/internal-server-error",
-    )
+    if not jwt_cfg.public_key_ring:
+        raise AuthError(
+            status_code=500,
+            title="Internal Server Error",
+            detail="JWT verification key ring is not configured.",
+            type_url="https://api.skeldir.com/problems/internal-server-error",
+        )
+    if not jwt_cfg.algorithm:
+        raise AuthError(
+            status_code=500,
+            title="Internal Server Error",
+            detail="JWT algorithm is not configured.",
+            type_url="https://api.skeldir.com/problems/internal-server-error",
+        )
 
 
 def _decode_token(token: str) -> dict[str, Any]:
@@ -85,18 +87,12 @@ def _decode_token(token: str) -> dict[str, Any]:
     if jwt_cfg.audience:
         decode_kwargs["audience"] = jwt_cfg.audience
 
-    if jwt_cfg.jwks_url:
-        jwks_client = PyJWKClient(jwt_cfg.jwks_url)
-        signing_key = jwks_client.get_signing_key_from_jwt(token).key
-        return jwt.decode(
-            token,
-            signing_key,
-            algorithms=[jwt_cfg.algorithm],
-            **decode_kwargs,
-        )
     kid: str | None = None
     try:
         header = jwt.get_unverified_header(token)
+        token_algorithm = str(header.get("alg", "")).strip()
+        if token_algorithm != RS256_ALGORITHM:
+            raise InvalidTokenError("Invalid JWT algorithm.")
         kid_value = header.get("kid")
         kid = str(kid_value).strip() if kid_value is not None else None
     except InvalidTokenError:
@@ -110,12 +106,17 @@ def _decode_token(token: str) -> dict[str, Any]:
             return jwt.decode(
                 token,
                 key,
-                algorithms=[jwt_cfg.algorithm],
+                algorithms=[RS256_ALGORITHM],
                 **decode_kwargs,
             )
         except InvalidTokenError:
             continue
     raise InvalidTokenError("Invalid or expired JWT token.")
+
+
+def decode_and_verify_jwt(token: str) -> dict[str, Any]:
+    """Shared JWT verification primitive for HTTP and worker planes."""
+    return _decode_token(token)
 
 
 def mint_internal_jwt(
@@ -127,7 +128,9 @@ def mint_internal_jwt(
 ) -> str:
     """Mint internal JWTs using rotation-safe current key material and `kid` header."""
     signing = get_jwt_signing_material()
-    now = datetime.now(timezone.utc)
+    if signing.algorithm != RS256_ALGORITHM:
+        raise RuntimeError("AUTH_JWT_ALGORITHM must be RS256")
+    now = clock_module.utcnow()
     payload: dict[str, Any] = {
         "tenant_id": str(tenant_id),
         "sub": str(user_id),
@@ -144,7 +147,7 @@ def mint_internal_jwt(
     return jwt.encode(
         payload,
         signing.key,
-        algorithm=signing.algorithm,
+        algorithm=RS256_ALGORITHM,
         headers={"kid": signing.kid},
     )
 

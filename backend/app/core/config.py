@@ -76,10 +76,15 @@ class Settings(BaseSettings):
     )
     # JWT Authentication (Phase 1)
     AUTH_JWT_SECRET: Optional[str] = Field(
-        None, description="JWT HMAC secret (HS*). Required when JWKS URL is not set."
+        None,
+        description="JWT private signing key ring JSON (RS256) keyed by kid.",
+    )
+    AUTH_JWT_PUBLIC_KEY_RING: Optional[str] = Field(
+        None,
+        description="JWT public verification key ring JSON (RS256) keyed by kid.",
     )
     AUTH_JWT_ALGORITHM: Optional[str] = Field(
-        None, description="JWT signing algorithm (e.g., HS256, RS256)."
+        "RS256", description="JWT signing algorithm. Must be RS256."
     )
     AUTH_JWT_ISSUER: Optional[str] = Field(
         None, description="Expected JWT issuer (iss claim)."
@@ -314,6 +319,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "AUTH_JWT_SECRET",
+        "AUTH_JWT_PUBLIC_KEY_RING",
         "AUTH_JWT_ALGORITHM",
         "AUTH_JWT_ISSUER",
         "AUTH_JWT_AUDIENCE",

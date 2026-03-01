@@ -12,9 +12,12 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 
+from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
+
 os.environ["TESTING"] = "1"
-os.environ.setdefault("AUTH_JWT_SECRET", "test-secret")
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "HS256")
+os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
+os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
+os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
 os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")

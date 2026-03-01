@@ -1,0 +1,133 @@
+{
+  "captured_at_utc": "2026-03-01T15:19:54.240554+00:00",
+  "main_sha": "2bc1b28b48e2c32ba555bf93a5c5b33a008ac193",
+  "required_context_count": 15,
+  "all_required_contexts_green": true,
+  "required_contexts": [
+    {
+      "context": "B0.7 P2 Runtime Proof (LLM + Redaction)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175691",
+      "check_run_id": 65268175691
+    },
+    {
+      "context": "Celery Foundation B0.5.1",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175745",
+      "check_run_id": 65268175745
+    },
+    {
+      "context": "Validate Contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175707",
+      "check_run_id": 65268175707
+    },
+    {
+      "context": "Frontend Contract Consumption Gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255997",
+      "check_run_id": 65268255997
+    },
+    {
+      "context": "Mock Usability Gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255989",
+      "check_run_id": 65268255989
+    },
+    {
+      "context": "Phase 1 Negative Controls",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255996",
+      "check_run_id": 65268255996
+    },
+    {
+      "context": "Phase 1 Runtime Conformance",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255981",
+      "check_run_id": 65268255981
+    },
+    {
+      "context": "JWT Tenant Context Invariants",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255982",
+      "check_run_id": 65268255982
+    },
+    {
+      "context": "B0.6 Phase 2 Adjudication",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103356/job/65268166768",
+      "check_run_id": 65268166768
+    },
+    {
+      "context": "Phase Gates (B0.3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268188812",
+      "check_run_id": 65268188812
+    },
+    {
+      "context": "Phase 8 Regression Gate (Full Physics)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22546072511/job/65308616852",
+      "check_run_id": 65308616852
+    },
+    {
+      "context": "b11-p2-secret-chokepoint-gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166836",
+      "check_run_id": 65268166836
+    },
+    {
+      "context": "b11-p2-readiness-gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166824",
+      "check_run_id": 65268166824
+    },
+    {
+      "context": "b11-p4-static-and-runtime-gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166742",
+      "check_run_id": 65268166742
+    },
+    {
+      "context": "b11-p4-ci-audit-gate",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166760",
+      "check_run_id": 65268166760
+    }
+  ],
+  "full_physics_dispatch_runs": [
+    {
+      "run_id": 22545707040,
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22545707040",
+      "conclusion": "cancelled",
+      "note": "initial dispatch did not complete; superseded"
+    },
+    {
+      "run_id": 22545912450,
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22545912450",
+      "conclusion": "cancelled",
+      "note": "queued/stuck on runner label ubuntu-8core; cancelled"
+    },
+    {
+      "run_id": 22546072511,
+      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22546072511",
+      "conclusion": "success",
+      "note": "workflow_dispatch rerun with runner_label=ubuntu-latest"
+    }
+  ]
+}

@@ -10,8 +10,11 @@ import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-os.environ.setdefault("AUTH_JWT_SECRET", "test-secret")
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "HS256")
+from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, private_ring_payload, public_ring_payload
+
+os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
+os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
+os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
 os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
@@ -59,7 +62,12 @@ def _build_token(tenant_id: UUID) -> str:
         "exp": now + 3600,
         "tenant_id": str(tenant_id),
     }
-    return jwt.encode(payload, os.environ["AUTH_JWT_SECRET"], algorithm=os.environ["AUTH_JWT_ALGORITHM"])
+    return jwt.encode(
+        payload,
+        TEST_PRIVATE_KEY_PEM,
+        algorithm=os.environ["AUTH_JWT_ALGORITHM"],
+        headers={"kid": "kid-1"},
+    )
 
 
 async def _make_client_request(path: str, token: str, correlation_id: str) -> tuple[int, dict, dict]:

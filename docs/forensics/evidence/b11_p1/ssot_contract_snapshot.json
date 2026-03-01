@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 52,
+  "keys_total": 53,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
@@ -75,6 +75,23 @@
       "key": "AUTH_JWT_JWKS_URL",
       "owner": "platform-security",
       "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/auth/jwt-public-key-ring",
+      "call_sites": [
+        "backend/app/security/auth.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "AUTH_JWT_PUBLIC_KEY_RING",
+      "owner": "platform-security",
+      "rotation_criticality": "critical"
     },
     {
       "aws_path_template": "/skeldir/{env}/secret/auth/jwt-secret",
