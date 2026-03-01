@@ -54,10 +54,11 @@ def _spawn_worker_unknown_kid(
     rotated_public_ring: str,
     db_url: str,
     disable_singleflight: bool,
+    refresh_floor_seconds: int,
     result_queue,
 ) -> None:
     os.environ["SKELDIR_JWT_UNKNOWN_KID_REFRESH_DEBOUNCE_SECONDS"] = "0"
-    os.environ["SKELDIR_JWT_REFRESH_MIN_FLOOR_SECONDS"] = "30"
+    os.environ["SKELDIR_JWT_REFRESH_MIN_FLOOR_SECONDS"] = str(refresh_floor_seconds)
     os.environ["SKELDIR_JWT_REFRESH_JITTER_SECONDS"] = "0"
     if disable_singleflight:
         os.environ["SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT"] = "1"
@@ -143,13 +144,23 @@ def test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes(monkeypa
     token = jwt.encode(_payload(), TEST_PRIVATE_KEY_PEM, algorithm="RS256", headers={"kid": "kid-new"})
     ctx = multiprocessing.get_context("spawn")
     workers = 8
+    refresh_floor_seconds = int(os.getenv("SKELDIR_B12_P3_TEST_REFRESH_FLOOR_SECONDS", "30"))
     barrier = ctx.Barrier(workers)
     queue = ctx.Queue()
     db_url = get_database_url()
     processes = [
         ctx.Process(
             target=_spawn_worker_unknown_kid,
-            args=(barrier, token, old_public_ring, rotated_public_ring, db_url, False, queue),
+            args=(
+                barrier,
+                token,
+                old_public_ring,
+                rotated_public_ring,
+                db_url,
+                False,
+                refresh_floor_seconds,
+                queue,
+            ),
         )
         for _ in range(workers)
     ]
@@ -164,6 +175,37 @@ def test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes(monkeypa
 
     state = get_jwt_verification_pg_cache_state_for_testing()
     assert state.refresh_event_count <= 1
+
+
+def test_negative_control_disable_singleflight_allows_multi_refresh_spawn(monkeypatch):
+    old_public_ring = _ring_payload(current_kid="kid-old", key_material=TEST_PUBLIC_KEY_PEM)
+    monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", old_public_ring)
+    seed_jwt_verification_pg_cache_for_testing(raw_ring=old_public_ring)
+
+    token = jwt.encode(_payload(), TEST_PRIVATE_KEY_PEM, algorithm="RS256", headers={"kid": "kid-missing"})
+    ctx = multiprocessing.get_context("spawn")
+    workers = 6
+    barrier = ctx.Barrier(workers)
+    queue = ctx.Queue()
+    db_url = get_database_url()
+    processes = [
+        ctx.Process(
+            target=_spawn_worker_unknown_kid,
+            args=(barrier, token, old_public_ring, old_public_ring, db_url, True, 0, queue),
+        )
+        for _ in range(workers)
+    ]
+    for proc in processes:
+        proc.start()
+    for proc in processes:
+        proc.join(timeout=40)
+        assert proc.exitcode == 0
+
+    outcomes = [queue.get(timeout=5) for _ in range(workers)]
+    assert not [item for item in outcomes if str(item).startswith("err:")]
+
+    state = get_jwt_verification_pg_cache_state_for_testing()
+    assert state.refresh_event_count > 1
 
 
 def test_refresh_floor_blocks_repeated_unknown_kid_refresh(monkeypatch):

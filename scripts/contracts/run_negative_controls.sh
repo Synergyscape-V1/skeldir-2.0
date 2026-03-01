@@ -354,6 +354,7 @@ fi
 
 echo "[negative-control] 22/22 fleet singleflight gate should fail when Postgres singleflight is disabled"
 if SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT=1 \
+   SKELDIR_B12_P3_TEST_REFRESH_FLOOR_SECONDS=0 \
    pytest backend/tests/test_b12_p3_pg_fleet_stampede.py -q -k test_unknown_kid_refresh_is_fleet_singleflight_with_spawn_processes; then
   echo "[negative-control] ERROR: fleet singleflight gate did not fail under disabled Postgres singleflight mutation"
   exit 1
