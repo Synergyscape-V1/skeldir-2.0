@@ -1,133 +1,144 @@
-{
-  "captured_at_utc": "2026-03-01T15:19:54.240554+00:00",
-  "main_sha": "2bc1b28b48e2c32ba555bf93a5c5b33a008ac193",
-  "required_context_count": 15,
-  "all_required_contexts_green": true,
-  "required_contexts": [
-    {
-      "context": "B0.7 P2 Runtime Proof (LLM + Redaction)",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175691",
-      "check_run_id": 65268175691
-    },
-    {
-      "context": "Celery Foundation B0.5.1",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175745",
-      "check_run_id": 65268175745
-    },
-    {
-      "context": "Validate Contracts",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268175707",
-      "check_run_id": 65268175707
-    },
-    {
-      "context": "Frontend Contract Consumption Gate",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255997",
-      "check_run_id": 65268255997
-    },
-    {
-      "context": "Mock Usability Gate",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255989",
-      "check_run_id": 65268255989
-    },
-    {
-      "context": "Phase 1 Negative Controls",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255996",
-      "check_run_id": 65268255996
-    },
-    {
-      "context": "Phase 1 Runtime Conformance",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255981",
-      "check_run_id": 65268255981
-    },
-    {
-      "context": "JWT Tenant Context Invariants",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268255982",
-      "check_run_id": 65268255982
-    },
-    {
-      "context": "B0.6 Phase 2 Adjudication",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103356/job/65268166768",
-      "check_run_id": 65268166768
-    },
-    {
-      "context": "Phase Gates (B0.3)",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103340/job/65268188812",
-      "check_run_id": 65268188812
-    },
-    {
-      "context": "Phase 8 Regression Gate (Full Physics)",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22546072511/job/65308616852",
-      "check_run_id": 65308616852
-    },
-    {
-      "context": "b11-p2-secret-chokepoint-gate",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166836",
-      "check_run_id": 65268166836
-    },
-    {
-      "context": "b11-p2-readiness-gate",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103339/job/65268166824",
-      "check_run_id": 65268166824
-    },
-    {
-      "context": "b11-p4-static-and-runtime-gate",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166742",
-      "check_run_id": 65268166742
-    },
-    {
-      "context": "b11-p4-ci-audit-gate",
-      "status": "completed",
-      "conclusion": "success",
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22530103354/job/65268166760",
-      "check_run_id": 65268166760
-    }
-  ],
-  "full_physics_dispatch_runs": [
-    {
-      "run_id": 22545707040,
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22545707040",
-      "conclusion": "cancelled",
-      "note": "initial dispatch did not complete; superseded"
-    },
-    {
-      "run_id": 22545912450,
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22545912450",
-      "conclusion": "cancelled",
-      "note": "queued/stuck on runner label ubuntu-8core; cancelled"
-    },
-    {
-      "run_id": 22546072511,
-      "url": "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22546072511",
-      "conclusion": "success",
-      "note": "workflow_dispatch rerun with runner_label=ubuntu-latest"
-    }
-  ]
+﻿{
+    "sha":  "c13b1e74a90fd025c797f9c8c14050c56fb222d2",
+    "checked_at":  "2026-03-01T13:06:20.1784249-06:00",
+    "all_required_success":  true,
+    "required_contexts":  [
+                              "B0.7 P2 Runtime Proof (LLM + Redaction)",
+                              "Celery Foundation B0.5.1",
+                              "Validate Contracts",
+                              "Frontend Contract Consumption Gate",
+                              "Mock Usability Gate",
+                              "Phase 1 Negative Controls",
+                              "Phase 1 Runtime Conformance",
+                              "B0.6 Phase 2 Adjudication",
+                              "Phase Gates (B0.3)",
+                              "Phase 8 Regression Gate (Full Physics)",
+                              "b11-p2-secret-chokepoint-gate",
+                              "b11-p2-readiness-gate",
+                              "b11-p4-static-and-runtime-gate",
+                              "b11-p4-ci-audit-gate",
+                              "JWT Tenant Context Invariants"
+                          ],
+    "results":  [
+                    {
+                        "context":  "b11-p2-secret-chokepoint-gate",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:13Z",
+                        "completed_at":  "2026-03-01T17:19:48Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458353/job/65314569292"
+                    },
+                    {
+                        "context":  "Phase 8 Regression Gate (Full Physics)",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T18:53:36Z",
+                        "completed_at":  "2026-03-01T19:05:30Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22550185316/job/65318836450"
+                    },
+                    {
+                        "context":  "Phase Gates (B0.3)",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:46Z",
+                        "completed_at":  "2026-03-01T17:21:47Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314598308"
+                    },
+                    {
+                        "context":  "b11-p2-readiness-gate",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:13Z",
+                        "completed_at":  "2026-03-01T17:19:50Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458353/job/65314569278"
+                    },
+                    {
+                        "context":  "JWT Tenant Context Invariants",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:21:15Z",
+                        "completed_at":  "2026-03-01T17:22:25Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669131"
+                    },
+                    {
+                        "context":  "b11-p4-ci-audit-gate",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:13Z",
+                        "completed_at":  "2026-03-01T17:19:35Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458318/job/65314569274"
+                    },
+                    {
+                        "context":  "b11-p4-static-and-runtime-gate",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:13Z",
+                        "completed_at":  "2026-03-01T17:20:13Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458318/job/65314569271"
+                    },
+                    {
+                        "context":  "B0.6 Phase 2 Adjudication",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:13Z",
+                        "completed_at":  "2026-03-01T17:20:15Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458343/job/65314569209"
+                    },
+                    {
+                        "context":  "Validate Contracts",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:29Z",
+                        "completed_at":  "2026-03-01T17:21:13Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314581781"
+                    },
+                    {
+                        "context":  "Celery Foundation B0.5.1",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:28Z",
+                        "completed_at":  "2026-03-01T17:21:31Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314581800"
+                    },
+                    {
+                        "context":  "B0.7 P2 Runtime Proof (LLM + Redaction)",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:19:29Z",
+                        "completed_at":  "2026-03-01T17:21:51Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314581777"
+                    },
+                    {
+                        "context":  "Frontend Contract Consumption Gate",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:21:15Z",
+                        "completed_at":  "2026-03-01T17:23:14Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669127"
+                    },
+                    {
+                        "context":  "Phase 1 Runtime Conformance",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:21:15Z",
+                        "completed_at":  "2026-03-01T17:21:55Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669125"
+                    },
+                    {
+                        "context":  "Phase 1 Negative Controls",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:21:15Z",
+                        "completed_at":  "2026-03-01T17:25:34Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669119"
+                    },
+                    {
+                        "context":  "Mock Usability Gate",
+                        "source":  "check_run",
+                        "state":  "success",
+                        "started_at":  "2026-03-01T17:21:15Z",
+                        "completed_at":  "2026-03-01T17:22:18Z",
+                        "details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/22548458324/job/65314669120"
+                    }
+                ]
 }
