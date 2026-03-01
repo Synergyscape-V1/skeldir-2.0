@@ -303,4 +303,37 @@ if SKELDIR_B12_USERS_FORCE_DROP_INSERT_POLICY=1 \
   exit 1
 fi
 
+echo "[negative-control] 19/20 RS256-only gate should fail under algorithm-check bypass mutation"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("backend/app/security/auth.py")
+text = path.read_text(encoding="utf-8")
+needle = "        if token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
+replacement = "        if False and token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
+if needle not in text:
+    raise SystemExit("Unable to apply RS256 gate bypass mutation")
+path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+if pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_hs256_token_is_rejected; then
+  echo "[negative-control] ERROR: RS256-only verification gate did not fail under bypass mutation"
+  exit 1
+fi
+cp "$BACKUP_AUTH" "$ORIG_AUTH"
+
+echo "[negative-control] 20/20 no-secret-fetch gate should fail under forced per-request verifier refresh"
+if SKELDIR_B12_P3_FORCE_PER_REQUEST_VERIFIER_REFRESH=1 \
+   pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_verification_steady_state_does_not_read_secret_source; then
+  echo "[negative-control] ERROR: no-secret-fetch gate did not fail under forced per-request refresh"
+  exit 1
+fi
+
+echo "[negative-control] 21/21 HTTP no-secret-fetch gate should fail under forced per-request verifier refresh"
+if SKELDIR_B12_P3_FORCE_PER_REQUEST_VERIFIER_REFRESH=1 \
+   pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_http_plane_steady_state_does_not_read_secret_source; then
+  echo "[negative-control] ERROR: HTTP no-secret-fetch gate did not fail under forced per-request refresh"
+  exit 1
+fi
+
 echo "[negative-control] PASS"

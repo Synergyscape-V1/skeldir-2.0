@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 
 import psycopg2
 
+from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
+
 
 @dataclass(frozen=True)
 class _Phase8Config:
@@ -100,6 +102,31 @@ if payload["current_user"] != expected:
 if payload["rolsuper"]:
     sys.exit(4)
 """
+
+
+def _is_kid_keyring_payload(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(parsed, dict) and isinstance(parsed.get("current_kid"), str) and isinstance(parsed.get("keys"), dict)
+
+
+def _resolved_jwt_env_values() -> tuple[str, str, str]:
+    algorithm = os.getenv("AUTH_JWT_ALGORITHM", "RS256")
+    private_ring = os.getenv("AUTH_JWT_SECRET")
+    public_ring = os.getenv("AUTH_JWT_PUBLIC_KEY_RING")
+    if algorithm == "RS256":
+        if not _is_kid_keyring_payload(private_ring):
+            private_ring = private_ring_payload()
+        if not _is_kid_keyring_payload(public_ring):
+            public_ring = public_ring_payload()
+    else:
+        private_ring = private_ring or private_ring_payload()
+        public_ring = public_ring or public_ring_payload()
+    return private_ring, public_ring, algorithm
 
 
 def _repo_root() -> Path:
@@ -320,6 +347,7 @@ def _ensure_dirs(cfg: _Phase8Config) -> None:
 
 def _build_env(cfg: _Phase8Config) -> dict[str, str]:
     env = os.environ.copy()
+    jwt_private_ring, jwt_public_ring, jwt_algorithm = _resolved_jwt_env_values()
     env.update(
         {
             "CI": "true",
@@ -341,8 +369,9 @@ def _build_env(cfg: _Phase8Config) -> dict[str, str]:
             "E2E_MOCK_BASE_URL": cfg.mock_base_url,
             "E2E_DB_URL": cfg.runtime_sync_dsn,
             "E2E_WAIT_TIMEOUT_S": "120",
-            "AUTH_JWT_SECRET": os.getenv("AUTH_JWT_SECRET", "e2e-secret"),
-            "AUTH_JWT_ALGORITHM": os.getenv("AUTH_JWT_ALGORITHM", "HS256"),
+            "AUTH_JWT_SECRET": jwt_private_ring,
+            "AUTH_JWT_PUBLIC_KEY_RING": jwt_public_ring,
+            "AUTH_JWT_ALGORITHM": jwt_algorithm,
             "AUTH_JWT_ISSUER": os.getenv("AUTH_JWT_ISSUER", "https://issuer.skeldir.test"),
             "AUTH_JWT_AUDIENCE": os.getenv("AUTH_JWT_AUDIENCE", "skeldir-api"),
             "PLATFORM_TOKEN_ENCRYPTION_KEY": os.getenv(

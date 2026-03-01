@@ -28,6 +28,7 @@ from app.services.revenue_reconciliation import (
     RevenueReconciliationService,
     VerifiedRevenue,
 )
+from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM
 
 
 @dataclass(frozen=True)
@@ -230,9 +231,23 @@ def _build_auth_token(tenant_id: UUID, user_id: UUID) -> str:
         "iat": now,
         "exp": now + 3600,
     }
-    secret = os.getenv("AUTH_JWT_SECRET", "e2e-secret")
-    algorithm = os.getenv("AUTH_JWT_ALGORITHM", "HS256")
-    return jwt.encode(payload, secret, algorithm=algorithm)
+    secret = os.getenv("AUTH_JWT_SECRET", TEST_PRIVATE_KEY_PEM)
+    algorithm = os.getenv("AUTH_JWT_ALGORITHM", "RS256")
+    kid: str | None = None
+    try:
+        parsed = json.loads(secret)
+        if isinstance(parsed, dict):
+            current_kid = parsed.get("current_kid")
+            keys = parsed.get("keys", {})
+            if isinstance(current_kid, str) and isinstance(keys, dict):
+                resolved = keys.get(current_kid)
+                if isinstance(resolved, str):
+                    secret = resolved
+                    kid = current_kid
+    except json.JSONDecodeError:
+        pass
+    headers = {"kid": kid} if kid else None
+    return jwt.encode(payload, secret, algorithm=algorithm, headers=headers)
 
 
 def _wait_for_count(

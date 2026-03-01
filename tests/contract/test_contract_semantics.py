@@ -28,11 +28,15 @@ import jwt
 # Import FastAPI app for ASGI testing (no network required)
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
-os.environ.setdefault("AUTH_JWT_SECRET", "test-secret")
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "HS256")
+from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, private_ring_payload, public_ring_payload
+
+os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
+os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
+os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
 os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("CONTRACT_TESTING", "1")
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
 from app.main import app
 
 
@@ -46,7 +50,12 @@ def _build_token() -> str:
         "exp": now + 3600,
         "tenant_id": "00000000-0000-0000-0000-000000000000",
     }
-    return jwt.encode(payload, os.environ["AUTH_JWT_SECRET"], algorithm=os.environ["AUTH_JWT_ALGORITHM"])
+    return jwt.encode(
+        payload,
+        TEST_PRIVATE_KEY_PEM,
+        algorithm=os.environ["AUTH_JWT_ALGORITHM"],
+        headers={"kid": "kid-1"},
+    )
 
 
 def load_scope_config() -> dict:

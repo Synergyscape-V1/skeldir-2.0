@@ -14,16 +14,23 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 
 os.environ["TESTING"] = "1"
-os.environ["AUTH_JWT_SECRET"] = "test-secret"
-os.environ["AUTH_JWT_ALGORITHM"] = "HS256"
-os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
-os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 os.environ.setdefault(
     "DATABASE_URL",
     "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
 )
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+from app.testing.jwt_rs256 import (  # noqa: E402
+    TEST_PRIVATE_KEY_PEM,
+    private_ring_payload,
+    public_ring_payload,
+)
+
+os.environ["AUTH_JWT_SECRET"] = private_ring_payload()
+os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = public_ring_payload()
+os.environ["AUTH_JWT_ALGORITHM"] = "RS256"
+os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
+os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 
 from app.main import app  # noqa: E402
 
@@ -41,7 +48,12 @@ def _build_token(tenant_id: UUID | None) -> str:
     }
     if tenant_id is not None:
         payload["tenant_id"] = str(tenant_id)
-    return jwt.encode(payload, os.environ["AUTH_JWT_SECRET"], algorithm=os.environ["AUTH_JWT_ALGORITHM"])
+    return jwt.encode(
+        payload,
+        TEST_PRIVATE_KEY_PEM,
+        algorithm=os.environ["AUTH_JWT_ALGORITHM"],
+        headers={"kid": "kid-1"},
+    )
 
 
 @asynccontextmanager

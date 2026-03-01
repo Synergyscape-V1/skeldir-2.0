@@ -449,6 +449,8 @@ jobs:
           pytest backend/tests/test_b07_p1_identity_guc.py -q
           pytest backend/tests/test_b12_p1_tenant_context_safety.py -q
           pytest backend/tests/test_b12_p2_auth_substrate.py -q
+          pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q
+          pytest backend/tests/test_b11_p3_jwt_rotation_semantics.py -q -k "unknown_kid_forces_debounced_refresh_and_recovers or unknown_kid_refresh_is_debounced_under_flood"
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest
@@ -1333,7 +1335,7 @@ jobs:
       B060_PHASE6_API_BASE_URL: http://127.0.0.1:8000
       B060_PHASE6_MOCK_BASE_URL: http://127.0.0.1:8080
       B060_PHASE6_JWT_SECRET: e2e-secret
-      B060_PHASE6_JWT_ALGORITHM: HS256
+      B060_PHASE6_JWT_ALGORITHM: RS256
       B060_PHASE6_JWT_ISSUER: https://issuer.skeldir.test
       B060_PHASE6_JWT_AUDIENCE: skeldir-api
     steps:

@@ -16,10 +16,6 @@ from alembic import command
 from alembic.config import Config
 
 os.environ["TESTING"] = "1"
-os.environ["AUTH_JWT_SECRET"] = "test-secret"
-os.environ["AUTH_JWT_ALGORITHM"] = "HS256"
-os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
-os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
 os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
 os.environ.setdefault(
@@ -28,6 +24,17 @@ os.environ.setdefault(
 )
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+from app.testing.jwt_rs256 import (  # noqa: E402
+    TEST_PRIVATE_KEY_PEM,
+    private_ring_payload,
+    public_ring_payload,
+)
+
+os.environ["AUTH_JWT_SECRET"] = private_ring_payload()
+os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = public_ring_payload()
+os.environ["AUTH_JWT_ALGORITHM"] = "RS256"
+os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
+os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 
 from app.main import app  # noqa: E402
 from tests.builders.core_builders import build_tenant  # noqa: E402
@@ -54,7 +61,12 @@ def _build_token(tenant_id: UUID) -> str:
         "exp": now + 3600,
         "tenant_id": str(tenant_id),
     }
-    return jwt.encode(payload, os.environ["AUTH_JWT_SECRET"], algorithm=os.environ["AUTH_JWT_ALGORITHM"])
+    return jwt.encode(
+        payload,
+        TEST_PRIVATE_KEY_PEM,
+        algorithm=os.environ["AUTH_JWT_ALGORITHM"],
+        headers={"kid": "kid-1"},
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)

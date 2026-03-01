@@ -17,7 +17,7 @@ jobs:
       E2E_MOCK_BASE_URL: http://127.0.0.1:8080
       E2E_WAIT_TIMEOUT_S: "120"
       AUTH_JWT_SECRET: e2e-secret
-      AUTH_JWT_ALGORITHM: HS256
+      AUTH_JWT_ALGORITHM: RS256
       AUTH_JWT_ISSUER: https://issuer.skeldir.test
       AUTH_JWT_AUDIENCE: skeldir-api
       PHASE8_RUNTIME_DB_USER: app_user
