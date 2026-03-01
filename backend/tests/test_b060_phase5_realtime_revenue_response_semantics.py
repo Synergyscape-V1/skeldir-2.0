@@ -12,13 +12,13 @@ from uuid import UUID, uuid4
 
 from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, private_ring_payload, public_ring_payload
 
-os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
-os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
-os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
-os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
-os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
-os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
+os.environ["AUTH_JWT_SECRET"] = private_ring_payload()
+os.environ["AUTH_JWT_PUBLIC_KEY_RING"] = public_ring_payload()
+os.environ["AUTH_JWT_ALGORITHM"] = "RS256"
+os.environ["AUTH_JWT_ISSUER"] = "https://issuer.skeldir.test"
+os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
+os.environ["PLATFORM_TOKEN_ENCRYPTION_KEY"] = "test-platform-key"
+os.environ["PLATFORM_TOKEN_KEY_ID"] = "test-key"
 
 import jwt
 import pytest
