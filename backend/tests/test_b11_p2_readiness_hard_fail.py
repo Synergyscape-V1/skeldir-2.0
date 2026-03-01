@@ -20,7 +20,7 @@ async def api_client():
 async def test_readiness_fails_closed_when_jwt_secret_missing(monkeypatch, api_client):
     monkeypatch.setenv("SKELDIR_REQUIRE_AUTH_SECRETS", "1")
     monkeypatch.setattr(settings, "AUTH_JWT_SECRET", None)
-    monkeypatch.setattr(settings, "AUTH_JWT_JWKS_URL", None)
+    monkeypatch.setattr(settings, "AUTH_JWT_PUBLIC_KEY_RING", None)
 
     ready = await api_client.get("/health/ready")
     health = await api_client.get("/api/health")
@@ -29,7 +29,8 @@ async def test_readiness_fails_closed_when_jwt_secret_missing(monkeypatch, api_c
     assert ready.status_code == 503
     assert health.status_code == 503
     assert api_ready.status_code == 503
-    assert "AUTH_JWT_SECRET|AUTH_JWT_JWKS_URL" in ready.json()["missing_required_secrets"]
+    assert "AUTH_JWT_SECRET" in ready.json()["missing_required_secrets"]
+    assert "AUTH_JWT_PUBLIC_KEY_RING" in ready.json()["missing_required_secrets"]
 
 
 @pytest.mark.asyncio

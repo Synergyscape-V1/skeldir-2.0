@@ -20,7 +20,7 @@ ADMIN_DB_URL = os.getenv(
 )
 
 JWT_SECRET = os.getenv("B060_PHASE6_JWT_SECRET", "e2e-secret")
-JWT_ALGORITHM = os.getenv("B060_PHASE6_JWT_ALGORITHM", "HS256")
+JWT_ALGORITHM = os.getenv("B060_PHASE6_JWT_ALGORITHM", "RS256")
 JWT_ISSUER = os.getenv("B060_PHASE6_JWT_ISSUER", "https://issuer.skeldir.test")
 JWT_AUDIENCE = os.getenv("B060_PHASE6_JWT_AUDIENCE", "skeldir-api")
 
@@ -56,7 +56,27 @@ def _build_token(tenant_id: UUID) -> str:
         "exp": now + 3600,
         "tenant_id": str(tenant_id),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    secret = JWT_SECRET
+    headers: dict[str, str] | None = None
+    if JWT_ALGORITHM == "RS256":
+        try:
+            parsed = json.loads(secret)
+            if isinstance(parsed, dict):
+                current_kid = parsed.get("current_kid")
+                keys = parsed.get("keys", {})
+                if isinstance(current_kid, str) and isinstance(keys, dict):
+                    resolved = keys.get(current_kid)
+                    if isinstance(resolved, str):
+                        secret = resolved
+                        headers = {"kid": current_kid}
+        except json.JSONDecodeError:
+            pass
+        if "BEGIN PRIVATE KEY" not in secret:
+            from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM
+
+            secret = TEST_PRIVATE_KEY_PEM
+            headers = {"kid": "kid-1"}
+    return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM, headers=headers)
 
 
 def _wait_for_db(timeout_s: int = 60) -> None:

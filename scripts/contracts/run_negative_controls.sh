@@ -269,37 +269,84 @@ if pytest backend/tests/test_b12_p1_tenant_context_safety.py -q -k test_worker_r
 fi
 cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT"
 
-echo "[negative-control] 12/15 auth PII guard should fail under synthetic violation"
+echo "[negative-control] 12/17 auth PII guard should fail under synthetic violation"
 if python scripts/security/b12_p2_auth_pii_guard.py --simulate-violation; then
   echo "[negative-control] ERROR: auth PII guard did not fail under synthetic violation"
   exit 1
 fi
 
-echo "[negative-control] 13/15 users least-privilege should fail under BYPASSRLS role mutation"
+echo "[negative-control] 13/18 users least-privilege should fail under BYPASSRLS role mutation"
 if SKELDIR_B12_USERS_FORCE_BYPASS_ROLE=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
   echo "[negative-control] ERROR: users least-privilege gate did not fail under BYPASSRLS role mutation"
   exit 1
 fi
 
-echo "[negative-control] 14/15 users least-privilege should fail under grant regression mutation"
+echo "[negative-control] 14/18 users least-privilege should fail under grant regression mutation"
 if SKELDIR_B12_USERS_FORCE_GRANT_REGRESSION=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
   echo "[negative-control] ERROR: users least-privilege gate did not fail under grant regression mutation"
   exit 1
 fi
 
-echo "[negative-control] 15/16 users least-privilege should fail under RLS-disable mutation"
+echo "[negative-control] 15/18 users least-privilege should fail under RLS-disable mutation"
 if SKELDIR_B12_USERS_FORCE_DISABLE_RLS=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
   echo "[negative-control] ERROR: users least-privilege gate did not fail under RLS-disable mutation"
   exit 1
 fi
 
-echo "[negative-control] 16/16 users pre-auth insert viability should fail when INSERT policy is removed"
+echo "[negative-control] 16/18 users lookup owner posture should fail when function owner is superuser"
+if SKELDIR_B12_USERS_FORCE_LOOKUP_OWNER_BYPASS=1 \
+   pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
+  echo "[negative-control] ERROR: users lookup-owner posture gate did not fail under superuser-owner mutation"
+  exit 1
+fi
+
+echo "[negative-control] 17/18 users lookup execution-context should fail when row_security/search_path hardening is removed"
+if SKELDIR_B12_USERS_FORCE_LOOKUP_EXEC_CTX_WEAKEN=1 \
+   pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_06_users_registry_least_privilege_contract; then
+  echo "[negative-control] ERROR: users lookup execution-context gate did not fail under hardening regression"
+  exit 1
+fi
+
+echo "[negative-control] 18/18 users pre-auth insert viability should fail when INSERT policy is removed"
 if SKELDIR_B12_USERS_FORCE_DROP_INSERT_POLICY=1 \
    pytest backend/tests/test_b12_p2_auth_substrate.py -q -k test_10_users_preauth_insert_viability_under_force_rls; then
   echo "[negative-control] ERROR: users pre-auth insert gate did not fail when INSERT policy was removed"
+  exit 1
+fi
+
+echo "[negative-control] 19/20 RS256-only gate should fail under algorithm-check bypass mutation"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("backend/app/security/auth.py")
+text = path.read_text(encoding="utf-8")
+needle = "        if token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
+replacement = "        if False and token_algorithm != RS256_ALGORITHM:\n            raise InvalidTokenError(\"Invalid JWT algorithm.\")\n"
+if needle not in text:
+    raise SystemExit("Unable to apply RS256 gate bypass mutation")
+path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+if pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_hs256_token_is_rejected; then
+  echo "[negative-control] ERROR: RS256-only verification gate did not fail under bypass mutation"
+  exit 1
+fi
+cp "$BACKUP_AUTH" "$ORIG_AUTH"
+
+echo "[negative-control] 20/20 no-secret-fetch gate should fail under forced per-request verifier refresh"
+if SKELDIR_B12_P3_FORCE_PER_REQUEST_VERIFIER_REFRESH=1 \
+   pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_verification_steady_state_does_not_read_secret_source; then
+  echo "[negative-control] ERROR: no-secret-fetch gate did not fail under forced per-request refresh"
+  exit 1
+fi
+
+echo "[negative-control] 21/21 HTTP no-secret-fetch gate should fail under forced per-request verifier refresh"
+if SKELDIR_B12_P3_FORCE_PER_REQUEST_VERIFIER_REFRESH=1 \
+   pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_http_plane_steady_state_does_not_read_secret_source; then
+  echo "[negative-control] ERROR: HTTP no-secret-fetch gate did not fail under forced per-request refresh"
   exit 1
 fi
 
