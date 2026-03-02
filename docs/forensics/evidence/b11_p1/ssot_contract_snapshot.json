@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 53,
+  "keys_total": 54,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
@@ -109,6 +109,23 @@
       "key": "AUTH_JWT_SECRET",
       "owner": "platform-security",
       "rotation_criticality": "critical"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/secret/auth/login-identifier-pepper",
+      "call_sites": [
+        "backend/app/services/auth_tokens.py"
+      ],
+      "classification": "secret",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "AUTH_LOGIN_IDENTIFIER_PEPPER",
+      "owner": "platform-security",
+      "rotation_criticality": "high"
     },
     {
       "aws_path_template": "/skeldir/{env}/config/celery/bayesian-task-soft-time-limit-s",

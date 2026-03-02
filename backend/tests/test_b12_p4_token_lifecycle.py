@@ -58,6 +58,20 @@ def _isolated_migrated_db_url() -> str:
         or os.environ.get("DATABASE_URL")
         or "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
     )
+    # CI already provisions a clean Postgres service and runs `alembic upgrade head`
+    # before this test module. Reusing that database avoids admin-auth drift across
+    # upstream suites and keeps this module bounded and deterministic in pipeline jobs.
+    if os.environ.get("CI", "").lower() == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
+        os.environ["DATABASE_URL"] = base_url
+        os.environ["MIGRATION_DATABASE_URL"] = base_url
+        cfg = Config(str(_repo_root() / "alembic.ini"))
+        try:
+            command.upgrade(cfg, "head")
+        except Exception as exc:
+            pytest.fail(f"P4 shared CI DB migration failed: {type(exc).__name__}: {exc}")
+        yield base_url
+        return
+
     parsed = make_url(base_url)
     admin_url = str(parsed.set(database="postgres"))
     db_owner = parsed.username or "postgres"

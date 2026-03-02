@@ -156,10 +156,10 @@ def downgrade() -> None:
         "REVOKE ALL ON TABLE public.auth_refresh_tokens FROM app_user",
     )
     op.execute("DROP POLICY IF EXISTS tenant_isolation_policy ON public.auth_refresh_tokens")
-    op.execute("DROP INDEX IF EXISTS public.idx_auth_refresh_tokens_family_created_at")
-    op.execute("DROP INDEX IF EXISTS public.idx_auth_refresh_tokens_tenant_user_created_at")
-    op.execute("DROP INDEX IF EXISTS public.idx_auth_refresh_tokens_tenant_created_at")
-    op.execute("DROP TABLE IF EXISTS public.auth_refresh_tokens")
+    op.execute("DROP INDEX IF EXISTS public.idx_auth_refresh_tokens_family_created_at")  # CI:DESTRUCTIVE_OK - rollback for B1.2-P4 substrate removal
+    op.execute("DROP INDEX IF EXISTS public.idx_auth_refresh_tokens_tenant_user_created_at")  # CI:DESTRUCTIVE_OK - rollback for B1.2-P4 substrate removal
+    op.execute("DROP INDEX IF EXISTS public.idx_auth_refresh_tokens_tenant_created_at")  # CI:DESTRUCTIVE_OK - rollback for B1.2-P4 substrate removal
+    op.execute("DROP TABLE IF EXISTS public.auth_refresh_tokens")  # CI:DESTRUCTIVE_OK - rollback for B1.2-P4 substrate removal
 
     _revoke_if_role_exists(
         "app_ro",
@@ -197,4 +197,4 @@ def downgrade() -> None:
     _grant_if_role_exists("app_user", "GRANT EXECUTE ON FUNCTION auth.lookup_user_by_login_hash(text) TO app_user")
     _grant_if_role_exists("app_rw", "GRANT EXECUTE ON FUNCTION auth.lookup_user_by_login_hash(text) TO app_rw")
     _grant_if_role_exists("app_ro", "GRANT EXECUTE ON FUNCTION auth.lookup_user_by_login_hash(text) TO app_ro")
-    op.execute("ALTER TABLE public.users DROP COLUMN IF EXISTS password_hash")
+    op.execute("ALTER TABLE public.users DROP COLUMN IF EXISTS password_hash")  # CI:DESTRUCTIVE_OK - rollback for B1.2-P4 users auth field
