@@ -112,6 +112,34 @@ def test_worker_plane_uses_same_verifier_and_no_fetch(monkeypatch):
     assert calls["count"] == 0
 
 
+def test_steady_state_verifier_hot_path_uses_zero_db_queries(monkeypatch):
+    from app.core import secrets as secrets_module
+
+    token = jwt.encode(_payload(), TEST_PRIVATE_KEY_PEM, algorithm="RS256", headers={"kid": "kid-1"})
+    _decode_token(token)  # warm in-proc verification cache
+
+    def _db_forbidden(*_args, **_kwargs):
+        raise AssertionError("steady-state verifier performed unexpected DB access")
+
+    monkeypatch.setattr(secrets_module.psycopg2, "connect", _db_forbidden)
+    for _ in range(10):
+        _decode_token(token)
+
+
+def test_worker_steady_state_hot_path_uses_zero_db_queries(monkeypatch):
+    from app.core import secrets as secrets_module
+
+    token = jwt.encode(_payload(), TEST_PRIVATE_KEY_PEM, algorithm="RS256", headers={"kid": "kid-1"})
+    decode_and_verify_jwt(token)  # warm in-proc verification cache
+
+    def _db_forbidden(*_args, **_kwargs):
+        raise AssertionError("steady-state worker verifier performed unexpected DB access")
+
+    monkeypatch.setattr(secrets_module.psycopg2, "connect", _db_forbidden)
+    decoded = decode_worker_auth_token(token)
+    assert decoded["tenant_id"]
+
+
 @pytest.mark.asyncio
 async def test_http_plane_steady_state_does_not_read_secret_source(monkeypatch):
     from app.core import secrets as secrets_module
@@ -146,3 +174,34 @@ async def test_http_plane_steady_state_does_not_read_secret_source(monkeypatch):
             assert resp.status_code == 200
 
     assert calls["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_http_plane_steady_state_hot_path_uses_zero_db_queries(monkeypatch):
+    from app.core import secrets as secrets_module
+
+    token = jwt.encode(_payload(), TEST_PRIVATE_KEY_PEM, algorithm="RS256", headers={"kid": "kid-1"})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        warm = await client.get(
+            "/api/auth/verify",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Correlation-ID": str(uuid4()),
+            },
+        )
+        assert warm.status_code == 200
+
+        def _db_forbidden(*_args, **_kwargs):
+            raise AssertionError("steady-state HTTP verifier performed unexpected DB access")
+
+        monkeypatch.setattr(secrets_module.psycopg2, "connect", _db_forbidden)
+        for _ in range(5):
+            resp = await client.get(
+                "/api/auth/verify",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Correlation-ID": str(uuid4()),
+                },
+            )
+            assert resp.status_code == 200

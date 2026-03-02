@@ -352,7 +352,14 @@ if SKELDIR_B12_P3_FORCE_PER_REQUEST_VERIFIER_REFRESH=1 \
   exit 1
 fi
 
-echo "[negative-control] 22/22 fleet singleflight gate should fail when Postgres singleflight is disabled"
+echo "[negative-control] 22/23 zero-DB hot path gate should fail under forced DB-read mutation"
+if SKELDIR_B12_P3_FORCE_DB_READ_ON_VERIFY=1 \
+   pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q -k test_steady_state_verifier_hot_path_uses_zero_db_queries; then
+  echo "[negative-control] ERROR: zero-DB hot path gate did not fail under forced DB-read mutation"
+  exit 1
+fi
+
+echo "[negative-control] 23/23 fleet singleflight gate should fail when Postgres singleflight is disabled"
 if SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT=1 \
    SKELDIR_B12_P3_TEST_DISABLE_SINGLEFLIGHT=1 \
    SKELDIR_B12_P3_TEST_REFRESH_FLOOR_SECONDS=0 \

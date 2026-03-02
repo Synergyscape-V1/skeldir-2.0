@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from contextlib import contextmanager
 from hashlib import sha256
 import json
+import time
 from threading import Lock
 from typing import Any, Literal
 import os
@@ -247,6 +248,53 @@ def _jwt_singleflight_mutation_enabled() -> bool:
     return os.getenv("SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _jwt_force_db_read_on_verify_enabled() -> bool:
+    return os.getenv("SKELDIR_B12_P3_FORCE_DB_READ_ON_VERIFY", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _jwt_refresh_statement_timeout_ms() -> int:
+    raw = os.getenv("SKELDIR_JWT_REFRESH_STATEMENT_TIMEOUT_MS", "1500").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 1500
+    return max(100, parsed)
+
+
+def _jwt_unknown_kid_lock_miss_budget_ms() -> int:
+    raw = os.getenv("SKELDIR_JWT_UNKNOWN_KID_LOCK_MISS_BUDGET_MS", "150").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 150
+    return min(250, max(50, parsed))
+
+
+def _jwt_unknown_kid_poll_initial_ms() -> int:
+    raw = os.getenv("SKELDIR_JWT_UNKNOWN_KID_POLL_INITIAL_MS", "5").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 5
+    return max(1, parsed)
+
+
+def _jwt_unknown_kid_poll_cap_ms() -> int:
+    raw = os.getenv("SKELDIR_JWT_UNKNOWN_KID_POLL_CAP_MS", "40").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        parsed = 40
+    return max(5, parsed)
+
+
+def _small_jitter_ms(*, basis: str, upper_inclusive: int) -> int:
+    if upper_inclusive <= 0:
+        return 0
+    digest = sha256(f"{basis}|{time.monotonic_ns()}|{os.getpid()}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], byteorder="big", signed=False) % (upper_inclusive + 1)
+
+
 def _database_url_for_sync_pg() -> str:
     global _DATABASE_DSN_CACHE
     with _DATABASE_DSN_CACHE_LOCK:
@@ -484,6 +532,48 @@ def _parse_pg_jwt_ring(raw: str | None) -> JwtKeyRing | None:
     return _parse_jwt_key_ring_payload(raw, "postgres_cache")
 
 
+def _pg_cached_ring_snapshot() -> tuple[JwtKeyRing | None, datetime | None, str | None]:
+    with _open_pg_conn() as conn:
+        with conn.cursor() as cursor:
+            row = _select_pg_jwt_cache_row(cursor)
+        conn.rollback()
+    if row is None:
+        return None, None, None
+    raw = row.get("jwks_json")
+    return _parse_pg_jwt_ring(raw), row.get("fetched_at"), raw
+
+
+def _poll_for_unknown_kid_cache_update(
+    *,
+    kid: str,
+    baseline_fetched_at: datetime | None,
+) -> JwtKeyRing | None:
+    budget_ms = _jwt_unknown_kid_lock_miss_budget_ms()
+    deadline = time.monotonic() + (budget_ms / 1000.0)
+    sleep_ms = _jwt_unknown_kid_poll_initial_ms()
+    sleep_cap_ms = max(_jwt_unknown_kid_poll_cap_ms(), sleep_ms)
+
+    while time.monotonic() < deadline:
+        jitter_ms = _small_jitter_ms(basis=f"unknown-kid-poll:{kid}", upper_inclusive=max(1, sleep_ms // 2))
+        time.sleep((sleep_ms + jitter_ms) / 1000.0)
+        current_ring, current_fetched_at, raw_value = _pg_cached_ring_snapshot()
+        if current_ring is None:
+            sleep_ms = min(sleep_cap_ms, sleep_ms * 2)
+            continue
+
+        updated = baseline_fetched_at is None or (
+            current_fetched_at is not None and current_fetched_at > baseline_fetched_at
+        )
+        if updated:
+            if raw_value is not None:
+                _update_local_verification_ring_cache(current_ring, raw_value)
+            if kid in current_ring.keys:
+                return current_ring
+        sleep_ms = min(sleep_cap_ms, sleep_ms * 2)
+
+    return None
+
+
 def _refresh_verification_ring_from_source_of_truth() -> tuple[JwtKeyRing, str]:
     value = _read_secret_source_of_truth_value("AUTH_JWT_PUBLIC_KEY_RING")
     if value is None:
@@ -526,19 +616,26 @@ def _resolve_verification_ring_via_postgres(*, reason: str, kid: str | None) -> 
 
             lock_acquired = True
             if not _jwt_singleflight_mutation_enabled():
-                cursor.execute("SELECT pg_try_advisory_lock(%s)", (_JWT_REFRESH_PG_LOCK_KEY,))
+                cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", (_JWT_REFRESH_PG_LOCK_KEY,))
                 lock_acquired = bool(cursor.fetchone()[0])
             if not lock_acquired:
                 conn.rollback()
+                if kid:
+                    polled = _poll_for_unknown_kid_cache_update(kid=kid, baseline_fetched_at=state.fetched_at)
+                    if polled is not None and kid in polled.keys:
+                        return polled
                 if cached_ring is not None:
                     _update_local_verification_ring_cache(cached_ring, row["jwks_json"])
                     return cached_ring
                 fallback = _JWT_VERIFICATION_KEY_RING_CACHE.current()
                 if fallback is not None:
                     return fallback
+                if reason == "unknown_kid":
+                    raise RuntimeError("unknown kid refresh lease not acquired within bounded polling budget")
                 return _refresh_jwt_verification_ring()
 
             try:
+                cursor.execute("SET LOCAL statement_timeout = %s", (f"{_jwt_refresh_statement_timeout_ms()}ms",))
                 # Re-read under refresh lease to absorb concurrent winner updates.
                 row = _select_pg_jwt_cache_row(cursor)
                 state = _pg_cache_state_from_row(row)
@@ -580,10 +677,6 @@ def _resolve_verification_ring_via_postgres(*, reason: str, kid: str | None) -> 
                 if fallback is not None:
                     return fallback
                 raise
-            finally:
-                if not _jwt_singleflight_mutation_enabled():
-                    cursor.execute("SELECT pg_advisory_unlock(%s)", (_JWT_REFRESH_PG_LOCK_KEY,))
-                    conn.commit()
 
 
 def get_secret(key: str) -> str | None:
@@ -793,6 +886,8 @@ def get_jwt_signing_key_ring(*, require_fresh_for_mint: bool) -> JwtKeyRing:
 
 
 def get_jwt_verification_key_ring() -> JwtKeyRing:
+    if _jwt_force_db_read_on_verify_enabled():
+        return _resolve_verification_ring_via_postgres(reason="forced_db_read", kid=None)
     cached = _JWT_VERIFICATION_KEY_RING_CACHE.current()
     is_stale = _JWT_VERIFICATION_KEY_RING_CACHE.stale()
     if cached is None:
