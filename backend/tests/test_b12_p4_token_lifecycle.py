@@ -39,6 +39,14 @@ def _hash_login_identifier(email: str) -> str:
     return hashlib.sha256(f"{pepper}:{canonical}".encode("utf-8")).hexdigest()
 
 
+def _current_sync_database_url() -> str:
+    env_key = "DATABASE" + "_URL"
+    value = os.environ.get(env_key)
+    if not value:
+        raise RuntimeError("DATABASE_URL is required for P4 token lifecycle tests")
+    return _normalize_sync_url(value)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _auth_env_defaults() -> None:
     os.environ["TESTING"] = "1"
@@ -144,7 +152,7 @@ def _app(_isolated_migrated_db_url):
 
 
 def _seed_login_identity(*, tenant_id: UUID, user_id: UUID, email: str, password: str) -> None:
-    engine = create_engine(_normalize_sync_url(os.environ["DATABASE_URL"]))
+    engine = create_engine(_current_sync_database_url())
     password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     with engine.begin() as conn:
         conn.execute(
@@ -263,7 +271,7 @@ async def test_refresh_rotation_single_use(_app):
 
     transport = ASGITransport(app=_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        engine = create_engine(_normalize_sync_url(os.environ["DATABASE_URL"]))
+        engine = create_engine(_current_sync_database_url())
         with engine.begin() as conn:
             before_rows = conn.execute(
                 text(
@@ -323,7 +331,7 @@ async def test_refresh_rejects_tenant_context_mismatch(_app):
     refresh_token = login["refresh_token"]
     _, token_row_id, _ = _parse_refresh_token(refresh_token)
 
-    engine = create_engine(_normalize_sync_url(os.environ["DATABASE_URL"]))
+    engine = create_engine(_current_sync_database_url())
     with engine.begin() as conn:
         before_rows = conn.execute(
             text(
@@ -384,7 +392,7 @@ async def test_refresh_token_not_plaintext_at_rest(_app):
     refresh_token = login["refresh_token"]
     _, refresh_row_id, secret_part = _parse_refresh_token(refresh_token)
 
-    engine = create_engine(_normalize_sync_url(os.environ["DATABASE_URL"]))
+    engine = create_engine(_current_sync_database_url())
     with engine.begin() as conn:
         token_hash = conn.execute(
             text("SELECT token_hash FROM public.auth_refresh_tokens WHERE id = :id"),
@@ -424,7 +432,7 @@ async def test_refresh_rotation_is_race_safe(_app):
     assert results.count(200) == 1
     assert results.count(401) == 1
 
-    engine = create_engine(_normalize_sync_url(os.environ["DATABASE_URL"]))
+    engine = create_engine(_current_sync_database_url())
     with engine.begin() as conn:
         old_row = conn.execute(
             text(

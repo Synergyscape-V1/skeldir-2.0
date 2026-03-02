@@ -25,7 +25,7 @@ from app.schemas.auth import (
     RefreshResponse,
     User,
 )
-from app.core.config import settings
+from app.core.secrets import get_secret
 from app.db.session import AsyncSessionLocal
 from app.security.auth import AuthContext, AuthError, get_auth_context
 from app.services.auth_tokens import (
@@ -38,6 +38,14 @@ from app.services.auth_tokens import (
 )
 
 router = APIRouter()
+_LOGIN_IDENTIFIER_PEPPER_CACHE: str | None = None
+
+
+def _login_identifier_pepper() -> str | None:
+    global _LOGIN_IDENTIFIER_PEPPER_CACHE
+    if _LOGIN_IDENTIFIER_PEPPER_CACHE is None:
+        _LOGIN_IDENTIFIER_PEPPER_CACHE = get_secret("AUTH_LOGIN_IDENTIFIER_PEPPER")
+    return _LOGIN_IDENTIFIER_PEPPER_CACHE
 
 
 @router.post(
@@ -75,7 +83,7 @@ async def login(
                 identity = await lookup_identity_by_login(
                     session,
                     login_identifier=str(request.email),
-                    login_pepper=settings.AUTH_LOGIN_IDENTIFIER_PEPPER,
+                    login_pepper=_login_identifier_pepper(),
                 )
                 password = request.password.get_secret_value()
                 if (

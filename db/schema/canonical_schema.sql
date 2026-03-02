@@ -4,6 +4,20 @@ CREATE SCHEMA security;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
+CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public'
+    AS $$
+            SELECT
+                u.id AS user_id,
+                u.is_active,
+                u.auth_provider,
+                u.password_hash
+            FROM users AS u
+            WHERE login_identifier_hash = p_login_identifier_hash
+            LIMIT 1
+        $$;
+
 CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -12,8 +26,8 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
                 u.id AS user_id,
                 u.is_active,
                 u.auth_provider
-            FROM public.users AS u
-            WHERE u.login_identifier_hash = p_login_identifier_hash
+            FROM users AS u
+            WHERE login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
 
@@ -636,6 +650,23 @@ CREATE TABLE public.attribution_recompute_jobs (
 
 ALTER TABLE ONLY public.attribution_recompute_jobs FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.auth_refresh_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    family_id uuid NOT NULL,
+    token_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    rotated_at timestamp with time zone,
+    replaced_by_id uuid,
+    revoked_at timestamp with time zone,
+    last_used_at timestamp with time zone,
+    CONSTRAINT ck_auth_refresh_tokens_hash_not_empty CHECK ((length(TRIM(BOTH FROM token_hash)) > 0))
+);
+
+ALTER TABLE ONLY public.auth_refresh_tokens FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.budget_optimization_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1084,22 +1115,22 @@ CREATE SEQUENCE public.message_id_sequence
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
 CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT aa.tenant_id,
-    aa.event_id,
-    aa.model_version,
-    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
-    e.revenue_cents AS event_revenue_cents,
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
-  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
   WITH NO DATA;
 
 CREATE MATERIALIZED VIEW mv_channel_performance AS
@@ -1188,15 +1219,15 @@ CREATE TABLE public.reconciliation_runs (
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
 CREATE MATERIALIZED VIEW mv_reconciliation_status AS
- SELECT rr.tenant_id,
-    rr.state,
-    rr.last_run_at,
-    rr.id AS reconciliation_run_id
+ SELECT tenant_id,
+    state,
+    last_run_at,
+    id AS reconciliation_run_id
    FROM (reconciliation_runs rr
-     JOIN ( SELECT reconciliation_runs.tenant_id,
-            max(reconciliation_runs.last_run_at) AS max_last_run_at
+     JOIN ( SELECT tenant_id,
+            max(last_run_at) AS max_last_run_at
            FROM reconciliation_runs
-          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.pii_audit_findings (
@@ -1393,6 +1424,7 @@ CREATE TABLE public.users (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    password_hash text,
     CONSTRAINT ck_users_auth_provider_valid CHECK ((auth_provider = ANY (ARRAY['password'::text, 'oauth_google'::text, 'oauth_microsoft'::text, 'oauth_github'::text, 'sso'::text]))),
     CONSTRAINT ck_users_login_identifier_hash_not_empty CHECK ((length(TRIM(BOTH FROM login_identifier_hash)) > 0))
 );
@@ -1457,6 +1489,9 @@ ALTER TABLE ONLY public.attribution_events
 
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.auth_refresh_tokens
+    ADD CONSTRAINT auth_refresh_tokens_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_pkey PRIMARY KEY (id);
@@ -1652,6 +1687,12 @@ CREATE INDEX idx_attribution_recompute_jobs_tenant_created_at ON public.attribut
 CREATE INDEX idx_attribution_recompute_jobs_tenant_status ON public.attribution_recompute_jobs USING btree (tenant_id, status);
 
 CREATE UNIQUE INDEX idx_attribution_recompute_jobs_window_identity ON public.attribution_recompute_jobs USING btree (tenant_id, window_start, window_end, model_version);
+
+CREATE INDEX idx_auth_refresh_tokens_family_created_at ON public.auth_refresh_tokens USING btree (family_id, created_at DESC);
+
+CREATE INDEX idx_auth_refresh_tokens_tenant_created_at ON public.auth_refresh_tokens USING btree (tenant_id, created_at DESC);
+
+CREATE INDEX idx_auth_refresh_tokens_tenant_user_created_at ON public.auth_refresh_tokens USING btree (tenant_id, user_id, created_at DESC);
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
@@ -1856,6 +1897,15 @@ ALTER TABLE ONLY public.attribution_events
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.auth_refresh_tokens
+    ADD CONSTRAINT auth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.auth_refresh_tokens(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.auth_refresh_tokens
+    ADD CONSTRAINT auth_refresh_tokens_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.auth_refresh_tokens
+    ADD CONSTRAINT auth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -1987,6 +2037,8 @@ ALTER TABLE public.attribution_recompute_jobs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY attribution_recompute_jobs_tenant_isolation ON public.attribution_recompute_jobs USING (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))) WITH CHECK (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true)));
 
+ALTER TABLE public.auth_refresh_tokens ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
@@ -2027,7 +2079,7 @@ ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
 
@@ -2045,6 +2097,8 @@ CREATE POLICY tenant_isolation_policy ON public.attribution_allocations USING ((
 
 CREATE POLICY tenant_isolation_policy ON public.attribution_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy ON public.auth_refresh_tokens USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy ON public.budget_optimization_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.channel_assignment_corrections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
@@ -2053,7 +2107,7 @@ CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = 
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -2101,9 +2155,9 @@ CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user U
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 

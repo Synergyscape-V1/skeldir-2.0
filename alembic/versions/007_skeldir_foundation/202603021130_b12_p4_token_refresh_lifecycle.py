@@ -48,6 +48,14 @@ def _revoke_if_role_exists(role: str, revoke_sql: str) -> None:
 
 def upgrade() -> None:
     op.execute("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash text")
+    _grant_if_role_exists(
+        "app_user",
+        "GRANT REFERENCES ON TABLE public.users TO app_user",
+    )
+    _grant_if_role_exists(
+        "app_rw",
+        "GRANT REFERENCES ON TABLE public.users TO app_rw",
+    )
 
     op.execute(
         """
@@ -143,6 +151,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    _revoke_if_role_exists(
+        "app_rw",
+        "REVOKE REFERENCES ON TABLE public.users FROM app_rw",
+    )
+    _revoke_if_role_exists(
+        "app_user",
+        "REVOKE REFERENCES ON TABLE public.users FROM app_user",
+    )
     _revoke_if_role_exists(
         "app_ro",
         "REVOKE ALL ON TABLE public.auth_refresh_tokens FROM app_ro",

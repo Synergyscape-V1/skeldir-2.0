@@ -355,7 +355,8 @@ export interface operations {
                 /**
                  * @example {
                  *       "email": "user@example.com",
-                 *       "password": "securepassword123"
+                 *       "password": "securepassword123",
+                 *       "tenant_id": "550e8400-e29b-41d4-a716-446655440000"
                  *     }
                  */
                 "application/json": {
@@ -366,6 +367,11 @@ export interface operations {
                     email: string;
                     /** Format: password */
                     password: string;
+                    /**
+                     * Format: uuid
+                     * @description Optional tenant selector; required when user belongs to multiple tenants
+                     */
+                    tenant_id?: string;
                 };
             };
         };
@@ -380,8 +386,8 @@ export interface operations {
                     /**
                      * @example {
                      *       "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                     *       "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                     *       "expires_in": 3600,
+                     *       "refresh_token": "550e8400-e29b-41d4-a716-446655440000.a88f7ea2-7c26-4ec8-9f85-e55cb3f45ec5.zf9X1K...",
+                     *       "expires_in": 900,
                      *       "user": {
                      *         "id": "550e8400-e29b-41d4-a716-446655440000",
                      *         "email": "user@example.com",
@@ -392,7 +398,7 @@ export interface operations {
                     "application/json": {
                         /** @description JWT access token */
                         access_token: string;
-                        /** @description JWT refresh token for obtaining new access tokens */
+                        /** @description Opaque refresh token for obtaining new access tokens */
                         refresh_token: string;
                         /**
                          * @description Token expiration time in seconds
@@ -606,6 +612,11 @@ export interface operations {
                 "application/json": {
                     /** @description The refresh token from login response */
                     refresh_token: string;
+                    /**
+                     * Format: uuid
+                     * @description Optional tenant hint; if provided must match refresh token tenant scope
+                     */
+                    tenant_id?: string;
                 };
             };
         };
@@ -620,14 +631,14 @@ export interface operations {
                     /**
                      * @example {
                      *       "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                     *       "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                     *       "expires_in": 3600
+                     *       "refresh_token": "550e8400-e29b-41d4-a716-446655440000.a88f7ea2-7c26-4ec8-9f85-e55cb3f45ec5.zf9X1K...",
+                     *       "expires_in": 900
                      *     }
                      */
                     "application/json": {
                         /** @description New JWT access token */
                         access_token: string;
-                        /** @description New refresh token (token rotation) */
+                        /** @description New opaque refresh token (rotate-on-use) */
                         refresh_token?: string;
                         /** @description Token expiration time in seconds */
                         expires_in: number;
