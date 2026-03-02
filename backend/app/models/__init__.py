@@ -30,7 +30,9 @@ Usage:
 
 from app.models.attribution_event import AttributionEvent
 from app.models.auth_substrate import (
+    AuthRefreshToken,
     Role,
+    Tenant,
     TenantMembership,
     TenantMembershipRole,
     UserIdentity,
@@ -56,10 +58,12 @@ from app.models.revenue_cache import RevenueCacheEntry
 __all__ = [
     "Base",
     "TenantMixin",
+    "Tenant",
     "UserIdentity",
     "TenantMembership",
     "Role",
     "TenantMembershipRole",
+    "AuthRefreshToken",
     "AttributionEvent",
     "DeadEvent",
     "ChannelTaxonomy",

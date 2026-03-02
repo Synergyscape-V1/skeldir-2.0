@@ -368,4 +368,18 @@ if SKELDIR_B12_P3_DISABLE_PG_SINGLEFLIGHT=1 \
   exit 1
 fi
 
+echo "[negative-control] 24/25 refresh rotation gate should fail when rotation update is disabled"
+if SKELDIR_B12_P4_DISABLE_ROTATION_UPDATE=1 \
+   pytest backend/tests/test_b12_p4_token_lifecycle.py -q -k test_refresh_rotation_single_use; then
+  echo "[negative-control] ERROR: refresh rotation gate did not fail under disabled rotation mutation"
+  exit 1
+fi
+
+echo "[negative-control] 25/25 plaintext-at-rest gate should fail when plaintext storage mutation is enabled"
+if SKELDIR_B12_P4_STORE_PLAINTEXT=1 \
+   pytest backend/tests/test_b12_p4_token_lifecycle.py -q -k test_refresh_token_not_plaintext_at_rest; then
+  echo "[negative-control] ERROR: plaintext-at-rest gate did not fail under plaintext storage mutation"
+  exit 1
+fi
+
 echo "[negative-control] PASS"

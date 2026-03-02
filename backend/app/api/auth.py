@@ -11,9 +11,11 @@ Contract Operations:
 All routes use generated Pydantic models from backend/app/schemas/auth.py
 """
 
-from fastapi import APIRouter, Depends, Header
-from uuid import UUID, uuid4
+import os
 from typing import Annotated
+from uuid import UUID, uuid4
+
+from fastapi import APIRouter, Depends, Header
 
 # Import generated Pydantic models
 from app.schemas.auth import (
@@ -23,7 +25,17 @@ from app.schemas.auth import (
     RefreshResponse,
     User,
 )
-from app.security.auth import AuthContext, get_auth_context
+from app.core.config import settings
+from app.db.session import AsyncSessionLocal
+from app.security.auth import AuthContext, AuthError, get_auth_context
+from app.services.auth_tokens import (
+    TokenPair,
+    issue_login_token_pair,
+    lookup_identity_by_login,
+    resolve_tenant_membership,
+    rotate_refresh_token,
+    verify_password,
+)
 
 router = APIRouter()
 
@@ -38,32 +50,81 @@ router = APIRouter()
 )
 async def login(
     request: LoginRequest,
-    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")]
+    _x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")]
 ):
     """
     Authenticate user with email and password.
-    
-    This is a sample implementation for contract enforcement testing.
-    Production implementation would validate credentials against database.
-    
+
     Contract: POST /api/auth/login
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
-    # Sample implementation - always succeeds for testing
-    # Production: validate credentials, query database, generate real JWT
-    
+    # Contract-conformance mode intentionally bypasses DB dependencies.
+    if os.getenv("CONTRACT_TESTING") == "1":
+        selected_tenant = request.tenant_id or uuid4()
+        synthetic_user = uuid4()
+        token_pair = TokenPair(
+            access_token="contract-test-access-token",
+            refresh_token=f"{selected_tenant}.{uuid4()}.contract-testing-refresh",
+            user_id=synthetic_user,
+            tenant_id=selected_tenant,
+            expires_in_seconds=900,
+        )
+    else:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                identity = await lookup_identity_by_login(
+                    session,
+                    login_identifier=str(request.email),
+                    login_pepper=settings.AUTH_LOGIN_IDENTIFIER_PEPPER,
+                )
+                password = request.password.get_secret_value()
+                if (
+                    identity is None
+                    or not identity.is_active
+                    or identity.auth_provider != "password"
+                ):
+                    raise AuthError(
+                        status_code=401,
+                        title="Authentication Failed",
+                        detail="Invalid credentials.",
+                        type_url="https://api.skeldir.com/problems/authentication-failed",
+                    )
+                if not verify_password(password, identity.password_hash):
+                    raise AuthError(
+                        status_code=401,
+                        title="Authentication Failed",
+                        detail="Invalid credentials.",
+                        type_url="https://api.skeldir.com/problems/authentication-failed",
+                    )
+                resolved_tenant = await resolve_tenant_membership(
+                    session,
+                    user_id=identity.user_id,
+                    requested_tenant_id=request.tenant_id,
+                )
+                if resolved_tenant is None:
+                    raise AuthError(
+                        status_code=401,
+                        title="Authentication Failed",
+                        detail="Invalid credentials.",
+                        type_url="https://api.skeldir.com/problems/authentication-failed",
+                    )
+                token_pair = await issue_login_token_pair(
+                    session,
+                    user_id=identity.user_id,
+                    tenant_id=resolved_tenant,
+                )
+
     user = User(
-        id=uuid4(),
+        id=token_pair.user_id,
         email=request.email,
         username=request.email.split("@")[0] if "@" in request.email else "user",
     )
-
     return LoginResponse(
-        access_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.sample_access_token",
-        refresh_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.sample_refresh_token",
-        expires_in=3600,
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in_seconds,
         user=user,
-        token_type="Bearer"
+        token_type="Bearer",
     )
 
 
@@ -77,26 +138,42 @@ async def login(
 )
 async def refresh_token(
     request: RefreshRequest,
-    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    _: Annotated[AuthContext, Depends(get_auth_context)],
+    _x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
 ):
     """
     Refresh access token using refresh token.
-    
-    This is a sample implementation for contract enforcement testing.
-    Production implementation would validate refresh token and generate new tokens.
-    
+
     Contract: POST /api/auth/refresh
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
-    # Sample implementation - always succeeds for testing
-    # Production: validate refresh token, generate new JWT pair
-    
+    if os.getenv("CONTRACT_TESTING") == "1":
+        return RefreshResponse(
+            access_token="contract-test-access-token-refreshed",
+            refresh_token=f"{request.tenant_id or uuid4()}.{uuid4()}.contract-testing-refresh-next",
+            expires_in=900,
+            token_type="Bearer",
+        )
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            token_pair = await rotate_refresh_token(
+                session,
+                refresh_token=request.refresh_token,
+                requested_tenant_id=request.tenant_id,
+            )
+            if token_pair is None:
+                raise AuthError(
+                    status_code=401,
+                    title="Authentication Failed",
+                    detail="Invalid refresh token.",
+                    type_url="https://api.skeldir.com/problems/authentication-failed",
+                )
+
     return RefreshResponse(
-        access_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.new_access_token",
-        refresh_token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.new_refresh_token",
-        expires_in=3600,
-        token_type="Bearer"
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in_seconds,
+        token_type="Bearer",
     )
 
 

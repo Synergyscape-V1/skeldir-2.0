@@ -114,6 +114,7 @@ JWT_PROTECTED_PREFIXES = (
 )
 PUBLIC_ROUTE_ALLOWLIST = {
     ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/refresh"),
     ("GET", "/api/health"),
     ("GET", "/api/health/live"),
     ("GET", "/api/health/ready"),
