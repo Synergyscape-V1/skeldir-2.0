@@ -16,3 +16,4 @@ celery>=5.3.6
 psycopg2-binary>=2.9.9
 PyJWT>=2.8.0
 cryptography>=42.0.0
+bcrypt>=4.1.2

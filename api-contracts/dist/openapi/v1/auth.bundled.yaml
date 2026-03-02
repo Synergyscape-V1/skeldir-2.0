@@ -52,9 +52,14 @@ paths:
                   type: string
                   format: password
                   minLength: 8
+                tenant_id:
+                  type: string
+                  format: uuid
+                  description: Optional tenant selector; required when user belongs to multiple tenants
             example:
               email: user@example.com
               password: securepassword123
+              tenant_id: 550e8400-e29b-41d4-a716-446655440000
       responses:
         '200':
           description: Login successful
@@ -78,7 +83,7 @@ paths:
                     description: JWT access token
                   refresh_token:
                     type: string
-                    description: JWT refresh token for obtaining new access tokens
+                    description: Opaque refresh token for obtaining new access tokens
                   expires_in:
                     type: integer
                     description: Token expiration time in seconds
@@ -96,8 +101,8 @@ paths:
                         type: string
               example:
                 access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-                refresh_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-                expires_in: 3600
+                refresh_token: 550e8400-e29b-41d4-a716-446655440000.a88f7ea2-7c26-4ec8-9f85-e55cb3f45ec5.zf9X1K...
+                expires_in: 900
                 user:
                   id: 550e8400-e29b-41d4-a716-446655440000
                   email: user@example.com
@@ -210,6 +215,7 @@ paths:
       operationId: refreshToken
       tags:
         - Authentication
+      security: []
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -228,6 +234,10 @@ paths:
                 refresh_token:
                   type: string
                   description: The refresh token from login response
+                tenant_id:
+                  type: string
+                  format: uuid
+                  description: Optional tenant hint; if provided must match refresh token tenant scope
       responses:
         '200':
           description: Token refreshed successfully
@@ -249,14 +259,14 @@ paths:
                     description: New JWT access token
                   refresh_token:
                     type: string
-                    description: New refresh token (token rotation)
+                    description: New opaque refresh token (rotate-on-use)
                   expires_in:
                     type: integer
                     description: Token expiration time in seconds
               example:
                 access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-                refresh_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-                expires_in: 3600
+                refresh_token: 550e8400-e29b-41d4-a716-446655440000.a88f7ea2-7c26-4ec8-9f85-e55cb3f45ec5.zf9X1K...
+                expires_in: 900
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_3

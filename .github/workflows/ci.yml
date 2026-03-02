@@ -457,6 +457,7 @@ jobs:
           pytest backend/tests/test_b12_p3_v4_lock_semantics.py -q
           pytest backend/tests/test_b11_p3_jwt_rotation_semantics.py -q -k "unknown_kid_forces_debounced_refresh_and_recovers or unknown_kid_refresh_is_debounced_under_flood"
           pytest backend/tests/test_b12_p3_pg_fleet_stampede.py -q
+          pytest backend/tests/test_b12_p4_token_lifecycle.py -q
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest

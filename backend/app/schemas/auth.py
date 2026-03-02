@@ -12,6 +12,9 @@ from pydantic import AnyUrl, BaseModel, EmailStr, Field, SecretStr
 class LoginRequest(BaseModel):
     email: Annotated[EmailStr, Field(example='user@example.com')]
     password: Annotated[SecretStr, Field(example='securePassword123')]
+    tenant_id: Annotated[
+        Optional[UUID], Field(example='550e8400-e29b-41d4-a716-446655440000')
+    ] = None
 
 
 class User(BaseModel):
@@ -27,7 +30,7 @@ class LoginResponse(BaseModel):
     """
     refresh_token: str
     """
-    JWT refresh token
+    Opaque refresh token
     """
     expires_in: Annotated[int, Field(example=3600)]
     """
@@ -46,8 +49,11 @@ class LoginResponse(BaseModel):
 class RefreshRequest(BaseModel):
     refresh_token: str
     """
-    JWT refresh token
+    Opaque refresh token
     """
+    tenant_id: Annotated[
+        Optional[UUID], Field(example='550e8400-e29b-41d4-a716-446655440000')
+    ] = None
 
 
 class RefreshResponse(BaseModel):
@@ -57,7 +63,7 @@ class RefreshResponse(BaseModel):
     """
     refresh_token: str
     """
-    New JWT refresh token
+    New opaque refresh token
     """
     expires_in: Annotated[int, Field(example=3600)]
     """

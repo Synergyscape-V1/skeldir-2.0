@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     AUTH_JWT_JWKS_URL: Optional[str] = Field(
         None, description="JWKS URL for JWT signature verification."
     )
+    AUTH_LOGIN_IDENTIFIER_PEPPER: Optional[str] = Field(
+        None,
+        description="Pepper used to hash canonical login identifiers for auth lookup.",
+    )
 
     # Platform Credentials (Phase 2)
     PLATFORM_TOKEN_ENCRYPTION_KEY: Optional[str] = Field(
@@ -324,6 +328,7 @@ class Settings(BaseSettings):
         "AUTH_JWT_ISSUER",
         "AUTH_JWT_AUDIENCE",
         "AUTH_JWT_JWKS_URL",
+        "AUTH_LOGIN_IDENTIFIER_PEPPER",
         "PLATFORM_TOKEN_ENCRYPTION_KEY",
         "PLATFORM_TOKEN_KEY_ID",
         "STRIPE_BASE_URL",

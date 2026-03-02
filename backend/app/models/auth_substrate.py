@@ -27,6 +27,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 
+class Tenant(Base):
+    """Minimal tenant mapping used for FK resolution in auth substrate models."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+
+
 class UserIdentity(Base):
     """Opaque user identity registry (no raw email/IP at rest)."""
 
@@ -217,6 +225,66 @@ class TenantMembershipRole(Base):
         Index(
             "idx_tenant_membership_roles_tenant_created_at",
             "tenant_id",
+            "created_at",
+        ),
+    )
+
+
+class AuthRefreshToken(Base):
+    """Tenant-scoped refresh tokens (hashed at rest, rotate-on-use lifecycle)."""
+
+    __tablename__ = "auth_refresh_tokens"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    family_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("auth_refresh_tokens.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("length(trim(token_hash)) > 0", name="ck_auth_refresh_tokens_hash_not_empty"),
+        Index(
+            "idx_auth_refresh_tokens_tenant_created_at",
+            "tenant_id",
+            "created_at",
+        ),
+        Index(
+            "idx_auth_refresh_tokens_tenant_user_created_at",
+            "tenant_id",
+            "user_id",
+            "created_at",
+        ),
+        Index(
+            "idx_auth_refresh_tokens_family_created_at",
+            "family_id",
             "created_at",
         ),
     )

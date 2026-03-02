@@ -168,6 +168,14 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         owner="platform-security",
         call_sites=("backend/app/security/auth.py",),
     ),
+    "AUTH_LOGIN_IDENTIFIER_PEPPER": _contract(
+        key="AUTH_LOGIN_IDENTIFIER_PEPPER",
+        classification="secret",
+        aws_path_template="/skeldir/{env}/secret/auth/login-identifier-pepper",
+        rotation_criticality="high",
+        owner="platform-security",
+        call_sites=("backend/app/services/auth_tokens.py",),
+    ),
     "PLATFORM_TOKEN_ENCRYPTION_KEY": _contract(
         key="PLATFORM_TOKEN_ENCRYPTION_KEY",
         classification="secret",
