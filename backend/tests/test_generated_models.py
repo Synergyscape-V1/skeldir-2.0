@@ -19,7 +19,11 @@ def test_login_request_validation():
     from app.schemas.auth import LoginRequest
 
     # Valid request
-    valid_data = {"email": "test@example.com", "password": "securepass123"}
+    valid_data = {
+        "email": "test@example.com",
+        "password": "securepass123",
+        "tenant_id": "00000000-0000-0000-0000-000000000000",
+    }
     request = LoginRequest(**valid_data)
     assert request.email == "test@example.com"
 

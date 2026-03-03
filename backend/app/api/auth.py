@@ -74,10 +74,13 @@ async def login(
             type_url="https://api.skeldir.com/problems/validation-error",
         )
 
+    contract_testing = os.getenv("CONTRACT_TESTING") == "1"
+
     # Contract-conformance mode intentionally bypasses DB dependencies.
-    if os.getenv("CONTRACT_TESTING") == "1":
+    if contract_testing:
         selected_tenant = request.tenant_id
         synthetic_user = uuid4()
+        synthetic_email = "contract.user@example.com"
         token_pair = TokenPair(
             access_token="contract-test-access-token",
             refresh_token=f"{selected_tenant}.{uuid4()}.contract-testing-refresh",
@@ -132,8 +135,12 @@ async def login(
 
     user = User(
         id=token_pair.user_id,
-        email=request.email,
-        username=request.email.split("@")[0] if "@" in request.email else "user",
+        email=synthetic_email if contract_testing else request.email,
+        username=(
+            synthetic_email.split("@")[0]
+            if contract_testing
+            else (request.email.split("@")[0] if "@" in request.email else "user")
+        ),
     )
     return LoginResponse(
         access_token=token_pair.access_token,
