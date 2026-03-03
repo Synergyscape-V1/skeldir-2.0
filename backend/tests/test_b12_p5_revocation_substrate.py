@@ -12,7 +12,8 @@ from sqlalchemy import text
 
 from app.db.session import AsyncSessionLocal
 from app.main import app
-from app.security.auth import decode_and_verify_jwt, extract_access_token_claims
+from app.core.secrets import get_jwt_signing_material
+from app.security.auth import decode_and_verify_jwt, extract_access_token_claims, mint_internal_jwt
 from app.services.auth_revocation import denylist_access_token
 from app.tasks.context import assert_worker_auth_envelope_active
 
@@ -37,20 +38,36 @@ def _build_token(
 ) -> str:
     now = int(time.time())
     issued_at = iat or now
-    payload: dict[str, object] = {
-        "sub": str(user_id),
-        "user_id": str(user_id),
-        "tenant_id": str(tenant_id),
-        "iss": os.environ["AUTH_JWT_ISSUER"],
-        "aud": os.environ["AUTH_JWT_AUDIENCE"],
+    additional_claims: dict[str, object] = {
         "iat": issued_at,
         "exp": exp or (issued_at + 3600),
     }
     if include_jti:
-        payload["jti"] = str(jti or uuid4())
+        additional_claims["jti"] = str(jti or uuid4())
     if roles:
-        payload["roles"] = roles
-    return jwt.encode(payload, os.environ["AUTH_JWT_SECRET"], algorithm=os.environ["AUTH_JWT_ALGORITHM"])
+        additional_claims["roles"] = roles
+    if not include_jti:
+        signing = get_jwt_signing_material()
+        payload: dict[str, object] = {
+            "tenant_id": str(tenant_id),
+            "sub": str(user_id),
+            "user_id": str(user_id),
+            "iat": issued_at,
+            "exp": exp or (issued_at + 3600),
+        }
+        if roles:
+            payload["roles"] = roles
+        if signing.issuer:
+            payload["iss"] = signing.issuer
+        if signing.audience:
+            payload["aud"] = signing.audience
+        return jwt.encode(payload, signing.key, algorithm=signing.algorithm, headers={"kid": signing.kid})
+    return mint_internal_jwt(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        expires_in_seconds=max(1, int((exp or (issued_at + 3600)) - issued_at)),
+        additional_claims=additional_claims,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -174,6 +191,47 @@ async def test_kill_switch_invalidates_prior_tokens_and_allows_new_tokens(test_t
         exp=now + 3600,
     )
     assert await _verify_token(token_b) == 200
+
+
+async def test_kill_switch_negative_control_disabled_revocation_allows_prior_token(test_tenant, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SKELDIR_B12_P5_DISABLE_REVOCATION_CHECKS", "1")
+
+    user_id = uuid4()
+    admin_user = uuid4()
+    now = int(time.time())
+
+    token_before_cutoff = _build_token(
+        tenant_id=test_tenant,
+        user_id=user_id,
+        iat=now - 120,
+        exp=now + 3600,
+    )
+    admin_token = _build_token(
+        tenant_id=test_tenant,
+        user_id=admin_user,
+        iat=now,
+        exp=now + 3600,
+        roles=["admin"],
+    )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=30)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        cutoff_resp = await client.post(
+            "/api/auth/admin/token-cutoff",
+            json={
+                "user_id": str(user_id),
+                "tokens_invalid_before": cutoff.isoformat(),
+            },
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {admin_token}",
+            },
+        )
+    assert cutoff_resp.status_code == 200
+
+    # Negative control: disabled revocation checks intentionally allow stale token reuse.
+    assert await _verify_token(token_before_cutoff) == 200
 
 
 async def test_worker_auth_envelope_respects_revocation_before_db_write(test_tenant):

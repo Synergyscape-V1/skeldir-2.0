@@ -14,7 +14,6 @@ Coverage Requirement: All in-scope operations hit at least once.
 """
 
 import os
-import time
 import pytest
 import schemathesis
 from pathlib import Path
@@ -23,32 +22,29 @@ import yaml
 from fastapi.testclient import TestClient
 from schemathesis.core.failures import FailureGroup
 import uuid
-import jwt
 
 # Import FastAPI app for ASGI testing (no network required)
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
-os.environ.setdefault("AUTH_JWT_SECRET", "test-secret")
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "HS256")
+from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
+
+os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
+os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
+os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
 os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("CONTRACT_TESTING", "1")
 os.environ.setdefault("TESTING", "1")
 from app.main import app
+from app.security.auth import mint_internal_jwt
 
 
 def _build_token() -> str:
-    now = int(time.time())
-    payload = {
-        "sub": "contract-user",
-        "iss": os.environ["AUTH_JWT_ISSUER"],
-        "aud": os.environ["AUTH_JWT_AUDIENCE"],
-        "iat": now,
-        "jti": str(uuid.uuid4()),
-        "exp": now + 3600,
-        "tenant_id": "00000000-0000-0000-0000-000000000000",
-    }
-    return jwt.encode(payload, os.environ["AUTH_JWT_SECRET"], algorithm=os.environ["AUTH_JWT_ALGORITHM"])
+    return mint_internal_jwt(
+        tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        user_id=uuid.uuid4(),
+        expires_in_seconds=3600,
+    )
 
 
 def load_scope_config() -> dict:
@@ -233,7 +229,8 @@ def test_auth_login_happy_path():
         "/api/auth/login",
         json={
             "email": "user@example.com",
-            "password": "securePassword123"
+            "password": "securePassword123",
+            "tenant_id": "00000000-0000-0000-0000-000000000000",
         },
         headers={"X-Correlation-ID": str(uuid.uuid4())}
     )

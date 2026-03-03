@@ -1,7 +1,7 @@
 """B1.2-P5: denylist + tokens_invalid_before revocation substrate.
 
 Revision ID: 202603031300
-Revises: 202602141530
+Revises: 202603021130
 Create Date: 2026-03-03 13:00:00
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 
 
 revision: str = "202603031300"
-down_revision: Union[str, None] = "202602141530"
+down_revision: Union[str, None] = "202603021130"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

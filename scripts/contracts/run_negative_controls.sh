@@ -101,12 +101,21 @@ if grep -q "0 changes" "$OASDIFF_OUT"; then
 fi
 rm -f "$OASDIFF_OUT"
 
-echo "[negative-control] 4/4 revocation gate should fail when revocation checks are disabled"
+echo "[negative-control] 4/5 denylist revocation gate should fail when checks are disabled"
 if SKELDIR_B12_P5_DISABLE_REVOCATION_CHECKS=1 \
   SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS=1 \
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
   pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_logout_denylist_blocks_access_token_reuse_immediately; then
   echo "[negative-control] ERROR: revocation gate did not fail when checks were disabled"
+  exit 1
+fi
+
+echo "[negative-control] 5/5 kill-switch revocation gate should fail when checks are disabled"
+if SKELDIR_B12_P5_DISABLE_REVOCATION_CHECKS=1 \
+  SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS=1 \
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_kill_switch_invalidates_prior_tokens_and_allows_new_tokens; then
+  echo "[negative-control] ERROR: kill-switch gate did not fail when checks were disabled"
   exit 1
 fi
 
