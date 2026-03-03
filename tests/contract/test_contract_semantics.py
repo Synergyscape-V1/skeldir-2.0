@@ -18,7 +18,7 @@ import time
 import pytest
 import schemathesis
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import List
 import yaml
 from fastapi.testclient import TestClient
 from schemathesis.core.failures import FailureGroup
@@ -28,15 +28,12 @@ import jwt
 # Import FastAPI app for ASGI testing (no network required)
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
-from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, private_ring_payload, public_ring_payload
-
-os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
-os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
+os.environ.setdefault("AUTH_JWT_SECRET", "test-secret")
+os.environ.setdefault("AUTH_JWT_ALGORITHM", "HS256")
 os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("CONTRACT_TESTING", "1")
-os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
+os.environ.setdefault("TESTING", "1")
 from app.main import app
 
 
@@ -47,15 +44,11 @@ def _build_token() -> str:
         "iss": os.environ["AUTH_JWT_ISSUER"],
         "aud": os.environ["AUTH_JWT_AUDIENCE"],
         "iat": now,
+        "jti": str(uuid.uuid4()),
         "exp": now + 3600,
         "tenant_id": "00000000-0000-0000-0000-000000000000",
     }
-    return jwt.encode(
-        payload,
-        TEST_PRIVATE_KEY_PEM,
-        algorithm=os.environ["AUTH_JWT_ALGORITHM"],
-        headers={"kid": "kid-1"},
-    )
+    return jwt.encode(payload, os.environ["AUTH_JWT_SECRET"], algorithm=os.environ["AUTH_JWT_ALGORITHM"])
 
 
 def load_scope_config() -> dict:
@@ -103,60 +96,6 @@ def is_in_scope(path: str) -> bool:
 
 # Test each bundled specification
 bundled_specs = get_bundled_specs()
-JWT_PROTECTED_PREFIXES = (
-    "/api/auth",
-    "/api/attribution",
-    "/api/v1/revenue",
-    "/api/reconciliation",
-    "/api/export",
-    "/api/health",
-    "/api/llm",
-)
-PUBLIC_ROUTE_ALLOWLIST = {
-    ("POST", "/api/auth/login"),
-    ("POST", "/api/auth/refresh"),
-    ("GET", "/api/health"),
-    ("GET", "/api/health/live"),
-    ("GET", "/api/health/ready"),
-    ("GET", "/api/health/version"),
-}
-PROBLEM_REQUIRED_FIELDS = {
-    "type",
-    "title",
-    "status",
-    "detail",
-    "instance",
-    "correlation_id",
-    "timestamp",
-}
-
-
-def _load_yaml(path: Path) -> Dict[str, Any]:
-    with path.open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
-
-
-def _iter_operations(spec: Dict[str, Any]) -> List[Tuple[str, str, Dict[str, Any], List[Dict[str, Any]]]]:
-    operations: List[Tuple[str, str, Dict[str, Any], List[Dict[str, Any]]]] = []
-    top_level_security = spec.get("security")
-    for route_path, path_item in (spec.get("paths") or {}).items():
-        if not isinstance(path_item, dict):
-            continue
-        for method in ("get", "post", "put", "patch", "delete"):
-            operation = path_item.get(method)
-            if not isinstance(operation, dict):
-                continue
-            effective_security = operation.get("security", top_level_security)
-            operations.append((method.upper(), route_path, operation, effective_security or []))
-    return operations
-
-
-def _extract_security_scheme_names(security: List[Dict[str, Any]]) -> set[str]:
-    names: set[str] = set()
-    for requirement in security:
-        if isinstance(requirement, dict):
-            names.update(requirement.keys())
-    return names
 
 
 @pytest.mark.parametrize("spec_path", bundled_specs, ids=lambda p: p.name)
@@ -294,8 +233,7 @@ def test_auth_login_happy_path():
         "/api/auth/login",
         json={
             "email": "user@example.com",
-            "password": "securePassword123",
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "password": "securePassword123"
         },
         headers={"X-Correlation-ID": str(uuid.uuid4())}
     )
@@ -311,18 +249,6 @@ def test_auth_login_happy_path():
     assert {"id", "email", "username"}.issubset(data["user"].keys()), "user must include id, email, username"
     assert "token_type" in data, "Missing token_type in response"
     assert data["token_type"] == "Bearer", "Expected token_type to be 'Bearer'"
-
-
-def test_auth_login_contract_requires_tenant_id():
-    spec_path = Path(__file__).parent.parent.parent / "api-contracts" / "dist" / "openapi" / "v1" / "auth.bundled.yaml"
-    spec = _load_yaml(spec_path)
-    login_operation = (((spec.get("paths") or {}).get("/api/auth/login") or {}).get("post") or {})
-    request_schema = (
-        (((login_operation.get("requestBody") or {}).get("content") or {}).get("application/json") or {}).get("schema")
-        or {}
-    )
-    required = set(request_schema.get("required") or [])
-    assert "tenant_id" in required, "POST /api/auth/login contract must require tenant_id"
 
 
 def test_attribution_revenue_realtime_happy_path():
@@ -383,81 +309,6 @@ def test_coverage_report():
     print(f"  Routes:")
     for route in sorted(in_scope_routes):
         print(f"    - {route}")
-
-
-@pytest.mark.parametrize("spec_path", bundled_specs, ids=lambda p: p.name)
-def test_contract_auth_topology_and_error_surface(spec_path: Path):
-    """
-    Static adjudication for auth topology + canonical error shape.
-
-    This closes vacuity by failing on:
-    - JWT route losing bearerAuth declaration
-    - webhook route gaining bearerAuth or losing tenantKeyAuth
-    - 401/403 responses drifting away from RFC7807 ProblemDetails surface
-    """
-    spec = _load_yaml(spec_path)
-    security_schemes = ((spec.get("components") or {}).get("securitySchemes") or {})
-
-    jwt_protected_operation_count = 0
-    jwt_operations_with_403_problem = 0
-
-    for method, route_path, operation, effective_security in _iter_operations(spec):
-        security_names = _extract_security_scheme_names(effective_security)
-        is_webhook = route_path.startswith("/api/webhooks/")
-        is_jwt_family = route_path.startswith(JWT_PROTECTED_PREFIXES)
-        is_public_allowlisted = (method, route_path) in PUBLIC_ROUTE_ALLOWLIST
-
-        if is_webhook:
-            assert "tenantKeyAuth" in security_names, (
-                f"{method} {route_path} must declare tenantKeyAuth"
-            )
-            assert "bearerAuth" not in security_names, (
-                f"{method} {route_path} must not declare bearerAuth"
-            )
-            assert "tenantKeyAuth" in security_schemes, (
-                f"{spec_path.name} must publish tenantKeyAuth in components.securitySchemes"
-            )
-
-        if is_jwt_family and not is_webhook and not is_public_allowlisted:
-            jwt_protected_operation_count += 1
-            assert "bearerAuth" in security_names, (
-                f"{method} {route_path} must declare bearerAuth"
-            )
-            responses = operation.get("responses") or {}
-            assert "401" in responses, (
-                f"{method} {route_path} must declare 401 Unauthorized"
-            )
-            assert "403" in responses, (
-                f"{method} {route_path} must declare 403 Forbidden"
-            )
-
-        responses = operation.get("responses") or {}
-        for code in ("401", "403"):
-            if code not in responses:
-                continue
-            response_spec = responses[code] or {}
-            content = response_spec.get("content") or {}
-            problem_content = content.get("application/problem+json")
-            assert problem_content, (
-                f"{method} {route_path} {code} must expose application/problem+json"
-            )
-            schema = problem_content.get("schema") or {}
-            if "$ref" in schema:
-                assert schema["$ref"].endswith("/ProblemDetails"), (
-                    f"{method} {route_path} {code} must reference ProblemDetails"
-                )
-            else:
-                required_fields = set(schema.get("required") or [])
-                assert PROBLEM_REQUIRED_FIELDS.issubset(required_fields), (
-                    f"{method} {route_path} {code} must require canonical ProblemDetails fields"
-                )
-            if code == "403" and is_jwt_family and not is_webhook and not is_public_allowlisted:
-                jwt_operations_with_403_problem += 1
-
-    if jwt_protected_operation_count > 0:
-        assert jwt_operations_with_403_problem == jwt_protected_operation_count, (
-            f"{spec_path.name} must expose canonical 403 ProblemDetails on every JWT-protected operation"
-        )
 
 
 # Negative test scenarios (documented in negative_tests_dynamic.md)

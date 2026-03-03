@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Optional
 from uuid import UUID
 
@@ -114,3 +115,17 @@ class Problem(BaseModel):
     """
     Correlation ID from the request header (Skeldir extension)
     """
+
+
+class AdminTokenCutoffRequest(BaseModel):
+    user_id: UUID
+    tokens_invalid_before: datetime | None = None
+
+
+class AdminTokenCutoffResponse(BaseModel):
+    success: bool
+    correlation_id: UUID
+    tenant_id: UUID
+    user_id: UUID
+    tokens_invalid_before: datetime
+    message: str

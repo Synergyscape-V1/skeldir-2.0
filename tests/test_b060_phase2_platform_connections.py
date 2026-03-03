@@ -58,6 +58,7 @@ def _build_token(tenant_id: UUID) -> str:
         "iss": os.environ["AUTH_JWT_ISSUER"],
         "aud": os.environ["AUTH_JWT_AUDIENCE"],
         "iat": now,
+        "jti": str(uuid4()),
         "exp": now + 3600,
         "tenant_id": str(tenant_id),
     }

@@ -53,6 +53,7 @@ def _build_token(tenant_id: UUID) -> str:
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
         "iat": now,
+        "jti": str(uuid4()),
         "exp": now + 3600,
         "tenant_id": str(tenant_id),
     }

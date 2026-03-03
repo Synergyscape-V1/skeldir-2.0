@@ -12,6 +12,7 @@ All routes use generated Pydantic models from backend/app/schemas/auth.py
 """
 
 import os
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -19,6 +20,8 @@ from fastapi import APIRouter, Depends, Header
 
 # Import generated Pydantic models
 from app.schemas.auth import (
+    AdminTokenCutoffRequest,
+    AdminTokenCutoffResponse,
     LoginRequest,
     LoginResponse,
     RefreshRequest,
@@ -28,6 +31,7 @@ from app.schemas.auth import (
 from app.core.secrets import get_secret
 from app.db.session import AsyncSessionLocal
 from app.security.auth import AuthContext, AuthError, get_auth_context
+from app.services.auth_revocation import denylist_access_token, upsert_tokens_invalid_before
 from app.services.auth_tokens import (
     TokenPair,
     issue_login_token_pair,
@@ -39,6 +43,7 @@ from app.services.auth_tokens import (
 
 router = APIRouter()
 _LOGIN_IDENTIFIER_PEPPER_CACHE: str | None = None
+_ADMIN_ROLE_CANDIDATES = {"admin", "owner", "super_admin", "tenant_admin"}
 
 
 def _login_identifier_pepper() -> str | None:
@@ -46,6 +51,25 @@ def _login_identifier_pepper() -> str | None:
     if _LOGIN_IDENTIFIER_PEPPER_CACHE is None:
         _LOGIN_IDENTIFIER_PEPPER_CACHE = get_secret("AUTH_LOGIN_IDENTIFIER_PEPPER")
     return _LOGIN_IDENTIFIER_PEPPER_CACHE
+
+
+def _require_admin_role(auth_context: AuthContext) -> None:
+    role_candidates: list[str] = []
+    single_role = auth_context.claims.get("role")
+    if single_role is not None:
+        role_candidates.append(str(single_role))
+    roles = auth_context.claims.get("roles")
+    if isinstance(roles, list):
+        role_candidates.extend(str(item) for item in roles)
+    normalized = {value.strip().lower() for value in role_candidates if value and str(value).strip()}
+    if normalized.intersection(_ADMIN_ROLE_CANDIDATES):
+        return
+    raise AuthError(
+        status_code=403,
+        title="Forbidden",
+        detail="Admin role required.",
+        type_url="https://api.skeldir.com/problems/forbidden",
+    )
 
 
 @router.post(
@@ -221,9 +245,28 @@ async def logout(
     Contract: POST /api/auth/logout
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
-    # Sample implementation - always succeeds for testing
-    # Production: blacklist tokens, mark session ended in database
-    
+    if os.getenv("CONTRACT_TESTING") != "1":
+        exp = auth_context.claims.get("exp")
+        try:
+            expires_at = datetime.fromtimestamp(int(exp), tz=timezone.utc)
+        except (TypeError, ValueError):
+            raise AuthError(
+                status_code=401,
+                title="Authentication Failed",
+                detail="Invalid exp claim.",
+                type_url="https://api.skeldir.com/problems/authentication-failed",
+            )
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await denylist_access_token(
+                    session,
+                    tenant_id=auth_context.tenant_id,
+                    user_id=auth_context.user_id,
+                    jti=auth_context.jti,
+                    expires_at=expires_at,
+                    reason="logout",
+                )
+
     return {
         "success": True,
         "correlation_id": str(x_correlation_id),
@@ -246,3 +289,43 @@ async def verify_token(
         "valid": True,
         "user_id": str(auth_context.user_id),
     }
+
+
+@router.post(
+    "/admin/token-cutoff",
+    response_model=AdminTokenCutoffResponse,
+    status_code=200,
+    operation_id="adminRevokeTokensBefore",
+    summary="Admin token kill-switch",
+    description="Set tenant-scoped user token cutoff (`tokens_invalid_before`) for immediate revocation.",
+)
+async def admin_token_cutoff(
+    request: AdminTokenCutoffRequest,
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+):
+    if os.getenv("CONTRACT_TESTING") != "1":
+        _require_admin_role(auth_context)
+    cutoff = request.tokens_invalid_before or datetime.now(timezone.utc)
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+
+    if os.getenv("CONTRACT_TESTING") != "1":
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await upsert_tokens_invalid_before(
+                    session,
+                    tenant_id=auth_context.tenant_id,
+                    user_id=request.user_id,
+                    invalid_before=cutoff,
+                    updated_by_user_id=auth_context.user_id,
+                )
+
+    return AdminTokenCutoffResponse(
+        success=True,
+        correlation_id=x_correlation_id,
+        tenant_id=auth_context.tenant_id,
+        user_id=request.user_id,
+        tokens_invalid_before=cutoff,
+        message=f"Token cutoff updated for {request.user_id}",
+    )

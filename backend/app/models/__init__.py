@@ -30,7 +30,9 @@ Usage:
 
 from app.models.attribution_event import AttributionEvent
 from app.models.auth_substrate import (
+    AuthAccessTokenDenylist,
     AuthRefreshToken,
+    AuthUserTokenCutoff,
     Role,
     Tenant,
     TenantMembership,
@@ -64,6 +66,8 @@ __all__ = [
     "Role",
     "TenantMembershipRole",
     "AuthRefreshToken",
+    "AuthAccessTokenDenylist",
+    "AuthUserTokenCutoff",
     "AttributionEvent",
     "DeadEvent",
     "ChannelTaxonomy",
