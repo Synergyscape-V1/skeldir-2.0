@@ -519,6 +519,101 @@ async def test_refresh_reuse_revokes_family_and_kills_successor(_app):
     assert int(active_count) == 0
 
 
+async def test_refresh_token_id_miss_executes_dummy_bcrypt_check(_app, monkeypatch: pytest.MonkeyPatch):
+    import app.services.auth_tokens as auth_tokens_module
+
+    tenant_id = uuid4()
+    real_checkpw = bcrypt.checkpw
+    calls = {"count": 0}
+
+    def _counting_checkpw(password: bytes, hashed_password: bytes) -> bool:
+        calls["count"] += 1
+        return real_checkpw(password, hashed_password)
+
+    monkeypatch.setattr(auth_tokens_module.bcrypt, "checkpw", _counting_checkpw)
+
+    miss_token = f"{tenant_id}.{uuid4()}.selector-miss-secret"
+    transport = ASGITransport(app=_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": miss_token, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+
+    assert response.status_code == 401, response.text
+    assert calls["count"] == 1
+
+
+async def test_refresh_reuse_revokes_only_token_family_parallel_family_survives(_app):
+    tenant_id = uuid4()
+    user_id = uuid4()
+    email = f"user-{uuid4().hex[:8]}@example.com"
+    password = "S3curePassword!123"
+    _seed_login_identity(tenant_id=tenant_id, user_id=user_id, email=email, password=password)
+
+    login_a = await _login(app_instance=_app, tenant_id=tenant_id, email=email, password=password)
+    refresh_a1 = login_a["refresh_token"]
+    _, a1_id, _ = _parse_refresh_token(refresh_a1)
+
+    transport = ASGITransport(app=_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        attacker = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh_a1, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+        assert attacker.status_code == 200, attacker.text
+        refresh_a2 = attacker.json()["refresh_token"]
+        _, a2_id, _ = _parse_refresh_token(refresh_a2)
+
+    login_b = await _login(app_instance=_app, tenant_id=tenant_id, email=email, password=password)
+    refresh_b1 = login_b["refresh_token"]
+    _, b1_id, _ = _parse_refresh_token(refresh_b1)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        legitimate_reuse = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh_a1, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+        assert legitimate_reuse.status_code == 401, legitimate_reuse.text
+
+        attacker_successor = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh_a2, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+        assert attacker_successor.status_code == 401, attacker_successor.text
+
+        parallel_family = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh_b1, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+        assert parallel_family.status_code == 200, parallel_family.text
+
+    engine = create_engine(_current_sync_database_url())
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, family_id, revoked_at
+                FROM public.auth_refresh_tokens
+                WHERE id IN (:a1_id, :a2_id, :b1_id)
+                """
+            ),
+            {"a1_id": str(a1_id), "a2_id": str(a2_id), "b1_id": str(b1_id)},
+        ).mappings().all()
+
+    by_id = {UUID(str(row["id"])): row for row in rows}
+    assert by_id[a1_id]["family_id"] == by_id[a2_id]["family_id"]
+    assert by_id[a1_id]["family_id"] != by_id[b1_id]["family_id"]
+    assert by_id[a1_id]["revoked_at"] is not None
+    assert by_id[a2_id]["revoked_at"] is not None
+    assert by_id[b1_id]["revoked_at"] is None
+
+
 async def test_refresh_rotation_is_race_safe(_app):
     tenant_id = uuid4()
     user_id = uuid4()

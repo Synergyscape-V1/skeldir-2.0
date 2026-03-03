@@ -20,6 +20,8 @@ from app.security.auth import mint_internal_jwt
 ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 REFRESH_TOKEN_TTL_DAYS = 30
 logger = logging.getLogger(__name__)
+_DUMMY_REFRESH_MISS_DIGEST = hashlib.sha256(b"skeldir-refresh-selector-miss").hexdigest().encode("utf-8")
+_DUMMY_REFRESH_MISS_HASH = bcrypt.hashpw(_DUMMY_REFRESH_MISS_DIGEST, bcrypt.gensalt())
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,11 @@ def verify_refresh_token(*, secret: str, refresh_token: str, token_hash: str) ->
         return bcrypt.checkpw(digest, token_hash.encode("utf-8"))
     except ValueError:
         return False
+
+
+def _verify_dummy_refresh_miss_cost() -> None:
+    # Constant-cost miss path prevents selector enumeration via latency.
+    bcrypt.checkpw(_DUMMY_REFRESH_MISS_DIGEST, _DUMMY_REFRESH_MISS_HASH)
 
 
 def _mint_refresh_token_value(*, tenant_id: UUID, token_id: UUID, secret: str) -> str:
@@ -178,16 +185,13 @@ async def revoke_refresh_family(
     trigger_token_id: UUID,
 ) -> None:
     now = clock_module.utcnow()
-    rows = (
-        await session.execute(
-            select(AuthRefreshToken)
-            .where(
-                AuthRefreshToken.tenant_id == tenant_id,
-                AuthRefreshToken.user_id == user_id,
-            )
-            .with_for_update()
-        )
-    ).scalars().all()
+    where_clauses = [
+        AuthRefreshToken.tenant_id == tenant_id,
+        AuthRefreshToken.user_id == user_id,
+    ]
+    if os.getenv("SKELDIR_B12_P4_REVOKE_ALL_FAMILIES") != "1":
+        where_clauses.append(AuthRefreshToken.family_id == family_id)
+    rows = (await session.execute(select(AuthRefreshToken).where(*where_clauses).with_for_update())).scalars().all()
     for row in rows:
         if row.revoked_at is None:
             row.revoked_at = now
@@ -276,6 +280,8 @@ async def rotate_refresh_token(
     )
     token_row = (await session.execute(query)).scalar_one_or_none()
     if token_row is None:
+        if os.getenv("SKELDIR_B12_P4_DISABLE_MISS_DUMMY_BCRYPT") != "1":
+            _verify_dummy_refresh_miss_cost()
         return None
 
     now = clock_module.utcnow()
