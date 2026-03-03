@@ -259,6 +259,24 @@ async def test_login_issues_tenant_scoped_access_and_opaque_refresh(_app):
     assert not payload["refresh_token"].startswith("eyJ")
 
 
+async def test_login_requires_tenant_id_for_token_issuance(_app):
+    tenant_id = uuid4()
+    user_id = uuid4()
+    email = f"user-{uuid4().hex[:8]}@example.com"
+    password = "S3curePassword!123"
+    _seed_login_identity(tenant_id=tenant_id, user_id=user_id, email=email, password=password)
+
+    transport = ASGITransport(app=_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/auth/login",
+            json={"email": email, "password": password},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+
+    assert response.status_code == 422, response.text
+
+
 async def test_refresh_rotation_single_use(_app):
     tenant_id = uuid4()
     user_id = uuid4()
@@ -315,7 +333,7 @@ async def test_refresh_rotation_single_use(_app):
             ).scalar_one()
 
         # Login mints 1, first refresh mints +1, failed reuse mints +0.
-        assert int(after_rows) == int(before_rows) + 1
+    assert int(after_rows) == int(before_rows) + 1
 
 
 async def test_refresh_rejects_tenant_context_mismatch(_app):
@@ -405,6 +423,102 @@ async def test_refresh_token_not_plaintext_at_rest(_app):
     assert token_hash.startswith("$2")
 
 
+async def test_refresh_hashes_secret_component_only(_app):
+    tenant_id = uuid4()
+    user_id = uuid4()
+    email = f"user-{uuid4().hex[:8]}@example.com"
+    password = "S3curePassword!123"
+    _seed_login_identity(tenant_id=tenant_id, user_id=user_id, email=email, password=password)
+
+    login = await _login(app_instance=_app, tenant_id=tenant_id, email=email, password=password)
+    refresh_token = login["refresh_token"]
+    _, refresh_row_id, secret_part = _parse_refresh_token(refresh_token)
+
+    secret_digest = hashlib.sha256(secret_part.encode("utf-8")).hexdigest().encode("utf-8")
+    blob_digest = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest().encode("utf-8")
+
+    engine = create_engine(_current_sync_database_url())
+    with engine.begin() as conn:
+        token_hash = conn.execute(
+            text("SELECT token_hash FROM public.auth_refresh_tokens WHERE id = :id"),
+            {"id": str(refresh_row_id)},
+        ).scalar_one()
+
+    assert bcrypt.checkpw(secret_digest, token_hash.encode("utf-8"))
+    assert not bcrypt.checkpw(blob_digest, token_hash.encode("utf-8"))
+
+
+async def test_refresh_reuse_revokes_family_and_kills_successor(_app):
+    tenant_id = uuid4()
+    user_id = uuid4()
+    email = f"user-{uuid4().hex[:8]}@example.com"
+    password = "S3curePassword!123"
+    _seed_login_identity(tenant_id=tenant_id, user_id=user_id, email=email, password=password)
+
+    login = await _login(app_instance=_app, tenant_id=tenant_id, email=email, password=password)
+    refresh_a = login["refresh_token"]
+    _, token_a_id, _ = _parse_refresh_token(refresh_a)
+
+    transport = ASGITransport(app=_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        attacker = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh_a, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+        assert attacker.status_code == 200, attacker.text
+        refresh_b = attacker.json()["refresh_token"]
+        _, token_b_id, _ = _parse_refresh_token(refresh_b)
+
+        legitimate_reuse = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh_a, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+        assert legitimate_reuse.status_code == 401, legitimate_reuse.text
+
+        successor_attempt = await client.post(
+            "/api/auth/refresh",
+            json={"refresh_token": refresh_b, "tenant_id": str(tenant_id)},
+            headers={"X-Correlation-ID": str(uuid4())},
+        )
+        assert successor_attempt.status_code == 401, successor_attempt.text
+
+    engine = create_engine(_current_sync_database_url())
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, family_id, revoked_at, rotated_at, replaced_by_id
+                FROM public.auth_refresh_tokens
+                WHERE id IN (:a_id, :b_id)
+                ORDER BY created_at
+                """
+            ),
+            {"a_id": str(token_a_id), "b_id": str(token_b_id)},
+        ).mappings().all()
+        family_id = rows[0]["family_id"]
+        active_count = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM public.auth_refresh_tokens
+                WHERE family_id = :family_id
+                  AND revoked_at IS NULL
+                  AND expires_at > now()
+                """
+            ),
+            {"family_id": str(family_id)},
+        ).scalar_one()
+
+    assert len(rows) == 2
+    assert rows[0]["rotated_at"] is not None
+    assert rows[0]["replaced_by_id"] == token_b_id
+    assert rows[0]["revoked_at"] is not None
+    assert rows[1]["revoked_at"] is not None
+    assert int(active_count) == 0
+
+
 async def test_refresh_rotation_is_race_safe(_app):
     tenant_id = uuid4()
     user_id = uuid4()
@@ -460,7 +574,9 @@ async def test_refresh_rotation_is_race_safe(_app):
 
     assert old_row["rotated_at"] is not None
     assert old_row["replaced_by_id"] is not None
-    assert int(active_count) == 1
+    # Under replay-detection hardening, the losing concurrent request may trigger
+    # family revocation; the invariant is bounded minting (never >1 active successor).
+    assert int(active_count) in (0, 1)
 
 
 async def test_signing_hot_path_avoids_per_request_secret_fetch(_app, monkeypatch: pytest.MonkeyPatch):

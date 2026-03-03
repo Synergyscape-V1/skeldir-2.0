@@ -15,6 +15,9 @@ cp "$ORIG_ATTR" "$BACKUP_ATTR"
 ORIG_BASE="api-contracts/openapi/v1/_common/base.yaml"
 BACKUP_BASE="$(mktemp)"
 cp "$ORIG_BASE" "$BACKUP_BASE"
+ORIG_AUTH_CONTRACT="api-contracts/openapi/v1/auth.yaml"
+BACKUP_AUTH_CONTRACT="$(mktemp)"
+cp "$ORIG_AUTH_CONTRACT" "$BACKUP_AUTH_CONTRACT"
 ORIG_AUTH="backend/app/security/auth.py"
 BACKUP_AUTH="$(mktemp)"
 cp "$ORIG_AUTH" "$BACKUP_AUTH"
@@ -29,12 +32,14 @@ cleanup() {
   cp "$BACKUP_RT" "$ORIG_RT" || true
   cp "$BACKUP_ATTR" "$ORIG_ATTR" || true
   cp "$BACKUP_BASE" "$ORIG_BASE" || true
+  cp "$BACKUP_AUTH_CONTRACT" "$ORIG_AUTH_CONTRACT" || true
   cp "$BACKUP_AUTH" "$ORIG_AUTH" || true
   cp "$BACKUP_TASK_CONTEXT" "$ORIG_TASK_CONTEXT" || true
   cp "$BACKUP_DB_SESSION" "$ORIG_DB_SESSION" || true
   rm -f "$BACKUP_RT" || true
   rm -f "$BACKUP_ATTR" || true
   rm -f "$BACKUP_BASE" || true
+  rm -f "$BACKUP_AUTH_CONTRACT" || true
   rm -f "$BACKUP_AUTH" || true
   rm -f "$BACKUP_TASK_CONTEXT" || true
   rm -f "$BACKUP_DB_SESSION" || true
@@ -381,5 +386,39 @@ if SKELDIR_B12_P4_STORE_PLAINTEXT=1 \
   echo "[negative-control] ERROR: plaintext-at-rest gate did not fail under plaintext storage mutation"
   exit 1
 fi
+
+echo "[negative-control] 26/28 family-revocation gate should fail when family revoke-on-reuse is disabled"
+if SKELDIR_B12_P4_DISABLE_FAMILY_REVOKE_ON_REUSE=1 \
+   pytest backend/tests/test_b12_p4_token_lifecycle.py -q -k test_refresh_reuse_revokes_family_and_kills_successor; then
+  echo "[negative-control] ERROR: family-revocation gate did not fail under reuse-revoke bypass mutation"
+  exit 1
+fi
+
+echo "[negative-control] 27/28 secret-only hashing gate should fail when full-blob hashing mutation is enabled"
+if SKELDIR_B12_P4_HASH_BLOB=1 \
+   pytest backend/tests/test_b12_p4_token_lifecycle.py -q -k test_refresh_hashes_secret_component_only; then
+  echo "[negative-control] ERROR: secret-only hashing gate did not fail under full-blob hashing mutation"
+  exit 1
+fi
+
+echo "[negative-control] 28/28 tenant determinism contract gate should fail when tenant_id is made optional"
+python - <<'PY'
+from pathlib import Path
+
+path = Path("api-contracts/openapi/v1/auth.yaml")
+text = path.read_text(encoding="utf-8")
+needle = "                - tenant_id\n"
+if needle not in text:
+    raise SystemExit("Unable to apply tenant determinism contract mutation")
+path.write_text(text.replace(needle, "", 1), encoding="utf-8")
+PY
+bash scripts/contracts/bundle.sh
+if DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest tests/contract/test_contract_semantics.py -q -k test_auth_login_contract_requires_tenant_id; then
+  echo "[negative-control] ERROR: tenant determinism contract gate did not fail under optional-tenant mutation"
+  exit 1
+fi
+cp "$BACKUP_AUTH_CONTRACT" "$ORIG_AUTH_CONTRACT"
+bash scripts/contracts/bundle.sh
 
 echo "[negative-control] PASS"

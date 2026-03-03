@@ -12,9 +12,7 @@ from pydantic import AnyUrl, BaseModel, EmailStr, Field, SecretStr
 class LoginRequest(BaseModel):
     email: Annotated[EmailStr, Field(example='user@example.com')]
     password: Annotated[SecretStr, Field(example='securePassword123')]
-    tenant_id: Annotated[
-        Optional[UUID], Field(example='550e8400-e29b-41d4-a716-446655440000')
-    ] = None
+    tenant_id: Annotated[UUID, Field(example='550e8400-e29b-41d4-a716-446655440000')]
 
 
 class User(BaseModel):

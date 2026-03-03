@@ -66,10 +66,21 @@ async def login(
     Contract: POST /api/auth/login
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
+    if request.tenant_id is None:
+        raise AuthError(
+            status_code=400,
+            title="Validation Failed",
+            detail="tenant_required",
+            type_url="https://api.skeldir.com/problems/validation-error",
+        )
+
+    contract_testing = os.getenv("CONTRACT_TESTING") == "1"
+
     # Contract-conformance mode intentionally bypasses DB dependencies.
-    if os.getenv("CONTRACT_TESTING") == "1":
-        selected_tenant = request.tenant_id or uuid4()
+    if contract_testing:
+        selected_tenant = request.tenant_id
         synthetic_user = uuid4()
+        synthetic_email = "contract.user@example.com"
         token_pair = TokenPair(
             access_token="contract-test-access-token",
             refresh_token=f"{selected_tenant}.{uuid4()}.contract-testing-refresh",
@@ -124,8 +135,12 @@ async def login(
 
     user = User(
         id=token_pair.user_id,
-        email=request.email,
-        username=request.email.split("@")[0] if "@" in request.email else "user",
+        email=synthetic_email if contract_testing else request.email,
+        username=(
+            synthetic_email.split("@")[0]
+            if contract_testing
+            else (request.email.split("@")[0] if "@" in request.email else "user")
+        ),
     )
     return LoginResponse(
         access_token=token_pair.access_token,
@@ -162,6 +177,7 @@ async def refresh_token(
             token_type="Bearer",
         )
 
+    token_pair = None
     async with AsyncSessionLocal() as session:
         async with session.begin():
             token_pair = await rotate_refresh_token(
@@ -169,13 +185,13 @@ async def refresh_token(
                 refresh_token=request.refresh_token,
                 requested_tenant_id=request.tenant_id,
             )
-            if token_pair is None:
-                raise AuthError(
-                    status_code=401,
-                    title="Authentication Failed",
-                    detail="Invalid refresh token.",
-                    type_url="https://api.skeldir.com/problems/authentication-failed",
-                )
+    if token_pair is None:
+        raise AuthError(
+            status_code=401,
+            title="Authentication Failed",
+            detail="Invalid refresh token.",
+            type_url="https://api.skeldir.com/problems/authentication-failed",
+        )
 
     return RefreshResponse(
         access_token=token_pair.access_token,

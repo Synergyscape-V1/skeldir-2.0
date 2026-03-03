@@ -43,6 +43,7 @@ paths:
               required:
                 - email
                 - password
+                - tenant_id
               properties:
                 email:
                   type: string
@@ -55,7 +56,7 @@ paths:
                 tenant_id:
                   type: string
                   format: uuid
-                  description: Optional tenant selector; required when user belongs to multiple tenants
+                  description: Required tenant selector for deterministic tenant-scoped token issuance
             example:
               email: user@example.com
               password: securepassword123

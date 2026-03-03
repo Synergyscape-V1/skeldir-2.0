@@ -95,7 +95,11 @@ headers = {
     "Content-Type": "application/json",
     "X-Correlation-ID": "00000000-0000-0000-0000-000000000000",
 }
-payload = {"email": "test@example.com", "password": "testpass123"}
+payload = {
+    "email": "test@example.com",
+    "password": "testpass123",
+    "tenant_id": "00000000-0000-0000-0000-000000000000",
+}
 resp = requests.post("http://localhost:4010/api/auth/login", headers=headers, json=payload)
 body = {}
 try:

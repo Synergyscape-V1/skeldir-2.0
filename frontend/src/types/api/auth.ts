@@ -369,9 +369,9 @@ export interface operations {
                     password: string;
                     /**
                      * Format: uuid
-                     * @description Optional tenant selector; required when user belongs to multiple tenants
+                     * @description Required tenant selector for deterministic tenant-scoped token issuance
                      */
-                    tenant_id?: string;
+                    tenant_id: string;
                 };
             };
         };
