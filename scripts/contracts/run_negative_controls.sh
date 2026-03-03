@@ -401,7 +401,7 @@ if SKELDIR_B12_P4_HASH_BLOB=1 \
   exit 1
 fi
 
-echo "[negative-control] 28/28 tenant determinism contract gate should fail when tenant_id is made optional"
+echo "[negative-control] 28/30 tenant determinism contract gate should fail when tenant_id is made optional"
 python - <<'PY'
 from pathlib import Path
 
@@ -420,5 +420,19 @@ if DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
 fi
 cp "$BACKUP_AUTH_CONTRACT" "$ORIG_AUTH_CONTRACT"
 bash scripts/contracts/bundle.sh
+
+echo "[negative-control] 29/30 EG2a miss-path dummy-bcrypt gate should fail when miss-cost verify is disabled"
+if SKELDIR_B12_P4_DISABLE_MISS_DUMMY_BCRYPT=1 \
+   pytest backend/tests/test_b12_p4_token_lifecycle.py -q -k test_refresh_token_id_miss_executes_dummy_bcrypt_check; then
+  echo "[negative-control] ERROR: EG2a miss-path gate did not fail when dummy-bcrypt miss verify was disabled"
+  exit 1
+fi
+
+echo "[negative-control] 30/30 EG5a family-scope gate should fail under widened revocation mutation"
+if SKELDIR_B12_P4_REVOKE_ALL_FAMILIES=1 \
+   pytest backend/tests/test_b12_p4_token_lifecycle.py -q -k test_refresh_reuse_revokes_only_token_family_parallel_family_survives; then
+  echo "[negative-control] ERROR: EG5a family-scope gate did not fail under widened revocation mutation"
+  exit 1
+fi
 
 echo "[negative-control] PASS"
