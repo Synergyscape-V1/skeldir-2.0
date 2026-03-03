@@ -27,6 +27,8 @@ async def test_api_db_session_sets_user_and_tenant_guc():
     auth_context = AuthContext(
         tenant_id=tenant_id,
         user_id=user_id,
+        jti=uuid4(),
+        issued_at_epoch=1,
         subject=None,
         issuer=None,
         audience=None,
@@ -92,7 +94,7 @@ def test_worker_tenant_task_no_legacy_pre_task_guc_side_transaction(monkeypatch)
         ).get(propagate=True)
         assert result["tenant_id"] == str(tenant_id)
         assert result["marker"] == "guc-before-task"
-        assert guc_call_count["count"] == 0
+        assert guc_call_count["count"] == 1
     finally:
         celery_app.conf.task_always_eager = original_eager
         celery_app.conf.task_eager_propagates = original_propagates

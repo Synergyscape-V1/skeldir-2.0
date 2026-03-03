@@ -1,4 +1,4 @@
-﻿"""
+"""
 Test-only Celery tasks for structured worker logging runtime proof (B0.5.6.6).
 
 These tasks are intentionally deterministic and DB-free. They are only loaded
