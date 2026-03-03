@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import secrets
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from app.security.auth import mint_internal_jwt
 
 ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 REFRESH_TOKEN_TTL_DAYS = 30
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -61,29 +63,43 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return False
 
 
-def _refresh_token_digest(refresh_token: str) -> bytes:
+def _refresh_secret_digest(secret: str) -> bytes:
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest().encode("utf-8")
+
+
+def _refresh_blob_digest(refresh_token: str) -> bytes:
     return hashlib.sha256(refresh_token.encode("utf-8")).hexdigest().encode("utf-8")
 
 
-def hash_refresh_token_for_storage(refresh_token: str) -> str:
+def hash_refresh_token_for_storage(*, secret: str, refresh_token: str) -> str:
     if os.getenv("SKELDIR_B12_P4_STORE_PLAINTEXT") == "1":
         return refresh_token
-    return bcrypt.hashpw(_refresh_token_digest(refresh_token), bcrypt.gensalt()).decode("utf-8")
+    digest = (
+        _refresh_blob_digest(refresh_token)
+        if os.getenv("SKELDIR_B12_P4_HASH_BLOB") == "1"
+        else _refresh_secret_digest(secret)
+    )
+    return bcrypt.hashpw(digest, bcrypt.gensalt()).decode("utf-8")
 
 
-def verify_refresh_token(refresh_token: str, token_hash: str) -> bool:
+def verify_refresh_token(*, secret: str, refresh_token: str, token_hash: str) -> bool:
+    digest = (
+        _refresh_blob_digest(refresh_token)
+        if os.getenv("SKELDIR_B12_P4_HASH_BLOB") == "1"
+        else _refresh_secret_digest(secret)
+    )
     try:
-        return bcrypt.checkpw(_refresh_token_digest(refresh_token), token_hash.encode("utf-8"))
+        return bcrypt.checkpw(digest, token_hash.encode("utf-8"))
     except ValueError:
         return False
 
 
-def _mint_refresh_token_value(*, tenant_id: UUID, token_id: UUID) -> str:
+def _mint_refresh_token_value(*, tenant_id: UUID, token_id: UUID, secret: str) -> str:
     # Prefix carries tenant + token row id for bounded lookup without plaintext persistence.
-    return f"{tenant_id}.{token_id}.{secrets.token_urlsafe(48)}"
+    return f"{tenant_id}.{token_id}.{secret}"
 
 
-def parse_refresh_token(refresh_token: str) -> tuple[UUID, UUID] | None:
+def parse_refresh_token(refresh_token: str) -> tuple[UUID, UUID, str] | None:
     parts = refresh_token.split(".")
     if len(parts) != 3:
         return None
@@ -94,7 +110,7 @@ def parse_refresh_token(refresh_token: str) -> tuple[UUID, UUID] | None:
         return None
     if not parts[2]:
         return None
-    return tenant_id, token_id
+    return tenant_id, token_id, parts[2]
 
 
 async def lookup_identity_by_login(
@@ -129,45 +145,65 @@ async def resolve_tenant_membership(
     session: AsyncSession,
     *,
     user_id: UUID,
-    requested_tenant_id: UUID | None,
+    requested_tenant_id: UUID,
 ) -> UUID | None:
-    base_query = (
-        text(
-            """
-            SELECT tenant_id
-            FROM public.tenant_memberships
-            WHERE user_id = :user_id
-              AND membership_status = 'active'
-            ORDER BY created_at DESC
-            LIMIT :limit
-            """
-        )
-        if requested_tenant_id is None
-        else text(
-            """
-            SELECT tenant_id
-            FROM public.tenant_memberships
-            WHERE user_id = :user_id
-              AND tenant_id = :tenant_id
-              AND membership_status = 'active'
-            LIMIT 1
-            """
-        )
+    base_query = text(
+        """
+        SELECT tenant_id
+        FROM public.tenant_memberships
+        WHERE user_id = :user_id
+          AND tenant_id = :tenant_id
+          AND membership_status = 'active'
+        LIMIT 1
+        """
     )
-    params: dict[str, object] = {"user_id": str(user_id)}
-    if requested_tenant_id is None:
-        params["limit"] = 2
-    else:
-        params["tenant_id"] = str(requested_tenant_id)
+    params: dict[str, object] = {
+        "user_id": str(user_id),
+        "tenant_id": str(requested_tenant_id),
+    }
 
     rows = (await session.execute(base_query, params)).all()
-    if requested_tenant_id is not None:
-        if not rows:
-            return None
-        return UUID(str(rows[0][0]))
-    if len(rows) != 1:
+    if not rows:
         return None
     return UUID(str(rows[0][0]))
+
+
+async def revoke_refresh_family(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    family_id: UUID,
+    reason: str,
+    trigger_token_id: UUID,
+) -> None:
+    now = clock_module.utcnow()
+    rows = (
+        await session.execute(
+            select(AuthRefreshToken)
+            .where(
+                AuthRefreshToken.tenant_id == tenant_id,
+                AuthRefreshToken.user_id == user_id,
+            )
+            .with_for_update()
+        )
+    ).scalars().all()
+    for row in rows:
+        if row.revoked_at is None:
+            row.revoked_at = now
+    await session.flush()
+    logger.warning(
+        "auth_refresh_family_revoked_on_reuse",
+        extra={
+            "event_type": "auth_security",
+            "tenant_id": str(tenant_id),
+            "user_id": str(user_id),
+            "family_id": str(family_id),
+            "trigger_token_id": str(trigger_token_id),
+            "reason": reason,
+            "family_row_count": len(rows),
+        },
+    )
 
 
 async def _create_refresh_token_row(
@@ -178,13 +214,14 @@ async def _create_refresh_token_row(
     family_id: UUID | None,
 ) -> tuple[AuthRefreshToken, str]:
     token_id = uuid4()
-    refresh_token = _mint_refresh_token_value(tenant_id=tenant_id, token_id=token_id)
+    secret = secrets.token_urlsafe(48)
+    refresh_token = _mint_refresh_token_value(tenant_id=tenant_id, token_id=token_id, secret=secret)
     token_row = AuthRefreshToken(
         id=token_id,
         tenant_id=tenant_id,
         user_id=user_id,
         family_id=family_id or uuid4(),
-        token_hash=hash_refresh_token_for_storage(refresh_token),
+        token_hash=hash_refresh_token_for_storage(secret=secret, refresh_token=refresh_token),
         expires_at=clock_module.utcnow() + timedelta(days=REFRESH_TOKEN_TTL_DAYS),
     )
     session.add(token_row)
@@ -227,7 +264,7 @@ async def rotate_refresh_token(
     parsed = parse_refresh_token(refresh_token)
     if parsed is None:
         return None
-    token_tenant_id, token_id = parsed
+    token_tenant_id, token_id, secret = parsed
     if requested_tenant_id is not None and requested_tenant_id != token_tenant_id:
         return None
 
@@ -242,12 +279,23 @@ async def rotate_refresh_token(
         return None
 
     now = clock_module.utcnow()
+    if token_row.tenant_id != token_tenant_id:
+        return None
+    if not verify_refresh_token(secret=secret, refresh_token=refresh_token, token_hash=token_row.token_hash):
+        return None
+    if token_row.rotated_at is not None or token_row.revoked_at is not None:
+        if os.getenv("SKELDIR_B12_P4_DISABLE_FAMILY_REVOKE_ON_REUSE") != "1":
+            await revoke_refresh_family(
+                session,
+                tenant_id=token_row.tenant_id,
+                user_id=token_row.user_id,
+                family_id=token_row.family_id,
+                reason="refresh_token_reuse_detected",
+                trigger_token_id=token_row.id,
+            )
+        return None
     if (
-        token_row.tenant_id != token_tenant_id
-        or token_row.revoked_at is not None
-        or token_row.rotated_at is not None
-        or token_row.expires_at <= now
-        or not verify_refresh_token(refresh_token, token_row.token_hash)
+        token_row.expires_at <= now
     ):
         return None
 

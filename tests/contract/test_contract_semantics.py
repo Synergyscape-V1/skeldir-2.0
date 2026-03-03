@@ -294,7 +294,8 @@ def test_auth_login_happy_path():
         "/api/auth/login",
         json={
             "email": "user@example.com",
-            "password": "securePassword123"
+            "password": "securePassword123",
+            "tenant_id": "00000000-0000-0000-0000-000000000000",
         },
         headers={"X-Correlation-ID": str(uuid.uuid4())}
     )
@@ -310,6 +311,18 @@ def test_auth_login_happy_path():
     assert {"id", "email", "username"}.issubset(data["user"].keys()), "user must include id, email, username"
     assert "token_type" in data, "Missing token_type in response"
     assert data["token_type"] == "Bearer", "Expected token_type to be 'Bearer'"
+
+
+def test_auth_login_contract_requires_tenant_id():
+    spec_path = Path(__file__).parent.parent.parent / "api-contracts" / "dist" / "openapi" / "v1" / "auth.bundled.yaml"
+    spec = _load_yaml(spec_path)
+    login_operation = (((spec.get("paths") or {}).get("/api/auth/login") or {}).get("post") or {})
+    request_schema = (
+        (((login_operation.get("requestBody") or {}).get("content") or {}).get("application/json") or {}).get("schema")
+        or {}
+    )
+    required = set(request_schema.get("required") or [])
+    assert "tenant_id" in required, "POST /api/auth/login contract must require tenant_id"
 
 
 def test_attribution_revenue_realtime_happy_path():

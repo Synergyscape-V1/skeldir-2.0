@@ -66,9 +66,17 @@ async def login(
     Contract: POST /api/auth/login
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
+    if request.tenant_id is None:
+        raise AuthError(
+            status_code=400,
+            title="Validation Failed",
+            detail="tenant_required",
+            type_url="https://api.skeldir.com/problems/validation-error",
+        )
+
     # Contract-conformance mode intentionally bypasses DB dependencies.
     if os.getenv("CONTRACT_TESTING") == "1":
-        selected_tenant = request.tenant_id or uuid4()
+        selected_tenant = request.tenant_id
         synthetic_user = uuid4()
         token_pair = TokenPair(
             access_token="contract-test-access-token",
@@ -162,6 +170,7 @@ async def refresh_token(
             token_type="Bearer",
         )
 
+    token_pair = None
     async with AsyncSessionLocal() as session:
         async with session.begin():
             token_pair = await rotate_refresh_token(
@@ -169,13 +178,13 @@ async def refresh_token(
                 refresh_token=request.refresh_token,
                 requested_tenant_id=request.tenant_id,
             )
-            if token_pair is None:
-                raise AuthError(
-                    status_code=401,
-                    title="Authentication Failed",
-                    detail="Invalid refresh token.",
-                    type_url="https://api.skeldir.com/problems/authentication-failed",
-                )
+    if token_pair is None:
+        raise AuthError(
+            status_code=401,
+            title="Authentication Failed",
+            detail="Invalid refresh token.",
+            type_url="https://api.skeldir.com/problems/authentication-failed",
+        )
 
     return RefreshResponse(
         access_token=token_pair.access_token,
