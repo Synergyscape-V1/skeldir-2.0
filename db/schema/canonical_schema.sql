@@ -1250,9 +1250,9 @@ CREATE MATERIALIZED VIEW mv_reconciliation_status AS
     rr.last_run_at,
     rr.id AS reconciliation_run_id
    FROM (reconciliation_runs rr
-      JOIN ( SELECT tenant_id,
-             max(last_run_at) AS max_last_run_at
-            FROM reconciliation_runs
+    JOIN ( SELECT tenant_id,
+           max(last_run_at) AS max_last_run_at
+          FROM reconciliation_runs
           GROUP BY tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
   WITH NO DATA;
 
