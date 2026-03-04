@@ -251,6 +251,7 @@ jobs:
 
       - name: "EG-R1-4: Live stack boot + health/metrics probes"
         run: |
+          set +e
           echo "=== EG-R1-4: Live Stack Boot + /health and /metrics ===" | tee -a $GITHUB_STEP_SUMMARY
           mkdir -p "$ARTIFACTS_DIR/LIVE_STACK"
 
@@ -271,17 +272,23 @@ jobs:
 
           # Wait for backend to be ready
           echo "Waiting for backend to be ready..."
+          BACKEND_READY=false
           for i in {1..30}; do
             if curl -s http://localhost:8000/health > /dev/null 2>&1; then
               echo "Backend is ready after $i seconds"
+              BACKEND_READY=true
               break
             fi
             sleep 1
           done
 
+          if [ "$BACKEND_READY" != "true" ]; then
+            echo "Backend did not become ready within timeout; continuing with probes for deterministic verdict output." | tee -a $GITHUB_STEP_SUMMARY
+          fi
+
           # Probe /health endpoint
           echo "Probing /health endpoint..." | tee -a $GITHUB_STEP_SUMMARY
-          HEALTH_RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8000/health)
+          HEALTH_RESPONSE=$(curl -s -m 5 -w "\n%{http_code}" http://localhost:8000/health || printf '\n000')
           HEALTH_BODY=$(echo "$HEALTH_RESPONSE" | head -n -1)
           HEALTH_CODE=$(echo "$HEALTH_RESPONSE" | tail -n 1)
 
@@ -298,7 +305,7 @@ jobs:
 
           # Probe /metrics endpoint
           echo "Probing /metrics endpoint..." | tee -a $GITHUB_STEP_SUMMARY
-          METRICS_RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8000/metrics)
+          METRICS_RESPONSE=$(curl -s -m 5 -w "\n%{http_code}" http://localhost:8000/metrics || printf '\n000')
           METRICS_BODY=$(echo "$METRICS_RESPONSE" | head -n -1)
           METRICS_CODE=$(echo "$METRICS_RESPONSE" | tail -n 1)
 
