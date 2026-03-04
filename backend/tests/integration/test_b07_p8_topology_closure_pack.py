@@ -229,6 +229,7 @@ def _build_auth_token(tenant_id: UUID, user_id: UUID) -> str:
         "iss": os.getenv("AUTH_JWT_ISSUER", "https://issuer.skeldir.test"),
         "aud": os.getenv("AUTH_JWT_AUDIENCE", "skeldir-api"),
         "iat": now,
+        "jti": str(uuid4()),
         "exp": now + 3600,
     }
     secret = os.getenv("AUTH_JWT_SECRET", TEST_PRIVATE_KEY_PEM)

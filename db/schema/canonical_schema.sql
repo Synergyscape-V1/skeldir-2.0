@@ -650,6 +650,18 @@ CREATE TABLE public.attribution_recompute_jobs (
 
 ALTER TABLE ONLY public.attribution_recompute_jobs FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.auth_access_token_denylist (
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    jti uuid NOT NULL,
+    revoked_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    reason text DEFAULT 'logout'::text NOT NULL,
+    CONSTRAINT ck_auth_access_token_denylist_reason_not_empty CHECK ((length(TRIM(BOTH FROM reason)) > 0))
+);
+
+ALTER TABLE ONLY public.auth_access_token_denylist FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.auth_refresh_tokens (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -666,6 +678,16 @@ CREATE TABLE public.auth_refresh_tokens (
 );
 
 ALTER TABLE ONLY public.auth_refresh_tokens FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.auth_user_token_cutoffs (
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    tokens_invalid_before timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_user_id uuid
+);
+
+ALTER TABLE ONLY public.auth_user_token_cutoffs FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.budget_optimization_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1598,6 +1620,12 @@ ALTER TABLE ONLY public.llm_validation_failures
 ALTER TABLE ONLY public.pii_audit_findings
     ADD CONSTRAINT pii_audit_findings_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.auth_access_token_denylist
+    ADD CONSTRAINT pk_auth_access_token_denylist PRIMARY KEY (tenant_id, user_id, jti);
+
+ALTER TABLE ONLY public.auth_user_token_cutoffs
+    ADD CONSTRAINT pk_auth_user_token_cutoffs PRIMARY KEY (tenant_id, user_id);
+
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_pkey PRIMARY KEY (id);
 
@@ -1688,11 +1716,19 @@ CREATE INDEX idx_attribution_recompute_jobs_tenant_status ON public.attribution_
 
 CREATE UNIQUE INDEX idx_attribution_recompute_jobs_window_identity ON public.attribution_recompute_jobs USING btree (tenant_id, window_start, window_end, model_version);
 
+CREATE INDEX idx_auth_access_token_denylist_expires_at ON public.auth_access_token_denylist USING btree (expires_at DESC);
+
+CREATE INDEX idx_auth_access_token_denylist_jti ON public.auth_access_token_denylist USING btree (jti);
+
+CREATE INDEX idx_auth_access_token_denylist_tenant_user_revoked_at ON public.auth_access_token_denylist USING btree (tenant_id, user_id, revoked_at DESC);
+
 CREATE INDEX idx_auth_refresh_tokens_family_created_at ON public.auth_refresh_tokens USING btree (family_id, created_at DESC);
 
 CREATE INDEX idx_auth_refresh_tokens_tenant_created_at ON public.auth_refresh_tokens USING btree (tenant_id, created_at DESC);
 
 CREATE INDEX idx_auth_refresh_tokens_tenant_user_created_at ON public.auth_refresh_tokens USING btree (tenant_id, user_id, created_at DESC);
+
+CREATE INDEX idx_auth_user_token_cutoffs_tenant_user ON public.auth_user_token_cutoffs USING btree (tenant_id, user_id);
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
@@ -1897,6 +1933,9 @@ ALTER TABLE ONLY public.attribution_events
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.auth_access_token_denylist
+    ADD CONSTRAINT auth_access_token_denylist_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.auth_refresh_tokens(id) ON DELETE SET NULL;
 
@@ -1905,6 +1944,9 @@ ALTER TABLE ONLY public.auth_refresh_tokens
 
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.auth_user_token_cutoffs
+    ADD CONSTRAINT auth_user_token_cutoffs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
@@ -2037,7 +2079,11 @@ ALTER TABLE public.attribution_recompute_jobs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY attribution_recompute_jobs_tenant_isolation ON public.attribution_recompute_jobs USING (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))) WITH CHECK (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true)));
 
+ALTER TABLE public.auth_access_token_denylist ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.auth_refresh_tokens ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.auth_user_token_cutoffs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
 
@@ -2097,7 +2143,11 @@ CREATE POLICY tenant_isolation_policy ON public.attribution_allocations USING ((
 
 CREATE POLICY tenant_isolation_policy ON public.attribution_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy ON public.auth_access_token_denylist USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy ON public.auth_refresh_tokens USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy ON public.auth_user_token_cutoffs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.budget_optimization_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 

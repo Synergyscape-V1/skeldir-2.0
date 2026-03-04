@@ -288,3 +288,92 @@ class AuthRefreshToken(Base):
             "created_at",
         ),
     )
+
+
+class AuthAccessTokenDenylist(Base):
+    """Tenant/user scoped access-token revocation rows keyed by JWT jti."""
+
+    __tablename__ = "auth_access_token_denylist"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    jti: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="logout",
+        server_default="logout",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(reason)) > 0",
+            name="ck_auth_access_token_denylist_reason_not_empty",
+        ),
+        Index(
+            "idx_auth_access_token_denylist_jti",
+            "jti",
+        ),
+        Index(
+            "idx_auth_access_token_denylist_tenant_user_revoked_at",
+            "tenant_id",
+            "user_id",
+            "revoked_at",
+        ),
+        Index(
+            "idx_auth_access_token_denylist_expires_at",
+            "expires_at",
+        ),
+    )
+
+
+class AuthUserTokenCutoff(Base):
+    """Tenant/user kill-switch timestamp enforced against JWT iat."""
+
+    __tablename__ = "auth_user_token_cutoffs"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    tokens_invalid_before: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_auth_user_token_cutoffs_tenant_user",
+            "tenant_id",
+            "user_id",
+        ),
+    )

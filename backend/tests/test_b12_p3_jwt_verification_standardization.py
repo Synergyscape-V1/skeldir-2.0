@@ -50,6 +50,7 @@ def _payload() -> dict[str, object]:
         "tenant_id": str(uuid4()),
         "sub": str(uuid4()),
         "user_id": str(uuid4()),
+        "jti": str(uuid4()),
         "iss": settings.AUTH_JWT_ISSUER,
         "aud": settings.AUTH_JWT_AUDIENCE,
         "iat": now,

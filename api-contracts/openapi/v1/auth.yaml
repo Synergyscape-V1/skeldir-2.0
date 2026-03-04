@@ -252,6 +252,85 @@ paths:
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
+  /api/auth/admin/token-cutoff:
+    post:
+      summary: Admin token kill-switch
+      description: Set tenant-scoped `tokens_invalid_before` for immediate user token revocation.
+      operationId: adminRevokeTokensBefore
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                tokens_invalid_before:
+                  type: string
+                  format: date-time
+                  description: Optional cutoff; defaults to current timestamp if omitted.
+            example:
+              user_id: 550e8400-e29b-41d4-a716-446655440001
+              tokens_invalid_before: '2026-03-03T14:20:00Z'
+      responses:
+        '200':
+          description: Token cutoff updated
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - correlation_id
+                  - tenant_id
+                  - user_id
+                  - tokens_invalid_before
+                  - message
+                properties:
+                  success:
+                    type: boolean
+                  correlation_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                    format: uuid
+                  tokens_invalid_before:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                tenant_id: 550e8400-e29b-41d4-a716-446655440000
+                user_id: 550e8400-e29b-41d4-a716-446655440001
+                tokens_invalid_before: '2026-03-03T14:20:00Z'
+                message: Token cutoff updated
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+
 components:
   securitySchemes:
     bearerAuth:

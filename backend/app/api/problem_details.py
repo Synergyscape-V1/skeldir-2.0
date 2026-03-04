@@ -21,7 +21,7 @@ def problem_details_response(
         "title": title,
         "status": status_code,
         "detail": detail,
-        "instance": str(request.url.path),
+        "instance": str(request.url),
         "correlation_id": str(correlation_id),
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }

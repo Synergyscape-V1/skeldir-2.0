@@ -4,7 +4,6 @@ Health probe task for end-to-end worker capability validation (B0.5.6.2).
 This task is invoked by /health/worker to prove the data-plane round trip:
 API -> broker -> worker -> result backend -> API.
 """
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -15,24 +14,16 @@ from sqlalchemy import text
 from app.celery_app import celery_app
 from app.db.session import engine
 from app.observability.context import set_request_correlation_id
+from app.tasks.context import run_in_worker_loop
 
 logger = logging.getLogger(__name__)
 
 
 def _run_coro(coro):
     """
-    Run an async coroutine from sync context, even if an event loop is running.
+    Run an async coroutine from sync worker context on the shared worker loop.
     """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-    else:
-        new_loop = asyncio.new_event_loop()
-        try:
-            return new_loop.run_until_complete(coro)
-        finally:
-            new_loop.close()
+    return run_in_worker_loop(coro)
 
 
 async def _fetch_db_user() -> str:
