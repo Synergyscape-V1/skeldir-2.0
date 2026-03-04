@@ -20,6 +20,7 @@ from app.core.identity import resolve_user_id
 from app.db.session import AsyncSessionLocal
 from app.observability.context import set_tenant_id, set_user_id
 from app.services.auth_revocation import evaluate_access_token_revocation
+from app.security.revocation_runtime import get_revocation_runtime_cache
 
 RS256_ALGORITHM = "RS256"
 
@@ -287,6 +288,43 @@ def revocation_enforcement_enabled() -> bool:
 async def assert_access_token_active(token_claims: AccessTokenClaims) -> None:
     if not revocation_enforcement_enabled():
         return
+    if os.getenv("SKELDIR_B12_P5_FORCE_DB_REVOCATION_HOT_PATH") == "1":
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                decision = await evaluate_access_token_revocation(
+                    session,
+                    tenant_id=token_claims.tenant_id,
+                    user_id=token_claims.user_id,
+                    jti=token_claims.jti,
+                    issued_at_epoch=token_claims.issued_at_epoch,
+                )
+        if decision.is_revoked:
+            raise AuthError(
+                status_code=401,
+                title="Authentication Failed",
+                detail="Token has been revoked.",
+                type_url="https://api.skeldir.com/problems/authentication-failed",
+            )
+        return
+
+    revocation_cache = get_revocation_runtime_cache()
+    revocation_cache.ensure_started()
+    cached = revocation_cache.snapshot_for_token(
+        tenant_id=token_claims.tenant_id,
+        user_id=token_claims.user_id,
+        jti=token_claims.jti,
+        issued_at_epoch=token_claims.issued_at_epoch,
+    )
+    if cached.is_known:
+        if cached.is_revoked:
+            raise AuthError(
+                status_code=401,
+                title="Authentication Failed",
+                detail="Token has been revoked.",
+                type_url="https://api.skeldir.com/problems/authentication-failed",
+            )
+        return
+
     async with AsyncSessionLocal() as session:
         async with session.begin():
             decision = await evaluate_access_token_revocation(
@@ -296,6 +334,31 @@ async def assert_access_token_active(token_claims: AccessTokenClaims) -> None:
                 jti=token_claims.jti,
                 issued_at_epoch=token_claims.issued_at_epoch,
             )
+    if decision.denylist_expires_at is not None:
+        revocation_cache.note_denylist(
+            tenant_id=token_claims.tenant_id,
+            user_id=token_claims.user_id,
+            jti=token_claims.jti,
+            expires_at=decision.denylist_expires_at,
+        )
+    if decision.tokens_invalid_before is not None:
+        revocation_cache.note_cutoff(
+            tenant_id=token_claims.tenant_id,
+            user_id=token_claims.user_id,
+            tokens_invalid_before=decision.tokens_invalid_before,
+        )
+    else:
+        revocation_cache.note_cutoff_absent(
+            tenant_id=token_claims.tenant_id,
+            user_id=token_claims.user_id,
+        )
+    if not decision.is_revoked:
+        revocation_cache.note_clean_token(
+            tenant_id=token_claims.tenant_id,
+            user_id=token_claims.user_id,
+            jti=token_claims.jti,
+            expires_at=_epoch_to_datetime_utc(token_claims.expires_at_epoch),
+        )
     if decision.is_revoked:
         raise AuthError(
             status_code=401,

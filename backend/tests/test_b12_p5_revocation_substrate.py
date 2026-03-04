@@ -2,19 +2,26 @@
 
 import os
 import time
+import asyncio
 from datetime import datetime, timedelta, timezone
+from typing import Callable
 from uuid import UUID, uuid4
 
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy import text
 
+from app.tasks.beat_schedule import build_beat_schedule
 from app.db.session import AsyncSessionLocal
+from app.db.session import engine
 from app.main import app
 from app.core.secrets import get_jwt_signing_material
+from app.security.revocation_runtime import RevocationRuntimeCache
 from app.security.auth import decode_and_verify_jwt, extract_access_token_claims, mint_internal_jwt
 from app.services.auth_revocation import denylist_access_token
+from app.tasks.maintenance import _delete_expired_denylist_rows
 from app.tasks.context import assert_worker_auth_envelope_active
 
 pytestmark = pytest.mark.asyncio
@@ -305,3 +312,187 @@ async def test_revocation_lookups_are_index_backed(test_tenant):
 
     assert "idx_auth_access_token_denylist" in denylist_plan.lower()
     assert "idx_auth_user_token_cutoffs_tenant_user" in cutoff_plan.lower()
+
+
+def _install_revocation_query_counter() -> tuple[dict[str, int], Callable[[], None]]:
+    counts = {"revocation": 0}
+
+    def _capture_sql(conn, cursor, statement, parameters, context, executemany):
+        lowered = statement.lower()
+        if "auth_access_token_denylist" in lowered or "auth_user_token_cutoffs" in lowered:
+            counts["revocation"] += 1
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _capture_sql)
+
+    def _remove() -> None:
+        event.remove(engine.sync_engine, "before_cursor_execute", _capture_sql)
+
+    return counts, _remove
+
+
+async def test_http_revocation_hot_path_has_zero_db_lookups_after_warmup(test_tenant):
+    user_id = uuid4()
+    token = _build_token(tenant_id=test_tenant, user_id=user_id)
+
+    # Warmup allows bounded cold-start lookup and cache priming.
+    assert await _verify_token(token) == 200
+
+    counts, remove = _install_revocation_query_counter()
+    try:
+        for _ in range(100):
+            assert await _verify_token(token) == 200
+    finally:
+        remove()
+
+    assert counts["revocation"] == 0
+
+
+async def test_worker_revocation_hot_path_has_zero_db_lookups_after_warmup(test_tenant):
+    user_id = uuid4()
+    token = _build_token(tenant_id=test_tenant, user_id=user_id)
+
+    # Warmup allows bounded cold-start lookup and cache priming.
+    assert_worker_auth_envelope_active(
+        auth_token=token,
+        tenant_id=test_tenant,
+        user_id=user_id,
+    )
+
+    counts, remove = _install_revocation_query_counter()
+    try:
+        for _ in range(100):
+            assert_worker_auth_envelope_active(
+                auth_token=token,
+                tenant_id=test_tenant,
+                user_id=user_id,
+            )
+    finally:
+        remove()
+
+    assert counts["revocation"] == 0
+
+
+async def test_revocation_events_propagate_across_runtime_caches_within_sla(test_tenant):
+    user_id = uuid4()
+    token = _build_token(tenant_id=test_tenant, user_id=user_id)
+    claims = extract_access_token_claims(decode_and_verify_jwt(token))
+
+    runtime_a = RevocationRuntimeCache(runtime_name="sla-a")
+    runtime_b = RevocationRuntimeCache(runtime_name="sla-b")
+    runtime_a.ensure_started()
+    runtime_b.ensure_started()
+    try:
+        runtime_b.note_cutoff_absent(tenant_id=claims.tenant_id, user_id=claims.user_id)
+        runtime_b.note_clean_token(
+            tenant_id=claims.tenant_id,
+            user_id=claims.user_id,
+            jti=claims.jti,
+            expires_at=datetime.fromtimestamp(claims.expires_at_epoch, tz=timezone.utc),
+        )
+
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await denylist_access_token(
+                    session,
+                    tenant_id=claims.tenant_id,
+                    user_id=claims.user_id,
+                    jti=claims.jti,
+                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+                    reason="propagation_sla_test",
+                )
+
+        deadline = time.monotonic() + 5.0
+        observed = False
+        while time.monotonic() < deadline:
+            snap = runtime_b.snapshot_for_token(
+                tenant_id=claims.tenant_id,
+                user_id=claims.user_id,
+                jti=claims.jti,
+                issued_at_epoch=claims.issued_at_epoch,
+            )
+            if snap.is_known and snap.is_revoked:
+                observed = True
+                break
+            await asyncio.sleep(0.1)
+        assert observed
+    finally:
+        runtime_a.close()
+        runtime_b.close()
+
+
+async def test_denylist_gc_is_bounded_and_makes_progress(test_tenant):
+    user_id = uuid4()
+    now = datetime.now(timezone.utc)
+    expired_rows = [uuid4() for _ in range(7)]
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO public.users (id, login_identifier_hash, auth_provider, is_active)
+                    VALUES (:id, :hash, 'password', true)
+                    ON CONFLICT (id) DO NOTHING
+                    """
+                ),
+                {"id": str(user_id), "hash": f"gc-test-{user_id}"},
+            )
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(test_tenant)},
+            )
+            for jti in expired_rows:
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO public.auth_access_token_denylist
+                        (tenant_id, user_id, jti, revoked_at, expires_at, reason)
+                        VALUES (:tenant_id, :user_id, :jti, :revoked_at, :expires_at, :reason)
+                        ON CONFLICT (tenant_id, user_id, jti)
+                        DO NOTHING
+                        """
+                    ),
+                    {
+                        "tenant_id": str(test_tenant),
+                        "user_id": str(user_id),
+                        "jti": str(jti),
+                        "revoked_at": now - timedelta(minutes=20),
+                        "expires_at": now - timedelta(minutes=5),
+                        "reason": "gc_test_expired",
+                    },
+                )
+
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO public.auth_access_token_denylist
+                    (tenant_id, user_id, jti, revoked_at, expires_at, reason)
+                    VALUES (:tenant_id, :user_id, :jti, :revoked_at, :expires_at, :reason)
+                    ON CONFLICT (tenant_id, user_id, jti)
+                    DO NOTHING
+                    """
+                ),
+                {
+                    "tenant_id": str(test_tenant),
+                    "user_id": str(user_id),
+                    "jti": str(uuid4()),
+                    "revoked_at": now,
+                    "expires_at": now + timedelta(minutes=10),
+                    "reason": "gc_test_live",
+                },
+            )
+
+    first_tick = await _delete_expired_denylist_rows(batch_size=3)
+    second_tick = await _delete_expired_denylist_rows(batch_size=3)
+    third_tick = await _delete_expired_denylist_rows(batch_size=3)
+
+    assert first_tick["deleted_rows"] <= 3
+    assert second_tick["deleted_rows"] <= 3
+    assert third_tick["deleted_rows"] <= 3
+    assert first_tick["deleted_rows"] > 0
+    assert first_tick["deleted_rows"] + second_tick["deleted_rows"] + third_tick["deleted_rows"] >= 7
+
+
+async def test_denylist_gc_job_is_registered_in_beat_schedule():
+    schedule = build_beat_schedule()
+    assert "auth-denylist-gc" in schedule

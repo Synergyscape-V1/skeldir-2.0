@@ -7,6 +7,7 @@ shared configuration (Postgres-only broker/backend).
 """
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
@@ -25,6 +26,7 @@ from app.tasks.context import run_in_worker_loop, tenant_task
 logger = logging.getLogger(__name__)
 _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
 _PUBLIC_SCHEMA = _IDENTIFIER_PREPARER.quote_schema("public")
+_DEFAULT_DENYLIST_GC_BATCH_SIZE = 1000
 
 
 def _validated_matview_identifier(
@@ -287,5 +289,112 @@ def enforce_data_retention_task(
             "retention_enforcement_failed",
             exc_info=exc,
             extra={"tenant_id": str(tenant_id), "task_id": self.request.id, "correlation_id": correlation_id},
+        )
+        raise self.retry(exc=exc, countdown=60)
+
+
+def _denylist_gc_batch_size() -> int:
+    configured = os.getenv("SKELDIR_B12_P5_DENYLIST_GC_BATCH_SIZE")
+    if not configured:
+        return _DEFAULT_DENYLIST_GC_BATCH_SIZE
+    try:
+        parsed = int(configured)
+    except ValueError:
+        return _DEFAULT_DENYLIST_GC_BATCH_SIZE
+    return max(1, parsed)
+
+
+async def _delete_expired_denylist_rows(batch_size: int) -> Dict[str, int]:
+    deleted = 0
+    scanned_tenants = 0
+    remaining = max(1, int(batch_size))
+    unbounded_delete = os.getenv("SKELDIR_B12_P5_GC_UNBOUNDED_DELETE") == "1"
+
+    async with engine.begin() as conn:
+        tenants_result = await conn.execute(text("SELECT id FROM public.tenants ORDER BY id"))
+        tenant_rows = [row[0] for row in tenants_result]
+
+        for tenant_id in tenant_rows:
+            if not unbounded_delete and remaining <= 0:
+                break
+            scanned_tenants += 1
+            await set_tenant_guc(conn, tenant_id, local=True)
+            if unbounded_delete:
+                result = await conn.execute(
+                    text(
+                        """
+                        DELETE FROM public.auth_access_token_denylist
+                        WHERE tenant_id = :tenant_id
+                          AND expires_at < now()
+                        """
+                    ),
+                    {"tenant_id": str(tenant_id)},
+                )
+            else:
+                result = await conn.execute(
+                    text(
+                        """
+                        WITH doomed AS (
+                            SELECT tenant_id, user_id, jti
+                            FROM public.auth_access_token_denylist
+                            WHERE tenant_id = :tenant_id
+                              AND expires_at < now()
+                            ORDER BY expires_at
+                            LIMIT :batch_size
+                        )
+                        DELETE FROM public.auth_access_token_denylist d
+                        USING doomed
+                        WHERE d.tenant_id = doomed.tenant_id
+                          AND d.user_id = doomed.user_id
+                          AND d.jti = doomed.jti
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "batch_size": int(remaining),
+                    },
+                )
+            rowcount = int(result.rowcount or 0)
+            deleted += rowcount
+            if not unbounded_delete:
+                remaining -= rowcount
+
+    return {
+        "deleted_rows": deleted,
+        "batch_size": int(batch_size),
+        "scanned_tenants": scanned_tenants,
+    }
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.gc_expired_access_token_denylist",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def gc_expired_access_token_denylist(self) -> Dict[str, int]:
+    correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    batch_size = _denylist_gc_batch_size()
+    try:
+        result = run_in_worker_loop(_delete_expired_denylist_rows(batch_size))
+        logger.info(
+            "denylist_gc_completed",
+            extra={
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                **result,
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "denylist_gc_failed",
+            exc_info=exc,
+            extra={
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                "batch_size": batch_size,
+            },
         )
         raise self.retry(exc=exc, countdown=60)
