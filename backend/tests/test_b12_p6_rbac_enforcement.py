@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 from pathlib import Path
@@ -273,6 +274,9 @@ async def test_eg63_role_change_immediately_revokes_prior_privileged_token(test_
 
     assert await _admin_rbac_check(target_admin_login["access_token"]) == 401
 
+    # Revocation cutoff uses sub-second precision while JWT iat is second-granularity.
+    # Wait for next second boundary so newly issued downgraded token is not spuriously cut off.
+    await asyncio.sleep(1.1)
     target_viewer_login = await _login(tenant_id=tenant_id, email=target_admin_email, password=password)
     claims = decode_and_verify_jwt(target_viewer_login["access_token"])
     assert claims["role"] == "viewer"
