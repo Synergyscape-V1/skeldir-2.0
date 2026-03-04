@@ -6,7 +6,6 @@ Provides a deterministic ping task to validate:
 - Postgres broker/result backend
 - Logging/metrics instrumentation
 """
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -20,24 +19,16 @@ from app.celery_app import celery_app
 from app.db.session import engine, set_tenant_guc
 from app.core.secrets import get_database_url
 from app.observability.context import set_request_correlation_id, set_tenant_id
+from app.tasks.context import run_in_worker_loop
 
 logger = logging.getLogger(__name__)
 
 
 def _run_coro(coro):
     """
-    Run an async coroutine from sync context, even if an event loop is already running.
+    Run an async coroutine from sync worker context on the shared worker loop.
     """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-    else:
-        new_loop = asyncio.new_event_loop()
-        try:
-            return new_loop.run_until_complete(coro)
-        finally:
-            new_loop.close()
+    return run_in_worker_loop(coro)
 
 
 async def _fetch_db_user(tenant_id: Optional[UUID] = None) -> str:

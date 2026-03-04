@@ -6,7 +6,6 @@ intentionally minimal but syntactically correct, RLS-aware, and wired to the
 shared configuration (Postgres-only broker/backend).
 """
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -21,7 +20,7 @@ from app.matviews.registry import get_entry, list_names
 from app.matviews.executor import RefreshOutcome, refresh_single
 from app.db.session import engine, set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
-from app.tasks.context import tenant_task
+from app.tasks.context import run_in_worker_loop, tenant_task
 
 logger = logging.getLogger(__name__)
 _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
@@ -202,7 +201,7 @@ def scan_for_pii_contamination_task(
     set_request_correlation_id(correlation_id)
     set_tenant_id(tenant_id)
     try:
-        current = asyncio.run(_validate_db_connection_for_tenant(tenant_id))
+        current = run_in_worker_loop(_validate_db_connection_for_tenant(tenant_id))
         logger.info(
             "pii_scan_stub_completed",
             extra={"tenant_id": str(tenant_id), "task_id": self.request.id, "correlation_id": correlation_id},
@@ -272,7 +271,7 @@ def enforce_data_retention_task(
     cutoff_90_day = datetime.now(timezone.utc) - timedelta(days=90)
     cutoff_30_day = datetime.now(timezone.utc) - timedelta(days=30)
     try:
-        results = asyncio.run(_enforce_retention(tenant_id, cutoff_90_day, cutoff_30_day))
+        results = run_in_worker_loop(_enforce_retention(tenant_id, cutoff_90_day, cutoff_30_day))
         logger.info(
             "retention_enforced",
             extra={
