@@ -101,7 +101,7 @@ if grep -q "0 changes" "$OASDIFF_OUT"; then
 fi
 rm -f "$OASDIFF_OUT"
 
-echo "[negative-control] 4/5 denylist revocation gate should fail when checks are disabled"
+echo "[negative-control] 4/8 denylist revocation gate should fail when checks are disabled"
 if SKELDIR_B12_P5_DISABLE_REVOCATION_CHECKS=1 \
   SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS=1 \
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
@@ -110,12 +110,44 @@ if SKELDIR_B12_P5_DISABLE_REVOCATION_CHECKS=1 \
   exit 1
 fi
 
-echo "[negative-control] 5/5 kill-switch revocation gate should fail when checks are disabled"
+echo "[negative-control] 5/8 kill-switch revocation gate should fail when checks are disabled"
 if SKELDIR_B12_P5_DISABLE_REVOCATION_CHECKS=1 \
   SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS=1 \
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
   pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_kill_switch_invalidates_prior_tokens_and_allows_new_tokens; then
   echo "[negative-control] ERROR: kill-switch gate did not fail when checks were disabled"
+  exit 1
+fi
+
+echo "[negative-control] 6/8 hot-path DB regression gate should fail when forced DB mode is enabled"
+if SKELDIR_B12_P5_FORCE_DB_REVOCATION_HOT_PATH=1 \
+  SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS=1 \
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_http_revocation_hot_path_has_zero_db_lookups_after_warmup; then
+  echo "[negative-control] ERROR: hot-path DB regression gate did not fail under forced DB mode"
+  exit 1
+fi
+
+echo "[negative-control] 7/8 propagation gate should fail when event listener is disabled"
+if SKELDIR_B12_P5_DISABLE_REVOCATION_EVENT_LISTENER=1 \
+  SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS=1 \
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_revocation_events_propagate_across_runtime_caches_within_sla; then
+  echo "[negative-control] ERROR: propagation gate did not fail with listener disabled"
+  exit 1
+fi
+
+echo "[negative-control] 8/8 denylist GC gates should fail when batching/job registration are mutated"
+if SKELDIR_B12_P5_GC_UNBOUNDED_DELETE=1 \
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_denylist_gc_is_bounded_and_makes_progress; then
+  echo "[negative-control] ERROR: GC boundedness gate did not fail under unbounded mutation"
+  exit 1
+fi
+if SKELDIR_B12_P5_DISABLE_DENYLIST_GC_JOB=1 \
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_denylist_gc_job_is_registered_in_beat_schedule; then
+  echo "[negative-control] ERROR: GC schedule gate did not fail when beat job was disabled"
   exit 1
 fi
 

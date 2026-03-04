@@ -32,7 +32,7 @@ def _refresh_interval_seconds() -> float:
 
 def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
     interval = _refresh_interval_seconds()
-    return {
+    schedule: Dict[str, Dict[str, Any]] = {
         "refresh-matviews-every-5-min": {
             "task": "app.tasks.matviews.pulse_matviews_global",
             "schedule": interval,
@@ -50,6 +50,13 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "options": {"expires": 3600},
         },
     }
+    if os.getenv("SKELDIR_B12_P5_DISABLE_DENYLIST_GC_JOB") != "1":
+        schedule["auth-denylist-gc"] = {
+            "task": "app.tasks.maintenance.gc_expired_access_token_denylist",
+            "schedule": crontab(minute="*/10"),
+            "options": {"expires": 600},
+        }
+    return schedule
 
 
 # Export for Celery configuration

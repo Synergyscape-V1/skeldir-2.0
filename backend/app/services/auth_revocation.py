@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
@@ -8,12 +9,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import set_tenant_guc_async
+from app.security.revocation_runtime import (
+    REVOCATION_NOTIFY_CHANNEL_CUTOFF,
+    REVOCATION_NOTIFY_CHANNEL_DENYLIST,
+)
 
 
 @dataclass(frozen=True)
 class RevocationEvaluation:
     is_denylisted: bool
     is_kill_switched: bool
+    denylist_expires_at: datetime | None
+    tokens_invalid_before: datetime | None
 
     @property
     def is_revoked(self) -> bool:
@@ -34,23 +41,24 @@ async def evaluate_access_token_revocation(
             text(
                 """
                 SELECT
-                    EXISTS(
-                        SELECT 1
+                    (
+                        SELECT d.expires_at
                         FROM public.auth_access_token_denylist d
                         WHERE d.tenant_id = :tenant_id
                           AND d.user_id = :user_id
                           AND d.jti = :jti
-                    ) AS is_denylisted,
+                        LIMIT 1
+                    ) AS denylist_expires_at,
                     COALESCE(
                         (
-                            SELECT to_timestamp(:issued_at_epoch) <= c.tokens_invalid_before
+                            SELECT c.tokens_invalid_before
                             FROM public.auth_user_token_cutoffs c
                             WHERE c.tenant_id = :tenant_id
                               AND c.user_id = :user_id
                             LIMIT 1
                         ),
-                        FALSE
-                    ) AS is_kill_switched
+                        NULL
+                    ) AS tokens_invalid_before
                 """
             ),
             {
@@ -61,9 +69,20 @@ async def evaluate_access_token_revocation(
             },
         )
     ).mappings().one()
+    denylist_expires_at = row["denylist_expires_at"]
+    tokens_invalid_before = row["tokens_invalid_before"]
+    is_denylisted = denylist_expires_at is not None
+    is_kill_switched = False
+    if tokens_invalid_before is not None:
+        is_kill_switched = datetime.fromtimestamp(
+            int(issued_at_epoch),
+            tz=timezone.utc,
+        ) <= tokens_invalid_before.astimezone(timezone.utc)
     return RevocationEvaluation(
-        is_denylisted=bool(row["is_denylisted"]),
-        is_kill_switched=bool(row["is_kill_switched"]),
+        is_denylisted=is_denylisted,
+        is_kill_switched=is_kill_switched,
+        denylist_expires_at=denylist_expires_at,
+        tokens_invalid_before=tokens_invalid_before,
     )
 
 
@@ -111,6 +130,22 @@ async def denylist_access_token(
             "reason": reason,
         },
     )
+    payload = json.dumps(
+        {
+            "tenant_id": str(tenant_id),
+            "user_id": str(user_id),
+            "jti": str(jti),
+            "expires_at": expires_at.astimezone(timezone.utc).isoformat(),
+        },
+        separators=(",", ":"),
+    )
+    await session.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {
+            "channel": REVOCATION_NOTIFY_CHANNEL_DENYLIST,
+            "payload": payload,
+        },
+    )
 
 
 async def upsert_tokens_invalid_before(
@@ -151,5 +186,20 @@ async def upsert_tokens_invalid_before(
             "user_id": str(user_id),
             "tokens_invalid_before": invalid_before.astimezone(timezone.utc),
             "updated_by_user_id": str(updated_by_user_id) if updated_by_user_id is not None else None,
+        },
+    )
+    payload = json.dumps(
+        {
+            "tenant_id": str(tenant_id),
+            "user_id": str(user_id),
+            "tokens_invalid_before": invalid_before.astimezone(timezone.utc).isoformat(),
+        },
+        separators=(",", ":"),
+    )
+    await session.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {
+            "channel": REVOCATION_NOTIFY_CHANNEL_CUTOFF,
+            "payload": payload,
         },
     )
