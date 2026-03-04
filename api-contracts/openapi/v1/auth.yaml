@@ -79,7 +79,7 @@ paths:
                 properties:
                   access_token:
                     type: string
-                    description: JWT access token
+                    description: JWT access token (`tenant_id`, `user_id`, `role`, `roles`, `jti`, `iat`, `exp`)
                   refresh_token:
                     type: string
                     description: Opaque refresh token for obtaining new access tokens
@@ -157,7 +157,7 @@ paths:
                 properties:
                   access_token:
                     type: string
-                    description: New JWT access token
+                    description: New JWT access token (`tenant_id`, `user_id`, `role`, `roles`, `jti`, `iat`, `exp`)
                   refresh_token:
                     type: string
                     description: New opaque refresh token (rotate-on-use)
@@ -330,6 +330,154 @@ paths:
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+
+  /api/auth/admin/rbac-check:
+    get:
+      summary: Admin-only RBAC proof endpoint
+      description: Representative admin-only endpoint used for deterministic RBAC deny-path validation.
+      operationId: adminRbacCheck
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: Caller has admin role
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - correlation_id
+                  - tenant_id
+                  - user_id
+                  - role
+                properties:
+                  success:
+                    type: boolean
+                  correlation_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                    format: uuid
+                  role:
+                    type: string
+                    enum: [admin, manager, viewer]
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                tenant_id: 550e8400-e29b-41d4-a716-446655440000
+                user_id: 550e8400-e29b-41d4-a716-446655440001
+                role: admin
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+
+  /api/auth/admin/membership-role:
+    post:
+      summary: Admin membership role update
+      description: Set tenant-scoped membership role and immediately revoke prior tokens on change.
+      operationId: adminUpdateMembershipRole
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - role
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                role:
+                  type: string
+                  enum: [admin, manager, viewer]
+            example:
+              user_id: 550e8400-e29b-41d4-a716-446655440001
+              role: viewer
+      responses:
+        '200':
+          description: Membership role updated
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - correlation_id
+                  - tenant_id
+                  - user_id
+                  - role
+                  - tokens_invalid_before
+                  - revoked_existing_tokens
+                  - message
+                properties:
+                  success:
+                    type: boolean
+                  correlation_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                    format: uuid
+                  role:
+                    type: string
+                    enum: [admin, manager, viewer]
+                  tokens_invalid_before:
+                    type: string
+                    format: date-time
+                  revoked_existing_tokens:
+                    type: boolean
+                  message:
+                    type: string
+              example:
+                success: true
+                correlation_id: 00000000-0000-0000-0000-000000000000
+                tenant_id: 550e8400-e29b-41d4-a716-446655440000
+                user_id: 550e8400-e29b-41d4-a716-446655440001
+                role: viewer
+                tokens_invalid_before: '2026-03-04T14:20:00Z'
+                revoked_existing_tokens: true
+                message: Membership role set to viewer.
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
 
 components:
   securitySchemes:
