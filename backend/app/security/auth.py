@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import os
 from typing import Any, Optional
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import Header, Request
 import jwt
@@ -149,11 +149,27 @@ def mint_internal_jwt(
     if signing.algorithm != RS256_ALGORITHM:
         raise RuntimeError("AUTH_JWT_ALGORITHM must be RS256")
     now = clock_module.utcnow()
+    claim_fingerprint = ""
+    if additional_claims:
+        claim_fingerprint = "|".join(
+            f"{key}={additional_claims[key]}"
+            for key in sorted(additional_claims.keys())
+        )
+    jti_seed = "|".join(
+        (
+            str(tenant_id),
+            str(user_id),
+            str(int(now.timestamp() * 1_000_000)),
+            str(max(1, expires_in_seconds)),
+            claim_fingerprint,
+        )
+    )
+    jti_value = uuid5(NAMESPACE_URL, jti_seed)
     payload: dict[str, Any] = {
         "tenant_id": str(tenant_id),
         "sub": str(user_id),
         "user_id": str(user_id),
-        "jti": str(uuid4()),
+        "jti": str(jti_value),
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=max(1, expires_in_seconds))).timestamp()),
     }
