@@ -4,6 +4,10 @@ CREATE SCHEMA security;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
+-- Canonical bootstrap creates security-definer functions before some dependent tables.
+-- Disable body validation during schema apply to preserve deterministic creation order.
+SET check_function_bodies = off;
+
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -13,7 +17,7 @@ CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text
                 u.is_active,
                 u.auth_provider,
                 u.password_hash
-            FROM users AS u
+            FROM public.users AS u
             WHERE login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
@@ -26,7 +30,7 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
                 u.id AS user_id,
                 u.is_active,
                 u.auth_provider
-            FROM users AS u
+            FROM public.users AS u
             WHERE login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
@@ -1137,22 +1141,22 @@ CREATE SEQUENCE public.message_id_sequence
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
 CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT tenant_id,
-    event_id,
-    model_version,
-    sum(allocated_revenue_cents) AS total_allocated_cents,
-    revenue_cents AS event_revenue_cents,
+ SELECT aa.tenant_id,
+    aa.event_id,
+    aa.model_version,
+    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
+    e.revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(allocated_revenue_cents) = revenue_cents)
+            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
+            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((event_id = id)))
-  GROUP BY tenant_id, event_id, model_version, revenue_cents
+     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
+  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
   WITH NO DATA;
 
 CREATE MATERIALIZED VIEW mv_channel_performance AS
@@ -1241,15 +1245,15 @@ CREATE TABLE public.reconciliation_runs (
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
 CREATE MATERIALIZED VIEW mv_reconciliation_status AS
- SELECT tenant_id,
-    state,
-    last_run_at,
-    id AS reconciliation_run_id
+ SELECT rr.tenant_id,
+    rr.state,
+    rr.last_run_at,
+    rr.id AS reconciliation_run_id
    FROM (reconciliation_runs rr
      JOIN ( SELECT tenant_id,
             max(last_run_at) AS max_last_run_at
            FROM reconciliation_runs
-          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
+          GROUP BY tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.pii_audit_findings (
@@ -2224,3 +2228,5 @@ CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
+
+SET check_function_bodies = on;
