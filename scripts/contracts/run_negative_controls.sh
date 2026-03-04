@@ -137,7 +137,7 @@ if SKELDIR_B12_P5_DISABLE_REVOCATION_EVENT_LISTENER=1 \
   exit 1
 fi
 
-echo "[negative-control] 8/8 denylist GC gates should fail when batching/job registration are mutated"
+echo "[negative-control] 8/9 denylist GC gates should fail when batching/job registration are mutated"
 if SKELDIR_B12_P5_GC_UNBOUNDED_DELETE=1 \
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
   pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_denylist_gc_is_bounded_and_makes_progress; then
@@ -148,6 +148,14 @@ if SKELDIR_B12_P5_DISABLE_DENYLIST_GC_JOB=1 \
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
   pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_denylist_gc_job_is_registered_in_beat_schedule; then
   echo "[negative-control] ERROR: GC schedule gate did not fail when beat job was disabled"
+  exit 1
+fi
+
+echo "[negative-control] 9/9 GC singleflight gate should fail when lock is disabled"
+if SKELDIR_B12_P5_DISABLE_GC_SINGLEFLIGHT=1 \
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+  pytest backend/tests/test_b12_p5_revocation_substrate.py -q -k test_denylist_gc_singleflight_allows_only_one_active_deleter; then
+  echo "[negative-control] ERROR: GC singleflight gate did not fail when lock was disabled"
   exit 1
 fi
 

@@ -493,6 +493,62 @@ async def test_denylist_gc_is_bounded_and_makes_progress(test_tenant):
     assert first_tick["deleted_rows"] + second_tick["deleted_rows"] + third_tick["deleted_rows"] >= 7
 
 
+async def test_denylist_gc_singleflight_allows_only_one_active_deleter(test_tenant, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SKELDIR_B12_P5_GC_SINGLEFLIGHT_HOLD_SECONDS", "0.35")
+
+    user_id = uuid4()
+    now = datetime.now(timezone.utc)
+    expired_rows = [uuid4() for _ in range(24)]
+
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO public.users (id, login_identifier_hash, auth_provider, is_active)
+                    VALUES (:id, :hash, 'password', true)
+                    ON CONFLICT (id) DO NOTHING
+                    """
+                ),
+                {"id": str(user_id), "hash": f"gc-singleflight-{user_id}"},
+            )
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(test_tenant)},
+            )
+            for jti in expired_rows:
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO public.auth_access_token_denylist
+                        (tenant_id, user_id, jti, revoked_at, expires_at, reason)
+                        VALUES (:tenant_id, :user_id, :jti, :revoked_at, :expires_at, :reason)
+                        ON CONFLICT (tenant_id, user_id, jti)
+                        DO NOTHING
+                        """
+                    ),
+                    {
+                        "tenant_id": str(test_tenant),
+                        "user_id": str(user_id),
+                        "jti": str(jti),
+                        "revoked_at": now - timedelta(minutes=20),
+                        "expires_at": now - timedelta(minutes=5),
+                        "reason": "gc_singleflight_concurrency",
+                    },
+                )
+
+    first, second = await asyncio.gather(
+        _delete_expired_denylist_rows(batch_size=12),
+        _delete_expired_denylist_rows(batch_size=12),
+    )
+    results = [first, second]
+
+    assert sorted(result["lock_acquired"] for result in results) == [0, 1]
+    assert sum(result["deleted_rows"] for result in results) > 0
+    assert any(result["lock_acquired"] == 0 and result["deleted_rows"] == 0 for result in results)
+    assert any(result["lock_acquired"] == 1 and result["deleted_rows"] > 0 for result in results)
+
+
 async def test_denylist_gc_job_is_registered_in_beat_schedule():
     schedule = build_beat_schedule()
     assert "auth-denylist-gc" in schedule

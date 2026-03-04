@@ -8,6 +8,7 @@ shared configuration (Postgres-only broker/backend).
 
 import logging
 import os
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
 _PUBLIC_SCHEMA = _IDENTIFIER_PREPARER.quote_schema("public")
 _DEFAULT_DENYLIST_GC_BATCH_SIZE = 1000
+_DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY = 1205001
 
 
 def _validated_matview_identifier(
@@ -309,8 +311,35 @@ async def _delete_expired_denylist_rows(batch_size: int) -> Dict[str, int]:
     scanned_tenants = 0
     remaining = max(1, int(batch_size))
     unbounded_delete = os.getenv("SKELDIR_B12_P5_GC_UNBOUNDED_DELETE") == "1"
+    disable_singleflight = os.getenv("SKELDIR_B12_P5_DISABLE_GC_SINGLEFLIGHT") == "1"
+    hold_seconds_raw = os.getenv("SKELDIR_B12_P5_GC_SINGLEFLIGHT_HOLD_SECONDS", "0")
+    try:
+        hold_seconds = max(0.0, float(hold_seconds_raw))
+    except ValueError:
+        hold_seconds = 0.0
 
     async with engine.begin() as conn:
+        lock_acquired = True
+        if not disable_singleflight:
+            lock_row = (
+                await conn.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:lock_key) AS acquired"),
+                    {"lock_key": _DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY},
+                )
+            ).mappings().one()
+            lock_acquired = bool(lock_row["acquired"])
+            if not lock_acquired:
+                return {
+                    "deleted_rows": 0,
+                    "batch_size": int(batch_size),
+                    "scanned_tenants": 0,
+                    "lock_acquired": 0,
+                    "singleflight_disabled": int(disable_singleflight),
+                }
+        if hold_seconds > 0.0:
+            # Test-only hook to force lock overlap during concurrency proofs.
+            await asyncio.sleep(hold_seconds)
+
         tenants_result = await conn.execute(text("SELECT id FROM public.tenants ORDER BY id"))
         tenant_rows = [row[0] for row in tenants_result]
 
@@ -363,6 +392,8 @@ async def _delete_expired_denylist_rows(batch_size: int) -> Dict[str, int]:
         "deleted_rows": deleted,
         "batch_size": int(batch_size),
         "scanned_tenants": scanned_tenants,
+        "lock_acquired": int(lock_acquired),
+        "singleflight_disabled": int(disable_singleflight),
     }
 
 
