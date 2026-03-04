@@ -14,6 +14,7 @@ from uuid import UUID
 
 import psycopg2
 
+from app.core import clock as clock_module
 from app.core.secrets import get_database_url
 
 logger = logging.getLogger(__name__)
@@ -174,7 +175,7 @@ class RevocationRuntimeCache:
         jti: UUID,
         issued_at_epoch: int,
     ) -> CachedRevocationSnapshot:
-        now = datetime.now(timezone.utc)
+        now = clock_module.utcnow()
         issued_at = datetime.fromtimestamp(int(issued_at_epoch), tz=timezone.utc)
         tuple_key = (tenant_id, user_id, jti)
         user_key = (tenant_id, user_id)
