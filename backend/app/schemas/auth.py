@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from uuid import UUID
 
 from pydantic import AnyUrl, BaseModel, EmailStr, Field, SecretStr
@@ -128,4 +128,28 @@ class AdminTokenCutoffResponse(BaseModel):
     tenant_id: UUID
     user_id: UUID
     tokens_invalid_before: datetime
+    message: str
+
+
+class AdminWhoAmIResponse(BaseModel):
+    success: bool
+    correlation_id: UUID
+    tenant_id: UUID
+    user_id: UUID
+    role: Literal['admin', 'manager', 'viewer']
+
+
+class AdminUpdateMembershipRoleRequest(BaseModel):
+    user_id: UUID
+    role: Literal['admin', 'manager', 'viewer']
+
+
+class AdminUpdateMembershipRoleResponse(BaseModel):
+    success: bool
+    correlation_id: UUID
+    tenant_id: UUID
+    user_id: UUID
+    role: Literal['admin', 'manager', 'viewer']
+    tokens_invalid_before: datetime
+    revoked_existing_tokens: bool
     message: str

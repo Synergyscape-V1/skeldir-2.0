@@ -16,6 +16,7 @@ from app.core import clock as clock_module
 from app.db.session import set_tenant_guc_async
 from app.models.auth_substrate import AuthRefreshToken
 from app.security.auth import mint_internal_jwt
+from app.security.rbac import normalize_role_claims, primary_role_from_claims
 
 ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 REFRESH_TOKEN_TTL_DAYS = 30
@@ -175,6 +176,161 @@ async def resolve_tenant_membership(
     return UUID(str(rows[0][0]))
 
 
+async def resolve_membership_roles(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    tenant_id: UUID,
+) -> list[str]:
+    await set_tenant_guc_async(session, tenant_id, local=True)
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT DISTINCT tmr.role_code
+                FROM public.tenant_membership_roles tmr
+                JOIN public.tenant_memberships tm
+                  ON tm.id = tmr.membership_id
+                 AND tm.tenant_id = tmr.tenant_id
+                WHERE tm.tenant_id = :tenant_id
+                  AND tm.user_id = :user_id
+                  AND tm.membership_status = 'active'
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "user_id": str(user_id),
+            },
+        )
+    ).all()
+    claims = normalize_role_claims(row[0] for row in rows)
+    if claims:
+        return claims
+    return ["viewer"]
+
+
+async def assign_membership_primary_role(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    role_code: str,
+) -> bool:
+    normalized_role = role_code.strip().lower()
+    if normalized_role not in {"admin", "manager", "viewer"}:
+        raise ValueError("Unsupported role code")
+
+    await set_tenant_guc_async(session, tenant_id, local=True)
+    role_exists = (
+        await session.execute(
+            text("SELECT 1 FROM public.roles WHERE code = :code LIMIT 1"),
+            {"code": normalized_role},
+        )
+    ).scalar_one_or_none()
+    if role_exists is None:
+        raise ValueError("Role code not present in catalog")
+
+    membership_row = (
+        await session.execute(
+            text(
+                """
+                SELECT id
+                FROM public.tenant_memberships
+                WHERE tenant_id = :tenant_id
+                  AND user_id = :user_id
+                  AND membership_status = 'active'
+                LIMIT 1
+                FOR UPDATE
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "user_id": str(user_id),
+            },
+        )
+    ).mappings().one_or_none()
+    if membership_row is None:
+        raise ValueError("Active tenant membership not found")
+    membership_id = str(membership_row["id"])
+
+    existing_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT role_code
+                FROM public.tenant_membership_roles
+                WHERE tenant_id = :tenant_id
+                  AND membership_id = :membership_id
+                FOR UPDATE
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "membership_id": membership_id,
+            },
+        )
+    ).all()
+    existing = {str(row[0]).strip().lower() for row in existing_rows}
+    changed = existing != {normalized_role}
+    if not changed:
+        return False
+
+    await session.execute(
+        text(
+            """
+            DELETE FROM public.tenant_membership_roles
+            WHERE tenant_id = :tenant_id
+              AND membership_id = :membership_id
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "membership_id": membership_id,
+        },
+    )
+    await session.execute(
+        text(
+            """
+            INSERT INTO public.tenant_membership_roles (
+                id,
+                tenant_id,
+                membership_id,
+                role_code,
+                created_at,
+                updated_at
+            ) VALUES (
+                gen_random_uuid(),
+                :tenant_id,
+                :membership_id,
+                :role_code,
+                now(),
+                now()
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "membership_id": membership_id,
+            "role_code": normalized_role,
+        },
+    )
+    await session.execute(
+        text(
+            """
+            UPDATE public.tenant_memberships
+            SET updated_at = now()
+            WHERE id = :membership_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "membership_id": membership_id,
+        },
+    )
+    return True
+
+
 async def revoke_refresh_family(
     session: AsyncSession,
     *,
@@ -246,11 +402,20 @@ async def issue_login_token_pair(
         tenant_id=tenant_id,
         family_id=None,
     )
+    role_claims = await resolve_membership_roles(
+        session,
+        user_id=user_id,
+        tenant_id=tenant_id,
+    )
     return TokenPair(
         access_token=mint_internal_jwt(
             tenant_id=tenant_id,
             user_id=user_id,
             expires_in_seconds=ACCESS_TOKEN_TTL_SECONDS,
+            additional_claims={
+                "role": primary_role_from_claims(role_claims),
+                "roles": role_claims,
+            },
         ),
         refresh_token=refresh_token,
         user_id=user_id,
@@ -316,12 +481,21 @@ async def rotate_refresh_token(
         token_row.rotated_at = now
         token_row.replaced_by_id = new_row.id
     await session.flush()
+    role_claims = await resolve_membership_roles(
+        session,
+        user_id=token_row.user_id,
+        tenant_id=token_row.tenant_id,
+    )
 
     return TokenPair(
         access_token=mint_internal_jwt(
             tenant_id=token_row.tenant_id,
             user_id=token_row.user_id,
             expires_in_seconds=ACCESS_TOKEN_TTL_SECONDS,
+            additional_claims={
+                "role": primary_role_from_claims(role_claims),
+                "roles": role_claims,
+            },
         ),
         refresh_token=new_refresh,
         user_id=token_row.user_id,

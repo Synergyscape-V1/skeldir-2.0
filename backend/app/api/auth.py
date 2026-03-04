@@ -22,6 +22,9 @@ from fastapi import APIRouter, Depends, Header
 from app.schemas.auth import (
     AdminTokenCutoffRequest,
     AdminTokenCutoffResponse,
+    AdminUpdateMembershipRoleRequest,
+    AdminUpdateMembershipRoleResponse,
+    AdminWhoAmIResponse,
     LoginRequest,
     LoginResponse,
     RefreshRequest,
@@ -31,9 +34,11 @@ from app.schemas.auth import (
 from app.core.secrets import get_secret
 from app.db.session import AsyncSessionLocal
 from app.security.auth import AuthContext, AuthError, get_auth_context
+from app.security.rbac import require_roles
 from app.services.auth_revocation import denylist_access_token, upsert_tokens_invalid_before
 from app.services.auth_tokens import (
     TokenPair,
+    assign_membership_primary_role,
     issue_login_token_pair,
     lookup_identity_by_login,
     resolve_tenant_membership,
@@ -43,7 +48,6 @@ from app.services.auth_tokens import (
 
 router = APIRouter()
 _LOGIN_IDENTIFIER_PEPPER_CACHE: str | None = None
-_ADMIN_ROLE_CANDIDATES = {"admin", "owner", "super_admin", "tenant_admin"}
 
 
 def _login_identifier_pepper() -> str | None:
@@ -51,25 +55,6 @@ def _login_identifier_pepper() -> str | None:
     if _LOGIN_IDENTIFIER_PEPPER_CACHE is None:
         _LOGIN_IDENTIFIER_PEPPER_CACHE = get_secret("AUTH_LOGIN_IDENTIFIER_PEPPER")
     return _LOGIN_IDENTIFIER_PEPPER_CACHE
-
-
-def _require_admin_role(auth_context: AuthContext) -> None:
-    role_candidates: list[str] = []
-    single_role = auth_context.claims.get("role")
-    if single_role is not None:
-        role_candidates.append(str(single_role))
-    roles = auth_context.claims.get("roles")
-    if isinstance(roles, list):
-        role_candidates.extend(str(item) for item in roles)
-    normalized = {value.strip().lower() for value in role_candidates if value and str(value).strip()}
-    if normalized.intersection(_ADMIN_ROLE_CANDIDATES):
-        return
-    raise AuthError(
-        status_code=403,
-        title="Forbidden",
-        detail="Admin role required.",
-        type_url="https://api.skeldir.com/problems/forbidden",
-    )
 
 
 @router.post(
@@ -302,10 +287,8 @@ async def verify_token(
 async def admin_token_cutoff(
     request: AdminTokenCutoffRequest,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Depends(require_roles("admin"))],
 ):
-    if os.getenv("CONTRACT_TESTING") != "1":
-        _require_admin_role(auth_context)
     cutoff = request.tokens_invalid_before or datetime.now(timezone.utc)
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=timezone.utc)
@@ -328,4 +311,93 @@ async def admin_token_cutoff(
         user_id=request.user_id,
         tokens_invalid_before=cutoff,
         message=f"Token cutoff updated for {request.user_id}",
+    )
+
+
+@router.get(
+    "/admin/rbac-check",
+    response_model=AdminWhoAmIResponse,
+    status_code=200,
+    operation_id="adminRbacCheck",
+    summary="Admin-only RBAC proof endpoint",
+    description="Representative admin-only endpoint used to prove deterministic 403 deny semantics.",
+)
+async def admin_rbac_check(
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[AuthContext, Depends(require_roles("admin"))],
+):
+    role_value = str(auth_context.claims.get("role", "viewer")).strip().lower() or "viewer"
+    if role_value not in {"admin", "manager", "viewer"}:
+        role_value = "viewer"
+    return AdminWhoAmIResponse(
+        success=True,
+        correlation_id=x_correlation_id,
+        tenant_id=auth_context.tenant_id,
+        user_id=auth_context.user_id,
+        role=role_value,
+    )
+
+
+@router.post(
+    "/admin/membership-role",
+    response_model=AdminUpdateMembershipRoleResponse,
+    status_code=200,
+    operation_id="adminUpdateMembershipRole",
+    summary="Admin membership role update",
+    description=(
+        "Set tenant-scoped membership role (Admin/Manager/Viewer). "
+        "Any role change immediately bumps tokens_invalid_before for that user."
+    ),
+)
+async def admin_update_membership_role(
+    request: AdminUpdateMembershipRoleRequest,
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[AuthContext, Depends(require_roles("admin"))],
+):
+    now_utc = datetime.now(timezone.utc)
+    changed = False
+
+    if os.getenv("CONTRACT_TESTING") != "1":
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                try:
+                    changed = await assign_membership_primary_role(
+                        session,
+                        tenant_id=auth_context.tenant_id,
+                        user_id=request.user_id,
+                        role_code=request.role,
+                    )
+                except ValueError as exc:
+                    message = str(exc).lower()
+                    if "membership" in message:
+                        raise AuthError(
+                            status_code=404,
+                            title="Not Found",
+                            detail="Active tenant membership not found.",
+                            type_url="https://api.skeldir.com/problems/not-found",
+                        ) from exc
+                    raise AuthError(
+                        status_code=400,
+                        title="Validation Failed",
+                        detail="Unsupported role code.",
+                        type_url="https://api.skeldir.com/problems/validation-error",
+                    ) from exc
+                if changed:
+                    await upsert_tokens_invalid_before(
+                        session,
+                        tenant_id=auth_context.tenant_id,
+                        user_id=request.user_id,
+                        invalid_before=now_utc,
+                        updated_by_user_id=auth_context.user_id,
+                    )
+
+    return AdminUpdateMembershipRoleResponse(
+        success=True,
+        correlation_id=x_correlation_id,
+        tenant_id=auth_context.tenant_id,
+        user_id=request.user_id,
+        role=request.role,
+        tokens_invalid_before=now_utc,
+        revoked_existing_tokens=changed,
+        message=f"Membership role set to {request.role}.",
     )
