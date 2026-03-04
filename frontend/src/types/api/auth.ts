@@ -1141,6 +1141,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "correlation_id": "00000000-0000-0000-0000-000000000000",
+                     *       "tenant_id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "user_id": "550e8400-e29b-41d4-a716-446655440001",
+                     *       "tokens_invalid_before": "2026-03-03T14:20:00Z",
+                     *       "message": "Token cutoff updated"
+                     *     }
+                     */
                     "application/json": {
                         success: boolean;
                         /** Format: uuid */
