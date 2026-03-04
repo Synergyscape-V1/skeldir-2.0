@@ -336,6 +336,7 @@ jobs:
       - name: "EG-R1-5: Live contract enforcement + DB interaction (CLOSURE GATE)"
         run: |
           set -o pipefail
+          set +e
           echo "=== EG-R1-5: Live Contract Enforcement + Postgres Interaction (CLOSURE) ===" | tee -a $GITHUB_STEP_SUMMARY
           mkdir -p "$ARTIFACTS_DIR/CONTRACT_ENFORCEMENT"
 
@@ -386,7 +387,7 @@ jobs:
           echo "### EG-R1-FIX-3: Readiness Probe (BEFORE closure tests)" | tee -a $GITHUB_STEP_SUMMARY
           echo "" | tee -a $GITHUB_STEP_SUMMARY
 
-          READY_BEFORE=$(curl -s -w "\n%{http_code}" http://localhost:8000/health/ready)
+          READY_BEFORE=$(curl -s -m 5 -w "\n%{http_code}" http://localhost:8000/health/ready || printf '\n000')
           READY_BEFORE_BODY=$(echo "$READY_BEFORE" | head -n -1)
           READY_BEFORE_CODE=$(echo "$READY_BEFORE" | tail -n 1)
 
@@ -469,12 +470,12 @@ jobs:
 
           # Happy path (valid login)
           CORR_ID=$(uuidgen)
-          WRITE_HAPPY=$(curl -s -w "\n%{http_code}" \
+          WRITE_HAPPY=$(curl -s -m 5 -w "\n%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
             -H "X-Correlation-ID: $CORR_ID" \
             -d '{"email":"test@example.com","password":"testpassword123"}' \
-            http://localhost:8000/api/auth/login)
+            http://localhost:8000/api/auth/login || printf '\n000')
           WRITE_HAPPY_BODY=$(echo "$WRITE_HAPPY" | head -n -1)
           WRITE_HAPPY_CODE=$(echo "$WRITE_HAPPY" | tail -n 1)
 
@@ -484,12 +485,12 @@ jobs:
           echo "Valid login - Body: $WRITE_HAPPY_BODY" >> "$ARTIFACTS_DIR/CONTRACT_ENFORCEMENT/curl_live_happy_path.log"
 
           # Invalid path (malformed JSON)
-          WRITE_INVALID=$(curl -s -w "\n%{http_code}" \
+          WRITE_INVALID=$(curl -s -m 5 -w "\n%{http_code}" \
             -X POST \
             -H "Content-Type: application/json" \
             -H "X-Correlation-ID: $(uuidgen)" \
             -d '{invalid json}' \
-            http://localhost:8000/api/auth/login)
+            http://localhost:8000/api/auth/login || printf '\n000')
           WRITE_INVALID_BODY=$(echo "$WRITE_INVALID" | head -n -1)
           WRITE_INVALID_CODE=$(echo "$WRITE_INVALID" | tail -n 1)
 
@@ -520,7 +521,7 @@ jobs:
           echo "### EG-R1-FIX-3: Readiness Probe (AFTER closure tests)" | tee -a $GITHUB_STEP_SUMMARY
           echo "" | tee -a $GITHUB_STEP_SUMMARY
 
-          READY_AFTER=$(curl -s -w "\n%{http_code}" http://localhost:8000/health/ready)
+          READY_AFTER=$(curl -s -m 5 -w "\n%{http_code}" http://localhost:8000/health/ready || printf '\n000')
           READY_AFTER_BODY=$(echo "$READY_AFTER" | head -n -1)
           READY_AFTER_CODE=$(echo "$READY_AFTER" | tail -n 1)
 
