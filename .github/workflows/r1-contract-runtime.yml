@@ -195,6 +195,9 @@ jobs:
           # Extra stabilization wait
           sleep 3
 
+          # Canonical schema ownership statements expect app_user to exist.
+          podman exec skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user; END IF; END \$\$;"
+
           # Apply canonical schema (Run 1)
           echo "Applying canonical schema (Run 1)..." | tee -a $GITHUB_STEP_SUMMARY
           if podman exec -i skeldir-r1-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB < db/schema/canonical_schema.sql 2>&1 | tee "$ARTIFACTS_DIR/DB_SCHEMA/schema_apply_run1.log"; then
