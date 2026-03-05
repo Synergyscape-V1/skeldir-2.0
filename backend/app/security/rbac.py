@@ -7,8 +7,7 @@ from fastapi import Depends
 
 from app.security.auth import AuthContext, AuthError, get_auth_context
 
-ROLE_PRECEDENCE: tuple[str, ...] = ("admin", "manager", "viewer")
-_ROLE_PRECEDENCE_INDEX = {role: idx for idx, role in enumerate(ROLE_PRECEDENCE)}
+ALLOWED_ROLES: tuple[str, ...] = ("admin", "manager", "viewer")
 
 
 def normalize_role_claims(raw_roles: Iterable[Any]) -> list[str]:
@@ -17,9 +16,8 @@ def normalize_role_claims(raw_roles: Iterable[Any]) -> list[str]:
         for value in raw_roles
         if value is not None and str(value).strip()
     }
-    known = [role for role in ROLE_PRECEDENCE if role in normalized]
-    extras = sorted(role for role in normalized if role not in _ROLE_PRECEDENCE_INDEX)
-    return [*known, *extras]
+    known = [role for role in ALLOWED_ROLES if role in normalized]
+    return known or ["viewer"]
 
 
 def role_claims_from_auth_context(auth_context: AuthContext) -> list[str]:

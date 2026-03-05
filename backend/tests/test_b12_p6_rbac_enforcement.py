@@ -4,21 +4,21 @@ import asyncio
 import importlib
 import os
 from pathlib import Path
-from typing import Callable
+from typing import Annotated, Callable
 from uuid import UUID, uuid4
 
 import bcrypt
 import pytest
 import yaml
-from fastapi import FastAPI
-from fastapi.routing import APIRoute
+from fastapi import FastAPI, Security
+from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, event, text
 
 from app.db.session import engine
 from app.main import app
 from app.services.auth_tokens import hash_login_identifier
-from app.security.auth import decode_and_verify_jwt
+from app.security.auth import AuthContext, AuthError, decode_and_verify_jwt, get_auth_context
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +27,7 @@ def _p6_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS", "1")
     monkeypatch.setenv("SKELDIR_B12_P6_ENABLE_NEGATIVE_ADMIN_UNSCOPED_ROUTE", "0")
     monkeypatch.setenv("SKELDIR_B12_P6_NEGATIVE_COPY_ROLE_FORWARD", "0")
+    monkeypatch.setenv("SKELDIR_B12_P6_NEGATIVE_MANAGER_SCOPES_THIN", "0")
 
 
 def _login_identifier_hash(email: str) -> str:
@@ -263,27 +264,59 @@ def _install_role_query_counter() -> tuple[dict[str, int], Callable[[], None]]:
 
 
 def _lint_admin_routes_have_admin_scope(candidate_app: FastAPI) -> None:
-    def _has_admin_scope(route: APIRoute) -> bool:
-        stack = [route.dependant]
-        while stack:
-            node = stack.pop()
-            for requirement in getattr(node, "security_requirements", []):
-                scheme_name = getattr(requirement.security_scheme, "scheme_name", "")
-                scopes = set(requirement.scopes or [])
-                if scheme_name == "bearerAuth" and "admin" in scopes:
-                    return True
-            stack.extend(getattr(node, "dependencies", []))
-        return False
-
+    doc = candidate_app.openapi()
+    paths = doc.get("paths", {})
+    operation_methods = {"get", "put", "post", "delete", "patch", "options", "head"}
     violations: list[str] = []
-    for route in candidate_app.routes:
-        if not isinstance(route, APIRoute):
+    for path, methods in paths.items():
+        if not path.startswith("/api/auth/admin"):
             continue
-        if not route.path.startswith("/api/auth/admin"):
-            continue
-        if not _has_admin_scope(route):
-            violations.append(f"{route.path} [{','.join(route.methods or set())}]")
+        for method, operation in methods.items():
+            if method not in operation_methods:
+                continue
+            security = operation.get("security", [])
+            has_admin_scope = any(
+                isinstance(requirement, dict)
+                and isinstance(requirement.get("bearerAuth"), list)
+                and "admin" in requirement.get("bearerAuth", [])
+                for requirement in security
+            )
+            if not has_admin_scope:
+                violations.append(f"{method.upper()} {path}")
     assert not violations, f"Admin scope lint violations: {violations}"
+
+
+async def _viewer_scope_probe_status(token: str) -> int:
+    probe_app = FastAPI()
+
+    @probe_app.exception_handler(AuthError)
+    async def _handle_auth_error(_, exc: AuthError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "type": exc.type_url,
+                "title": exc.title,
+                "detail": exc.detail,
+                "status": exc.status_code,
+            },
+        )
+
+    @probe_app.get("/viewer-probe")
+    async def viewer_probe(
+        _: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
+    ) -> dict[str, bool]:
+        return {"ok": True}
+
+    transport = ASGITransport(app=probe_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/viewer-probe",
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {token}",
+            },
+        )
+    return response.status_code
 
 
 @pytest.mark.asyncio
@@ -325,6 +358,34 @@ async def test_eg62_access_jwt_contains_tenant_user_and_role_claims(test_tenant)
     assert claims["user_id"] == str(user_id)
     assert claims["role"] == "manager"
     assert claims["roles"] == ["manager"]
+    assert claims["scopes"] == ["manager", "viewer"]
+
+
+@pytest.mark.asyncio
+async def test_eg6s1_negative_control_thin_manager_scopes_break_viewer_scope(monkeypatch: pytest.MonkeyPatch, test_tenant):
+    tenant_id = test_tenant
+    user_id = uuid4()
+    email = f"manager-thin-{uuid4().hex[:8]}@example.com"
+    password = "ManagerThinPass!123"
+
+    await _seed_identity_with_role(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        email=email,
+        password=password,
+        role="manager",
+    )
+
+    baseline_login = await _login(tenant_id=tenant_id, email=email, password=password)
+    baseline_claims = decode_and_verify_jwt(baseline_login["access_token"])
+    assert baseline_claims["scopes"] == ["manager", "viewer"]
+    assert await _viewer_scope_probe_status(baseline_login["access_token"]) == 200
+
+    monkeypatch.setenv("SKELDIR_B12_P6_NEGATIVE_MANAGER_SCOPES_THIN", "1")
+    thin_login = await _login(tenant_id=tenant_id, email=email, password=password)
+    thin_claims = decode_and_verify_jwt(thin_login["access_token"])
+    assert thin_claims["scopes"] == ["manager"]
+    assert await _viewer_scope_probe_status(thin_login["access_token"]) == 403
 
 
 @pytest.mark.asyncio
@@ -378,6 +439,7 @@ async def test_eg63_role_change_immediately_revokes_prior_privileged_token(test_
     claims = decode_and_verify_jwt(target_viewer_login["access_token"])
     assert claims["role"] == "viewer"
     assert claims["roles"] == ["viewer"]
+    assert claims["scopes"] == ["viewer"]
     assert await _admin_rbac_check(target_viewer_login["access_token"]) == 403
 
 
@@ -467,8 +529,10 @@ async def test_eg6t1_tenant_divergence_same_user_roles_diverge(test_tenant):
 
     assert claims_a["tenant_id"] == str(tenant_a)
     assert claims_a["role"] == "admin"
+    assert claims_a["scopes"] == ["admin", "manager", "viewer"]
     assert claims_b["tenant_id"] == str(tenant_b)
     assert claims_b["role"] == "viewer"
+    assert claims_b["scopes"] == ["viewer"]
 
     assert await _admin_rbac_check(login_a["access_token"]) == 200
     assert await _admin_rbac_check(login_b["access_token"]) == 403
@@ -529,14 +593,12 @@ async def test_eg6r1_refresh_after_downgrade_db_authoritative(test_tenant):
     assert await _admin_rbac_check(target_login["access_token"]) == 401
     await asyncio.sleep(1.1)
     refresh_status, refresh_payload = await _refresh(refresh_token=old_refresh, tenant_id=tenant_id)
-
-    if refresh_status == 200:
-        refreshed_claims = decode_and_verify_jwt(refresh_payload["access_token"])
-        assert refreshed_claims["role"] == "viewer"
-        assert refreshed_claims["roles"] == ["viewer"]
-        assert await _admin_rbac_check(refresh_payload["access_token"]) == 403
-    else:
-        assert refresh_status == 401
+    assert refresh_status == 200, refresh_payload
+    refreshed_claims = decode_and_verify_jwt(refresh_payload["access_token"])
+    assert refreshed_claims["role"] == "viewer"
+    assert refreshed_claims["roles"] == ["viewer"]
+    assert refreshed_claims["scopes"] == ["viewer"]
+    assert await _admin_rbac_check(refresh_payload["access_token"]) == 403
 
 
 @pytest.mark.asyncio
@@ -588,6 +650,7 @@ async def test_eg6r1_negative_control_copy_forward_role_toggle_demonstrates_viol
     assert refresh_status == 200
     refreshed_claims = decode_and_verify_jwt(refresh_payload["access_token"])
     assert refreshed_claims["role"] == "admin"
+    assert refreshed_claims["scopes"] == ["admin", "manager", "viewer"]
     assert await _admin_rbac_check(refresh_payload["access_token"]) == 200
 
 

@@ -16,10 +16,15 @@ from app.core import clock as clock_module
 from app.db.session import set_tenant_guc_async
 from app.models.auth_substrate import AuthRefreshToken
 from app.security.auth import mint_internal_jwt
-from app.security.rbac import normalize_role_claims, primary_role_from_claims
 
 ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 REFRESH_TOKEN_TTL_DAYS = 30
+ROLE_ORDER: tuple[str, ...] = ("admin", "manager", "viewer")
+FAT_SCOPE_EMBEDDING: dict[str, list[str]] = {
+    "viewer": ["viewer"],
+    "manager": ["manager", "viewer"],
+    "admin": ["admin", "manager", "viewer"],
+}
 logger = logging.getLogger(__name__)
 _DUMMY_REFRESH_MISS_DIGEST = hashlib.sha256(b"skeldir-refresh-selector-miss").hexdigest().encode("utf-8")
 _DUMMY_REFRESH_MISS_HASH = bcrypt.hashpw(_DUMMY_REFRESH_MISS_DIGEST, bcrypt.gensalt())
@@ -40,6 +45,31 @@ class TokenPair:
     user_id: UUID
     tenant_id: UUID
     expires_in_seconds: int
+
+
+def _normalize_role_codes(values: list[object]) -> list[str]:
+    normalized = {
+        str(value).strip().lower()
+        for value in values
+        if value is not None and str(value).strip()
+    }
+    ordered = [role for role in ROLE_ORDER if role in normalized]
+    return ordered or ["viewer"]
+
+
+def _primary_role(role_claims: list[str]) -> str:
+    for role in ROLE_ORDER:
+        if role in role_claims:
+            return role
+    return "viewer"
+
+
+def _fat_scopes_for_role(role_code: str) -> list[str]:
+    normalized_role = role_code.strip().lower()
+    if os.getenv("SKELDIR_B12_P6_NEGATIVE_MANAGER_SCOPES_THIN") == "1" and normalized_role == "manager":
+        # Negative control: intentionally violate fat-scope embedding for proof non-vacuity.
+        return ["manager"]
+    return FAT_SCOPE_EMBEDDING.get(normalized_role, FAT_SCOPE_EMBEDDING["viewer"])
 
 
 def _canonicalize_login_identifier(value: str) -> str:
@@ -204,10 +234,7 @@ async def resolve_membership_roles(
             },
         )
     ).all()
-    claims = normalize_role_claims(row[0] for row in rows)
-    if claims:
-        return claims
-    return ["viewer"]
+    return _normalize_role_codes([row[0] for row in rows])
 
 
 async def assign_membership_primary_role(
@@ -408,14 +435,16 @@ async def issue_login_token_pair(
         user_id=user_id,
         tenant_id=tenant_id,
     )
+    primary_role = _primary_role(role_claims)
     return TokenPair(
         access_token=mint_internal_jwt(
             tenant_id=tenant_id,
             user_id=user_id,
             expires_in_seconds=ACCESS_TOKEN_TTL_SECONDS,
             additional_claims={
-                "role": primary_role_from_claims(role_claims),
+                "role": primary_role,
                 "roles": role_claims,
+                "scopes": _fat_scopes_for_role(primary_role),
             },
         ),
         refresh_token=refresh_token,
@@ -491,6 +520,7 @@ async def rotate_refresh_token(
             user_id=token_row.user_id,
             tenant_id=token_row.tenant_id,
         )
+    primary_role = _primary_role(role_claims)
 
     return TokenPair(
         access_token=mint_internal_jwt(
@@ -498,8 +528,9 @@ async def rotate_refresh_token(
             user_id=token_row.user_id,
             expires_in_seconds=ACCESS_TOKEN_TTL_SECONDS,
             additional_claims={
-                "role": primary_role_from_claims(role_claims),
+                "role": primary_role,
                 "roles": role_claims,
+                "scopes": _fat_scopes_for_role(primary_role),
             },
         ),
         refresh_token=new_refresh,

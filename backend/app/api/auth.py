@@ -414,7 +414,7 @@ if os.getenv("SKELDIR_B12_P6_ENABLE_NEGATIVE_ADMIN_UNSCOPED_ROUTE") == "1":
         "/admin/_negative_unscoped",
         status_code=200,
         operation_id="adminNegativeUnscopedRoute",
-        include_in_schema=False,
+        include_in_schema=True,
     )
     async def admin_negative_unscoped_route() -> dict[str, bool]:
         return {"ok": True}

@@ -24,8 +24,7 @@ from app.services.auth_revocation import evaluate_access_token_revocation
 from app.security.revocation_runtime import get_revocation_runtime_cache
 
 RS256_ALGORITHM = "RS256"
-ROLE_PRECEDENCE: tuple[str, ...] = ("admin", "manager", "viewer")
-_ROLE_PRECEDENCE_INDEX = {role: idx for idx, role in enumerate(ROLE_PRECEDENCE)}
+ALLOWED_SCOPES: tuple[str, ...] = ("admin", "manager", "viewer")
 
 oauth2_bearer_auth = OAuth2PasswordBearer(
     tokenUrl="/api/auth/login",
@@ -92,43 +91,38 @@ def _get_bearer_token(authorization: str | None) -> str:
     return stripped.split(" ", 1)[1].strip()
 
 
-def _normalize_role_claims(claims: dict[str, Any]) -> list[str]:
+def _normalize_scope_claims(claims: dict[str, Any]) -> set[str]:
     raw_values: list[Any] = []
-    role = claims.get("role")
-    if role is not None:
-        raw_values.append(role)
-    roles = claims.get("roles")
-    if isinstance(roles, list):
-        raw_values.extend(roles)
+    scopes = claims.get("scopes")
+    if isinstance(scopes, list):
+        raw_values.extend(scopes)
+    elif isinstance(scopes, str):
+        raw_values.extend(scopes.split())
     normalized = {
         str(value).strip().lower()
         for value in raw_values
         if value is not None and str(value).strip()
     }
-    return [candidate for candidate in ROLE_PRECEDENCE if candidate in normalized]
+    return {candidate for candidate in normalized if candidate in ALLOWED_SCOPES}
 
 
 def _enforce_required_scopes(*, claims: dict[str, Any], required_scopes: list[str]) -> None:
-    if not required_scopes:
+    normalized_required = [scope.strip().lower() for scope in required_scopes if scope.strip().lower() in ALLOWED_SCOPES]
+    if not normalized_required:
         return
-    known_required = [scope.strip().lower() for scope in required_scopes if scope.strip().lower() in _ROLE_PRECEDENCE_INDEX]
-    if not known_required:
-        return
-    required_rank = min(_ROLE_PRECEDENCE_INDEX[scope] for scope in known_required)
-    role_claims = _normalize_role_claims(claims)
-    if not role_claims:
+    granted_scopes = _normalize_scope_claims(claims)
+    if not granted_scopes:
         raise AuthError(
             status_code=403,
             title="Forbidden",
-            detail=f"Required role scope: {', '.join(sorted(known_required))}.",
+            detail=f"Required role scope: {', '.join(sorted(set(normalized_required)))}.",
             type_url="https://api.skeldir.com/problems/forbidden",
         )
-    caller_rank = min(_ROLE_PRECEDENCE_INDEX[role] for role in role_claims if role in _ROLE_PRECEDENCE_INDEX)
-    if caller_rank > required_rank:
+    if not set(normalized_required).issubset(granted_scopes):
         raise AuthError(
             status_code=403,
             title="Forbidden",
-            detail=f"Required role scope: {', '.join(sorted(known_required))}.",
+            detail=f"Required role scope: {', '.join(sorted(set(normalized_required)))}.",
             type_url="https://api.skeldir.com/problems/forbidden",
         )
 
