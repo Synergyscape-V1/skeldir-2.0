@@ -44,6 +44,11 @@ def _build_token() -> str:
         tenant_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
         user_id=uuid.uuid4(),
         expires_in_seconds=3600,
+        additional_claims={
+            "role": "viewer",
+            "roles": ["viewer"],
+            "scopes": ["viewer"],
+        },
     )
 
 

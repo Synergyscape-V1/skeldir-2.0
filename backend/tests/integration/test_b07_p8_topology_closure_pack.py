@@ -225,6 +225,9 @@ def _build_auth_token(tenant_id: UUID, user_id: UUID) -> str:
     payload = {
         "sub": str(user_id),
         "user_id": str(user_id),
+        "role": "viewer",
+        "roles": ["viewer"],
+        "scopes": ["viewer"],
         "tenant_id": str(tenant_id),
         "iss": os.getenv("AUTH_JWT_ISSUER", "https://issuer.skeldir.test"),
         "aud": os.getenv("AUTH_JWT_AUDIENCE", "skeldir-api"),

@@ -190,6 +190,14 @@ async def refresh_token(
     Contract: POST /api/auth/refresh
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
+    if not refresh_bearer_token:
+        raise AuthError(
+            status_code=401,
+            title="Authentication Failed",
+            detail="Missing Authorization header.",
+            type_url="https://api.skeldir.com/problems/authentication-failed",
+        )
+
     if os.getenv("CONTRACT_TESTING") == "1":
         return RefreshResponse(
             access_token="contract-test-access-token-refreshed",
@@ -203,7 +211,7 @@ async def refresh_token(
         async with session.begin():
             token_pair = await rotate_refresh_token(
                 session,
-                refresh_token=refresh_bearer_token or request.refresh_token,
+                refresh_token=refresh_bearer_token,
                 requested_tenant_id=request.tenant_id,
             )
     if token_pair is None:

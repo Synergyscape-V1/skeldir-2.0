@@ -25,6 +25,11 @@ from app.security.revocation_runtime import get_revocation_runtime_cache
 
 RS256_ALGORITHM = "RS256"
 ALLOWED_SCOPES: tuple[str, ...] = ("admin", "manager", "viewer")
+ROLE_TO_FAT_SCOPES: dict[str, tuple[str, ...]] = {
+    "admin": ("admin", "manager", "viewer"),
+    "manager": ("manager", "viewer"),
+    "viewer": ("viewer",),
+}
 
 oauth2_access_bearer_auth = OAuth2PasswordBearer(
     tokenUrl="/api/auth/login",
@@ -98,10 +103,31 @@ def _get_bearer_token(authorization: str | None) -> str:
 def _normalize_scope_claims(claims: dict[str, Any]) -> set[str]:
     raw_values: list[Any] = []
     scopes = claims.get("scopes")
+    scopes_claim_present = scopes is not None
     if isinstance(scopes, list):
         raw_values.extend(scopes)
     elif isinstance(scopes, str):
         raw_values.extend(scopes.split())
+    elif scopes_claim_present:
+        # Invalid explicit scopes claim type -> fail closed as no granted scopes.
+        return set()
+
+    # Backward-compatible path for legacy tokens that carry role/roles but no scopes claim.
+    if not scopes_claim_present:
+        role_values: list[Any] = []
+        role = claims.get("role")
+        roles = claims.get("roles")
+        if role is not None:
+            role_values.append(role)
+        if isinstance(roles, list):
+            role_values.extend(roles)
+        elif isinstance(roles, str):
+            role_values.extend(roles.split())
+        for raw_role in role_values:
+            normalized_role = str(raw_role).strip().lower()
+            if normalized_role in ROLE_TO_FAT_SCOPES:
+                raw_values.extend(ROLE_TO_FAT_SCOPES[normalized_role])
+
     normalized = {
         str(value).strip().lower()
         for value in raw_values

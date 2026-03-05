@@ -242,7 +242,10 @@ async def _refresh(*, refresh_token: str, tenant_id: UUID) -> tuple[int, dict]:
         response = await client.post(
             "/api/auth/refresh",
             json={"refresh_token": refresh_token, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {refresh_token}",
+            },
         )
     payload = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
     return response.status_code, payload
