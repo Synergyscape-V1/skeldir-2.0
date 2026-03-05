@@ -20,7 +20,7 @@ tags:
     description: Natural language explanations with deterministic citations
 
 security:
-  - bearerAuth: []
+  - accessBearerAuth: ["viewer"]
 
 paths:
   /api/v1/explain/{entity_type}/{entity_id}:
@@ -35,7 +35,7 @@ paths:
       tags:
         - LLM Explanations
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - name: entity_type
           in: path
@@ -192,5 +192,5 @@ components:
           additionalProperties: true
 
   securitySchemes:
-    bearerAuth:
-      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'

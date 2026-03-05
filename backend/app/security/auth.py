@@ -6,8 +6,8 @@ import os
 from typing import Any, Optional
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from fastapi import Depends, Request
-from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+from fastapi import Depends, Request, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer, SecurityScopes
 import jwt
 from jwt import InvalidTokenError, PyJWTError
 
@@ -26,15 +26,19 @@ from app.security.revocation_runtime import get_revocation_runtime_cache
 RS256_ALGORITHM = "RS256"
 ALLOWED_SCOPES: tuple[str, ...] = ("admin", "manager", "viewer")
 
-oauth2_bearer_auth = OAuth2PasswordBearer(
+oauth2_access_bearer_auth = OAuth2PasswordBearer(
     tokenUrl="/api/auth/login",
-    scheme_name="bearerAuth",
+    scheme_name="accessBearerAuth",
     auto_error=False,
     scopes={
         "admin": "Administrator access",
         "manager": "Manager access",
         "viewer": "Viewer access",
     },
+)
+refresh_bearer_auth = HTTPBearer(
+    scheme_name="refreshBearerAuth",
+    auto_error=False,
 )
 
 
@@ -424,7 +428,7 @@ def _epoch_to_datetime_utc(epoch: int) -> datetime:
 async def get_auth_context(
     request: Request,
     security_scopes: SecurityScopes,
-    token: str | None = Depends(oauth2_bearer_auth),
+    token: str | None = Depends(oauth2_access_bearer_auth),
 ) -> AuthContext:
     if not token:
         raise AuthError(
@@ -461,3 +465,12 @@ async def get_auth_context(
     set_tenant_id(token_claims.tenant_id)
     set_user_id(token_claims.user_id)
     return auth_context
+
+
+async def get_refresh_bearer_token(
+    credentials: HTTPAuthorizationCredentials | None = Security(refresh_bearer_auth),
+) -> str | None:
+    if credentials is None:
+        return None
+    token = credentials.credentials.strip()
+    return token or None

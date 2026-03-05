@@ -123,9 +123,9 @@ def main() -> int:
     jwt_rows = [r for r in rows if _route_family(r) == "jwt"]
     webhook_rows = [r for r in rows if _route_family(r) == "webhook_hmac"]
 
-    jwt_with_bearer = sum("bearerAuth" in _security_names(r.security) for r in jwt_rows)
+    jwt_with_access = sum("accessBearerAuth" in _security_names(r.security) for r in jwt_rows)
     webhook_with_tenant_key = sum("tenantKeyAuth" in _security_names(r.security) for r in webhook_rows)
-    webhook_with_bearer = sum("bearerAuth" in _security_names(r.security) for r in webhook_rows)
+    webhook_with_access = sum("accessBearerAuth" in _security_names(r.security) for r in webhook_rows)
     has_401_problem = sum(r.has_401_problem for r in rows)
     has_403_problem = sum(r.has_403_problem for r in rows)
 
@@ -136,9 +136,9 @@ def main() -> int:
             "operations_total": len(rows),
             "jwt_operations": len(jwt_rows),
             "webhook_operations": len(webhook_rows),
-            "jwt_with_bearer": jwt_with_bearer,
+            "jwt_with_access_bearer": jwt_with_access,
             "webhook_with_tenant_key": webhook_with_tenant_key,
-            "webhook_with_bearer": webhook_with_bearer,
+            "webhook_with_access_bearer": webhook_with_access,
             "operations_with_401_problem": has_401_problem,
             "operations_with_403_problem": has_403_problem,
         },
@@ -171,15 +171,15 @@ Generated from repository state.
 ## Contract Authority Surface
 - Contract roots: `api-contracts/openapi/v1/*.yaml`
 - Bundled artifacts used for adjudication: `api-contracts/dist/openapi/v1/*.bundled.yaml`
-- Security schemes required by topology lock: `bearerAuth` (JWT) and `tenantKeyAuth` (webhook/HMAC)
+- Security schemes required by topology lock: `accessBearerAuth` (JWT) and `tenantKeyAuth` (webhook/HMAC)
 
 ## Auth Topology Inventory
 - Total operations: **{len(rows)}**
 - JWT-family operations: **{len(jwt_rows)}**
-- JWT-family operations declaring `bearerAuth`: **{jwt_with_bearer}**
+- JWT-family operations declaring `accessBearerAuth`: **{jwt_with_access}**
 - Webhook-family operations: **{len(webhook_rows)}**
 - Webhook operations declaring `tenantKeyAuth`: **{webhook_with_tenant_key}**
-- Webhook operations declaring `bearerAuth` (must remain 0): **{webhook_with_bearer}**
+- Webhook operations declaring `accessBearerAuth` (must remain 0): **{webhook_with_access}**
 
 ## Canonical Error Surface Inventory
 - Operations exposing `401` with `application/problem+json`: **{has_401_problem}**

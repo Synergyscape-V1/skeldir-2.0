@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,7 +133,7 @@ async def _aggregate_revenue_by_source(
 async def get_reconciliation_status(
     response: Response,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
 ):
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
@@ -189,7 +189,7 @@ async def get_platform_reconciliation_status(
     request: Request,
     response: Response,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
 ):
     key = _normalize_platform_key(platform_id)
@@ -247,7 +247,7 @@ async def trigger_sync(
     payload: SyncRequest,
     response: Response,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
 ):
     now = datetime.now(timezone.utc)

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Request, Security, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.problem_details import problem_details_response
@@ -59,7 +59,7 @@ async def upsert_platform_connection(
     payload: PlatformConnectionUpsertRequest,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     try:
         _validate_platform(payload.platform.value)
@@ -96,7 +96,7 @@ async def get_platform_connection(
     platform: str,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     platform_account_id: Optional[str] = None,
 ):
     try:
@@ -143,7 +143,7 @@ async def upsert_platform_credentials(
     payload: PlatformCredentialUpsertRequest,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     try:
         _validate_platform(payload.platform.value)

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Header, Response, Security
 
 from app.security.auth import AuthContext, get_auth_context
 
@@ -17,7 +17,7 @@ def _utcnow_iso() -> str:
 async def export_revenue(
     response: Response,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    _: Annotated[AuthContext, Depends(get_auth_context)],
+    _: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
     now = _utcnow_iso()
@@ -39,7 +39,7 @@ async def export_revenue(
 @router.get("/csv", operation_id="exportCSV")
 async def export_csv(
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    _: Annotated[AuthContext, Depends(get_auth_context)],
+    _: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     body = "date,channel,revenue,conversions,confidence\n2025-11-25,Meta,0.00,0,1.00\n"
     return Response(
@@ -56,7 +56,7 @@ async def export_csv(
 async def export_json(
     response: Response,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    _: Annotated[AuthContext, Depends(get_auth_context)],
+    _: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
     now = _utcnow_iso()
@@ -78,7 +78,7 @@ async def export_json(
 @router.get("/excel", operation_id="exportExcel")
 async def export_excel(
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    _: Annotated[AuthContext, Depends(get_auth_context)],
+    _: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     payload = b"PK\x03\x04SKELDIR-MOCK-XLSX"
     return Response(

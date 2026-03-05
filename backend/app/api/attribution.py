@@ -9,7 +9,7 @@ Contract Operations:
 All routes use generated Pydantic models from backend/app/schemas/attribution.py
 """
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
 from uuid import UUID
 from typing import Annotated
 
@@ -43,7 +43,7 @@ async def get_realtime_revenue(
     request: Request,
     response: Response,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
     if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
 ):

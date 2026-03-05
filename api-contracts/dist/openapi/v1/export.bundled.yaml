@@ -13,7 +13,8 @@ servers:
   - url: http://localhost:4013
     description: Prism Mock Server (Export)
 security:
-  - bearerAuth: []
+  - accessBearerAuth:
+      - viewer
 tags:
   - name: Export
     description: Data export functionality for CSV, JSON, and Excel formats
@@ -26,7 +27,8 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - viewer
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -268,7 +270,8 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - viewer
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -316,7 +319,8 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - viewer
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -374,7 +378,8 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - viewer
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -423,11 +428,16 @@ components:
       required: *ref_0
       properties: *ref_1
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: JWT Bearer token authentication
+    accessBearerAuth:
+      type: oauth2
+      description: JWT Bearer token authentication with RBAC scopes
+      flows:
+        password:
+          tokenUrl: /api/auth/login
+          scopes:
+            admin: Administrator access
+            manager: Manager access
+            viewer: Viewer access
   parameters:
     CorrelationId:
       name: X-Correlation-ID

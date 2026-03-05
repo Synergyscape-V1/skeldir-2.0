@@ -13,7 +13,8 @@ servers:
   - url: http://localhost:4025
     description: Prism Mock Server (Budget)
 security:
-  - bearerAuth: []
+  - accessBearerAuth:
+      - viewer
 tags:
   - name: Budget
     description: Budget optimization with LLM synthesis
@@ -374,11 +375,16 @@ components:
       required: *ref_0
       properties: *ref_1
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: JWT Bearer token authentication
+    accessBearerAuth:
+      type: oauth2
+      description: JWT Bearer token authentication with RBAC scopes
+      flows:
+        password:
+          tokenUrl: /api/auth/login
+          scopes:
+            admin: Administrator access
+            manager: Manager access
+            viewer: Viewer access
   parameters:
     CorrelationId:
       name: X-Correlation-ID

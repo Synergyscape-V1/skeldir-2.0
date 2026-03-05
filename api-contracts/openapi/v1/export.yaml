@@ -19,7 +19,7 @@ tags:
     description: Data export functionality for CSV, JSON, and Excel formats
 
 security:
-  - bearerAuth: []
+  - accessBearerAuth: ["viewer"]
 
 paths:
   /api/export/revenue:
@@ -30,7 +30,7 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -118,7 +118,7 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -155,7 +155,7 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -200,7 +200,7 @@ paths:
       tags:
         - Export
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -282,5 +282,5 @@ components:
               maximum: 1
 
   securitySchemes:
-    bearerAuth:
-      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'

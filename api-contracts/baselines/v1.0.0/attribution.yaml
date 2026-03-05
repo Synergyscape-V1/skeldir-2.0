@@ -19,7 +19,7 @@ tags:
     description: Attribution and revenue tracking endpoints
 
 security:
-  - bearerAuth: []
+  - accessBearerAuth: ["viewer"]
 
 paths:
   /api/attribution/revenue/realtime:
@@ -32,7 +32,7 @@ paths:
       tags:
         - Attribution
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -92,7 +92,7 @@ paths:
       tags:
         - Attribution
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -229,5 +229,5 @@ components:
           description: Return on Ad Spend (revenue/spend)
 
   securitySchemes:
-    bearerAuth:
-      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'

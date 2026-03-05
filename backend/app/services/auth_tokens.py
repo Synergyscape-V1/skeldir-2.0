@@ -53,8 +53,7 @@ def _normalize_role_codes(values: list[object]) -> list[str]:
         for value in values
         if value is not None and str(value).strip()
     }
-    ordered = [role for role in ROLE_ORDER if role in normalized]
-    return ordered or ["viewer"]
+    return [role for role in ROLE_ORDER if role in normalized]
 
 
 def _primary_role(role_claims: list[str]) -> str:
@@ -435,6 +434,8 @@ async def issue_login_token_pair(
         user_id=user_id,
         tenant_id=tenant_id,
     )
+    if not role_claims:
+        raise ValueError("Active tenant membership has no roles.")
     primary_role = _primary_role(role_claims)
     return TokenPair(
         access_token=mint_internal_jwt(
@@ -520,6 +521,9 @@ async def rotate_refresh_token(
             user_id=token_row.user_id,
             tenant_id=token_row.tenant_id,
         )
+        if not role_claims:
+            # Membership deleted (or roles removed) must immediately stop refresh reminting.
+            return None
     primary_role = _primary_role(role_claims)
 
     return TokenPair(

@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional, Annotated
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, Security, status
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from uuid import UUID, uuid4
@@ -256,7 +256,7 @@ async def api_health(request: Request) -> dict:
 @router.get("/api/health/detailed")
 async def api_health_detailed(
     response: Response,
-    _: Annotated[AuthContext, Depends(get_auth_context)],
+    _: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ) -> dict:
     """Detailed contract endpoint for OpenAPI health bundle (/api/health/detailed)."""
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

@@ -64,7 +64,7 @@ paths:
       tags:
         - Health
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -238,5 +238,5 @@ components:
             $ref: './_common/base.yaml#/components/schemas/ProblemDetails'
 
   securitySchemes:
-    bearerAuth:
-      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
