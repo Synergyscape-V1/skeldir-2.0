@@ -38,8 +38,13 @@ pytestmark = pytest.mark.asyncio
 
 def _build_token(tenant_id: UUID) -> str:
     now = int(time.time())
+    user_id = str(uuid4())
     payload = {
-        "sub": "user-1",
+        "sub": user_id,
+        "user_id": user_id,
+        "role": "viewer",
+        "roles": ["viewer"],
+        "scopes": ["viewer"],
         "iss": os.environ["AUTH_JWT_ISSUER"],
         "aud": os.environ["AUTH_JWT_AUDIENCE"],
         "iat": now,

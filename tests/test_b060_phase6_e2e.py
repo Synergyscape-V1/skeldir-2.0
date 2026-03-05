@@ -48,8 +48,13 @@ STAMPEDE_TIMEOUT_S = _get_env_float("STAMPEDE_TIMEOUT_S", 10.0)
 
 def _build_token(tenant_id: UUID) -> str:
     now = int(time.time())
+    user_id = str(uuid4())
     payload = {
-        "sub": "b060-e2e-user",
+        "sub": user_id,
+        "user_id": user_id,
+        "role": "viewer",
+        "roles": ["viewer"],
+        "scopes": ["viewer"],
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
         "iat": now,
