@@ -267,12 +267,12 @@ def _lint_admin_routes_have_admin_scope(candidate_app: FastAPI) -> None:
         stack = [route.dependant]
         while stack:
             node = stack.pop()
-            for requirement in node.security_requirements:
+            for requirement in getattr(node, "security_requirements", []):
                 scheme_name = getattr(requirement.security_scheme, "scheme_name", "")
                 scopes = set(requirement.scopes or [])
                 if scheme_name == "bearerAuth" and "admin" in scopes:
                     return True
-            stack.extend(node.dependencies)
+            stack.extend(getattr(node, "dependencies", []))
         return False
 
     violations: list[str] = []
