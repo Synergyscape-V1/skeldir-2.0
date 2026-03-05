@@ -15,7 +15,7 @@ tags:
     description: Realtime revenue endpoints
 
 security:
-  - bearerAuth: []
+  - accessBearerAuth: ["viewer"]
 
 paths:
   /api/v1/revenue/realtime:
@@ -27,7 +27,7 @@ paths:
       tags:
         - Revenue
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -112,5 +112,5 @@ components:
           example: []
 
   securitySchemes:
-    bearerAuth:
-      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'

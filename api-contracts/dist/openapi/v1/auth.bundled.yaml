@@ -13,7 +13,8 @@ servers:
   - url: http://localhost:4010
     description: Prism Mock Server (Auth)
 security:
-  - bearerAuth: []
+  - accessBearerAuth:
+      - viewer
 tags:
   - name: Authentication
     description: User authentication and authorization endpoints
@@ -216,7 +217,8 @@ paths:
       operationId: refreshToken
       tags:
         - Authentication
-      security: []
+      security:
+        - refreshBearerAuth: []
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -284,7 +286,8 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - viewer
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -340,7 +343,8 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - viewer
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -397,7 +401,8 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - admin
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -487,7 +492,8 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - admin
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -557,7 +563,8 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - accessBearerAuth:
+            - admin
       parameters:
         - name: X-Correlation-ID
           in: header
@@ -684,11 +691,21 @@ paths:
                 properties: *ref_1
 components:
   securitySchemes:
-    bearerAuth:
+    accessBearerAuth:
+      type: oauth2
+      description: JWT Bearer token authentication with RBAC scopes
+      flows:
+        password:
+          tokenUrl: /api/auth/login
+          scopes:
+            admin: Administrator access
+            manager: Manager access
+            viewer: Viewer access
+    refreshBearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
-      description: JWT Bearer token authentication
+      bearerFormat: refresh-token
+      description: Refresh token bearer authentication (opaque rotate-on-use refresh token)
   parameters:
     CorrelationId:
       name: X-Correlation-ID

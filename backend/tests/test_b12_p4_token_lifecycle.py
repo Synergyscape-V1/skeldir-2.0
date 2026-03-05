@@ -209,6 +209,42 @@ def _seed_login_identity(*, tenant_id: UUID, user_id: UUID, email: str, password
                 "user_id": str(user_id),
             },
         )
+        membership_id = conn.execute(
+            text(
+                """
+                SELECT id
+                FROM public.tenant_memberships
+                WHERE tenant_id = :tenant_id
+                  AND user_id = :user_id
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "user_id": str(user_id),
+            },
+        ).scalar_one()
+        conn.execute(
+            text(
+                """
+                INSERT INTO public.tenant_membership_roles (
+                    id,
+                    tenant_id,
+                    membership_id,
+                    role_code,
+                    created_at,
+                    updated_at
+                )
+                VALUES (:id, :tenant_id, :membership_id, 'viewer', now(), now())
+                ON CONFLICT (membership_id, role_code) DO NOTHING
+                """
+            ),
+            {
+                "id": str(uuid4()),
+                "tenant_id": str(tenant_id),
+                "membership_id": str(membership_id),
+            },
+        )
 
 
 async def _login(*, app_instance, tenant_id: UUID, email: str, password: str) -> dict:
@@ -221,6 +257,27 @@ async def _login(*, app_instance, tenant_id: UUID, email: str, password: str) ->
         )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+async def _refresh(
+    *,
+    app_instance,
+    refresh_token: str,
+    tenant_id: UUID | None,
+    correlation_id: UUID | None = None,
+) -> tuple[int, dict]:
+    transport = ASGITransport(app=app_instance)
+    headers = {
+        "X-Correlation-ID": str(correlation_id or uuid4()),
+        "Authorization": f"Bearer {refresh_token}",
+    }
+    payload: dict[str, str] = {"refresh_token": refresh_token}
+    if tenant_id is not None:
+        payload["tenant_id"] = str(tenant_id)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/auth/refresh", json=payload, headers=headers)
+    return response.status_code, response.json() if response.content else {}
 
 
 def _decode_access(access_token: str) -> dict:
@@ -287,50 +344,48 @@ async def test_refresh_rotation_single_use(_app):
     login = await _login(app_instance=_app, tenant_id=tenant_id, email=email, password=password)
     refresh_a = login["refresh_token"]
 
-    transport = ASGITransport(app=_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        engine = create_engine(_current_sync_database_url())
-        with engine.begin() as conn:
-            before_rows = conn.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM public.auth_refresh_tokens
-                    WHERE tenant_id = :tenant_id
-                      AND user_id = :user_id
-                    """
-                ),
-                {"tenant_id": str(tenant_id), "user_id": str(user_id)},
-            ).scalar_one()
+    engine = create_engine(_current_sync_database_url())
+    with engine.begin() as conn:
+        before_rows = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM public.auth_refresh_tokens
+                WHERE tenant_id = :tenant_id
+                  AND user_id = :user_id
+                """
+            ),
+            {"tenant_id": str(tenant_id), "user_id": str(user_id)},
+        ).scalar_one()
 
-        first = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_a, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert first.status_code == 200, first.text
-        refresh_b = first.json()["refresh_token"]
-        assert refresh_b != refresh_a
+    first_status, first_payload = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_a,
+        tenant_id=tenant_id,
+    )
+    assert first_status == 200
+    refresh_b = first_payload["refresh_token"]
+    assert refresh_b != refresh_a
 
-        reuse = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_a, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert reuse.status_code == 401, reuse.text
+    reuse_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_a,
+        tenant_id=tenant_id,
+    )
+    assert reuse_status == 401
 
-        with engine.begin() as conn:
-            after_rows = conn.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM public.auth_refresh_tokens
-                    WHERE tenant_id = :tenant_id
-                      AND user_id = :user_id
-                    """
-                ),
-                {"tenant_id": str(tenant_id), "user_id": str(user_id)},
-            ).scalar_one()
+    with engine.begin() as conn:
+        after_rows = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM public.auth_refresh_tokens
+                WHERE tenant_id = :tenant_id
+                  AND user_id = :user_id
+                """
+            ),
+            {"tenant_id": str(tenant_id), "user_id": str(user_id)},
+        ).scalar_one()
 
         # Login mints 1, first refresh mints +1, failed reuse mints +0.
     assert int(after_rows) == int(before_rows) + 1
@@ -362,15 +417,12 @@ async def test_refresh_rejects_tenant_context_mismatch(_app):
             {"user_id": str(user_id)},
         ).scalar_one()
 
-    transport = ASGITransport(app=_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        mismatch = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_token, "tenant_id": str(tenant_b)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-
-    assert mismatch.status_code == 401, mismatch.text
+    mismatch_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_token,
+        tenant_id=tenant_b,
+    )
+    assert mismatch_status == 401
 
     with engine.begin() as conn:
         row = conn.execute(
@@ -459,30 +511,28 @@ async def test_refresh_reuse_revokes_family_and_kills_successor(_app):
     refresh_a = login["refresh_token"]
     _, token_a_id, _ = _parse_refresh_token(refresh_a)
 
-    transport = ASGITransport(app=_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        attacker = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_a, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert attacker.status_code == 200, attacker.text
-        refresh_b = attacker.json()["refresh_token"]
-        _, token_b_id, _ = _parse_refresh_token(refresh_b)
+    attacker_status, attacker_payload = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_a,
+        tenant_id=tenant_id,
+    )
+    assert attacker_status == 200
+    refresh_b = attacker_payload["refresh_token"]
+    _, token_b_id, _ = _parse_refresh_token(refresh_b)
 
-        legitimate_reuse = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_a, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert legitimate_reuse.status_code == 401, legitimate_reuse.text
+    legitimate_reuse_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_a,
+        tenant_id=tenant_id,
+    )
+    assert legitimate_reuse_status == 401
 
-        successor_attempt = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_b, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert successor_attempt.status_code == 401, successor_attempt.text
+    successor_attempt_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_b,
+        tenant_id=tenant_id,
+    )
+    assert successor_attempt_status == 401
 
     engine = create_engine(_current_sync_database_url())
     with engine.begin() as conn:
@@ -538,7 +588,10 @@ async def test_refresh_token_id_miss_executes_dummy_bcrypt_check(_app, monkeypat
         response = await client.post(
             "/api/auth/refresh",
             json={"refresh_token": miss_token, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {miss_token}",
+            },
         )
 
     assert response.status_code == 401, response.text
@@ -556,42 +609,39 @@ async def test_refresh_reuse_revokes_only_token_family_parallel_family_survives(
     refresh_a1 = login_a["refresh_token"]
     _, a1_id, _ = _parse_refresh_token(refresh_a1)
 
-    transport = ASGITransport(app=_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        attacker = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_a1, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert attacker.status_code == 200, attacker.text
-        refresh_a2 = attacker.json()["refresh_token"]
-        _, a2_id, _ = _parse_refresh_token(refresh_a2)
+    attacker_status, attacker_payload = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_a1,
+        tenant_id=tenant_id,
+    )
+    assert attacker_status == 200
+    refresh_a2 = attacker_payload["refresh_token"]
+    _, a2_id, _ = _parse_refresh_token(refresh_a2)
 
     login_b = await _login(app_instance=_app, tenant_id=tenant_id, email=email, password=password)
     refresh_b1 = login_b["refresh_token"]
     _, b1_id, _ = _parse_refresh_token(refresh_b1)
 
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        legitimate_reuse = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_a1, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert legitimate_reuse.status_code == 401, legitimate_reuse.text
+    legitimate_reuse_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_a1,
+        tenant_id=tenant_id,
+    )
+    assert legitimate_reuse_status == 401
 
-        attacker_successor = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_a2, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert attacker_successor.status_code == 401, attacker_successor.text
+    attacker_successor_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_a2,
+        tenant_id=tenant_id,
+    )
+    assert attacker_successor_status == 401
 
-        parallel_family = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": refresh_b1, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-        assert parallel_family.status_code == 200, parallel_family.text
+    parallel_family_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=refresh_b1,
+        tenant_id=tenant_id,
+    )
+    assert parallel_family_status == 200
 
     engine = create_engine(_current_sync_database_url())
     with engine.begin() as conn:
@@ -625,18 +675,15 @@ async def test_refresh_rotation_is_race_safe(_app):
     refresh_token = login["refresh_token"]
     _, refresh_row_id, _ = _parse_refresh_token(refresh_token)
 
-    transport = ASGITransport(app=_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async def _refresh_once() -> int:
+        status_code, _ = await _refresh(
+            app_instance=_app,
+            refresh_token=refresh_token,
+            tenant_id=tenant_id,
+        )
+        return status_code
 
-        async def _refresh_once() -> int:
-            response = await client.post(
-                "/api/auth/refresh",
-                json={"refresh_token": refresh_token, "tenant_id": str(tenant_id)},
-                headers={"X-Correlation-ID": str(uuid4())},
-            )
-            return response.status_code
-
-        results = await asyncio.gather(_refresh_once(), _refresh_once())
+    results = await asyncio.gather(_refresh_once(), _refresh_once())
 
     assert results.count(200) == 1
     assert results.count(401) == 1
@@ -694,12 +741,10 @@ async def test_signing_hot_path_avoids_per_request_secret_fetch(_app, monkeypatc
     monkeypatch.setattr(secrets_module, "_read_secret_source_of_truth_value", _counting_fetch)
     login = await _login(app_instance=_app, tenant_id=tenant_id, email=email, password=password)
 
-    transport = ASGITransport(app=_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        refresh = await client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": login["refresh_token"], "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
-        )
-    assert refresh.status_code == 200, refresh.text
+    refresh_status, _ = await _refresh(
+        app_instance=_app,
+        refresh_token=login["refresh_token"],
+        tenant_id=tenant_id,
+    )
+    assert refresh_status == 200
     assert calls["count"] == 0

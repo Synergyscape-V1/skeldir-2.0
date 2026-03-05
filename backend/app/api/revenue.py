@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db_session
@@ -38,7 +38,7 @@ router = APIRouter()
 async def get_realtime_revenue_v1(
     request: Request,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
     response: Response,
 ):

@@ -19,7 +19,7 @@ tags:
     description: Budget optimization with LLM synthesis
 
 security:
-  - bearerAuth: []
+  - accessBearerAuth: ["viewer"]
 
 paths:
   /api/budget/optimize:
@@ -256,5 +256,5 @@ components:
               type: number
 
   securitySchemes:
-    bearerAuth:
-      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'

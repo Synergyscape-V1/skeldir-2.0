@@ -33,7 +33,7 @@ from app.schemas.auth import (
 )
 from app.core.secrets import get_secret
 from app.db.session import AsyncSessionLocal
-from app.security.auth import AuthContext, AuthError, get_auth_context
+from app.security.auth import AuthContext, AuthError, get_auth_context, get_refresh_bearer_token
 from app.services.auth_revocation import denylist_access_token, upsert_tokens_invalid_before
 from app.services.auth_tokens import (
     TokenPair,
@@ -139,11 +139,19 @@ async def login(
                         detail="Invalid credentials.",
                         type_url="https://api.skeldir.com/problems/authentication-failed",
                     )
-                token_pair = await issue_login_token_pair(
-                    session,
-                    user_id=identity.user_id,
-                    tenant_id=resolved_tenant,
-                )
+                try:
+                    token_pair = await issue_login_token_pair(
+                        session,
+                        user_id=identity.user_id,
+                        tenant_id=resolved_tenant,
+                    )
+                except ValueError as exc:
+                    raise AuthError(
+                        status_code=403,
+                        title="Forbidden",
+                        detail="Active membership role is required.",
+                        type_url="https://api.skeldir.com/problems/forbidden",
+                    ) from exc
 
     user = User(
         id=token_pair.user_id,
@@ -174,6 +182,7 @@ async def login(
 async def refresh_token(
     request: RefreshRequest,
     _x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    refresh_bearer_token: Annotated[str | None, Security(get_refresh_bearer_token)],
 ):
     """
     Refresh access token using refresh token.
@@ -181,6 +190,14 @@ async def refresh_token(
     Contract: POST /api/auth/refresh
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
+    if not refresh_bearer_token:
+        raise AuthError(
+            status_code=401,
+            title="Authentication Failed",
+            detail="Missing Authorization header.",
+            type_url="https://api.skeldir.com/problems/authentication-failed",
+        )
+
     if os.getenv("CONTRACT_TESTING") == "1":
         return RefreshResponse(
             access_token="contract-test-access-token-refreshed",
@@ -194,7 +211,7 @@ async def refresh_token(
         async with session.begin():
             token_pair = await rotate_refresh_token(
                 session,
-                refresh_token=request.refresh_token,
+                refresh_token=refresh_bearer_token,
                 requested_tenant_id=request.tenant_id,
             )
     if token_pair is None:
@@ -222,7 +239,7 @@ async def refresh_token(
 )
 async def logout(
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     """
     Logout user and invalidate tokens.
@@ -271,7 +288,7 @@ async def logout(
 )
 async def verify_token(
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(get_auth_context)],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
 ):
     return {
         "valid": True,

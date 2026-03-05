@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import importlib
 import os
 from pathlib import Path
-from typing import Annotated, Callable
+from typing import Annotated, Any, Callable
 from uuid import UUID, uuid4
 
 import bcrypt
@@ -241,7 +242,10 @@ async def _refresh(*, refresh_token: str, tenant_id: UUID) -> tuple[int, dict]:
         response = await client.post(
             "/api/auth/refresh",
             json={"refresh_token": refresh_token, "tenant_id": str(tenant_id)},
-            headers={"X-Correlation-ID": str(uuid4())},
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {refresh_token}",
+            },
         )
     payload = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
     return response.status_code, payload
@@ -263,27 +267,91 @@ def _install_role_query_counter() -> tuple[dict[str, int], Callable[[], None]]:
     return counts, _remove
 
 
-def _lint_admin_routes_have_admin_scope(candidate_app: FastAPI) -> None:
-    doc = candidate_app.openapi()
+OPERATION_METHODS = {"get", "put", "post", "delete", "patch", "options", "head"}
+ALLOWED_SCHEMES = {"accessBearerAuth", "refreshBearerAuth", "tenantKeyAuth"}
+ALLOWED_ACCESS_SCOPES = {"admin", "manager", "viewer"}
+PUBLIC_ALLOWLIST: set[tuple[str, str]] = {
+    ("GET", "/"),
+    ("GET", "/api/health"),
+    ("GET", "/api/health/live"),
+    ("GET", "/api/health/ready"),
+    ("GET", "/health"),
+    ("GET", "/health/live"),
+    ("GET", "/health/ready"),
+    ("GET", "/health/worker"),
+    ("GET", "/metrics"),
+    ("POST", "/api/auth/login"),
+}
+
+
+def _lint_openapi_default_deny_and_scopes(*, doc: dict[str, Any]) -> None:
+    top_security = doc.get("security")
     paths = doc.get("paths", {})
-    operation_methods = {"get", "put", "post", "delete", "patch", "options", "head"}
     violations: list[str] = []
     for path, methods in paths.items():
-        if not path.startswith("/api/auth/admin"):
-            continue
         for method, operation in methods.items():
-            if method not in operation_methods:
+            if method not in OPERATION_METHODS:
                 continue
-            security = operation.get("security", [])
-            has_admin_scope = any(
-                isinstance(requirement, dict)
-                and isinstance(requirement.get("bearerAuth"), list)
-                and "admin" in requirement.get("bearerAuth", [])
-                for requirement in security
-            )
-            if not has_admin_scope:
-                violations.append(f"{method.upper()} {path}")
-    assert not violations, f"Admin scope lint violations: {violations}"
+            method_upper = method.upper()
+            route_id = f"{method_upper} {path}"
+            effective_security = operation.get("security", top_security)
+            if (method_upper, path) not in PUBLIC_ALLOWLIST:
+                if effective_security in (None, []):
+                    violations.append(f"{route_id}: missing security declaration (default-deny violation)")
+                    continue
+
+            if effective_security in (None, []):
+                continue
+
+            if not isinstance(effective_security, list):
+                violations.append(f"{route_id}: security block must be a list")
+                continue
+
+            has_access_bearer = False
+            has_admin_scope = False
+            for requirement in effective_security:
+                if not isinstance(requirement, dict):
+                    violations.append(f"{route_id}: security requirement must be an object")
+                    continue
+                for scheme_name, scopes in requirement.items():
+                    if scheme_name not in ALLOWED_SCHEMES:
+                        violations.append(f"{route_id}: unknown security scheme '{scheme_name}'")
+                        continue
+                    if scheme_name == "accessBearerAuth":
+                        has_access_bearer = True
+                        if not isinstance(scopes, list) or not scopes:
+                            violations.append(f"{route_id}: accessBearerAuth requires non-empty scopes")
+                            continue
+                        normalized_scopes = {str(scope).strip().lower() for scope in scopes if str(scope).strip()}
+                        if not normalized_scopes:
+                            violations.append(f"{route_id}: accessBearerAuth scopes normalized empty")
+                            continue
+                        if not normalized_scopes.issubset(ALLOWED_ACCESS_SCOPES):
+                            violations.append(f"{route_id}: invalid access scopes {sorted(normalized_scopes)}")
+                            continue
+                        if normalized_scopes.isdisjoint(ALLOWED_ACCESS_SCOPES):
+                            violations.append(f"{route_id}: accessBearerAuth scopes must include viewer/manager/admin")
+                        if "admin" in normalized_scopes:
+                            has_admin_scope = True
+                    elif scheme_name == "refreshBearerAuth":
+                        if path != "/api/auth/refresh" or method_upper != "POST":
+                            violations.append(f"{route_id}: refreshBearerAuth only allowed on POST /api/auth/refresh")
+                        if scopes != []:
+                            violations.append(f"{route_id}: refreshBearerAuth scopes must be []")
+                    elif scheme_name == "tenantKeyAuth":
+                        if not path.startswith("/api/webhooks/"):
+                            violations.append(f"{route_id}: tenantKeyAuth only allowed on webhook routes")
+                        if scopes != []:
+                            violations.append(f"{route_id}: tenantKeyAuth scopes must be []")
+
+            if path == "/api/auth/refresh" and method_upper == "POST":
+                if effective_security != [{"refreshBearerAuth": []}]:
+                    violations.append(f"{route_id}: refresh endpoint must use refreshBearerAuth only")
+            if path.startswith("/api/auth/admin"):
+                if not has_access_bearer or not has_admin_scope:
+                    violations.append(f"{route_id}: admin route must require accessBearerAuth admin scope")
+
+    assert not violations, "OpenAPI security lint violations:\n" + "\n".join(f"- {v}" for v in violations)
 
 
 async def _viewer_scope_probe_status(token: str) -> int:
@@ -471,11 +539,11 @@ async def test_eg64_rbac_enforcement_hot_path_has_zero_role_table_reads_after_wa
     assert counts["role_reads"] == 0
 
 
-def test_eg6a1_admin_namespace_routes_are_default_deny_scoped():
-    _lint_admin_routes_have_admin_scope(app)
+def test_eg6deny_openapi_default_deny_and_scope_coverage():
+    _lint_openapi_default_deny_and_scopes(doc=app.openapi())
 
 
-def test_eg6a1_negative_control_unscoped_admin_route_fails_lint(monkeypatch: pytest.MonkeyPatch):
+def test_eg6admin_negative_control_unscoped_admin_route_fails_lint(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("SKELDIR_B12_P6_ENABLE_NEGATIVE_ADMIN_UNSCOPED_ROUTE", "1")
     import app.api.auth as auth_module
 
@@ -483,10 +551,41 @@ def test_eg6a1_negative_control_unscoped_admin_route_fails_lint(monkeypatch: pyt
     candidate = FastAPI()
     candidate.include_router(reloaded.router, prefix="/api/auth")
     with pytest.raises(AssertionError):
-        _lint_admin_routes_have_admin_scope(candidate)
+        _lint_openapi_default_deny_and_scopes(doc=candidate.openapi())
 
     monkeypatch.setenv("SKELDIR_B12_P6_ENABLE_NEGATIVE_ADMIN_UNSCOPED_ROUTE", "0")
     importlib.reload(auth_module)
+
+
+def test_eg6deny_negative_control_missing_security_route_fails_lint():
+    candidate = FastAPI()
+
+    @candidate.get("/api/private/no-security")
+    async def private_unsecured() -> dict[str, bool]:
+        return {"ok": True}
+
+    with pytest.raises(AssertionError):
+        _lint_openapi_default_deny_and_scopes(doc=candidate.openapi())
+
+
+def test_eg6view_negative_control_access_scheme_empty_scopes_fails_lint():
+    doc = copy.deepcopy(app.openapi())
+    doc["paths"]["/api/negative/access-empty"] = {
+        "get": {
+            "operationId": "negativeAccessEmptyScopes",
+            "responses": {"200": {"description": "ok"}},
+            "security": [{"accessBearerAuth": []}],
+        }
+    }
+    with pytest.raises(AssertionError):
+        _lint_openapi_default_deny_and_scopes(doc=doc)
+
+
+def test_eg6scheme_negative_control_refresh_route_misdeclared_as_access_fails_lint():
+    doc = copy.deepcopy(app.openapi())
+    doc["paths"]["/api/auth/refresh"]["post"]["security"] = [{"accessBearerAuth": ["viewer"]}]
+    with pytest.raises(AssertionError):
+        _lint_openapi_default_deny_and_scopes(doc=doc)
 
 
 @pytest.mark.asyncio
@@ -602,6 +701,59 @@ async def test_eg6r1_refresh_after_downgrade_db_authoritative(test_tenant):
 
 
 @pytest.mark.asyncio
+async def test_eg6rdel_membership_deletion_blocks_refresh_remint(test_tenant):
+    tenant_id = test_tenant
+    target_user_id = uuid4()
+    target_email = f"refresh-delete-{uuid4().hex[:8]}@example.com"
+    password = "RefreshDeletePass!123"
+
+    await _seed_identity_with_role(
+        tenant_id=tenant_id,
+        user_id=target_user_id,
+        email=target_email,
+        password=password,
+        role="admin",
+    )
+    target_login = await _login(tenant_id=tenant_id, email=target_email, password=password)
+    old_refresh = target_login["refresh_token"]
+
+    database_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
+    sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    db = create_engine(sync_url)
+    with db.begin() as conn:
+        deleted_roles = conn.execute(
+            text(
+                """
+                DELETE FROM public.tenant_membership_roles
+                WHERE tenant_id = :tenant_id
+                  AND membership_id IN (
+                    SELECT id
+                    FROM public.tenant_memberships
+                    WHERE tenant_id = :tenant_id
+                      AND user_id = :user_id
+                  )
+                """
+            ),
+            {"tenant_id": str(tenant_id), "user_id": str(target_user_id)},
+        )
+        deleted_memberships = conn.execute(
+            text(
+                """
+                DELETE FROM public.tenant_memberships
+                WHERE tenant_id = :tenant_id
+                  AND user_id = :user_id
+                """
+            ),
+            {"tenant_id": str(tenant_id), "user_id": str(target_user_id)},
+        )
+    assert (deleted_roles.rowcount or 0) >= 1
+    assert (deleted_memberships.rowcount or 0) >= 1
+
+    refresh_status, _refresh_payload = await _refresh(refresh_token=old_refresh, tenant_id=tenant_id)
+    assert refresh_status in {401, 403}
+
+
+@pytest.mark.asyncio
 async def test_eg6r1_negative_control_copy_forward_role_toggle_demonstrates_violation(
     test_tenant,
     monkeypatch: pytest.MonkeyPatch,
@@ -662,12 +814,18 @@ def test_eg65_openapi_contract_declares_admin_rbac_endpoints_and_403_schema():
     token_cutoff = paths["/api/auth/admin/token-cutoff"]["post"]
     admin_check = paths["/api/auth/admin/rbac-check"]["get"]
     membership_role = paths["/api/auth/admin/membership-role"]["post"]
+    refresh = paths["/api/auth/refresh"]["post"]
+    logout = paths["/api/auth/logout"]["post"]
+    verify = paths["/api/auth/verify"]["get"]
 
-    assert token_cutoff["security"] == [{"bearerAuth": ["admin"]}]
-    assert admin_check["security"] == [{"bearerAuth": ["admin"]}]
+    assert token_cutoff["security"] == [{"accessBearerAuth": ["admin"]}]
+    assert admin_check["security"] == [{"accessBearerAuth": ["admin"]}]
     assert "403" in admin_check["responses"]
-    assert membership_role["security"] == [{"bearerAuth": ["admin"]}]
+    assert membership_role["security"] == [{"accessBearerAuth": ["admin"]}]
     assert "403" in membership_role["responses"]
+    assert refresh["security"] == [{"refreshBearerAuth": []}]
+    assert logout["security"] == [{"accessBearerAuth": ["viewer"]}]
+    assert verify["security"] == [{"accessBearerAuth": ["viewer"]}]
 
 
 def test_eg66_webhook_contracts_remain_tenant_key_auth_without_bearer_auth():
@@ -676,4 +834,4 @@ def test_eg66_webhook_contracts_remain_tenant_key_auth_without_bearer_auth():
         doc = yaml.safe_load((webhook_dir / file_name).read_text(encoding="utf-8"))
         security = doc.get("security", [])
         assert {"tenantKeyAuth": []} in security
-        assert {"bearerAuth": []} not in security
+        assert {"accessBearerAuth": ["viewer"]} not in security

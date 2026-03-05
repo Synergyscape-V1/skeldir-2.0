@@ -19,7 +19,7 @@ tags:
     description: User authentication and authorization endpoints
 
 security:
-  - bearerAuth: []
+  - accessBearerAuth: ["viewer"]
 
 paths:
   /api/auth/login:
@@ -120,7 +120,8 @@ paths:
       operationId: refreshToken
       tags:
         - Authentication
-      security: []
+      security:
+        - refreshBearerAuth: []
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
       requestBody:
@@ -181,7 +182,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -214,7 +215,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - accessBearerAuth: ["viewer"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -260,7 +261,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: ["admin"]
+        - accessBearerAuth: ["admin"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -339,7 +340,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: ["admin"]
+        - accessBearerAuth: ["admin"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -395,7 +396,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: ["admin"]
+        - accessBearerAuth: ["admin"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -481,5 +482,7 @@ paths:
 
 components:
   securitySchemes:
-    bearerAuth:
-      $ref: './_common/base.yaml#/components/securitySchemes/bearerAuth'
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+    refreshBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/refreshBearerAuth'

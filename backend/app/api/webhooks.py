@@ -14,8 +14,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
 from fastapi import Body
+from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -44,6 +45,11 @@ from app.webhooks.signatures import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+tenant_key_auth = APIKeyHeader(
+    name=settings.TENANT_API_KEY_HEADER,
+    scheme_name="tenantKeyAuth",
+    auto_error=False,
+)
 
 
 class WebhookResponse(BaseModel):
@@ -60,8 +66,10 @@ class WebhookErrorResponse(BaseModel):
     vendor: Optional[str] = None
 
 
-async def tenant_secrets(request: Request):
-    api_key = request.headers.get(settings.TENANT_API_KEY_HEADER)
+async def tenant_secrets(
+    request: Request,
+    api_key: str | None = Security(tenant_key_auth),
+):
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

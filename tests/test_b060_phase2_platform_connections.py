@@ -55,6 +55,10 @@ def _build_token(tenant_id: UUID) -> str:
     now = int(time.time())
     payload = {
         "sub": "user-1",
+        "user_id": str(uuid4()),
+        "role": "viewer",
+        "roles": ["viewer"],
+        "scopes": ["viewer"],
         "iss": os.environ["AUTH_JWT_ISSUER"],
         "aud": os.environ["AUTH_JWT_AUDIENCE"],
         "iat": now,
