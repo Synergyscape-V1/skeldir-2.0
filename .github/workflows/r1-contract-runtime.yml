@@ -208,7 +208,9 @@ jobs:
 
           # Capture schema state after Run 1
           podman exec skeldir-r1-postgres pg_dump --schema-only --no-owner --no-privileges -U $POSTGRES_USER $POSTGRES_DB > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.sql"
-          SCHEMA_HASH_RUN1=$(sha256sum "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.sql" | cut -d' ' -f1)
+          # pg_dump embeds volatile \restrict/\unrestrict session tokens; normalize them away.
+          grep -vE '^\\(un)?restrict ' "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.sql" > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.normalized.sql"
+          SCHEMA_HASH_RUN1=$(sha256sum "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.normalized.sql" | cut -d' ' -f1)
           echo "**Schema hash after Run 1:** \`$SCHEMA_HASH_RUN1\`" | tee -a $GITHUB_STEP_SUMMARY
 
           # Apply canonical schema again (Run 2 - idempotency test)
@@ -221,7 +223,8 @@ jobs:
 
           # Capture schema state after Run 2
           podman exec skeldir-r1-postgres pg_dump --schema-only --no-owner --no-privileges -U $POSTGRES_USER $POSTGRES_DB > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.sql"
-          SCHEMA_HASH_RUN2=$(sha256sum "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.sql" | cut -d' ' -f1)
+          grep -vE '^\\(un)?restrict ' "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.sql" > "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.normalized.sql"
+          SCHEMA_HASH_RUN2=$(sha256sum "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.normalized.sql" | cut -d' ' -f1)
           echo "**Schema hash after Run 2:** \`$SCHEMA_HASH_RUN2\`" | tee -a $GITHUB_STEP_SUMMARY
 
           # Compare hashes for idempotency
@@ -230,7 +233,7 @@ jobs:
             echo "PASS" > "$ARTIFACTS_DIR/DB_SCHEMA/verdict.txt"
           else
             echo "❌ **Schema drift detected:** Run1 != Run2" | tee -a $GITHUB_STEP_SUMMARY
-            diff "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.sql" "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.sql" | head -30 | tee -a $GITHUB_STEP_SUMMARY
+            diff "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run1.normalized.sql" "$ARTIFACTS_DIR/DB_SCHEMA/schema_after_run2.normalized.sql" | head -30 | tee -a $GITHUB_STEP_SUMMARY
             echo "FAIL" > "$ARTIFACTS_DIR/DB_SCHEMA/verdict.txt"
           fi
 
@@ -261,6 +264,7 @@ jobs:
           # Configure database connection for backend
           export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB"
           export ENVIRONMENT="test"
+          export CONTRACT_TESTING="1"
           export LOG_LEVEL="INFO"
 
           # Start FastAPI backend with uvicorn
@@ -477,7 +481,7 @@ jobs:
             -X POST \
             -H "Content-Type: application/json" \
             -H "X-Correlation-ID: $CORR_ID" \
-            -d '{"email":"test@example.com","password":"testpassword123"}' \
+            -d '{"email":"test@example.com","password":"testpassword123","tenant_id":"550e8400-e29b-41d4-a716-446655440000"}' \
             http://localhost:8000/api/auth/login || printf '\n000')
           WRITE_HAPPY_BODY=$(echo "$WRITE_HAPPY" | head -n -1)
           WRITE_HAPPY_CODE=$(echo "$WRITE_HAPPY" | tail -n 1)
