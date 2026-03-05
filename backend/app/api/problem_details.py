@@ -16,12 +16,14 @@ def problem_details_response(
     correlation_id: UUID,
     type_url: str,
 ) -> JSONResponse:
+    # Use a URI-safe, path-template-independent instance identifier.
+    instance_uri = f"urn:skeldir:error:{correlation_id}"
     payload = {
         "type": type_url,
         "title": title,
         "status": status_code,
         "detail": detail,
-        "instance": str(request.url),
+        "instance": instance_uri,
         "correlation_id": str(correlation_id),
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }

@@ -260,10 +260,15 @@ components:
 
   securitySchemes:
     bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: JWT Bearer token authentication
+      type: oauth2
+      description: JWT Bearer token authentication with RBAC scopes
+      flows:
+        password:
+          tokenUrl: /api/auth/login
+          scopes:
+            admin: Administrator access
+            manager: Manager access
+            viewer: Viewer access
     tenantKeyAuth:
       type: apiKey
       in: header
