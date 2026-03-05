@@ -6,7 +6,8 @@ import os
 from typing import Any, Optional
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from fastapi import Header, Request
+from fastapi import Depends, Request
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 import jwt
 from jwt import InvalidTokenError, PyJWTError
 
@@ -23,6 +24,19 @@ from app.services.auth_revocation import evaluate_access_token_revocation
 from app.security.revocation_runtime import get_revocation_runtime_cache
 
 RS256_ALGORITHM = "RS256"
+ROLE_PRECEDENCE: tuple[str, ...] = ("admin", "manager", "viewer")
+_ROLE_PRECEDENCE_INDEX = {role: idx for idx, role in enumerate(ROLE_PRECEDENCE)}
+
+oauth2_bearer_auth = OAuth2PasswordBearer(
+    tokenUrl="/api/auth/login",
+    scheme_name="bearerAuth",
+    auto_error=False,
+    scopes={
+        "admin": "Administrator access",
+        "manager": "Manager access",
+        "viewer": "Viewer access",
+    },
+)
 
 
 class AuthError(Exception):
@@ -76,6 +90,47 @@ def _get_bearer_token(authorization: str | None) -> str:
             type_url="https://api.skeldir.com/problems/authentication-failed",
         )
     return stripped.split(" ", 1)[1].strip()
+
+
+def _normalize_role_claims(claims: dict[str, Any]) -> list[str]:
+    raw_values: list[Any] = []
+    role = claims.get("role")
+    if role is not None:
+        raw_values.append(role)
+    roles = claims.get("roles")
+    if isinstance(roles, list):
+        raw_values.extend(roles)
+    normalized = {
+        str(value).strip().lower()
+        for value in raw_values
+        if value is not None and str(value).strip()
+    }
+    return [candidate for candidate in ROLE_PRECEDENCE if candidate in normalized]
+
+
+def _enforce_required_scopes(*, claims: dict[str, Any], required_scopes: list[str]) -> None:
+    if not required_scopes:
+        return
+    known_required = [scope.strip().lower() for scope in required_scopes if scope.strip().lower() in _ROLE_PRECEDENCE_INDEX]
+    if not known_required:
+        return
+    required_rank = min(_ROLE_PRECEDENCE_INDEX[scope] for scope in known_required)
+    role_claims = _normalize_role_claims(claims)
+    if not role_claims:
+        raise AuthError(
+            status_code=403,
+            title="Forbidden",
+            detail=f"Required role scope: {', '.join(sorted(known_required))}.",
+            type_url="https://api.skeldir.com/problems/forbidden",
+        )
+    caller_rank = min(_ROLE_PRECEDENCE_INDEX[role] for role in role_claims if role in _ROLE_PRECEDENCE_INDEX)
+    if caller_rank > required_rank:
+        raise AuthError(
+            status_code=403,
+            title="Forbidden",
+            detail=f"Required role scope: {', '.join(sorted(known_required))}.",
+            type_url="https://api.skeldir.com/problems/forbidden",
+        )
 
 
 def _ensure_auth_configured() -> None:
@@ -374,9 +429,16 @@ def _epoch_to_datetime_utc(epoch: int) -> datetime:
 
 async def get_auth_context(
     request: Request,
-    authorization: str | None = Header(default=None, alias="Authorization"),
+    security_scopes: SecurityScopes,
+    token: str | None = Depends(oauth2_bearer_auth),
 ) -> AuthContext:
-    token = _get_bearer_token(authorization)
+    if not token:
+        raise AuthError(
+            status_code=401,
+            title="Authentication Failed",
+            detail="Missing Authorization header.",
+            type_url="https://api.skeldir.com/problems/authentication-failed",
+        )
     try:
         claims = _decode_token(token)
     except InvalidTokenError as exc:
@@ -389,6 +451,7 @@ async def get_auth_context(
 
     token_claims = extract_access_token_claims(claims)
     await assert_access_token_active(token_claims)
+    _enforce_required_scopes(claims=token_claims.claims, required_scopes=security_scopes.scopes)
     auth_context = AuthContext(
         tenant_id=token_claims.tenant_id,
         user_id=token_claims.user_id,

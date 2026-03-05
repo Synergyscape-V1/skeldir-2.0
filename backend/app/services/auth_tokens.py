@@ -155,6 +155,7 @@ async def resolve_tenant_membership(
     user_id: UUID,
     requested_tenant_id: UUID,
 ) -> UUID | None:
+    await set_tenant_guc_async(session, requested_tenant_id, local=True)
     base_query = text(
         """
         SELECT tenant_id
@@ -481,11 +482,15 @@ async def rotate_refresh_token(
         token_row.rotated_at = now
         token_row.replaced_by_id = new_row.id
     await session.flush()
-    role_claims = await resolve_membership_roles(
-        session,
-        user_id=token_row.user_id,
-        tenant_id=token_row.tenant_id,
-    )
+    if os.getenv("SKELDIR_B12_P6_NEGATIVE_COPY_ROLE_FORWARD") == "1":
+        # Negative control: intentionally bypass DB role truth to prove EG6.R1 would fail.
+        role_claims = ["admin"]
+    else:
+        role_claims = await resolve_membership_roles(
+            session,
+            user_id=token_row.user_id,
+            tenant_id=token_row.tenant_id,
+        )
 
     return TokenPair(
         access_token=mint_internal_jwt(

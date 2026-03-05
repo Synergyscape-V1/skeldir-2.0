@@ -260,7 +260,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - bearerAuth: ["admin"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -339,7 +339,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - bearerAuth: ["admin"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
@@ -395,7 +395,7 @@ paths:
       tags:
         - Authentication
       security:
-        - bearerAuth: []
+        - bearerAuth: ["admin"]
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'

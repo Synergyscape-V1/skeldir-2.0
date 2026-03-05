@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Security
 
 # Import generated Pydantic models
 from app.schemas.auth import (
@@ -34,7 +34,6 @@ from app.schemas.auth import (
 from app.core.secrets import get_secret
 from app.db.session import AsyncSessionLocal
 from app.security.auth import AuthContext, AuthError, get_auth_context
-from app.security.rbac import require_roles
 from app.services.auth_revocation import denylist_access_token, upsert_tokens_invalid_before
 from app.services.auth_tokens import (
     TokenPair,
@@ -47,6 +46,10 @@ from app.services.auth_tokens import (
 )
 
 router = APIRouter()
+admin_router = APIRouter(
+    prefix="/admin",
+    dependencies=[Security(get_auth_context, scopes=["admin"])],
+)
 _LOGIN_IDENTIFIER_PEPPER_CACHE: str | None = None
 
 
@@ -276,8 +279,8 @@ async def verify_token(
     }
 
 
-@router.post(
-    "/admin/token-cutoff",
+@admin_router.post(
+    "/token-cutoff",
     response_model=AdminTokenCutoffResponse,
     status_code=200,
     operation_id="adminRevokeTokensBefore",
@@ -287,7 +290,7 @@ async def verify_token(
 async def admin_token_cutoff(
     request: AdminTokenCutoffRequest,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(require_roles("admin"))],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["admin"])],
 ):
     cutoff = request.tokens_invalid_before or datetime.now(timezone.utc)
     if cutoff.tzinfo is None:
@@ -314,8 +317,8 @@ async def admin_token_cutoff(
     )
 
 
-@router.get(
-    "/admin/rbac-check",
+@admin_router.get(
+    "/rbac-check",
     response_model=AdminWhoAmIResponse,
     status_code=200,
     operation_id="adminRbacCheck",
@@ -324,7 +327,7 @@ async def admin_token_cutoff(
 )
 async def admin_rbac_check(
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(require_roles("admin"))],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["admin"])],
 ):
     role_value = str(auth_context.claims.get("role", "viewer")).strip().lower() or "viewer"
     if role_value not in {"admin", "manager", "viewer"}:
@@ -338,8 +341,8 @@ async def admin_rbac_check(
     )
 
 
-@router.post(
-    "/admin/membership-role",
+@admin_router.post(
+    "/membership-role",
     response_model=AdminUpdateMembershipRoleResponse,
     status_code=200,
     operation_id="adminUpdateMembershipRole",
@@ -352,7 +355,7 @@ async def admin_rbac_check(
 async def admin_update_membership_role(
     request: AdminUpdateMembershipRoleRequest,
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
-    auth_context: Annotated[AuthContext, Depends(require_roles("admin"))],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["admin"])],
 ):
     now_utc = datetime.now(timezone.utc)
     changed = False
@@ -401,3 +404,17 @@ async def admin_update_membership_role(
         revoked_existing_tokens=changed,
         message=f"Membership role set to {request.role}.",
     )
+
+
+router.include_router(admin_router)
+
+
+if os.getenv("SKELDIR_B12_P6_ENABLE_NEGATIVE_ADMIN_UNSCOPED_ROUTE") == "1":
+    @router.get(
+        "/admin/_negative_unscoped",
+        status_code=200,
+        operation_id="adminNegativeUnscopedRoute",
+        include_in_schema=False,
+    )
+    async def admin_negative_unscoped_route() -> dict[str, bool]:
+        return {"ok": True}
