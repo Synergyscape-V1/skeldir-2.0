@@ -52,6 +52,14 @@ def _build_token() -> str:
     )
 
 
+@pytest.fixture(autouse=True)
+def _contract_runtime_auth_fixture(monkeypatch):
+    async def _no_revocation_check(_token_claims):
+        return None
+
+    monkeypatch.setattr("app.security.auth.assert_access_token_active", _no_revocation_check)
+
+
 def load_scope_config() -> dict:
     """Load contract scope configuration."""
     config_path = Path(__file__).parent.parent.parent / "backend" / "app" / "config" / "contract_scope.yaml"

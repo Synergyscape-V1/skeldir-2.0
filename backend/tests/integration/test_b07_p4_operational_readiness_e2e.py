@@ -327,6 +327,8 @@ def _payload(
     return LLMTaskPayload(
         tenant_id=tenant_id,
         user_id=user_id,
+        jti=uuid4(),
+        iat=int(time.time()),
         correlation_id=request_id,
         request_id=request_id,
         prompt=prompt,

@@ -4,6 +4,7 @@ import sys
 import time
 import subprocess
 import json
+import tempfile
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -36,6 +37,8 @@ from app.tasks.housekeeping import ping  # noqa: E402
 from app.tasks.maintenance import scan_for_pii_contamination_task  # noqa: E402
 from app.tasks import matviews  # noqa: E402,F401
 from app.tasks.llm import llm_routing_worker  # noqa: E402
+from app.tasks.authority import SystemAuthorityEnvelope  # noqa: E402
+from app.tasks.enqueue import enqueue_tenant_task  # noqa: E402
 from app.main import app  # noqa: E402
 from app.db.session import engine  # noqa: E402
 from app.observability.logging_config import configure_logging  # noqa: E402
@@ -174,6 +177,7 @@ def celery_worker_proc():
     backend_dir = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
     env["PYTHONPATH"] = str(backend_dir.parent)
+    env["PROMETHEUS_MULTIPROC_DIR"] = tempfile.mkdtemp(prefix="b051_prom_")
     # B0.5.6.1: CELERY_METRICS_PORT/ADDR removed - worker HTTP server eradicated
     queue_list = ",".join(["housekeeping", "maintenance", QUEUE_LLM, "attribution"])
     cmd = [
@@ -308,7 +312,11 @@ def test_tenant_task_enforces_and_sets_guc():
     celery_app.conf.task_always_eager = True
     try:
         tenant_id = uuid4()
-        result = scan_for_pii_contamination_task.delay(tenant_id=str(tenant_id)).get(timeout=10)
+        result = enqueue_tenant_task(
+            scan_for_pii_contamination_task,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={},
+        ).get(timeout=10)
         assert result["status"] == "ok"
         assert UUID(result["guc"]) == tenant_id
 

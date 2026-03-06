@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+AUTHORITY_ENVELOPE_HEADER = "skeldir_authority_envelope"
+
 
 class SessionAuthorityEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -45,4 +47,3 @@ def parse_authority_envelope(value: Any) -> AuthorityEnvelope:
 
 def authority_envelope_payload(value: AuthorityEnvelope) -> dict[str, Any]:
     return value.model_dump(mode="json")
-

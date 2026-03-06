@@ -11,12 +11,11 @@ from typing import Optional
 from uuid import UUID
 
 from app.celery_app import celery_app
-from app.core.identity import resolve_user_id
 from app.db.session import get_session
 from app.observability.context import set_request_correlation_id, set_tenant_id, set_user_id
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.tasks.context import run_in_worker_loop
-from app.tasks.tenant_base import TenantTask
+from app.tasks.tenant_base import TenantTask, task_tenant_id, task_user_id
 from app.workers.llm import (
     generate_explanation,
     optimize_budget,
@@ -60,8 +59,6 @@ def _resolve_request_context(
 def _retry_kwargs(
     *,
     payload: dict,
-    tenant_id: UUID,
-    user_id: UUID,
     correlation_id: str,
     request_id: str,
     max_cost_cents: int,
@@ -69,8 +66,6 @@ def _retry_kwargs(
 ) -> dict:
     return {
         "payload": payload,
-        "tenant_id": tenant_id,
-        "user_id": user_id,
         "correlation_id": correlation_id,
         "request_id": request_id,
         "max_cost_cents": max_cost_cents,
@@ -89,15 +84,14 @@ def _retry_kwargs(
 def llm_routing_worker(
     self,
     payload: dict,
-    tenant_id: UUID,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
     force_failure: bool = False,
     retry_on_failure: bool = True,
 ):
-    resolved_user_id = resolve_user_id(user_id)
+    tenant_id = task_tenant_id(self)
+    resolved_user_id = task_user_id(self)
     correlation, request_id = _resolve_request_context(
         tenant_id=tenant_id,
         endpoint="app.tasks.llm.route",
@@ -133,8 +127,6 @@ def llm_routing_worker(
             exc=exc,
             kwargs=_retry_kwargs(
                 payload=payload,
-                tenant_id=tenant_id,
-                user_id=resolved_user_id,
                 correlation_id=correlation,
                 request_id=request_id,
                 max_cost_cents=max_cost_cents,
@@ -147,15 +139,14 @@ def llm_routing_worker(
 def llm_explanation_worker(
     self,
     payload: dict,
-    tenant_id: UUID,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
     force_failure: bool = False,
     retry_on_failure: bool = True,
 ):
-    resolved_user_id = resolve_user_id(user_id)
+    tenant_id = task_tenant_id(self)
+    resolved_user_id = task_user_id(self)
     correlation, request_id = _resolve_request_context(
         tenant_id=tenant_id,
         endpoint="app.tasks.llm.explanation",
@@ -195,8 +186,6 @@ def llm_explanation_worker(
             exc=exc,
             kwargs=_retry_kwargs(
                 payload=payload,
-                tenant_id=tenant_id,
-                user_id=resolved_user_id,
                 correlation_id=correlation,
                 request_id=request_id,
                 max_cost_cents=max_cost_cents,
@@ -209,15 +198,14 @@ def llm_explanation_worker(
 def llm_investigation_worker(
     self,
     payload: dict,
-    tenant_id: UUID,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
     force_failure: bool = False,
     retry_on_failure: bool = True,
 ):
-    resolved_user_id = resolve_user_id(user_id)
+    tenant_id = task_tenant_id(self)
+    resolved_user_id = task_user_id(self)
     correlation, request_id = _resolve_request_context(
         tenant_id=tenant_id,
         endpoint="app.tasks.llm.investigation",
@@ -257,8 +245,6 @@ def llm_investigation_worker(
             exc=exc,
             kwargs=_retry_kwargs(
                 payload=payload,
-                tenant_id=tenant_id,
-                user_id=resolved_user_id,
                 correlation_id=correlation,
                 request_id=request_id,
                 max_cost_cents=max_cost_cents,
@@ -271,15 +257,14 @@ def llm_investigation_worker(
 def llm_budget_optimization_worker(
     self,
     payload: dict,
-    tenant_id: UUID,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     request_id: Optional[str] = None,
     max_cost_cents: int = 0,
     force_failure: bool = False,
     retry_on_failure: bool = True,
 ):
-    resolved_user_id = resolve_user_id(user_id)
+    tenant_id = task_tenant_id(self)
+    resolved_user_id = task_user_id(self)
     correlation, request_id = _resolve_request_context(
         tenant_id=tenant_id,
         endpoint="app.tasks.llm.budget_optimization",
@@ -319,8 +304,6 @@ def llm_budget_optimization_worker(
             exc=exc,
             kwargs=_retry_kwargs(
                 payload=payload,
-                tenant_id=tenant_id,
-                user_id=resolved_user_id,
                 correlation_id=correlation,
                 request_id=request_id,
                 max_cost_cents=max_cost_cents,

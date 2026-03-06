@@ -14,10 +14,10 @@ import pytest
 from sqlalchemy import text
 
 from app.celery_app import celery_app
+from app.core.secrets import get_database_url
 from app.db.session import AsyncSessionLocal
-from app.security.auth import decode_and_verify_jwt, extract_access_token_claims, mint_internal_jwt
 from app.services.auth_revocation import denylist_access_token
-from app.tasks.authority import SessionAuthorityEnvelope
+from app.tasks.authority import AUTHORITY_ENVELOPE_HEADER, SessionAuthorityEnvelope
 
 
 def _wait_for_worker_ready(lines: list[str], proc: subprocess.Popen[str], timeout_s: float = 90.0) -> None:
@@ -37,9 +37,11 @@ def _start_worker() -> tuple[subprocess.Popen[str], list[str]]:
     env["PYTHONPATH"] = str(backend_dir.parent)
     env["TESTING"] = "1"
     env["SKELDIR_TEST_TASKS"] = "1"
-    env["SKELDIR_B12_P7_STRICT_ENVELOPE"] = "1"
-    env["SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS"] = "1"
     env["PROMETHEUS_MULTIPROC_DIR"] = tempfile.mkdtemp(prefix="b12_p7_prom_")
+    # Keep subprocess worker aligned with this test process runtime/broker identity.
+    env["DATABASE_URL"] = get_database_url()
+    env["CELERY_BROKER_URL"] = str(celery_app.conf.broker_url)
+    env["CELERY_RESULT_BACKEND"] = str(celery_app.conf.result_backend)
 
     cmd = [
         sys.executable,
@@ -84,34 +86,35 @@ def _start_worker() -> tuple[subprocess.Popen[str], list[str]]:
 @pytest.mark.asyncio
 async def test_revoked_session_envelope_is_blocked_before_worker_side_effect(test_tenant) -> None:
     user_id = uuid4()
-    token = mint_internal_jwt(tenant_id=test_tenant, user_id=user_id, expires_in_seconds=3600)
-    claims = extract_access_token_claims(decode_and_verify_jwt(token))
+    jti = uuid4()
+    issued_at_epoch = int(datetime.now(timezone.utc).timestamp())
 
     result = celery_app.send_task(
         "app.tasks.observability_test.auth_envelope_probe",
         queue="housekeeping",
         kwargs={
-            "authority_envelope": SessionAuthorityEnvelope(
-                tenant_id=claims.tenant_id,
-                user_id=claims.user_id,
-                jti=claims.jti,
-                iat=claims.issued_at_epoch,
-            ).model_dump(mode="json"),
-            "auth_token": token,
             "correlation_id": str(uuid4()),
+        },
+        headers={
+            AUTHORITY_ENVELOPE_HEADER: SessionAuthorityEnvelope(
+                tenant_id=test_tenant,
+                user_id=user_id,
+                jti=jti,
+                iat=issued_at_epoch,
+            ).model_dump(mode="json")
         },
     )
 
     async with AsyncSessionLocal() as session:
         async with session.begin():
-            await denylist_access_token(
-                session,
-                tenant_id=claims.tenant_id,
-                user_id=claims.user_id,
-                jti=claims.jti,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-                reason="b12_p7_runtime_revoke_after_enqueue",
-            )
+                await denylist_access_token(
+                    session,
+                    tenant_id=test_tenant,
+                    user_id=user_id,
+                    jti=jti,
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                    reason="b12_p7_runtime_revoke_after_enqueue",
+                )
 
     worker_proc, _lines = _start_worker()
     try:

@@ -25,7 +25,9 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.core.db import engine
+from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.attribution import recompute_window
+from app.tasks.enqueue import enqueue_tenant_task
 from app.db.session import set_tenant_guc
 from tests.conftest import _insert_tenant
 
@@ -38,6 +40,24 @@ def _parse_timestamp(iso_string: str) -> datetime:
     else:
         dt = dt.astimezone(timezone.utc)
     return dt
+
+
+def _enqueue_recompute_window(
+    *,
+    tenant_id,
+    window_start: str,
+    window_end: str,
+    model_version: str,
+):
+    return enqueue_tenant_task(
+        recompute_window,
+        envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+        kwargs={
+            "window_start": window_start,
+            "window_end": window_end,
+            "model_version": model_version,
+        },
+    ).get()
 
 
 @pytest.mark.asyncio
@@ -81,12 +101,12 @@ class TestWindowIdempotency:
                 )
 
             # First execution - creates job identity
-            result1 = recompute_window.delay(
+            result1 = _enqueue_recompute_window(
                 tenant_id=test_tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version=model_version,
-            ).get()
+            )
 
             # Query job row after first execution
             async with engine.begin() as conn:
@@ -120,12 +140,12 @@ class TestWindowIdempotency:
             assert status_first == "succeeded", f"First execution must succeed, got status={status_first}"
 
             # Second execution - reuses job identity (idempotency proof)
-            result2 = recompute_window.delay(
+            result2 = _enqueue_recompute_window(
                 tenant_id=test_tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version=model_version,
-            ).get()
+            )
 
             # Query job row after second execution
             async with engine.begin() as conn:
@@ -280,12 +300,12 @@ class TestWindowIdempotency:
                     },
                 )
 
-            result1 = recompute_window.delay(
+            result1 = _enqueue_recompute_window(
                 tenant_id=test_tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version=model_version,
-            ).get()
+            )
 
             async with engine.begin() as conn:
                 await set_tenant_guc(conn, test_tenant_id, local=True)
@@ -321,12 +341,12 @@ class TestWindowIdempotency:
                 )
                 count_first = count_first_result.scalar()
 
-            result2 = recompute_window.delay(
+            result2 = _enqueue_recompute_window(
                 tenant_id=test_tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version=model_version,
-            ).get()
+            )
 
             async with engine.begin() as conn:
                 await set_tenant_guc(conn, test_tenant_id, local=True)
@@ -418,12 +438,12 @@ class TestWindowIdempotency:
                     api_key_hash=f"test_hash_{test_tenant_id}",
                 )
 
-            recompute_window.delay(
+            _enqueue_recompute_window(
                 tenant_id=test_tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version=model_version,
-            ).get()
+            )
 
             async with engine.begin() as conn:
                 await set_tenant_guc(conn, test_tenant_id, local=True)
@@ -497,19 +517,19 @@ class TestWindowIdempotency:
                     api_key_hash=f"test_hash_{test_tenant_id}",
                 )
 
-            recompute_window.delay(
+            _enqueue_recompute_window(
                 tenant_id=test_tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version="1.0.0",
-            ).get()
+            )
 
-            recompute_window.delay(
+            _enqueue_recompute_window(
                 tenant_id=test_tenant_id,
                 window_start=window_start,
                 window_end=window_end,
                 model_version="2.0.0",
-            ).get()
+            )
 
             async with engine.begin() as conn:
                 await set_tenant_guc(conn, test_tenant_id, local=True)

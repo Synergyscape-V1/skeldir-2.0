@@ -13,8 +13,8 @@ from uuid import UUID
 
 from app.celery_app import celery_app
 from app.db.session import get_session
-from app.tasks.context import assert_worker_auth_envelope_active, run_in_worker_loop
-from app.tasks.tenant_base import TenantTask
+from app.tasks.context import run_in_worker_loop
+from app.tasks.tenant_base import TenantTask, task_tenant_id, task_user_id
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -80,8 +80,13 @@ async def _write_auth_envelope_probe(
     name="app.tasks.observability_test.tenant_context_probe",
     routing_key="housekeeping.task",
 )
-def tenant_context_probe(self, tenant_id: UUID, user_id: UUID, correlation_id: Optional[str] = None) -> dict:
-    return run_in_worker_loop(_probe_worker_tenant_context(tenant_id=tenant_id, user_id=user_id))
+def tenant_context_probe(self, correlation_id: Optional[str] = None) -> dict:
+    return run_in_worker_loop(
+        _probe_worker_tenant_context(
+            tenant_id=task_tenant_id(self),
+            user_id=task_user_id(self),
+        )
+    )
 
 
 @celery_app.task(
@@ -92,23 +97,19 @@ def tenant_context_probe(self, tenant_id: UUID, user_id: UUID, correlation_id: O
 )
 def auth_envelope_probe(
     self,
-    tenant_id: UUID,
-    user_id: UUID,
-    auth_token: str,
     correlation_id: Optional[str] = None,
 ) -> dict:
-    claims = assert_worker_auth_envelope_active(
-        auth_token=auth_token,
-        tenant_id=tenant_id,
-        user_id=user_id,
-    )
+    tenant_id = task_tenant_id(self)
+    user_id = task_user_id(self)
+    envelope = getattr(self.request, "authority_envelope", {}) or {}
+    jti = str(envelope.get("jti", "missing-jti"))
     task_id = str(getattr(self.request, "id", None) or "missing-task-id")
     inserted = run_in_worker_loop(
         _write_auth_envelope_probe(
             tenant_id=tenant_id,
             user_id=user_id,
             task_id=task_id,
-            effect_key=f"revocation-probe:{claims['jti']}",
+            effect_key=f"revocation-probe:{jti}",
         )
     )
-    return {"status": "ok", "rows_inserted": inserted, "jti": str(claims["jti"])}
+    return {"status": "ok", "rows_inserted": inserted, "jti": jti}
