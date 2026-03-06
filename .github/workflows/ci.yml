@@ -503,6 +503,56 @@ jobs:
       - name: Execute B1.2-P6 RBAC proof suite
         run: |
           pytest backend/tests/test_b12_p6_rbac_enforcement.py -q
+
+  b12-p7-worker-coherence-proofs:
+    name: B1.2 P7 Worker Coherence Proofs
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS: "1"
+      SKELDIR_B12_P7_STRICT_ENVELOPE: "1"
+      SKELDIR_TEST_TASKS: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend test dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+          alembic upgrade head
+
+      - name: Execute B1.2-P7 worker coherence proof suite
+        run: |
+          pytest backend/tests/test_b12_p7_enqueue_and_envelope.py -q
+          pytest backend/tests/test_b12_p7_global_task_write_proof.py -q
+          pytest backend/tests/integration/test_b12_p7_worker_revocation_runtime.py -q
+          pytest backend/tests/test_b12_p1_tenant_context_safety.py -q
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest

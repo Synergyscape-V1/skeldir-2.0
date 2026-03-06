@@ -19,6 +19,9 @@ from app.core.secrets import get_database_url
 from app.observability import metrics
 from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.observability.metrics_policy import normalize_view_name
+from app.tasks.authority import SystemAuthorityEnvelope
+from app.tasks.enqueue import enqueue_tenant_task
+from app.tasks.tenant_base import TenantTask
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +219,7 @@ def _apply_strategy(
 
 @celery_app.task(
     bind=True,
+    base=TenantTask,
     name="app.tasks.matviews.refresh_single",
     routing_key="maintenance.task",
     max_retries=3,
@@ -267,6 +271,7 @@ def matview_refresh_single(
 
 @celery_app.task(
     bind=True,
+    base=TenantTask,
     name="app.tasks.matviews.refresh_all_for_tenant",
     routing_key="maintenance.task",
     max_retries=3,
@@ -365,10 +370,13 @@ def pulse_matviews_global(
         )
         tenant_ids = _fetch_tenant_ids_sync()
         for tenant_id in tenant_ids:
-            matview_refresh_all_for_tenant.delay(
-                tenant_id=str(tenant_id),
-                correlation_id=correlation_id,
-                schedule_class=schedule_class,
+            enqueue_tenant_task(
+                matview_refresh_all_for_tenant,
+                envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+                kwargs={
+                    "correlation_id": correlation_id,
+                    "schedule_class": schedule_class,
+                },
             )
         logger.info(
             "matview_pulse_task_dispatched",

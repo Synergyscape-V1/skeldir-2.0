@@ -19,6 +19,7 @@ from app.core.identity import resolve_user_id
 from app.db.session import engine, set_tenant_guc, set_user_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id, set_user_id
 from app.security.auth import (
+    AccessTokenClaims,
     AuthError,
     assert_access_token_active,
     decode_and_verify_jwt,
@@ -113,6 +114,44 @@ def assert_worker_auth_envelope_active(
     except AuthError as exc:
         raise ValueError("auth envelope revoked") from exc
     return claims
+
+
+def assert_worker_session_claims_active(
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    jti: UUID,
+    iat: int,
+) -> None:
+    """
+    Enforce revocation from a session authority envelope without requiring raw JWT.
+    """
+    token_claims = AccessTokenClaims(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        subject=str(user_id),
+        issuer=None,
+        audience=None,
+        jti=jti,
+        issued_at_epoch=int(iat),
+        expires_at_epoch=max(int(iat) + 3600, int(iat) + 1),
+        claims={
+            "tenant_id": str(tenant_id),
+            "user_id": str(user_id),
+            "sub": str(user_id),
+            "jti": str(jti),
+            "iat": int(iat),
+            "exp": max(int(iat) + 3600, int(iat) + 1),
+        },
+    )
+
+    async def _enforce() -> None:
+        await assert_access_token_active(token_claims)
+
+    try:
+        run_in_worker_loop(_enforce())
+    except AuthError as exc:
+        raise ValueError("auth envelope revoked") from exc
 
 
 async def _set_tenant_guc_global(tenant_id: UUID, user_id: UUID) -> None:

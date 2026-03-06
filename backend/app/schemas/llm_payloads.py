@@ -15,6 +15,14 @@ from pydantic import BaseModel, Field
 class LLMTaskPayload(BaseModel):
     tenant_id: UUID = Field(..., description="Tenant context for RLS")
     user_id: UUID = Field(..., description="User context for per-user caps and RLS")
+    jti: UUID | None = Field(
+        default=None,
+        description="Access-session JTI when task is session-derived",
+    )
+    iat: int | None = Field(
+        default=None,
+        description="Access-session iat epoch when task is session-derived",
+    )
     correlation_id: Optional[str] = Field(None, description="Correlation for observability")
     request_id: Optional[str] = Field(
         None,

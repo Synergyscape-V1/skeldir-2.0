@@ -40,12 +40,12 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "kwargs": {"schedule_class": "minute"},
         },
         "pii-audit-scanner": {
-            "task": "app.tasks.maintenance.scan_for_pii_contamination",
+            "task": "app.tasks.maintenance.scan_for_pii_contamination_all_tenants",
             "schedule": crontab(hour=4, minute=0),
             "options": {"expires": 3600},
         },
         "enforce-data-retention": {
-            "task": "app.tasks.maintenance.enforce_data_retention",
+            "task": "app.tasks.maintenance.enforce_data_retention_all_tenants",
             "schedule": crontab(hour=3, minute=0),
             "options": {"expires": 3600},
         },

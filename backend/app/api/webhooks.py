@@ -36,6 +36,8 @@ from app.observability.context import (
     set_business_correlation_id,
     get_request_correlation_id,
 )
+from app.tasks.authority import SystemAuthorityEnvelope
+from app.tasks.enqueue import tenant_task_signature
 from app.webhooks.signatures import (
     verify_shopify_signature,
     verify_stripe_signature,
@@ -123,18 +125,26 @@ def _schedule_downstream_tasks(
         from app.tasks.matviews import matview_refresh_all_for_tenant
 
         window_start, window_end = _compute_recompute_window(event_timestamp)
+        system_envelope = SystemAuthorityEnvelope(tenant_id=tenant_id)
         chain(
-            recompute_window.s(
-                tenant_id=tenant_id,
-                window_start=window_start,
-                window_end=window_end,
-                correlation_id=correlation_id,
-                model_version="1.0.0",
+            tenant_task_signature(
+                recompute_window,
+                envelope=system_envelope,
+                kwargs={
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "correlation_id": correlation_id,
+                    "model_version": "1.0.0",
+                },
             ).set(correlation_id=correlation_id),
-            matview_refresh_all_for_tenant.si(
-                tenant_id=tenant_id,
-                correlation_id=correlation_id,
-                schedule_class="realtime",
+            tenant_task_signature(
+                matview_refresh_all_for_tenant,
+                envelope=system_envelope,
+                kwargs={
+                    "correlation_id": correlation_id,
+                    "schedule_class": "realtime",
+                },
+                immutable=True,
             ).set(correlation_id=correlation_id),
         ).apply_async()
         logger.info(

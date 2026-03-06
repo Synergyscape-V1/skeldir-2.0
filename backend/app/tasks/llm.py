@@ -15,7 +15,8 @@ from app.core.identity import resolve_user_id
 from app.db.session import get_session
 from app.observability.context import set_request_correlation_id, set_tenant_id, set_user_id
 from app.schemas.llm_payloads import LLMTaskPayload
-from app.tasks.context import run_in_worker_loop, tenant_task
+from app.tasks.context import run_in_worker_loop
+from app.tasks.tenant_base import TenantTask
 from app.workers.llm import (
     generate_explanation,
     optimize_budget,
@@ -79,12 +80,12 @@ def _retry_kwargs(
 
 @celery_app.task(
     bind=True,
+    base=TenantTask,
     name="app.tasks.llm.route",
     routing_key="llm.task",
     max_retries=3,
     default_retry_delay=30,
 )
-@tenant_task
 def llm_routing_worker(
     self,
     payload: dict,
@@ -142,8 +143,7 @@ def llm_routing_worker(
         )
 
 
-@celery_app.task(bind=True, name="app.tasks.llm.explanation", max_retries=3, default_retry_delay=30)
-@tenant_task
+@celery_app.task(bind=True, base=TenantTask, name="app.tasks.llm.explanation", max_retries=3, default_retry_delay=30)
 def llm_explanation_worker(
     self,
     payload: dict,
@@ -205,8 +205,7 @@ def llm_explanation_worker(
         )
 
 
-@celery_app.task(bind=True, name="app.tasks.llm.investigation", max_retries=3, default_retry_delay=30)
-@tenant_task
+@celery_app.task(bind=True, base=TenantTask, name="app.tasks.llm.investigation", max_retries=3, default_retry_delay=30)
 def llm_investigation_worker(
     self,
     payload: dict,
@@ -268,8 +267,7 @@ def llm_investigation_worker(
         )
 
 
-@celery_app.task(bind=True, name="app.tasks.llm.budget_optimization", max_retries=3, default_retry_delay=30)
-@tenant_task
+@celery_app.task(bind=True, base=TenantTask, name="app.tasks.llm.budget_optimization", max_retries=3, default_retry_delay=30)
 def llm_budget_optimization_worker(
     self,
     payload: dict,

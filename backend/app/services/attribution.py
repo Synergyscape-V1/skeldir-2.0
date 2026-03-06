@@ -11,6 +11,8 @@ from uuid import UUID, uuid4
 
 from celery.result import AsyncResult
 
+from app.tasks.authority import SystemAuthorityEnvelope
+from app.tasks.enqueue import enqueue_tenant_task
 from app.tasks.attribution import _normalize_timestamp, recompute_window
 
 WindowBoundary = Union[str, datetime]
@@ -61,9 +63,10 @@ def schedule_recompute_window(
     start_payload = _isoformat_utc(start_dt)
     end_payload = _isoformat_utc(end_dt)
 
-    return recompute_window.apply_async(
+    return enqueue_tenant_task(
+        recompute_window,
+        envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
         kwargs={
-            "tenant_id": tenant_id,
             "window_start": start_payload,
             "window_end": end_payload,
             "correlation_id": str(correlation_uuid),
@@ -72,4 +75,3 @@ def schedule_recompute_window(
         },
         correlation_id=str(correlation_uuid),
     )
-
