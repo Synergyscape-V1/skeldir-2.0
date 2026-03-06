@@ -22,7 +22,10 @@ from app.matviews.registry import get_entry, list_names
 from app.matviews.executor import RefreshOutcome, refresh_single
 from app.db.session import engine, set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
-from app.tasks.context import run_in_worker_loop, tenant_task
+from app.tasks.authority import SystemAuthorityEnvelope
+from app.tasks.context import run_in_worker_loop
+from app.tasks.enqueue import enqueue_tenant_task
+from app.tasks.tenant_base import TenantTask
 
 logger = logging.getLogger(__name__)
 _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
@@ -108,12 +111,12 @@ def refresh_all_matviews_global_legacy(self) -> Dict[str, str]:
 
 @celery_app.task(
     bind=True,
+    base=TenantTask,
     name="app.tasks.maintenance.refresh_matview_for_tenant",
     routing_key="maintenance.task",
     max_retries=3,
     default_retry_delay=60,
 )
-@tenant_task
 def refresh_matview_for_tenant(
     self,
     tenant_id: UUID,
@@ -187,11 +190,11 @@ async def _validate_db_connection_for_tenant(tenant_id: UUID) -> str:
 
 @celery_app.task(
     bind=True,
+    base=TenantTask,
     name="app.tasks.maintenance.scan_for_pii_contamination",
     max_retries=3,
     default_retry_delay=60,
 )
-@tenant_task
 def scan_for_pii_contamination_task(
     self,
     tenant_id: UUID,
@@ -253,13 +256,19 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
         }
 
 
+async def _fetch_all_tenant_ids() -> List[UUID]:
+    async with engine.begin() as conn:
+        result = await conn.execute(text("SELECT id FROM public.tenants ORDER BY id"))
+        return [UUID(str(row[0])) for row in result.fetchall()]
+
+
 @celery_app.task(
     bind=True,
+    base=TenantTask,
     name="app.tasks.maintenance.enforce_data_retention",
     max_retries=3,
     default_retry_delay=60,
 )
-@tenant_task
 def enforce_data_retention_task(
     self,
     tenant_id: UUID,
@@ -293,6 +302,48 @@ def enforce_data_retention_task(
             extra={"tenant_id": str(tenant_id), "task_id": self.request.id, "correlation_id": correlation_id},
         )
         raise self.retry(exc=exc, countdown=60)
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.scan_for_pii_contamination_all_tenants",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def scan_for_pii_contamination_all_tenants(self) -> Dict[str, int]:
+    correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    tenant_ids = run_in_worker_loop(_fetch_all_tenant_ids())
+    dispatched = 0
+    for tenant_id in tenant_ids:
+        enqueue_tenant_task(
+            scan_for_pii_contamination_task,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={"correlation_id": correlation_id},
+        )
+        dispatched += 1
+    return {"tenant_count": len(tenant_ids), "tasks_dispatched": dispatched}
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.enforce_data_retention_all_tenants",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def enforce_data_retention_all_tenants(self) -> Dict[str, int]:
+    correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    tenant_ids = run_in_worker_loop(_fetch_all_tenant_ids())
+    dispatched = 0
+    for tenant_id in tenant_ids:
+        enqueue_tenant_task(
+            enforce_data_retention_task,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={"correlation_id": correlation_id},
+        )
+        dispatched += 1
+    return {"tenant_count": len(tenant_ids), "tasks_dispatched": dispatched}
 
 
 def _denylist_gc_batch_size() -> int:

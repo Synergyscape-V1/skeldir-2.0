@@ -23,7 +23,8 @@ from app.celery_app import celery_app
 from app.core.db import engine
 from app.db.session import set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
-from app.tasks.context import tenant_task, run_in_worker_loop
+from app.tasks.context import run_in_worker_loop
+from app.tasks.tenant_base import TenantTask
 
 logger = logging.getLogger(__name__)
 
@@ -489,12 +490,12 @@ async def _compute_allocations_deterministic_baseline(
 
 @celery_app.task(
     bind=True,
+    base=TenantTask,
     name="app.tasks.attribution.recompute_window",
     routing_key="attribution.task",
     max_retries=3,
     default_retry_delay=30,
 )
-@tenant_task
 def recompute_window(
     self,
     tenant_id: UUID,

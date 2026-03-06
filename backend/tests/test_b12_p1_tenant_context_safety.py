@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.celery_app import celery_app
 from app.core.secrets import get_database_url
 from app.db import session as db_session
+from app.tasks.authority import SystemAuthorityEnvelope
 
 
 def _build_async_database_url_and_args() -> tuple[str, dict]:
@@ -168,12 +169,18 @@ def test_worker_real_process_pool_reuse_no_bleed_and_tenant_envelope_required():
         result_a = celery_app.send_task(
             "app.tasks.observability_test.tenant_context_probe",
             queue="housekeeping",
-            kwargs={"tenant_id": str(tenant_a), "user_id": str(user_a)},
+            kwargs={
+                "authority_envelope": SystemAuthorityEnvelope(tenant_id=tenant_a).model_dump(mode="json"),
+                "user_id": str(user_a),
+            },
         ).get(timeout=60, propagate=True)
         result_b = celery_app.send_task(
             "app.tasks.observability_test.tenant_context_probe",
             queue="housekeeping",
-            kwargs={"tenant_id": str(tenant_b), "user_id": str(user_b)},
+            kwargs={
+                "authority_envelope": SystemAuthorityEnvelope(tenant_id=tenant_b).model_dump(mode="json"),
+                "user_id": str(user_b),
+            },
         ).get(timeout=60, propagate=True)
 
         assert result_a["tenant"] == str(tenant_a)
@@ -187,7 +194,7 @@ def test_worker_real_process_pool_reuse_no_bleed_and_tenant_envelope_required():
             queue="housekeeping",
             kwargs={"user_id": str(uuid4())},
         )
-        with pytest.raises(Exception, match="tenant_id is required"):
+        with pytest.raises(Exception, match="authority_envelope is required"):
             missing_tenant.get(timeout=60, propagate=True)
     finally:
         proc.terminate()
