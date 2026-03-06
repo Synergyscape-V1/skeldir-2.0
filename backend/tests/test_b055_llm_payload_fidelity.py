@@ -42,8 +42,10 @@ def test_llm_payload_json_roundtrip_fidelity():
 def test_llm_enqueue_payload_mapping(monkeypatch):
     captured = {}
 
-    def _fake_apply_async(*, kwargs):
+    def _fake_apply_async(*, kwargs, queue=None, correlation_id=None):
         captured["kwargs"] = kwargs
+        captured["queue"] = queue
+        captured["correlation_id"] = correlation_id
 
         class _Result:
             id = "test-task-id"
@@ -64,8 +66,10 @@ def test_llm_enqueue_payload_mapping(monkeypatch):
 
     assert result.id == "test-task-id"
     assert captured["kwargs"]["payload"] == payload.prompt
-    assert captured["kwargs"]["tenant_id"] == payload.tenant_id
     assert captured["kwargs"]["user_id"] == payload.user_id
     assert captured["kwargs"]["correlation_id"] == payload.correlation_id
     assert captured["kwargs"]["request_id"] == payload.request_id
     assert captured["kwargs"]["max_cost_cents"] == payload.max_cost_cents
+    assert captured["kwargs"]["authority_envelope"]["context_type"] == "system"
+    assert captured["kwargs"]["authority_envelope"]["tenant_id"] == str(payload.tenant_id)
+    assert captured["correlation_id"] == payload.correlation_id
