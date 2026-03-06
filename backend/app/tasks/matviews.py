@@ -230,6 +230,7 @@ def matview_refresh_single(
     *,
     tenant_id: UUID,
     view_name: str,
+    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     schedule_class: Optional[str] = None,
     force: bool = False,
@@ -281,6 +282,7 @@ def matview_refresh_all_for_tenant(
     self,
     *,
     tenant_id: UUID,
+    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     schedule_class: Optional[str] = None,
 ) -> dict:
