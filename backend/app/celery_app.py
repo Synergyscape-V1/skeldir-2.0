@@ -755,11 +755,21 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
 
         # Extract metadata
         tenant_id = None
-        if kwargs and 'tenant_id' in kwargs:
+
+        def _coerce_uuid(value):
             try:
-                tenant_id = UUID(str(kwargs['tenant_id']))
+                return UUID(str(value))
             except (ValueError, TypeError):
-                pass
+                return None
+
+        if kwargs and "tenant_id" in kwargs:
+            tenant_id = _coerce_uuid(kwargs["tenant_id"])
+        if tenant_id is None and task and hasattr(task, "request"):
+            tenant_id = _coerce_uuid(getattr(task.request, "tenant_id", None))
+            if tenant_id is None:
+                envelope = getattr(task.request, "authority_envelope", None)
+                if isinstance(envelope, dict):
+                    tenant_id = _coerce_uuid(envelope.get("tenant_id"))
 
         # Classify error type
         error_type = "unknown"

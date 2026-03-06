@@ -317,6 +317,8 @@ def test_b07_p2_runtime_llm_chain_with_redaction():
         payload = LLMTaskPayload(
             tenant_id=tenant_id,
             user_id=user_id,
+            jti=uuid4(),
+            iat=int(time.time()),
             correlation_id=request_id,
             request_id=request_id,
             prompt={"purpose": "b07-p2-runtime-proof"},

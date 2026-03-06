@@ -26,11 +26,13 @@ os.environ.setdefault("DATABASE_URL", DEFAULT_ASYNC_DSN)
 
 from app.celery_app import _on_task_failure, celery_app
 from app.core.queues import QUEUE_LLM
+from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.housekeeping import ping
 from app.tasks.maintenance import refresh_all_matviews_global_legacy
 from app.tasks import matviews  # noqa: F401
 from app.tasks.llm import llm_routing_worker
 from app.tasks.attribution import recompute_window
+from app.tasks.enqueue import enqueue_tenant_task
 from app.db.session import engine
 
 
@@ -272,11 +274,14 @@ class TestWorkerDLQ:
             # Trigger attribution task failure
             test_tenant_id = uuid4()
             with pytest.raises(ValueError):
-                recompute_window.delay(
-                    tenant_id=test_tenant_id,
-                    window_start="2025-01-01T00:00:00Z",
-                    window_end="2025-01-31T23:59:59Z",
-                    fail=True
+                enqueue_tenant_task(
+                    recompute_window,
+                    envelope=SystemAuthorityEnvelope(tenant_id=test_tenant_id),
+                    kwargs={
+                        "window_start": "2025-01-01T00:00:00Z",
+                        "window_end": "2025-01-31T23:59:59Z",
+                        "fail": True,
+                    },
                 ).get(propagate=True)
 
             # Query DLQ for captured failure
