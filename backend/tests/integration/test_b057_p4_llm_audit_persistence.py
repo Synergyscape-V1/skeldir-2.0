@@ -12,6 +12,11 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import create_engine, text
 from app.core.secrets import get_database_url
+from app.tasks.authority import (
+    AUTHORITY_ENVELOPE_HEADER,
+    SessionAuthorityEnvelope,
+    authority_envelope_payload,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +45,16 @@ def _runtime_sync_db_url() -> str:
     if runtime_url.startswith("postgresql+asyncpg://"):
         return runtime_url.replace("postgresql+asyncpg://", "postgresql://", 1)
     return runtime_url
+
+
+def _session_envelope_headers(tenant_id: UUID, user_id: UUID) -> dict[str, dict]:
+    envelope = SessionAuthorityEnvelope(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        jti=uuid4(),
+        iat=int(time.time()),
+    )
+    return {AUTHORITY_ENVELOPE_HEADER: authority_envelope_payload(envelope)}
 
 
 def _seed_tenant(admin_db_url: str, label: str) -> _TenantFixture:
@@ -199,12 +214,11 @@ def test_b057_p4_llm_stub_persists_under_runtime_identity():
             "app.tasks.llm.route",
             kwargs={
                 "payload": {"stub": True},
-                "tenant_id": str(tenant_a.tenant_id),
-                "user_id": str(user_id),
                 "correlation_id": str(uuid4()),
                 "request_id": str(uuid4()),
                 "max_cost_cents": 0,
             },
+            headers=_session_envelope_headers(tenant_a.tenant_id, user_id),
             queue="llm",
             routing_key="llm.task",
         )
@@ -238,13 +252,12 @@ def test_b057_p4_audit_failure_persists_to_worker_failed_jobs():
             "app.tasks.llm.route",
             kwargs={
                 "payload": {"stub": True},
-                "tenant_id": str(bad_tenant_id),
-                "user_id": str(user_id),
                 "correlation_id": str(uuid4()),
                 "request_id": str(uuid4()),
                 "max_cost_cents": 0,
                 "retry_on_failure": False,
             },
+            headers=_session_envelope_headers(bad_tenant_id, user_id),
             queue="llm",
             routing_key="llm.task",
         )
