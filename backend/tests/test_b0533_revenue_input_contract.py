@@ -36,7 +36,9 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.core.db import engine
+from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.attribution import recompute_window
+from app.tasks.enqueue import enqueue_tenant_task
 from tests.conftest import _insert_tenant
 
 
@@ -171,11 +173,14 @@ class TestRevenueInputContract:
             )
 
         # Run recompute_window (Contract B: reads events, writes allocations, ignores ledger)
-        result = recompute_window.delay(
-            tenant_id=test_tenant_id,
-            window_start=window_start,
-            window_end=window_end,
-            model_version=model_version,
+        result = enqueue_tenant_task(
+            recompute_window,
+            envelope=SystemAuthorityEnvelope(tenant_id=test_tenant_id),
+            kwargs={
+                "window_start": window_start,
+                "window_end": window_end,
+                "model_version": model_version,
+            },
         ).get()
 
         # Verify allocations were created
@@ -334,11 +339,14 @@ class TestRevenueInputContract:
             )
 
         # BASELINE: Run recompute_window with empty ledger
-        result_baseline = recompute_window.delay(
-            tenant_id=test_tenant_id,
-            window_start=window_start,
-            window_end=window_end,
-            model_version=model_version,
+        result_baseline = enqueue_tenant_task(
+            recompute_window,
+            envelope=SystemAuthorityEnvelope(tenant_id=test_tenant_id),
+            kwargs={
+                "window_start": window_start,
+                "window_end": window_end,
+                "model_version": model_version,
+            },
         ).get()
 
         # Capture baseline allocations
@@ -449,11 +457,14 @@ class TestRevenueInputContract:
             ledger_rows_before = ledger_before_result.fetchall()
 
         # RERUN: Run recompute_window with populated ledger (Contract B: should ignore ledger)
-        result_populated = recompute_window.delay(
-            tenant_id=test_tenant_id,
-            window_start=window_start,
-            window_end=window_end,
-            model_version=model_version,
+        result_populated = enqueue_tenant_task(
+            recompute_window,
+            envelope=SystemAuthorityEnvelope(tenant_id=test_tenant_id),
+            kwargs={
+                "window_start": window_start,
+                "window_end": window_end,
+                "model_version": model_version,
+            },
         ).get()
 
         # Capture allocations after rerun AND ledger state AFTER rerun
