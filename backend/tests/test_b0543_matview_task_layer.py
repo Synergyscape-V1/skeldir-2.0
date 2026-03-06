@@ -19,6 +19,8 @@ from app.celery_app import celery_app
 from app.db.session import engine
 from app.matviews import executor
 from app.observability import metrics
+from app.tasks.authority import SystemAuthorityEnvelope
+from app.tasks.enqueue import enqueue_tenant_task
 from app.tasks import matviews as matview_tasks
 
 
@@ -76,10 +78,13 @@ def test_matview_metrics_emitted(monkeypatch):
         )
         before = counter._value.get()
 
-        matview_tasks.matview_refresh_single.delay(
-            tenant_id=str(tenant_id),
-            view_name=result.view_name,
-            correlation_id=correlation_id,
+        enqueue_tenant_task(
+            matview_tasks.matview_refresh_single,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={
+                "view_name": result.view_name,
+                "correlation_id": correlation_id,
+            },
         ).get(propagate=True)
 
         after = counter._value.get()
@@ -107,10 +112,13 @@ async def test_matview_failure_persists_correlation_id(monkeypatch):
         monkeypatch.setattr(matview_tasks, "refresh_single", fake_refresh_single)
 
         with pytest.raises(matview_tasks.MatviewTaskFailure):
-            matview_tasks.matview_refresh_single.delay(
-                tenant_id=str(tenant_id),
-                view_name=result.view_name,
-                correlation_id=correlation_id,
+            enqueue_tenant_task(
+                matview_tasks.matview_refresh_single,
+                envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+                kwargs={
+                    "view_name": result.view_name,
+                    "correlation_id": correlation_id,
+                },
             ).get(propagate=True)
 
         async with engine.begin() as conn:
@@ -173,10 +181,13 @@ async def test_worker_survives_matview_failure(monkeypatch):
         failures_before = failure_counter._value.get()
 
         with pytest.raises(matview_tasks.MatviewTaskFailure):
-            matview_tasks.matview_refresh_single.delay(
-                tenant_id=str(tenant_id),
-                view_name="mv_allocation_summary",
-                correlation_id=fail_correlation_id,
+            enqueue_tenant_task(
+                matview_tasks.matview_refresh_single,
+                envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+                kwargs={
+                    "view_name": "mv_allocation_summary",
+                    "correlation_id": fail_correlation_id,
+                },
             ).get(propagate=True)
 
         failures_after = failure_counter._value.get()
@@ -198,10 +209,13 @@ async def test_worker_survives_matview_failure(monkeypatch):
 
         assert row is not None
 
-        result = matview_tasks.matview_refresh_single.delay(
-            tenant_id=str(tenant_id),
-            view_name="mv_allocation_summary",
-            correlation_id=success_correlation_id,
+        result = enqueue_tenant_task(
+            matview_tasks.matview_refresh_single,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={
+                "view_name": "mv_allocation_summary",
+                "correlation_id": success_correlation_id,
+            },
         ).get(propagate=True)
         assert result["status"] == "ok"
         assert calls["count"] == 2

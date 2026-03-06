@@ -8,7 +8,12 @@ from typing import Any, Mapping
 
 from celery.canvas import Signature
 
-from app.tasks.authority import AuthorityEnvelope, authority_envelope_payload, parse_authority_envelope
+from app.tasks.authority import (
+    AUTHORITY_ENVELOPE_HEADER,
+    AuthorityEnvelope,
+    authority_envelope_payload,
+    parse_authority_envelope,
+)
 
 TENANT_SCOPED_TASK_NAMES: frozenset[str] = frozenset(
     {
@@ -33,14 +38,22 @@ def _assert_tenant_scoped(task_name: str) -> None:
 
 def _build_task_kwargs(
     *,
-    envelope: AuthorityEnvelope,
     kwargs: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     task_kwargs = dict(kwargs or {})
-    if "authority_envelope" in task_kwargs:
-        raise ValueError("authority_envelope must be supplied via enqueue_tenant_task only")
-    task_kwargs["authority_envelope"] = authority_envelope_payload(envelope)
+    prohibited = {"authority_envelope", "tenant_id", "user_id", "jti", "iat"}
+    overlap = sorted(prohibited.intersection(task_kwargs.keys()))
+    if overlap:
+        joined = ", ".join(overlap)
+        raise ValueError(f"tenant authority fields are reserved and must not be task kwargs: {joined}")
     return task_kwargs
+
+
+def _build_task_headers(
+    *,
+    envelope: AuthorityEnvelope,
+) -> dict[str, Any]:
+    return {AUTHORITY_ENVELOPE_HEADER: authority_envelope_payload(envelope)}
 
 
 def tenant_task_signature(
@@ -52,10 +65,14 @@ def tenant_task_signature(
 ) -> Signature:
     parsed = parse_authority_envelope(envelope)
     _assert_tenant_scoped(task.name)
-    task_kwargs = _build_task_kwargs(envelope=parsed, kwargs=kwargs)
+    task_kwargs = _build_task_kwargs(kwargs=kwargs)
+    headers = _build_task_headers(envelope=parsed)
+    signature: Signature
     if immutable:
-        return task.si(**task_kwargs)
-    return task.s(**task_kwargs)
+        signature = task.si(**task_kwargs)
+    else:
+        signature = task.s(**task_kwargs)
+    return signature.set(headers=headers)
 
 
 def enqueue_tenant_task(
@@ -68,9 +85,11 @@ def enqueue_tenant_task(
 ):
     parsed = parse_authority_envelope(envelope)
     _assert_tenant_scoped(task.name)
-    task_kwargs = _build_task_kwargs(envelope=parsed, kwargs=kwargs)
+    task_kwargs = _build_task_kwargs(kwargs=kwargs)
+    headers = _build_task_headers(envelope=parsed)
     return task.apply_async(
         kwargs=task_kwargs,
+        headers=headers,
         queue=queue,
         correlation_id=correlation_id,
     )

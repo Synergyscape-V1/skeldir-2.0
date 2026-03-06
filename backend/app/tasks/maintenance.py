@@ -25,7 +25,7 @@ from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.context import run_in_worker_loop
 from app.tasks.enqueue import enqueue_tenant_task
-from app.tasks.tenant_base import TenantTask
+from app.tasks.tenant_base import TenantTask, task_tenant_id
 
 logger = logging.getLogger(__name__)
 _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
@@ -119,9 +119,7 @@ def refresh_all_matviews_global_legacy(self) -> Dict[str, str]:
 )
 def refresh_matview_for_tenant(
     self,
-    tenant_id: UUID,
     view_name: str,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
 ) -> Dict[str, str]:
     """
@@ -131,9 +129,7 @@ def refresh_matview_for_tenant(
     for materialized view refresh operations in the worker-tenant isolation model.
 
     Args:
-        tenant_id: UUID of tenant scope
         view_name: Name of materialized view to refresh (must be in registry)
-        user_id: Optional user context for RLS enforcement
         correlation_id: Optional correlation ID for tracing
 
     Returns:
@@ -142,6 +138,7 @@ def refresh_matview_for_tenant(
     Raises:
         ValueError: If view_name not in canonical registry
     """
+    tenant_id = task_tenant_id(self)
     correlation_id = correlation_id or str(uuid4())
     set_request_correlation_id(correlation_id)
     set_tenant_id(tenant_id)
@@ -197,13 +194,12 @@ async def _validate_db_connection_for_tenant(tenant_id: UUID) -> str:
 )
 def scan_for_pii_contamination_task(
     self,
-    tenant_id: UUID,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Stub PII scan task; validates connectivity and tenant context.
     """
+    tenant_id = task_tenant_id(self)
     correlation_id = correlation_id or str(uuid4())
     set_request_correlation_id(correlation_id)
     set_tenant_id(tenant_id)
@@ -271,13 +267,12 @@ async def _fetch_all_tenant_ids() -> List[UUID]:
 )
 def enforce_data_retention_task(
     self,
-    tenant_id: UUID,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
 ) -> Dict[str, int]:
     """
     Tenant-scoped retention enforcement with RLS guardrails.
     """
+    tenant_id = task_tenant_id(self)
     correlation_id = correlation_id or str(uuid4())
     set_request_correlation_id(correlation_id)
     set_tenant_id(tenant_id)

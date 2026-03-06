@@ -355,12 +355,6 @@ def extract_access_token_claims(claims: dict[str, Any]) -> AccessTokenClaims:
 
 
 def revocation_enforcement_enabled() -> bool:
-    if os.getenv("CONTRACT_TESTING") == "1":
-        return False
-    if os.getenv("SKELDIR_B12_P5_DISABLE_REVOCATION_CHECKS") == "1":
-        return False
-    if os.getenv("TESTING") == "1" and os.getenv("SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS") != "1":
-        return False
     return True
 
 

@@ -482,7 +482,6 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
-      SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -527,8 +526,6 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
-      SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS: "1"
-      SKELDIR_B12_P7_STRICT_ENVELOPE: "1"
       SKELDIR_TEST_TASKS: "1"
     steps:
       - name: Checkout code
@@ -550,6 +547,7 @@ jobs:
       - name: Execute B1.2-P7 worker coherence proof suite
         run: |
           pytest backend/tests/test_b12_p7_enqueue_and_envelope.py -q
+          pytest backend/tests/test_b12_p7_revocation_hot_path_zero_io.py -q
           pytest backend/tests/test_b12_p7_global_task_write_proof.py -q
           pytest backend/tests/integration/test_b12_p7_worker_revocation_runtime.py -q
           pytest backend/tests/test_b12_p1_tenant_context_safety.py -q

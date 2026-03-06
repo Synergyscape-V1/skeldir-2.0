@@ -79,8 +79,6 @@ def _build_token(
 
 @pytest.fixture(autouse=True)
 def _enable_revocation(monkeypatch: pytest.MonkeyPatch) -> None:
-    if "SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS" not in os.environ:
-        monkeypatch.setenv("SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS", "1")
     if "CONTRACT_TESTING" not in os.environ:
         monkeypatch.delenv("CONTRACT_TESTING", raising=False)
 

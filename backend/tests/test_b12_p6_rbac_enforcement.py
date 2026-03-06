@@ -25,7 +25,6 @@ from app.security.auth import AuthContext, AuthError, decode_and_verify_jwt, get
 @pytest.fixture(autouse=True)
 def _p6_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONTRACT_TESTING", "0")
-    monkeypatch.setenv("SKELDIR_B12_P5_ENABLE_REVOCATION_IN_TESTS", "1")
     monkeypatch.setenv("SKELDIR_B12_P6_ENABLE_NEGATIVE_ADMIN_UNSCOPED_ROUTE", "0")
     monkeypatch.setenv("SKELDIR_B12_P6_NEGATIVE_COPY_ROLE_FORWARD", "0")
     monkeypatch.setenv("SKELDIR_B12_P6_NEGATIVE_MANAGER_SCOPES_THIN", "0")

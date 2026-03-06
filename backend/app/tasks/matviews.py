@@ -21,7 +21,7 @@ from app.observability.context import set_request_correlation_id, set_tenant_id
 from app.observability.metrics_policy import normalize_view_name
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import enqueue_tenant_task
-from app.tasks.tenant_base import TenantTask
+from app.tasks.tenant_base import TenantTask, task_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -228,14 +228,12 @@ def _apply_strategy(
 def matview_refresh_single(
     self,
     *,
-    tenant_id: UUID,
     view_name: str,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     schedule_class: Optional[str] = None,
     force: bool = False,
 ) -> dict:
-    tenant_uuid = _normalize_tenant_id(tenant_id)
+    tenant_uuid = _normalize_tenant_id(task_tenant_id(self))
     correlation_id = correlation_id or str(uuid4())
     set_tenant_id(tenant_uuid)
     set_request_correlation_id(correlation_id)
@@ -281,12 +279,10 @@ def matview_refresh_single(
 def matview_refresh_all_for_tenant(
     self,
     *,
-    tenant_id: UUID,
-    user_id: Optional[UUID] = None,
     correlation_id: Optional[str] = None,
     schedule_class: Optional[str] = None,
 ) -> dict:
-    tenant_uuid = _normalize_tenant_id(tenant_id)
+    tenant_uuid = _normalize_tenant_id(task_tenant_id(self))
     correlation_id = correlation_id or str(uuid4())
     set_tenant_id(tenant_uuid)
     set_request_correlation_id(correlation_id)

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.celery_app import celery_app
 from app.core.secrets import get_database_url
 from app.db import session as db_session
-from app.tasks.authority import SystemAuthorityEnvelope
+from app.tasks.authority import AUTHORITY_ENVELOPE_HEADER, SessionAuthorityEnvelope
 
 
 def _build_async_database_url_and_args() -> tuple[str, dict]:
@@ -123,6 +123,10 @@ def test_worker_real_process_pool_reuse_no_bleed_and_tenant_envelope_required():
     env["DATABASE_POOL_SIZE"] = "1"
     env["DATABASE_MAX_OVERFLOW"] = "0"
     env["PROMETHEUS_MULTIPROC_DIR"] = tempfile.mkdtemp(prefix="b12_p1_prom_")
+    # Keep subprocess worker on the same runtime/broker identity as this test process.
+    env["DATABASE_URL"] = get_database_url()
+    env["CELERY_BROKER_URL"] = str(celery_app.conf.broker_url)
+    env["CELERY_RESULT_BACKEND"] = str(celery_app.conf.result_backend)
 
     cmd = [
         sys.executable,
@@ -169,17 +173,27 @@ def test_worker_real_process_pool_reuse_no_bleed_and_tenant_envelope_required():
         result_a = celery_app.send_task(
             "app.tasks.observability_test.tenant_context_probe",
             queue="housekeeping",
-            kwargs={
-                "authority_envelope": SystemAuthorityEnvelope(tenant_id=tenant_a).model_dump(mode="json"),
-                "user_id": str(user_a),
+            kwargs={},
+            headers={
+                AUTHORITY_ENVELOPE_HEADER: SessionAuthorityEnvelope(
+                    tenant_id=tenant_a,
+                    user_id=user_a,
+                    jti=uuid4(),
+                    iat=int(time.time()),
+                ).model_dump(mode="json"),
             },
         ).get(timeout=60, propagate=True)
         result_b = celery_app.send_task(
             "app.tasks.observability_test.tenant_context_probe",
             queue="housekeeping",
-            kwargs={
-                "authority_envelope": SystemAuthorityEnvelope(tenant_id=tenant_b).model_dump(mode="json"),
-                "user_id": str(user_b),
+            kwargs={},
+            headers={
+                AUTHORITY_ENVELOPE_HEADER: SessionAuthorityEnvelope(
+                    tenant_id=tenant_b,
+                    user_id=user_b,
+                    jti=uuid4(),
+                    iat=int(time.time()),
+                ).model_dump(mode="json"),
             },
         ).get(timeout=60, propagate=True)
 
@@ -192,9 +206,9 @@ def test_worker_real_process_pool_reuse_no_bleed_and_tenant_envelope_required():
         missing_tenant = celery_app.send_task(
             "app.tasks.observability_test.tenant_context_probe",
             queue="housekeeping",
-            kwargs={"user_id": str(uuid4())},
+            kwargs={},
         )
-        with pytest.raises(Exception, match="authority_envelope is required"):
+        with pytest.raises(Exception, match="authority_envelope header is required"):
             missing_tenant.get(timeout=60, propagate=True)
     finally:
         proc.terminate()
