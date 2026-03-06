@@ -21,6 +21,7 @@ from app.tasks.context import (
 
 class TenantTask(Task):
     abstract = True
+    typing = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         envelope_raw = kwargs.pop("authority_envelope", None)
