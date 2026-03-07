@@ -1,0 +1,196 @@
+﻿# P8 Static Auth Emitter Inventory
+
+Generated: 2026-03-07T17:20:29.3098974-06:00
+
+## 401/403 and auth-domain emitters
+
+backend/app\api\auth.py:39:    forbidden_auth_error,
+backend/app\api\auth.py:42:    unauthorized_auth_error,
+backend/app\api\auth.py:89:        raise AuthError(
+backend/app\api\auth.py:124:                    raise unauthorized_auth_error()
+backend/app\api\auth.py:126:                    raise unauthorized_auth_error()
+backend/app\api\auth.py:133:                    raise unauthorized_auth_error()
+backend/app\api\auth.py:141:                    raise forbidden_auth_error() from exc
+backend/app\api\auth.py:181:        raise unauthorized_auth_error()
+backend/app\api\auth.py:200:        raise unauthorized_auth_error()
+backend/app\api\auth.py:235:            raise unauthorized_auth_error()
+backend/app\api\auth.py:365:                        raise AuthError(
+backend/app\api\auth.py:371:                    raise AuthError(
+backend/app\main.py:37:from app.security.auth import AuthError, forbidden_auth_error, unauthorized_auth_error
+backend/app\main.py:116:    normalized = unauthorized_auth_error() if exc.status_code == 401 else forbidden_auth_error()
+backend/app\api\webhooks.py:42:from app.security.auth import unauthorized_auth_error
+backend/app\api\webhooks.py:82:        raise unauthorized_auth_error()
+backend/app\api\webhooks.py:259:        raise unauthorized_auth_error()
+backend/app\api\webhooks.py:262:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
+backend/app\api\webhooks.py:295:        raise unauthorized_auth_error()
+backend/app\api\webhooks.py:298:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing payment intent id")
+backend/app\api\webhooks.py:343:        raise unauthorized_auth_error()
+backend/app\api\webhooks.py:395:        return JSONResponse(
+backend/app\api\webhooks.py:542:        raise unauthorized_auth_error()
+backend/app\api\webhooks.py:545:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing transaction id or amount")
+backend/app\api\webhooks.py:577:        raise unauthorized_auth_error()
+backend/app\api\webhooks.py:580:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
+backend/app\api\problem_details.py:67:    return JSONResponse(
+backend/app\security\rbac.py:8:from app.security.auth import AuthContext, forbidden_auth_error, get_auth_context
+backend/app\security\rbac.py:49:        raise forbidden_auth_error()
+backend/app\security\auth.py:81:def unauthorized_auth_error() -> AuthError:
+backend/app\security\auth.py:83:        status_code=401,
+backend/app\security\auth.py:91:def forbidden_auth_error() -> AuthError:
+backend/app\security\auth.py:93:        status_code=403,
+backend/app\security\auth.py:128:        raise unauthorized_auth_error()
+backend/app\security\auth.py:131:        raise unauthorized_auth_error()
+backend/app\security\auth.py:177:        raise forbidden_auth_error()
+backend/app\security\auth.py:179:        raise forbidden_auth_error()
+backend/app\security\auth.py:185:        raise AuthError(
+backend/app\security\auth.py:192:        raise AuthError(
+backend/app\security\auth.py:295:        raise unauthorized_auth_error()
+backend/app\security\auth.py:299:        raise unauthorized_auth_error() from exc
+backend/app\security\auth.py:310:        raise unauthorized_auth_error()
+backend/app\security\auth.py:314:        raise unauthorized_auth_error() from exc
+backend/app\security\auth.py:320:        raise unauthorized_auth_error()
+backend/app\security\auth.py:324:        raise unauthorized_auth_error() from exc
+backend/app\security\auth.py:326:        raise unauthorized_auth_error()
+backend/app\security\auth.py:380:            raise unauthorized_auth_error()
+backend/app\security\auth.py:393:            raise unauthorized_auth_error()
+backend/app\security\auth.py:432:        raise unauthorized_auth_error()
+backend/app\security\auth.py:445:        raise unauthorized_auth_error()
+backend/app\security\auth.py:449:        raise unauthorized_auth_error() from exc
+backend/app\core\tenant_context.py:25:from app.security.auth import unauthorized_auth_error
+backend/app\core\tenant_context.py:51:        raise unauthorized_auth_error()
+backend/app\core\tenant_context.py:67:            raise unauthorized_auth_error()
+backend/app\core\tenant_context.py:199:        raise HTTPException(
+backend/app\core\tenant_context.py:210:        raise HTTPException(
+
+## Exception handlers and validation handlers
+
+backend/app\main.py:20:from fastapi import FastAPI, HTTPException, Request
+backend/app\main.py:98:@app.exception_handler(AuthError)
+backend/app\main.py:112:@app.exception_handler(HTTPException)
+backend/app\main.py:113:async def normalized_http_exception_handler(request: Request, exc: HTTPException):
+backend/app\main.py:115:        return await fastapi_http_exception_handler(request, exc)
+backend/app\api\webhooks.py:17:from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
+backend/app\api\webhooks.py:262:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
+backend/app\api\webhooks.py:298:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing payment intent id")
+backend/app\api\webhooks.py:545:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing transaction id or amount")
+backend/app\api\webhooks.py:580:        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
+backend/app\core\tenant_context.py:20:from fastapi import Request, HTTPException
+backend/app\core\tenant_context.py:185:        HTTPException: 500 if tenant context is missing and required
+backend/app\core\tenant_context.py:199:        raise HTTPException(
+backend/app\core\tenant_context.py:210:        raise HTTPException(
+
+## Security modality declarations
+
+api-contracts/dist/openapi/v1\webhooks.stripe.bundled.yaml:16:  - tenantKeyAuth: []
+api-contracts/dist/openapi/v1\webhooks.stripe.bundled.yaml:413:    tenantKeyAuth:
+api-contracts/dist/openapi/v1\health.bundled.yaml:192:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\health.bundled.yaml:371:    accessBearerAuth:
+api-contracts/dist/openapi/v1\reconciliation.bundled.yaml:16:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\reconciliation.bundled.yaml:32:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\reconciliation.bundled.yaml:253:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\reconciliation.bundled.yaml:323:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\reconciliation.bundled.yaml:408:    accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:16:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:226:        - refreshBearerAuth: []
+api-contracts/dist/openapi/v1\auth.bundled.yaml:294:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:351:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:409:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:500:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:571:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:699:    accessBearerAuth:
+api-contracts/dist/openapi/v1\auth.bundled.yaml:709:    refreshBearerAuth:
+api-contracts/dist/openapi/v1\webhooks.paypal.bundled.yaml:16:  - tenantKeyAuth: []
+api-contracts/dist/openapi/v1\webhooks.paypal.bundled.yaml:369:    tenantKeyAuth:
+api-contracts/openapi/v1\_common\base.yaml:267:    accessBearerAuth:
+api-contracts/openapi/v1\_common\base.yaml:277:    refreshBearerAuth:
+api-contracts/openapi/v1\_common\base.yaml:282:    tenantKeyAuth:
+api-contracts/dist/openapi/v1\webhooks.shopify.bundled.yaml:16:  - tenantKeyAuth: []
+api-contracts/dist/openapi/v1\webhooks.shopify.bundled.yaml:479:    tenantKeyAuth:
+api-contracts/dist/openapi/v1\webhooks.woocommerce.bundled.yaml:16:  - tenantKeyAuth: []
+api-contracts/dist/openapi/v1\webhooks.woocommerce.bundled.yaml:446:    tenantKeyAuth:
+api-contracts/dist/openapi/v1\revenue.bundled.yaml:12:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\revenue.bundled.yaml:27:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\revenue.bundled.yaml:241:    accessBearerAuth:
+api-contracts/openapi/v1\llm-budget.yaml:22:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\llm-budget.yaml:259:    accessBearerAuth:
+api-contracts/openapi/v1\llm-budget.yaml:260:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/dist/openapi/v1\llm-explanations.bundled.yaml:17:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\llm-explanations.bundled.yaml:35:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\llm-explanations.bundled.yaml:329:    accessBearerAuth:
+api-contracts/openapi/v1\auth.yaml:22:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\auth.yaml:124:        - refreshBearerAuth: []
+api-contracts/openapi/v1\auth.yaml:185:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\auth.yaml:218:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\auth.yaml:264:        - accessBearerAuth: ["admin"]
+api-contracts/openapi/v1\auth.yaml:343:        - accessBearerAuth: ["admin"]
+api-contracts/openapi/v1\auth.yaml:399:        - accessBearerAuth: ["admin"]
+api-contracts/openapi/v1\auth.yaml:485:    accessBearerAuth:
+api-contracts/openapi/v1\auth.yaml:486:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/openapi/v1\auth.yaml:487:    refreshBearerAuth:
+api-contracts/openapi/v1\auth.yaml:488:      $ref: './_common/base.yaml#/components/securitySchemes/refreshBearerAuth'
+api-contracts/openapi/v1\health.yaml:67:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\health.yaml:241:    accessBearerAuth:
+api-contracts/openapi/v1\health.yaml:242:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/dist/openapi/v1\llm-investigations.bundled.yaml:17:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\llm-investigations.bundled.yaml:376:    accessBearerAuth:
+api-contracts/openapi/v1\export.yaml:22:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\export.yaml:33:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\export.yaml:121:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\export.yaml:158:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\export.yaml:203:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\export.yaml:285:    accessBearerAuth:
+api-contracts/openapi/v1\export.yaml:286:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/openapi/v1\llm-explanations.yaml:23:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\llm-explanations.yaml:38:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\llm-explanations.yaml:195:    accessBearerAuth:
+api-contracts/openapi/v1\llm-explanations.yaml:196:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/openapi/v1\attribution.yaml:26:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\attribution.yaml:40:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\attribution.yaml:103:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\attribution.yaml:256:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\attribution.yaml:304:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\attribution.yaml:359:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\attribution.yaml:669:    accessBearerAuth:
+api-contracts/openapi/v1\attribution.yaml:670:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/dist/openapi/v1\attribution.bundled.yaml:16:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\attribution.bundled.yaml:37:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\attribution.bundled.yaml:278:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\attribution.bundled.yaml:555:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\attribution.bundled.yaml:690:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\attribution.bundled.yaml:765:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\attribution.bundled.yaml:930:    accessBearerAuth:
+api-contracts/dist/openapi/v1\export.bundled.yaml:16:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\export.bundled.yaml:30:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\export.bundled.yaml:278:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\export.bundled.yaml:327:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\export.bundled.yaml:386:        - accessBearerAuth:
+api-contracts/dist/openapi/v1\export.bundled.yaml:436:    accessBearerAuth:
+api-contracts/openapi/v1\reconciliation.yaml:22:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\reconciliation.yaml:35:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\reconciliation.yaml:84:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\reconciliation.yaml:128:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\reconciliation.yaml:240:    accessBearerAuth:
+api-contracts/openapi/v1\reconciliation.yaml:241:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/openapi/v1\llm-investigations.yaml:23:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\llm-investigations.yaml:238:    accessBearerAuth:
+api-contracts/openapi/v1\llm-investigations.yaml:239:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/dist/openapi/v1\_common\base.yaml:266:    accessBearerAuth:
+api-contracts/dist/openapi/v1\_common\base.yaml:276:    refreshBearerAuth:
+api-contracts/dist/openapi/v1\_common\base.yaml:281:    tenantKeyAuth:
+api-contracts/dist/openapi/v1\llm-budget.bundled.yaml:16:  - accessBearerAuth:
+api-contracts/dist/openapi/v1\llm-budget.bundled.yaml:383:    accessBearerAuth:
+api-contracts/openapi/v1\revenue.yaml:18:  - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\revenue.yaml:30:        - accessBearerAuth: ["viewer"]
+api-contracts/openapi/v1\revenue.yaml:115:    accessBearerAuth:
+api-contracts/openapi/v1\revenue.yaml:116:      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'
+api-contracts/openapi/v1\webhooks\woocommerce.yaml:22:  - tenantKeyAuth: []
+api-contracts/openapi/v1\webhooks\woocommerce.yaml:220:    tenantKeyAuth:
+api-contracts/openapi/v1\webhooks\woocommerce.yaml:221:      $ref: '../_common/base.yaml#/components/securitySchemes/tenantKeyAuth'
+api-contracts/openapi/v1\webhooks\stripe.yaml:22:  - tenantKeyAuth: []
+api-contracts/openapi/v1\webhooks\stripe.yaml:193:    tenantKeyAuth:
+api-contracts/openapi/v1\webhooks\stripe.yaml:194:      $ref: '../_common/base.yaml#/components/securitySchemes/tenantKeyAuth'
+api-contracts/openapi/v1\webhooks\shopify.yaml:22:  - tenantKeyAuth: []
+api-contracts/openapi/v1\webhooks\shopify.yaml:212:    tenantKeyAuth:
+api-contracts/openapi/v1\webhooks\shopify.yaml:213:      $ref: '../_common/base.yaml#/components/securitySchemes/tenantKeyAuth'
+api-contracts/openapi/v1\webhooks\paypal.yaml:22:  - tenantKeyAuth: []
+api-contracts/openapi/v1\webhooks\paypal.yaml:164:    tenantKeyAuth:
+api-contracts/openapi/v1\webhooks\paypal.yaml:165:      $ref: '../_common/base.yaml#/components/securitySchemes/tenantKeyAuth'

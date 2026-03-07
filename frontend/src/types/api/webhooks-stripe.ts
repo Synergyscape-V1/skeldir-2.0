@@ -243,6 +243,11 @@ export interface components {
              * @example 2025-11-11T14:32:00Z
              */
             timestamp: string;
+            /**
+             * @description Stable, non-sensitive error code for programmatic handling
+             * @example AUTH_UNAUTHORIZED
+             */
+            code: string;
             /** @description Optional array of specific validation errors */
             errors?: {
                 /** @example email */
@@ -323,6 +328,11 @@ export interface components {
                      * @example 2025-11-11T14:32:00Z
                      */
                     timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
                     /** @description Optional array of specific validation errors */
                     errors?: {
                         /** @example email */
@@ -383,6 +393,11 @@ export interface components {
                      * @example 2025-11-11T14:32:00Z
                      */
                     timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
                     /** @description Optional array of specific validation errors */
                     errors?: {
                         /** @example email */
@@ -442,6 +457,11 @@ export interface components {
                      * @example 2025-11-11T14:32:00Z
                      */
                     timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
                     /** @description Optional array of specific validation errors */
                     errors?: {
                         /** @example email */
@@ -627,6 +647,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -687,6 +712,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -746,6 +776,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -923,6 +958,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -983,6 +1023,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -1042,6 +1087,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -1219,6 +1269,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -1279,6 +1334,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -1338,6 +1398,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -1515,6 +1580,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -1575,6 +1645,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */
@@ -1634,6 +1709,11 @@ export interface operations {
                          * @example 2025-11-11T14:32:00Z
                          */
                         timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
                         /** @description Optional array of specific validation errors */
                         errors?: {
                             /** @example email */

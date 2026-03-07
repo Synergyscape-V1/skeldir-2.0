@@ -17,7 +17,8 @@ from uuid import UUID, uuid4
 # task metrics shards and must not influence API process metrics.
 os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler as fastapi_http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 
 # Structured logging for API process (JSON with tenant/correlation context).
@@ -33,7 +34,7 @@ from app.api.problem_details import problem_details_response
 # Import middleware - Phase G: Active Privacy Defense
 from app.middleware import PIIStrippingMiddleware
 from app.middleware.observability import ObservabilityMiddleware
-from app.security.auth import AuthError
+from app.security.auth import AuthError, forbidden_auth_error, unauthorized_auth_error
 from app.core.secrets import assert_runtime_secret_contract
 
 # Initialize FastAPI app
@@ -96,11 +97,7 @@ async def root():
 
 @app.exception_handler(AuthError)
 async def auth_error_handler(request: Request, exc: AuthError):
-    correlation_value = get_request_correlation_id() or request.headers.get("X-Correlation-ID")
-    try:
-        correlation_id = UUID(str(correlation_value))
-    except (TypeError, ValueError):
-        correlation_id = uuid4()
+    correlation_id = _resolve_problem_correlation_id(request)
     return problem_details_response(
         request,
         status_code=exc.status_code,
@@ -108,7 +105,33 @@ async def auth_error_handler(request: Request, exc: AuthError):
         detail=exc.detail,
         correlation_id=correlation_id,
         type_url=exc.type_url,
+        code=exc.code,
     )
+
+
+@app.exception_handler(HTTPException)
+async def normalized_http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code not in (401, 403):
+        return await fastapi_http_exception_handler(request, exc)
+    normalized = unauthorized_auth_error() if exc.status_code == 401 else forbidden_auth_error()
+    correlation_id = _resolve_problem_correlation_id(request)
+    return problem_details_response(
+        request,
+        status_code=normalized.status_code,
+        title=normalized.title,
+        detail=normalized.detail,
+        correlation_id=correlation_id,
+        type_url=normalized.type_url,
+        code=normalized.code,
+    )
+
+
+def _resolve_problem_correlation_id(request: Request) -> UUID:
+    correlation_value = get_request_correlation_id() or request.headers.get("X-Correlation-ID")
+    try:
+        return UUID(str(correlation_value))
+    except (TypeError, ValueError):
+        return uuid4()
 
 
 if __name__ == "__main__":

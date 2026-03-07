@@ -35,6 +35,15 @@ ROLE_TO_FAT_SCOPES: dict[str, tuple[str, ...]] = {
 _REVOCATION_DB_LOOKUP_COUNT = 0
 _REVOCATION_DB_LOOKUP_LOCK = threading.Lock()
 
+AUTH_FAILED_TITLE = "Authentication Failed"
+AUTH_FORBIDDEN_TITLE = "Forbidden"
+AUTH_UNAUTHORIZED_DETAIL = "Authentication failed."
+AUTH_FORBIDDEN_DETAIL = "Access denied."
+AUTH_UNAUTHORIZED_CODE = "AUTH_UNAUTHORIZED"
+AUTH_FORBIDDEN_CODE = "AUTH_FORBIDDEN"
+AUTH_UNAUTHORIZED_TYPE_URL = "https://api.skeldir.com/problems/authentication-failed"
+AUTH_FORBIDDEN_TYPE_URL = "https://api.skeldir.com/problems/forbidden"
+
 oauth2_access_bearer_auth = OAuth2PasswordBearer(
     tokenUrl="/api/auth/login",
     scheme_name="accessBearerAuth",
@@ -52,12 +61,41 @@ refresh_bearer_auth = HTTPBearer(
 
 
 class AuthError(Exception):
-    def __init__(self, *, status_code: int, title: str, detail: str, type_url: str) -> None:
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        title: str,
+        detail: str,
+        type_url: str,
+        code: str | None = None,
+    ) -> None:
         self.status_code = status_code
         self.title = title
         self.detail = detail
         self.type_url = type_url
+        self.code = code
         super().__init__(detail)
+
+
+def unauthorized_auth_error() -> AuthError:
+    return AuthError(
+        status_code=401,
+        title=AUTH_FAILED_TITLE,
+        detail=AUTH_UNAUTHORIZED_DETAIL,
+        type_url=AUTH_UNAUTHORIZED_TYPE_URL,
+        code=AUTH_UNAUTHORIZED_CODE,
+    )
+
+
+def forbidden_auth_error() -> AuthError:
+    return AuthError(
+        status_code=403,
+        title=AUTH_FORBIDDEN_TITLE,
+        detail=AUTH_FORBIDDEN_DETAIL,
+        type_url=AUTH_FORBIDDEN_TYPE_URL,
+        code=AUTH_FORBIDDEN_CODE,
+    )
 
 
 @dataclass(frozen=True)
@@ -87,20 +125,10 @@ class AccessTokenClaims:
 
 def _get_bearer_token(authorization: str | None) -> str:
     if not authorization:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Missing Authorization header.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
     stripped = authorization.strip()
     if not stripped.lower().startswith("bearer "):
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Authorization header must be a Bearer token.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
     return stripped.split(" ", 1)[1].strip()
 
 
@@ -146,19 +174,9 @@ def _enforce_required_scopes(*, claims: dict[str, Any], required_scopes: list[st
         return
     granted_scopes = _normalize_scope_claims(claims)
     if not granted_scopes:
-        raise AuthError(
-            status_code=403,
-            title="Forbidden",
-            detail=f"Required role scope: {', '.join(sorted(set(normalized_required)))}.",
-            type_url="https://api.skeldir.com/problems/forbidden",
-        )
+        raise forbidden_auth_error()
     if not set(normalized_required).issubset(granted_scopes):
-        raise AuthError(
-            status_code=403,
-            title="Forbidden",
-            detail=f"Required role scope: {', '.join(sorted(set(normalized_required)))}.",
-            type_url="https://api.skeldir.com/problems/forbidden",
-        )
+        raise forbidden_auth_error()
 
 
 def _ensure_auth_configured() -> None:
@@ -274,21 +292,11 @@ def mint_internal_jwt(
 def _require_tenant_id(claims: dict[str, Any]) -> UUID:
     tenant_id = claims.get("tenant_id")
     if not tenant_id:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Missing tenant_id claim.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
     try:
         return UUID(str(tenant_id))
     except ValueError as exc:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Invalid tenant_id claim.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        ) from exc
+        raise unauthorized_auth_error() from exc
 
 
 def _resolve_user_id(claims: dict[str, Any]) -> UUID:
@@ -299,48 +307,23 @@ def _resolve_user_id(claims: dict[str, Any]) -> UUID:
 def _require_jti(claims: dict[str, Any]) -> UUID:
     raw_jti = claims.get("jti")
     if raw_jti is None:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Missing jti claim.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
     try:
         return UUID(str(raw_jti))
     except ValueError as exc:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Invalid jti claim.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        ) from exc
+        raise unauthorized_auth_error() from exc
 
 
 def _require_numeric_epoch(claims: dict[str, Any], claim_name: str) -> int:
     raw = claims.get(claim_name)
     if raw is None:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail=f"Missing {claim_name} claim.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
     try:
         value = int(raw)
     except (TypeError, ValueError) as exc:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail=f"Invalid {claim_name} claim.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        ) from exc
+        raise unauthorized_auth_error() from exc
     if value <= 0:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail=f"Invalid {claim_name} claim.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
     return value
 
 
@@ -394,12 +377,7 @@ async def assert_access_token_active(token_claims: AccessTokenClaims) -> None:
                     issued_at_epoch=token_claims.issued_at_epoch,
                 )
         if decision.is_revoked:
-            raise AuthError(
-                status_code=401,
-                title="Authentication Failed",
-                detail="Token has been revoked.",
-                type_url="https://api.skeldir.com/problems/authentication-failed",
-            )
+            raise unauthorized_auth_error()
         return
 
     revocation_cache = get_revocation_runtime_cache()
@@ -412,12 +390,7 @@ async def assert_access_token_active(token_claims: AccessTokenClaims) -> None:
     )
     if cached.is_known:
         if cached.is_revoked:
-            raise AuthError(
-                status_code=401,
-                title="Authentication Failed",
-                detail="Token has been revoked.",
-                type_url="https://api.skeldir.com/problems/authentication-failed",
-            )
+            raise unauthorized_auth_error()
         return
 
     async with AsyncSessionLocal() as session:
@@ -456,12 +429,7 @@ async def assert_access_token_active(token_claims: AccessTokenClaims) -> None:
             expires_at=_epoch_to_datetime_utc(token_claims.expires_at_epoch),
         )
     if decision.is_revoked:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Token has been revoked.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
 
 
 def _epoch_to_datetime_utc(epoch: int) -> datetime:
@@ -474,21 +442,11 @@ async def get_auth_context(
     token: str | None = Depends(oauth2_access_bearer_auth),
 ) -> AuthContext:
     if not token:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Missing Authorization header.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
     try:
         claims = _decode_token(token)
     except InvalidTokenError as exc:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Invalid or expired JWT token.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        ) from exc
+        raise unauthorized_auth_error() from exc
 
     token_claims = extract_access_token_claims(claims)
     await assert_access_token_active(token_claims)
