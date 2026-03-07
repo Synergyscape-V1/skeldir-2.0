@@ -8,11 +8,15 @@ when the worker is started with `SKELDIR_TEST_TASKS=1`.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from typing import Optional
 from uuid import UUID
 
 from app.celery_app import celery_app
 from app.db.session import get_session
+from app.security.auth import get_revocation_db_lookup_count, reset_revocation_db_lookup_count
+from app.security.revocation_runtime import get_revocation_runtime_cache
 from app.tasks.context import run_in_worker_loop
 from app.tasks.tenant_base import TenantTask, task_tenant_id, task_user_id
 from sqlalchemy import text
@@ -35,6 +39,32 @@ def redaction_canary(self, secret_value: str) -> dict:
     logger.info("LLM_PROVIDER_API_KEY=%s", secret_value)
     logger.warning("Authorization: Bearer %s", secret_value)
     return {"status": "ok"}
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.observability_test.revocation_runtime_control",
+    routing_key="housekeeping.task",
+)
+def revocation_runtime_control(
+    self,
+    sleep_seconds: float = 0.0,
+    reset_lookup_counter: bool = False,
+) -> dict:
+    if reset_lookup_counter:
+        reset_revocation_db_lookup_count()
+    if sleep_seconds > 0:
+        time.sleep(float(sleep_seconds))
+    cache = get_revocation_runtime_cache()
+    cache.ensure_started()
+    runtime_state = cache.runtime_state()
+    return {
+        "worker_pid": os.getpid(),
+        "listener_pid": runtime_state["listener_pid"],
+        "listener_alive": bool(runtime_state["listener_alive"]),
+        "listener_conn_fd": runtime_state["listener_conn_fd"],
+        "revocation_db_lookups": int(get_revocation_db_lookup_count()),
+    }
 
 
 async def _probe_worker_tenant_context(tenant_id: UUID, user_id: UUID) -> dict[str, str]:
@@ -113,3 +143,34 @@ def auth_envelope_probe(
         )
     )
     return {"status": "ok", "rows_inserted": inserted, "jti": jti}
+
+
+@celery_app.task(
+    bind=True,
+    base=TenantTask,
+    name="app.tasks.observability_test.revocation_runtime_probe",
+    routing_key="housekeeping.task",
+)
+def revocation_runtime_probe(
+    self,
+    correlation_id: Optional[str] = None,
+    sleep_seconds: float = 0.0,
+    reset_lookup_counter: bool = False,
+) -> dict:
+    tenant_id = task_tenant_id(self)
+    user_id = task_user_id(self)
+    if reset_lookup_counter:
+        reset_revocation_db_lookup_count()
+    if sleep_seconds > 0:
+        time.sleep(float(sleep_seconds))
+    cache = get_revocation_runtime_cache()
+    cache.ensure_started()
+    runtime_state = cache.runtime_state()
+    return {
+        "tenant": str(tenant_id),
+        "user": str(user_id),
+        "worker_pid": os.getpid(),
+        "listener_pid": runtime_state["listener_pid"],
+        "listener_alive": bool(runtime_state["listener_alive"]),
+        "revocation_db_lookups": int(get_revocation_db_lookup_count()),
+    }

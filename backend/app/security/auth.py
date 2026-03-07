@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import os
+import threading
 from typing import Any, Optional
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -30,6 +31,9 @@ ROLE_TO_FAT_SCOPES: dict[str, tuple[str, ...]] = {
     "manager": ("manager", "viewer"),
     "viewer": ("viewer",),
 }
+
+_REVOCATION_DB_LOOKUP_COUNT = 0
+_REVOCATION_DB_LOOKUP_LOCK = threading.Lock()
 
 oauth2_access_bearer_auth = OAuth2PasswordBearer(
     tokenUrl="/api/auth/login",
@@ -358,12 +362,30 @@ def revocation_enforcement_enabled() -> bool:
     return True
 
 
+def get_revocation_db_lookup_count() -> int:
+    with _REVOCATION_DB_LOOKUP_LOCK:
+        return _REVOCATION_DB_LOOKUP_COUNT
+
+
+def reset_revocation_db_lookup_count() -> None:
+    global _REVOCATION_DB_LOOKUP_COUNT
+    with _REVOCATION_DB_LOOKUP_LOCK:
+        _REVOCATION_DB_LOOKUP_COUNT = 0
+
+
+def _record_revocation_db_lookup() -> None:
+    global _REVOCATION_DB_LOOKUP_COUNT
+    with _REVOCATION_DB_LOOKUP_LOCK:
+        _REVOCATION_DB_LOOKUP_COUNT += 1
+
+
 async def assert_access_token_active(token_claims: AccessTokenClaims) -> None:
     if not revocation_enforcement_enabled():
         return
     if os.getenv("SKELDIR_B12_P5_FORCE_DB_REVOCATION_HOT_PATH") == "1":
         async with AsyncSessionLocal() as session:
             async with session.begin():
+                _record_revocation_db_lookup()
                 decision = await evaluate_access_token_revocation(
                     session,
                     tenant_id=token_claims.tenant_id,
@@ -400,6 +422,7 @@ async def assert_access_token_active(token_claims: AccessTokenClaims) -> None:
 
     async with AsyncSessionLocal() as session:
         async with session.begin():
+            _record_revocation_db_lookup()
             decision = await evaluate_access_token_revocation(
                 session,
                 tenant_id=token_claims.tenant_id,
