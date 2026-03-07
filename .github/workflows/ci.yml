@@ -547,6 +547,8 @@ jobs:
       - name: Execute B1.2-P7 worker coherence proof suite
         run: |
           pytest backend/tests/test_b12_p7_enqueue_and_envelope.py -q
+          pytest backend/tests/test_b12_p7_system_authority_boundary.py -q
+          pytest backend/tests/test_b12_p7_context_canonicalization.py -q
           pytest backend/tests/test_b12_p7_revocation_hot_path_zero_io.py -q
           pytest backend/tests/test_b12_p7_global_task_write_proof.py -q
           pytest backend/tests/integration/test_b12_p7_worker_revocation_runtime.py -q

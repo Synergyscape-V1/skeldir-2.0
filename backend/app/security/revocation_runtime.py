@@ -85,24 +85,43 @@ class RevocationRuntimeCache:
         self._lock = threading.Lock()
         self._listener_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._listener_pid: int | None = None
+        self._listener_conn_fd: int | None = None
 
         self._denylisted_until: dict[tuple[UUID, UUID, UUID], datetime] = {}
         self._cutoff_by_user: dict[tuple[UUID, UUID], datetime | None] = {}
         self._known_clean_jti_until: dict[tuple[UUID, UUID, UUID], datetime] = {}
+        if hasattr(os, "register_at_fork"):
+            os.register_at_fork(after_in_child=self._after_fork_in_child)
 
     def close(self) -> None:
         self._stop_event.set()
         listener = self._listener_thread
         if listener and listener.is_alive():
             listener.join(timeout=2.0)
+        with self._lock:
+            self._close_listener_fd_locked()
+            self._listener_thread = None
+            self._listener_pid = None
 
     def ensure_started(self) -> None:
         if os.getenv(_MUTATION_DISABLE_EVENT_LISTENER) == "1":
             return
-        if self._listener_thread and self._listener_thread.is_alive():
+        current_pid = os.getpid()
+        if (
+            self._listener_thread
+            and self._listener_thread.is_alive()
+            and self._listener_pid == current_pid
+        ):
             return
         with self._lock:
-            if self._listener_thread and self._listener_thread.is_alive():
+            if self._listener_pid is not None and self._listener_pid != current_pid:
+                self._reset_after_pid_change_locked(new_pid=current_pid)
+            if (
+                self._listener_thread
+                and self._listener_thread.is_alive()
+                and self._listener_pid == current_pid
+            ):
                 return
             self._stop_event.clear()
             thread = threading.Thread(
@@ -112,6 +131,17 @@ class RevocationRuntimeCache:
             )
             thread.start()
             self._listener_thread = thread
+            self._listener_pid = current_pid
+
+    def runtime_state(self) -> dict[str, object]:
+        listener = self._listener_thread
+        return {
+            "runtime_name": self._runtime_name,
+            "process_pid": os.getpid(),
+            "listener_pid": self._listener_pid,
+            "listener_alive": bool(listener and listener.is_alive()),
+            "listener_conn_fd": self._listener_conn_fd,
+        }
 
     def note_denylist(
         self,
@@ -209,17 +239,21 @@ class RevocationRuntimeCache:
     def _listen_loop(self) -> None:
         dsn = _to_sync_dsn(get_database_url())
         backoff_seconds = 0.5
+        listener_pid = os.getpid()
         while not self._stop_event.is_set():
             conn = None
             try:
                 conn = psycopg2.connect(dsn)
                 conn.set_session(autocommit=True)
+                with self._lock:
+                    self._listener_pid = listener_pid
+                    self._listener_conn_fd = conn.fileno()
                 cur = conn.cursor()
                 cur.execute(f"LISTEN {REVOCATION_NOTIFY_CHANNEL_DENYLIST};")
                 cur.execute(f"LISTEN {REVOCATION_NOTIFY_CHANNEL_CUTOFF};")
                 logger.info(
                     "revocation_listener_started",
-                    extra={"runtime_name": self._runtime_name},
+                    extra={"runtime_name": self._runtime_name, "listener_pid": listener_pid},
                 )
                 backoff_seconds = 0.5
 
@@ -249,6 +283,8 @@ class RevocationRuntimeCache:
                         conn.close()
                 except Exception:
                     pass
+                with self._lock:
+                    self._listener_conn_fd = None
 
     def _apply_notification(self, channel: str, payload: str | None) -> None:
         if not payload:
@@ -285,6 +321,40 @@ class RevocationRuntimeCache:
                 user_id=user_id,
                 tokens_invalid_before=cutoff,
             )
+
+    def _reset_after_pid_change_locked(self, *, new_pid: int) -> None:
+        self._stop_event.set()
+        self._close_listener_fd_locked()
+        self._listener_thread = None
+        self._listener_pid = new_pid
+        self._stop_event = threading.Event()
+
+    def _close_listener_fd_locked(self) -> None:
+        fd = self._listener_conn_fd
+        self._listener_conn_fd = None
+        if fd is None:
+            return
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def _after_fork_in_child(self) -> None:
+        # The child must never reuse the parent's listener thread state/FD.
+        self._close_listener_fd_best_effort()
+        self._listener_thread = None
+        self._listener_pid = None
+        self._stop_event = threading.Event()
+
+    def _close_listener_fd_best_effort(self) -> None:
+        fd = self._listener_conn_fd
+        self._listener_conn_fd = None
+        if fd is None:
+            return
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 _DEFAULT_CACHE = RevocationRuntimeCache()

@@ -291,6 +291,10 @@ def _configure_worker_logging(**kwargs):
     settings = _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
     configure_logging(settings.LOG_LEVEL)
     configure_task_lifecycle_loggers(settings.LOG_LEVEL)
+    # P7 fork-safety: initialize LISTEN/NOTIFY cache in each worker child process.
+    from app.security.revocation_runtime import get_revocation_runtime_cache
+
+    get_revocation_runtime_cache().ensure_started()
     logger.info("celery_worker_logging_configured")
 
 
