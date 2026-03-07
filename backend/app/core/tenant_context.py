@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.db.session import engine
+from app.security.auth import unauthorized_auth_error
 from app.services.tenant_webhook_secrets import resolve_tenant_webhook_secrets_from_row
 
 logger = logging.getLogger(__name__)
@@ -44,10 +45,10 @@ async def get_tenant_with_webhook_secrets(api_key: str) -> dict:
         paypal_webhook_secret, woocommerce_webhook_secret
 
     Raises:
-        HTTPException(401): if the key is missing/unknown
+        AuthError(401): if the key is missing/unknown
     """
     if not api_key or not api_key.strip():
-        raise HTTPException(status_code=401, detail={"status": "invalid_tenant_key"})
+        raise unauthorized_auth_error()
 
     api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
     async with engine.connect() as conn:
@@ -63,7 +64,7 @@ async def get_tenant_with_webhook_secrets(api_key: str) -> dict:
         row = res.mappings().first()
 
         if not row:
-            raise HTTPException(status_code=401, detail={"status": "invalid_tenant_key"})
+            raise unauthorized_auth_error()
 
         tenant_id = UUID(str(row["tenant_id"]))
         decrypted = await resolve_tenant_webhook_secrets_from_row(

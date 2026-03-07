@@ -553,6 +553,53 @@ jobs:
           pytest backend/tests/test_b12_p7_global_task_write_proof.py -q
           pytest backend/tests/integration/test_b12_p7_worker_revocation_runtime.py -q
           pytest backend/tests/test_b12_p1_tenant_context_safety.py -q
+
+  b12-p8-error-contract-proofs:
+    name: B1.2 P8 Error Contract Proofs
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CONTRACT_TESTING: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend test dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+          alembic upgrade head
+
+      - name: Execute B1.2-P8 error contract proof suite
+        run: |
+          pytest backend/tests/test_b12_p8_error_contract_normalization.py -q
+          pytest tests/contract/test_contract_semantics.py -q -k "p8_contract_error_surface or p8_runtime_parity or p8_runtime_403_surface or p8_negative_control"
+
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest

@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends
 
-from app.security.auth import AuthContext, AuthError, get_auth_context
+from app.security.auth import AuthContext, forbidden_auth_error, get_auth_context
 
 ALLOWED_ROLES: tuple[str, ...] = ("admin", "manager", "viewer")
 
@@ -46,11 +46,6 @@ def require_roles(*allowed_roles: str):
         effective_roles = set(role_claims_from_auth_context(auth_context))
         if effective_roles.intersection(allowed):
             return auth_context
-        raise AuthError(
-            status_code=403,
-            title="Forbidden",
-            detail=f"Required role: {', '.join(sorted(allowed))}.",
-            type_url="https://api.skeldir.com/problems/forbidden",
-        )
+        raise forbidden_auth_error()
 
     return _guard

@@ -33,7 +33,14 @@ from app.schemas.auth import (
 )
 from app.core.secrets import get_secret
 from app.db.session import AsyncSessionLocal
-from app.security.auth import AuthContext, AuthError, get_auth_context, get_refresh_bearer_token
+from app.security.auth import (
+    AuthContext,
+    AuthError,
+    forbidden_auth_error,
+    get_auth_context,
+    get_refresh_bearer_token,
+    unauthorized_auth_error,
+)
 from app.services.auth_revocation import denylist_access_token, upsert_tokens_invalid_before
 from app.services.auth_tokens import (
     TokenPair,
@@ -114,31 +121,16 @@ async def login(
                     or not identity.is_active
                     or identity.auth_provider != "password"
                 ):
-                    raise AuthError(
-                        status_code=401,
-                        title="Authentication Failed",
-                        detail="Invalid credentials.",
-                        type_url="https://api.skeldir.com/problems/authentication-failed",
-                    )
+                    raise unauthorized_auth_error()
                 if not verify_password(password, identity.password_hash):
-                    raise AuthError(
-                        status_code=401,
-                        title="Authentication Failed",
-                        detail="Invalid credentials.",
-                        type_url="https://api.skeldir.com/problems/authentication-failed",
-                    )
+                    raise unauthorized_auth_error()
                 resolved_tenant = await resolve_tenant_membership(
                     session,
                     user_id=identity.user_id,
                     requested_tenant_id=request.tenant_id,
                 )
                 if resolved_tenant is None:
-                    raise AuthError(
-                        status_code=401,
-                        title="Authentication Failed",
-                        detail="Invalid credentials.",
-                        type_url="https://api.skeldir.com/problems/authentication-failed",
-                    )
+                    raise unauthorized_auth_error()
                 try:
                     token_pair = await issue_login_token_pair(
                         session,
@@ -146,12 +138,7 @@ async def login(
                         tenant_id=resolved_tenant,
                     )
                 except ValueError as exc:
-                    raise AuthError(
-                        status_code=403,
-                        title="Forbidden",
-                        detail="Active membership role is required.",
-                        type_url="https://api.skeldir.com/problems/forbidden",
-                    ) from exc
+                    raise forbidden_auth_error() from exc
 
     user = User(
         id=token_pair.user_id,
@@ -191,12 +178,7 @@ async def refresh_token(
     Spec: api-contracts/dist/openapi/v1/auth.bundled.yaml
     """
     if not refresh_bearer_token:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Missing Authorization header.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
 
     if os.getenv("CONTRACT_TESTING") == "1":
         return RefreshResponse(
@@ -215,12 +197,7 @@ async def refresh_token(
                 requested_tenant_id=request.tenant_id,
             )
     if token_pair is None:
-        raise AuthError(
-            status_code=401,
-            title="Authentication Failed",
-            detail="Invalid refresh token.",
-            type_url="https://api.skeldir.com/problems/authentication-failed",
-        )
+        raise unauthorized_auth_error()
 
     return RefreshResponse(
         access_token=token_pair.access_token,
@@ -255,12 +232,7 @@ async def logout(
         try:
             expires_at = datetime.fromtimestamp(int(exp), tz=timezone.utc)
         except (TypeError, ValueError):
-            raise AuthError(
-                status_code=401,
-                title="Authentication Failed",
-                detail="Invalid exp claim.",
-                type_url="https://api.skeldir.com/problems/authentication-failed",
-            )
+            raise unauthorized_auth_error()
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 await denylist_access_token(

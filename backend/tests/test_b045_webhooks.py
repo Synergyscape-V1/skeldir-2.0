@@ -160,6 +160,7 @@ async def test_signature_enforced_shopify():
                 },
         )
     assert resp.status_code == 401
+    assert resp.headers.get("content-type", "").startswith("application/problem+json")
 
 
 @pytest.mark.asyncio
@@ -185,6 +186,7 @@ async def test_paypal_invalid_signature_returns_401():
             },
         )
     assert resp.status_code == 401
+    assert resp.headers.get("content-type", "").startswith("application/problem+json")
 
     async with get_session(tenant_id) as session:
         evt_count = await session.scalar(
@@ -270,6 +272,7 @@ async def test_stripe_success_and_invalid_signature():
     assert ok.status_code == 200
     assert ok.json()["status"] == "success"
     assert bad.status_code == 401
+    assert bad.headers.get("content-type", "").startswith("application/problem+json")
 
 
 @pytest.mark.asyncio
@@ -358,6 +361,7 @@ async def test_woocommerce_invalid_signature_returns_401():
             },
         )
     assert resp.status_code == 401
+    assert resp.headers.get("content-type", "").startswith("application/problem+json")
 
     async with get_session(tenant_id) as session:
         evt_count = await session.scalar(
@@ -383,7 +387,7 @@ async def test_openapi_contract_paths_present():
     assert "ShopifyOrderCreateRequest" in shopify_schema_ref
     stripe_schema_ref = paths["/api/webhooks/stripe/payment_intent_succeeded"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
     assert "StripePaymentIntentSucceededRequest" in stripe_schema_ref
-    # Verify response schemas expose status + identifier fields for 200 and status for 401
+    # Verify response schemas expose status + identifier fields for 200 and RFC7807 for 401
     for path in [
         "/api/webhooks/shopify/order_create",
         "/api/webhooks/stripe/payment_intent_succeeded",
@@ -403,10 +407,11 @@ async def test_openapi_contract_paths_present():
 
         unauthorized = post_op.get("responses", {}).get("401")
         if unauthorized:
-            unauth_schema = unauthorized["content"]["application/json"]["schema"]
+            unauth_schema = unauthorized["content"]["application/problem+json"]["schema"]
             if "$ref" in unauth_schema:
                 ref_name = unauth_schema["$ref"].split("/")[-1]
                 unauth_schema = schema["components"]["schemas"][ref_name]
             assert unauth_schema.get("type") == "object"
             unauth_props = unauth_schema.get("properties", {})
-            assert "status" in unauth_props and unauth_props["status"].get("type") == "string"
+            assert "status" in unauth_props and unauth_props["status"].get("type") == "integer"
+            assert "code" in unauth_props and unauth_props["code"].get("type") == "string"

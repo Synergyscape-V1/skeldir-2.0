@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any, Optional
 
+from app.api.problem_details import ProblemDetails
 from app.core.config import settings
 from app.core.tenant_context import get_tenant_with_webhook_secrets
 from app.db.session import get_session
@@ -38,6 +39,7 @@ from app.observability.context import (
 )
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import tenant_task_signature
+from app.security.auth import unauthorized_auth_error
 from app.webhooks.signatures import (
     verify_shopify_signature,
     verify_stripe_signature,
@@ -63,20 +65,21 @@ class WebhookResponse(BaseModel):
     error: Optional[str] = None
 
 
-class WebhookErrorResponse(BaseModel):
-    status: str
-    vendor: Optional[str] = None
+UNAUTHORIZED_PROBLEM_RESPONSE = {
+    "description": "Unauthorized - invalid or missing authentication",
+    "content": {
+        "application/problem+json": {
+            "schema": ProblemDetails.model_json_schema(),
+        },
+    },
+}
 
 
 async def tenant_secrets(
-    request: Request,
     api_key: str | None = Security(tenant_key_auth),
 ):
     if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"status": "invalid_tenant_key"},
-        )
+        raise unauthorized_auth_error()
     tenant_info = await get_tenant_with_webhook_secrets(api_key)
     set_tenant_id(tenant_info["tenant_id"])
     return tenant_info
@@ -243,7 +246,7 @@ async def _handle_ingestion(tenant_id, event_data: dict, idempotency_key: str, s
 @router.post(
     "/webhooks/shopify/order_create",
     response_model=WebhookResponse,
-    responses={401: {"model": WebhookErrorResponse}},
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
 )
 async def shopify_order_create(
     request: Request,
@@ -253,10 +256,7 @@ async def shopify_order_create(
 ):
     raw_body = getattr(request.state, "original_body", None) or await request.body()
     if not verify_shopify_signature(raw_body, tenant_info["shopify_webhook_secret"], x_shopify_hmac_sha256):
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"status": "invalid_signature", "vendor": "shopify"},
-        )
+        raise unauthorized_auth_error()
 
     if not payload.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
@@ -280,7 +280,7 @@ async def shopify_order_create(
 @router.post(
     "/webhooks/stripe/payment_intent_succeeded",
     response_model=WebhookResponse,
-    responses={401: {"model": WebhookErrorResponse}},
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
 )
 async def stripe_payment_intent_succeeded(
     request: Request,
@@ -292,10 +292,7 @@ async def stripe_payment_intent_succeeded(
     raw_body = getattr(request.state, "original_body", None) or await request.body()
     stripped_body = await request.body()
     if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"status": "invalid_signature", "vendor": "stripe"},
-        )
+        raise unauthorized_auth_error()
 
     if not payload.id and not x_idempotency_key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing payment intent id")
@@ -324,7 +321,7 @@ async def stripe_payment_intent_succeeded(
 @router.post(
     "/webhooks/stripe/payment_intent/succeeded",
     response_model=WebhookResponse,
-    responses={401: {"model": WebhookErrorResponse}},
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
 )
 async def stripe_payment_intent_succeeded_v2(
     request: Request,
@@ -343,10 +340,7 @@ async def stripe_payment_intent_succeeded_v2(
     """
     raw_body = getattr(request.state, "original_body", None) or await request.body()
     if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"status": "invalid_signature", "vendor": "stripe"},
-        )
+        raise unauthorized_auth_error()
     stripped_body = await request.body()
 
     payload: dict[str, Any] = {}
@@ -535,7 +529,7 @@ async def stripe_payment_intent_succeeded_v2(
 @router.post(
     "/webhooks/paypal/sale_completed",
     response_model=WebhookResponse,
-    responses={401: {"model": WebhookErrorResponse}},
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
 )
 async def paypal_sale_completed(
     request: Request,
@@ -545,10 +539,7 @@ async def paypal_sale_completed(
 ):
     raw_body = getattr(request.state, "original_body", None) or await request.body()
     if not verify_paypal_signature(raw_body, tenant_info["paypal_webhook_secret"], transmission_sig):
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"status": "invalid_signature", "vendor": "paypal"},
-        )
+        raise unauthorized_auth_error()
 
     if not payload.id or not payload.amount:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing transaction id or amount")
@@ -573,7 +564,7 @@ async def paypal_sale_completed(
 @router.post(
     "/webhooks/woocommerce/order_completed",
     response_model=WebhookResponse,
-    responses={401: {"model": WebhookErrorResponse}},
+    responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
 )
 async def woocommerce_order_completed(
     request: Request,
@@ -583,10 +574,7 @@ async def woocommerce_order_completed(
 ):
     raw_body = getattr(request.state, "original_body", None) or await request.body()
     if not verify_woocommerce_signature(raw_body, tenant_info["woocommerce_webhook_secret"], x_wc_webhook_signature):
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"status": "invalid_signature", "vendor": "woocommerce"},
-        )
+        raise unauthorized_auth_error()
 
     if not payload.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")

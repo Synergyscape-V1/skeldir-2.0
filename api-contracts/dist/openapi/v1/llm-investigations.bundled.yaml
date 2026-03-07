@@ -135,6 +135,7 @@ paths:
                   - instance
                   - correlation_id
                   - timestamp
+                  - code
                 properties: &ref_1
                   type:
                     type: string
@@ -168,6 +169,10 @@ paths:
                     format: date-time
                     description: ISO 8601 timestamp when the error occurred
                     example: '2025-11-11T14:32:00Z'
+                  code:
+                    type: string
+                    description: Stable, non-sensitive error code for programmatic handling
+                    example: AUTH_UNAUTHORIZED
                   errors:
                     type: array
                     description: Optional array of specific validation errors
