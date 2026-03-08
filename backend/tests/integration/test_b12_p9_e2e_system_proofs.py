@@ -112,6 +112,14 @@ def _artifacts_dir() -> Path:
     return root
 
 
+def _prepare_prometheus_multiproc_dir() -> Path:
+    multiproc_dir = (_artifacts_dir() / "prometheus_multiproc").resolve()
+    multiproc_dir.mkdir(parents=True, exist_ok=True)
+    for shard in multiproc_dir.glob("*.db"):
+        shard.unlink()
+    return multiproc_dir
+
+
 def _normalize_sync_url(value: str) -> str:
     if value.startswith("postgresql+asyncpg://"):
         return value.replace("postgresql+asyncpg://", "postgresql://", 1)
@@ -244,6 +252,7 @@ def _start_logged_process(cmd: list[str], *, env: dict[str, str], cwd: Path, log
 
 def _build_runtime_env() -> dict[str, str]:
     runtime_env = os.environ.copy()
+    multiproc_dir = _prepare_prometheus_multiproc_dir()
     runtime_env["TESTING"] = "1"
     runtime_env["CONTRACT_TESTING"] = "0"
     runtime_env["ENVIRONMENT"] = "test"
@@ -257,6 +266,7 @@ def _build_runtime_env() -> dict[str, str]:
     runtime_env["PLATFORM_TOKEN_KEY_ID"] = "b12-p9-key-id"
     runtime_env["SKELDIR_TEST_TASKS"] = "1"
     runtime_env["PYTHONPATH"] = str(_repo_root()) + os.pathsep + str(_backend_root())
+    runtime_env["PROMETHEUS_MULTIPROC_DIR"] = str(multiproc_dir)
     runtime_env["DATABASE_URL"] = _runtime_sync_database_url()
     runtime_env["MIGRATION_DATABASE_URL"] = _seed_sync_database_url()
     runtime_env["CELERY_BROKER_URL"] = str(celery_app.conf.broker_url)
