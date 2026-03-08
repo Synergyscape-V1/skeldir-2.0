@@ -1,0 +1,92 @@
+{
+  "jwt_malformed": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "www_authenticate": null,
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:4fbd5483-dde7-42fb-bea2-416eef9c1a33",
+      "correlation_id": "4fbd5483-dde7-42fb-bea2-416eef9c1a33",
+      "timestamp": "2026-03-08T17:12:17.994085Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  },
+  "jwt_missing_header": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "www_authenticate": null,
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:d235ed34-c4de-4fd4-a047-cb7c837817cc",
+      "correlation_id": "d235ed34-c4de-4fd4-a047-cb7c837817cc",
+      "timestamp": "2026-03-08T17:12:17.999084Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  },
+  "jwt_malformed_scheme": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "www_authenticate": null,
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:66abd9b0-6a2d-42a1-a749-45927e6b9652",
+      "correlation_id": "66abd9b0-6a2d-42a1-a749-45927e6b9652",
+      "timestamp": "2026-03-08T17:12:18.001084Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  },
+  "wh_missing_tenant_key": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "www_authenticate": null,
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:3cb9f150-55bb-4119-b089-7047e2d55462",
+      "correlation_id": "3cb9f150-55bb-4119-b089-7047e2d55462",
+      "timestamp": "2026-03-08T17:12:18.005085Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  },
+  "wh_unknown_tenant_key": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "www_authenticate": null,
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:9fb931f8-2e6c-40bc-81fb-55064d50aa94",
+      "correlation_id": "9fb931f8-2e6c-40bc-81fb-55064d50aa94",
+      "timestamp": "2026-03-08T17:12:18.041251Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  },
+  "wh_missing_signature": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "www_authenticate": null,
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:8bc3289d-24fc-466b-a053-b9c6a76d274e",
+      "correlation_id": "8bc3289d-24fc-466b-a053-b9c6a76d274e",
+      "timestamp": "2026-03-08T17:12:18.072896Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  }
+}

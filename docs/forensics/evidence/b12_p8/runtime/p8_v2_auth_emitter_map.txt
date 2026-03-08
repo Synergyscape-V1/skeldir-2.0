@@ -1,0 +1,56 @@
+### backend/app/main.py
+25:from fastapi.exceptions import RequestValidationError
+36:from app.api.problem_details import problem_details_response
+41:from app.security.auth import AuthError, forbidden_auth_error, unauthorized_auth_error
+113:@app.exception_handler(AuthError)
+114:async def auth_error_handler(request: Request, exc: AuthError):
+116:    return problem_details_response(
+127:@app.exception_handler(HTTPException)
+128:async def normalized_http_exception_handler(request: Request, exc: HTTPException):
+130:        return await fastapi_http_exception_handler(request, exc)
+131:    normalized = unauthorized_auth_error() if exc.status_code == 401 else forbidden_auth_error()
+133:    return problem_details_response(
+144:@app.exception_handler(RequestValidationError)
+145:async def normalized_request_validation_handler(request: Request, exc: RequestValidationError):
+147:        return await fastapi_request_validation_exception_handler(request, exc)
+161:        normalized = unauthorized_auth_error()
+162:        return problem_details_response(
+172:    return problem_details_response(
+
+### backend/app/security/auth.py
+63:class AuthError(Exception):
+81:def unauthorized_auth_error() -> AuthError:
+82:    return AuthError(
+91:def forbidden_auth_error() -> AuthError:
+92:    return AuthError(
+128:        raise unauthorized_auth_error()
+131:        raise unauthorized_auth_error()
+177:        raise forbidden_auth_error()
+179:        raise forbidden_auth_error()
+185:        raise AuthError(
+192:        raise AuthError(
+295:        raise unauthorized_auth_error()
+299:        raise unauthorized_auth_error() from exc
+310:        raise unauthorized_auth_error()
+314:        raise unauthorized_auth_error() from exc
+320:        raise unauthorized_auth_error()
+324:        raise unauthorized_auth_error() from exc
+326:        raise unauthorized_auth_error()
+380:            raise unauthorized_auth_error()
+393:            raise unauthorized_auth_error()
+432:        raise unauthorized_auth_error()
+445:        raise unauthorized_auth_error()
+449:        raise unauthorized_auth_error() from exc
+
+### backend/app/api/webhooks.py
+43:from app.security.auth import AuthError, unauthorized_auth_error
+136:    except AuthError:
+155:        raise unauthorized_auth_error()
+217:        raise unauthorized_auth_error()
+
+### backend/app/core/tenant_context.py
+25:from app.security.auth import unauthorized_auth_error
+48:        AuthError(401): if the key is missing/unknown
+51:        raise unauthorized_auth_error()
+67:            raise unauthorized_auth_error()
+

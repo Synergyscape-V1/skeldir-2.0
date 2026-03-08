@@ -1,0 +1,15 @@
+### backend/tests/test_b12_p8_error_contract_normalization.py
+110:     async def _tenant_secrets_override():
+119:     app.dependency_overrides[webhooks_api.tenant_secrets] = _tenant_secrets_override
+216:     async def _tenant_secrets_override():
+226:     app.dependency_overrides[webhooks_api.tenant_secrets] = _tenant_secrets_override
+246:     async def _raise_unauthorized(_api_key: str):
+249:     monkeypatch.setattr(webhooks_api, "get_tenant_with_webhook_secrets", _raise_unauthorized)
+294:     async def _raise_unauthorized(_api_key: str):
+297:     monkeypatch.setattr(webhooks_api, "get_tenant_with_webhook_secrets", _raise_unauthorized)
+323:     app.dependency_overrides[webhooks_api.tenant_secrets] = _leaky_tenant_override
+
+### tests/contract/test_contract_semantics.py
+417:     async def _tenant_secrets_override():
+427:     app.dependency_overrides[webhooks_api.tenant_secrets] = _tenant_secrets_override
+

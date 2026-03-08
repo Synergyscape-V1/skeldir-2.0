@@ -50,7 +50,11 @@ def verify_stripe_signature(raw_body: bytes, secret: Optional[str], header: Opti
         return False
     if abs(int(time.time()) - ts_int) > tolerance:
         return False
-    signed_payload = f"{timestamp}.{raw_body.decode()}".encode()
+    try:
+        body_text = raw_body.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    signed_payload = f"{timestamp}.{body_text}".encode()
     computed = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(computed, signature)
 

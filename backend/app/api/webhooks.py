@@ -12,6 +12,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from collections.abc import Callable
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
@@ -39,7 +40,7 @@ from app.observability.context import (
 )
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import tenant_task_signature
-from app.security.auth import unauthorized_auth_error
+from app.security.auth import AuthError, unauthorized_auth_error
 from app.webhooks.signatures import (
     verify_shopify_signature,
     verify_stripe_signature,
@@ -73,6 +74,140 @@ UNAUTHORIZED_PROBLEM_RESPONSE = {
         },
     },
 }
+
+WEBHOOK_DUMMY_SECRET = "skeldir_webhook_dummy_secret_constant_work"
+WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL = "Request payload too large."
+WEBHOOK_INVALID_PAYLOAD_DETAIL = "Invalid request payload."
+
+WebhookVerifier = Callable[[bytes, Optional[str], Optional[str]], bool]
+WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
+    "shopify": ("shopify_webhook_secret", verify_shopify_signature),
+    "stripe": ("stripe_webhook_secret", verify_stripe_signature),
+    "paypal": ("paypal_webhook_secret", verify_paypal_signature),
+    "woocommerce": ("woocommerce_webhook_secret", verify_woocommerce_signature),
+}
+
+
+def _parse_content_length_header(request: Request) -> int | None:
+    raw = request.headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        parsed = int(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=WEBHOOK_INVALID_PAYLOAD_DETAIL) from exc
+    if parsed < 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=WEBHOOK_INVALID_PAYLOAD_DETAIL)
+    return parsed
+
+
+def _enforce_webhook_body_size_limit(*, request: Request, raw_body: bytes) -> None:
+    max_body_bytes = settings.WEBHOOK_AUTH_MAX_BODY_BYTES
+    parsed_content_length = _parse_content_length_header(request)
+    if parsed_content_length is not None and parsed_content_length > max_body_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL,
+        )
+    if len(raw_body) > max_body_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL,
+        )
+
+
+async def _resolve_raw_body_for_webhook_auth(request: Request) -> bytes:
+    raw_body = getattr(request.state, "original_body", None)
+    if raw_body is None:
+        raw_body = await request.body()
+    if isinstance(raw_body, bytearray):
+        raw_body = bytes(raw_body)
+    if not isinstance(raw_body, bytes):
+        raw_body = bytes(raw_body or b"")
+    _enforce_webhook_body_size_limit(request=request, raw_body=raw_body)
+    return raw_body
+
+
+async def _resolve_tenant_info_for_webhook_auth(api_key: str | None) -> dict[str, Any] | None:
+    if not api_key or not api_key.strip():
+        return None
+    try:
+        return await get_tenant_with_webhook_secrets(api_key)
+    except AuthError:
+        return None
+
+
+async def _authorize_webhook_request(
+    *,
+    request: Request,
+    provider: str,
+    signature_header: str | None,
+    api_key: str | None,
+) -> dict[str, Any]:
+    raw_body = await _resolve_raw_body_for_webhook_auth(request)
+    secret_field, verifier = WEBHOOK_VERIFIERS[provider]
+    tenant_info = await _resolve_tenant_info_for_webhook_auth(api_key)
+    secret_found = tenant_info is not None and bool(tenant_info.get(secret_field))
+    secret_for_compute = str(tenant_info[secret_field]) if secret_found else WEBHOOK_DUMMY_SECRET
+    signature_valid = verifier(raw_body, secret_for_compute, signature_header)
+
+    if not (secret_found and signature_valid):
+        raise unauthorized_auth_error()
+
+    set_tenant_id(tenant_info["tenant_id"])
+    return tenant_info
+
+
+async def shopify_webhook_auth(
+    request: Request,
+    x_shopify_hmac_sha256: str | None = Header(None, alias="X-Shopify-Hmac-Sha256"),
+    api_key: str | None = Security(tenant_key_auth),
+) -> dict[str, Any]:
+    return await _authorize_webhook_request(
+        request=request,
+        provider="shopify",
+        signature_header=x_shopify_hmac_sha256,
+        api_key=api_key,
+    )
+
+
+async def stripe_webhook_auth(
+    request: Request,
+    stripe_signature: str | None = Header(None, alias="Stripe-Signature"),
+    api_key: str | None = Security(tenant_key_auth),
+) -> dict[str, Any]:
+    return await _authorize_webhook_request(
+        request=request,
+        provider="stripe",
+        signature_header=stripe_signature,
+        api_key=api_key,
+    )
+
+
+async def paypal_webhook_auth(
+    request: Request,
+    transmission_sig: str | None = Header(None, alias="PayPal-Transmission-Sig"),
+    api_key: str | None = Security(tenant_key_auth),
+) -> dict[str, Any]:
+    return await _authorize_webhook_request(
+        request=request,
+        provider="paypal",
+        signature_header=transmission_sig,
+        api_key=api_key,
+    )
+
+
+async def woocommerce_webhook_auth(
+    request: Request,
+    x_wc_webhook_signature: str | None = Header(None, alias="X-WC-Webhook-Signature"),
+    api_key: str | None = Security(tenant_key_auth),
+) -> dict[str, Any]:
+    return await _authorize_webhook_request(
+        request=request,
+        provider="woocommerce",
+        signature_header=x_wc_webhook_signature,
+        api_key=api_key,
+    )
 
 
 async def tenant_secrets(
@@ -251,13 +386,8 @@ async def _handle_ingestion(tenant_id, event_data: dict, idempotency_key: str, s
 async def shopify_order_create(
     request: Request,
     payload: ShopifyOrderCreateRequest = Body(...),
-    x_shopify_hmac_sha256: str = Header(None, alias="X-Shopify-Hmac-Sha256"),
-    tenant_info=Depends(tenant_secrets),
+    tenant_info=Depends(shopify_webhook_auth),
 ):
-    raw_body = getattr(request.state, "original_body", None) or await request.body()
-    if not verify_shopify_signature(raw_body, tenant_info["shopify_webhook_secret"], x_shopify_hmac_sha256):
-        raise unauthorized_auth_error()
-
     if not payload.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
 
@@ -285,15 +415,9 @@ async def shopify_order_create(
 async def stripe_payment_intent_succeeded(
     request: Request,
     payload: StripePaymentIntentSucceededRequest = Body(...),
-    stripe_signature: str = Header(None, alias="Stripe-Signature"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
-    tenant_info=Depends(tenant_secrets),
+    tenant_info=Depends(stripe_webhook_auth),
 ):
-    raw_body = getattr(request.state, "original_body", None) or await request.body()
-    stripped_body = await request.body()
-    if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
-        raise unauthorized_auth_error()
-
     if not payload.id and not x_idempotency_key:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing payment intent id")
 
@@ -325,9 +449,8 @@ async def stripe_payment_intent_succeeded(
 )
 async def stripe_payment_intent_succeeded_v2(
     request: Request,
-    stripe_signature: str = Header(None, alias="Stripe-Signature"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
-    tenant_info=Depends(tenant_secrets),
+    tenant_info=Depends(stripe_webhook_auth),
 ):
     """
     Stripe payment_intent.succeeded webhook (contract path).
@@ -339,8 +462,6 @@ async def stripe_payment_intent_succeeded_v2(
     - Duplicate valid events: idempotent success (no 5xx)
     """
     raw_body = getattr(request.state, "original_body", None) or await request.body()
-    if not verify_stripe_signature(raw_body, tenant_info["stripe_webhook_secret"], stripe_signature):
-        raise unauthorized_auth_error()
     stripped_body = await request.body()
 
     payload: dict[str, Any] = {}
@@ -534,13 +655,8 @@ async def stripe_payment_intent_succeeded_v2(
 async def paypal_sale_completed(
     request: Request,
     payload: PayPalSaleCompletedRequest = Body(...),
-    transmission_sig: str = Header(None, alias="PayPal-Transmission-Sig"),
-    tenant_info=Depends(tenant_secrets),
+    tenant_info=Depends(paypal_webhook_auth),
 ):
-    raw_body = getattr(request.state, "original_body", None) or await request.body()
-    if not verify_paypal_signature(raw_body, tenant_info["paypal_webhook_secret"], transmission_sig):
-        raise unauthorized_auth_error()
-
     if not payload.id or not payload.amount:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing transaction id or amount")
 
@@ -569,13 +685,8 @@ async def paypal_sale_completed(
 async def woocommerce_order_completed(
     request: Request,
     payload: WooCommerceOrderCompletedRequest = Body(...),
-    x_wc_webhook_signature: str = Header(None, alias="X-WC-Webhook-Signature"),
-    tenant_info=Depends(tenant_secrets),
+    tenant_info=Depends(woocommerce_webhook_auth),
 ):
-    raw_body = getattr(request.state, "original_body", None) or await request.body()
-    if not verify_woocommerce_signature(raw_body, tenant_info["woocommerce_webhook_secret"], x_wc_webhook_signature):
-        raise unauthorized_auth_error()
-
     if not payload.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
 

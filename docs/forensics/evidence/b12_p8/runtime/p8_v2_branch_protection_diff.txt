@@ -1,0 +1,7 @@
+﻿strict_before=True
+strict_after=True
+added_contexts:
+- B1.2 P7 Worker Coherence Proofs
+- B1.2 P8 Error Contract Proofs
+removed_contexts:
+- (none)

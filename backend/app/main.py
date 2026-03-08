@@ -18,7 +18,11 @@ from uuid import UUID, uuid4
 os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.exception_handlers import http_exception_handler as fastapi_http_exception_handler
+from fastapi.exception_handlers import (
+    http_exception_handler as fastapi_http_exception_handler,
+    request_validation_exception_handler as fastapi_request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 # Structured logging for API process (JSON with tenant/correlation context).
@@ -73,6 +77,17 @@ app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(health.router, tags=["Health"])
 app.include_router(webhooks.router, prefix="/api", tags=["Webhooks"])
 
+WEBHOOK_AUTH_HEADER_NAMES = {
+    "authorization",
+    "x-skeldir-tenant-key",
+    "x-shopify-hmac-sha256",
+    "stripe-signature",
+    "paypal-transmission-sig",
+    "x-wc-webhook-signature",
+}
+WEBHOOK_VALIDATION_TYPE_URL = "https://api.skeldir.com/problems/request-validation-failed"
+WEBHOOK_VALIDATION_CODE = "REQUEST_VALIDATION_FAILED"
+
 # Health endpoints are now exclusively in app.api.health with explicit semantics:
 # - /health: Legacy alias for liveness only
 # - /health/live: Pure liveness (no deps)
@@ -123,6 +138,45 @@ async def normalized_http_exception_handler(request: Request, exc: HTTPException
         correlation_id=correlation_id,
         type_url=normalized.type_url,
         code=normalized.code,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def normalized_request_validation_handler(request: Request, exc: RequestValidationError):
+    if not request.url.path.startswith("/api/webhooks/"):
+        return await fastapi_request_validation_exception_handler(request, exc)
+
+    correlation_id = _resolve_problem_correlation_id(request)
+    header_validation_error = False
+    for error in exc.errors():
+        location = error.get("loc") or ()
+        if len(location) < 2 or location[0] != "header":
+            continue
+        header_name = str(location[1]).strip().lower()
+        if header_name in WEBHOOK_AUTH_HEADER_NAMES:
+            header_validation_error = True
+            break
+
+    if header_validation_error:
+        normalized = unauthorized_auth_error()
+        return problem_details_response(
+            request,
+            status_code=normalized.status_code,
+            title=normalized.title,
+            detail=normalized.detail,
+            correlation_id=correlation_id,
+            type_url=normalized.type_url,
+            code=normalized.code,
+        )
+
+    return problem_details_response(
+        request,
+        status_code=422,
+        title="Validation Failed",
+        detail="Request validation failed.",
+        correlation_id=correlation_id,
+        type_url=WEBHOOK_VALIDATION_TYPE_URL,
+        code=WEBHOOK_VALIDATION_CODE,
     )
 
 

@@ -27,10 +27,11 @@ Behavior:
 
 import json
 import logging
+import os
 from typing import Any, Dict, Set
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,26 @@ PII_KEYS: Set[str] = {
 # Only strip PII at ingestion boundary to avoid breaking non-ingestion APIs
 # (e.g., auth/login legitimately accepts an email address).
 PII_STRIP_PATH_PREFIXES: tuple[str, ...] = ("/api/webhooks",)
+WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL = "Request payload too large."
+WEBHOOK_INVALID_PAYLOAD_DETAIL = "Invalid request payload."
+_WEBHOOK_AUTH_MAX_BODY_BYTES_DEFAULT = 1_048_576
+try:
+    WEBHOOK_AUTH_MAX_BODY_BYTES = int(
+        os.getenv("WEBHOOK_AUTH_MAX_BODY_BYTES", str(_WEBHOOK_AUTH_MAX_BODY_BYTES_DEFAULT))
+    )
+except ValueError:
+    WEBHOOK_AUTH_MAX_BODY_BYTES = _WEBHOOK_AUTH_MAX_BODY_BYTES_DEFAULT
+
+
+def _content_length_header(request: Request) -> int | None:
+    raw = request.headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return -1
+    return parsed
 
 
 def strip_pii_keys_recursive(data: Any, path: str = "root") -> tuple[Any, list[str]]:
@@ -137,11 +158,39 @@ class PIIStrippingMiddleware(BaseHTTPMiddleware):
         # Only process POST/PUT/PATCH requests with JSON content
         if request.method in ["POST", "PUT", "PATCH"]:
             content_type = request.headers.get("content-type", "")
-            
+            content_length = _content_length_header(request)
+            if content_length == -1 or (content_length is not None and content_length < 0):
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": WEBHOOK_INVALID_PAYLOAD_DETAIL},
+                )
+            if content_length is not None and content_length > WEBHOOK_AUTH_MAX_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL},
+                )
+
             if "application/json" in content_type:
                 try:
-                    # Read request body
-                    body = await request.body()
+                    # Read request body with a strict upper bound to prevent oversized
+                    # payloads from forcing unbounded parse/HMAC work.
+                    chunks: list[bytes] = []
+                    body_size = 0
+                    async for chunk in request.stream():
+                        body_size += len(chunk)
+                        if body_size > WEBHOOK_AUTH_MAX_BODY_BYTES:
+                            return JSONResponse(
+                                status_code=413,
+                                content={"detail": WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL},
+                            )
+                        chunks.append(chunk)
+                    body = b"".join(chunks)
+
+                    async def _restore_receive():
+                        return {"type": "http.request", "body": body, "more_body": False}
+
+                    request._receive = _restore_receive
+                    request._body = body
                     setattr(request.state, "original_body", body)
                     
                     if body:
