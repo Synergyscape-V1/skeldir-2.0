@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 54,
+  "keys_total": 55,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
@@ -927,6 +927,24 @@
         "local"
       ],
       "key": "TENANT_SECRETS_CACHE_TTL_SECONDS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/webhooks/auth-max-body-bytes",
+      "call_sites": [
+        "backend/app/api/webhooks.py",
+        "backend/app/middleware/pii_stripping.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "WEBHOOK_AUTH_MAX_BODY_BYTES",
       "owner": "backend-platform",
       "rotation_criticality": "none"
     }

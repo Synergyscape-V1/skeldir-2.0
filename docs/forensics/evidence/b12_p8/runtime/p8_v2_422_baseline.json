@@ -1,0 +1,51 @@
+{
+  "invalid_payload_no_auth_headers": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:f25445e8-1a58-42f4-85a1-98933a624ddd",
+      "correlation_id": "f25445e8-1a58-42f4-85a1-98933a624ddd",
+      "timestamp": "2026-03-08T17:14:07.767495Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  },
+  "invalid_payload_with_auth_headers": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:f25c97d7-1dc0-4f5f-8692-d32de3fc42c9",
+      "correlation_id": "f25c97d7-1dc0-4f5f-8692-d32de3fc42c9",
+      "timestamp": "2026-03-08T17:14:07.772495Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  },
+  "invalid_payload_with_valid_auth": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": {
+      "detail": "Missing payment intent id"
+    }
+  },
+  "jwt_authorization_header_malformed": {
+    "status": 401,
+    "content_type": "application/problem+json",
+    "body": {
+      "type": "https://api.skeldir.com/problems/authentication-failed",
+      "title": "Authentication Failed",
+      "status": 401,
+      "detail": "Authentication failed.",
+      "instance": "urn:skeldir:error:e3ee61ee-a364-4e6a-8493-a09aecbd2d0b",
+      "correlation_id": "e3ee61ee-a364-4e6a-8493-a09aecbd2d0b",
+      "timestamp": "2026-03-08T17:14:07.777542Z",
+      "code": "AUTH_UNAUTHORIZED"
+    }
+  }
+}

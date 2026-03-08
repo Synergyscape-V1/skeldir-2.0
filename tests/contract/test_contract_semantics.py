@@ -38,7 +38,7 @@ os.environ["AUTH_JWT_AUDIENCE"] = "skeldir-api"
 os.environ["CONTRACT_TESTING"] = "1"
 os.environ["TESTING"] = "1"
 from app.main import app
-from app.security.auth import mint_internal_jwt
+from app.security.auth import mint_internal_jwt, unauthorized_auth_error
 from app.api import webhooks as webhooks_api
 
 
@@ -413,43 +413,42 @@ def test_p8_contract_error_surface_uses_problem_details_for_auth_and_webhook_mod
                     )
 
 
-def test_p8_runtime_parity_invalid_jwt_vs_invalid_hmac_signature():
-    async def _tenant_secrets_override():
-        return {
-            "tenant_id": uuid.uuid4(),
-            "shopify_webhook_secret": "shopify_secret",
-            "stripe_webhook_secret": "stripe_secret",
-            "paypal_webhook_secret": "paypal_secret",
-            "woocommerce_webhook_secret": "woo_secret",
-        }
+def test_p8_runtime_parity_invalid_jwt_vs_invalid_hmac_signature(monkeypatch):
+    async def _tenant_lookup(api_key: str):
+        if api_key == "known-key":
+            return {
+                "tenant_id": uuid.uuid4(),
+                "shopify_webhook_secret": "shopify_secret",
+                "stripe_webhook_secret": "stripe_secret",
+                "paypal_webhook_secret": "paypal_secret",
+                "woocommerce_webhook_secret": "woo_secret",
+            }
+        raise unauthorized_auth_error()
 
     client = TestClient(app)
-    app.dependency_overrides[webhooks_api.tenant_secrets] = _tenant_secrets_override
-    try:
-        jwt_resp = client.get(
-            "/api/v1/revenue/realtime",
-            headers={
-                "X-Correlation-ID": str(uuid.uuid4()),
-                "Authorization": "Bearer not-a-jwt",
-            },
-        )
-        hmac_resp = client.post(
-            "/api/webhooks/stripe/payment_intent_succeeded",
-            json={
-                "id": f"pi_{uuid.uuid4().hex[:12]}",
-                "amount": 5000,
-                "currency": "usd",
-                "created": 1732631400,
-                "status": "succeeded",
-            },
-            headers={
-                "X-Correlation-ID": str(uuid.uuid4()),
-                "X-Skeldir-Tenant-Key": "synthetic-tenant-key",
-                "Stripe-Signature": "t=0,v1=invalid",
-            },
-        )
-    finally:
-        app.dependency_overrides.pop(webhooks_api.tenant_secrets, None)
+    monkeypatch.setattr(webhooks_api, "get_tenant_with_webhook_secrets", _tenant_lookup)
+    jwt_resp = client.get(
+        "/api/v1/revenue/realtime",
+        headers={
+            "X-Correlation-ID": str(uuid.uuid4()),
+            "Authorization": "Bearer not-a-jwt",
+        },
+    )
+    hmac_resp = client.post(
+        "/api/webhooks/stripe/payment_intent_succeeded",
+        json={
+            "id": f"pi_{uuid.uuid4().hex[:12]}",
+            "amount": 5000,
+            "currency": "usd",
+            "created": 1732631400,
+            "status": "succeeded",
+        },
+        headers={
+            "X-Correlation-ID": str(uuid.uuid4()),
+            "X-Skeldir-Tenant-Key": "known-key",
+            "Stripe-Signature": "t=0,v1=invalid",
+        },
+    )
 
     jwt_problem = _assert_problem_details_response(jwt_resp, expected_status=401)
     hmac_problem = _assert_problem_details_response(hmac_resp, expected_status=401)

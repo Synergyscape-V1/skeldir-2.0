@@ -120,6 +120,14 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         owner="backend-platform",
         call_sites=("backend/app/core/config.py",),
     ),
+    "WEBHOOK_AUTH_MAX_BODY_BYTES": _contract(
+        key="WEBHOOK_AUTH_MAX_BODY_BYTES",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/webhooks/auth-max-body-bytes",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=("backend/app/api/webhooks.py", "backend/app/middleware/pii_stripping.py"),
+    ),
     "AUTH_JWT_SECRET": _contract(
         key="AUTH_JWT_SECRET",
         classification="secret",

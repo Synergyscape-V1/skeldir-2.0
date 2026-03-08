@@ -1,0 +1,10 @@
+{
+  "unknown_key": {
+    "status": 401,
+    "verify_calls": 0
+  },
+  "known_key_bad_sig": {
+    "status": 401,
+    "verify_calls": 1
+  }
+}

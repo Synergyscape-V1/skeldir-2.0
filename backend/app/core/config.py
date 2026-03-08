@@ -74,6 +74,10 @@ class Settings(BaseSettings):
         2048,
         description="Maximum entries for tenant webhook secret cache.",
     )
+    WEBHOOK_AUTH_MAX_BODY_BYTES: int = Field(
+        1_048_576,
+        description="Maximum webhook request body size (bytes) allowed before auth signature verification.",
+    )
     # JWT Authentication (Phase 1)
     AUTH_JWT_SECRET: Optional[str] = Field(
         None,
@@ -314,7 +318,11 @@ class Settings(BaseSettings):
             raise ValueError("TENANT_API_KEY_HEADER cannot be empty")
         return value.strip()
 
-    @field_validator("TENANT_SECRETS_CACHE_TTL_SECONDS", "TENANT_SECRETS_CACHE_MAX_ENTRIES")
+    @field_validator(
+        "TENANT_SECRETS_CACHE_TTL_SECONDS",
+        "TENANT_SECRETS_CACHE_MAX_ENTRIES",
+        "WEBHOOK_AUTH_MAX_BODY_BYTES",
+    )
     @classmethod
     def validate_tenant_secret_cache_settings(cls, value: int, info) -> int:
         if value < 1:
