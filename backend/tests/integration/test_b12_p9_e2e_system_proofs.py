@@ -23,6 +23,8 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from app.celery_app import celery_app
+from app.core.config import settings
+from app.core.secrets import reset_crypto_secret_caches_for_testing
 from app.tasks.authority import AUTHORITY_ENVELOPE_HEADER, SessionAuthorityEnvelope
 from app.testing.jwt_rs256 import TEST_PUBLIC_KEY_PEM, private_ring_payload, public_ring_payload
 from app.webhooks.signatures import verify_stripe_signature
@@ -606,6 +608,9 @@ def _p9_env_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PLATFORM_TOKEN_ENCRYPTION_KEY", "b12-p9-platform-key")
     monkeypatch.setenv("PLATFORM_TOKEN_KEY_ID", "b12-p9-key-id")
     monkeypatch.setenv("SKELDIR_TEST_TASKS", "1")
+    settings.PLATFORM_TOKEN_ENCRYPTION_KEY = "b12-p9-platform-key"
+    settings.PLATFORM_TOKEN_KEY_ID = "b12-p9-key-id"
+    reset_crypto_secret_caches_for_testing()
 
 
 async def test_b12_p9_e2e_system_proof() -> None:
