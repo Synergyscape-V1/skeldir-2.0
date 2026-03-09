@@ -93,7 +93,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          python scripts/ci/enforce_b13_p0_codeowners.py
+          python scripts/ci/enforce_b13_p0_codeowners.py --allow-api-unavailable
 
       - name: Enforce B1.3-P0 evidence-pack shape
         run: |
