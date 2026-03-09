@@ -55,7 +55,17 @@ def response_is_valid(response: Dict[str, Any]) -> bool:
 def schema_matches_problem(schema: Dict[str, Any]) -> bool:
     if "$ref" in schema:
         ref = schema["$ref"]
-        return any(ref.startswith(prefix) for prefix in VALID_RESPONSE_REF_PREFIXES)
+        if any(ref.startswith(prefix) for prefix in VALID_RESPONSE_REF_PREFIXES):
+            return True
+        if str(ref).endswith("/ProblemDetails") or str(ref).endswith("ProblemDetails"):
+            return True
+        return False
+
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for item in all_of:
+            if isinstance(item, dict) and schema_matches_problem(item):
+                return True
 
     required = schema.get("required", [])
     properties = schema.get("properties", {})
