@@ -21,6 +21,10 @@ tags:
     description: LLM-powered natural language explanations for attribution data
   - name: Platform Connections
     description: Tenant-scoped platform connection and credential management
+  - name: Provider OAuth Lifecycle
+    description: |
+      Contract-authoritative provider data OAuth lifecycle surfaces.
+      This surface is distinct from first-party JWT login (`/api/auth/*`) and webhook HMAC auth (`/api/webhooks/*`).
 
 security:
   - accessBearerAuth: ["viewer"]
@@ -396,6 +400,342 @@ paths:
         '500':
           $ref: './_common/base.yaml#/components/responses/ServerError'
 
+  /api/attribution/platform-oauth/{platform}/authorize:
+    post:
+      summary: Initiate provider OAuth authorization
+      description: |
+        Creates a tenant-scoped provider OAuth authorization session and returns the provider authorization URL.
+        This is a provider data OAuth lifecycle route and is not used for first-party JWT login or webhook authentication.
+      operationId: initiateProviderOAuthAuthorization
+      tags:
+        - Provider OAuth Lifecycle
+      security:
+        - accessBearerAuth: ["manager"]
+      x-auth-boundary: provider_oauth_lifecycle
+      x-disallowed-security-schemes:
+        - refreshBearerAuth
+        - tenantKeyAuth
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: platform
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Platform'
+          description: Provider platform identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderOAuthAuthorizeRequest'
+      responses:
+        '202':
+          description: Provider authorization URL generated
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderOAuthAuthorizeResponse'
+              example:
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: stripe
+                lifecycle_state: authorization_pending
+                authorization_url: https://connect.stripe.com/oauth/authorize?client_id=ca_123&state=st_abc
+                state_reference: st_abc
+                state_expires_at: '2026-03-09T18:15:00Z'
+                data_freshness_seconds: 0
+                last_updated: '2026-03-09T17:45:00Z'
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/ProviderNotConnectedError'
+        '409':
+          $ref: '#/components/responses/ProviderRevokedError'
+        '429':
+          $ref: '#/components/responses/ProviderRateLimitedError'
+        '503':
+          $ref: '#/components/responses/ProviderTransportFailureError'
+
+  /api/attribution/platform-oauth/{platform}/callback:
+    get:
+      summary: Complete provider OAuth callback
+      description: |
+        Completes provider OAuth callback handling after authorization redirect.
+        This route represents provider lifecycle completion semantics only.
+      operationId: completeProviderOAuthCallback
+      tags:
+        - Provider OAuth Lifecycle
+      security:
+        - accessBearerAuth: ["manager"]
+      x-auth-boundary: provider_oauth_lifecycle
+      x-disallowed-security-schemes:
+        - refreshBearerAuth
+        - tenantKeyAuth
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: platform
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Platform'
+          description: Provider platform identifier
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Provider authorization code
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Opaque state reference emitted during authorize initiation
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Provider callback error code when authorization is denied
+        - name: error_description
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Provider callback error description
+      responses:
+        '200':
+          description: Callback completed and lifecycle state updated
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderOAuthCallbackResponse'
+              example:
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: stripe
+                platform_account_id: acct_1AbCdEfGh
+                lifecycle_state: connected
+                refresh_state: fresh
+                data_freshness_seconds: 1
+                last_updated: '2026-03-09T17:46:00Z'
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ProviderScopeInsufficientError'
+        '404':
+          $ref: '#/components/responses/ProviderNotConnectedError'
+        '409':
+          $ref: '#/components/responses/ProviderExpiredError'
+        '429':
+          $ref: '#/components/responses/ProviderRateLimitedError'
+        '503':
+          $ref: '#/components/responses/ProviderTransportFailureError'
+
+  /api/attribution/platform-oauth/{platform}/status:
+    get:
+      summary: Read provider OAuth connection status
+      description: |
+        Returns tenant-scoped provider OAuth lifecycle status.
+        No token values or provider raw payloads are returned.
+      operationId: getProviderOAuthStatus
+      tags:
+        - Provider OAuth Lifecycle
+      security:
+        - accessBearerAuth: ["viewer"]
+      x-auth-boundary: provider_oauth_lifecycle
+      x-disallowed-security-schemes:
+        - refreshBearerAuth
+        - tenantKeyAuth
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: platform
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Platform'
+          description: Provider platform identifier
+        - name: platform_account_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional provider account filter
+      responses:
+        '200':
+          description: Provider OAuth lifecycle status
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderOAuthStatusResponse'
+              example:
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: stripe
+                platform_account_id: acct_1AbCdEfGh
+                lifecycle_state: connected
+                refresh_state: fresh
+                expires_at: '2026-03-10T17:45:00Z'
+                scope: read_write
+                data_freshness_seconds: 3
+                last_updated: '2026-03-09T17:46:00Z'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ProviderScopeInsufficientError'
+        '404':
+          $ref: '#/components/responses/ProviderNotConnectedError'
+        '409':
+          $ref: '#/components/responses/ProviderRevokedError'
+        '429':
+          $ref: '#/components/responses/ProviderRateLimitedError'
+        '503':
+          $ref: '#/components/responses/ProviderTransportFailureError'
+
+  /api/attribution/platform-oauth/{platform}/disconnect:
+    post:
+      summary: Disconnect and revoke provider OAuth connection
+      description: |
+        Revokes provider OAuth connectivity for the tenant and transitions lifecycle state to revoked.
+      operationId: disconnectProviderOAuth
+      tags:
+        - Provider OAuth Lifecycle
+      security:
+        - accessBearerAuth: ["manager"]
+      x-auth-boundary: provider_oauth_lifecycle
+      x-disallowed-security-schemes:
+        - refreshBearerAuth
+        - tenantKeyAuth
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: platform
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Platform'
+          description: Provider platform identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderOAuthDisconnectRequest'
+      responses:
+        '200':
+          description: Provider OAuth connection revoked
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderOAuthDisconnectResponse'
+              example:
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: stripe
+                lifecycle_state: revoked
+                disconnected_at: '2026-03-09T17:47:00Z'
+                data_freshness_seconds: 0
+                last_updated: '2026-03-09T17:47:00Z'
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/ProviderNotConnectedError'
+        '409':
+          $ref: '#/components/responses/ProviderExpiredError'
+        '429':
+          $ref: '#/components/responses/ProviderRateLimitedError'
+        '503':
+          $ref: '#/components/responses/ProviderTransportFailureError'
+
+  /api/attribution/platform-oauth/{platform}/refresh-state:
+    get:
+      summary: Read provider OAuth refresh result state
+      description: |
+        Returns tenant-scoped refresh lifecycle status and most recent refresh outcome.
+      operationId: getProviderOAuthRefreshState
+      tags:
+        - Provider OAuth Lifecycle
+      security:
+        - accessBearerAuth: ["viewer"]
+      x-auth-boundary: provider_oauth_lifecycle
+      x-disallowed-security-schemes:
+        - refreshBearerAuth
+        - tenantKeyAuth
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: platform
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Platform'
+          description: Provider platform identifier
+      responses:
+        '200':
+          description: Provider OAuth refresh result state
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderOAuthRefreshStateResponse'
+              example:
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                platform: stripe
+                lifecycle_state: connected
+                refresh_state: succeeded
+                next_refresh_due_at: '2026-03-10T16:45:00Z'
+                last_refresh_attempt_at: '2026-03-09T17:46:00Z'
+                last_refresh_success_at: '2026-03-09T17:46:00Z'
+                last_error_code: null
+                data_freshness_seconds: 15
+                last_updated: '2026-03-09T17:46:00Z'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ProviderScopeInsufficientError'
+        '404':
+          $ref: '#/components/responses/ProviderNotConnectedError'
+        '409':
+          $ref: '#/components/responses/ProviderRevokedError'
+        '429':
+          $ref: '#/components/responses/ProviderRateLimitedError'
+        '503':
+          $ref: '#/components/responses/ProviderTransportFailureError'
+
 components:
   schemas:
     Platform:
@@ -530,6 +870,256 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    ProviderOAuthLifecycleState:
+      type: string
+      description: Tenant-scoped provider OAuth lifecycle state
+      enum:
+        - not_connected
+        - authorization_pending
+        - connected
+        - expired
+        - revoked
+        - reconnect_required
+
+    ProviderRefreshResultState:
+      type: string
+      description: Most recent provider OAuth refresh result state
+      enum:
+        - not_attempted
+        - fresh
+        - due
+        - in_progress
+        - succeeded
+        - failed
+
+    ProviderOAuthAuthorizeRequest:
+      type: object
+      required:
+        - platform_account_id
+        - redirect_uri
+      properties:
+        platform_account_id:
+          type: string
+          description: Tenant-local provider account identifier
+        redirect_uri:
+          type: string
+          format: uri
+          description: Callback URL registered for the provider OAuth client
+        requested_scopes:
+          type: array
+          items:
+            type: string
+          description: Optional requested provider scopes
+
+    ProviderOAuthAuthorizeResponse:
+      type: object
+      required:
+        - tenant_id
+        - platform
+        - lifecycle_state
+        - authorization_url
+        - state_reference
+        - state_expires_at
+        - data_freshness_seconds
+        - last_updated
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        platform:
+          $ref: '#/components/schemas/Platform'
+        lifecycle_state:
+          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
+        authorization_url:
+          type: string
+          format: uri
+          description: Provider authorization URL for redirect initiation
+        state_reference:
+          type: string
+          description: Opaque reference for callback state validation
+        state_expires_at:
+          type: string
+          format: date-time
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+        last_updated:
+          type: string
+          format: date-time
+
+    ProviderOAuthCallbackResponse:
+      type: object
+      required:
+        - tenant_id
+        - platform
+        - platform_account_id
+        - lifecycle_state
+        - refresh_state
+        - data_freshness_seconds
+        - last_updated
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        platform:
+          $ref: '#/components/schemas/Platform'
+        platform_account_id:
+          type: string
+        lifecycle_state:
+          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
+        refresh_state:
+          $ref: '#/components/schemas/ProviderRefreshResultState'
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+        last_updated:
+          type: string
+          format: date-time
+
+    ProviderOAuthStatusResponse:
+      type: object
+      required:
+        - tenant_id
+        - platform
+        - platform_account_id
+        - lifecycle_state
+        - refresh_state
+        - data_freshness_seconds
+        - last_updated
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        platform:
+          $ref: '#/components/schemas/Platform'
+        platform_account_id:
+          type: string
+        lifecycle_state:
+          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
+        refresh_state:
+          $ref: '#/components/schemas/ProviderRefreshResultState'
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        scope:
+          type: string
+          nullable: true
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+        last_updated:
+          type: string
+          format: date-time
+
+    ProviderOAuthDisconnectReason:
+      type: string
+      enum:
+        - user_initiated
+        - provider_revoked
+        - security_event
+        - tenant_offboarding
+
+    ProviderOAuthDisconnectRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          $ref: '#/components/schemas/ProviderOAuthDisconnectReason'
+
+    ProviderOAuthDisconnectResponse:
+      type: object
+      required:
+        - tenant_id
+        - platform
+        - lifecycle_state
+        - disconnected_at
+        - data_freshness_seconds
+        - last_updated
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        platform:
+          $ref: '#/components/schemas/Platform'
+        lifecycle_state:
+          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
+        disconnected_at:
+          type: string
+          format: date-time
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+        last_updated:
+          type: string
+          format: date-time
+
+    ProviderLifecycleErrorCode:
+      type: string
+      description: Non-leaky provider OAuth lifecycle failure categories
+      enum:
+        - provider_not_connected
+        - provider_expired
+        - provider_revoked
+        - provider_scope_insufficient
+        - provider_rate_limited
+        - provider_transport_failure
+
+    ProviderOAuthRefreshStateResponse:
+      type: object
+      required:
+        - tenant_id
+        - platform
+        - lifecycle_state
+        - refresh_state
+        - next_refresh_due_at
+        - data_freshness_seconds
+        - last_updated
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        platform:
+          $ref: '#/components/schemas/Platform'
+        lifecycle_state:
+          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
+        refresh_state:
+          $ref: '#/components/schemas/ProviderRefreshResultState'
+        next_refresh_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_refresh_attempt_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_refresh_success_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_error_code:
+          anyOf:
+            - $ref: '#/components/schemas/ProviderLifecycleErrorCode'
+            - type: 'null'
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+        last_updated:
+          type: string
+          format: date-time
+
+    ProviderLifecycleProblemDetails:
+      allOf:
+        - $ref: './_common/base.yaml#/components/schemas/ProblemDetails'
+        - type: object
+          required:
+            - code
+          properties:
+            code:
+              $ref: '#/components/schemas/ProviderLifecycleErrorCode'
+
     RealtimeRevenueCounter:
       type: object
       required:
@@ -664,6 +1254,136 @@ components:
           description: LLM API cost for this explanation
           example: 1.8
           x-internal: true
+
+  responses:
+    ProviderNotConnectedError:
+      description: Provider connection does not exist for the tenant
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
+          example:
+            type: https://api.skeldir.com/problems/provider-not-connected
+            title: Provider Not Connected
+            status: 404
+            detail: Provider connection is not available for this tenant.
+            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000
+            correlation_id: 550e8400-e29b-41d4-a716-446655440000
+            timestamp: '2026-03-09T17:45:00Z'
+            code: provider_not_connected
+    ProviderExpiredError:
+      description: Provider credential lifecycle is expired and requires re-authorization
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
+          example:
+            type: https://api.skeldir.com/problems/provider-expired
+            title: Provider Authorization Expired
+            status: 409
+            detail: Provider authorization is expired and must be renewed.
+            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440001
+            correlation_id: 550e8400-e29b-41d4-a716-446655440001
+            timestamp: '2026-03-09T17:45:00Z'
+            code: provider_expired
+    ProviderRevokedError:
+      description: Provider connection was revoked and is no longer active
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
+          example:
+            type: https://api.skeldir.com/problems/provider-revoked
+            title: Provider Connection Revoked
+            status: 409
+            detail: Provider connection has been revoked and requires reconnect.
+            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440002
+            correlation_id: 550e8400-e29b-41d4-a716-446655440002
+            timestamp: '2026-03-09T17:45:00Z'
+            code: provider_revoked
+    ProviderScopeInsufficientError:
+      description: Provider connection exists but lacks required scope grants
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
+          example:
+            type: https://api.skeldir.com/problems/provider-scope-insufficient
+            title: Provider Scope Insufficient
+            status: 403
+            detail: Provider connection lacks required scopes for this lifecycle action.
+            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440003
+            correlation_id: 550e8400-e29b-41d4-a716-446655440003
+            timestamp: '2026-03-09T17:45:00Z'
+            code: provider_scope_insufficient
+    ProviderRateLimitedError:
+      description: Provider lifecycle operation is rate limited
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying provider lifecycle operation
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
+          example:
+            type: https://api.skeldir.com/problems/provider-rate-limited
+            title: Provider Rate Limited
+            status: 429
+            detail: Provider rate limit exceeded for lifecycle operation.
+            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004
+            correlation_id: 550e8400-e29b-41d4-a716-446655440004
+            timestamp: '2026-03-09T17:45:00Z'
+            code: provider_rate_limited
+    ProviderTransportFailureError:
+      description: Provider lifecycle operation failed due to upstream transport unavailability
+      headers:
+        X-Correlation-ID:
+          schema:
+            type: string
+            format: uuid
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying provider lifecycle operation
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
+          example:
+            type: https://api.skeldir.com/problems/provider-transport-failure
+            title: Provider Transport Failure
+            status: 503
+            detail: Provider lifecycle operation is temporarily unavailable.
+            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005
+            correlation_id: 550e8400-e29b-41d4-a716-446655440005
+            timestamp: '2026-03-09T17:45:00Z'
+            code: provider_transport_failure
 
   securitySchemes:
     accessBearerAuth:
