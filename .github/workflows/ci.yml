@@ -110,6 +110,9 @@ jobs:
     name: B1.3 P1 Contract Authority Proofs
     runs-on: ubuntu-latest
     needs: [checkout, validate-contracts]
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_validation
+      MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
