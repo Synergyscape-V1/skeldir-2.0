@@ -123,7 +123,8 @@ jobs:
 
       - name: Install P1 contract proof dependencies
         run: |
-          pip install pyyaml pytest
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
 
       - name: Enforce B1.3-P1 lifecycle contract authority
         run: |

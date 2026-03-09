@@ -1100,9 +1100,9 @@ components:
           format: date-time
           nullable: true
         last_error_code:
-          allOf:
+          anyOf:
             - $ref: '#/components/schemas/ProviderLifecycleErrorCode'
-          nullable: true
+            - type: 'null'
         data_freshness_seconds:
           type: integer
           minimum: 0

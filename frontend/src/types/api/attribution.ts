@@ -130,6 +130,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/attribution/platform-oauth/{platform}/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Initiate provider OAuth authorization
+         * @description Creates a tenant-scoped provider OAuth authorization session and returns the provider authorization URL.
+         *     This is a provider data OAuth lifecycle route and is not used for first-party JWT login or webhook authentication.
+         */
+        post: operations["initiateProviderOAuthAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/attribution/platform-oauth/{platform}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Complete provider OAuth callback
+         * @description Completes provider OAuth callback handling after authorization redirect.
+         *     This route represents provider lifecycle completion semantics only.
+         */
+        get: operations["completeProviderOAuthCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/attribution/platform-oauth/{platform}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read provider OAuth connection status
+         * @description Returns tenant-scoped provider OAuth lifecycle status.
+         *     No token values or provider raw payloads are returned.
+         */
+        get: operations["getProviderOAuthStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/attribution/platform-oauth/{platform}/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disconnect and revoke provider OAuth connection
+         * @description Revokes provider OAuth connectivity for the tenant and transitions lifecycle state to revoked.
+         */
+        post: operations["disconnectProviderOAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/attribution/platform-oauth/{platform}/refresh-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read provider OAuth refresh result state
+         * @description Returns tenant-scoped refresh lifecycle status and most recent refresh outcome.
+         */
+        get: operations["getProviderOAuthRefreshState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -222,6 +325,222 @@ export interface components {
             expires_at?: string | null;
             /** Format: date-time */
             updated_at: string;
+        };
+        /**
+         * @description Tenant-scoped provider OAuth lifecycle state
+         * @enum {string}
+         */
+        ProviderOAuthLifecycleState: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+        /**
+         * @description Most recent provider OAuth refresh result state
+         * @enum {string}
+         */
+        ProviderRefreshResultState: "not_attempted" | "fresh" | "due" | "in_progress" | "succeeded" | "failed";
+        ProviderOAuthAuthorizeRequest: {
+            /** @description Tenant-local provider account identifier */
+            platform_account_id: string;
+            /**
+             * Format: uri
+             * @description Callback URL registered for the provider OAuth client
+             */
+            redirect_uri: string;
+            /** @description Optional requested provider scopes */
+            requested_scopes?: string[];
+        };
+        ProviderOAuthAuthorizeResponse: {
+            /** Format: uuid */
+            tenant_id: string;
+            /**
+             * @description Supported platform identifier
+             * @enum {string}
+             */
+            platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            /**
+             * @description Tenant-scoped provider OAuth lifecycle state
+             * @enum {string}
+             */
+            lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+            /**
+             * Format: uri
+             * @description Provider authorization URL for redirect initiation
+             */
+            authorization_url: string;
+            /** @description Opaque reference for callback state validation */
+            state_reference: string;
+            /** Format: date-time */
+            state_expires_at: string;
+            data_freshness_seconds: number;
+            /** Format: date-time */
+            last_updated: string;
+        };
+        ProviderOAuthCallbackResponse: {
+            /** Format: uuid */
+            tenant_id: string;
+            /**
+             * @description Supported platform identifier
+             * @enum {string}
+             */
+            platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            platform_account_id: string;
+            /**
+             * @description Tenant-scoped provider OAuth lifecycle state
+             * @enum {string}
+             */
+            lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+            /**
+             * @description Most recent provider OAuth refresh result state
+             * @enum {string}
+             */
+            refresh_state: "not_attempted" | "fresh" | "due" | "in_progress" | "succeeded" | "failed";
+            data_freshness_seconds: number;
+            /** Format: date-time */
+            last_updated: string;
+        };
+        ProviderOAuthStatusResponse: {
+            /** Format: uuid */
+            tenant_id: string;
+            /**
+             * @description Supported platform identifier
+             * @enum {string}
+             */
+            platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            platform_account_id: string;
+            /**
+             * @description Tenant-scoped provider OAuth lifecycle state
+             * @enum {string}
+             */
+            lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+            /**
+             * @description Most recent provider OAuth refresh result state
+             * @enum {string}
+             */
+            refresh_state: "not_attempted" | "fresh" | "due" | "in_progress" | "succeeded" | "failed";
+            /** Format: date-time */
+            expires_at?: string | null;
+            scope?: string | null;
+            data_freshness_seconds: number;
+            /** Format: date-time */
+            last_updated: string;
+        };
+        /** @enum {string} */
+        ProviderOAuthDisconnectReason: "user_initiated" | "provider_revoked" | "security_event" | "tenant_offboarding";
+        ProviderOAuthDisconnectRequest: {
+            /** @enum {string} */
+            reason: "user_initiated" | "provider_revoked" | "security_event" | "tenant_offboarding";
+        };
+        ProviderOAuthDisconnectResponse: {
+            /** Format: uuid */
+            tenant_id: string;
+            /**
+             * @description Supported platform identifier
+             * @enum {string}
+             */
+            platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            /**
+             * @description Tenant-scoped provider OAuth lifecycle state
+             * @enum {string}
+             */
+            lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+            /** Format: date-time */
+            disconnected_at: string;
+            data_freshness_seconds: number;
+            /** Format: date-time */
+            last_updated: string;
+        };
+        /**
+         * @description Non-leaky provider OAuth lifecycle failure categories
+         * @enum {string}
+         */
+        ProviderLifecycleErrorCode: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+        ProviderOAuthRefreshStateResponse: {
+            /** Format: uuid */
+            tenant_id: string;
+            /**
+             * @description Supported platform identifier
+             * @enum {string}
+             */
+            platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            /**
+             * @description Tenant-scoped provider OAuth lifecycle state
+             * @enum {string}
+             */
+            lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+            /**
+             * @description Most recent provider OAuth refresh result state
+             * @enum {string}
+             */
+            refresh_state: "not_attempted" | "fresh" | "due" | "in_progress" | "succeeded" | "failed";
+            /** Format: date-time */
+            next_refresh_due_at: string | null;
+            /** Format: date-time */
+            last_refresh_attempt_at?: string | null;
+            /** Format: date-time */
+            last_refresh_success_at?: string | null;
+            last_error_code?: ("provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure") | null;
+            data_freshness_seconds: number;
+            /** Format: date-time */
+            last_updated: string;
+        };
+        ProviderLifecycleProblemDetails: {
+            /**
+             * Format: uri
+             * @description URI reference identifying the problem type
+             * @example https://api.skeldir.com/problems/authentication-failed
+             */
+            type: string;
+            /**
+             * @description Short, human-readable summary of the problem
+             * @example Authentication Failed
+             */
+            title: string;
+            /**
+             * @description HTTP status code
+             * @example 401
+             */
+            status: number;
+            /**
+             * @description Human-readable explanation specific to this occurrence
+             * @example The provided JWT token has expired. Please refresh your authentication token.
+             */
+            detail: string;
+            /**
+             * Format: uri
+             * @description URI reference identifying this specific occurrence
+             * @example https://api.skeldir.com/api/attribution/revenue/realtime
+             */
+            instance: string;
+            /**
+             * Format: uuid
+             * @description Request correlation ID for distributed tracing
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            correlation_id: string;
+            /**
+             * Format: date-time
+             * @description ISO 8601 timestamp when the error occurred
+             * @example 2025-11-11T14:32:00Z
+             */
+            timestamp: string;
+            /**
+             * @description Stable, non-sensitive error code for programmatic handling
+             * @example AUTH_UNAUTHORIZED
+             */
+            code: string;
+            /** @description Optional array of specific validation errors */
+            errors?: {
+                /** @example email */
+                field?: string;
+                /** @example Invalid email format */
+                message?: string;
+                /** @example INVALID_FORMAT */
+                code?: string;
+            }[];
+        } & {
+            /**
+             * @description Non-leaky provider OAuth lifecycle failure categories
+             * @enum {string}
+             */
+            code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
         };
         RealtimeRevenueCounter: {
             /**
@@ -387,6 +706,502 @@ export interface components {
         };
     };
     responses: {
+        /** @description Provider connection does not exist for the tenant */
+        ProviderNotConnectedError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.skeldir.com/problems/provider-not-connected",
+                 *       "title": "Provider Not Connected",
+                 *       "status": 404,
+                 *       "detail": "Provider connection is not available for this tenant.",
+                 *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
+                 *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                 *       "timestamp": "2026-03-09T17:45:00Z",
+                 *       "code": "provider_not_connected"
+                 *     }
+                 */
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                } & {
+                    /**
+                     * @description Non-leaky provider OAuth lifecycle failure categories
+                     * @enum {string}
+                     */
+                    code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                };
+            };
+        };
+        /** @description Provider credential lifecycle is expired and requires re-authorization */
+        ProviderExpiredError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.skeldir.com/problems/provider-expired",
+                 *       "title": "Provider Authorization Expired",
+                 *       "status": 409,
+                 *       "detail": "Provider authorization is expired and must be renewed.",
+                 *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440001",
+                 *       "correlation_id": "550e8400-e29b-41d4-a716-446655440001",
+                 *       "timestamp": "2026-03-09T17:45:00Z",
+                 *       "code": "provider_expired"
+                 *     }
+                 */
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                } & {
+                    /**
+                     * @description Non-leaky provider OAuth lifecycle failure categories
+                     * @enum {string}
+                     */
+                    code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                };
+            };
+        };
+        /** @description Provider connection was revoked and is no longer active */
+        ProviderRevokedError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.skeldir.com/problems/provider-revoked",
+                 *       "title": "Provider Connection Revoked",
+                 *       "status": 409,
+                 *       "detail": "Provider connection has been revoked and requires reconnect.",
+                 *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440002",
+                 *       "correlation_id": "550e8400-e29b-41d4-a716-446655440002",
+                 *       "timestamp": "2026-03-09T17:45:00Z",
+                 *       "code": "provider_revoked"
+                 *     }
+                 */
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                } & {
+                    /**
+                     * @description Non-leaky provider OAuth lifecycle failure categories
+                     * @enum {string}
+                     */
+                    code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                };
+            };
+        };
+        /** @description Provider connection exists but lacks required scope grants */
+        ProviderScopeInsufficientError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.skeldir.com/problems/provider-scope-insufficient",
+                 *       "title": "Provider Scope Insufficient",
+                 *       "status": 403,
+                 *       "detail": "Provider connection lacks required scopes for this lifecycle action.",
+                 *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440003",
+                 *       "correlation_id": "550e8400-e29b-41d4-a716-446655440003",
+                 *       "timestamp": "2026-03-09T17:45:00Z",
+                 *       "code": "provider_scope_insufficient"
+                 *     }
+                 */
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                } & {
+                    /**
+                     * @description Non-leaky provider OAuth lifecycle failure categories
+                     * @enum {string}
+                     */
+                    code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                };
+            };
+        };
+        /** @description Provider lifecycle operation is rate limited */
+        ProviderRateLimitedError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                /** @description Seconds to wait before retrying provider lifecycle operation */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.skeldir.com/problems/provider-rate-limited",
+                 *       "title": "Provider Rate Limited",
+                 *       "status": 429,
+                 *       "detail": "Provider rate limit exceeded for lifecycle operation.",
+                 *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004",
+                 *       "correlation_id": "550e8400-e29b-41d4-a716-446655440004",
+                 *       "timestamp": "2026-03-09T17:45:00Z",
+                 *       "code": "provider_rate_limited"
+                 *     }
+                 */
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                } & {
+                    /**
+                     * @description Non-leaky provider OAuth lifecycle failure categories
+                     * @enum {string}
+                     */
+                    code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                };
+            };
+        };
+        /** @description Provider lifecycle operation failed due to upstream transport unavailability */
+        ProviderTransportFailureError: {
+            headers: {
+                "X-Correlation-ID"?: string;
+                /** @description Seconds to wait before retrying provider lifecycle operation */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "https://api.skeldir.com/problems/provider-transport-failure",
+                 *       "title": "Provider Transport Failure",
+                 *       "status": 503,
+                 *       "detail": "Provider lifecycle operation is temporarily unavailable.",
+                 *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005",
+                 *       "correlation_id": "550e8400-e29b-41d4-a716-446655440005",
+                 *       "timestamp": "2026-03-09T17:45:00Z",
+                 *       "code": "provider_transport_failure"
+                 *     }
+                 */
+                "application/problem+json": {
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying the problem type
+                     * @example https://api.skeldir.com/problems/authentication-failed
+                     */
+                    type: string;
+                    /**
+                     * @description Short, human-readable summary of the problem
+                     * @example Authentication Failed
+                     */
+                    title: string;
+                    /**
+                     * @description HTTP status code
+                     * @example 401
+                     */
+                    status: number;
+                    /**
+                     * @description Human-readable explanation specific to this occurrence
+                     * @example The provided JWT token has expired. Please refresh your authentication token.
+                     */
+                    detail: string;
+                    /**
+                     * Format: uri
+                     * @description URI reference identifying this specific occurrence
+                     * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                     */
+                    instance: string;
+                    /**
+                     * Format: uuid
+                     * @description Request correlation ID for distributed tracing
+                     * @example 550e8400-e29b-41d4-a716-446655440000
+                     */
+                    correlation_id: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO 8601 timestamp when the error occurred
+                     * @example 2025-11-11T14:32:00Z
+                     */
+                    timestamp: string;
+                    /**
+                     * @description Stable, non-sensitive error code for programmatic handling
+                     * @example AUTH_UNAUTHORIZED
+                     */
+                    code: string;
+                    /** @description Optional array of specific validation errors */
+                    errors?: {
+                        /** @example email */
+                        field?: string;
+                        /** @example Invalid email format */
+                        message?: string;
+                        /** @example INVALID_FORMAT */
+                        code?: string;
+                    }[];
+                } & {
+                    /**
+                     * @description Non-leaky provider OAuth lifecycle failure categories
+                     * @enum {string}
+                     */
+                    code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                };
+            };
+        };
         /** @description Unauthorized - invalid or missing authentication */
         UnauthorizedError: {
             headers: {
@@ -2758,6 +3573,2913 @@ export interface operations {
                             /** @example INVALID_FORMAT */
                             code?: string;
                         }[];
+                    };
+                };
+            };
+        };
+    };
+    initiateProviderOAuthAuthorization: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path: {
+                /** @description Provider platform identifier */
+                platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Tenant-local provider account identifier */
+                    platform_account_id: string;
+                    /**
+                     * Format: uri
+                     * @description Callback URL registered for the provider OAuth client
+                     */
+                    redirect_uri: string;
+                    /** @description Optional requested provider scopes */
+                    requested_scopes?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Provider authorization URL generated */
+            202: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *       "platform": "stripe",
+                     *       "lifecycle_state": "authorization_pending",
+                     *       "authorization_url": "https://connect.stripe.com/oauth/authorize?client_id=ca_123&state=st_abc",
+                     *       "state_reference": "st_abc",
+                     *       "state_expires_at": "2026-03-09T18:15:00Z",
+                     *       "data_freshness_seconds": 0,
+                     *       "last_updated": "2026-03-09T17:45:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        tenant_id: string;
+                        /**
+                         * @description Supported platform identifier
+                         * @enum {string}
+                         */
+                        platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+                        /**
+                         * @description Tenant-scoped provider OAuth lifecycle state
+                         * @enum {string}
+                         */
+                        lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+                        /**
+                         * Format: uri
+                         * @description Provider authorization URL for redirect initiation
+                         */
+                        authorization_url: string;
+                        /** @description Opaque reference for callback state validation */
+                        state_reference: string;
+                        /** Format: date-time */
+                        state_expires_at: string;
+                        data_freshness_seconds: number;
+                        /** Format: date-time */
+                        last_updated: string;
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            400: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Forbidden - authenticated but insufficient permissions */
+            403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Provider connection does not exist for the tenant */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-not-connected",
+                     *       "title": "Provider Not Connected",
+                     *       "status": 404,
+                     *       "detail": "Provider connection is not available for this tenant.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_not_connected"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider connection was revoked and is no longer active */
+            409: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-revoked",
+                     *       "title": "Provider Connection Revoked",
+                     *       "status": 409,
+                     *       "detail": "Provider connection has been revoked and requires reconnect.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440002",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440002",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_revoked"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation is rate limited */
+            429: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-rate-limited",
+                     *       "title": "Provider Rate Limited",
+                     *       "status": 429,
+                     *       "detail": "Provider rate limit exceeded for lifecycle operation.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440004",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_rate_limited"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation failed due to upstream transport unavailability */
+            503: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-transport-failure",
+                     *       "title": "Provider Transport Failure",
+                     *       "status": 503,
+                     *       "detail": "Provider lifecycle operation is temporarily unavailable.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440005",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_transport_failure"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+        };
+    };
+    completeProviderOAuthCallback: {
+        parameters: {
+            query: {
+                /** @description Provider authorization code */
+                code?: string;
+                /** @description Opaque state reference emitted during authorize initiation */
+                state: string;
+                /** @description Provider callback error code when authorization is denied */
+                error?: string;
+                /** @description Provider callback error description */
+                error_description?: string;
+            };
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path: {
+                /** @description Provider platform identifier */
+                platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Callback completed and lifecycle state updated */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *       "platform": "stripe",
+                     *       "platform_account_id": "acct_1AbCdEfGh",
+                     *       "lifecycle_state": "connected",
+                     *       "refresh_state": "fresh",
+                     *       "data_freshness_seconds": 1,
+                     *       "last_updated": "2026-03-09T17:46:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        tenant_id: string;
+                        /**
+                         * @description Supported platform identifier
+                         * @enum {string}
+                         */
+                        platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+                        platform_account_id: string;
+                        /**
+                         * @description Tenant-scoped provider OAuth lifecycle state
+                         * @enum {string}
+                         */
+                        lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+                        /**
+                         * @description Most recent provider OAuth refresh result state
+                         * @enum {string}
+                         */
+                        refresh_state: "not_attempted" | "fresh" | "due" | "in_progress" | "succeeded" | "failed";
+                        data_freshness_seconds: number;
+                        /** Format: date-time */
+                        last_updated: string;
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            400: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Provider connection exists but lacks required scope grants */
+            403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-scope-insufficient",
+                     *       "title": "Provider Scope Insufficient",
+                     *       "status": 403,
+                     *       "detail": "Provider connection lacks required scopes for this lifecycle action.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440003",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440003",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_scope_insufficient"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider connection does not exist for the tenant */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-not-connected",
+                     *       "title": "Provider Not Connected",
+                     *       "status": 404,
+                     *       "detail": "Provider connection is not available for this tenant.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_not_connected"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider credential lifecycle is expired and requires re-authorization */
+            409: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-expired",
+                     *       "title": "Provider Authorization Expired",
+                     *       "status": 409,
+                     *       "detail": "Provider authorization is expired and must be renewed.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440001",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440001",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_expired"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation is rate limited */
+            429: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-rate-limited",
+                     *       "title": "Provider Rate Limited",
+                     *       "status": 429,
+                     *       "detail": "Provider rate limit exceeded for lifecycle operation.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440004",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_rate_limited"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation failed due to upstream transport unavailability */
+            503: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-transport-failure",
+                     *       "title": "Provider Transport Failure",
+                     *       "status": 503,
+                     *       "detail": "Provider lifecycle operation is temporarily unavailable.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440005",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_transport_failure"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+        };
+    };
+    getProviderOAuthStatus: {
+        parameters: {
+            query?: {
+                /** @description Optional provider account filter */
+                platform_account_id?: string;
+            };
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path: {
+                /** @description Provider platform identifier */
+                platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider OAuth lifecycle status */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *       "platform": "stripe",
+                     *       "platform_account_id": "acct_1AbCdEfGh",
+                     *       "lifecycle_state": "connected",
+                     *       "refresh_state": "fresh",
+                     *       "expires_at": "2026-03-10T17:45:00Z",
+                     *       "scope": "read_write",
+                     *       "data_freshness_seconds": 3,
+                     *       "last_updated": "2026-03-09T17:46:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        tenant_id: string;
+                        /**
+                         * @description Supported platform identifier
+                         * @enum {string}
+                         */
+                        platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+                        platform_account_id: string;
+                        /**
+                         * @description Tenant-scoped provider OAuth lifecycle state
+                         * @enum {string}
+                         */
+                        lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+                        /**
+                         * @description Most recent provider OAuth refresh result state
+                         * @enum {string}
+                         */
+                        refresh_state: "not_attempted" | "fresh" | "due" | "in_progress" | "succeeded" | "failed";
+                        /** Format: date-time */
+                        expires_at?: string | null;
+                        scope?: string | null;
+                        data_freshness_seconds: number;
+                        /** Format: date-time */
+                        last_updated: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Provider connection exists but lacks required scope grants */
+            403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-scope-insufficient",
+                     *       "title": "Provider Scope Insufficient",
+                     *       "status": 403,
+                     *       "detail": "Provider connection lacks required scopes for this lifecycle action.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440003",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440003",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_scope_insufficient"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider connection does not exist for the tenant */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-not-connected",
+                     *       "title": "Provider Not Connected",
+                     *       "status": 404,
+                     *       "detail": "Provider connection is not available for this tenant.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_not_connected"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider connection was revoked and is no longer active */
+            409: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-revoked",
+                     *       "title": "Provider Connection Revoked",
+                     *       "status": 409,
+                     *       "detail": "Provider connection has been revoked and requires reconnect.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440002",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440002",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_revoked"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation is rate limited */
+            429: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-rate-limited",
+                     *       "title": "Provider Rate Limited",
+                     *       "status": 429,
+                     *       "detail": "Provider rate limit exceeded for lifecycle operation.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440004",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_rate_limited"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation failed due to upstream transport unavailability */
+            503: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-transport-failure",
+                     *       "title": "Provider Transport Failure",
+                     *       "status": 503,
+                     *       "detail": "Provider lifecycle operation is temporarily unavailable.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440005",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_transport_failure"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+        };
+    };
+    disconnectProviderOAuth: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path: {
+                /** @description Provider platform identifier */
+                platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    reason: "user_initiated" | "provider_revoked" | "security_event" | "tenant_offboarding";
+                };
+            };
+        };
+        responses: {
+            /** @description Provider OAuth connection revoked */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *       "platform": "stripe",
+                     *       "lifecycle_state": "revoked",
+                     *       "disconnected_at": "2026-03-09T17:47:00Z",
+                     *       "data_freshness_seconds": 0,
+                     *       "last_updated": "2026-03-09T17:47:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        tenant_id: string;
+                        /**
+                         * @description Supported platform identifier
+                         * @enum {string}
+                         */
+                        platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+                        /**
+                         * @description Tenant-scoped provider OAuth lifecycle state
+                         * @enum {string}
+                         */
+                        lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+                        /** Format: date-time */
+                        disconnected_at: string;
+                        data_freshness_seconds: number;
+                        /** Format: date-time */
+                        last_updated: string;
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            400: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Forbidden - authenticated but insufficient permissions */
+            403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Provider connection does not exist for the tenant */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-not-connected",
+                     *       "title": "Provider Not Connected",
+                     *       "status": 404,
+                     *       "detail": "Provider connection is not available for this tenant.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_not_connected"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider credential lifecycle is expired and requires re-authorization */
+            409: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-expired",
+                     *       "title": "Provider Authorization Expired",
+                     *       "status": 409,
+                     *       "detail": "Provider authorization is expired and must be renewed.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440001",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440001",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_expired"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation is rate limited */
+            429: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-rate-limited",
+                     *       "title": "Provider Rate Limited",
+                     *       "status": 429,
+                     *       "detail": "Provider rate limit exceeded for lifecycle operation.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440004",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_rate_limited"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation failed due to upstream transport unavailability */
+            503: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-transport-failure",
+                     *       "title": "Provider Transport Failure",
+                     *       "status": 503,
+                     *       "detail": "Provider lifecycle operation is temporarily unavailable.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440005",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_transport_failure"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+        };
+    };
+    getProviderOAuthRefreshState: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unique request correlation ID for distributed tracing */
+                "X-Correlation-ID": string;
+                /** @description Bearer token for authentication (format - Bearer <token>) */
+                Authorization: string;
+            };
+            path: {
+                /** @description Provider platform identifier */
+                platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider OAuth refresh result state */
+            200: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *       "platform": "stripe",
+                     *       "lifecycle_state": "connected",
+                     *       "refresh_state": "succeeded",
+                     *       "next_refresh_due_at": "2026-03-10T16:45:00Z",
+                     *       "last_refresh_attempt_at": "2026-03-09T17:46:00Z",
+                     *       "last_refresh_success_at": "2026-03-09T17:46:00Z",
+                     *       "last_error_code": null,
+                     *       "data_freshness_seconds": 15,
+                     *       "last_updated": "2026-03-09T17:46:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** Format: uuid */
+                        tenant_id: string;
+                        /**
+                         * @description Supported platform identifier
+                         * @enum {string}
+                         */
+                        platform: "google_ads" | "meta_ads" | "tiktok_ads" | "linkedin_ads" | "stripe" | "paypal" | "shopify" | "woocommerce";
+                        /**
+                         * @description Tenant-scoped provider OAuth lifecycle state
+                         * @enum {string}
+                         */
+                        lifecycle_state: "not_connected" | "authorization_pending" | "connected" | "expired" | "revoked" | "reconnect_required";
+                        /**
+                         * @description Most recent provider OAuth refresh result state
+                         * @enum {string}
+                         */
+                        refresh_state: "not_attempted" | "fresh" | "due" | "in_progress" | "succeeded" | "failed";
+                        /** Format: date-time */
+                        next_refresh_due_at: string | null;
+                        /** Format: date-time */
+                        last_refresh_attempt_at?: string | null;
+                        /** Format: date-time */
+                        last_refresh_success_at?: string | null;
+                        last_error_code?: ("provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure") | null;
+                        data_freshness_seconds: number;
+                        /** Format: date-time */
+                        last_updated: string;
+                    };
+                };
+            };
+            /** @description Unauthorized - invalid or missing authentication */
+            401: {
+                headers: {
+                    /** @description Request correlation ID for distributed tracing */
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Provider connection exists but lacks required scope grants */
+            403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-scope-insufficient",
+                     *       "title": "Provider Scope Insufficient",
+                     *       "status": 403,
+                     *       "detail": "Provider connection lacks required scopes for this lifecycle action.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440003",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440003",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_scope_insufficient"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider connection does not exist for the tenant */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-not-connected",
+                     *       "title": "Provider Not Connected",
+                     *       "status": 404,
+                     *       "detail": "Provider connection is not available for this tenant.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_not_connected"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider connection was revoked and is no longer active */
+            409: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-revoked",
+                     *       "title": "Provider Connection Revoked",
+                     *       "status": 409,
+                     *       "detail": "Provider connection has been revoked and requires reconnect.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440002",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440002",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_revoked"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation is rate limited */
+            429: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-rate-limited",
+                     *       "title": "Provider Rate Limited",
+                     *       "status": 429,
+                     *       "detail": "Provider rate limit exceeded for lifecycle operation.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440004",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_rate_limited"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
+                    };
+                };
+            };
+            /** @description Provider lifecycle operation failed due to upstream transport unavailability */
+            503: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying provider lifecycle operation */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/provider-transport-failure",
+                     *       "title": "Provider Transport Failure",
+                     *       "status": 503,
+                     *       "detail": "Provider lifecycle operation is temporarily unavailable.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440005",
+                     *       "timestamp": "2026-03-09T17:45:00Z",
+                     *       "code": "provider_transport_failure"
+                     *     }
+                     */
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    } & {
+                        /**
+                         * @description Non-leaky provider OAuth lifecycle failure categories
+                         * @enum {string}
+                         */
+                        code: "provider_not_connected" | "provider_expired" | "provider_revoked" | "provider_scope_insufficient" | "provider_rate_limited" | "provider_transport_failure";
                     };
                 };
             };
