@@ -67,6 +67,9 @@ jobs:
     name: B1.3 P0 Governance & Scope Lock
     runs-on: ubuntu-latest
     needs: [checkout, validate-contracts]
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
