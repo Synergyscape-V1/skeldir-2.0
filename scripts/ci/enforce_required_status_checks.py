@@ -76,6 +76,7 @@ def main() -> int:
 
     expected = contract.get("required_contexts", [])
     strict_expected = bool(contract.get("strict_required", True))
+    exact_match = bool(contract.get("exact_match", False))
 
     try:
         payload = _fetch_required_status_checks(repo=repo, branch=branch, token=token)
@@ -105,6 +106,7 @@ def main() -> int:
 
     actual = payload.get("contexts", [])
     missing = [ctx for ctx in expected if ctx not in actual]
+    extra = [ctx for ctx in actual if ctx not in expected]
     strict_actual = bool(payload.get("strict"))
 
     if strict_expected and not strict_actual:
@@ -117,6 +119,15 @@ def main() -> int:
             print(f"  - {context}")
         print("actual contexts:")
         for context in actual:
+            print(f"  - {context}")
+        return 1
+
+    if exact_match and extra:
+        print("required status checks enforcement failed: unexpected extra contexts present")
+        for context in extra:
+            print(f"  - {context}")
+        print("expected contexts:")
+        for context in expected:
             print(f"  - {context}")
         return 1
 

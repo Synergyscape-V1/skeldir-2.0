@@ -1,0 +1,56 @@
+{
+  "contract_id": "b13.p0.provider_capability_matrix.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "runtime_backed_providers": [
+    "stripe"
+  ],
+  "runtime_internal_only_providers": [
+    "dummy"
+  ],
+  "connection_substrate_providers": [
+    "google_ads",
+    "linkedin_ads",
+    "meta_ads",
+    "paypal",
+    "shopify",
+    "stripe",
+    "tiktok_ads",
+    "woocommerce"
+  ],
+  "future_rollout_targets": [
+    "google_ads",
+    "linkedin_ads",
+    "meta_ads",
+    "paypal",
+    "shopify",
+    "tiktok_ads",
+    "woocommerce"
+  ],
+  "webhook_hmac_providers": [
+    "paypal",
+    "shopify",
+    "stripe",
+    "woocommerce"
+  ],
+  "first_party_identity_oauth_surfaces_excluded_from_b13_provider_lifecycle": {
+    "security_schemes": [
+      "accessBearerAuth"
+    ],
+    "docs_routes": [
+      "/docs/oauth2-redirect"
+    ]
+  },
+  "provider_modes": {
+    "dummy": "internal_runtime_only",
+    "google_ads": "future_rollout",
+    "linkedin_ads": "future_rollout",
+    "meta_ads": "future_rollout",
+    "paypal": "future_rollout",
+    "shopify": "future_rollout",
+    "stripe": "runtime_backed",
+    "tiktok_ads": "future_rollout",
+    "woocommerce": "future_rollout"
+  }
+}

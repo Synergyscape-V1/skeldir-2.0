@@ -1,0 +1,17 @@
+{
+    "sha":  "4749d0eecbf4495157a2569ef3ae1b052b11cb4b",
+    "required_count":  20,
+    "latest_check_run_count":  30,
+    "missing_required_contexts":  [
+                                      "B0.7 P2 Runtime Proof (LLM + Redaction)",
+                                      "Celery Foundation B0.5.1",
+                                      "Validate Contracts",
+                                      "B0.6 Phase 2 Adjudication",
+                                      "Phase 8 Regression Gate (Full Physics)",
+                                      "b11-p2-secret-chokepoint-gate",
+                                      "b11-p2-readiness-gate",
+                                      "b11-p4-static-and-runtime-gate",
+                                      "b11-p4-ci-audit-gate",
+                                      "B1.3 P0 Governance \u0026 Scope Lock"
+                                  ]
+}

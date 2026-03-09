@@ -1,29 +1,25 @@
-# Code ownership for Skeldir API Contracts repository
-#
-# This file defines who must review changes to specific paths.
-# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Code ownership for Skeldir repository.
+# All patterns map to principals with verified write access.
 
-# Contract ownership - backend team leads must review all contract changes
-api-contracts/ @backend-team-leads
+# Default owner for any path not explicitly overridden.
+* @Muk223
 
-# CI/CD workflows - backend team leads own CI configuration
-.github/workflows/contract-validation.yml @backend-team-leads
-.github/workflows/contract-publish.yml @backend-team-leads
+# Contract ownership.
+api-contracts/ @Muk223
+api-contracts/openapi/v1/**/*.yaml @Muk223
 
-# Breaking changes require frontend lead review for SDK/FE alignment
-# Note: Breaking changes are detected via CI, but FE lead should be notified
-api-contracts/openapi/v1/**/*.yaml @frontend-lead
+# CI/governance ownership.
+.github/workflows/ @Muk223
+.github/workflows/ci.yml @Muk223
+contracts-internal/governance/ @Muk223
 
-# Repository configuration files
-README.md @backend-team-leads
-LICENSE @backend-team-leads
-SECURITY.md @backend-team-leads
-PRIVACY-NOTES.md @backend-team-leads
-CHANGELOG.md @backend-team-leads
+# Security-sensitive backend paths.
+backend/app/security/ @Muk223
+backend/app/core/secrets.py @Muk223
+backend/app/services/platform_credentials.py @Muk223
+backend/app/api/platforms.py @Muk223
 
-# Documentation and governance
-docs/ @backend-team-leads
-
-# Scripts
-scripts/ @backend-team-leads
+# Repository docs and scripts.
+docs/ @Muk223
+scripts/ @Muk223
 
