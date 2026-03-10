@@ -90,3 +90,23 @@ def test_b11_p6_formatter_survives_argument_shape_mismatch_without_leak() -> Non
     logger.info("provider %d failed", {"refresh_token": marker})
     rendered = stream.getvalue()
     assert marker not in rendered
+
+
+def test_b11_p6_sensitive_template_argument_masking() -> None:
+    marker = "b11_p6_sensitive_template_marker"
+    logger = logging.getLogger("b11_p6_sensitive_template")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.handlers = []
+    logger.filters = []
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    handler.addFilter(RedactionFilter())
+    logger.addHandler(handler)
+
+    logger.info("LLM_PROVIDER_API_KEY=%s", marker)
+    rendered = stream.getvalue()
+    assert marker not in rendered
+    assert "LLM_PROVIDER_API_KEY=***" in rendered
