@@ -111,6 +111,32 @@ def test_tenant_task_rejects_kwargs_authority_injection() -> None:
         result.get(propagate=True)
 
 
+def test_tenant_task_rejects_sensitive_lifecycle_material_in_kwargs() -> None:
+    with pytest.raises(ValueError, match="sensitive material blocked"):
+        enqueue_tenant_task(
+            celery_app.tasks["app.tasks.attribution.recompute_window"],
+            envelope=SystemAuthorityEnvelope(tenant_id=uuid4()),
+            kwargs={
+                "window_start": "2026-01-01T00:00:00Z",
+                "window_end": "2026-01-02T00:00:00Z",
+                "payload": {"access_token": "token-leak"},
+            },
+        )
+
+
+def test_tenant_task_rejects_json_encoded_lifecycle_material_in_kwargs() -> None:
+    with pytest.raises(ValueError, match="sensitive material blocked"):
+        enqueue_tenant_task(
+            celery_app.tasks["app.tasks.attribution.recompute_window"],
+            envelope=SystemAuthorityEnvelope(tenant_id=uuid4()),
+            kwargs={
+                "window_start": "2026-01-01T00:00:00Z",
+                "window_end": "2026-01-02T00:00:00Z",
+                "metadata": '{"nested":{"refresh_token":"encoded-leak"}}',
+            },
+        )
+
+
 def test_tenant_scoped_task_signatures_are_business_only() -> None:
     task_objects = {name: celery_app.tasks[name] for name in TENANT_SCOPED_TASK_NAMES}
     violations = _signature_authority_param_violations(task_objects)

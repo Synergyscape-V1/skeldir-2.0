@@ -51,14 +51,22 @@ def _sync_database_url() -> str:
     return url
 
 
-def _build_token(tenant_id: UUID) -> str:
+def _build_token(tenant_id: UUID, *, role: str = "viewer") -> str:
+    normalized_role = role.strip().lower()
+    if normalized_role == "admin":
+        scopes = ["admin", "manager", "viewer"]
+    elif normalized_role == "manager":
+        scopes = ["manager", "viewer"]
+    else:
+        normalized_role = "viewer"
+        scopes = ["viewer"]
     now = int(time.time())
     payload = {
         "sub": "user-1",
         "user_id": str(uuid4()),
-        "role": "viewer",
-        "roles": ["viewer"],
-        "scopes": ["viewer"],
+        "role": normalized_role,
+        "roles": [normalized_role],
+        "scopes": scopes,
         "iss": os.environ["AUTH_JWT_ISSUER"],
         "aud": os.environ["AUTH_JWT_AUDIENCE"],
         "iat": now,
@@ -103,7 +111,7 @@ async def test_platform_connections_require_auth():
 
 async def test_platform_connection_tenant_isolation_and_secrecy(tenant_ids):
     tenant_a, tenant_b = tenant_ids
-    token_a = _build_token(tenant_a)
+    manager_token_a = _build_token(tenant_a, role="manager")
     token_b = _build_token(tenant_b)
 
     transport = ASGITransport(app=app)
@@ -112,7 +120,7 @@ async def test_platform_connection_tenant_isolation_and_secrecy(tenant_ids):
             "/api/attribution/platform-connections",
             headers={
                 "X-Correlation-ID": str(uuid4()),
-                "Authorization": f"Bearer {token_a}",
+                "Authorization": f"Bearer {manager_token_a}",
             },
             json={"platform": "meta_ads", "platform_account_id": "act_1", "status": "active"},
         )
@@ -122,7 +130,7 @@ async def test_platform_connection_tenant_isolation_and_secrecy(tenant_ids):
             "/api/attribution/platform-credentials",
             headers={
                 "X-Correlation-ID": str(uuid4()),
-                "Authorization": f"Bearer {token_a}",
+                "Authorization": f"Bearer {manager_token_a}",
             },
             json={
                 "platform": "meta_ads",
@@ -179,3 +187,45 @@ async def test_platform_connection_tenant_isolation_and_secrecy(tenant_ids):
         ).scalar_one()
 
     assert encrypted_token != b"access-token-a"
+
+
+async def test_platform_mutations_require_manager_scope(tenant_ids):
+    tenant_a, _ = tenant_ids
+    viewer_token = _build_token(tenant_a, role="viewer")
+    manager_token = _build_token(tenant_a, role="manager")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        viewer_connection = await client.post(
+            "/api/attribution/platform-connections",
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {viewer_token}",
+            },
+            json={"platform": "meta_ads", "platform_account_id": "viewer-denied"},
+        )
+        assert viewer_connection.status_code == 403
+
+        manager_connection = await client.post(
+            "/api/attribution/platform-connections",
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {manager_token}",
+            },
+            json={"platform": "meta_ads", "platform_account_id": "manager-allowed"},
+        )
+        assert manager_connection.status_code == 200
+
+        viewer_credentials = await client.post(
+            "/api/attribution/platform-credentials",
+            headers={
+                "X-Correlation-ID": str(uuid4()),
+                "Authorization": f"Bearer {viewer_token}",
+            },
+            json={
+                "platform": "meta_ads",
+                "platform_account_id": "manager-allowed",
+                "access_token": "should-be-blocked",
+            },
+        )
+        assert viewer_credentials.status_code == 403

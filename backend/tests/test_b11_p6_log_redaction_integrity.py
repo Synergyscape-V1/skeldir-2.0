@@ -54,3 +54,39 @@ def test_b11_p6_redaction_filter_masks_exception_path():
     RedactionFilter().filter(record)
     assert marker not in str(record.msg)
     assert "PLATFORM_TOKEN_ENCRYPTION_KEY=***" in str(record.msg)
+
+
+def test_b11_p6_redaction_filter_masks_structured_nested_payload() -> None:
+    marker = "nested-secret-marker"
+    record = logging.LogRecord(
+        name="b11_p6_redaction_integrity",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg={"event": "provider_error", "payload": {"access_token": marker}},
+        args=(),
+        exc_info=None,
+    )
+    RedactionFilter().filter(record)
+    assert marker not in str(record.msg)
+    assert record.msg["payload"]["access_token"] == "***"
+
+
+def test_b11_p6_formatter_survives_argument_shape_mismatch_without_leak() -> None:
+    marker = "b11_p6_structural_leak_marker"
+    logger = logging.getLogger("b11_p6_formatter_shape")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.handlers = []
+    logger.filters = []
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    handler.addFilter(RedactionFilter())
+    logger.addHandler(handler)
+
+    # Intentionally invalid formatting signature to exercise formatter fallback path.
+    logger.info("provider %d failed", {"refresh_token": marker})
+    rendered = stream.getvalue()
+    assert marker not in rendered
