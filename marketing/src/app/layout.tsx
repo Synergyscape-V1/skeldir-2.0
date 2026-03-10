@@ -17,18 +17,10 @@ const playfairDisplay = Playfair_Display({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://skeldir.com"),
   title: "Skeldir - See exactly where your ad budget is wasted",
-  description: "Skeldir shows you the gap between what ad platforms claim and what actually hits your bank account—so you can move budget with confidence, not guesswork.",
-  icons: {
-    icon: [
-      { url: "/icon.png", sizes: "32x32", type: "image/png" },
-      { url: "/icon.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [
-      { url: "/icon.png", sizes: "180x180", type: "image/png" },
-    ],
-  },
+  description:
+    "Skeldir shows you the gap between what ad platforms claim and what actually hits your bank account-so you can move budget with confidence, not guesswork.",
 };
 
 export default function RootLayout({
@@ -48,7 +40,7 @@ export default function RootLayout({
           imageSizes="(max-width: 767px) 100vw, (max-width: 1023px) 80vw, 1200px"
           fetchPriority="high"
         />
-        {/* Preload solution articulation image — early fetch avoids waterfall */}
+        {/* Preload solution articulation image - early fetch avoids waterfall */}
         <link
           rel="preload"
           as="image"

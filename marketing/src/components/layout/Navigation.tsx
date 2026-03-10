@@ -21,8 +21,10 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
   const [isClient, setIsClient] = useState(false);
   const toggleHandledByPointer = useRef(false);
 
-  // Pages with white backgrounds need solid nav from the start
-  const pagesWithWhiteBackground = ['/pricing', '/resources'];
+  const isHomeOrAgencies =
+    pathname === "/" || (pathname && pathname.startsWith("/agencies"));
+  // Pages with white/light backgrounds need solid nav from the start
+  const pagesWithWhiteBackground = ['/pricing', '/resources', '/book-demo'];
   const shouldForceVisible = forceVisible || pagesWithWhiteBackground.some(path => pathname?.startsWith(path));
 
   useEffect(() => {
@@ -68,7 +70,12 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
         // Visible state (scrolled or forceVisible): solid white to prevent overlap with content
         backgroundColor: isVisible ? "#FFFFFF" : "transparent",
         boxShadow: isVisible ? "0 4px 20px rgba(0, 0, 0, 0.08)" : "none",
-        borderBottom: isVisible ? "1px solid rgba(229, 231, 235, 0.6)" : "none",
+        // Home hero needs a subtle divider line even before scroll; other pages keep the old behavior
+        borderBottom: isVisible
+          ? "1px solid rgba(229, 231, 235, 0.6)"
+          : isHomeOrAgencies
+          ? "1px solid rgba(15, 23, 42, 0.28)"
+          : "none",
         backdropFilter: isVisible ? "none" : "none",
       }}
     >

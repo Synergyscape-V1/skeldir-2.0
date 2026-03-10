@@ -492,7 +492,7 @@ export function HowItWorks() {
         position: "relative",
       }}
     >
-      {/* Gradient transition overlay at the top */}
+      {/* Top overlay normalized to pure white so transition from previous section is seamless */}
       <div
         style={{
           position: "absolute",
@@ -500,7 +500,7 @@ export function HowItWorks() {
           left: 0,
           right: 0,
           height: "120px",
-          background: "linear-gradient(to bottom, rgba(248, 250, 252, 1) 0%, rgba(248, 250, 252, 0.8) 20%, rgba(255, 255, 255, 0.6) 50%, rgba(255, 255, 255, 1) 100%)",
+          background: "linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 100%)",
           pointerEvents: "none",
           zIndex: 1,
         }}

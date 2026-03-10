@@ -64,7 +64,7 @@ function Card1() {
         <div style={{ backgroundColor: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: "16px", boxShadow: "0px 4px 24px rgba(0, 0, 0, 0.08)", padding: "32px 28px", display: "flex", flexDirection: "column", transform: "scale(0.97)", opacity: 0.95, transition: "transform 0.3s ease, opacity 0.3s ease" }}>
             <h3 style={{ fontFamily: "Inter, sans-serif", fontSize: "24px", fontWeight: 700, lineHeight: 1.2, color: "#111827", margin: 0 }}>Get the Truth</h3>
             <div style={{ display: "inline-flex", alignItems: "baseline", marginTop: "8px" }}>
-                <span style={{ fontFamily: "Inter, sans-serif", fontSize: "48px", fontWeight: 700, color: "#111827" }}>$149</span>
+                <span style={{ fontFamily: "Inter, sans-serif", fontSize: "48px", fontWeight: 700, color: "#111827" }}>$199</span>
                 <span style={{ fontFamily: "Inter, sans-serif", fontSize: "16px", fontWeight: 400, color: "#6B7280", marginLeft: "2px" }}>/month</span>
             </div>
             <div style={{ marginTop: "20px" }}>
@@ -87,7 +87,7 @@ function Card1() {
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#1d4ed8"; e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.3)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#2563EB"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
             >
-                Get started for $149/month
+                Get started for $199/month
             </button>
         </div>
     );
@@ -122,7 +122,7 @@ function Card2() {
             <div style={{ backgroundColor: "#FFFFFF", border: "2px solid #2563EB", borderRadius: "16px", boxShadow: "0px 12px 40px rgba(37, 99, 235, 0.25), 0px 4px 16px rgba(37, 99, 235, 0.15)", padding: "32px 28px", display: "flex", flexDirection: "column", position: "relative", zIndex: 2, transform: "scale(1.05)", transition: "transform 0.3s ease, box-shadow 0.3s ease" }}>
                 <h3 style={{ fontFamily: "Inter, sans-serif", fontSize: "24px", fontWeight: 700, lineHeight: 1.2, color: "#111827", margin: 0, marginTop: "16px" }}>Optimize for Profit</h3>
                 <div style={{ display: "inline-flex", alignItems: "baseline", marginTop: "8px" }}>
-                    <span style={{ fontFamily: "Inter, sans-serif", fontSize: "48px", fontWeight: 700, color: "#111827" }}>$349</span>
+                    <span style={{ fontFamily: "Inter, sans-serif", fontSize: "48px", fontWeight: 700, color: "#111827" }}>$499</span>
                     <span style={{ fontFamily: "Inter, sans-serif", fontSize: "16px", fontWeight: 400, color: "#6B7280", marginLeft: "2px" }}>/month</span>
                 </div>
                 <div style={{ marginTop: "20px" }}>
@@ -193,7 +193,7 @@ function Card3() {
         <div style={{ backgroundColor: "#FFFFFF", border: "1px solid #E5E7EB", borderRadius: "16px", boxShadow: "0px 4px 24px rgba(0, 0, 0, 0.08)", padding: "32px 28px", display: "flex", flexDirection: "column", transform: "scale(0.97)", opacity: 0.95, transition: "transform 0.3s ease, opacity 0.3s ease" }}>
             <h3 style={{ fontFamily: "Inter, sans-serif", fontSize: "24px", fontWeight: 700, lineHeight: 1.2, color: "#111827", margin: 0, marginTop: "16px" }}>Run at Scale</h3>
             <div style={{ display: "inline-flex", alignItems: "baseline", marginTop: "8px" }}>
-                <span style={{ fontFamily: "Inter, sans-serif", fontSize: "48px", fontWeight: 700, color: "#111827" }}>$749</span>
+                <span style={{ fontFamily: "Inter, sans-serif", fontSize: "48px", fontWeight: 700, color: "#111827" }}>$999</span>
                 <span style={{ fontFamily: "Inter, sans-serif", fontSize: "16px", fontWeight: 400, color: "#6B7280", marginLeft: "2px" }}>/month</span>
             </div>
             <div style={{ marginTop: "20px" }}>

@@ -108,14 +108,14 @@ export function PricingComparisonTable() {
                     {/* Starter Tier */}
                     <MobileTierCard
                         name="Starter"
-                        price="$149/mo"
+                        price="$199/mo"
                         data={keyDifferences}
                         tierKey="starter"
                     />
                     {/* Pro Tier */}
                     <MobileTierCard
                         name="Pro"
-                        price="$349/mo"
+                        price="$499/mo"
                         data={keyDifferences}
                         tierKey="pro"
                         isPopular
@@ -123,7 +123,7 @@ export function PricingComparisonTable() {
                     {/* Enterprise Tier */}
                     <MobileTierCard
                         name="Enterprise"
-                        price="$749/mo"
+                        price="$999/mo"
                         data={keyDifferences}
                         tierKey="enterprise"
                     />

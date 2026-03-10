@@ -9,7 +9,7 @@ export function HeroSection() {
       <div className="container mx-auto px-4 md:px-6">
         <div className="grid gap-12 lg:grid-cols-2 lg:gap-12 items-center">
           {/* Left: Text Content */}
-          <div className="flex flex-col justify-center space-y-8 text-left lg:pr-8 lg:-ml-[20%] hero-text-column">
+          <div className="flex flex-col justify-center space-y-8 text-left lg:pr-8 hero-text-column">
             <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl md:text-6xl leading-tight hero-headline" style={{ color: 'white' }}>
               <span>Stop guessing where</span> <span>your ad budget works—</span><span style={{ 
                 color: '#111827', 
@@ -96,63 +96,105 @@ export function HeroSection() {
             </div>
           </div>
 
-          {/* Right: Product Visual - responsive home product hero screenshot */}
+          {/* Right: Product Visual — 3D perspective hero dashboard */}
           <div className="relative mx-auto w-full max-w-[950px] lg:max-w-none lg:ml-[20%] hero-image-container home-product-hero">
-            <div 
-              className="relative rounded-2xl overflow-visible hero-image-glass"
-              style={{
-                background: 'rgba(255, 255, 255, 0.7)',
-                backdropFilter: 'blur(20px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.2) inset, 0 20px 60px -15px rgba(0, 0, 0, 0.2)',
-                transform: 'scale(1.1)',
-              }}
-            >
-              <div className="overflow-hidden rounded-2xl">
-                <img
-                  src="/assets/images/home-product-hero/home-product-hero-800w.jpg"
-                  srcSet="/assets/images/home-product-hero/home-product-hero-400w.jpg 400w, /assets/images/home-product-hero/home-product-hero-800w.jpg 800w, /assets/images/home-product-hero/home-product-hero-1200w.jpg 1200w"
-                  sizes="(max-width: 600px) 100vw, (max-width: 960px) 80vw, 950px"
-                  alt="Channel Comparison Dashboard — Skeldir ad channel ROAS and budget shift recommendations"
-                  className="w-full h-auto object-contain hero-dashboard-image"
-                  loading="eager"
-                  decoding="async"
-                  fetchPriority="high"
-                />
+            <div className="hero-image-float-wrapper">
+              <div 
+                className="relative rounded-2xl overflow-visible hero-image-glass"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.7)',
+                  backdropFilter: 'blur(20px) saturate(180%)',
+                  WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                }}
+              >
+                <div className="overflow-hidden rounded-2xl">
+                  <img
+                    src="/homepage-demo-2.png"
+                    alt="Skeldir command center — unified attribution and ROAS control panel"
+                    className="w-full h-auto object-contain hero-dashboard-image"
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
+                  />
+                </div>
               </div>
             </div>
           </div>
           
           <style>{`
-            @keyframes float {
-              0%, 100% {
-                transform: translateY(0px);
-              }
-              50% {
-                transform: translateY(-12px);
-              }
-            }
-            .hero-image-glass {
-              animation: float 6s ease-in-out infinite;
-              position: relative;
-            }
-            .hero-image-glass::after {
-              content: '';
-              position: absolute;
-              bottom: -25px;
-              left: 5%;
-              right: 5%;
-              height: 50px;
-              background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 30%, rgba(0, 0, 0, 0.05) 50%, transparent 75%);
-              border-radius: 50%;
-              z-index: -1;
-              filter: blur(16px);
-              pointer-events: none;
-              transform: scale(1.1);
+            /* ─── 3D Perspective Stage ─── */
+            .hero-image-container {
+              perspective: 1200px;
+              perspective-origin: 60% 50%;
             }
 
-            /* Mobile: same structure as desktop (left-aligned, same hierarchy) */
+            /* Float animation wrapper — isolated from 3D rotation */
+            .hero-image-float-wrapper {
+              position: relative;
+              transform-style: preserve-3d;
+              animation: hero-float 7s ease-in-out infinite;
+              will-change: transform;
+            }
+
+            @keyframes hero-float {
+              0%, 100% { transform: translateY(0px); }
+              50% { transform: translateY(-8px); }
+            }
+
+            /* Ground contact shadow — on float wrapper so it stays flat */
+            .hero-image-float-wrapper::after {
+              content: '';
+              position: absolute;
+              bottom: -22px;
+              left: 12%;
+              right: 2%;
+              height: 50px;
+              background: radial-gradient(
+                ellipse at 38% 50%,
+                rgba(0, 0, 0, 0.20) 0%,
+                rgba(0, 0, 0, 0.07) 45%,
+                transparent 75%
+              );
+              border-radius: 50%;
+              z-index: -1;
+              filter: blur(18px);
+              pointer-events: none;
+            }
+
+            /* 3D Glass Panel */
+            .hero-image-glass {
+              position: relative;
+              transform-style: preserve-3d;
+              transform: translateX(4%) scale(1.25) rotateY(-8deg) rotateX(4deg);
+              transform-origin: 65% center;
+              box-shadow:
+                0 1px 2px rgba(0, 0, 0, 0.06),
+                4px 6px 16px rgba(0, 0, 0, 0.07),
+                8px 16px 40px rgba(31, 38, 135, 0.10),
+                16px 32px 80px -10px rgba(0, 0, 0, 0.18),
+                inset 0 1px 0 rgba(255, 255, 255, 0.25);
+            }
+
+            /* Light-catch gradient — simulates surface reflecting ambient light */
+            .hero-image-glass::before {
+              content: '';
+              position: absolute;
+              inset: 0;
+              border-radius: inherit;
+              background: linear-gradient(
+                110deg,
+                rgba(255, 255, 255, 0.14) 0%,
+                rgba(255, 255, 255, 0.05) 35%,
+                transparent 55%,
+                rgba(0, 0, 0, 0.03) 100%
+              );
+              z-index: 10;
+              pointer-events: none;
+            }
+
+            /* ─── Responsive ─── */
+
             @media (max-width: 767px) {
               .hero-text-column {
                 align-items: flex-start !important;
@@ -165,12 +207,10 @@ export function HeroSection() {
                 margin-bottom: 20px !important;
                 text-align: left !important;
               }
-              
               .hero-headline span {
                 white-space: normal !important;
                 display: inline !important;
               }
-
               .hero-subheadline {
                 font-size: 14px !important;
                 line-height: 1.45 !important;
@@ -178,7 +218,6 @@ export function HeroSection() {
                 margin-bottom: 20px !important;
                 text-align: left !important;
               }
-
               .hero-cta-container {
                 width: 100% !important;
                 max-width: 100% !important;
@@ -187,7 +226,6 @@ export function HeroSection() {
                 overflow-x: hidden !important;
                 align-items: flex-start !important;
               }
-
               .hero-buttons {
                 display: flex !important;
                 flex-direction: row !important;
@@ -198,12 +236,10 @@ export function HeroSection() {
                 padding: 0 !important;
                 margin: 0 !important;
               }
-
               .hero-cta-link-primary,
               .hero-cta-link-secondary {
                 display: inline-flex !important;
               }
-
               .hero-cta-button-primary {
                 display: inline-flex !important;
                 align-items: center !important;
@@ -224,12 +260,10 @@ export function HeroSection() {
                 border: none !important;
                 white-space: nowrap !important;
               }
-
               .hero-cta-button-primary:hover {
                 background: #1E40AF !important;
                 box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4) !important;
               }
-
               .hero-cta-button-secondary {
                 display: inline-flex !important;
                 align-items: center !important;
@@ -248,13 +282,11 @@ export function HeroSection() {
                 transition: all 180ms ease-out !important;
                 white-space: nowrap !important;
               }
-
               .hero-cta-button-secondary:hover {
                 background: rgba(0, 0, 0, 0.1) !important;
                 border-color: #000000 !important;
                 color: #000000 !important;
               }
-
               @media (max-width: 360px) {
                 .hero-buttons {
                   gap: 8px !important;
@@ -265,33 +297,33 @@ export function HeroSection() {
                   font-size: 14px !important;
                 }
               }
-
               .hero-tagline {
                 font-size: 14px !important;
                 text-align: left !important;
                 padding: 0 !important;
               }
-
               .hero-image-container {
                 width: 100% !important;
                 max-width: 100% !important;
                 padding: 0 !important;
-                margin-top: 32px !important;
+                margin-top: 24px !important;
+                perspective: 800px;
+                perspective-origin: 55% 50%;
               }
-
               .hero-image-glass {
-                transform: scale(1) !important;
-                width: 100% !important;
+                transform: translateX(-0.5%) scale(1.08) rotateY(-3deg) rotateX(2deg);
+                transform-origin: center center;
+                width: 100%;
               }
-
               .hero-dashboard-image {
                 width: 100% !important;
+                max-width: 100% !important;
                 height: auto !important;
                 object-fit: contain !important;
+                margin-left: 0 !important;
               }
-
-              .hero-image-glass::after {
-                display: none !important;
+              .hero-image-float-wrapper::after {
+                display: none;
               }
             }
 
@@ -300,14 +332,30 @@ export function HeroSection() {
                 font-size: 36px !important;
                 line-height: 1.25 !important;
               }
-
               .hero-subheadline {
                 font-size: 18px !important;
                 line-height: 1.6 !important;
               }
-
               .hero-image-glass {
-                transform: scale(1.05) !important;
+                transform: translateX(3%) scale(1.05) rotateY(-6deg) rotateX(3deg);
+              }
+            }
+
+            @media (min-width: 1024px) {
+              .hero-image-container {
+                max-width: 1100px !important;
+                margin-left: 0 !important;
+                perspective: 1400px;
+                perspective-origin: 60% 50%;
+              }
+              .hero-image-glass {
+                transform: translateX(6%) scale(1.3) rotateY(-10deg) rotateX(5deg);
+                transform-origin: 60% center;
+              }
+              .hero-dashboard-image {
+                max-height: 640px !important;
+                width: 100% !important;
+                object-fit: contain !important;
               }
             }
           `}</style>

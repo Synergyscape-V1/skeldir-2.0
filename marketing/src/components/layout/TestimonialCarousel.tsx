@@ -254,7 +254,6 @@ interface TestimonialCardProps {
 function TestimonialCard({ testimonial, isActive, position }: TestimonialCardProps) {
   const getCardStyle = (): React.CSSProperties => {
     const baseStyle: React.CSSProperties = {
-      width: "500px",
       minHeight: "280px",
       backgroundColor: "#FFFFFF",
       borderRadius: "16px",
@@ -263,7 +262,11 @@ function TestimonialCard({ testimonial, isActive, position }: TestimonialCardPro
       transition: "opacity 300ms ease, transform 300ms ease",
       display: "flex",
       flexDirection: "column",
-      flex: "0 0 500px",
+      width: "100%",
+      maxWidth: "500px",
+      // Ensure exactly 3 cards fit fully in the visible viewport:
+      // total width = 3 * cardWidth + 2 * 24px gap = container width
+      flex: "0 0 calc((100% - 48px) / 3)",
     };
 
     if (position === "center") {

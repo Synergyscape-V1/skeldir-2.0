@@ -123,7 +123,7 @@ export function FinalCTA() {
               e.currentTarget.style.outline = "none";
             }}
           >
-            Get Started  $149/mo
+            Get Started  $199/mo
           </a>
           <a
             href="/book-demo"

@@ -211,7 +211,7 @@ function Card1() {
             color: "#111827",
           }}
         >
-          $149
+          $199
         </span>
         <span
           style={{
@@ -433,7 +433,7 @@ function Card2() {
               color: "#111827",
             }}
           >
-            $349
+            $499
           </span>
           <span
             style={{
@@ -655,7 +655,7 @@ function Card3() {
             color: "#111827",
           }}
         >
-          $749
+          $999
         </span>
         <span
           style={{

@@ -41,6 +41,7 @@ export function AgenciesHeroSection() {
       />
       {/* Overlay content — preserved z-index above image */}
       <div
+        className="agencies-hero-overlay"
         style={{
           position: 'relative',
           zIndex: 1,
@@ -346,8 +347,19 @@ export function AgenciesHeroSection() {
           animation: agencies-hero-reveal 0.55s ease-out 0.1s both;
         }
 
-        /* Desktop: 1024px+ — two columns; text stays in viewport (no negative margin), overlap via image pull only */
+        /* Desktop: 1024px+ — align hero text/image vertical position with homepage hero */
         @media (min-width: 1024px) {
+          .agencies-hero {
+            /* Match homepage hero's visual offset from nav */
+            padding-top: 128px !important;
+          }
+
+          .agencies-hero-overlay {
+            /* Top-align content instead of vertically centering in the viewport */
+            align-items: flex-start !important;
+            min-height: auto !important;
+          }
+
           .agencies-hero-container {
             padding: 0 24px !important;
           }
@@ -359,7 +371,8 @@ export function AgenciesHeroSection() {
             text-align: left !important;
             padding-right: 32px !important;
             margin-left: 0 !important;
-            margin-top: -200px !important;
+            /* Use zero offset now that the overlay is top-aligned; this mirrors home hero behavior */
+            margin-top: 0 !important;
           }
           .agencies-hero-headline {
             text-align: left !important;
@@ -378,7 +391,8 @@ export function AgenciesHeroSection() {
           .agencies-hero-visual {
             margin-left: 0 !important;
             margin-right: 0 !important;
-            margin-top: -250px !important;
+            /* Zero vertical offset so visual sits in the same band as the home hero image */
+            margin-top: 0 !important;
             max-width: 1600px !important;
             justify-self: end !important;
             transform: translateX(120px) !important;
