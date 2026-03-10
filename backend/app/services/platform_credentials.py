@@ -1,4 +1,4 @@
-﻿"""
+"""
 Service layer for platform credentials (encrypted tokens).
 """
 

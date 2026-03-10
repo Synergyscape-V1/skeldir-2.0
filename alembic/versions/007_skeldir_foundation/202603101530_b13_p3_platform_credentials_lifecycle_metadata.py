@@ -1,4 +1,4 @@
-﻿"""B1.3-P3: durable platform credential lifecycle metadata extension.
+"""B1.3-P3: durable platform credential lifecycle metadata extension.
 
 Revision ID: 202603101530
 Revises: 202603101000
@@ -60,10 +60,10 @@ def upgrade() -> None:
         """
     )
 
-    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_lifecycle_status_valid")
-    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_refresh_failure_count_nonnegative")
-    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_revoked_status_consistency")
-    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_revoked_refresh_due_null")
+    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_lifecycle_status_valid")  # CI:DESTRUCTIVE_OK - idempotent constraint replacement in B1.3-P3
+    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_refresh_failure_count_nonnegative")  # CI:DESTRUCTIVE_OK - idempotent constraint replacement in B1.3-P3
+    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_revoked_status_consistency")  # CI:DESTRUCTIVE_OK - idempotent constraint replacement in B1.3-P3
+    op.execute("ALTER TABLE public.platform_credentials DROP CONSTRAINT IF EXISTS ck_platform_credentials_revoked_refresh_due_null")  # CI:DESTRUCTIVE_OK - idempotent constraint replacement in B1.3-P3
 
     op.execute(
         """
@@ -126,12 +126,12 @@ def downgrade() -> None:
     op.execute(
         """
         ALTER TABLE public.platform_credentials
-            DROP COLUMN IF EXISTS revoked_at,
-            DROP COLUMN IF EXISTS last_refresh_at,
-            DROP COLUMN IF EXISTS last_failure_at,
-            DROP COLUMN IF EXISTS last_failure_class,
-            DROP COLUMN IF EXISTS refresh_failure_count,
-            DROP COLUMN IF EXISTS lifecycle_status,
-            DROP COLUMN IF EXISTS next_refresh_due_at
+            DROP COLUMN IF EXISTS revoked_at, -- # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
+            DROP COLUMN IF EXISTS last_refresh_at, -- # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
+            DROP COLUMN IF EXISTS last_failure_at, -- # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
+            DROP COLUMN IF EXISTS last_failure_class, -- # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
+            DROP COLUMN IF EXISTS refresh_failure_count, -- # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
+            DROP COLUMN IF EXISTS lifecycle_status, -- # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
+            DROP COLUMN IF EXISTS next_refresh_due_at -- # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
         """
-    )  # CI:DESTRUCTIVE_OK - rollback for B1.3-P3 durable lifecycle columns
+    )

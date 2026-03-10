@@ -1325,6 +1325,11 @@ CREATE TABLE public.platform_credentials (
     encrypted_access_token bytea NOT NULL,
     encrypted_refresh_token bytea,
     expires_at timestamp with time zone,
+    scope text,
+    token_type text,
+    key_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     next_refresh_due_at timestamp with time zone,
     lifecycle_status text DEFAULT 'active'::text NOT NULL,
     refresh_failure_count integer DEFAULT 0 NOT NULL,
@@ -1332,11 +1337,6 @@ CREATE TABLE public.platform_credentials (
     last_failure_at timestamp with time zone,
     last_refresh_at timestamp with time zone,
     revoked_at timestamp with time zone,
-    scope text,
-    token_type text,
-    key_id text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_platform_credentials_lifecycle_status_valid CHECK ((lifecycle_status = ANY (ARRAY['active'::text, 'degraded'::text, 'revoked'::text]))),
     CONSTRAINT ck_platform_credentials_refresh_failure_count_nonnegative CHECK ((refresh_failure_count >= 0)),
     CONSTRAINT ck_platform_credentials_revoked_refresh_due_null CHECK (((lifecycle_status <> 'revoked'::text) OR (next_refresh_due_at IS NULL))),
@@ -1875,11 +1875,11 @@ CREATE INDEX idx_pii_audit_findings_table_detected_at ON public.pii_audit_findin
 
 CREATE INDEX idx_platform_connections_tenant_platform_updated_at ON public.platform_connections USING btree (tenant_id, platform, updated_at DESC);
 
-CREATE INDEX idx_platform_credentials_tenant_platform_updated_at ON public.platform_credentials USING btree (tenant_id, platform, updated_at DESC);
-
 CREATE INDEX idx_platform_credentials_refresh_due ON public.platform_credentials USING btree (tenant_id, lifecycle_status, next_refresh_due_at) WHERE (next_refresh_due_at IS NOT NULL);
 
 CREATE INDEX idx_platform_credentials_tenant_lifecycle_updated ON public.platform_credentials USING btree (tenant_id, lifecycle_status, updated_at DESC);
+
+CREATE INDEX idx_platform_credentials_tenant_platform_updated_at ON public.platform_credentials USING btree (tenant_id, platform, updated_at DESC);
 
 CREATE INDEX idx_platform_credentials_tenant_revoked_at ON public.platform_credentials USING btree (tenant_id, revoked_at DESC) WHERE (revoked_at IS NOT NULL);
 
