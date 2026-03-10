@@ -1,0 +1,9 @@
+﻿
+backend/tests/test_b13_p2_handshake_state_contract.py::test_b13_p2_handshake_gate_passes_repo_state PASSED [ 20%]
+backend/tests/test_b13_p2_handshake_state_contract.py::test_b13_p2_negative_control_detects_missing_gc_column PASSED [ 40%]
+backend/tests/test_b13_p2_handshake_state_contract.py::test_b13_p2_negative_control_detects_missing_atomic_pending_guard PASSED [ 60%]
+backend/tests/test_b13_p2_handshake_state_contract.py::test_b13_p2_evidence_gate_passes_repo_state PASSED [ 80%]
+backend/tests/test_b13_p2_handshake_state_contract.py::test_b13_p2_evidence_gate_negative_control_detects_missing_sections PASSED [100%]
+
+============================== 5 passed in 0.45s ==============================
+

@@ -1256,6 +1256,34 @@ CREATE MATERIALIZED VIEW mv_reconciliation_status AS
           GROUP BY tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
   WITH NO DATA;
 
+CREATE TABLE public.oauth_handshake_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    platform text NOT NULL,
+    state_nonce_hash text NOT NULL,
+    encrypted_pkce_verifier bytea,
+    pkce_key_id text,
+    pkce_code_challenge text,
+    pkce_code_challenge_method text,
+    redirect_uri text,
+    provider_session_metadata jsonb,
+    status text DEFAULT 'pending'::text NOT NULL,
+    terminal_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    consumed_at timestamp with time zone,
+    gc_after timestamp with time zone NOT NULL,
+    CONSTRAINT ck_oauth_handshake_sessions_consumed_shape CHECK ((((status = 'consumed'::text) AND (consumed_at IS NOT NULL)) OR ((status <> 'consumed'::text) AND (consumed_at IS NULL)))),
+    CONSTRAINT ck_oauth_handshake_sessions_gc_after_window CHECK ((gc_after >= created_at)),
+    CONSTRAINT ck_oauth_handshake_sessions_pkce_key_binding CHECK ((((encrypted_pkce_verifier IS NULL) AND (pkce_key_id IS NULL)) OR ((encrypted_pkce_verifier IS NOT NULL) AND (pkce_key_id IS NOT NULL)))),
+    CONSTRAINT ck_oauth_handshake_sessions_pkce_method CHECK (((pkce_code_challenge_method IS NULL) OR (pkce_code_challenge_method = ANY (ARRAY['S256'::text, 'plain'::text])))),
+    CONSTRAINT ck_oauth_handshake_sessions_status_valid CHECK ((status = ANY (ARRAY['pending'::text, 'consumed'::text, 'expired'::text, 'aborted'::text])))
+);
+
+ALTER TABLE ONLY public.oauth_handshake_sessions FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.pii_audit_findings (
     id bigint NOT NULL,
     table_name text NOT NULL,
@@ -1621,6 +1649,9 @@ ALTER TABLE ONLY public.llm_semantic_cache
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.oauth_handshake_sessions
+    ADD CONSTRAINT oauth_handshake_sessions_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.pii_audit_findings
     ADD CONSTRAINT pii_audit_findings_pkey PRIMARY KEY (id);
 
@@ -1677,6 +1708,9 @@ ALTER TABLE ONLY public.llm_api_calls
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT uq_llm_monthly_costs_tenant_user_month UNIQUE (tenant_id, user_id, month);
+
+ALTER TABLE ONLY public.oauth_handshake_sessions
+    ADD CONSTRAINT uq_oauth_handshake_sessions_tenant_state_hash UNIQUE (tenant_id, state_nonce_hash);
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT uq_tenant_membership_roles_membership_role UNIQUE (membership_id, role_code);
@@ -1815,6 +1849,14 @@ CREATE UNIQUE INDEX idx_mv_daily_revenue_summary_unique ON public.mv_daily_reven
 CREATE UNIQUE INDEX idx_mv_realtime_revenue_tenant_id ON public.mv_realtime_revenue USING btree (tenant_id);
 
 CREATE UNIQUE INDEX idx_mv_reconciliation_status_tenant_id ON public.mv_reconciliation_status USING btree (tenant_id);
+
+CREATE INDEX idx_oauth_handshake_sessions_expires_at ON public.oauth_handshake_sessions USING btree (expires_at DESC);
+
+CREATE INDEX idx_oauth_handshake_sessions_gc_after ON public.oauth_handshake_sessions USING btree (gc_after);
+
+CREATE INDEX idx_oauth_handshake_sessions_tenant_platform_user_created ON public.oauth_handshake_sessions USING btree (tenant_id, platform, user_id, created_at DESC);
+
+CREATE INDEX idx_oauth_handshake_sessions_tenant_state_lookup ON public.oauth_handshake_sessions USING btree (tenant_id, state_nonce_hash, status);
 
 CREATE INDEX idx_pii_audit_findings_detected_key ON public.pii_audit_findings USING btree (detected_key);
 
@@ -2027,6 +2069,12 @@ ALTER TABLE ONLY public.llm_semantic_cache
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.oauth_handshake_sessions
+    ADD CONSTRAINT oauth_handshake_sessions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.oauth_handshake_sessions
+    ADD CONSTRAINT oauth_handshake_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -2123,6 +2171,8 @@ ALTER TABLE public.llm_semantic_cache ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.llm_validation_failures ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.oauth_handshake_sessions ENABLE ROW LEVEL SECURITY;
+
 CREATE POLICY ops_quarantine_select ON public.dead_events_quarantine FOR SELECT USING (((tenant_id IS NULL) AND (CURRENT_USER = 'app_ops'::name)));
 
 ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
@@ -2184,6 +2234,8 @@ CREATE POLICY tenant_isolation_policy ON public.llm_monthly_costs USING (((tenan
 CREATE POLICY tenant_isolation_policy ON public.llm_semantic_cache USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
 CREATE POLICY tenant_isolation_policy ON public.llm_validation_failures USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy ON public.oauth_handshake_sessions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.platform_connections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
