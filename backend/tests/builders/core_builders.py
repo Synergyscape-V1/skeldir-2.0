@@ -380,6 +380,13 @@ async def build_platform_credentials(
     token_type: str | None = None,
     key_id: str = "test-key",
     encryption_key: str = "test-platform-key",
+    next_refresh_due_at: datetime | None = None,
+    lifecycle_status: str = "active",
+    refresh_failure_count: int = 0,
+    last_failure_class: str | None = None,
+    last_failure_at: datetime | None = None,
+    last_refresh_at: datetime | None = None,
+    revoked_at: datetime | None = None,
 ) -> Dict[str, UUID]:
     """Create a platform_credentials row for the given connection."""
     columns = await _table_columns("platform_credentials")
@@ -399,6 +406,13 @@ async def build_platform_credentials(
         "scope": scope,
         "token_type": token_type,
         "key_id": key_id,
+        "next_refresh_due_at": next_refresh_due_at,
+        "lifecycle_status": lifecycle_status,
+        "refresh_failure_count": refresh_failure_count,
+        "last_failure_class": last_failure_class,
+        "last_failure_at": last_failure_at,
+        "last_refresh_at": last_refresh_at,
+        "revoked_at": revoked_at,
         "created_at": now,
         "updated_at": now,
         "encryption_key": encryption_key,
@@ -423,8 +437,15 @@ async def build_platform_credentials(
         "ELSE pgp_sym_encrypt(CAST(:refresh_token AS text), :encryption_key) END",
     )
     add("expires_at", ":expires_at")
+    add("next_refresh_due_at", ":next_refresh_due_at")
     add("scope", ":scope")
     add("token_type", ":token_type")
+    add("lifecycle_status", ":lifecycle_status")
+    add("refresh_failure_count", ":refresh_failure_count")
+    add("last_failure_class", ":last_failure_class")
+    add("last_failure_at", ":last_failure_at")
+    add("last_refresh_at", ":last_refresh_at")
+    add("revoked_at", ":revoked_at")
     add("key_id", ":key_id")
     add("created_at", ":created_at")
     add("updated_at", ":updated_at")

@@ -198,6 +198,63 @@ jobs:
         run: |
           pytest backend/tests/test_b13_p2_handshake_state_runtime.py -q
 
+  b13-p3-durable-lifecycle-schema-proofs:
+    name: B1.3 P3 Durable Lifecycle Schema Proofs
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install P3 proof dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Apply migrations
+        run: |
+          alembic upgrade head
+
+      - name: Enforce B1.3-P3 durable lifecycle structure
+        run: |
+          python scripts/ci/enforce_b13_p3_durable_lifecycle.py
+
+      - name: Run B1.3-P3 non-vacuous structural controls
+        run: |
+          pytest backend/tests/test_b13_p3_durable_lifecycle_contract.py -q
+
+      - name: Run B1.3-P3 runtime durable lifecycle proofs
+        run: |
+          pytest backend/tests/test_b13_p3_durable_lifecycle_runtime.py -q
+
   # Contract validation
 
   validate-contracts:
