@@ -28,6 +28,7 @@
     "B1.3 P0 Governance & Scope Lock",
     "B1.3 P1 Contract Authority Proofs",
     "B1.3 P2 Handshake State Proofs",
-    "B1.3 P3 Durable Lifecycle Schema Proofs"
+    "B1.3 P3 Durable Lifecycle Schema Proofs",
+    "B1.3 P4 Boundary Hardening Proofs"
   ]
 }

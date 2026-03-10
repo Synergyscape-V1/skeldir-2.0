@@ -210,23 +210,12 @@ async def resolve_tenant_webhook_secrets_from_row(
 
     resolved: dict[str, str | None] = {}
     for provider in PROVIDERS:
-        plaintext_raw = row.get(f"{provider}_webhook_secret")
         ciphertext_raw = row.get(f"{provider}_webhook_secret_ciphertext")
         key_id_raw = row.get(f"{provider}_webhook_secret_key_id")
         ciphertext = _bytes_from_db(ciphertext_raw)
         key_id = str(key_id_raw).strip() if key_id_raw is not None else ""
 
         if not ciphertext or not key_id:
-            if plaintext_raw is not None and str(plaintext_raw).strip():
-                plaintext_value = str(plaintext_raw)
-                plaintext_cache_key = f"{tenant_id}:{provider}:legacy-plaintext:{hashlib.sha256(plaintext_value.encode('utf-8')).hexdigest()}"
-                cached_plain = _CACHE.get(plaintext_cache_key)
-                if cached_plain is not None:
-                    resolved[f"{provider}_webhook_secret"] = cached_plain
-                else:
-                    _CACHE.set(plaintext_cache_key, plaintext_value)
-                    resolved[f"{provider}_webhook_secret"] = plaintext_value
-                continue
             resolved[f"{provider}_webhook_secret"] = None
             continue
 

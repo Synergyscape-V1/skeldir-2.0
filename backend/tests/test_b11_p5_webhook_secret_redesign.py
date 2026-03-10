@@ -209,7 +209,7 @@ async def test_b11_p5_mutation_version_triggers_sync_cache_evict(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_b11_p5_expand_phase_plaintext_fallback():
+async def test_b11_p5_plaintext_fallback_is_disabled():
     tenant_id = uuid4()
     row = {
         "tenant_updated_at": "2026-02-22T10:00:00+00:00",
@@ -228,4 +228,4 @@ async def test_b11_p5_expand_phase_plaintext_fallback():
         tenant_id=tenant_id,
         row=row,
     )
-    assert resolved["shopify_webhook_secret"] == "legacy-plain-secret"
+    assert resolved["shopify_webhook_secret"] is None

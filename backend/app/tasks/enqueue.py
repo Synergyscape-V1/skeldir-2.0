@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from celery.canvas import Signature
 
+from app.security.secret_boundary import assert_no_sensitive_material
 from app.tasks.authority import (
     AUTHORITY_ENVELOPE_HEADER,
     AuthorityEnvelope,
@@ -46,6 +47,7 @@ def _build_task_kwargs(
     if overlap:
         joined = ", ".join(overlap)
         raise ValueError(f"tenant authority fields are reserved and must not be task kwargs: {joined}")
+    assert_no_sensitive_material(task_kwargs, boundary_name="celery_task_kwargs")
     return task_kwargs
 
 

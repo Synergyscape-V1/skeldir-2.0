@@ -8,6 +8,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.security.secret_boundary import sanitize_for_transport, sanitize_problem_detail
+
 AUTH_UNAUTHORIZED_CODE = "AUTH_UNAUTHORIZED"
 AUTH_FORBIDDEN_CODE = "AUTH_FORBIDDEN"
 DEFAULT_PROBLEM_CODE = "UNSPECIFIED_ERROR"
@@ -52,18 +54,19 @@ def problem_details_response(
 ) -> JSONResponse:
     # Use a URI-safe, path-template-independent instance identifier.
     instance_uri = f"urn:skeldir:error:{correlation_id}"
+    sanitized_errors = sanitize_for_transport(errors) if errors is not None else None
     payload = {
         "type": type_url,
         "title": title,
         "status": status_code,
-        "detail": detail,
+        "detail": sanitize_problem_detail(detail),
         "instance": instance_uri,
         "correlation_id": str(correlation_id),
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "code": code or _default_code_for_status(status_code),
     }
-    if errors is not None:
-        payload["errors"] = errors
+    if sanitized_errors is not None:
+        payload["errors"] = sanitized_errors
     return JSONResponse(
         status_code=status_code,
         content=payload,
