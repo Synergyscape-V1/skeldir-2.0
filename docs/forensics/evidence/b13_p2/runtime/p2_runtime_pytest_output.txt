@@ -1,0 +1,18 @@
+﻿
+backend/tests/test_b13_p2_handshake_state_runtime.py::test_p2_transient_substrate_is_distinct_from_durable_provider_tables PASSED [ 25%]
+backend/tests/test_b13_p2_handshake_state_runtime.py::test_p2_replay_and_cross_tenant_binding_fail_before_side_effects PASSED [ 50%]
+backend/tests/test_b13_p2_handshake_state_runtime.py::test_p2_expiry_and_gc_are_bounded PASSED [ 75%]
+backend/tests/test_b13_p2_handshake_state_runtime.py::test_p2_consumed_rows_become_gc_eligible PASSED [100%]
+
+============================== warnings summary ===============================
+backend/tests/test_b13_p2_handshake_state_runtime.py::test_p2_transient_substrate_is_distinct_from_durable_provider_tables
+  C:\Python311\Lib\site-packages\alembic\config.py:598: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+    util.warn_deprecated(
+
+backend/tests/test_b13_p2_handshake_state_runtime.py::test_p2_transient_substrate_is_distinct_from_durable_provider_tables
+  C:\Python311\Lib\site-packages\alembic\config.py:546: DeprecationWarning: The version_path_separator configuration parameter is deprecated; please use path_separator
+    util.warn_deprecated(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 4 passed, 2 warnings in 2.63s ========================
+

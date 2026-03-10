@@ -1,0 +1,5 @@
+﻿B1.3-P2 handshake substrate gate passed.
+  migration=alembic\versions\007_skeldir_foundation\202603101000_b13_p2_oauth_handshake_state_substrate.py
+  model=backend\app\models\oauth_handshake_session.py
+  service=backend\app\services\oauth_handshake_state.py
+

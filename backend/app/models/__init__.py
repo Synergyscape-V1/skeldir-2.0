@@ -53,6 +53,7 @@ from app.models.llm import (
     LLMMonthlyCost,
     LLMSemanticCache,
 )
+from app.models.oauth_handshake_session import OAuthHandshakeSession
 from app.models.platform_connection import PlatformConnection
 from app.models.platform_credential import PlatformCredential
 from app.models.revenue_cache import RevenueCacheEntry
@@ -80,6 +81,7 @@ __all__ = [
     "LLMHourlyShutoffState",
     "Investigation",
     "BudgetOptimizationJob",
+    "OAuthHandshakeSession",
     "PlatformConnection",
     "PlatformCredential",
     "RevenueCacheEntry",

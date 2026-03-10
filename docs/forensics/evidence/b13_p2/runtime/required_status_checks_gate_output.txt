@@ -1,0 +1,25 @@
+﻿required status checks enforcement failed: missing contexts
+  - B1.3 P2 Handshake State Proofs
+actual contexts:
+  - B0.7 P2 Runtime Proof (LLM + Redaction)
+  - Celery Foundation B0.5.1
+  - Validate Contracts
+  - Frontend Contract Consumption Gate
+  - Mock Usability Gate
+  - Phase 1 Negative Controls
+  - Phase 1 Runtime Conformance
+  - B0.6 Phase 2 Adjudication
+  - Phase Gates (B0.3)
+  - Phase 8 Regression Gate (Full Physics)
+  - b11-p2-secret-chokepoint-gate
+  - b11-p2-readiness-gate
+  - b11-p4-static-and-runtime-gate
+  - b11-p4-ci-audit-gate
+  - JWT Tenant Context Invariants
+  - B1.2 P6 RBAC Proofs
+  - B1.2 P7 Worker Coherence Proofs
+  - B1.2 P8 Error Contract Proofs
+  - B1.2 P9 E2E System Proofs
+  - B1.3 P0 Governance & Scope Lock
+  - B1.3 P1 Contract Authority Proofs
+

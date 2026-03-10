@@ -1,0 +1,3 @@
+﻿B1.3-P2 evidence gate passed.
+  evidence_pack=docs\forensics\B1.3-P2_Remediation_Evidence_Pack.md
+
