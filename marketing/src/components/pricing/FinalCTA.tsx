@@ -54,7 +54,7 @@ export function FinalCTA() {
                         }}
                     >
                         Get started
-                        <span style={{ fontSize: "14px", fontWeight: 500 }}>$149/mo</span>
+                        <span style={{ fontSize: "14px", fontWeight: 500 }}>$199/mo</span>
                     </Link>
 
                     {/* Secondary Button */}

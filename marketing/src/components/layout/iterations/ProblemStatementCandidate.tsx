@@ -529,7 +529,6 @@ const responsiveStyles = `
     h4 { font-size: 22px !important; }
   }
 
-  /* Mobile: scale down component by ~1.8x (scale 0.55) with scientific centering */
   @media (max-width: 767px) {
     .problem-statement-section {
       display: flex;
@@ -539,117 +538,139 @@ const responsiveStyles = `
       padding-left: 12px !important;
       padding-right: 12px !important;
     }
-    .problem-statement-inner {
-      transform: scale(0.825);
-      transform-origin: center top;
-      /* Compensate for layout box: scaled content is ~17.5% smaller, pull up next section */
-      margin-bottom: -15vh !important;
-    }
-    h2 { font-size: 30px !important; }
-    h3 { font-size: 19px !important; }
-    h4 { font-size: 20px !important; }
-    section ul { font-size: 14px !important; }
 
-    /* Callout box: lower by 0.2 (reduce margin-top by 20%) and maintain desktop shape */
+    .problem-statement-inner {
+      transform: none !important;
+      margin-bottom: 0 !important;
+    }
+
+    h2 { font-size: 24px !important; }
+    h3 { font-size: 16px !important; margin-bottom: 10px !important; }
+    h4 { font-size: 18px !important; }
+    section ul { font-size: 13px !important; }
+
     .problem-statement-callout {
       margin-top: 16px !important;
-      max-width: 750px !important;
-      border-radius: 12px !important;
-      padding: 18px 16px !important;
+      max-width: 100% !important;
+      border-radius: 10px !important;
+      padding: 14px 12px !important;
     }
 
-    /* Chart: keep logos beside bars; use narrower logo column and allow bars to shrink */
-    .problem-statement-chart-row {
-      grid-template-columns: 62px minmax(0, 1fr) !important;
-      gap: 6px !important;
-      padding-bottom: 6px !important;
+    .problem-statement-chart {
+      padding: 4px 8px !important;
+      gap: 0 !important;
+      overflow: visible !important;
     }
+
+    .problem-statement-chart-row {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 0 !important;
+      padding: 14px 0 12px !important;
+    }
+
+    .problem-statement-chart-row > div:first-child {
+      flex-direction: row !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      gap: 8px !important;
+      margin-bottom: 8px !important;
+    }
+    .problem-statement-chart-row > div:first-child img {
+      width: 22px !important;
+      height: 22px !important;
+    }
+    .problem-statement-chart-row > div:first-child span {
+      font-size: 13px !important;
+      font-weight: 800 !important;
+      line-height: 1 !important;
+    }
+
+    .problem-statement-chart-bars {
+      position: relative !important;
+      padding-right: 0 !important;
+      padding-bottom: 26px !important;
+      min-width: 0 !important;
+      overflow: visible !important;
+      gap: 10px !important;
+      background-image: none !important;
+    }
+
+    .problem-statement-bar-wrap {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      gap: 2px !important;
+      min-height: auto !important;
+    }
+
     .problem-statement-chart-row .problem-statement-bar {
       min-width: 0 !important;
-      height: 18px !important;
+      height: 20px !important;
+      flex-shrink: 0 !important;
+      border-radius: 3px !important;
     }
-    /* Hide label inside bar on mobile */
+
     .problem-statement-chart-row .problem-statement-bar .problem-statement-bar-label-inside {
       display: none !important;
     }
-    /* Show label outside bar on mobile */
+
     .problem-statement-chart-row .problem-statement-bar-label-outside-mobile {
       display: inline-block !important;
-    }
-    .problem-statement-chart-row .problem-statement-bar span {
-      font-size: 11px !important;
-      line-height: 1.2 !important;
-    }
-    .problem-statement-chart-row .problem-statement-bar-wrap {
-      min-height: auto !important;
-      display: block !important;
-    }
-    .problem-statement-chart {
-      padding: 10px 8px !important;
-      gap: 2px !important;
-      overflow: visible !important;
-    }
-    .problem-statement-chart-bars {
-      padding-right: 4px !important;
-      min-width: 0 !important;
-      overflow: visible !important;
-      gap: 4px !important;
-    }
-    /* Slightly smaller logo on mobile to keep bars visible */
-    .problem-statement-chart-row > div:first-child img {
-      width: 28px !important;
-      height: 28px !important;
-    }
-    .problem-statement-chart-row > div:first-child span {
-      font-size: 10px !important;
-      line-height: 1.1 !important;
-    }
-    .problem-statement-chart-row .problem-statement-bar-wrap > span {
-      display: inline-block !important;
       margin-left: 0 !important;
-      margin-top: 3px !important;
-      font-size: 11px !important;
+      margin-top: 0 !important;
+      font-size: 11.5px !important;
+      font-weight: 700 !important;
       white-space: nowrap !important;
+      color: #374151 !important;
     }
+
+    .problem-statement-chart-row .problem-statement-bar-label-outside {
+      margin-left: 0 !important;
+      margin-top: 0 !important;
+      font-size: 11.5px !important;
+      font-weight: 700 !important;
+      color: #374151 !important;
+    }
+
     .problem-statement-annotation {
+      position: absolute !important;
+      left: 0 !important;
+      right: auto !important;
+      bottom: 0 !important;
       display: inline-flex !important;
+      align-items: center !important;
       margin-left: 0 !important;
-      margin-top: 40px !important;
-      max-width: 100% !important;
+      margin-top: 0 !important;
+      padding: 3px 10px !important;
+      border-radius: 4px !important;
       white-space: nowrap !important;
       font-size: 11px !important;
-      line-height: 1.2 !important;
-      vertical-align: middle !important;
+      line-height: 1.3 !important;
+      gap: 0 !important;
     }
-    /* Add spacing between tiny label and annotation on mobile - more specific rule */
-    .problem-statement-chart-row .problem-statement-bar-wrap > span + .problem-statement-annotation {
-      margin-top: 16px !important;
-      display: block !important;
-    }
-    .problem-statement-annotation--under {
+
+    .problem-statement-annotation--over {
+      background: rgba(220, 38, 38, 0.09) !important;
       flex-direction: row !important;
-      align-items: center !important;
-      gap: 4px !important;
     }
-    .problem-statement-arrow--left {
-      width: 17px !important;
-      height: 11px !important;
+
+    .problem-statement-annotation--under {
+      background: rgba(22, 163, 74, 0.09) !important;
+      flex-direction: row !important;
+      gap: 0 !important;
     }
-    .problem-statement-arrow--curved {
-      width: 22px !important;
-      height: 16px !important;
+
+    .problem-statement-chart-row .problem-statement-bar-wrap > span + .problem-statement-annotation {
+      margin-top: 0 !important;
+      display: inline-flex !important;
     }
-    .problem-statement-meta-bracket-arrow {
-      width: 24px !important;
-      height: 46px !important;
-      right: 2px !important;
-      top: 2px !important;
+
+    .problem-statement-annotation span {
+      font-size: 11px !important;
     }
-    /* Hide all arrows on mobile */
+
     .problem-statement-annotation svg,
-    .inline-annotation svg,
-    .inline-annotation-underfunded svg,
-    .inline-annotation-overfunded svg,
     .problem-statement-meta-bracket-arrow {
       display: none !important;
     }

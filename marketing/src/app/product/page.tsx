@@ -439,40 +439,40 @@ export default function ProductPage() {
             <div className="product-hero__ctas" style={{ display: "flex", alignItems: "center", gap: "16px", marginTop: "4px" }}>
               {/* Primary CTA */}
               <button
-                onClick={() => router.push('/signup')}
-                style={{
-                  display: "inline-flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  minWidth: "220px",
-                  height: "56px",
-                  padding: "0 28px",
-                  borderRadius: "999px",
-                  border: "none",
-                  background: "#2563EB",
-                  color: "#FFFFFF",
-                  fontSize: "16px",
-                  fontWeight: 600,
-                  boxShadow: "0 8px 24px rgba(37, 99, 235, 0.35)",
-                  cursor: "pointer",
-                  transition: "all 200ms ease-out",
-                  lineHeight: "1.2",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#1D4ED8";
-                  e.currentTarget.style.boxShadow = "0 10px 30px rgba(37, 99, 235, 0.45)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#2563EB";
-                  e.currentTarget.style.boxShadow = "0 8px 24px rgba(37, 99, 235, 0.35)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
-              >
-                Get started
-                <span style={{ fontSize: "14px", fontWeight: 500 }}>$149/mo</span>
-              </button>
+              onClick={() => router.push('/signup')}
+              style={{
+                display: "inline-flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: "220px",
+                height: "56px",
+                padding: "0 28px",
+                borderRadius: "999px",
+                border: "none",
+                background: "#2563EB",
+                color: "#FFFFFF",
+                fontSize: "16px",
+                fontWeight: 600,
+                boxShadow: "0 8px 24px rgba(37, 99, 235, 0.35)",
+                cursor: "pointer",
+                transition: "all 200ms ease-out",
+                lineHeight: "1.2",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#1D4ED8";
+                e.currentTarget.style.boxShadow = "0 10px 30px rgba(37, 99, 235, 0.45)";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#2563EB";
+                e.currentTarget.style.boxShadow = "0 8px 24px rgba(37, 99, 235, 0.35)";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              Get started
+              <span style={{ fontSize: "14px", fontWeight: 500 }}>$199/mo</span>
+            </button>
 
               {/* Secondary CTA */}
               <button

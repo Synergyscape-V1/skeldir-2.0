@@ -13,9 +13,9 @@
 // ============================================================================
 
 const IMG_SRC = "/assets/images/solution-articulation/solution-articulation-full.png";
-const IMG_WIDTH = 2816;
-const IMG_HEIGHT = 1396;
-const ASPECT = IMG_HEIGHT / IMG_WIDTH; // ≈ 0.4957
+const IMG_WIDTH = 2400;
+const IMG_HEIGHT = 1653;
+const ASPECT = IMG_HEIGHT / IMG_WIDTH;
 
 export function SolutionOverview() {
   return (
@@ -49,6 +49,9 @@ export function SolutionOverview() {
           padding: 0 48px;
           position: relative;
           z-index: 2;
+          /* Ensure the container is pure white so any trimmed edge pixels
+             blend seamlessly into the section background. */
+          background-color: #FFFFFF;
         }
         .solution-img-wrapper img {
           display: block;
@@ -56,7 +59,11 @@ export function SolutionOverview() {
           max-width: 100%;
           height: auto;
           border-radius: 12px;
-          box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+          box-shadow: none;
+          /* Trim a 4px band from all four sides so the very edge pixels
+             are completely see-through and the white section background
+             shows through uniformly along the entire perimeter. */
+          clip-path: inset(4px 4px 4px 4px);
         }
         @media (max-width: 1024px) {
           .solution-img-wrapper {
