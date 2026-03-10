@@ -9,14 +9,14 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import text
 
+from app.core.secrets import resolve_platform_encryption_key_by_id
 from app.models.platform_connection import PlatformConnection
 from app.models.platform_credential import PlatformCredential
-from app.core.secrets import resolve_platform_encryption_key_by_id
 from app.services.platform_connections import PlatformConnectionNotFoundError
 
 
@@ -26,6 +26,17 @@ class PlatformCredentialExpiredError(RuntimeError):
 
 class PlatformCredentialNotFoundError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class PlatformCredentialRefreshDue:
+    id: UUID
+    platform_connection_id: UUID
+    platform: str
+    next_refresh_due_at: datetime
+    lifecycle_status: str
+    refresh_failure_count: int
+    last_failure_class: str | None
 
 
 class PlatformCredentialStore:
@@ -68,8 +79,15 @@ class PlatformCredentialStore:
             encrypted_access_token=encrypted_access,
             encrypted_refresh_token=encrypted_refresh,
             expires_at=expires_at,
+            next_refresh_due_at=expires_at,
             scope=scope,
             token_type=token_type,
+            lifecycle_status="active",
+            refresh_failure_count=0,
+            last_failure_class=None,
+            last_failure_at=None,
+            last_refresh_at=None,
+            revoked_at=None,
             key_id=key_id,
             created_at=func.now(),
             updated_at=func.now(),
@@ -80,18 +98,216 @@ class PlatformCredentialStore:
                 "encrypted_access_token": encrypted_access,
                 "encrypted_refresh_token": encrypted_refresh,
                 "expires_at": expires_at,
+                "next_refresh_due_at": expires_at,
                 "scope": scope,
                 "token_type": token_type,
+                "lifecycle_status": "active",
+                "refresh_failure_count": 0,
+                "last_failure_class": None,
+                "last_failure_at": None,
+                "last_refresh_at": None,
+                "revoked_at": None,
                 "key_id": key_id,
                 "updated_at": func.now(),
             },
         ).returning(
             PlatformCredential.id,
             PlatformCredential.expires_at,
+            PlatformCredential.next_refresh_due_at,
+            PlatformCredential.lifecycle_status,
             PlatformCredential.updated_at,
         )
         result = await session.execute(stmt)
         row = result.mappings().first()
+        return dict(row)
+
+    @staticmethod
+    async def list_refresh_due(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        as_of: datetime,
+        limit: int = 100,
+    ) -> list[PlatformCredentialRefreshDue]:
+        query = (
+            select(
+                PlatformCredential.id,
+                PlatformCredential.platform_connection_id,
+                PlatformCredential.platform,
+                PlatformCredential.next_refresh_due_at,
+                PlatformCredential.lifecycle_status,
+                PlatformCredential.refresh_failure_count,
+                PlatformCredential.last_failure_class,
+            )
+            .where(
+                PlatformCredential.tenant_id == tenant_id,
+                PlatformCredential.lifecycle_status.in_(("active", "degraded")),
+                PlatformCredential.next_refresh_due_at.is_not(None),
+                PlatformCredential.next_refresh_due_at <= as_of,
+            )
+            .order_by(PlatformCredential.next_refresh_due_at.asc())
+            .limit(max(1, int(limit)))
+        )
+        result = await session.execute(query)
+        due_rows: list[PlatformCredentialRefreshDue] = []
+        for row in result.mappings().all():
+            due_at = row.get("next_refresh_due_at")
+            if due_at is None:
+                continue
+            due_rows.append(
+                PlatformCredentialRefreshDue(
+                    id=row["id"],
+                    platform_connection_id=row["platform_connection_id"],
+                    platform=row["platform"],
+                    next_refresh_due_at=due_at,
+                    lifecycle_status=row["lifecycle_status"],
+                    refresh_failure_count=int(row["refresh_failure_count"]),
+                    last_failure_class=row.get("last_failure_class"),
+                )
+            )
+        return due_rows
+
+    @staticmethod
+    async def record_refresh_failure(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        credential_id: UUID,
+        failure_class: str,
+        next_refresh_due_at: datetime | None = None,
+        failure_at: datetime | None = None,
+    ) -> dict:
+        failure_at_ts = failure_at or datetime.now(timezone.utc)
+        cleaned_failure_class = failure_class.strip() or "unknown_failure"
+
+        values: dict[str, object] = {
+            "refresh_failure_count": PlatformCredential.refresh_failure_count + 1,
+            "last_failure_class": cleaned_failure_class,
+            "last_failure_at": failure_at_ts,
+            "lifecycle_status": "degraded",
+            "updated_at": func.now(),
+        }
+        if next_refresh_due_at is not None:
+            values["next_refresh_due_at"] = next_refresh_due_at
+
+        result = await session.execute(
+            update(PlatformCredential)
+            .where(
+                PlatformCredential.id == credential_id,
+                PlatformCredential.tenant_id == tenant_id,
+                PlatformCredential.lifecycle_status != "revoked",
+            )
+            .values(values)
+            .returning(
+                PlatformCredential.id,
+                PlatformCredential.lifecycle_status,
+                PlatformCredential.refresh_failure_count,
+                PlatformCredential.last_failure_class,
+                PlatformCredential.last_failure_at,
+                PlatformCredential.next_refresh_due_at,
+                PlatformCredential.updated_at,
+            )
+        )
+        row = result.mappings().first()
+        if not row:
+            raise PlatformCredentialNotFoundError()
+        return dict(row)
+
+    @staticmethod
+    async def mark_refresh_success(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        credential_id: UUID,
+        access_token: str,
+        refresh_token: Optional[str],
+        expires_at: Optional[datetime],
+        scope: Optional[str],
+        token_type: Optional[str],
+        key_id: str,
+        encryption_key: str,
+        refreshed_at: datetime | None = None,
+        next_refresh_due_at: datetime | None = None,
+    ) -> dict:
+        refreshed_at_ts = refreshed_at or datetime.now(timezone.utc)
+        due_at = next_refresh_due_at if next_refresh_due_at is not None else expires_at
+
+        encrypted_access = func.pgp_sym_encrypt(access_token, encryption_key)
+        encrypted_refresh = (
+            func.pgp_sym_encrypt(refresh_token, encryption_key)
+            if refresh_token
+            else None
+        )
+
+        result = await session.execute(
+            update(PlatformCredential)
+            .where(
+                PlatformCredential.id == credential_id,
+                PlatformCredential.tenant_id == tenant_id,
+            )
+            .values(
+                encrypted_access_token=encrypted_access,
+                encrypted_refresh_token=encrypted_refresh,
+                expires_at=expires_at,
+                next_refresh_due_at=due_at,
+                scope=scope,
+                token_type=token_type,
+                lifecycle_status="active",
+                refresh_failure_count=0,
+                last_failure_class=None,
+                last_failure_at=None,
+                last_refresh_at=refreshed_at_ts,
+                revoked_at=None,
+                key_id=key_id,
+                updated_at=func.now(),
+            )
+            .returning(
+                PlatformCredential.id,
+                PlatformCredential.lifecycle_status,
+                PlatformCredential.expires_at,
+                PlatformCredential.next_refresh_due_at,
+                PlatformCredential.last_refresh_at,
+                PlatformCredential.refresh_failure_count,
+                PlatformCredential.updated_at,
+            )
+        )
+        row = result.mappings().first()
+        if not row:
+            raise PlatformCredentialNotFoundError()
+        return dict(row)
+
+    @staticmethod
+    async def mark_revoked(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        credential_id: UUID,
+        revoked_at: datetime | None = None,
+    ) -> dict:
+        revoked_at_ts = revoked_at or datetime.now(timezone.utc)
+        result = await session.execute(
+            update(PlatformCredential)
+            .where(
+                PlatformCredential.id == credential_id,
+                PlatformCredential.tenant_id == tenant_id,
+            )
+            .values(
+                lifecycle_status="revoked",
+                revoked_at=revoked_at_ts,
+                next_refresh_due_at=None,
+                updated_at=func.now(),
+            )
+            .returning(
+                PlatformCredential.id,
+                PlatformCredential.lifecycle_status,
+                PlatformCredential.revoked_at,
+                PlatformCredential.next_refresh_due_at,
+                PlatformCredential.updated_at,
+            )
+        )
+        row = result.mappings().first()
+        if not row:
+            raise PlatformCredentialNotFoundError()
         return dict(row)
 
     @staticmethod
@@ -117,6 +333,8 @@ class PlatformCredentialStore:
                 PlatformCredential.tenant_id == tenant_id,
                 PlatformCredential.platform == platform,
                 PlatformConnection.platform_account_id == platform_account_id,
+                PlatformCredential.lifecycle_status.in_(("active", "degraded")),
+                PlatformCredential.revoked_at.is_(None),
             )
             .order_by(PlatformCredential.updated_at.desc())
             .limit(1)
@@ -152,9 +370,16 @@ class PlatformCredentials:
     access_token: str
     refresh_token: str | None
     expires_at: datetime | None
+    next_refresh_due_at: datetime | None
     scope: str | None
     token_type: str | None
     key_id: str
+    lifecycle_status: str
+    refresh_failure_count: int
+    last_failure_class: str | None
+    last_failure_at: datetime | None
+    last_refresh_at: datetime | None
+    revoked_at: datetime | None
 
 
 class PlatformCredentialService:
@@ -169,9 +394,16 @@ class PlatformCredentialService:
         query = (
             select(
                 PlatformCredential.expires_at,
+                PlatformCredential.next_refresh_due_at,
                 PlatformCredential.scope,
                 PlatformCredential.token_type,
                 PlatformCredential.key_id,
+                PlatformCredential.lifecycle_status,
+                PlatformCredential.refresh_failure_count,
+                PlatformCredential.last_failure_class,
+                PlatformCredential.last_failure_at,
+                PlatformCredential.last_refresh_at,
+                PlatformCredential.revoked_at,
                 PlatformCredential.encrypted_access_token,
                 PlatformCredential.encrypted_refresh_token,
             )
@@ -182,6 +414,8 @@ class PlatformCredentialService:
             .where(
                 PlatformCredential.tenant_id == tenant_id,
                 PlatformConnection.id == connection_id,
+                PlatformCredential.lifecycle_status.in_(("active", "degraded")),
+                PlatformCredential.revoked_at.is_(None),
             )
             .order_by(PlatformCredential.updated_at.desc())
             .limit(1)
@@ -217,9 +451,16 @@ class PlatformCredentialService:
             access_token=str(access_token),
             refresh_token=str(refresh_token) if refresh_token is not None else None,
             expires_at=expires_at,
+            next_refresh_due_at=row.get("next_refresh_due_at"),
             scope=row.get("scope"),
             token_type=row.get("token_type"),
             key_id=key_id,
+            lifecycle_status=row.get("lifecycle_status") or "active",
+            refresh_failure_count=int(row.get("refresh_failure_count") or 0),
+            last_failure_class=row.get("last_failure_class"),
+            last_failure_at=row.get("last_failure_at"),
+            last_refresh_at=row.get("last_refresh_at"),
+            revoked_at=row.get("revoked_at"),
         )
 
 
