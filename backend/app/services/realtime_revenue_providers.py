@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, Protocol
+from typing import Generic, Iterable, Protocol, TypeVar
 from uuid import UUID
 
 import asyncio
@@ -150,17 +150,24 @@ class RevenueProvider(Protocol):
         raise NotImplementedError
 
 
-class ProviderRegistry:
-    def __init__(self, providers: Iterable[RevenueProvider] | None = None) -> None:
-        self._providers: dict[str, RevenueProvider] = {}
+class ProviderKeyed(Protocol):
+    provider_key: str
+
+
+ProviderT = TypeVar("ProviderT", bound=ProviderKeyed)
+
+
+class ProviderRegistry(Generic[ProviderT]):
+    def __init__(self, providers: Iterable[ProviderT] | None = None) -> None:
+        self._providers: dict[str, ProviderT] = {}
         if providers:
             for provider in providers:
                 self.register(provider)
 
-    def register(self, provider: RevenueProvider) -> None:
+    def register(self, provider: ProviderT) -> None:
         self._providers[provider.provider_key] = provider
 
-    def get(self, provider_key: str) -> RevenueProvider:
+    def get(self, provider_key: str) -> ProviderT:
         provider = self._providers.get(provider_key)
         if not provider:
             raise KeyError(f"Provider '{provider_key}' not registered")
