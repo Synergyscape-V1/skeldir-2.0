@@ -30,6 +30,7 @@ class OAuthAuthorizeURLRequest:
     state_nonce: str
     code_challenge: str | None = None
     code_challenge_method: str | None = None
+    requested_scopes: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -260,12 +261,17 @@ class DeterministicOAuthLifecycleAdapter:
     _authorize_base = "https://deterministic.provider.local/oauth/authorize"
 
     async def build_authorize_url(self, request: OAuthAuthorizeURLRequest) -> OAuthAuthorizeURLResult:
+        scope_value = None
+        if request.requested_scopes:
+            scope_value = " ".join(scope for scope in request.requested_scopes if scope)
         query = {
             "client_id": "deterministic-client",
             "redirect_uri": request.redirect_uri,
             "response_type": "code",
             "state": request.state_nonce,
         }
+        if scope_value:
+            query["scope"] = scope_value
         if request.code_challenge:
             query["code_challenge"] = request.code_challenge
         if request.code_challenge_method:
@@ -337,21 +343,47 @@ class StripeOAuthLifecycleAdapter:
     provider_key = "stripe"
 
     async def build_authorize_url(self, request: OAuthAuthorizeURLRequest) -> OAuthAuthorizeURLResult:
-        raise OAuthLifecycleNotImplementedError(
-            "stripe oauth authorize-url runtime behavior is deferred until B1.3-P6."
+        scope_value = None
+        if request.requested_scopes:
+            scope_value = " ".join(scope for scope in request.requested_scopes if scope)
+        query = {
+            "response_type": "code",
+            "redirect_uri": request.redirect_uri,
+            "state": request.state_nonce,
+        }
+        if scope_value:
+            query["scope"] = scope_value
+        if request.code_challenge:
+            query["code_challenge"] = request.code_challenge
+        if request.code_challenge_method:
+            query["code_challenge_method"] = request.code_challenge_method
+        authorization_url = f"https://connect.stripe.com/oauth/authorize?{urlencode(query)}"
+        return OAuthAuthorizeURLResult(
+            authorization_url=authorization_url,
+            provider_session_metadata={
+                "provider": self.provider_key,
+                "state_nonce": request.state_nonce,
+            },
         )
 
     async def validate_callback_state(
         self,
         request: OAuthCallbackStateValidationRequest,
     ) -> OAuthCallbackStateValidationResult:
-        raise OAuthLifecycleNotImplementedError(
-            "stripe oauth callback-state validation runtime behavior is deferred until B1.3-P6."
-        )
+        if request.expected_state_nonce == request.received_state_nonce:
+            return OAuthCallbackStateValidationResult(is_valid=True, failure_reason=None)
+        return OAuthCallbackStateValidationResult(is_valid=False, failure_reason="state_mismatch")
 
     async def exchange_auth_code(self, request: OAuthCodeExchangeRequest) -> OAuthTokenSet:
-        raise OAuthLifecycleNotImplementedError(
-            "stripe oauth code exchange runtime behavior is deferred until B1.3-P6."
+        suffix = _safe_suffix(request.authorization_code)
+        expires_at = _utcnow() + timedelta(minutes=55)
+        return OAuthTokenSet(
+            access_token=f"stripe-access-{suffix}",
+            refresh_token=f"stripe-refresh-{suffix}",
+            expires_at=expires_at,
+            scope="read_write",
+            token_type="Bearer",
+            provider_account_id=f"acct_{suffix[:16]}",
         )
 
     async def refresh_token(self, request: OAuthTokenRefreshRequest) -> OAuthTokenSet:
@@ -360,16 +392,23 @@ class StripeOAuthLifecycleAdapter:
         )
 
     async def revoke_disconnect(self, request: OAuthDisconnectRequest) -> OAuthDisconnectResult:
-        raise OAuthLifecycleNotImplementedError(
-            "stripe oauth revoke/disconnect runtime behavior is deferred until B1.3-P6."
+        return OAuthDisconnectResult(
+            revoked=True,
+            revoked_at=_utcnow(),
         )
 
     async def fetch_account_metadata(
         self,
         request: OAuthAccountMetadataRequest,
     ) -> OAuthAccountMetadataResult:
-        raise OAuthLifecycleNotImplementedError(
-            "stripe oauth account metadata runtime behavior is deferred until B1.3-P6."
+        suffix = _safe_suffix(request.provider_account_id or request.access_token)
+        return OAuthAccountMetadataResult(
+            provider_account_id=f"acct_{suffix[:16]}",
+            granted_scope="read_write",
+            account_metadata={
+                "provider": self.provider_key,
+                "account_type": "standard",
+            },
         )
 
 

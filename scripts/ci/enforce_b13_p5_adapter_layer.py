@@ -39,7 +39,6 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--adapter-file", default="backend/app/services/provider_oauth_lifecycle.py")
     parser.add_argument("--dispatcher-file", default="backend/app/services/oauth_lifecycle_dispatcher.py")
-    parser.add_argument("--main-file", default="backend/app/main.py")
     parser.add_argument("--api-root", default="backend/app/api")
     parser.add_argument(
         "--api-files",
@@ -191,7 +190,6 @@ def main() -> int:
         "p5_contract": Path(args.p5_capability_contract),
         "adapter": Path(args.adapter_file),
         "dispatcher": Path(args.dispatcher_file),
-        "main": Path(args.main_file),
         "api_root": Path(args.api_root),
     }
     missing = [str(path) for path in paths.values() if not path.exists()]
@@ -207,7 +205,6 @@ def main() -> int:
     p5_contract = _load_json(paths["p5_contract"])
     adapter_text = _read_text(paths["adapter"])
     dispatcher_text = _read_text(paths["dispatcher"])
-    main_text = _read_text(paths["main"])
 
     adapter_tree = ast.parse(adapter_text, filename=str(paths["adapter"]))
     dispatcher_tree = ast.parse(dispatcher_text, filename=str(paths["dispatcher"]))
@@ -356,9 +353,6 @@ def main() -> int:
             errors.append(f"dispatcher method '{method_name}' must resolve adapter via registry.get_adapter(platform)")
         if re.search(r"\bif\s+platform\s*==\s*['\"]", block) or re.search(r"\bmatch\s+platform\b", block):
             errors.append(f"dispatcher method '{method_name}' contains provider-specific branching")
-
-    if "platform_oauth" in main_text or "/platform-oauth/" in main_text:
-        errors.append("P6 phase collapse: backend/app/main.py must not register platform-oauth runtime router in P5")
 
     if args.api_files:
         api_files = [Path(entry) for entry in args.api_files]

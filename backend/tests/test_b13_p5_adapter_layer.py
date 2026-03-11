@@ -15,7 +15,6 @@ from app.services.provider_oauth_lifecycle import (
     OAuthCallbackStateValidationRequest,
     OAuthCodeExchangeRequest,
     OAuthDisconnectRequest,
-    OAuthLifecycleNotImplementedError,
     OAuthTokenRefreshRequest,
 )
 
@@ -277,16 +276,16 @@ async def test_b13_p5_dispatcher_rejects_unknown_provider() -> None:
 
 
 @pytest.mark.asyncio
-async def test_b13_p5_stripe_adapter_is_scaffold_only_in_p5() -> None:
+async def test_b13_p5_stripe_adapter_is_dispatchable_without_route_local_branching() -> None:
     dispatcher = ProviderOAuthLifecycleDispatcher()
-    with pytest.raises(OAuthLifecycleNotImplementedError):
-        await dispatcher.build_authorize_url(
-            platform="stripe",
-            request=OAuthAuthorizeURLRequest(
-                tenant_id=uuid4(),
-                user_id=uuid4(),
-                correlation_id=uuid4(),
-                redirect_uri="https://app.example/callback",
-                state_nonce="state",
-            ),
-        )
+    result = await dispatcher.build_authorize_url(
+        platform="stripe",
+        request=OAuthAuthorizeURLRequest(
+            tenant_id=uuid4(),
+            user_id=uuid4(),
+            correlation_id=uuid4(),
+            redirect_uri="https://app.example/callback",
+            state_nonce="state",
+        ),
+    )
+    assert "connect.stripe.com/oauth/authorize" in result.authorization_url
