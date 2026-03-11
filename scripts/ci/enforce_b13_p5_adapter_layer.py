@@ -16,6 +16,7 @@ REQUIRED_METHODS = (
     "revoke_disconnect",
     "fetch_account_metadata",
 )
+FORBIDDEN_HTTP_MODULES = ("httpx", "requests", "aiohttp", "urllib3")
 PROVIDER_LITERAL_PATTERN = re.compile(
     r"['\"](stripe|dummy|shopify|paypal|woocommerce|google_ads|meta_ads|tiktok_ads|linkedin_ads)['\"]"
 )
@@ -140,6 +141,17 @@ def _scan_provider_branching(path: Path, errors: list[str]) -> None:
             errors.append(f"provider-specific match-case branch in API file: {path}:{lineno}")
 
 
+def _imported_modules(tree: ast.AST) -> set[str]:
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                modules.add(alias.name.split(".", 1)[0])
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module.split(".", 1)[0])
+    return modules
+
+
 def _check_required_context(workflow_text: str, required_checks: dict, errors: list[str]) -> None:
     if REQUIRED_CONTEXT not in workflow_text:
         errors.append(f"workflow missing required context name: {REQUIRED_CONTEXT}")
@@ -216,6 +228,16 @@ def main() -> int:
         errors.append("missing DeterministicOAuthLifecycleAdapter class")
     if not _class_exists(adapter_tree, "StripeOAuthLifecycleAdapter"):
         errors.append("missing StripeOAuthLifecycleAdapter class")
+
+    imported_modules = _imported_modules(adapter_tree)
+    forbidden_imports = sorted(
+        module for module in imported_modules if module in FORBIDDEN_HTTP_MODULES
+    )
+    if forbidden_imports:
+        errors.append(
+            "P5 adapter outbound HTTP firewall violated: forbidden HTTP client imports "
+            f"in adapter file {paths['adapter']}: {forbidden_imports}"
+        )
 
     declarations = _extract_literal_assignment(adapter_tree, "OAUTH_LIFECYCLE_CAPABILITY_DECLARATIONS")
     if not isinstance(declarations, dict):
@@ -359,6 +381,7 @@ def main() -> int:
     print(f"  adapter_interface_methods={list(REQUIRED_METHODS)}")
     print(f"  providers={sorted(declaration_map)}")
     print(f"  deterministic_reference={deterministic_providers[0] if deterministic_providers else 'missing'}")
+    print("  outbound_http=forbidden_in_p5_adapter")
     print("  dispatch=registry-backed and provider-branch free")
     return 0
 

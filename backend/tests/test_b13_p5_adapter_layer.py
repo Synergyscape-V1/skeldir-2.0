@@ -161,6 +161,24 @@ def test_b13_p5_negative_control_detects_route_local_provider_branching(tmp_path
     assert "provider-specific platform branch in API file" in f"{result.stdout}\n{result.stderr}"
 
 
+def test_b13_p5_negative_control_detects_outbound_http_import_in_adapter(tmp_path: Path) -> None:
+    adapter_file = REPO_ROOT / "backend/app/services/provider_oauth_lifecycle.py"
+    mutated = "import httpx\n" + adapter_file.read_text(encoding="utf-8")
+    mutated_path = tmp_path / "provider_oauth_lifecycle.py"
+    mutated_path.write_text(mutated, encoding="utf-8")
+
+    result = _run(
+        [
+            sys.executable,
+            str(GATE_SCRIPT),
+            "--adapter-file",
+            str(mutated_path),
+        ]
+    )
+    assert result.returncode != 0
+    assert "outbound HTTP firewall violated" in f"{result.stdout}\n{result.stderr}"
+
+
 @pytest.mark.asyncio
 async def test_b13_p5_dispatcher_executes_full_deterministic_lifecycle() -> None:
     dispatcher = ProviderOAuthLifecycleDispatcher()
