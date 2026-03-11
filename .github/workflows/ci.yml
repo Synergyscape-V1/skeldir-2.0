@@ -310,6 +310,38 @@ jobs:
       - name: Run B1.3-P4 boundary hardening proofs
         run: |
           pytest backend/tests/test_b13_p4_boundary_hardening.py -q
+
+  b13-p5-adapter-layer-proofs:
+    name: B1.3 P5 Adapter Layer Proofs
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install P5 proof dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Enforce B1.3-P5 adapter-layer structure
+        run: |
+          python scripts/ci/enforce_b13_p5_adapter_layer.py
+
+      - name: Run B1.3-P5 adapter-layer proofs
+        run: |
+          pytest backend/tests/test_b13_p5_adapter_layer.py -q
   # Contract validation
 
   validate-contracts:

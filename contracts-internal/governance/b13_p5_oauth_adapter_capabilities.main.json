@@ -1,0 +1,38 @@
+{
+  "contract_id": "b13.p5.oauth_adapter_capabilities.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "canonical_lifecycle_methods": [
+    "build_authorize_url",
+    "validate_callback_state",
+    "exchange_auth_code",
+    "refresh_token",
+    "revoke_disconnect",
+    "fetch_account_metadata"
+  ],
+  "adapter_capabilities": [
+    {
+      "provider": "dummy",
+      "mode": "internal_runtime_only",
+      "adapter_kind": "deterministic_reference",
+      "supports_authorize_url": true,
+      "supports_callback_state_validation": true,
+      "supports_code_exchange": true,
+      "supports_token_refresh": true,
+      "supports_revoke_disconnect": true,
+      "supports_account_metadata": true
+    },
+    {
+      "provider": "stripe",
+      "mode": "runtime_backed",
+      "adapter_kind": "runtime_scaffold",
+      "supports_authorize_url": true,
+      "supports_callback_state_validation": true,
+      "supports_code_exchange": true,
+      "supports_token_refresh": true,
+      "supports_revoke_disconnect": true,
+      "supports_account_metadata": true
+    }
+  ]
+}
