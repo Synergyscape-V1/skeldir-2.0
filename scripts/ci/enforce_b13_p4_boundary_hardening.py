@@ -294,7 +294,7 @@ def main() -> int:
     print("  rbac=mutation(manager)|read(viewer)")
     print("  secret_path=core.secrets exclusive for lifecycle key resolution")
     print("  non_leak=logging|problem_details|task_enqueue structural guards active")
-    print("  phase_collapse_guard=P6 runtime handlers remain absent")
+    print("  phase_collapse_guard=legacy platforms api remains free of route-local OAuth lifecycle handlers")
     return 0
 
 

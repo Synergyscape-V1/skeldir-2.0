@@ -82,6 +82,18 @@ class OAuthHandshakeConsumeResult:
     provider_session_metadata: dict | None
 
 
+@dataclass(frozen=True)
+class OAuthPendingHandshakeSnapshot:
+    id: UUID
+    tenant_id: UUID
+    user_id: UUID
+    platform: str
+    expires_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    provider_session_metadata: dict | None
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -417,3 +429,49 @@ class OAuthHandshakeStateService:
             {"now_ts": now_ts, "batch_size": max(1, int(batch_size))},
         )
         return len(result.fetchall())
+
+    @staticmethod
+    async def latest_pending_session(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+        platform: str,
+        now: datetime | None = None,
+    ) -> OAuthPendingHandshakeSnapshot | None:
+        now_ts = now or _utc_now()
+        query = (
+            select(
+                OAuthHandshakeSession.id,
+                OAuthHandshakeSession.tenant_id,
+                OAuthHandshakeSession.user_id,
+                OAuthHandshakeSession.platform,
+                OAuthHandshakeSession.expires_at,
+                OAuthHandshakeSession.created_at,
+                OAuthHandshakeSession.updated_at,
+                OAuthHandshakeSession.provider_session_metadata,
+            )
+            .where(
+                OAuthHandshakeSession.tenant_id == tenant_id,
+                OAuthHandshakeSession.user_id == user_id,
+                OAuthHandshakeSession.platform == platform,
+                OAuthHandshakeSession.status == "pending",
+                OAuthHandshakeSession.consumed_at.is_(None),
+                OAuthHandshakeSession.expires_at > now_ts,
+            )
+            .order_by(OAuthHandshakeSession.created_at.desc())
+            .limit(1)
+        )
+        row = (await session.execute(query)).mappings().first()
+        if not row:
+            return None
+        return OAuthPendingHandshakeSnapshot(
+            id=row["id"],
+            tenant_id=row["tenant_id"],
+            user_id=row["user_id"],
+            platform=row["platform"],
+            expires_at=row["expires_at"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            provider_session_metadata=row.get("provider_session_metadata"),
+        )

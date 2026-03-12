@@ -162,6 +162,83 @@ class PlatformCredentialStatusResponse(BaseModel):
     updated_at: datetime
 
 
+class ProviderOAuthLifecycleState(Enum):
+    not_connected = 'not_connected'
+    authorization_pending = 'authorization_pending'
+    connected = 'connected'
+    expired = 'expired'
+    revoked = 'revoked'
+    reconnect_required = 'reconnect_required'
+
+
+class ProviderRefreshResultState(Enum):
+    not_attempted = 'not_attempted'
+    fresh = 'fresh'
+    due = 'due'
+    in_progress = 'in_progress'
+    succeeded = 'succeeded'
+    failed = 'failed'
+
+
+class ProviderOAuthAuthorizeRequest(BaseModel):
+    platform_account_id: str
+    redirect_uri: str
+    requested_scopes: Optional[list[str]] = None
+
+
+class ProviderOAuthAuthorizeResponse(BaseModel):
+    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    platform: Platform
+    lifecycle_state: ProviderOAuthLifecycleState
+    authorization_url: str
+    state_reference: str
+    state_expires_at: datetime
+    data_freshness_seconds: Annotated[int, Field(ge=0)]
+    last_updated: datetime
+
+
+class ProviderOAuthCallbackResponse(BaseModel):
+    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    platform: Platform
+    platform_account_id: str
+    lifecycle_state: ProviderOAuthLifecycleState
+    refresh_state: ProviderRefreshResultState
+    data_freshness_seconds: Annotated[int, Field(ge=0)]
+    last_updated: datetime
+
+
+class ProviderOAuthStatusResponse(BaseModel):
+    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    platform: Platform
+    platform_account_id: str
+    lifecycle_state: ProviderOAuthLifecycleState
+    refresh_state: ProviderRefreshResultState
+    expires_at: Optional[datetime] = None
+    scope: Optional[str] = None
+    data_freshness_seconds: Annotated[int, Field(ge=0)]
+    last_updated: datetime
+
+
+class ProviderOAuthDisconnectReason(Enum):
+    user_initiated = 'user_initiated'
+    provider_revoked = 'provider_revoked'
+    security_event = 'security_event'
+    tenant_offboarding = 'tenant_offboarding'
+
+
+class ProviderOAuthDisconnectRequest(BaseModel):
+    reason: ProviderOAuthDisconnectReason
+
+
+class ProviderOAuthDisconnectResponse(BaseModel):
+    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    platform: Platform
+    lifecycle_state: ProviderOAuthLifecycleState
+    disconnected_at: datetime
+    data_freshness_seconds: Annotated[int, Field(ge=0)]
+    last_updated: datetime
+
+
 # Alias for CI compatibility (must be a class definition to match workflow grep pattern)
 class RealtimeRevenueResponse(RealtimeRevenueCounter):
     """Alias for RealtimeRevenueCounter to match CI expectations."""

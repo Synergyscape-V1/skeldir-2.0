@@ -39,6 +39,22 @@ class PlatformCredentialRefreshDue:
     last_failure_class: str | None
 
 
+@dataclass(frozen=True)
+class PlatformCredentialLifecycleSnapshot:
+    id: UUID
+    platform_connection_id: UUID
+    platform: str
+    lifecycle_status: str
+    expires_at: datetime | None
+    next_refresh_due_at: datetime | None
+    scope: str | None
+    last_failure_class: str | None
+    last_failure_at: datetime | None
+    last_refresh_at: datetime | None
+    revoked_at: datetime | None
+    updated_at: datetime
+
+
 class PlatformCredentialStore:
     @staticmethod
     async def upsert_tokens(
@@ -364,9 +380,57 @@ class PlatformCredentialStore:
             "updated_at": row["updated_at"],
         }
 
+    @staticmethod
+    async def get_latest_lifecycle_snapshot_for_connection(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        connection_id: UUID,
+    ) -> PlatformCredentialLifecycleSnapshot | None:
+        query = (
+            select(
+                PlatformCredential.id,
+                PlatformCredential.platform_connection_id,
+                PlatformCredential.platform,
+                PlatformCredential.lifecycle_status,
+                PlatformCredential.expires_at,
+                PlatformCredential.next_refresh_due_at,
+                PlatformCredential.scope,
+                PlatformCredential.last_failure_class,
+                PlatformCredential.last_failure_at,
+                PlatformCredential.last_refresh_at,
+                PlatformCredential.revoked_at,
+                PlatformCredential.updated_at,
+            )
+            .where(
+                PlatformCredential.tenant_id == tenant_id,
+                PlatformCredential.platform_connection_id == connection_id,
+            )
+            .order_by(PlatformCredential.updated_at.desc())
+            .limit(1)
+        )
+        row = (await session.execute(query)).mappings().first()
+        if not row:
+            return None
+        return PlatformCredentialLifecycleSnapshot(
+            id=row["id"],
+            platform_connection_id=row["platform_connection_id"],
+            platform=row["platform"],
+            lifecycle_status=row["lifecycle_status"],
+            expires_at=row.get("expires_at"),
+            next_refresh_due_at=row.get("next_refresh_due_at"),
+            scope=row.get("scope"),
+            last_failure_class=row.get("last_failure_class"),
+            last_failure_at=row.get("last_failure_at"),
+            last_refresh_at=row.get("last_refresh_at"),
+            revoked_at=row.get("revoked_at"),
+            updated_at=row["updated_at"],
+        )
+
 
 @dataclass(frozen=True)
 class PlatformCredentials:
+    id: UUID
     access_token: str
     refresh_token: str | None
     expires_at: datetime | None
@@ -390,9 +454,11 @@ class PlatformCredentialService:
         tenant_id: UUID,
         connection_id: UUID,
         encryption_key: Optional[str] = None,
+        allow_expired: bool = False,
     ) -> PlatformCredentials:
         query = (
             select(
+                PlatformCredential.id,
                 PlatformCredential.expires_at,
                 PlatformCredential.next_refresh_due_at,
                 PlatformCredential.scope,
@@ -426,7 +492,7 @@ class PlatformCredentialService:
             raise PlatformCredentialNotFoundError()
 
         expires_at = row.get("expires_at")
-        if expires_at and expires_at <= datetime.now(timezone.utc):
+        if not allow_expired and expires_at and expires_at <= datetime.now(timezone.utc):
             raise PlatformCredentialExpiredError()
 
         key_id = str(row.get("key_id"))
@@ -448,6 +514,7 @@ class PlatformCredentialService:
             raise PlatformCredentialNotFoundError()
 
         return PlatformCredentials(
+            id=row["id"],
             access_token=str(access_token),
             refresh_token=str(refresh_token) if refresh_token is not None else None,
             expires_at=expires_at,

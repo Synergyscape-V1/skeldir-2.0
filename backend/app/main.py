@@ -32,7 +32,17 @@ from app.observability.context import get_request_correlation_id
 configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 
 # Import routers
-from app.api import auth, attribution, export, health, reconciliation, revenue, webhooks, platforms
+from app.api import (
+    auth,
+    attribution,
+    export,
+    health,
+    platform_oauth,
+    platforms,
+    reconciliation,
+    revenue,
+    webhooks,
+)
 from app.api.problem_details import problem_details_response
 
 # Import middleware - Phase G: Active Privacy Defense
@@ -71,6 +81,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(attribution.router, prefix="/api/attribution", tags=["Attribution"])
 app.include_router(platforms.router, prefix="/api/attribution", tags=["Platform Connections"])
+app.include_router(platform_oauth.router, prefix="/api/attribution", tags=["Provider OAuth Lifecycle"])
 app.include_router(revenue.router, prefix="/api/v1", tags=["Revenue"])
 app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["Reconciliation"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])

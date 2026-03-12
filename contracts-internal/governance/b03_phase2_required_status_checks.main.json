@@ -30,6 +30,7 @@
     "B1.3 P2 Handshake State Proofs",
     "B1.3 P3 Durable Lifecycle Schema Proofs",
     "B1.3 P4 Boundary Hardening Proofs",
-    "B1.3 P5 Adapter Layer Proofs"
+    "B1.3 P5 Adapter Layer Proofs",
+    "B1.3 P6 Runtime Lifecycle Proofs"
   ]
 }
