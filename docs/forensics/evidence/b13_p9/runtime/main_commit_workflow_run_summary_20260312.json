@@ -1,0 +1,211 @@
+{
+    "generated_at_utc":  "2026-03-12T21:59:33.8243425Z",
+    "commit_sha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+    "workflow_run_count":  20,
+    "all_runs_completed_success":  true,
+    "non_success_runs":  [
+
+                         ],
+    "workflow_runs":  [
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369488,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369488",
+                              "workflowName":  "b11-p5-webhook-secret-redesign-adjudication"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369503,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369503",
+                              "workflowName":  "b11-p3-crypto-rotation-adjudication"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369459,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369459",
+                              "workflowName":  "B0.5.4.2 Refresh Executor Gates"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369449,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369449",
+                              "workflowName":  "b11-p2-secret-readiness-adjudication"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369470,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369470",
+                              "workflowName":  "CI: Workflow YAML Lint"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369469,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369469",
+                              "workflowName":  "b057-p3-webhook-ingestion-least-privilege"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369437,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369437",
+                              "workflowName":  "b057-p5-full-chain"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369476,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369476",
+                              "workflowName":  "b11-p4-db-provider-ci-audit-adjudication"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369441,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369441",
+                              "workflowName":  "b11-p1-control-plane-adjudication"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369485,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369485",
+                              "workflowName":  "B0.5.4.3 Matview Task Layer Gates"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369496,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369496",
+                              "workflowName":  "b057-p4-llm-audit-persistence"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369471,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369471",
+                              "workflowName":  "B0.5.4.1 View Registry Gates"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369494,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369494",
+                              "workflowName":  "B0.6 Phase 2 Adjudication"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369463,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369463",
+                              "workflowName":  "B0.6 Phase 0 Adjudication"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369538,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369538",
+                              "workflowName":  "b07-p4-e2e-operational-readiness"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369479,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369479",
+                              "workflowName":  "R1: Contract/Runtime Viability"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369466,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369466",
+                              "workflowName":  "b11-p6-end-to-end-closure-pack"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369536,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369536",
+                              "workflowName":  "Empirical Validation - Directive Compliance"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369452,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369452",
+                              "workflowName":  "b07-phase8-closure-pack"
+                          },
+                          {
+                              "conclusion":  "success",
+                              "createdAt":  "2026-03-12T21:44:21Z",
+                              "databaseId":  23025369493,
+                              "displayTitle":  "Merge pull request #197 from Synergyscape-V1/b13-p9-core-substrate-cl…",
+                              "headSha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+                              "status":  "completed",
+                              "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493",
+                              "workflowName":  "CI"
+                          }
+                      ]
+}

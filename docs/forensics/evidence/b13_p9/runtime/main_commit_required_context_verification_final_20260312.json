@@ -1,0 +1,279 @@
+{
+    "generated_at_utc":  "2026-03-12T21:58:42.6228915Z",
+    "commit_sha":  "fc2b52a6f210401f1abc4af589739669afdc7068",
+    "ci_run_id":  23025369493,
+    "ci_run_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493",
+    "required_context_count":  29,
+    "has_p9_required_context":  true,
+    "p9_context_success":  true,
+    "missing_required_context_results":  [
+                                             "Phase 8 Regression Gate (Full Physics)"
+                                         ],
+    "failing_required_context_results":  [
+
+                                         ],
+    "all_required_contexts_successful":  false,
+    "required_context_results":  [
+                                     {
+                                         "context":  "B0.7 P2 Runtime Proof (LLM + Redaction)",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66871857851"
+                                     },
+                                     {
+                                         "context":  "Celery Foundation B0.5.1",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66871857985"
+                                     },
+                                     {
+                                         "context":  "Validate Contracts",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66871857838"
+                                     },
+                                     {
+                                         "context":  "Frontend Contract Consumption Gate",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057030"
+                                     },
+                                     {
+                                         "context":  "Mock Usability Gate",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057027"
+                                     },
+                                     {
+                                         "context":  "Phase 1 Negative Controls",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057079"
+                                     },
+                                     {
+                                         "context":  "Phase 1 Runtime Conformance",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057064"
+                                     },
+                                     {
+                                         "context":  "B0.6 Phase 2 Adjudication",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369494/job/66871820068"
+                                     },
+                                     {
+                                         "context":  "Phase Gates (B0.3)",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66871885708"
+                                     },
+                                     {
+                                         "context":  "Phase 8 Regression Gate (Full Physics)",
+                                         "present":  false,
+                                         "success":  false,
+                                         "latest_source":  null,
+                                         "latest_status":  null,
+                                         "latest_conclusion":  null,
+                                         "latest_details_url":  null
+                                     },
+                                     {
+                                         "context":  "b11-p2-secret-chokepoint-gate",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369449/job/66871820059"
+                                     },
+                                     {
+                                         "context":  "b11-p2-readiness-gate",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369449/job/66871820016"
+                                     },
+                                     {
+                                         "context":  "b11-p4-static-and-runtime-gate",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369476/job/66871820063"
+                                     },
+                                     {
+                                         "context":  "b11-p4-ci-audit-gate",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369476/job/66871820106"
+                                     },
+                                     {
+                                         "context":  "JWT Tenant Context Invariants",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057094"
+                                     },
+                                     {
+                                         "context":  "B1.2 P6 RBAC Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872056988"
+                                     },
+                                     {
+                                         "context":  "B1.2 P7 Worker Coherence Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057019"
+                                     },
+                                     {
+                                         "context":  "B1.2 P8 Error Contract Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057009"
+                                     },
+                                     {
+                                         "context":  "B1.2 P9 E2E System Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057018"
+                                     },
+                                     {
+                                         "context":  "B1.3 P0 Governance \u0026 Scope Lock",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872056946"
+                                     },
+                                     {
+                                         "context":  "B1.3 P1 Contract Authority Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872056885"
+                                     },
+                                     {
+                                         "context":  "B1.3 P2 Handshake State Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872056915"
+                                     },
+                                     {
+                                         "context":  "B1.3 P3 Durable Lifecycle Schema Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872056934"
+                                     },
+                                     {
+                                         "context":  "B1.3 P4 Boundary Hardening Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872056867"
+                                     },
+                                     {
+                                         "context":  "B1.3 P5 Adapter Layer Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872056894"
+                                     },
+                                     {
+                                         "context":  "B1.3 P6 Runtime Lifecycle Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057058"
+                                     },
+                                     {
+                                         "context":  "B1.3 P7 Refresh Orchestration Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057088"
+                                     },
+                                     {
+                                         "context":  "B1.3 P8 Failure \u0026 Baseline Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057076"
+                                     },
+                                     {
+                                         "context":  "B1.3 P9 Core Substrate Closure Proofs",
+                                         "present":  true,
+                                         "success":  true,
+                                         "latest_source":  "check_run",
+                                         "latest_status":  "completed",
+                                         "latest_conclusion":  "success",
+                                         "latest_details_url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23025369493/job/66872057061"
+                                     }
+                                 ]
+}
