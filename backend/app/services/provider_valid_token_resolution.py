@@ -20,7 +20,6 @@ from app.services.platform_credentials import (
     PlatformCredentialStore,
     compute_next_refresh_due_at,
 )
-from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import enqueue_tenant_task_by_name
 
 _REFRESH_TASK_NAME = "app.tasks.maintenance.refresh_provider_oauth_credential"
@@ -87,7 +86,10 @@ class ProviderValidTokenResolver:
                 try:
                     enqueue_tenant_task_by_name(
                         _REFRESH_TASK_NAME,
-                        envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+                        envelope={
+                            "context_type": "system",
+                            "tenant_id": str(tenant_id),
+                        },
                         kwargs={
                             "credential_id": str(credentials.id),
                             "correlation_id": str(correlation_id),
