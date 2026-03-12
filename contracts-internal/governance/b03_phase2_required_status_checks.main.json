@@ -32,6 +32,7 @@
     "B1.3 P4 Boundary Hardening Proofs",
     "B1.3 P5 Adapter Layer Proofs",
     "B1.3 P6 Runtime Lifecycle Proofs",
-    "B1.3 P7 Refresh Orchestration Proofs"
+    "B1.3 P7 Refresh Orchestration Proofs",
+    "B1.3 P8 Failure & Baseline Proofs"
   ]
 }

@@ -24,6 +24,7 @@ from app.schemas.attribution import (
     ProviderOAuthCallbackResponse,
     ProviderOAuthDisconnectRequest,
     ProviderOAuthDisconnectResponse,
+    ProviderOAuthRefreshStateResponse,
     ProviderOAuthStatusResponse,
 )
 from app.security.auth import AuthContext
@@ -267,6 +268,66 @@ async def get_provider_oauth_status(
         refresh_state=result.refresh_state,  # type: ignore[arg-type]
         expires_at=result.expires_at,
         scope=result.scope,
+        data_freshness_seconds=result.data_freshness_seconds,
+        last_updated=result.last_updated,
+    )
+
+
+@router.get(
+    "/platform-oauth/{platform}/refresh-state",
+    response_model=ProviderOAuthRefreshStateResponse,
+    status_code=200,
+    operation_id="getProviderOAuthRefreshState",
+    summary="Read provider OAuth refresh result state",
+)
+async def get_provider_oauth_refresh_state(
+    request: Request,
+    platform: Platform,
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
+    auth_context: Annotated[AuthContext, Depends(require_lifecycle_read_access)],
+):
+    platform_key = platform.value
+    if not _is_supported_platform(platform_key):
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            title="Validation Error",
+            detail=f"Unsupported platform: {platform_key}",
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/validation-error",
+        )
+    try:
+        result = await runtime_service.get_refresh_state(
+            db_session,
+            tenant_id=auth_context.tenant_id,
+            user_id=auth_context.user_id,
+            platform=platform_key,
+        )
+    except ProviderLifecycleProblem as problem:
+        return _provider_problem_response(
+            request,
+            correlation_id=x_correlation_id,
+            problem=problem,
+        )
+
+    logger.info(
+        {
+            "event_type": "provider_oauth_refresh_state",
+            "tenant_id": str(auth_context.tenant_id),
+            "correlation_id": str(x_correlation_id),
+            "platform": platform_key,
+        }
+    )
+    return ProviderOAuthRefreshStateResponse(
+        tenant_id=str(result.tenant_id),
+        platform=platform,
+        lifecycle_state=result.lifecycle_state,  # type: ignore[arg-type]
+        refresh_state=result.refresh_state,  # type: ignore[arg-type]
+        next_refresh_due_at=result.next_refresh_due_at,
+        last_refresh_attempt_at=result.last_refresh_attempt_at,
+        last_refresh_success_at=result.last_refresh_success_at,
+        last_error_code=result.last_error_code,  # type: ignore[arg-type]
         data_freshness_seconds=result.data_freshness_seconds,
         last_updated=result.last_updated,
     )
