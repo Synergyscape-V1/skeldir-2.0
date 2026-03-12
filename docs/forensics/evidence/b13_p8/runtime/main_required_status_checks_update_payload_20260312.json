@@ -1,11 +1,6 @@
 {
-  "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.0.0",
-  "repository": "Synergyscape-V1/skeldir-2.0",
-  "branch": "main",
-  "strict_required": true,
-  "exact_match": true,
-  "required_contexts": [
+  "strict": true,
+  "contexts": [
     "B0.7 P2 Runtime Proof (LLM + Redaction)",
     "Celery Foundation B0.5.1",
     "Validate Contracts",

@@ -46,6 +46,7 @@ from app.services.provider_oauth_lifecycle import (
     OAuthDisconnectRequest,
     OAuthLifecycleAdapterError,
     OAuthLifecycleNotImplementedError,
+    OAuthLifecycleRefreshError,
 )
 
 PROBLEM_TYPE_BASE = "https://api.skeldir.com/problems"
@@ -94,6 +95,20 @@ class ProviderOAuthDisconnectRuntimeResult:
     platform: str
     lifecycle_state: str
     disconnected_at: datetime
+    data_freshness_seconds: int
+    last_updated: datetime
+
+
+@dataclass(frozen=True)
+class ProviderOAuthRefreshStateRuntimeResult:
+    tenant_id: UUID
+    platform: str
+    lifecycle_state: str
+    refresh_state: str
+    next_refresh_due_at: datetime | None
+    last_refresh_attempt_at: datetime | None
+    last_refresh_success_at: datetime | None
+    last_error_code: str | None
     data_freshness_seconds: int
     last_updated: datetime
 
@@ -188,6 +203,34 @@ def provider_transport_failure(
     )
 
 
+def provider_rate_limited(
+    detail: str = "Provider lifecycle operation is rate-limited.",
+    *,
+    retry_after_seconds: int | None = None,
+) -> ProviderLifecycleProblem:
+    return _normalize_provider_error(
+        status_code=429,
+        title="Provider Rate Limited",
+        detail=detail,
+        code="provider_rate_limited",
+        type_suffix="provider-rate-limited",
+        retry_after_seconds=retry_after_seconds,
+    )
+
+
+_REFRESH_FAILURE_TO_EXTERNAL_CODE: dict[str, str] = {
+    "provider_expired": "provider_expired",
+    "provider_revoked": "provider_revoked",
+    "provider_invalid_grant": "provider_revoked",
+    "provider_invalid_client": "provider_revoked",
+    "provider_refresh_token_missing": "provider_revoked",
+    "provider_scope_insufficient": "provider_scope_insufficient",
+    "provider_rate_limited": "provider_rate_limited",
+    "provider_transport_failure": "provider_transport_failure",
+    "provider_refresh_not_implemented": "provider_transport_failure",
+}
+
+
 def _first_nonempty(values: Iterable[object | None]) -> str | None:
     for value in values:
         if value is None:
@@ -225,6 +268,27 @@ def _refresh_state_from_snapshot(
     return "not_attempted"
 
 
+def _refresh_result_state_from_snapshot(
+    *,
+    lifecycle_status: str | None,
+    next_refresh_due_at: datetime | None,
+    last_refresh_at: datetime | None,
+    last_failure_class: str | None,
+    now: datetime,
+) -> str:
+    if lifecycle_status == "revoked":
+        return "failed"
+    if last_failure_class:
+        return "failed"
+    if next_refresh_due_at is not None and _as_utc(next_refresh_due_at) <= now:
+        return "due"
+    if last_refresh_at is not None:
+        return "succeeded"
+    if next_refresh_due_at is not None:
+        return "fresh"
+    return "not_attempted"
+
+
 def _lifecycle_state_from_snapshot(
     *,
     connection_status: str,
@@ -243,6 +307,38 @@ def _lifecycle_state_from_snapshot(
     if credential_lifecycle_status in {"active", "degraded"}:
         return "connected"
     return "reconnect_required"
+
+
+def _external_error_code_for_failure_class(failure_class: str | None) -> str | None:
+    if not failure_class:
+        return None
+    normalized = failure_class.strip().lower()
+    if not normalized:
+        return None
+    return _REFRESH_FAILURE_TO_EXTERNAL_CODE.get(normalized, "provider_transport_failure")
+
+
+def _latest_refresh_attempt_at(*, last_failure_at: datetime | None, last_refresh_at: datetime | None) -> datetime | None:
+    if last_failure_at is None:
+        return last_refresh_at
+    if last_refresh_at is None:
+        return last_failure_at
+    return last_failure_at if _as_utc(last_failure_at) >= _as_utc(last_refresh_at) else last_refresh_at
+
+
+def _provider_problem_from_adapter_error(exc: OAuthLifecycleAdapterError) -> ProviderLifecycleProblem:
+    if isinstance(exc, OAuthLifecycleRefreshError):
+        external_code = _external_error_code_for_failure_class(exc.failure_class)
+        if external_code == "provider_revoked":
+            return provider_revoked()
+        if external_code == "provider_scope_insufficient":
+            return provider_scope_insufficient()
+        if external_code == "provider_rate_limited":
+            return provider_rate_limited(retry_after_seconds=exc.retry_after_seconds)
+        return provider_transport_failure()
+    if isinstance(exc, OAuthLifecycleNotImplementedError):
+        return provider_transport_failure()
+    return provider_transport_failure()
 
 
 def _safe_connection_metadata(
@@ -296,8 +392,8 @@ class ProviderOAuthLifecycleRuntimeService:
             )
         except KeyError as exc:
             raise provider_not_connected() from exc
-        except (OAuthLifecycleNotImplementedError, OAuthLifecycleAdapterError) as exc:
-            raise provider_transport_failure() from exc
+        except OAuthLifecycleAdapterError as exc:
+            raise _provider_problem_from_adapter_error(exc) from exc
 
         provider_metadata = dict(authorize_result.provider_session_metadata or {})
         provider_metadata["platform_account_id"] = platform_account_id
@@ -338,7 +434,12 @@ class ProviderOAuthLifecycleRuntimeService:
         provider_error_code: str | None,
     ) -> ProviderOAuthCallbackRuntimeResult:
         if provider_error_code:
-            raise provider_scope_insufficient(detail="Provider authorization was denied.")
+            lowered = provider_error_code.strip().lower()
+            if "rate" in lowered or "limit" in lowered:
+                raise provider_rate_limited()
+            if lowered in {"access_denied", "insufficient_scope"} or "scope" in lowered:
+                raise provider_scope_insufficient(detail="Provider authorization was denied.")
+            raise provider_revoked(detail="Provider authorization is no longer valid and requires reconnect.")
         if not authorization_code:
             raise ValueError("Provider callback code is required.")
 
@@ -398,8 +499,8 @@ class ProviderOAuthLifecycleRuntimeService:
             raise
         except KeyError as exc:
             raise provider_not_connected() from exc
-        except (OAuthLifecycleNotImplementedError, OAuthLifecycleAdapterError) as exc:
-            raise provider_transport_failure() from exc
+        except OAuthLifecycleAdapterError as exc:
+            raise _provider_problem_from_adapter_error(exc) from exc
 
         provider_metadata = consumed.provider_session_metadata or {}
         platform_account_id = _first_nonempty(
@@ -553,6 +654,110 @@ class ProviderOAuthLifecycleRuntimeService:
             last_updated=snapshot.updated_at,
         )
 
+    async def get_refresh_state(
+        self,
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        user_id: UUID,
+        platform: str,
+    ) -> ProviderOAuthRefreshStateRuntimeResult:
+        now = _utcnow()
+        try:
+            connection = await PlatformConnectionService.get_connection(
+                session,
+                tenant_id=tenant_id,
+                platform=platform,
+                platform_account_id=None,
+            )
+        except PlatformConnectionNotFoundError:
+            pending = await OAuthHandshakeStateService.latest_pending_session(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                platform=platform,
+                now=now,
+            )
+            if pending is None:
+                raise provider_not_connected()
+            return ProviderOAuthRefreshStateRuntimeResult(
+                tenant_id=tenant_id,
+                platform=platform,
+                lifecycle_state="authorization_pending",
+                refresh_state="not_attempted",
+                next_refresh_due_at=None,
+                last_refresh_attempt_at=None,
+                last_refresh_success_at=None,
+                last_error_code=None,
+                data_freshness_seconds=max(0, int((now - _as_utc(pending.updated_at)).total_seconds())),
+                last_updated=pending.updated_at,
+            )
+
+        snapshot = await PlatformCredentialStore.get_latest_lifecycle_snapshot_for_connection(
+            session,
+            tenant_id=tenant_id,
+            connection_id=UUID(str(connection["id"])),
+        )
+        if snapshot is None:
+            if connection.get("status") == "disabled":
+                raise provider_revoked()
+            last_updated = connection.get("updated_at") or now
+            return ProviderOAuthRefreshStateRuntimeResult(
+                tenant_id=tenant_id,
+                platform=platform,
+                lifecycle_state="reconnect_required",
+                refresh_state="not_attempted",
+                next_refresh_due_at=None,
+                last_refresh_attempt_at=None,
+                last_refresh_success_at=None,
+                last_error_code=None,
+                data_freshness_seconds=max(0, int((now - _as_utc(last_updated)).total_seconds())),
+                last_updated=last_updated,
+            )
+
+        lifecycle_state = _lifecycle_state_from_snapshot(
+            connection_status=str(connection.get("status") or "active"),
+            credential_lifecycle_status=snapshot.lifecycle_status,
+            expires_at=snapshot.expires_at,
+            now=now,
+        )
+        external_error_code = _external_error_code_for_failure_class(snapshot.last_failure_class)
+        if lifecycle_state == "revoked":
+            raise provider_revoked()
+        if external_error_code == "provider_rate_limited":
+            retry_after = None
+            if snapshot.next_refresh_due_at is not None and _as_utc(snapshot.next_refresh_due_at) > now:
+                retry_after = max(1, int((_as_utc(snapshot.next_refresh_due_at) - now).total_seconds()))
+            raise provider_rate_limited(retry_after_seconds=retry_after)
+        if external_error_code == "provider_scope_insufficient":
+            raise provider_scope_insufficient()
+        if external_error_code == "provider_transport_failure":
+            raise provider_transport_failure()
+
+        refresh_state = _refresh_result_state_from_snapshot(
+            lifecycle_status=snapshot.lifecycle_status,
+            next_refresh_due_at=snapshot.next_refresh_due_at,
+            last_refresh_at=snapshot.last_refresh_at,
+            last_failure_class=snapshot.last_failure_class,
+            now=now,
+        )
+        last_refresh_attempt_at = _latest_refresh_attempt_at(
+            last_failure_at=snapshot.last_failure_at,
+            last_refresh_at=snapshot.last_refresh_at,
+        )
+        return ProviderOAuthRefreshStateRuntimeResult(
+            tenant_id=tenant_id,
+            platform=platform,
+            lifecycle_state=lifecycle_state,
+            refresh_state=refresh_state,
+            next_refresh_due_at=snapshot.next_refresh_due_at,
+            last_refresh_attempt_at=last_refresh_attempt_at,
+            last_refresh_success_at=snapshot.last_refresh_at,
+            last_error_code=external_error_code,
+            data_freshness_seconds=max(0, int((now - _as_utc(snapshot.updated_at)).total_seconds())),
+            last_updated=snapshot.updated_at,
+        )
+
     async def disconnect(
         self,
         session: AsyncSession,
@@ -603,8 +808,8 @@ class ProviderOAuthLifecycleRuntimeService:
             pass
         except KeyError as exc:
             raise provider_not_connected() from exc
-        except (OAuthLifecycleNotImplementedError, OAuthLifecycleAdapterError) as exc:
-            raise provider_transport_failure() from exc
+        except OAuthLifecycleAdapterError as exc:
+            raise _provider_problem_from_adapter_error(exc) from exc
 
         await PlatformConnectionService.upsert_connection(
             session,

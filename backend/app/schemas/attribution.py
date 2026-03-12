@@ -239,6 +239,28 @@ class ProviderOAuthDisconnectResponse(BaseModel):
     last_updated: datetime
 
 
+class ProviderLifecycleErrorCode(Enum):
+    provider_not_connected = 'provider_not_connected'
+    provider_expired = 'provider_expired'
+    provider_revoked = 'provider_revoked'
+    provider_scope_insufficient = 'provider_scope_insufficient'
+    provider_rate_limited = 'provider_rate_limited'
+    provider_transport_failure = 'provider_transport_failure'
+
+
+class ProviderOAuthRefreshStateResponse(BaseModel):
+    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    platform: Platform
+    lifecycle_state: ProviderOAuthLifecycleState
+    refresh_state: ProviderRefreshResultState
+    next_refresh_due_at: Optional[datetime] = None
+    last_refresh_attempt_at: Optional[datetime] = None
+    last_refresh_success_at: Optional[datetime] = None
+    last_error_code: Optional[ProviderLifecycleErrorCode] = None
+    data_freshness_seconds: Annotated[int, Field(ge=0)]
+    last_updated: datetime
+
+
 # Alias for CI compatibility (must be a class definition to match workflow grep pattern)
 class RealtimeRevenueResponse(RealtimeRevenueCounter):
     """Alias for RealtimeRevenueCounter to match CI expectations."""

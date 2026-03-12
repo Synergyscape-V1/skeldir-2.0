@@ -325,6 +325,12 @@ class DeterministicOAuthLifecycleAdapter:
     async def refresh_token(self, request: OAuthTokenRefreshRequest) -> OAuthTokenSet:
         refresh_token_value = request.refresh_token.strip()
         lowered = refresh_token_value.lower()
+        if "invalid_client" in lowered:
+            raise OAuthLifecycleRefreshError(
+                "deterministic_refresh_invalid_client",
+                failure_class="provider_invalid_client",
+                terminal=True,
+            )
         if "invalid_grant" in lowered or "revoked" in lowered:
             raise OAuthLifecycleRefreshError(
                 "deterministic_refresh_invalid_grant",
@@ -422,6 +428,12 @@ class StripeOAuthLifecycleAdapter:
     async def refresh_token(self, request: OAuthTokenRefreshRequest) -> OAuthTokenSet:
         refresh_token_value = request.refresh_token.strip()
         lowered = refresh_token_value.lower()
+        if "invalid_client" in lowered:
+            raise OAuthLifecycleRefreshError(
+                "stripe_refresh_invalid_client",
+                failure_class="provider_invalid_client",
+                terminal=True,
+            )
         if "invalid_grant" in lowered or "revoked" in lowered:
             raise OAuthLifecycleRefreshError(
                 "stripe_refresh_invalid_grant",
