@@ -20,8 +20,12 @@ from sqlalchemy.sql.compiler import IdentifierPreparer
 from app.celery_app import celery_app
 from app.matviews.registry import get_entry, list_names
 from app.matviews.executor import RefreshOutcome, refresh_single
-from app.db.session import engine, set_tenant_guc
+from app.db.session import AsyncSessionLocal, engine, set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
+from app.services.provider_token_refresh import (
+    claim_due_credentials_for_tenant,
+    refresh_credential_once,
+)
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.context import run_in_worker_loop
 from app.tasks.enqueue import enqueue_tenant_task
@@ -32,6 +36,7 @@ _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
 _PUBLIC_SCHEMA = _IDENTIFIER_PREPARER.quote_schema("public")
 _DEFAULT_DENYLIST_GC_BATCH_SIZE = 1000
 _DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY = 1205001
+_DEFAULT_PROVIDER_REFRESH_BATCH_SIZE = 100
 
 
 def _validated_matview_identifier(
@@ -352,6 +357,94 @@ def _denylist_gc_batch_size() -> int:
     return max(1, parsed)
 
 
+def _provider_refresh_batch_size() -> int:
+    configured = os.getenv("SKELDIR_B13_P7_PROVIDER_REFRESH_BATCH_SIZE")
+    if not configured:
+        return _DEFAULT_PROVIDER_REFRESH_BATCH_SIZE
+    try:
+        parsed = int(configured)
+    except ValueError:
+        return _DEFAULT_PROVIDER_REFRESH_BATCH_SIZE
+    return max(1, parsed)
+
+
+def _parse_uuid_or_fallback(value: str | None) -> UUID:
+    if value:
+        try:
+            return UUID(str(value))
+        except (ValueError, TypeError):
+            pass
+    return uuid4()
+
+
+async def _select_and_enqueue_due_provider_refreshes_for_tenant(
+    tenant_id: UUID,
+    correlation_id: str,
+) -> Dict[str, int]:
+    batch_size = _provider_refresh_batch_size()
+    async with AsyncSessionLocal() as session:
+        await session.begin()
+        try:
+            await set_tenant_guc(session, tenant_id, local=True)
+            selection = await claim_due_credentials_for_tenant(
+                session,
+                tenant_id=tenant_id,
+                as_of=datetime.now(timezone.utc),
+                limit=batch_size,
+            )
+            await session.commit()
+        except Exception:
+            if session.in_transaction():
+                await session.rollback()
+            raise
+
+    dispatched = 0
+    for credential_id in selection.claimed_credential_ids:
+        enqueue_tenant_task(
+            refresh_provider_oauth_credential,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={
+                "credential_id": str(credential_id),
+                "correlation_id": correlation_id,
+                "refresh_claimed": True,
+            },
+            correlation_id=correlation_id,
+        )
+        dispatched += 1
+
+    return {
+        "due_count": int(selection.due_count),
+        "tasks_enqueued": int(dispatched),
+        "batch_size": int(batch_size),
+    }
+
+
+async def _refresh_provider_oauth_credential_async(
+    *,
+    tenant_id: UUID,
+    credential_id: UUID,
+    correlation_id: UUID,
+    force: bool,
+) -> dict[str, object]:
+    async with AsyncSessionLocal() as session:
+        await session.begin()
+        try:
+            await set_tenant_guc(session, tenant_id, local=True)
+            execution = await refresh_credential_once(
+                session,
+                tenant_id=tenant_id,
+                credential_id=credential_id,
+                correlation_id=correlation_id,
+                force=force,
+            )
+            await session.commit()
+        except Exception:
+            if session.in_transaction():
+                await session.rollback()
+            raise
+    return execution.to_public_dict()
+
+
 async def _delete_expired_denylist_rows(batch_size: int) -> Dict[str, int]:
     deleted = 0
     scanned_tenants = 0
@@ -475,3 +568,114 @@ def gc_expired_access_token_denylist(self) -> Dict[str, int]:
             },
         )
         raise self.retry(exc=exc, countdown=60)
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.schedule_provider_oauth_refresh_all_tenants",
+    routing_key="maintenance.task",
+    max_retries=3,
+    default_retry_delay=60,
+    ignore_result=True,
+)
+def schedule_provider_oauth_refresh_all_tenants(self) -> Dict[str, int]:
+    correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    tenant_ids = run_in_worker_loop(_fetch_all_tenant_ids())
+    dispatched = 0
+    for tenant_id in tenant_ids:
+        enqueue_tenant_task(
+            schedule_provider_oauth_refresh_for_tenant,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={"correlation_id": correlation_id},
+            correlation_id=correlation_id,
+        )
+        dispatched += 1
+    return {"tenant_count": len(tenant_ids), "tasks_dispatched": dispatched}
+
+
+@celery_app.task(
+    bind=True,
+    base=TenantTask,
+    name="app.tasks.maintenance.schedule_provider_oauth_refresh_for_tenant",
+    routing_key="maintenance.task",
+    max_retries=3,
+    default_retry_delay=60,
+    ignore_result=True,
+)
+def schedule_provider_oauth_refresh_for_tenant(
+    self,
+    correlation_id: Optional[str] = None,
+) -> Dict[str, int]:
+    tenant_id = task_tenant_id(self)
+    correlation_id = correlation_id or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    set_tenant_id(tenant_id)
+    try:
+        result = run_in_worker_loop(
+            _select_and_enqueue_due_provider_refreshes_for_tenant(tenant_id, correlation_id)
+        )
+        logger.info(
+            "provider_oauth_refresh_scheduled_for_tenant",
+            extra={
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                **result,
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "provider_oauth_refresh_schedule_failed_for_tenant",
+            exc_info=exc,
+            extra={
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+            },
+        )
+        raise self.retry(exc=exc, countdown=60)
+
+
+@celery_app.task(
+    bind=True,
+    base=TenantTask,
+    name="app.tasks.maintenance.refresh_provider_oauth_credential",
+    routing_key="maintenance.task",
+    max_retries=0,
+    ignore_result=True,
+)
+def refresh_provider_oauth_credential(
+    self,
+    credential_id: str,
+    correlation_id: Optional[str] = None,
+    refresh_claimed: bool = False,
+) -> dict[str, object]:
+    tenant_id = task_tenant_id(self)
+    correlation_id = correlation_id or str(uuid4())
+    correlation_uuid = _parse_uuid_or_fallback(correlation_id)
+    credential_uuid = UUID(str(credential_id))
+    set_request_correlation_id(correlation_id)
+    set_tenant_id(tenant_id)
+
+    result = run_in_worker_loop(
+        _refresh_provider_oauth_credential_async(
+            tenant_id=tenant_id,
+            credential_id=credential_uuid,
+            correlation_id=correlation_uuid,
+            force=bool(refresh_claimed),
+        )
+    )
+    logger.info(
+        "provider_oauth_credential_refresh_completed",
+        extra={
+            "tenant_id": str(tenant_id),
+            "credential_id": str(credential_uuid),
+            "task_id": self.request.id,
+            "correlation_id": correlation_id,
+            "refresh_status": result.get("status"),
+            "failure_class": result.get("failure_class"),
+        },
+    )
+    return result

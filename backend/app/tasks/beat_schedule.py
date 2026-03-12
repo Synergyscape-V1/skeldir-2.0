@@ -39,6 +39,11 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "options": {"expires": max(int(interval), 1) * 2},
             "kwargs": {"schedule_class": "minute"},
         },
+        "provider-oauth-refresh-orchestration": {
+            "task": "app.tasks.maintenance.schedule_provider_oauth_refresh_all_tenants",
+            "schedule": crontab(minute="*/10"),
+            "options": {"expires": 600},
+        },
         "pii-audit-scanner": {
             "task": "app.tasks.maintenance.scan_for_pii_contamination_all_tenants",
             "schedule": crontab(hour=4, minute=0),

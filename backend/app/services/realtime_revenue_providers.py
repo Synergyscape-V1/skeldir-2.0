@@ -23,8 +23,8 @@ from app.models.platform_connection import PlatformConnection
 from app.services.platform_credentials import (
     PlatformCredentialExpiredError,
     PlatformCredentialNotFoundError,
-    PlatformCredentialService,
 )
+from app.services.provider_valid_token_resolution import ProviderValidTokenResolver
 
 DEFAULT_INTERVAL = "minute"
 DEFAULT_CURRENCY = "USD"
@@ -437,13 +437,15 @@ async def _fetch_realtime_revenue_snapshot(
         )
 
     results: list[ProviderRevenueResult] = []
+    token_resolver = ProviderValidTokenResolver()
     for connection in supported_connections:
         provider = registry.get(connection.platform)
         try:
-            credentials = await PlatformCredentialService.get_credentials(
+            resolved = await token_resolver.resolve_for_connection(
                 session,
                 tenant_id=tenant_id,
                 connection_id=connection.id,
+                correlation_id=correlation_id,
             )
         except (PlatformCredentialNotFoundError, PlatformCredentialExpiredError) as exc:
             raise ProviderFetchError(
@@ -462,12 +464,12 @@ async def _fetch_realtime_revenue_snapshot(
             tenant_id=tenant_id,
             platform_connection=connection,
             credentials=ProviderCredentials(
-                access_token=credentials.access_token,
-                refresh_token=credentials.refresh_token,
-                expires_at=credentials.expires_at,
-                scope=credentials.scope,
-                token_type=credentials.token_type,
-                key_id=credentials.key_id,
+                access_token=resolved.access_token,
+                refresh_token=resolved.refresh_token,
+                expires_at=resolved.expires_at,
+                scope=resolved.scope,
+                token_type=resolved.token_type,
+                key_id=resolved.key_id,
             ),
             correlation_id=correlation_id,
             now=effective_now,

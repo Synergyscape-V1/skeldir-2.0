@@ -5,7 +5,7 @@ Service layer for platform credentials (encrypted tokens).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -26,6 +26,31 @@ class PlatformCredentialExpiredError(RuntimeError):
 
 class PlatformCredentialNotFoundError(RuntimeError):
     pass
+
+
+DEFAULT_PROVIDER_REFRESH_LEAD_TIME = timedelta(hours=25)
+DEFAULT_PROVIDER_REFRESH_CLAIM_HOLD = timedelta(minutes=5)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def compute_next_refresh_due_at(
+    expires_at: datetime | None,
+    *,
+    now: datetime | None = None,
+    lead_time: timedelta = DEFAULT_PROVIDER_REFRESH_LEAD_TIME,
+) -> datetime | None:
+    if expires_at is None:
+        return None
+    now_ts = _as_utc(now or datetime.now(timezone.utc))
+    due_at = _as_utc(expires_at) - lead_time
+    if due_at <= now_ts:
+        return now_ts
+    return due_at
 
 
 @dataclass(frozen=True)
@@ -80,6 +105,8 @@ class PlatformCredentialStore:
         connection_id = connection_result.scalar_one_or_none()
         if not connection_id:
             raise PlatformConnectionNotFoundError()
+        now_ts = datetime.now(timezone.utc)
+        next_refresh_due_at = compute_next_refresh_due_at(expires_at, now=now_ts)
 
         encrypted_access = func.pgp_sym_encrypt(access_token, encryption_key)
         encrypted_refresh = (
@@ -95,7 +122,7 @@ class PlatformCredentialStore:
             encrypted_access_token=encrypted_access,
             encrypted_refresh_token=encrypted_refresh,
             expires_at=expires_at,
-            next_refresh_due_at=expires_at,
+            next_refresh_due_at=next_refresh_due_at,
             scope=scope,
             token_type=token_type,
             lifecycle_status="active",
@@ -114,7 +141,7 @@ class PlatformCredentialStore:
                 "encrypted_access_token": encrypted_access,
                 "encrypted_refresh_token": encrypted_refresh,
                 "expires_at": expires_at,
-                "next_refresh_due_at": expires_at,
+                "next_refresh_due_at": next_refresh_due_at,
                 "scope": scope,
                 "token_type": token_type,
                 "lifecycle_status": "active",
@@ -136,6 +163,34 @@ class PlatformCredentialStore:
         result = await session.execute(stmt)
         row = result.mappings().first()
         return dict(row)
+
+    @staticmethod
+    async def claim_refresh_window(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        credential_id: UUID,
+        as_of: datetime | None = None,
+        hold_for: timedelta = DEFAULT_PROVIDER_REFRESH_CLAIM_HOLD,
+    ) -> bool:
+        now_ts = _as_utc(as_of or datetime.now(timezone.utc))
+        hold_until = now_ts + hold_for
+        result = await session.execute(
+            update(PlatformCredential)
+            .where(
+                PlatformCredential.id == credential_id,
+                PlatformCredential.tenant_id == tenant_id,
+                PlatformCredential.lifecycle_status.in_(("active", "degraded")),
+                PlatformCredential.next_refresh_due_at.is_not(None),
+                PlatformCredential.next_refresh_due_at <= now_ts,
+            )
+            .values(
+                next_refresh_due_at=hold_until,
+                updated_at=func.now(),
+            )
+            .returning(PlatformCredential.id)
+        )
+        return result.scalar_one_or_none() is not None
 
     @staticmethod
     async def list_refresh_due(
@@ -246,7 +301,11 @@ class PlatformCredentialStore:
         next_refresh_due_at: datetime | None = None,
     ) -> dict:
         refreshed_at_ts = refreshed_at or datetime.now(timezone.utc)
-        due_at = next_refresh_due_at if next_refresh_due_at is not None else expires_at
+        due_at = (
+            next_refresh_due_at
+            if next_refresh_due_at is not None
+            else compute_next_refresh_due_at(expires_at, now=refreshed_at_ts)
+        )
 
         encrypted_access = func.pgp_sym_encrypt(access_token, encryption_key)
         encrypted_refresh = (
@@ -431,6 +490,8 @@ class PlatformCredentialStore:
 @dataclass(frozen=True)
 class PlatformCredentials:
     id: UUID
+    platform_connection_id: UUID
+    platform: str
     access_token: str
     refresh_token: str | None
     expires_at: datetime | None
@@ -459,6 +520,8 @@ class PlatformCredentialService:
         query = (
             select(
                 PlatformCredential.id,
+                PlatformCredential.platform_connection_id,
+                PlatformCredential.platform,
                 PlatformCredential.expires_at,
                 PlatformCredential.next_refresh_due_at,
                 PlatformCredential.scope,
@@ -515,6 +578,88 @@ class PlatformCredentialService:
 
         return PlatformCredentials(
             id=row["id"],
+            platform_connection_id=row["platform_connection_id"],
+            platform=row["platform"],
+            access_token=str(access_token),
+            refresh_token=str(refresh_token) if refresh_token is not None else None,
+            expires_at=expires_at,
+            next_refresh_due_at=row.get("next_refresh_due_at"),
+            scope=row.get("scope"),
+            token_type=row.get("token_type"),
+            key_id=key_id,
+            lifecycle_status=row.get("lifecycle_status") or "active",
+            refresh_failure_count=int(row.get("refresh_failure_count") or 0),
+            last_failure_class=row.get("last_failure_class"),
+            last_failure_at=row.get("last_failure_at"),
+            last_refresh_at=row.get("last_refresh_at"),
+            revoked_at=row.get("revoked_at"),
+        )
+
+    @staticmethod
+    async def get_credentials_by_id(
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        credential_id: UUID,
+        allow_expired: bool = False,
+    ) -> PlatformCredentials:
+        query = (
+            select(
+                PlatformCredential.id,
+                PlatformCredential.platform_connection_id,
+                PlatformCredential.platform,
+                PlatformCredential.expires_at,
+                PlatformCredential.next_refresh_due_at,
+                PlatformCredential.scope,
+                PlatformCredential.token_type,
+                PlatformCredential.key_id,
+                PlatformCredential.lifecycle_status,
+                PlatformCredential.refresh_failure_count,
+                PlatformCredential.last_failure_class,
+                PlatformCredential.last_failure_at,
+                PlatformCredential.last_refresh_at,
+                PlatformCredential.revoked_at,
+                PlatformCredential.encrypted_access_token,
+                PlatformCredential.encrypted_refresh_token,
+            )
+            .where(
+                PlatformCredential.tenant_id == tenant_id,
+                PlatformCredential.id == credential_id,
+                PlatformCredential.lifecycle_status.in_(("active", "degraded")),
+                PlatformCredential.revoked_at.is_(None),
+            )
+            .limit(1)
+        )
+        result = await session.execute(query)
+        row = result.mappings().first()
+        if not row:
+            raise PlatformCredentialNotFoundError()
+
+        expires_at = row.get("expires_at")
+        if not allow_expired and expires_at and _as_utc(expires_at) <= datetime.now(timezone.utc):
+            raise PlatformCredentialExpiredError()
+
+        key_id = str(row.get("key_id"))
+        if not key_id:
+            raise PlatformCredentialNotFoundError()
+        key = resolve_platform_encryption_key_by_id(key_id)
+        access_token = await _decrypt_ciphertext_once(
+            session,
+            ciphertext=row.get("encrypted_access_token"),
+            key=key,
+        )
+        refresh_token = await _decrypt_ciphertext_once(
+            session,
+            ciphertext=row.get("encrypted_refresh_token"),
+            key=key,
+        )
+        if access_token is None:
+            raise PlatformCredentialNotFoundError()
+
+        return PlatformCredentials(
+            id=row["id"],
+            platform_connection_id=row["platform_connection_id"],
+            platform=row["platform"],
             access_token=str(access_token),
             refresh_token=str(refresh_token) if refresh_token is not None else None,
             expires_at=expires_at,

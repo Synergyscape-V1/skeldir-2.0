@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from celery.canvas import Signature
 
+from app.celery_app import celery_app
 from app.security.secret_boundary import assert_no_sensitive_material
 from app.tasks.authority import (
     AUTHORITY_ENVELOPE_HEADER,
@@ -26,6 +27,8 @@ TENANT_SCOPED_TASK_NAMES: frozenset[str] = frozenset(
         "app.tasks.maintenance.refresh_matview_for_tenant",
         "app.tasks.maintenance.scan_for_pii_contamination",
         "app.tasks.maintenance.enforce_data_retention",
+        "app.tasks.maintenance.schedule_provider_oauth_refresh_for_tenant",
+        "app.tasks.maintenance.refresh_provider_oauth_credential",
         "app.tasks.matviews.refresh_single",
         "app.tasks.matviews.refresh_all_for_tenant",
     }
@@ -92,6 +95,26 @@ def enqueue_tenant_task(
     return task.apply_async(
         kwargs=task_kwargs,
         headers=headers,
+        queue=queue,
+        correlation_id=correlation_id,
+    )
+
+
+def enqueue_tenant_task_by_name(
+    task_name: str,
+    *,
+    envelope: AuthorityEnvelope | Mapping[str, Any],
+    kwargs: Mapping[str, Any] | None = None,
+    queue: str | None = None,
+    correlation_id: str | None = None,
+):
+    task = celery_app.tasks.get(task_name)
+    if task is None:
+        raise ValueError(f"unknown celery task: {task_name}")
+    return enqueue_tenant_task(
+        task,
+        envelope=envelope,
+        kwargs=kwargs,
         queue=queue,
         correlation_id=correlation_id,
     )
