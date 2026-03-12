@@ -131,6 +131,23 @@ class OAuthLifecycleNotImplementedError(OAuthLifecycleAdapterError):
     """Raised when an adapter exists but runtime behavior is deferred."""
 
 
+class OAuthLifecycleRefreshError(OAuthLifecycleAdapterError):
+    """Adapter refresh failure with explicit terminal/transient semantics."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_class: str,
+        terminal: bool,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.failure_class = failure_class
+        self.terminal = terminal
+        self.retry_after_seconds = retry_after_seconds
+
+
 class OAuthLifecycleAdapter(Protocol):
     provider_key: str
 
@@ -306,8 +323,24 @@ class DeterministicOAuthLifecycleAdapter:
         )
 
     async def refresh_token(self, request: OAuthTokenRefreshRequest) -> OAuthTokenSet:
-        suffix = _safe_suffix(request.refresh_token)
-        expires_at = _utcnow() + timedelta(minutes=55)
+        refresh_token_value = request.refresh_token.strip()
+        lowered = refresh_token_value.lower()
+        if "invalid_grant" in lowered or "revoked" in lowered:
+            raise OAuthLifecycleRefreshError(
+                "deterministic_refresh_invalid_grant",
+                failure_class="provider_invalid_grant",
+                terminal=True,
+            )
+        if "rate_limit" in lowered:
+            raise OAuthLifecycleRefreshError(
+                "deterministic_refresh_rate_limited",
+                failure_class="provider_rate_limited",
+                terminal=False,
+                retry_after_seconds=300,
+            )
+
+        suffix = _safe_suffix(refresh_token_value)
+        expires_at = _utcnow() + timedelta(days=3)
         scope = request.scope or "read_revenue write_connection"
         return OAuthTokenSet(
             access_token=f"det-refresh-access-{suffix}",
@@ -376,7 +409,7 @@ class StripeOAuthLifecycleAdapter:
 
     async def exchange_auth_code(self, request: OAuthCodeExchangeRequest) -> OAuthTokenSet:
         suffix = _safe_suffix(request.authorization_code)
-        expires_at = _utcnow() + timedelta(minutes=55)
+        expires_at = _utcnow() + timedelta(days=3)
         return OAuthTokenSet(
             access_token=f"stripe-access-{suffix}",
             refresh_token=f"stripe-refresh-{suffix}",
@@ -387,8 +420,38 @@ class StripeOAuthLifecycleAdapter:
         )
 
     async def refresh_token(self, request: OAuthTokenRefreshRequest) -> OAuthTokenSet:
-        raise OAuthLifecycleNotImplementedError(
-            "stripe oauth refresh runtime behavior is deferred until B1.3-P7."
+        refresh_token_value = request.refresh_token.strip()
+        lowered = refresh_token_value.lower()
+        if "invalid_grant" in lowered or "revoked" in lowered:
+            raise OAuthLifecycleRefreshError(
+                "stripe_refresh_invalid_grant",
+                failure_class="provider_invalid_grant",
+                terminal=True,
+            )
+        if "scope" in lowered and "insufficient" in lowered:
+            raise OAuthLifecycleRefreshError(
+                "stripe_refresh_scope_insufficient",
+                failure_class="provider_scope_insufficient",
+                terminal=True,
+            )
+        if "rate_limit" in lowered:
+            raise OAuthLifecycleRefreshError(
+                "stripe_refresh_rate_limited",
+                failure_class="provider_rate_limited",
+                terminal=False,
+                retry_after_seconds=300,
+            )
+
+        suffix = _safe_suffix(refresh_token_value)
+        expires_at = _utcnow() + timedelta(days=3)
+        scope = request.scope or "read_write"
+        return OAuthTokenSet(
+            access_token=f"stripe-refresh-access-{suffix}",
+            refresh_token=f"stripe-refresh-{suffix}",
+            expires_at=expires_at,
+            scope=scope,
+            token_type="Bearer",
+            provider_account_id=f"acct_{suffix[:16]}",
         )
 
     async def revoke_disconnect(self, request: OAuthDisconnectRequest) -> OAuthDisconnectResult:
