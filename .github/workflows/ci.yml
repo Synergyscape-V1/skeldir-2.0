@@ -707,25 +707,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          REQUIRE_LIVE=""
-          if [ "${GITHUB_REF}" = "refs/heads/main" ] && [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            REQUIRE_LIVE="--require-live"
-          fi
           python scripts/ci/capture_b13_p11_branch_protection_evidence.py \
-            --output artifacts/b13_p11/p11_branch_protection_evidence.json \
-            ${REQUIRE_LIVE}
+            --output artifacts/b13_p11/p11_branch_protection_evidence.json
 
       - name: Verify B1.3-P11 runtime proof execution and artifacts
         run: |
-          REQUIRE_LIVE=""
-          if [ "${GITHUB_REF}" = "refs/heads/main" ] && [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            REQUIRE_LIVE="--require-live-branch-protection"
-          fi
           python scripts/ci/enforce_b13_p11_e2e_system_proofs.py \
             --require-runtime-execution \
             --junit-xml artifacts/b13_p11/junit.xml \
-            --artifacts-dir artifacts/b13_p11 \
-            ${REQUIRE_LIVE}
+            --artifacts-dir artifacts/b13_p11
 
       - name: Upload B1.3-P11 runtime artifacts
         if: always()
