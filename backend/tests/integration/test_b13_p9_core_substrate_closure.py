@@ -11,11 +11,8 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from starlette.requests import Request
@@ -179,48 +176,15 @@ def _auth_context(tenant_id: UUID, user_id: UUID) -> AuthContext:
 
 @pytest.fixture(scope="session")
 def _isolated_database_urls() -> tuple[str, str]:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    base_sync_url = _sync_database_url()
-    parsed = make_url(base_sync_url)
-    admin_url = str(parsed.set(database="postgres"))
-    isolated_db_name = f"skeldir_b13_p9_{uuid4().hex[:12]}"
-    isolated_sync_url = str(parsed.set(database=isolated_db_name))
-    isolated_async_url = _to_async_url(isolated_sync_url)
-
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin_engine.begin() as conn:
-            conn.execute(text(f'CREATE DATABASE "{isolated_db_name}" OWNER "{parsed.username or "postgres"}"'))
-    except Exception as exc:
-        pytest.skip(f"unable to create isolated database for B1.3-P9 runtime proofs: {exc}")
-    finally:
-        admin_engine.dispose()
-
-    os.environ["MIGRATION_DATABASE_URL"] = isolated_sync_url
-    os.environ["DATABASE_URL"] = isolated_async_url
-    cfg.set_main_option("sqlalchemy.url", isolated_sync_url)
-    command.upgrade(cfg, "head")
-
-    try:
-        yield isolated_sync_url, isolated_async_url
-    finally:
-        cleanup_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-        try:
-            with cleanup_engine.begin() as conn:
-                conn.execute(
-                    text(
-                        """
-                        SELECT pg_terminate_backend(pid)
-                        FROM pg_stat_activity
-                        WHERE datname = :db_name
-                          AND pid <> pg_backend_pid()
-                        """
-                    ),
-                    {"db_name": isolated_db_name},
-                )
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{isolated_db_name}"'))
-        finally:
-            cleanup_engine.dispose()
+    # Run closure-grade runtime proofs against the job-local Postgres database.
+    # CI applies migrations ahead of this suite; this fixture only binds URLs.
+    # Avoiding per-test CREATE DATABASE removes a skip-prone dependency on admin
+    # privileges and makes proof execution deterministic on authoritative runs.
+    proof_sync_url = _sync_database_url()
+    proof_async_url = _to_async_url(proof_sync_url)
+    os.environ["MIGRATION_DATABASE_URL"] = proof_sync_url
+    os.environ["DATABASE_URL"] = proof_async_url
+    return proof_sync_url, proof_async_url
 
 
 @pytest.fixture
@@ -385,6 +349,99 @@ def test_b13_p9_negative_control_detects_missing_required_context(tmp_path: Path
     )
     assert result.returncode != 0
     assert "missing context" in f"{result.stdout}\n{result.stderr}"
+
+
+def test_b13_p9_negative_control_detects_skipped_runtime_execution(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    junit_xml = artifacts_dir / "junit.xml"
+    junit_xml.write_text(
+        """<?xml version="1.0" encoding="utf-8"?>
+<testsuite tests="2" skipped="1" failures="0" errors="0">
+  <testcase classname="p9" name="test_b13_p9_composed_lifecycle_closure_with_deterministic_and_stripe_paths"><skipped message="fixture unavailable">skip</skipped></testcase>
+  <testcase classname="p9" name="test_b13_p9_cross_tenant_and_tenantless_worker_fail_before_side_effects"></testcase>
+</testsuite>
+""",
+        encoding="utf-8",
+    )
+    (artifacts_dir / "p9_composed_runtime_report.json").write_text(
+        json.dumps({"stripe_path": {"refresh_status": "refreshed"}, "dummy_path": {"terminal_status": "revoked_terminal", "graceful_degraded_code": "provider_revoked"}}),
+        encoding="utf-8",
+    )
+    (artifacts_dir / "p9_negative_controls_report.json").write_text(
+        json.dumps(
+            {
+                "cross_tenant_status_code": 404,
+                "cross_tenant_disconnect_code": 404,
+                "tenantless_worker_error": "authority_envelope header is required",
+                "worker_positive_status": "refreshed",
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = _run(
+        [
+            sys.executable,
+            str(GATE_SCRIPT),
+            "--require-runtime-execution",
+            "--junit-xml",
+            str(junit_xml),
+            "--artifacts-dir",
+            str(artifacts_dir),
+        ]
+    )
+    assert result.returncode != 0
+    assert "did not pass (outcome=skipped)" in f"{result.stdout}\n{result.stderr}"
+
+
+def test_b13_p9_runtime_execution_gate_passes_with_real_artifact_shape(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    junit_xml = artifacts_dir / "junit.xml"
+    junit_xml.write_text(
+        """<?xml version="1.0" encoding="utf-8"?>
+<testsuite tests="2" skipped="0" failures="0" errors="0">
+  <testcase classname="p9" name="test_b13_p9_composed_lifecycle_closure_with_deterministic_and_stripe_paths"></testcase>
+  <testcase classname="p9" name="test_b13_p9_cross_tenant_and_tenantless_worker_fail_before_side_effects"></testcase>
+</testsuite>
+""",
+        encoding="utf-8",
+    )
+    (artifacts_dir / "p9_composed_runtime_report.json").write_text(
+        json.dumps(
+            {
+                "stripe_path": {"refresh_status": "refreshed"},
+                "dummy_path": {
+                    "terminal_status": "revoked_terminal",
+                    "graceful_degraded_code": "provider_revoked",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (artifacts_dir / "p9_negative_controls_report.json").write_text(
+        json.dumps(
+            {
+                "cross_tenant_status_code": 404,
+                "cross_tenant_disconnect_code": 404,
+                "tenantless_worker_error": "authority_envelope header is required",
+                "worker_positive_status": "refreshed",
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = _run(
+        [
+            sys.executable,
+            str(GATE_SCRIPT),
+            "--require-runtime-execution",
+            "--junit-xml",
+            str(junit_xml),
+            "--artifacts-dir",
+            str(artifacts_dir),
+        ]
+    )
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
 
 
 @pytest.mark.asyncio

@@ -557,7 +557,15 @@ jobs:
 
       - name: Run B1.3-P9 core substrate closure proofs
         run: |
-          pytest backend/tests/integration/test_b13_p9_core_substrate_closure.py -q
+          mkdir -p artifacts/b13_p9
+          pytest backend/tests/integration/test_b13_p9_core_substrate_closure.py -q -rs --junitxml=artifacts/b13_p9/junit.xml
+
+      - name: Verify B1.3-P9 runtime proof execution and artifacts
+        run: |
+          python scripts/ci/enforce_b13_p9_core_substrate_closure.py \
+            --require-runtime-execution \
+            --junit-xml artifacts/b13_p9/junit.xml \
+            --artifacts-dir artifacts/b13_p9
 
       - name: Upload B1.3-P9 runtime artifacts
         if: always()
@@ -565,7 +573,7 @@ jobs:
         with:
           name: b13-p9-runtime-artifacts
           path: artifacts/b13_p9
-          if-no-files-found: warn
+          if-no-files-found: error
   # Contract validation
 
   validate-contracts:
