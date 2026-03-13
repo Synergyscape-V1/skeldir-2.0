@@ -1,0 +1,119 @@
+{
+  "contract_id": "b13.p10.provider_rollout_tranches.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "target_runtime_backed_provider_set": [
+    "google_ads",
+    "meta_ads",
+    "paypal",
+    "shopify",
+    "stripe",
+    "woocommerce"
+  ],
+  "deferred_non_target_providers": [
+    "linkedin_ads",
+    "tiktok_ads"
+  ],
+  "current_active_tranche_id": "tranche_c_ad_networks",
+  "tranches": [
+    {
+      "tranche_id": "tranche_a_revenue_core",
+      "sequence": 1,
+      "status": "completed",
+      "providers": [
+        "stripe"
+      ]
+    },
+    {
+      "tranche_id": "tranche_b_commerce",
+      "sequence": 2,
+      "status": "completed",
+      "providers": [
+        "paypal",
+        "shopify",
+        "woocommerce"
+      ]
+    },
+    {
+      "tranche_id": "tranche_c_ad_networks",
+      "sequence": 3,
+      "status": "active",
+      "providers": [
+        "google_ads",
+        "meta_ads"
+      ]
+    }
+  ],
+  "provider_proof_topology": {
+    "google_ads": {
+      "proof_mode": "real_authorize_url_callback_shape",
+      "refresh_proof_mode": "deterministic_refresh_revoke_account_identity",
+      "live_credentials_required": false,
+      "refresh_token_rotation_possible": true,
+      "credential_concurrency_strategy": "isolated_per_test_database_and_nonshared_tokens",
+      "provider_specific_tests": [
+        "test_b13_p10_provider_lifecycle_tranche_proofs_cover_all_active_tranche_providers"
+      ]
+    },
+    "meta_ads": {
+      "proof_mode": "real_authorize_url_callback_shape",
+      "refresh_proof_mode": "deterministic_refresh_revoke_account_identity",
+      "live_credentials_required": false,
+      "refresh_token_rotation_possible": true,
+      "credential_concurrency_strategy": "isolated_per_test_database_and_nonshared_tokens",
+      "provider_specific_tests": [
+        "test_b13_p10_provider_lifecycle_tranche_proofs_cover_all_active_tranche_providers"
+      ]
+    },
+    "paypal": {
+      "proof_mode": "real_authorize_url_callback_shape",
+      "refresh_proof_mode": "deterministic_refresh_revoke_account_identity",
+      "live_credentials_required": false,
+      "refresh_token_rotation_possible": true,
+      "credential_concurrency_strategy": "isolated_per_test_database_and_nonshared_tokens",
+      "provider_specific_tests": [
+        "test_b13_p10_provider_lifecycle_tranche_proofs_cover_all_active_tranche_providers"
+      ]
+    },
+    "shopify": {
+      "proof_mode": "real_authorize_url_callback_shape",
+      "refresh_proof_mode": "deterministic_refresh_revoke_account_identity",
+      "live_credentials_required": false,
+      "refresh_token_rotation_possible": true,
+      "credential_concurrency_strategy": "isolated_per_test_database_and_nonshared_tokens",
+      "provider_specific_tests": [
+        "test_b13_p10_provider_lifecycle_tranche_proofs_cover_all_active_tranche_providers"
+      ]
+    },
+    "stripe": {
+      "proof_mode": "real_authorize_url_callback_shape",
+      "refresh_proof_mode": "deterministic_refresh_revoke_account_identity",
+      "live_credentials_required": false,
+      "refresh_token_rotation_possible": true,
+      "credential_concurrency_strategy": "isolated_per_test_database_and_nonshared_tokens",
+      "provider_specific_tests": [
+        "test_b13_p10_provider_lifecycle_tranche_proofs_cover_all_active_tranche_providers"
+      ]
+    },
+    "woocommerce": {
+      "proof_mode": "real_authorize_url_callback_shape",
+      "refresh_proof_mode": "deterministic_refresh_revoke_account_identity",
+      "live_credentials_required": false,
+      "refresh_token_rotation_possible": true,
+      "credential_concurrency_strategy": "isolated_per_test_database_and_nonshared_tokens",
+      "provider_specific_tests": [
+        "test_b13_p10_provider_lifecycle_tranche_proofs_cover_all_active_tranche_providers"
+      ]
+    }
+  },
+  "required_lifecycle_gates": [
+    "authorize_connect",
+    "encrypted_credential_persistence",
+    "expiry_tracking",
+    "scheduled_refresh",
+    "revoke_degradation_handling",
+    "account_scope_identity_proof",
+    "provider_specific_ci_proof"
+  ]
+}

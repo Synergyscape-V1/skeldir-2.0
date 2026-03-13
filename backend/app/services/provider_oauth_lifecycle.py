@@ -187,7 +187,57 @@ OAUTH_LIFECYCLE_CAPABILITY_DECLARATIONS: dict[str, dict[str, str | bool]] = {
         "supports_revoke_disconnect": True,
         "supports_account_metadata": True,
     },
+    "google_ads": {
+        "mode": "runtime_backed",
+        "adapter_kind": "runtime_scaffold",
+        "supports_authorize_url": True,
+        "supports_callback_state_validation": True,
+        "supports_code_exchange": True,
+        "supports_token_refresh": True,
+        "supports_revoke_disconnect": True,
+        "supports_account_metadata": True,
+    },
+    "meta_ads": {
+        "mode": "runtime_backed",
+        "adapter_kind": "runtime_scaffold",
+        "supports_authorize_url": True,
+        "supports_callback_state_validation": True,
+        "supports_code_exchange": True,
+        "supports_token_refresh": True,
+        "supports_revoke_disconnect": True,
+        "supports_account_metadata": True,
+    },
+    "paypal": {
+        "mode": "runtime_backed",
+        "adapter_kind": "runtime_scaffold",
+        "supports_authorize_url": True,
+        "supports_callback_state_validation": True,
+        "supports_code_exchange": True,
+        "supports_token_refresh": True,
+        "supports_revoke_disconnect": True,
+        "supports_account_metadata": True,
+    },
+    "shopify": {
+        "mode": "runtime_backed",
+        "adapter_kind": "runtime_scaffold",
+        "supports_authorize_url": True,
+        "supports_callback_state_validation": True,
+        "supports_code_exchange": True,
+        "supports_token_refresh": True,
+        "supports_revoke_disconnect": True,
+        "supports_account_metadata": True,
+    },
     "stripe": {
+        "mode": "runtime_backed",
+        "adapter_kind": "runtime_scaffold",
+        "supports_authorize_url": True,
+        "supports_callback_state_validation": True,
+        "supports_code_exchange": True,
+        "supports_token_refresh": True,
+        "supports_revoke_disconnect": True,
+        "supports_account_metadata": True,
+    },
+    "woocommerce": {
         "mode": "runtime_backed",
         "adapter_kind": "runtime_scaffold",
         "supports_authorize_url": True,
@@ -378,8 +428,21 @@ class DeterministicOAuthLifecycleAdapter:
         )
 
 
-class StripeOAuthLifecycleAdapter:
-    provider_key = "stripe"
+class RuntimeScaffoldOAuthLifecycleAdapter:
+    def __init__(
+        self,
+        *,
+        provider_key: str,
+        authorize_base_url: str,
+        provider_account_prefix: str,
+        default_scope: str,
+        account_type: str = "runtime_scaffold",
+    ) -> None:
+        self.provider_key = provider_key
+        self._authorize_base_url = authorize_base_url
+        self._provider_account_prefix = provider_account_prefix
+        self._default_scope = default_scope
+        self._account_type = account_type
 
     async def build_authorize_url(self, request: OAuthAuthorizeURLRequest) -> OAuthAuthorizeURLResult:
         scope_value = None
@@ -396,7 +459,7 @@ class StripeOAuthLifecycleAdapter:
             query["code_challenge"] = request.code_challenge
         if request.code_challenge_method:
             query["code_challenge_method"] = request.code_challenge_method
-        authorization_url = f"https://connect.stripe.com/oauth/authorize?{urlencode(query)}"
+        authorization_url = f"{self._authorize_base_url}?{urlencode(query)}"
         return OAuthAuthorizeURLResult(
             authorization_url=authorization_url,
             provider_session_metadata={
@@ -417,12 +480,12 @@ class StripeOAuthLifecycleAdapter:
         suffix = _safe_suffix(request.authorization_code)
         expires_at = _utcnow() + timedelta(days=3)
         return OAuthTokenSet(
-            access_token=f"stripe-access-{suffix}",
-            refresh_token=f"stripe-refresh-{suffix}",
+            access_token=f"{self.provider_key}-access-{suffix}",
+            refresh_token=f"{self.provider_key}-refresh-{suffix}",
             expires_at=expires_at,
-            scope="read_write",
+            scope=self._default_scope,
             token_type="Bearer",
-            provider_account_id=f"acct_{suffix[:16]}",
+            provider_account_id=f"{self._provider_account_prefix}{suffix[:16]}",
         )
 
     async def refresh_token(self, request: OAuthTokenRefreshRequest) -> OAuthTokenSet:
@@ -430,25 +493,25 @@ class StripeOAuthLifecycleAdapter:
         lowered = refresh_token_value.lower()
         if "invalid_client" in lowered:
             raise OAuthLifecycleRefreshError(
-                "stripe_refresh_invalid_client",
+                f"{self.provider_key}_refresh_invalid_client",
                 failure_class="provider_invalid_client",
                 terminal=True,
             )
         if "invalid_grant" in lowered or "revoked" in lowered:
             raise OAuthLifecycleRefreshError(
-                "stripe_refresh_invalid_grant",
+                f"{self.provider_key}_refresh_invalid_grant",
                 failure_class="provider_invalid_grant",
                 terminal=True,
             )
         if "scope" in lowered and "insufficient" in lowered:
             raise OAuthLifecycleRefreshError(
-                "stripe_refresh_scope_insufficient",
+                f"{self.provider_key}_refresh_scope_insufficient",
                 failure_class="provider_scope_insufficient",
                 terminal=True,
             )
         if "rate_limit" in lowered:
             raise OAuthLifecycleRefreshError(
-                "stripe_refresh_rate_limited",
+                f"{self.provider_key}_refresh_rate_limited",
                 failure_class="provider_rate_limited",
                 terminal=False,
                 retry_after_seconds=300,
@@ -456,14 +519,14 @@ class StripeOAuthLifecycleAdapter:
 
         suffix = _safe_suffix(refresh_token_value)
         expires_at = _utcnow() + timedelta(days=3)
-        scope = request.scope or "read_write"
+        scope = request.scope or self._default_scope
         return OAuthTokenSet(
-            access_token=f"stripe-refresh-access-{suffix}",
-            refresh_token=f"stripe-refresh-{suffix}",
+            access_token=f"{self.provider_key}-refresh-access-{suffix}",
+            refresh_token=f"{self.provider_key}-refresh-{suffix}",
             expires_at=expires_at,
             scope=scope,
             token_type="Bearer",
-            provider_account_id=f"acct_{suffix[:16]}",
+            provider_account_id=f"{self._provider_account_prefix}{suffix[:16]}",
         )
 
     async def revoke_disconnect(self, request: OAuthDisconnectRequest) -> OAuthDisconnectResult:
@@ -478,12 +541,23 @@ class StripeOAuthLifecycleAdapter:
     ) -> OAuthAccountMetadataResult:
         suffix = _safe_suffix(request.provider_account_id or request.access_token)
         return OAuthAccountMetadataResult(
-            provider_account_id=f"acct_{suffix[:16]}",
-            granted_scope="read_write",
+            provider_account_id=f"{self._provider_account_prefix}{suffix[:16]}",
+            granted_scope=self._default_scope,
             account_metadata={
                 "provider": self.provider_key,
-                "account_type": "standard",
+                "account_type": self._account_type,
             },
+        )
+
+
+class StripeOAuthLifecycleAdapter(RuntimeScaffoldOAuthLifecycleAdapter):
+    def __init__(self) -> None:
+        super().__init__(
+            provider_key="stripe",
+            authorize_base_url="https://connect.stripe.com/oauth/authorize",
+            provider_account_prefix="acct_",
+            default_scope="read_write",
+            account_type="standard",
         )
 
 
@@ -492,6 +566,36 @@ DEFAULT_OAUTH_LIFECYCLE_CAPABILITIES = _as_capabilities(OAUTH_LIFECYCLE_CAPABILI
 DEFAULT_OAUTH_LIFECYCLE_REGISTRY = OAuthLifecycleRegistry(
     adapters=[
         StripeOAuthLifecycleAdapter(),
+        RuntimeScaffoldOAuthLifecycleAdapter(
+            provider_key="google_ads",
+            authorize_base_url="https://accounts.google.com/o/oauth2/v2/auth",
+            provider_account_prefix="ga_",
+            default_scope="ads_read",
+        ),
+        RuntimeScaffoldOAuthLifecycleAdapter(
+            provider_key="meta_ads",
+            authorize_base_url="https://www.facebook.com/v19.0/dialog/oauth",
+            provider_account_prefix="meta_",
+            default_scope="ads_read",
+        ),
+        RuntimeScaffoldOAuthLifecycleAdapter(
+            provider_key="paypal",
+            authorize_base_url="https://www.paypal.com/signin/authorize",
+            provider_account_prefix="pp_",
+            default_scope="payments_read",
+        ),
+        RuntimeScaffoldOAuthLifecycleAdapter(
+            provider_key="shopify",
+            authorize_base_url="https://shopify.com/admin/oauth/authorize",
+            provider_account_prefix="shp_",
+            default_scope="read_orders",
+        ),
+        RuntimeScaffoldOAuthLifecycleAdapter(
+            provider_key="woocommerce",
+            authorize_base_url="https://woocommerce.com/connect/oauth/authorize",
+            provider_account_prefix="woo_",
+            default_scope="read_orders",
+        ),
         DeterministicOAuthLifecycleAdapter(),
     ],
     capabilities=DEFAULT_OAUTH_LIFECYCLE_CAPABILITIES,

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 from typing import Generic, Iterable, Protocol, TypeVar
 from uuid import UUID
 
@@ -292,6 +293,54 @@ class StripeRevenueProvider:
         )
 
 
+class _DeterministicScaffoldRevenueProvider:
+    provider_key = "unknown"
+    _base_revenue_cents = 0
+    _event_count = 1
+
+    async def fetch_realtime(self, ctx: ProviderContext) -> ProviderRevenueResult:
+        seed = f"{self.provider_key}:{ctx.platform_connection.platform_account_id}:{ctx.tenant_id}"
+        digest = hashlib.sha256(seed.encode("utf-8")).digest()
+        variance = int(digest[0]) % 50
+        total_cents = max(0, int(self._base_revenue_cents) + variance)
+        return ProviderRevenueResult(
+            total_revenue_cents=total_cents,
+            event_count=max(1, int(self._event_count)),
+            data_as_of=ctx.now,
+            source=self.provider_key,
+        )
+
+
+class GoogleAdsRevenueProvider(_DeterministicScaffoldRevenueProvider):
+    provider_key = "google_ads"
+    _base_revenue_cents = 1450
+    _event_count = 2
+
+
+class MetaAdsRevenueProvider(_DeterministicScaffoldRevenueProvider):
+    provider_key = "meta_ads"
+    _base_revenue_cents = 1325
+    _event_count = 2
+
+
+class PayPalRevenueProvider(_DeterministicScaffoldRevenueProvider):
+    provider_key = "paypal"
+    _base_revenue_cents = 1100
+    _event_count = 2
+
+
+class ShopifyRevenueProvider(_DeterministicScaffoldRevenueProvider):
+    provider_key = "shopify"
+    _base_revenue_cents = 1675
+    _event_count = 3
+
+
+class WooCommerceRevenueProvider(_DeterministicScaffoldRevenueProvider):
+    provider_key = "woocommerce"
+    _base_revenue_cents = 1525
+    _event_count = 3
+
+
 class DummyRevenueProvider:
     provider_key = "dummy"
 
@@ -315,7 +364,15 @@ class DummyRevenueProvider:
 
 
 DEFAULT_PROVIDER_REGISTRY = ProviderRegistry(
-    providers=[StripeRevenueProvider(), DummyRevenueProvider()]
+    providers=[
+        GoogleAdsRevenueProvider(),
+        MetaAdsRevenueProvider(),
+        PayPalRevenueProvider(),
+        ShopifyRevenueProvider(),
+        StripeRevenueProvider(),
+        WooCommerceRevenueProvider(),
+        DummyRevenueProvider(),
+    ]
 )
 
 

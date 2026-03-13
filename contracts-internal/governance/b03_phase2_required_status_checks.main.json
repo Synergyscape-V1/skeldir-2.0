@@ -34,6 +34,7 @@
     "B1.3 P6 Runtime Lifecycle Proofs",
     "B1.3 P7 Refresh Orchestration Proofs",
     "B1.3 P8 Failure & Baseline Proofs",
-    "B1.3 P9 Core Substrate Closure Proofs"
+    "B1.3 P9 Core Substrate Closure Proofs",
+    "B1.3 P10 Provider Tranche Proofs"
   ]
 }

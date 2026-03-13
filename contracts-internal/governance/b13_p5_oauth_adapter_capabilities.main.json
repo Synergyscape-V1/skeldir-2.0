@@ -13,6 +13,17 @@
   ],
   "adapter_capabilities": [
     {
+      "provider": "google_ads",
+      "mode": "runtime_backed",
+      "adapter_kind": "runtime_scaffold",
+      "supports_authorize_url": true,
+      "supports_callback_state_validation": true,
+      "supports_code_exchange": true,
+      "supports_token_refresh": true,
+      "supports_revoke_disconnect": true,
+      "supports_account_metadata": true
+    },
+    {
       "provider": "dummy",
       "mode": "internal_runtime_only",
       "adapter_kind": "deterministic_reference",
@@ -24,7 +35,51 @@
       "supports_account_metadata": true
     },
     {
+      "provider": "meta_ads",
+      "mode": "runtime_backed",
+      "adapter_kind": "runtime_scaffold",
+      "supports_authorize_url": true,
+      "supports_callback_state_validation": true,
+      "supports_code_exchange": true,
+      "supports_token_refresh": true,
+      "supports_revoke_disconnect": true,
+      "supports_account_metadata": true
+    },
+    {
+      "provider": "paypal",
+      "mode": "runtime_backed",
+      "adapter_kind": "runtime_scaffold",
+      "supports_authorize_url": true,
+      "supports_callback_state_validation": true,
+      "supports_code_exchange": true,
+      "supports_token_refresh": true,
+      "supports_revoke_disconnect": true,
+      "supports_account_metadata": true
+    },
+    {
+      "provider": "shopify",
+      "mode": "runtime_backed",
+      "adapter_kind": "runtime_scaffold",
+      "supports_authorize_url": true,
+      "supports_callback_state_validation": true,
+      "supports_code_exchange": true,
+      "supports_token_refresh": true,
+      "supports_revoke_disconnect": true,
+      "supports_account_metadata": true
+    },
+    {
       "provider": "stripe",
+      "mode": "runtime_backed",
+      "adapter_kind": "runtime_scaffold",
+      "supports_authorize_url": true,
+      "supports_callback_state_validation": true,
+      "supports_code_exchange": true,
+      "supports_token_refresh": true,
+      "supports_revoke_disconnect": true,
+      "supports_account_metadata": true
+    },
+    {
+      "provider": "woocommerce",
       "mode": "runtime_backed",
       "adapter_kind": "runtime_scaffold",
       "supports_authorize_url": true,
