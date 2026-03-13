@@ -109,7 +109,7 @@ def test_b13_p5_negative_control_detects_capability_overclaim(tmp_path: Path) ->
     payload = json.loads(p5_contract.read_text(encoding="utf-8"))
     payload["adapter_capabilities"].append(
         {
-            "provider": "paypal",
+            "provider": "linkedin_ads",
             "mode": "runtime_backed",
             "adapter_kind": "runtime_scaffold",
             "supports_authorize_url": True,

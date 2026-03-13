@@ -4,7 +4,12 @@
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "runtime_backed_providers": [
-    "stripe"
+    "google_ads",
+    "meta_ads",
+    "paypal",
+    "shopify",
+    "stripe",
+    "woocommerce"
   ],
   "runtime_internal_only_providers": [
     "dummy"
@@ -20,13 +25,8 @@
     "woocommerce"
   ],
   "future_rollout_targets": [
-    "google_ads",
     "linkedin_ads",
-    "meta_ads",
-    "paypal",
-    "shopify",
-    "tiktok_ads",
-    "woocommerce"
+    "tiktok_ads"
   ],
   "webhook_hmac_providers": [
     "paypal",
@@ -44,13 +44,13 @@
   },
   "provider_modes": {
     "dummy": "internal_runtime_only",
-    "google_ads": "future_rollout",
+    "google_ads": "runtime_backed",
     "linkedin_ads": "future_rollout",
-    "meta_ads": "future_rollout",
-    "paypal": "future_rollout",
-    "shopify": "future_rollout",
+    "meta_ads": "runtime_backed",
+    "paypal": "runtime_backed",
+    "shopify": "runtime_backed",
     "stripe": "runtime_backed",
     "tiktok_ads": "future_rollout",
-    "woocommerce": "future_rollout"
+    "woocommerce": "runtime_backed"
   }
 }

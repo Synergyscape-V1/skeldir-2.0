@@ -462,7 +462,14 @@ async def test_b13_p8_supported_provider_tranche_baseline_is_explicit_and_callab
     capability_contract = json.loads(P0_CAPABILITY_CONTRACT.read_text(encoding="utf-8"))
     runtime_backed = capability_contract.get("runtime_backed_providers")
     internal_only = capability_contract.get("runtime_internal_only_providers")
-    assert runtime_backed == ["stripe"]
+    assert runtime_backed == [
+        "google_ads",
+        "meta_ads",
+        "paypal",
+        "shopify",
+        "stripe",
+        "woocommerce",
+    ]
     assert internal_only == ["dummy"]
 
     dispatcher = ProviderOAuthLifecycleDispatcher()
@@ -479,6 +486,19 @@ async def test_b13_p8_supported_provider_tranche_baseline_is_explicit_and_callab
         )
     assert stripe_rate_limit.value.failure_class == "provider_rate_limited"
     assert stripe_rate_limit.value.terminal is False
+
+    with pytest.raises(OAuthLifecycleRefreshError) as paypal_invalid_grant:
+        await dispatcher.refresh_token(
+            platform="paypal",
+            request=OAuthTokenRefreshRequest(
+                tenant_id=uuid4(),
+                correlation_id=uuid4(),
+                refresh_token="paypal-invalid_grant-baseline",
+                scope="payments_read",
+            ),
+        )
+    assert paypal_invalid_grant.value.failure_class == "provider_invalid_grant"
+    assert paypal_invalid_grant.value.terminal is True
 
     with pytest.raises(OAuthLifecycleRefreshError) as dummy_invalid_client:
         await dispatcher.refresh_token(
