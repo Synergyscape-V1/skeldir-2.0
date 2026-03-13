@@ -616,6 +616,10 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
+      - name: Remove repo .env for CI isolation
+        run: |
+          rm -f .env
+
       - name: Apply migrations
         run: |
           alembic upgrade head
