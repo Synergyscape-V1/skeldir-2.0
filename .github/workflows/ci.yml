@@ -647,6 +647,93 @@ jobs:
           name: b13-p10-runtime-artifacts
           path: artifacts/b13_p10
           if-no-files-found: error
+
+  b13-p11-e2e-system-proofs:
+    name: B1.3 P11 E2E System Proofs
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install P11 proof dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Apply migrations
+        run: |
+          alembic upgrade head
+
+      - name: Enforce B1.3-P11 final E2E structure
+        run: |
+          python scripts/ci/enforce_b13_p11_e2e_system_proofs.py
+
+      - name: Run B1.3-P11 final E2E system proofs
+        run: |
+          mkdir -p artifacts/b13_p11
+          pytest backend/tests/integration/test_b13_p11_e2e_system_proofs.py -q -rs --junitxml=artifacts/b13_p11/junit.xml
+
+      - name: Capture B1.3-P11 branch protection evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          REQUIRE_LIVE=""
+          if [ "${GITHUB_REF}" = "refs/heads/main" ] && [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            REQUIRE_LIVE="--require-live"
+          fi
+          python scripts/ci/capture_b13_p11_branch_protection_evidence.py \
+            --output artifacts/b13_p11/p11_branch_protection_evidence.json \
+            ${REQUIRE_LIVE}
+
+      - name: Verify B1.3-P11 runtime proof execution and artifacts
+        run: |
+          REQUIRE_LIVE=""
+          if [ "${GITHUB_REF}" = "refs/heads/main" ] && [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            REQUIRE_LIVE="--require-live-branch-protection"
+          fi
+          python scripts/ci/enforce_b13_p11_e2e_system_proofs.py \
+            --require-runtime-execution \
+            --junit-xml artifacts/b13_p11/junit.xml \
+            --artifacts-dir artifacts/b13_p11 \
+            ${REQUIRE_LIVE}
+
+      - name: Upload B1.3-P11 runtime artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b13-p11-runtime-artifacts
+          path: artifacts/b13_p11
+          if-no-files-found: error
   # Contract validation
 
   validate-contracts:
