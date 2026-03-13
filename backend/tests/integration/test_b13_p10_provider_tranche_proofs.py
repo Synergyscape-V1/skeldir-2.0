@@ -10,11 +10,8 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from starlette.requests import Request
@@ -22,6 +19,8 @@ from starlette.requests import Request
 os.environ["TESTING"] = "1"
 os.environ.setdefault("PLATFORM_TOKEN_ENCRYPTION_KEY", "test-platform-key")
 os.environ.setdefault("PLATFORM_TOKEN_KEY_ID", "test-key")
+_BOOTSTRAP_MIGRATION_DATABASE_URL = os.environ.get("MIGRATION_DATABASE_URL")
+_BOOTSTRAP_DATABASE_URL = os.environ.get("DATABASE_URL")
 
 from app.api.platform_oauth import (  # noqa: E402
     complete_provider_oauth_callback,
@@ -123,7 +122,12 @@ def _minimal_request(path: str) -> Request:
 
 
 def _sync_database_url() -> str:
-    url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    url = (
+        _BOOTSTRAP_MIGRATION_DATABASE_URL
+        or _BOOTSTRAP_DATABASE_URL
+        or os.environ.get("MIGRATION_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+    )
     if not url:
         raise RuntimeError("DATABASE_URL or MIGRATION_DATABASE_URL is required")
     if url.startswith("postgresql+asyncpg://"):
@@ -198,60 +202,19 @@ def _auth_context(tenant_id: UUID, user_id: UUID) -> AuthContext:
 
 
 @pytest.fixture(scope="session")
-def _isolated_database_urls() -> tuple[str, str]:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    base_sync_url = _sync_database_url()
-    parsed = make_url(base_sync_url)
-    admin_url = str(parsed.set(database="postgres"))
-    isolated_db_name = f"skeldir_b13_p10_{uuid4().hex[:12]}"
-    isolated_sync_url = str(parsed.set(database=isolated_db_name))
-    isolated_async_url = _to_async_url(isolated_sync_url)
-
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin_engine.begin() as conn:
-            conn.execute(
-                text(
-                    f'CREATE DATABASE "{isolated_db_name}" OWNER "{parsed.username or "postgres"}"'
-                )
-            )
-    except Exception as exc:
-        pytest.skip(f"unable to create isolated database for B1.3-P10 runtime proofs: {exc}")
-    finally:
-        admin_engine.dispose()
-
-    os.environ["MIGRATION_DATABASE_URL"] = isolated_sync_url
-    os.environ["DATABASE_URL"] = isolated_async_url
-    cfg.set_main_option("sqlalchemy.url", isolated_sync_url)
-    command.upgrade(cfg, "head")
-
-    try:
-        yield isolated_sync_url, isolated_async_url
-    finally:
-        cleanup_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-        try:
-            with cleanup_engine.begin() as conn:
-                conn.execute(
-                    text(
-                        """
-                        SELECT pg_terminate_backend(pid)
-                        FROM pg_stat_activity
-                        WHERE datname = :db_name
-                          AND pid <> pg_backend_pid()
-                        """
-                    ),
-                    {"db_name": isolated_db_name},
-                )
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{isolated_db_name}"'))
-        finally:
-            cleanup_engine.dispose()
+def _runtime_database_urls() -> tuple[str, str]:
+    sync_url = _sync_database_url()
+    async_url = _to_async_url(sync_url)
+    os.environ["MIGRATION_DATABASE_URL"] = sync_url
+    os.environ["DATABASE_URL"] = async_url
+    return sync_url, async_url
 
 
 @pytest.fixture
 async def _async_session_factory(
-    _isolated_database_urls: tuple[str, str],
+    _runtime_database_urls: tuple[str, str],
 ) -> async_sessionmaker[AsyncSession]:
-    _, async_url = _isolated_database_urls
+    _, async_url = _runtime_database_urls
     engine = create_async_engine(
         async_url,
         pool_pre_ping=True,
@@ -381,10 +344,10 @@ def test_b13_p10_negative_control_detects_missing_required_context(tmp_path: Pat
 
 @pytest.mark.asyncio
 async def test_b13_p10_provider_lifecycle_tranche_proofs_cover_target_six_runtime_backed_providers(
-    _isolated_database_urls: tuple[str, str],
+    _runtime_database_urls: tuple[str, str],
     _async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    sync_url, _ = _isolated_database_urls
+    sync_url, _ = _runtime_database_urls
     tenant_id = uuid4()
     user_id = uuid4()
     _seed_tenant(sync_url, tenant_id, "p10-breadth")
