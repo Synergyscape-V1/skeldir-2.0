@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 
 REQUIRED_CONTEXT = "B1.3 P9 Core Substrate Closure Proofs"
@@ -11,6 +12,14 @@ REQUIRED_TEST_NAMES = (
     "test_b13_p9_gate_passes_repo_state",
     "test_b13_p9_composed_lifecycle_closure_with_deterministic_and_stripe_paths",
     "test_b13_p9_cross_tenant_and_tenantless_worker_fail_before_side_effects",
+)
+REQUIRED_RUNTIME_TEST_NAMES = (
+    "test_b13_p9_composed_lifecycle_closure_with_deterministic_and_stripe_paths",
+    "test_b13_p9_cross_tenant_and_tenantless_worker_fail_before_side_effects",
+)
+REQUIRED_RUNTIME_ARTIFACTS = (
+    "p9_composed_runtime_report.json",
+    "p9_negative_controls_report.json",
 )
 
 
@@ -29,6 +38,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--resolver-file", default="backend/app/services/provider_valid_token_resolution.py")
     parser.add_argument("--maintenance-task-file", default="backend/app/tasks/maintenance.py")
     parser.add_argument("--enqueue-file", default="backend/app/tasks/enqueue.py")
+    parser.add_argument("--require-runtime-execution", action="store_true")
+    parser.add_argument("--junit-xml", default=None)
+    parser.add_argument("--artifacts-dir", default="artifacts/b13_p9")
     return parser.parse_args()
 
 
@@ -56,8 +68,11 @@ def _check_workflow_surface(workflow_text: str, errors: list[str]) -> None:
         "name: B1.3 P9 Core Substrate Closure Proofs",
         "python scripts/ci/enforce_b13_p9_core_substrate_closure.py",
         "pytest backend/tests/integration/test_b13_p9_core_substrate_closure.py -q",
+        "--junitxml=artifacts/b13_p9/junit.xml",
+        "--require-runtime-execution",
         "name: b13-p9-runtime-artifacts",
         "path: artifacts/b13_p9",
+        "if-no-files-found: error",
     )
     for fragment in required_fragments:
         if fragment not in workflow_text:
@@ -155,6 +170,101 @@ def _check_tests_surface(test_text: str, errors: list[str]) -> None:
         if fragment not in test_text:
             errors.append(f"P9 proof suite missing closure fragment: {fragment}")
 
+    if "pytest.skip(" in test_text and "_isolated_database_urls" in test_text:
+        errors.append("P9 proof suite may skip closure-grade runtime tests from _isolated_database_urls")
+
+
+def _load_junit_cases(junit_path: Path) -> dict[str, str]:
+    root = ET.fromstring(junit_path.read_text(encoding="utf-8"))
+    outcomes: dict[str, str] = {}
+    for case in root.iter("testcase"):
+        name = case.attrib.get("name", "")
+        if not name:
+            continue
+        if case.find("failure") is not None:
+            outcome = "failed"
+        elif case.find("error") is not None:
+            outcome = "error"
+        elif case.find("skipped") is not None:
+            outcome = "skipped"
+        else:
+            outcome = "passed"
+        outcomes[name] = outcome
+    return outcomes
+
+
+def _resolve_case_outcome(outcomes: dict[str, str], test_name: str) -> str | None:
+    if test_name in outcomes:
+        return outcomes[test_name]
+    for name, outcome in outcomes.items():
+        if name.startswith(f"{test_name}["):
+            return outcome
+    return None
+
+
+def _check_runtime_execution(*, junit_path: Path, artifacts_dir: Path, errors: list[str]) -> None:
+    if not junit_path.exists():
+        errors.append(f"missing junit xml for runtime verification: {junit_path}")
+        return
+
+    try:
+        outcomes = _load_junit_cases(junit_path)
+    except Exception as exc:
+        errors.append(f"unable to parse junit xml {junit_path}: {exc}")
+        return
+
+    for test_name in REQUIRED_RUNTIME_TEST_NAMES:
+        outcome = _resolve_case_outcome(outcomes, test_name)
+        if outcome is None:
+            errors.append(f"runtime proof testcase missing from junit xml: {test_name}")
+            continue
+        if outcome != "passed":
+            errors.append(f"runtime proof testcase did not pass (outcome={outcome}): {test_name}")
+
+    if not artifacts_dir.exists():
+        errors.append(f"missing runtime artifact directory: {artifacts_dir}")
+        return
+
+    composed_payload: dict | None = None
+    negative_payload: dict | None = None
+    for artifact_name in REQUIRED_RUNTIME_ARTIFACTS:
+        artifact_path = artifacts_dir / artifact_name
+        if not artifact_path.exists():
+            errors.append(f"missing runtime proof artifact: {artifact_path}")
+            continue
+        try:
+            payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            errors.append(f"unable to parse runtime artifact {artifact_path}: {exc}")
+            continue
+        if artifact_name == "p9_composed_runtime_report.json":
+            composed_payload = payload
+        elif artifact_name == "p9_negative_controls_report.json":
+            negative_payload = payload
+
+    if composed_payload is not None:
+        stripe_path = composed_payload.get("stripe_path")
+        dummy_path = composed_payload.get("dummy_path")
+        if not isinstance(stripe_path, dict) or not isinstance(dummy_path, dict):
+            errors.append("p9_composed_runtime_report.json missing stripe_path/dummy_path objects")
+        else:
+            if stripe_path.get("refresh_status") != "refreshed":
+                errors.append("stripe composed lifecycle did not record refreshed status")
+            if dummy_path.get("terminal_status") != "revoked_terminal":
+                errors.append("dummy composed lifecycle did not record revoked_terminal status")
+            if dummy_path.get("graceful_degraded_code") != "provider_revoked":
+                errors.append("dummy composed lifecycle missing graceful degraded provider_revoked code")
+
+    if negative_payload is not None:
+        if negative_payload.get("cross_tenant_status_code") != 404:
+            errors.append("cross-tenant status negative did not assert 404 before side effects")
+        if negative_payload.get("cross_tenant_disconnect_code") != 404:
+            errors.append("cross-tenant disconnect negative did not assert 404 before side effects")
+        if negative_payload.get("tenantless_worker_error") != "authority_envelope header is required":
+            errors.append("tenantless worker negative missing required fail-closed error")
+        if negative_payload.get("worker_positive_status") != "refreshed":
+            errors.append("worker envelope parity positive path did not record refreshed status")
+
 
 def main() -> int:
     args = _parse_args()
@@ -202,6 +312,16 @@ def main() -> int:
         errors=errors,
     )
     _check_tests_surface(tests_text, errors)
+    if args.require_runtime_execution:
+        junit_xml = Path(args.junit_xml) if args.junit_xml else None
+        if junit_xml is None:
+            errors.append("--require-runtime-execution requires --junit-xml")
+        else:
+            _check_runtime_execution(
+                junit_path=junit_xml,
+                artifacts_dir=Path(args.artifacts_dir),
+                errors=errors,
+            )
 
     if errors:
         print("B1.3-P9 core substrate closure gate failed:")
