@@ -272,7 +272,7 @@ async def _fetch_credential_row(
                     pc.next_refresh_due_at,
                     encode(pc.encrypted_access_token, 'base64') AS encrypted_access_token_b64,
                     COALESCE(encode(pc.encrypted_refresh_token, 'base64'), '') AS encrypted_refresh_token_b64,
-                    conn.metadata AS connection_metadata
+                    conn.connection_metadata AS connection_metadata
                 FROM public.platform_credentials pc
                 JOIN public.platform_connections conn ON conn.id = pc.platform_connection_id
                 WHERE pc.tenant_id = :tenant_id
