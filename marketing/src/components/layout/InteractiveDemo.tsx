@@ -8,7 +8,7 @@ import { useState, useRef, useCallback } from "react";
 // State Machine: READY_TO_PLAY → PLAYING → ERROR
 // ============================================================================
 
-const YOUTUBE_VIDEO_ID = "DHEyowvZ_9E";
+const YOUTUBE_VIDEO_ID = "uLbvaETQVp0";
 const YOUTUBE_EMBED_URL = `https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}`;
 const YOUTUBE_THUMBNAIL_URL = `https://img.youtube.com/vi/${YOUTUBE_VIDEO_ID}/maxresdefault.jpg`;
 const YOUTUBE_THUMBNAIL_FALLBACK = `https://img.youtube.com/vi/${YOUTUBE_VIDEO_ID}/hqdefault.jpg`;
