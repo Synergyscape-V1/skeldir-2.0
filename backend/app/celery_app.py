@@ -162,6 +162,7 @@ def _ensure_celery_configured():
         "app.tasks.bayesian",
         "app.tasks.r4_failure_semantics",
         "app.tasks.r6_resource_governance",
+        "app.tasks.privacy",
     ]
     # B0.5.6.6: Test-only tasks for runtime log proof (never enabled in production).
     if os.getenv("SKELDIR_TEST_TASKS") == "1":
@@ -220,6 +221,7 @@ def _ensure_celery_configured():
             'app.tasks.bayesian.*': {'queue': QUEUE_ATTRIBUTION, 'routing_key': f'{QUEUE_ATTRIBUTION}.task'},
             'app.tasks.r4_failure_semantics.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
             'app.tasks.r6_resource_governance.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
+            'app.tasks.privacy.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},
         },
         task_default_queue=QUEUE_HOUSEKEEPING,
         task_default_exchange='tasks',

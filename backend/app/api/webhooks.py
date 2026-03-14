@@ -41,6 +41,7 @@ from app.observability.context import (
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import tenant_task_signature
 from app.security.auth import AuthError, unauthorized_auth_error
+from app.privacy.authority import generate_privacy_session_id
 from app.webhooks.signatures import (
     verify_shopify_signature,
     verify_stripe_signature,
@@ -398,7 +399,7 @@ async def shopify_order_create(
         "event_timestamp": (payload.created_at or datetime.now(timezone.utc)).isoformat(),
         "revenue_amount": payload.total_price or "0",
         "currency": payload.currency or "USD",
-        "session_id": str(uuid5(NAMESPACE_URL, f"shopify:{payload.id}")),
+        "session_id": str(generate_privacy_session_id()),
         "vendor": "shopify",
         "utm_source": "shopify",
         "external_event_id": str(payload.id),
@@ -433,7 +434,7 @@ async def stripe_payment_intent_succeeded(
         "event_timestamp": ts.isoformat(),
         "revenue_amount": revenue_amount,
         "currency": payload.currency.upper() if payload.currency else "USD",
-        "session_id": str(uuid5(NAMESPACE_URL, f"stripe:{payload.id or idempotency_key}")),
+        "session_id": str(generate_privacy_session_id()),
         "vendor": "stripe",
         "utm_source": "stripe",
         "external_event_id": payload.id,
@@ -607,7 +608,7 @@ async def stripe_payment_intent_succeeded_v2(
         "event_timestamp": ts.isoformat(),
         "revenue_amount": revenue_amount,
         "currency": currency.upper(),
-        "session_id": str(uuid5(NAMESPACE_URL, f"stripe:{idempotency_key}")),
+        "session_id": str(generate_privacy_session_id()),
         "vendor": vendor_for_normalization,
         "utm_source": utm_source_for_normalization,
         "external_event_id": pi_id,
@@ -668,7 +669,7 @@ async def paypal_sale_completed(
         "event_timestamp": ts.isoformat(),
         "revenue_amount": payload.amount.total or "0",
         "currency": payload.amount.currency or "USD",
-        "session_id": str(uuid5(NAMESPACE_URL, f"paypal:{payload.id}")),
+        "session_id": str(generate_privacy_session_id()),
         "vendor": "paypal",
         "utm_source": "paypal",
         "external_event_id": payload.id,
@@ -698,7 +699,7 @@ async def woocommerce_order_completed(
         "event_timestamp": ts.isoformat(),
         "revenue_amount": payload.total or "0",
         "currency": payload.currency or "USD",
-        "session_id": str(uuid5(NAMESPACE_URL, f"woocommerce:{payload.id}")),
+        "session_id": str(generate_privacy_session_id()),
         "vendor": "woocommerce",
         "utm_source": "woocommerce",
         "external_event_id": str(payload.id),
