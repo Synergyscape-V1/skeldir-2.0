@@ -1,0 +1,128 @@
+{
+  "artifact_id": "b14.p0.privacy_authority.main",
+  "artifact_version": "1.0.0",
+  "phase": "B1.4-P0",
+  "status": "authoritative",
+  "banned_direct_identifier_keys": [
+    "email",
+    "phone",
+    "first_name",
+    "last_name",
+    "full_name",
+    "name",
+    "address",
+    "ip_address",
+    "ip",
+    "customer_email",
+    "receipt_email",
+    "billing_email",
+    "shipping_address"
+  ],
+  "banned_proxy_identifier_keys": [
+    "device_fingerprint",
+    "fingerprint",
+    "user_agent",
+    "client_ip_hash",
+    "ip_hash",
+    "identity_hash",
+    "cross_session_id",
+    "vendor_payload"
+  ],
+  "event_lifecycle": {
+    "durable_store": {
+      "table": "public.attribution_events",
+      "payload_column": "raw_payload",
+      "payload_allowlist_keys": [
+        "event_type",
+        "event_timestamp",
+        "currency",
+        "vendor",
+        "utm_source",
+        "utm_medium",
+        "external_event_id",
+        "campaign_id",
+        "idempotency_key",
+        "channel"
+      ],
+      "payload_forbidden_keys": [
+        "vendor_payload",
+        "billing_details",
+        "raw_body",
+        "raw_body_sha256",
+        "raw_body_bytes",
+        "parse_error",
+        "device_fingerprint",
+        "user_agent",
+        "ip_hash"
+      ]
+    },
+    "expirable_surfaces": [
+      {
+        "table": "public.dead_events",
+        "column": "raw_payload",
+        "retention_days": 90,
+        "expiry_action": "redact_json_payload"
+      },
+      {
+        "table": "public.dead_events_quarantine",
+        "column": "raw_payload",
+        "retention_days": 90,
+        "expiry_action": "redact_json_payload"
+      }
+    ],
+    "session_boundary": {
+      "session_field": "session_id",
+      "derivation": "uuid4_nondeterministic",
+      "max_duration_minutes": 30,
+      "cross_session_linking": "forbidden"
+    }
+  },
+  "deletion_contract": {
+    "exposure_model": "internal_control_plane_worker",
+    "public_api_exposed": false,
+    "authority_task_name": "app.tasks.privacy.erase_tenant_privacy_surfaces",
+    "erasable_surfaces": [
+      "public.dead_events.raw_payload",
+      "public.dead_events.error_detail",
+      "public.dead_events_quarantine.raw_payload",
+      "public.dead_events_quarantine.error_detail"
+    ],
+    "non_erasable_surfaces": [
+      "public.attribution_events"
+    ]
+  },
+  "export_contract": {
+    "allowed_fields": [
+      "tenant_id",
+      "time_window",
+      "channel",
+      "revenue_cents",
+      "attribution_model",
+      "last_updated",
+      "data_freshness_seconds"
+    ],
+    "forbidden_fields": [
+      "email",
+      "phone",
+      "name",
+      "address",
+      "session_id",
+      "device_fingerprint",
+      "ip_address",
+      "ip_hash"
+    ]
+  },
+  "log_artifact_no_leak": {
+    "forbidden_keys": [
+      "authorization",
+      "cookie",
+      "set_cookie",
+      "x_skeldir_tenant_key",
+      "email",
+      "phone",
+      "ip_address",
+      "session_id",
+      "device_fingerprint"
+    ]
+  }
+}

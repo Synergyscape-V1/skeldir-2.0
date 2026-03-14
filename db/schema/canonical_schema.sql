@@ -299,6 +299,34 @@ CREATE FUNCTION public.fn_events_prevent_mutation() RETURNS trigger
         END;
         $$;
 
+CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $_$
+        BEGIN
+            IF NEW.raw_payload IS NULL THEN
+                RETURN NEW;
+            END IF;
+
+            IF (
+                jsonb_path_exists(NEW.raw_payload, '$.**.vendor_payload')
+                OR jsonb_path_exists(raw_payload, '$.**.billing_details')
+                OR jsonb_path_exists(raw_payload, '$.**.raw_body')
+                OR jsonb_path_exists(raw_payload, '$.**.raw_body_sha256')
+                OR jsonb_path_exists(raw_payload, '$.**.raw_body_bytes')
+                OR jsonb_path_exists(raw_payload, '$.**.parse_error')
+                OR jsonb_path_exists(raw_payload, '$.**.device_fingerprint')
+                OR jsonb_path_exists(raw_payload, '$.**.user_agent')
+                OR jsonb_path_exists(raw_payload, '$.**.ip_hash')
+                OR jsonb_path_exists(raw_payload, '$.**.session_id')
+            ) THEN
+                RAISE EXCEPTION
+                    'privacy authority violation: forbidden identity/raw-envelope key in attribution_events.raw_payload';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $_$;
+
 CREATE FUNCTION public.fn_ledger_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1974,6 +2002,8 @@ CREATE TRIGGER trg_check_allocation_sum_delete AFTER DELETE ON public.attributio
 CREATE TRIGGER trg_check_allocation_sum_update AFTER UPDATE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_update();
 
 CREATE TRIGGER trg_events_prevent_mutation BEFORE DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_events_prevent_mutation();
+
+CREATE TRIGGER trg_guard_attribution_events_payload_identity BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_guard_attribution_events_payload_identity();
 
 CREATE TRIGGER trg_ledger_prevent_mutation BEFORE DELETE OR UPDATE ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ledger_prevent_mutation();
 

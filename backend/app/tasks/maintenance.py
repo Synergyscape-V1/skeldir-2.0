@@ -229,10 +229,46 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
     Enforce data retention policy by purging old data.
 
     IMPORTANT: Immutable tables (e.g., attribution_events, revenue_ledger) are never
-    deleted. Retention enforcement must only operate on mutable tables.
+    deleted. Retention enforcement must only operate on mutable tables. For dead-letter
+    stores, old payload envelopes are redacted to satisfy raw-event expiry requirements.
     """
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
+        dead_events_payload_redacted = (
+            await conn.execute(
+                text(
+                    """
+                    UPDATE dead_events
+                    SET raw_payload = '{}'::jsonb,
+                        error_detail = '{}'::jsonb
+                    WHERE ingested_at < :cutoff
+                      AND (
+                        raw_payload <> '{}'::jsonb
+                        OR error_detail <> '{}'::jsonb
+                      )
+                    """
+                ),
+                {"cutoff": cutoff_90},
+            )
+        ).rowcount or 0
+        quarantine_payload_redacted = (
+            await conn.execute(
+                text(
+                    """
+                    UPDATE dead_events_quarantine
+                    SET raw_payload = '{}'::jsonb,
+                        error_detail = '{}'::jsonb
+                    WHERE tenant_id = :tenant_id
+                      AND ingested_at < :cutoff
+                      AND (
+                        raw_payload <> '{}'::jsonb
+                        OR error_detail <> '{}'::jsonb
+                      )
+                    """
+                ),
+                {"tenant_id": tenant_id, "cutoff": cutoff_90},
+            )
+        ).rowcount or 0
         allocations_deleted = (
             await conn.execute(
                 text("DELETE FROM attribution_allocations WHERE created_at < :cutoff"),
@@ -253,6 +289,8 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
         ).rowcount or 0
         return {
             "allocations_deleted": allocations_deleted,
+            "dead_events_payload_redacted": dead_events_payload_redacted,
+            "dead_events_quarantine_payload_redacted": quarantine_payload_redacted,
             "dead_events_deleted": dead_events_deleted,
         }
 
