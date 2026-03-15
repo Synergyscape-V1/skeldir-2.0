@@ -59,6 +59,30 @@ def test_b14_p0_negative_control_detects_missing_required_context(tmp_path: Path
     assert "missing context: B1.4 P0 Privacy Authority Lock" in combined
 
 
+def test_b14_p0_negative_control_detects_session_duration_regression(tmp_path: Path) -> None:
+    payload = json.loads(AUTHORITY.read_text(encoding="utf-8"))
+    payload["event_lifecycle"]["session_boundary"]["max_duration_minutes"] = 30
+    artifact_copy = tmp_path / "authority_bad_session.json"
+    artifact_copy.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    result = _run(["--authority-artifact", str(artifact_copy)])
+    assert result.returncode != 0
+    combined = f"{result.stdout}\n{result.stderr}"
+    assert "max_duration_minutes must be exactly 1440" in combined
+
+
+def test_b14_p0_negative_control_detects_missing_internal_only_debt_lock(tmp_path: Path) -> None:
+    payload = json.loads(AUTHORITY.read_text(encoding="utf-8"))
+    payload["deletion_contract"].pop("downstream_contract_debt", None)
+    artifact_copy = tmp_path / "authority_missing_debt.json"
+    artifact_copy.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    result = _run(["--authority-artifact", str(artifact_copy)])
+    assert result.returncode != 0
+    combined = f"{result.stdout}\n{result.stderr}"
+    assert "downstream_contract_debt" in combined
+
+
 def test_b14_p0_negative_control_detects_deterministic_session_derivation(tmp_path: Path) -> None:
     mutated = WEBHOOKS.read_text(encoding="utf-8").replace(
         "str(generate_privacy_session_id())",
@@ -72,4 +96,3 @@ def test_b14_p0_negative_control_detects_deterministic_session_derivation(tmp_pa
     assert result.returncode != 0
     combined = f"{result.stdout}\n{result.stderr}"
     assert "must not derive session ids deterministically" in combined
-
