@@ -6,6 +6,7 @@ in_scope_prefixes:
   - /api/auth
   - /api/attribution
   - /api/v1/revenue
+  - /api/v1/privacy
   - /api/reconciliation
   - /api/export
   - /api/health
@@ -34,6 +35,7 @@ spec_mappings:
   /api/auth: api-contracts/dist/openapi/v1/auth.bundled.yaml
   /api/attribution: api-contracts/dist/openapi/v1/attribution.bundled.yaml
   /api/v1/revenue: api-contracts/dist/openapi/v1/revenue.bundled.yaml
+  /api/v1/privacy: api-contracts/dist/openapi/v1/privacy.bundled.yaml
   /api/reconciliation: api-contracts/dist/openapi/v1/reconciliation.bundled.yaml
   /api/export: api-contracts/dist/openapi/v1/export.bundled.yaml
   /api/health: api-contracts/dist/openapi/v1/health.bundled.yaml

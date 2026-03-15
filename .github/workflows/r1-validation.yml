@@ -172,7 +172,7 @@ jobs:
               if python -m datamodel_code_generator \
                 --input "$BUNDLED_FILE" \
                 --input-file-type openapi \
-                --output "$TEMP_DIR" \
+                --output "$TEMP_DIR/models.py" \
                 --target-python-version 3.11 \
                 --use-annotated \
                 --use-standard-collections >> $ARTIFACT_DIR/openapi_contracts_smoke_codegen.log 2>&1; then
@@ -265,6 +265,7 @@ jobs:
       - name: Apply migrations (Run 1 - from zero)
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_test
         run: |
           {
             echo "=== Migration Run 1: From Zero to Head ==="
@@ -285,6 +286,7 @@ jobs:
       - name: Capture alembic state after run 1
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_test
         run: |
           {
             echo "=== Alembic State After Run 1 ==="
@@ -301,6 +303,7 @@ jobs:
       - name: Apply migrations (Run 2 - idempotency check)
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_test
+          MIGRATION_DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_test
         run: |
           {
             echo "=== Migration Run 2: Idempotency Check (should be no-op) ==="
@@ -379,6 +382,7 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_prod
+          MIGRATION_DATABASE_URL: postgresql://postgres:testpass@localhost:5432/skeldir_prod
         run: |
           alembic upgrade head 2>&1 | tee -a $ARTIFACT_DIR/live_stack_boot.log
 

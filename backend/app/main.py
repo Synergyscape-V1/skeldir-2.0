@@ -37,6 +37,7 @@ from app.api import (
     attribution,
     export,
     health,
+    privacy,
     platform_oauth,
     platforms,
     reconciliation,
@@ -83,6 +84,7 @@ app.include_router(attribution.router, prefix="/api/attribution", tags=["Attribu
 app.include_router(platforms.router, prefix="/api/attribution", tags=["Platform Connections"])
 app.include_router(platform_oauth.router, prefix="/api/attribution", tags=["Provider OAuth Lifecycle"])
 app.include_router(revenue.router, prefix="/api/v1", tags=["Revenue"])
+app.include_router(privacy.router, prefix="/api/v1", tags=["Privacy"])
 app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["Reconciliation"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(health.router, tags=["Health"])
