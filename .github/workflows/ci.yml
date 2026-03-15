@@ -879,8 +879,8 @@ jobs:
             name=$(basename "$current")
             main_path="api-contracts/dist/openapi/v1/${name}"
             if ! git cat-file -e "origin/main:${main_path}" 2>/dev/null; then
-              echo "ERROR: Missing origin/main bundled contract for ${name} at ${main_path}"
-              exit 1
+              echo "INFO: ${name} is new in PR scope (no origin/main baseline); skipping breaking diff"
+              continue
             fi
             baseline="/tmp/main-contracts/${name}"
             git show "origin/main:${main_path}" > "$baseline"

@@ -64,6 +64,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PrivacyDeleteAccepted'
+              examples:
+                accepted:
+                  summary: Deletion accepted
+                  value:
+                    status: accepted
+                    tenant_id: 11111111-1111-1111-1111-111111111111
+                    request_id: 3a5f8f0d-9f74-4a57-a283-b4d04a5be6b0
+                    exposure_model: public_backend_api_worker_orchestrated
+                    selector:
+                      idempotency_key: evt-4fca3e2f
         '400':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
         '401':
