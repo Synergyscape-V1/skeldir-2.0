@@ -13,6 +13,7 @@ from app.tasks import llm as _tasks_llm  # noqa: F401
 from app.tasks import maintenance as _tasks_maintenance  # noqa: F401
 from app.tasks import matviews as _tasks_matviews  # noqa: F401
 from app.tasks import observability_test as _tasks_observability_test  # noqa: F401
+from app.tasks import privacy as _tasks_privacy  # noqa: F401
 from app.tasks.authority import AUTHORITY_ENVELOPE_HEADER, SessionAuthorityEnvelope
 from app.tasks.enqueue import TENANT_SCOPED_TASK_NAMES
 from app.tasks.tenant_base import task_tenant_id
