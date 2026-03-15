@@ -72,6 +72,36 @@ def _build_probe_app() -> FastAPI:
         auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
         db: AsyncSession = Depends(get_db_session),
     ) -> dict[str, str | int]:
+        role_candidate = (
+            await db.execute(
+                text(
+                    """
+                    SELECT CASE
+                        WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw') THEN 'app_rw'
+                        WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN 'app_user'
+                        ELSE current_user
+                    END
+                    """
+                )
+            )
+        ).scalar_one()
+        if role_candidate in {"app_rw", "app_user"}:
+            await db.execute(text(f"SET LOCAL ROLE {role_candidate}"))
+
+        active_role_row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT current_user AS current_role,
+                           rolsuper,
+                           rolbypassrls
+                    FROM pg_roles
+                    WHERE rolname = current_user
+                    """
+                )
+            )
+        ).mappings().one()
+
         tenant_guc = (
             await db.execute(text("SELECT current_setting('app.current_tenant_id', true)"))
         ).scalar_one_or_none()
@@ -106,6 +136,9 @@ def _build_probe_app() -> FastAPI:
         return {
             "tenant_id": str(auth_context.tenant_id),
             "user_id": str(auth_context.user_id),
+            "db_role": str(active_role_row["current_role"]),
+            "db_role_superuser": int(bool(active_role_row["rolsuper"])),
+            "db_role_bypassrls": int(bool(active_role_row["rolbypassrls"])),
             "tenant_guc": str(tenant_guc or ""),
             "user_guc": str(user_guc or ""),
             "visible_marker_rows": int(visible_marker_rows),
@@ -177,6 +210,8 @@ async def test_b14_p0_e2e_http_jwt_to_guc_to_rls_chain(
 
     assert payload_a["tenant_id"] == str(tenant_a)
     assert payload_a["user_id"] == str(user_a)
+    assert payload_a["db_role_superuser"] == 0
+    assert payload_a["db_role_bypassrls"] == 0
     assert payload_a["tenant_guc"] == str(tenant_a)
     assert payload_a["user_guc"] == str(user_a)
     assert payload_a["visible_marker_rows"] == 1
@@ -184,6 +219,8 @@ async def test_b14_p0_e2e_http_jwt_to_guc_to_rls_chain(
 
     assert payload_b["tenant_id"] == str(tenant_b)
     assert payload_b["user_id"] == str(user_b)
+    assert payload_b["db_role_superuser"] == 0
+    assert payload_b["db_role_bypassrls"] == 0
     assert payload_b["tenant_guc"] == str(tenant_b)
     assert payload_b["user_guc"] == str(user_b)
     assert payload_b["visible_marker_rows"] == 1
