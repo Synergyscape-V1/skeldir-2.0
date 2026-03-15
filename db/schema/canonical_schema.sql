@@ -309,15 +309,15 @@ CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS tr
 
             IF (
                 jsonb_path_exists(NEW.raw_payload, '$.**.vendor_payload')
-                OR jsonb_path_exists(raw_payload, '$.**.billing_details')
-                OR jsonb_path_exists(raw_payload, '$.**.raw_body')
-                OR jsonb_path_exists(raw_payload, '$.**.raw_body_sha256')
-                OR jsonb_path_exists(raw_payload, '$.**.raw_body_bytes')
-                OR jsonb_path_exists(raw_payload, '$.**.parse_error')
-                OR jsonb_path_exists(raw_payload, '$.**.device_fingerprint')
-                OR jsonb_path_exists(raw_payload, '$.**.user_agent')
-                OR jsonb_path_exists(raw_payload, '$.**.ip_hash')
-                OR jsonb_path_exists(raw_payload, '$.**.session_id')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.billing_details')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.raw_body')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.raw_body_sha256')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.raw_body_bytes')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.parse_error')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.device_fingerprint')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.user_agent')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.ip_hash')
+                OR jsonb_path_exists(NEW.raw_payload, '$.**.session_id')
             ) THEN
                 RAISE EXCEPTION
                     'privacy authority violation: forbidden identity/raw-envelope key in attribution_events.raw_payload';

@@ -50,6 +50,10 @@ def _parse_args() -> argparse.Namespace:
         "--migration-file",
         default="alembic/versions/007_skeldir_foundation/202603141700_b14_p0_event_payload_authority_lock.py",
     )
+    parser.add_argument(
+        "--canonical-schema-file",
+        default="db/schema/canonical_schema.sql",
+    )
     return parser.parse_args()
 
 
@@ -66,6 +70,17 @@ def _require(condition: bool, message: str, errors: list[str]) -> None:
         errors.append(message)
 
 
+def _extract_guard_function_block(schema_text: str) -> str:
+    start_token = "CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS trigger"
+    start_index = schema_text.find(start_token)
+    if start_index < 0:
+        return ""
+    next_function_index = schema_text.find("\nCREATE FUNCTION ", start_index + len(start_token))
+    if next_function_index < 0:
+        return schema_text[start_index:]
+    return schema_text[start_index:next_function_index]
+
+
 def main() -> int:
     args = _parse_args()
 
@@ -78,6 +93,7 @@ def main() -> int:
     privacy_task_path = Path(args.privacy_task_file)
     privacy_module_path = Path(args.privacy_module_file)
     migration_path = Path(args.migration_file)
+    canonical_schema_path = Path(args.canonical_schema_file)
 
     files = (
         authority_path,
@@ -89,6 +105,7 @@ def main() -> int:
         privacy_task_path,
         privacy_module_path,
         migration_path,
+        canonical_schema_path,
     )
     missing = [path for path in files if not path.exists()]
     if missing:
@@ -106,6 +123,7 @@ def main() -> int:
     privacy_task_text = _read_text(privacy_task_path)
     privacy_module_text = _read_text(privacy_module_path)
     migration_text = _read_text(migration_path)
+    canonical_schema_text = _read_text(canonical_schema_path)
 
     errors: list[str] = []
 
@@ -148,13 +166,18 @@ def main() -> int:
         errors,
     )
     _require(
-        int(session_boundary.get("max_duration_minutes", 0)) <= 30,
-        "session_boundary.max_duration_minutes must be <= 30",
+        int(session_boundary.get("max_duration_minutes", 0)) == 1440,
+        "session_boundary.max_duration_minutes must be exactly 1440 (24 hours)",
         errors,
     )
     _require(
         deletion_contract.get("exposure_model") == "internal_control_plane_worker",
         "deletion_contract.exposure_model must be internal_control_plane_worker",
+        errors,
+    )
+    _require(
+        deletion_contract.get("contract_exposure_status") == "temporary_internal_only_p0",
+        "deletion_contract.contract_exposure_status must be temporary_internal_only_p0",
         errors,
     )
     _require(
@@ -167,6 +190,39 @@ def main() -> int:
         "deletion_contract.authority_task_name must match privacy worker task",
         errors,
     )
+    downstream_debt = deletion_contract.get("downstream_contract_debt", {})
+    _require(
+        isinstance(downstream_debt, dict),
+        "deletion_contract.downstream_contract_debt must be an object",
+        errors,
+    )
+    if isinstance(downstream_debt, dict):
+        _require(
+            downstream_debt.get("debt_id") == "B1.4-P1-DSAR-OPENAPI-EXPOSURE",
+            "deletion_contract.downstream_contract_debt.debt_id must be B1.4-P1-DSAR-OPENAPI-EXPOSURE",
+            errors,
+        )
+        _require(
+            downstream_debt.get("status") == "open",
+            "deletion_contract.downstream_contract_debt.status must be open",
+            errors,
+        )
+        _require(
+            downstream_debt.get("target_phase") == "B1.4-P1",
+            "deletion_contract.downstream_contract_debt.target_phase must be B1.4-P1",
+            errors,
+        )
+        required_artifact = str(downstream_debt.get("required_artifact", "")).strip()
+        _require(
+            required_artifact.startswith("api-contracts/openapi/v1/"),
+            "deletion_contract.downstream_contract_debt.required_artifact must point to api-contracts/openapi/v1/",
+            errors,
+        )
+        _require(
+            bool(str(downstream_debt.get("closure_condition", "")).strip()),
+            "deletion_contract.downstream_contract_debt.closure_condition must be non-empty",
+            errors,
+        )
     _require(
         isinstance(export_contract.get("allowed_fields"), list) and len(export_contract["allowed_fields"]) > 0,
         "export_contract.allowed_fields must be non-empty",
@@ -220,6 +276,23 @@ def main() -> int:
         "migration must install payload authority trigger",
         errors,
     )
+    guard_function_block = _extract_guard_function_block(canonical_schema_text)
+    _require(
+        bool(guard_function_block),
+        "canonical schema missing fn_guard_attribution_events_payload_identity",
+        errors,
+    )
+    if guard_function_block:
+        _require(
+            "jsonb_path_exists(raw_payload" not in guard_function_block,
+            "canonical schema guard function must not reference raw_payload without NEW.",
+            errors,
+        )
+        _require(
+            "jsonb_path_exists(NEW.raw_payload, '$.**.session_id')" in guard_function_block,
+            "canonical schema guard function must enforce NEW.raw_payload session_id guard",
+            errors,
+        )
 
     for context in REQUIRED_CONTEXTS:
         _require(context in workflow_text, f"workflow missing required context: {context}", errors)
@@ -251,4 +324,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
