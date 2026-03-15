@@ -1,0 +1,87 @@
+﻿=== EG-R2-FIX-1 ===
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	﻿2026-03-15T18:04:46.7225452Z ##[group]Run set -euo pipefail
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7225766Z [36;1mset -euo pipefail[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7226030Z [36;1mmkdir -p "$ARTIFACTS_DIR/SCENARIO_SUITE"[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7226301Z [36;1m[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7226600Z [36;1mexport PYTHONPATH="/home/runner/work/skeldir-2.0/skeldir-2.0/backend"[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7228106Z [36;1mexport DATABASE_URL="***localhost:${R2_PG_PORT}/${POSTGRES_DB}"[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7228766Z [36;1mexport CI="true"[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7228988Z [36;1mexport TESTING="1"[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7229208Z [36;1m[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7229430Z [36;1mpython scripts/r2/runtime_scenario_suite.py \[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7229749Z [36;1m  --candidate-sha "$R2_CANDIDATE_SHA" \[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7230036Z [36;1m  --window-id "$R2_WINDOW_ID" \[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7230393Z [36;1m  --orm-verdict-json "$ARTIFACTS_DIR/SCENARIO_SUITE/orm_verdict.json" \[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7230979Z [36;1m  | tee "$ARTIFACTS_DIR/SCENARIO_SUITE/scenario_suite.log"[0m
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7252745Z shell: /usr/bin/bash -e {0}
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7253001Z env:
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7253207Z   POSTGRES_USER: skeldir_r2_test
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7253470Z   POSTGRES_PASSWORD: skeldir_r2_test_password
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7253742Z   POSTGRES_DB: skeldir_r2_test
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7254139Z   POSTGRES_DIGEST: postgres@sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7254563Z   R2_NUM_SCENARIOS: 6
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7255036Z   ARTIFACTS_DIR: /home/runner/work/skeldir-2.0/skeldir-2.0/artifacts/runtime_r2/88d7e629c27051c602a8517f2e77b614c649cac0
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7255589Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.14/x64
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7255987Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.14/x64/lib/pkgconfig
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7256361Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.14/x64
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7256717Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.14/x64
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7257051Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.14/x64
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7257412Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.14/x64/lib
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7257756Z   R2_CANDIDATE_SHA: 88d7e629c27051c602a8517f2e77b614c649cac0
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7258026Z   R2_PG_PORT: 5432
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7258399Z   R2_WINDOW_ID: 20260315180437-23116128785-1
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7258714Z   R2_CANARY_WINDOW_ID: canary-20260315180437-23116128785-1
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:46.7258992Z ##[endgroup]
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2883112Z validation_error_routed_to_dlq
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2951850Z R2_SCENARIO_SUITE_START
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2952677Z CANDIDATE_SHA=88d7e629c27051c602a8517f2e77b614c649cac0
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2953118Z WINDOW_ID=20260315180437-23116128785-1
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2953440Z SCENARIO_1_PASS
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2953688Z SCENARIO_2_PASS
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2955579Z 2026-03-15 18:04:48 [warning  ] event_routed_to_dlq            extra={'correlation_id_request': None, 'correlation_id_business': 'cf4ac12e-5f1a-4e38-9551-502d2d227171', 'tenant_id': '11111111-1111-1111-1111-111111111111', 'user_id': None, 'dead_event_id': '06844887-5710-42e4-9e9f-284b9b4a89b7', 'error_type': 'unknown', 'error_code': 'ValidationError', 'classification': 'transient', 'event': 'event_routed_to_dlq', 'vendor': 'r2_suite', 'event_type': 'page_view'}
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8077944Z SCENARIO_3_PASS
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8078544Z SCENARIO_4_PASS
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8078750Z SCENARIO_5_PASS
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8078936Z SCENARIO_6_PASS
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8079128Z R2_SCENARIO_SUITE_VERDICT
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8079373Z SCENARIOS_EXECUTED=6
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8079571Z SCENARIOS_PASSED=6
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8079765Z END_VERDICT
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8079958Z R2_ORM_RUNTIME_INNOCENCE_VERDICT
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8080238Z IMMUTABLE_TABLE_SET=attribution_events,revenue_ledger
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8080573Z DESTRUCTIVE_VERBS=ALTER,DELETE,TRUNCATE,UPDATE
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8080887Z TOTAL_ORM_STATEMENTS_CAPTURED_IN_WINDOW=36
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8081157Z S1_NON_MARKER_ORM_STATEMENTS_COUNT=4
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8081589Z S2_NON_MARKER_ORM_STATEMENTS_COUNT=7
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8081841Z S3_NON_MARKER_ORM_STATEMENTS_COUNT=4
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8082071Z S4_NON_MARKER_ORM_STATEMENTS_COUNT=2
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8082315Z S5_NON_MARKER_ORM_STATEMENTS_COUNT=3
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8082548Z S6_NON_MARKER_ORM_STATEMENTS_COUNT=2
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8082778Z ORM_FORBIDDEN_MATCH_COUNT=0
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8082997Z END_VERDICT
+R2 Data-Truth Hardening	EG-R2-FIX-5: ORM runtime innocence (mandatory cross-check)	2026-03-15T18:04:49.3001303Z [36;1m  echo "FAIL: missing orm_verdict.json (did EG-R2-FIX-1 run?)"[0m
+R2 Data-Truth Hardening	EG-R2-FIX-9: Truth record (browser-visible)	2026-03-15T18:04:49.3762096Z [36;1m- EG-R2-FIX-1 Scenario hard gate: success[0m
+R2 Data-Truth Hardening	EG-R2-FIX-9: Truth record (browser-visible)	2026-03-15T18:04:49.3893224Z - EG-R2-FIX-1 Scenario hard gate: success
+R2 Data-Truth Hardening	R2 Gate Aggregation (hard fail on any gate)	2026-03-15T18:04:49.3937673Z [36;1mcheck "EG-R2-FIX-1" "success"[0m
+=== R2_GATE_AGGREGATION_VERDICT ===
+R2 Data-Truth Hardening	R2 Gate Aggregation (hard fail on any gate)	2026-03-15T18:04:49.3940285Z [36;1m  echo "R2_GATE_AGGREGATION_VERDICT"[0m
+R2 Data-Truth Hardening	R2 Gate Aggregation (hard fail on any gate)	2026-03-15T18:04:49.3941866Z [36;1mecho "R2_GATE_AGGREGATION_VERDICT"[0m
+R2 Data-Truth Hardening	R2 Gate Aggregation (hard fail on any gate)	2026-03-15T18:04:49.4010018Z R2_GATE_AGGREGATION_VERDICT
+=== FAILURE_COUNT= ===
+R2 Data-Truth Hardening	EG-R2-ENFORCEMENT: DB prevents violations	2026-03-15T18:04:38.2217515Z [36;1mecho "FAILURE_COUNT=${#FAILURES[@]}"[0m
+R2 Data-Truth Hardening	EG-R2-ENFORCEMENT: DB prevents violations	2026-03-15T18:04:44.3254554Z FAILURE_COUNT=0
+R2 Data-Truth Hardening	R2 Gate Aggregation (hard fail on any gate)	2026-03-15T18:04:49.3940560Z [36;1m  echo "FAILURE_COUNT=${#failures[@]}"[0m
+R2 Data-Truth Hardening	R2 Gate Aggregation (hard fail on any gate)	2026-03-15T18:04:49.3942114Z [36;1mecho "FAILURE_COUNT=0"[0m
+R2 Data-Truth Hardening	R2 Gate Aggregation (hard fail on any gate)	2026-03-15T18:04:49.4010448Z FAILURE_COUNT=0
+=== SCENARIO_1_PASS ===
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2953440Z SCENARIO_1_PASS
+=== SCENARIO_2_PASS ===
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.2953688Z SCENARIO_2_PASS
+=== SCENARIO_3_PASS ===
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8077944Z SCENARIO_3_PASS
+=== SCENARIO_4_PASS ===
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8078544Z SCENARIO_4_PASS
+=== SCENARIO_5_PASS ===
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8078750Z SCENARIO_5_PASS
+=== SCENARIO_6_PASS ===
+R2 Data-Truth Hardening	EG-R2-FIX-1: Runtime scenario suite (hard gate)	2026-03-15T18:04:48.8078936Z SCENARIO_6_PASS

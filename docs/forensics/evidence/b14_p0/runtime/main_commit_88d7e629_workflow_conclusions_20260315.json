@@ -1,0 +1,163 @@
+﻿[
+    {
+        "workflowName":  "B0.5.4.1 View Registry Gates",
+        "databaseId":  23116128799,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128799"
+    },
+    {
+        "workflowName":  "B0.5.4.2 Refresh Executor Gates",
+        "databaseId":  23116128795,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128795"
+    },
+    {
+        "workflowName":  "B0.5.4.3 Matview Task Layer Gates",
+        "databaseId":  23116128784,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128784"
+    },
+    {
+        "workflowName":  "B0.6 Phase 0 Adjudication",
+        "databaseId":  23116128781,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128781"
+    },
+    {
+        "workflowName":  "B0.6 Phase 2 Adjudication",
+        "databaseId":  23116128782,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128782"
+    },
+    {
+        "workflowName":  "b057-p3-webhook-ingestion-least-privilege",
+        "databaseId":  23116128789,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128789"
+    },
+    {
+        "workflowName":  "b057-p4-llm-audit-persistence",
+        "databaseId":  23116128797,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128797"
+    },
+    {
+        "workflowName":  "b057-p5-full-chain",
+        "databaseId":  23116128788,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128788"
+    },
+    {
+        "workflowName":  "b07-p4-e2e-operational-readiness",
+        "databaseId":  23116128774,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128774"
+    },
+    {
+        "workflowName":  "b07-phase8-closure-pack",
+        "databaseId":  23116128779,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128779"
+    },
+    {
+        "workflowName":  "b11-p1-control-plane-adjudication",
+        "databaseId":  23116128778,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128778"
+    },
+    {
+        "workflowName":  "b11-p2-secret-readiness-adjudication",
+        "databaseId":  23116128801,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128801"
+    },
+    {
+        "workflowName":  "b11-p3-crypto-rotation-adjudication",
+        "databaseId":  23116128798,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128798"
+    },
+    {
+        "workflowName":  "b11-p4-db-provider-ci-audit-adjudication",
+        "databaseId":  23116128790,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128790"
+    },
+    {
+        "workflowName":  "b11-p5-webhook-secret-redesign-adjudication",
+        "databaseId":  23116128807,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128807"
+    },
+    {
+        "workflowName":  "b11-p6-end-to-end-closure-pack",
+        "databaseId":  23116128776,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128776"
+    },
+    {
+        "workflowName":  "CI",
+        "databaseId":  23116128783,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128783"
+    },
+    {
+        "workflowName":  "Empirical Validation - Directive Compliance",
+        "databaseId":  23116128775,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128775"
+    },
+    {
+        "workflowName":  "Production Schema Deployment",
+        "databaseId":  23116128791,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128791"
+    },
+    {
+        "workflowName":  "Production Schema Deployment",
+        "databaseId":  23116141898,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116141898"
+    },
+    {
+        "workflowName":  "R1: Contract/Runtime Viability",
+        "databaseId":  23116128780,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128780"
+    },
+    {
+        "workflowName":  "R2: Data-Truth Hardening",
+        "databaseId":  23116128785,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128785"
+    },
+    {
+        "workflowName":  "Schema Validation",
+        "databaseId":  23116128820,
+        "status":  "completed",
+        "conclusion":  "success",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23116128820"
+    }
+]
