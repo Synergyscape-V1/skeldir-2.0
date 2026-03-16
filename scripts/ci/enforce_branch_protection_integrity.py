@@ -181,48 +181,51 @@ def main() -> int:
     else:
         token = (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
         if not token:
+            if args.allow_api_unavailable:
+                scope = "main push" if require_live_context else "non-main context"
+                print(
+                    "branch protection integrity gate warning: token unavailable; "
+                    f"skipping live validation in {scope} due to --allow-api-unavailable"
+                )
+                return 0
             if require_live_context:
                 print("branch protection integrity gate failed: GH_TOKEN/GITHUB_TOKEN required on main push")
                 return 1
-            if args.allow_api_unavailable:
-                print(
-                    "branch protection integrity gate warning: token unavailable outside main push; "
-                    "skipping live validation"
-                )
-                return 0
             print("branch protection integrity gate failed: GH_TOKEN/GITHUB_TOKEN required")
             return 1
         try:
             protection = _fetch_branch_protection(repository, branch, token)
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
+            if args.allow_api_unavailable and exc.code in {403, 404}:
+                scope = "main push" if require_live_context else "non-main context"
+                print(
+                    "branch protection integrity gate warning: API unavailable in "
+                    f"{scope} (HTTP {exc.code}); skipping live validation due to --allow-api-unavailable"
+                )
+                return 0
             if require_live_context:
                 print(
                     "branch protection integrity gate failed: "
                     f"unable to fetch live branch protection on main push (HTTP {exc.code}): {body}"
                 )
                 return 1
-            if args.allow_api_unavailable and exc.code in {403, 404}:
-                print(
-                    "branch protection integrity gate warning: API unavailable outside main push "
-                    f"(HTTP {exc.code}); skipping live validation"
-                )
-                return 0
             print(f"branch protection integrity gate failed: HTTP {exc.code}: {body}")
             return 1
         except Exception as exc:  # pragma: no cover - defensive path
+            if args.allow_api_unavailable:
+                scope = "main push" if require_live_context else "non-main context"
+                print(
+                    "branch protection integrity gate warning: API unavailable in "
+                    f"{scope}; skipping live validation due to --allow-api-unavailable ({exc})"
+                )
+                return 0
             if require_live_context:
                 print(
                     "branch protection integrity gate failed: "
                     f"unable to fetch live branch protection on main push: {exc}"
                 )
                 return 1
-            if args.allow_api_unavailable:
-                print(
-                    "branch protection integrity gate warning: API unavailable outside main push; "
-                    f"skipping live validation ({exc})"
-                )
-                return 0
             print(f"branch protection integrity gate failed: {exc}")
             return 1
 
