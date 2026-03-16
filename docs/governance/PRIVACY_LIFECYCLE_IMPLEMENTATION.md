@@ -375,7 +375,7 @@ Tables where PII is **legitimately allowed** for operational or compliance reaso
 **Current State**: `attribution_events.session_id` is **nullable** in live schema (should be NOT NULL per canonical).
 
 **Required Behavior**:
-- **Ephemeral**: Session IDs must rotate after N minutes of inactivity (e.g., 30 minutes as per privacy-first principle)
+- **Ephemeral**: Session IDs must expire within 24 hours (`max_duration_minutes=1440`) per B1.4 authority contract
 - **Non-joinable**: Session IDs **cannot** be joined back to identity data from analytics tables alone
 - **Tenant-scoped**: Session IDs are scoped to tenant (via `tenant_id`), but do not enable user-level profiling
 

@@ -91,9 +91,17 @@ def _github_get(url: str, token: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="B1.3-P0 CODEOWNERS + review governance enforcement")
+    parser = argparse.ArgumentParser(description="B1.3-P0 CODEOWNERS + branch-protection governance enforcement")
     parser.add_argument("--codeowners-file", default=".github/CODEOWNERS")
+    parser.add_argument(
+        "--branch-protection-contract",
+        default="contracts-internal/governance/main_branch_protection_integrity.main.json",
+    )
     parser.add_argument("--required-owner", default="@Muk223")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "Synergyscape-V1/skeldir-2.0"))
     parser.add_argument("--branch", default="main")
@@ -120,6 +128,22 @@ def main() -> int:
     except ValueError as exc:
         print(f"B1.3-P0 CODEOWNERS gate failed: {exc}")
         return 1
+
+    contract_path = (REPO_ROOT / args.branch_protection_contract).resolve()
+    if not contract_path.exists():
+        print(f"B1.3-P0 CODEOWNERS gate failed: branch-protection contract not found {contract_path}")
+        return 1
+    try:
+        contract = _load_json(contract_path)
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"B1.3-P0 CODEOWNERS gate failed: unable to parse branch-protection contract: {exc}")
+        return 1
+    review_contract = contract.get("review_policy") if isinstance(contract, dict) else None
+    if not isinstance(review_contract, dict):
+        print("B1.3-P0 CODEOWNERS gate failed: review_policy missing in branch-protection contract")
+        return 1
+    expected_code_owner_reviews = bool(review_contract.get("require_code_owner_reviews", True))
+    expected_min_approvals = int(review_contract.get("required_approving_review_count_min", 1))
 
     errors: list[str] = []
 
@@ -166,10 +190,16 @@ def main() -> int:
                 require_code_owner_reviews = bool(review_policy.get("require_code_owner_reviews", False))
                 required_approvals = int(review_policy.get("required_approving_review_count", 0))
 
-                if not require_code_owner_reviews:
-                    errors.append("Branch protection must set require_code_owner_reviews=true")
-                if required_approvals < 1:
-                    errors.append("Branch protection must set required_approving_review_count >= 1")
+                if require_code_owner_reviews != expected_code_owner_reviews:
+                    errors.append(
+                        "Branch protection require_code_owner_reviews mismatch: "
+                        f"expected={expected_code_owner_reviews} observed={require_code_owner_reviews}"
+                    )
+                if required_approvals < expected_min_approvals:
+                    errors.append(
+                        "Branch protection required_approving_review_count below contract minimum: "
+                        f"expected>={expected_min_approvals} observed={required_approvals}"
+                    )
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", errors="replace")
                 if args.allow_api_unavailable and exc.code in {403, 404}:

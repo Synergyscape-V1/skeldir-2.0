@@ -179,7 +179,7 @@ Policies:
 - Analytics data: 90-day retention (then deleted)
 - Financial audit data: Permanent retention
 - Dead events (resolved): 30-day post-resolution (then deleted)
-- Session data: Ephemeral (<=30 minutes)
+- Session data: Ephemeral (<=24 hours)
 
 ### "How do I make a database schema change?"
 

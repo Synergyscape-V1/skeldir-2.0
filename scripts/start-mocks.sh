@@ -2,7 +2,7 @@
 
 # Skeldir 2.0 - Native Prism Mock Server Startup Script
 # Process-based approach (no container runtime)
-# Starts all 9 Prism mock servers on ports 4010-4018
+# Starts Prism mock servers for contract domains on ports 4010-4019
 
 set -e
 
@@ -110,7 +110,7 @@ fi
 echo -e "${GREEN}✓ Contract directory exists${NC}"
 echo ""
 
-# Start Frontend-Facing Mock Servers (ports 4010-4014)
+# Start Frontend-Facing Mock Servers (ports 4010-4014, 4019)
 echo "Starting Frontend-Facing Services:"
 echo "-----------------------------------"
 start_prism_server "$CONTRACT_DIR/auth.bundled.yaml" 4010 "Auth Service"
@@ -118,6 +118,7 @@ start_prism_server "$CONTRACT_DIR/attribution.bundled.yaml" 4011 "Attribution Se
 start_prism_server "$CONTRACT_DIR/reconciliation.bundled.yaml" 4012 "Reconciliation Service"
 start_prism_server "$CONTRACT_DIR/export.bundled.yaml" 4013 "Export Service"
 start_prism_server "$CONTRACT_DIR/health.bundled.yaml" 4014 "Health Service"
+start_prism_server "$CONTRACT_DIR/privacy.bundled.yaml" 4019 "Privacy Service"
 
 # Start Backend-Only Webhook Mock Servers (ports 4015-4018)
 echo "Starting Webhook Services (Backend-Only):"
@@ -136,6 +137,7 @@ echo "  • Attribution:    http://localhost:4011"
 echo "  • Reconciliation: http://localhost:4012"
 echo "  • Export:         http://localhost:4013"
 echo "  • Health:         http://localhost:4014"
+echo "  • Privacy:        http://localhost:4019"
 echo ""
 echo "Webhook Services (Backend-Only):"
 echo "  • Shopify:        http://localhost:4015"

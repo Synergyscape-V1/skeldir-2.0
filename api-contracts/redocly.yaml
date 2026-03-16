@@ -12,6 +12,8 @@ apis:
     root: openapi/v1/reconciliation.yaml
   export:
     root: openapi/v1/export.yaml
+  privacy:
+    root: openapi/v1/privacy.yaml
   health:
     root: openapi/v1/health.yaml
   shopify_webhook:

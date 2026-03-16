@@ -7,7 +7,8 @@
       { "name": "attribution", "port": 4011, "contract": "attribution.yaml" },
       { "name": "reconciliation", "port": 4014, "contract": "reconciliation.yaml" },
       { "name": "export", "port": 4015, "contract": "export.yaml" },
-      { "name": "health", "port": 4016, "contract": "health.yaml" }
+      { "name": "health", "port": 4016, "contract": "health.yaml" },
+      { "name": "privacy", "port": 4019, "contract": "privacy.yaml" }
     ],
     "webhooks": [
       { "name": "shopify", "port": 4020, "contract": "webhooks/shopify.yaml" },

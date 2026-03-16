@@ -25,6 +25,12 @@
       "api_name": "export"
     },
     {
+      "id": "privacy",
+      "source": "api-contracts/openapi/v1/privacy.yaml",
+      "bundle": "api-contracts/dist/openapi/v1/privacy.bundled.yaml",
+      "api_name": "privacy"
+    },
+    {
       "id": "health",
       "source": "api-contracts/openapi/v1/health.yaml",
       "bundle": "api-contracts/dist/openapi/v1/health.bundled.yaml",

@@ -23,6 +23,7 @@ from app.ingestion.dlq_handler import DLQHandler
 from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
 from app.models import AttributionEvent, DeadEvent
 from app.observability.context import log_context
+from app.privacy.authority import minimize_event_payload_for_storage
 from app.observability.api_metrics import (
     events_dlq_total,
     events_duplicate_total,
@@ -204,6 +205,9 @@ class EventIngestionService:
             )
 
             # 4. Create event entity
+            durable_payload = minimize_event_payload_for_storage(
+                {**boundary.sanitized_payload, "channel": channel_code}
+            )
             event = AttributionEvent(
                 id=uuid4(),
                 tenant_id=tenant_id,
@@ -215,7 +219,7 @@ class EventIngestionService:
                 session_id=validated["session_id"],
                 revenue_cents=validated["revenue_cents"],
                 currency=validated.get("currency", "USD"),
-                raw_payload=boundary.sanitized_payload,
+                raw_payload=durable_payload,
                 correlation_id=validated.get("correlation_id"),
                 external_event_id=sanitized_event_data.get("external_event_id"),
                 campaign_id=sanitized_event_data.get("campaign_id"),

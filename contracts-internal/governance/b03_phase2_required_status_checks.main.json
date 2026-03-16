@@ -25,6 +25,8 @@
     "b11-p2-readiness-gate",
     "b11-p4-static-and-runtime-gate",
     "b11-p4-ci-audit-gate",
+    "Contract Semantic Drift Gate",
+    "B1.4 P0 Privacy Authority Lock",
     "B1.3 P0 Governance & Scope Lock",
     "B1.3 P1 Contract Authority Proofs",
     "B1.3 P2 Handshake State Proofs",

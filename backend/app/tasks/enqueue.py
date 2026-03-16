@@ -31,6 +31,7 @@ TENANT_SCOPED_TASK_NAMES: frozenset[str] = frozenset(
         "app.tasks.maintenance.refresh_provider_oauth_credential",
         "app.tasks.matviews.refresh_single",
         "app.tasks.matviews.refresh_all_for_tenant",
+        "app.tasks.privacy.erase_tenant_privacy_surfaces",
     }
 )
 
