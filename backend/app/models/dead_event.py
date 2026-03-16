@@ -29,7 +29,7 @@ class DeadEvent(Base):
 
     B0.4 Critical Columns:
         - id: Primary key
-        - raw_payload: Original webhook payload (PII-stripped)
+        - raw_payload: Sanitized webhook payload (PII-redacted for exception storage)
         - error_type: Error classification (validation_error, network_error, etc.)
         - error_message: Human-readable error description
         - retry_count: Number of processing attempts

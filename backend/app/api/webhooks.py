@@ -224,20 +224,34 @@ def _make_correlation_uuid(idempotency_key: str):
     return uuid5(NAMESPACE_URL, idempotency_key)
 
 
-def _pii_redacted_paths(request: Request) -> list[str]:
-    paths = getattr(request.state, "pii_redacted_paths", None)
-    if not paths:
-        return []
-    if isinstance(paths, list):
-        return [str(p) for p in paths]
-    return []
-
-
 def _coerce_event_timestamp(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _request_headers_for_privacy_boundary(request: Request) -> dict[str, str]:
+    return {str(key).lower(): str(value) for key, value in request.headers.items()}
+
+
+def _identity_payload_from_request(request: Request) -> dict[str, Any] | None:
+    raw_body = getattr(request.state, "original_body", None)
+    if raw_body is None:
+        return None
+    if isinstance(raw_body, bytearray):
+        raw_body = bytes(raw_body)
+    if not isinstance(raw_body, bytes):
+        raw_body = bytes(raw_body or b"")
+    if not raw_body:
+        return None
+    try:
+        parsed = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
 
 
 def _compute_recompute_window(event_timestamp: str) -> tuple[str, str]:
@@ -312,6 +326,8 @@ async def _route_to_dlq_direct(
     payload: dict,
     error_message: str,
     error_type: str = "validation_error",
+    identity_payload: dict[str, Any] | None = None,
+    request_headers: dict[str, str] | None = None,
 ):
     async with get_session(tenant_id=tenant_id) as session:
         handler = DLQHandler()
@@ -328,11 +344,20 @@ async def _route_to_dlq_direct(
             error=error,
             correlation_id=correlation_id,
             source=source,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
         )
         return dead
 
 
-async def _handle_ingestion(tenant_id, event_data: dict, idempotency_key: str, source: str):
+async def _handle_ingestion(
+    tenant_id,
+    event_data: dict,
+    idempotency_key: str,
+    source: str,
+    identity_payload: dict[str, Any] | None = None,
+    request_headers: dict[str, str] | None = None,
+):
     event_data = {**event_data, "idempotency_key": idempotency_key}
     # Use transactional helper to preserve DLQ commits on validation errors
     result = await ingest_with_transaction(
@@ -340,6 +365,8 @@ async def _handle_ingestion(tenant_id, event_data: dict, idempotency_key: str, s
         event_data=event_data,
         idempotency_key=idempotency_key,
         source=source,
+        identity_payload=identity_payload,
+        request_headers=request_headers,
     )
     if result.get("status") == "success":
         correlation_id = get_request_correlation_id() or idempotency_key
@@ -404,7 +431,14 @@ async def shopify_order_create(
         "external_event_id": str(payload.id),
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
-    return await _handle_ingestion(tenant_info["tenant_id"], event_data, idempotency_key, source="shopify")
+    return await _handle_ingestion(
+        tenant_info["tenant_id"],
+        event_data,
+        idempotency_key,
+        source="shopify",
+        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
+        request_headers=_request_headers_for_privacy_boundary(request),
+    )
 
 
 @router.post(
@@ -439,7 +473,14 @@ async def stripe_payment_intent_succeeded(
         "external_event_id": payload.id,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
-    return await _handle_ingestion(tenant_info["tenant_id"], event_data, idempotency_key, source="stripe")
+    return await _handle_ingestion(
+        tenant_info["tenant_id"],
+        event_data,
+        idempotency_key,
+        source="stripe",
+        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
+        request_headers=_request_headers_for_privacy_boundary(request),
+    )
 
 
 @router.post(
@@ -457,22 +498,36 @@ async def stripe_payment_intent_succeeded_v2(
 
     R3 semantics:
     - Signature/tenant failures: 401 (never DLQ)
-    - PII present (keys stripped by middleware): DLQ with sanitized payload, no canonical insert
+    - PII present in provider payload: accepted, pseudonymized, sanitized before durable write
     - Malformed payload: DLQ with sanitized payload, no canonical insert
     - Duplicate valid events: idempotent success (no 5xx)
     """
     raw_body = getattr(request.state, "original_body", None) or await request.body()
+    if isinstance(raw_body, bytearray):
+        raw_body = bytes(raw_body)
+    if not isinstance(raw_body, bytes):
+        raw_body = bytes(raw_body or b"")
     stripped_body = await request.body()
+    request_headers = _request_headers_for_privacy_boundary(request)
 
+    identity_payload: dict[str, Any] = {}
     payload: dict[str, Any] = {}
     payload_parse_error: str | None = None
     try:
-        parsed_payload = json.loads(stripped_body.decode("utf-8"))
-        if not isinstance(parsed_payload, dict):
+        parsed_identity = json.loads(raw_body.decode("utf-8"))
+        if not isinstance(parsed_identity, dict):
             raise ValueError("payload root must be a JSON object")
-        payload = parsed_payload
+        identity_payload = parsed_identity
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         payload_parse_error = str(exc)
+    if payload_parse_error is None:
+        try:
+            parsed_payload = json.loads(stripped_body.decode("utf-8"))
+            if not isinstance(parsed_payload, dict):
+                raise ValueError("payload root must be a JSON object")
+            payload = parsed_payload
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            payload_parse_error = str(exc)
 
     idempotency_key = x_idempotency_key
     pi_id = None
@@ -539,34 +594,15 @@ async def stripe_payment_intent_succeeded_v2(
             },
             error_message="invalid_json_payload",
             error_type="validation_error",
+            identity_payload=identity_payload or {
+                "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+            },
+            request_headers=request_headers,
         )
         return {
             "status": "dlq_routed",
             "dead_event_id": str(dead.id),
             "error": "validation_error",
-        }
-
-    pii_paths = _pii_redacted_paths(request)
-    if pii_paths:
-        dead = await _route_to_dlq_direct(
-            tenant_id=tenant_info["tenant_id"],
-            source="stripe",
-            correlation_id=correlation_uuid,
-            payload={
-                "event_type": "purchase",
-                "vendor": "stripe",
-                "idempotency_key": idempotency_key,
-                "correlation_id": correlation_uuid,
-                "vendor_payload": payload,
-                "pii_redacted_paths": pii_paths,
-            },
-            error_message="PII keys detected and stripped at ingestion boundary",
-            error_type="pii_violation",
-        )
-        return {
-            "status": "dlq_routed",
-            "dead_event_id": str(dead.id),
-            "error": "pii_violation",
         }
 
     # Validate minimal required shape; route any failure to DLQ (never 5xx)
@@ -593,6 +629,8 @@ async def stripe_payment_intent_succeeded_v2(
             },
             error_message=str(e),
             error_type="validation_error",
+            identity_payload=identity_payload or payload,
+            request_headers=request_headers,
         )
         return {
             "status": "dlq_routed",
@@ -622,6 +660,8 @@ async def stripe_payment_intent_succeeded_v2(
         event_data={**event_data, "idempotency_key": idempotency_key},
         idempotency_key=idempotency_key,
         source="stripe",
+        identity_payload=identity_payload or payload,
+        request_headers=request_headers,
     )
 
     if result.get("status") == "success":
@@ -674,7 +714,14 @@ async def paypal_sale_completed(
         "external_event_id": payload.id,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
-    return await _handle_ingestion(tenant_info["tenant_id"], event_data, idempotency_key, source="paypal")
+    return await _handle_ingestion(
+        tenant_info["tenant_id"],
+        event_data,
+        idempotency_key,
+        source="paypal",
+        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
+        request_headers=_request_headers_for_privacy_boundary(request),
+    )
 
 
 @router.post(
@@ -704,4 +751,11 @@ async def woocommerce_order_completed(
         "external_event_id": str(payload.id),
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
-    return await _handle_ingestion(tenant_info["tenant_id"], event_data, idempotency_key, source="woocommerce")
+    return await _handle_ingestion(
+        tenant_info["tenant_id"],
+        event_data,
+        idempotency_key,
+        source="woocommerce",
+        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
+        request_headers=_request_headers_for_privacy_boundary(request),
+    )

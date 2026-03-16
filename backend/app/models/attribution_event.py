@@ -67,7 +67,7 @@ class AttributionEvent(Base, TenantMixin):
     # Revenue Tracking
     revenue_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # Raw Data Storage (PII-stripped by PIIStrippingMiddleware)
+    # Raw Data Storage (PII-stripped by ingress privacy boundary enforcement)
     raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     # Idempotency & Deduplication

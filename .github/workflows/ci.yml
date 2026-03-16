@@ -724,6 +724,72 @@ jobs:
           name: b13-p11-runtime-artifacts
           path: artifacts/b13_p11
           if-no-files-found: error
+
+  b14-p1-ingress-contract-sanitization:
+    name: B1.4 P1 Ingress Contract Sanitization
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install B1.4-P1 dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Apply migrations
+        run: |
+          alembic upgrade head
+
+      - name: Enforce B1.4-P1 drift prevention
+        run: |
+          python scripts/ci/enforce_b14_p1_ingress_privacy.py
+
+      - name: Run B1.4-P1 enforcer negative controls
+        run: |
+          pytest backend/tests/test_b14_p1_ingress_privacy_enforcer.py -q
+
+      - name: Run B1.4-P1 DB-backed runtime proofs
+        run: |
+          mkdir -p artifacts/b14_p1
+          pytest backend/tests/integration/test_b14_p1_ingress_privacy_runtime.py -q -rs --junitxml=artifacts/b14_p1/junit.runtime.xml
+
+      - name: Upload B1.4-P1 runtime artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b14-p1-runtime-artifacts
+          path: artifacts/b14_p1
+          if-no-files-found: error
   # Contract validation
 
   validate-contracts:
