@@ -37,6 +37,19 @@ def _run_with_payload(tmp_path: Path, payload: dict) -> subprocess.CompletedProc
     )
 
 
+def _run_with_env(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    run_env = dict(env)
+    run_env.setdefault("PYTHONUTF8", "1")
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=run_env,
+    )
+
+
 def _baseline_payload() -> dict:
     review_policy = _review_policy_contract()
     return {
@@ -69,3 +82,15 @@ def test_branch_protection_integrity_gate_fails_bypass_allowance_negative_contro
     assert result.returncode != 0
     combined = f"{result.stdout}\n{result.stderr}"
     assert "bypass_pull_request_allowances must be empty" in combined
+
+
+def test_branch_protection_integrity_gate_allows_api_unavailable_on_main_push_when_flag_set() -> None:
+    env = {
+        "GITHUB_EVENT_NAME": "push",
+        "GITHUB_REF_NAME": "main",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_REPOSITORY": "Synergyscape-V1/skeldir-2.0",
+    }
+    result = _run_with_env(["--allow-api-unavailable"], env=env)
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
+    assert "warning: token unavailable" in result.stdout.lower()
