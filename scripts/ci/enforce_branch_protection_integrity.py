@@ -134,21 +134,31 @@ def main() -> int:
         return 1
 
     if args.run_negative_control:
+        contract_review = contract.get("review_policy") or {}
+        min_approvals = int(contract_review.get("required_approving_review_count_min", 0))
+        expected_codeowners = bool(contract_review.get("require_code_owner_reviews", False))
+        forbid_bypass = bool(contract.get("forbid_bypass_pull_request_allowances", True))
         control_payload = {
             "required_pull_request_reviews": {
-                "required_approving_review_count": 0,
-                "require_code_owner_reviews": bool(
-                    (contract.get("review_policy") or {}).get("require_code_owner_reviews", True)
-                ),
-                "bypass_pull_request_allowances": {"users": [], "teams": [], "apps": []},
+                "required_approving_review_count": min_approvals,
+                "require_code_owner_reviews": expected_codeowners,
+                "bypass_pull_request_allowances": {
+                    "users": [{"login": "forbidden-bypass"}] if forbid_bypass else [],
+                    "teams": [],
+                    "apps": [],
+                },
             },
             "enforce_admins": {"enabled": bool(contract.get("enforce_admins_required", True))},
         }
+        if not forbid_bypass:
+            control_payload["required_pull_request_reviews"]["require_code_owner_reviews"] = (
+                not expected_codeowners
+            )
         errors = _validate_integrity(protection=control_payload, contract=contract)
         if not errors:
             print(
                 "branch protection integrity negative control failed: "
-                "0-approval payload unexpectedly passed validation"
+                "mutated payload unexpectedly passed validation"
             )
             return 1
         print("branch protection integrity negative control passed.")
