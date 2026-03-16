@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from app.core.config import settings
+from app.core.secrets import get_secret
 
 REDACTION_TOKEN = "[REDACTED_B1.4]"
 
@@ -115,7 +115,7 @@ def compute_global_payload_hash(payload: Mapping[str, Any] | None) -> str:
 
 def _daily_pepper(now: datetime | None = None) -> str:
     anchor = now or datetime.now(timezone.utc)
-    base_pepper = settings.AUTH_LOGIN_IDENTIFIER_PEPPER or "skeldir-b14-default-pepper"
+    base_pepper = get_secret("AUTH_LOGIN_IDENTIFIER_PEPPER") or "skeldir-b14-default-pepper"
     return hashlib.sha256(f"{base_pepper}:{anchor.date().isoformat()}".encode("utf-8")).hexdigest()
 
 
