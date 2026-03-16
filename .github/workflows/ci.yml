@@ -63,6 +63,13 @@ jobs:
         run: |
           python scripts/ci/enforce_required_status_checks.py
 
+      - name: Enforce branch protection integrity (approval + admin enforcement)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ci/enforce_branch_protection_integrity.py --allow-api-unavailable
+          python scripts/ci/enforce_branch_protection_integrity.py --run-negative-control
+
   contract-semantic-drift-gate:
     name: Contract Semantic Drift Gate
     runs-on: ubuntu-latest
@@ -141,6 +148,7 @@ jobs:
       - name: Run B1.4-P0 runtime lifecycle proofs
         run: |
           pytest backend/tests/test_b14_p0_event_lifecycle_runtime.py -q
+          pytest backend/tests/test_b14_p0_privacy_delete_api.py -q
 
   b13-p0-governance-scope-lock:
     name: B1.3 P0 Governance & Scope Lock
@@ -871,8 +879,8 @@ jobs:
             name=$(basename "$current")
             main_path="api-contracts/dist/openapi/v1/${name}"
             if ! git cat-file -e "origin/main:${main_path}" 2>/dev/null; then
-              echo "ERROR: Missing origin/main bundled contract for ${name} at ${main_path}"
-              exit 1
+              echo "INFO: ${name} is new in PR scope (no origin/main baseline); skipping breaking diff"
+              continue
             fi
             baseline="/tmp/main-contracts/${name}"
             git show "origin/main:${main_path}" > "$baseline"
@@ -1195,6 +1203,7 @@ jobs:
           pytest backend/tests/test_b12_p2_auth_substrate.py -q
           pytest backend/tests/test_b12_p3_jwt_verification_standardization.py -q
           pytest backend/tests/test_b12_p3_v4_lock_semantics.py -q
+          pytest backend/tests/integration/test_b14_p0_jwt_http_guc_rls_e2e.py -q
           pytest backend/tests/test_b11_p3_jwt_rotation_semantics.py -q -k "unknown_kid_forces_debounced_refresh_and_recovers or unknown_kid_refresh_is_debounced_under_flood"
           pytest backend/tests/test_b12_p3_pg_fleet_stampede.py -q
           pytest backend/tests/test_b12_p4_token_lifecycle.py -q

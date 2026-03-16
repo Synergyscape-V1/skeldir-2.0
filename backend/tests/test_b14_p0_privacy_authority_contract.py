@@ -71,16 +71,16 @@ def test_b14_p0_negative_control_detects_session_duration_regression(tmp_path: P
     assert "max_duration_minutes must be exactly 1440" in combined
 
 
-def test_b14_p0_negative_control_detects_missing_internal_only_debt_lock(tmp_path: Path) -> None:
+def test_b14_p0_negative_control_detects_public_deletion_contract_regression(tmp_path: Path) -> None:
     payload = json.loads(AUTHORITY.read_text(encoding="utf-8"))
-    payload["deletion_contract"].pop("downstream_contract_debt", None)
-    artifact_copy = tmp_path / "authority_missing_debt.json"
+    payload["deletion_contract"]["public_api_exposed"] = False
+    artifact_copy = tmp_path / "authority_missing_public_api.json"
     artifact_copy.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     result = _run(["--authority-artifact", str(artifact_copy)])
     assert result.returncode != 0
     combined = f"{result.stdout}\n{result.stderr}"
-    assert "downstream_contract_debt" in combined
+    assert "public_api_exposed must be true" in combined
 
 
 def test_b14_p0_negative_control_detects_deterministic_session_derivation(tmp_path: Path) -> None:

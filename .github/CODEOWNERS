@@ -1,5 +1,7 @@
 # Code ownership for Skeldir repository.
 # All patterns map to principals with verified write access.
+# Self-adjudicated governance mode: CODEOWNERS preserves accountability and review
+# routing context, while merge authority is enforced by non-vacuous CI gates.
 
 # Default owner for any path not explicitly overridden.
 * @Muk223
@@ -22,4 +24,3 @@ backend/app/api/platforms.py @Muk223
 # Repository docs and scripts.
 docs/ @Muk223
 scripts/ @Muk223
-

@@ -16,6 +16,7 @@ EXPECTED_BUNDLES = [
     "revenue.bundled.yaml",
     "reconciliation.bundled.yaml",
     "export.bundled.yaml",
+    "privacy.bundled.yaml",
     "health.bundled.yaml",
     "webhooks.shopify.bundled.yaml",
     "webhooks.woocommerce.bundled.yaml",

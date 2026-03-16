@@ -14,6 +14,7 @@ from app.tasks import housekeeping as _tasks_housekeeping  # noqa: F401
 from app.tasks import llm as _tasks_llm  # noqa: F401
 from app.tasks import maintenance as _tasks_maintenance  # noqa: F401
 from app.tasks import matviews as _tasks_matviews  # noqa: F401
+from app.tasks import privacy as _tasks_privacy  # noqa: F401
 from app.tasks.authority import (
     AUTHORITY_ENVELOPE_HEADER,
     SessionAuthorityEnvelope,

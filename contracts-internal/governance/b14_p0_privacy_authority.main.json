@@ -78,17 +78,13 @@
     }
   },
   "deletion_contract": {
-    "exposure_model": "internal_control_plane_worker",
-    "contract_exposure_status": "temporary_internal_only_p0",
-    "public_api_exposed": false,
+    "exposure_model": "public_backend_api_worker_orchestrated",
+    "contract_exposure_status": "openapi_3_1_authoritative",
+    "public_api_exposed": true,
+    "public_api_path": "/api/v1/privacy/delete",
+    "public_api_operation_id": "requestPrivacyDelete",
+    "transport_mode": "asynchronous_accepted_202",
     "authority_task_name": "app.tasks.privacy.erase_tenant_privacy_surfaces",
-    "downstream_contract_debt": {
-      "debt_id": "B1.4-P1-DSAR-OPENAPI-EXPOSURE",
-      "status": "open",
-      "target_phase": "B1.4-P1",
-      "required_artifact": "api-contracts/openapi/v1/privacy-erasure.yaml",
-      "closure_condition": "Expose DSAR-compatible deletion semantics in OpenAPI or supersede with a higher-order architecture contract."
-    },
     "erasable_surfaces": [
       "public.dead_events.raw_payload",
       "public.dead_events.error_detail",

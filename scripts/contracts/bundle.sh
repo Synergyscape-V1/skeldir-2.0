@@ -81,6 +81,7 @@ bundle_one "$REDOCLY_BIN" attribution dist/openapi/v1/attribution.bundled.yaml
 bundle_one "$REDOCLY_BIN" revenue dist/openapi/v1/revenue.bundled.yaml
 bundle_one "$REDOCLY_BIN" reconciliation dist/openapi/v1/reconciliation.bundled.yaml
 bundle_one "$REDOCLY_BIN" export dist/openapi/v1/export.bundled.yaml
+bundle_one "$REDOCLY_BIN" privacy dist/openapi/v1/privacy.bundled.yaml
 bundle_one "$REDOCLY_BIN" health dist/openapi/v1/health.bundled.yaml
 
 log "Bundling webhook contracts..."

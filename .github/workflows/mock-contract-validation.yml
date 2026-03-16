@@ -42,6 +42,7 @@ jobs:
           npx @redocly/cli bundle revenue --config=redocly.yaml --output=dist/openapi/v1/revenue.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle reconciliation --config=redocly.yaml --output=dist/openapi/v1/reconciliation.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle export --config=redocly.yaml --output=dist/openapi/v1/export.bundled.yaml --ext yaml --dereferenced
+          npx @redocly/cli bundle privacy --config=redocly.yaml --output=dist/openapi/v1/privacy.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle health --config=redocly.yaml --output=dist/openapi/v1/health.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle shopify_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.shopify.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle woocommerce_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.woocommerce.bundled.yaml --ext yaml --dereferenced
@@ -89,6 +90,7 @@ jobs:
                 "VITE_RECONCILIATION_API_URL": "http://localhost:4012",
                 "VITE_EXPORT_API_URL": "http://localhost:4013",
                 "VITE_HEALTH_API_URL": "http://localhost:4014",
+                "VITE_PRIVACY_API_URL": "http://localhost:4019",
                 "VITE_WEBHOOK_SHOPIFY_URL": "http://localhost:4020",
                 "VITE_WEBHOOK_STRIPE_URL": "http://localhost:4021",
                 "VITE_WEBHOOK_WOOCOMMERCE_URL": "http://localhost:4022",
@@ -101,6 +103,7 @@ jobs:
               "4012": "reconciliation",
               "4013": "export",
               "4014": "health",
+              "4019": "privacy",
               "4020": "webhooks/shopify",
               "4021": "webhooks/stripe",
               "4022": "webhooks/woocommerce",
@@ -136,8 +139,8 @@ jobs:
       - name: Summary
         run: |
           echo "✅ Mock Contract Validation Complete"
-          echo "- All 12 Prism mock servers configured"
-          echo "- Contracts: auth, attribution, reconciliation, export, health, 4x webhooks, 3x LLM"
+          echo "- Core contracts: auth, attribution, reconciliation, export, health, privacy"
+          echo "- Plus 4x webhooks and 3x LLM contracts"
           echo "- Port ranges: 4010-4026"
           echo "- Environment config: env.frontend.b02.json"
           echo "Frontend Contract Consumer Ready: YES"

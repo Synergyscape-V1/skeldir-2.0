@@ -46,6 +46,7 @@ jobs:
           npx @redocly/cli bundle revenue --config=redocly.yaml --output=dist/openapi/v1/revenue.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle reconciliation --config=redocly.yaml --output=dist/openapi/v1/reconciliation.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle export --config=redocly.yaml --output=dist/openapi/v1/export.bundled.yaml --ext yaml --dereferenced
+          npx @redocly/cli bundle privacy --config=redocly.yaml --output=dist/openapi/v1/privacy.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle health --config=redocly.yaml --output=dist/openapi/v1/health.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle shopify_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.shopify.bundled.yaml --ext yaml --dereferenced
           npx @redocly/cli bundle woocommerce_webhook --config=redocly.yaml --output=dist/openapi/v1/webhooks.woocommerce.bundled.yaml --ext yaml --dereferenced
@@ -85,10 +86,9 @@ jobs:
         if: success()
         run: |
           echo "✅ Contract validation PASSED"
-          echo "- All 13 bundles present (10 core + 3 LLM)"
+          echo "- All 14 bundles present (11 core + 3 LLM)"
           echo "- Zero external refs (fully dereferenced)"
           echo ""
           echo "Operational ≠ Functional: VALIDATED"
-
 
 

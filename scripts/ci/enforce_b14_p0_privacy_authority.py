@@ -47,6 +47,18 @@ def _parse_args() -> argparse.Namespace:
         default="backend/app/privacy/authority.py",
     )
     parser.add_argument(
+        "--privacy-api-file",
+        default="backend/app/api/privacy.py",
+    )
+    parser.add_argument(
+        "--privacy-contract-file",
+        default="api-contracts/openapi/v1/privacy.yaml",
+    )
+    parser.add_argument(
+        "--contract-scope-file",
+        default="backend/app/config/contract_scope.yaml",
+    )
+    parser.add_argument(
         "--migration-file",
         default="alembic/versions/007_skeldir_foundation/202603141700_b14_p0_event_payload_authority_lock.py",
     )
@@ -92,6 +104,9 @@ def main() -> int:
     maintenance_path = Path(args.maintenance_file)
     privacy_task_path = Path(args.privacy_task_file)
     privacy_module_path = Path(args.privacy_module_file)
+    privacy_api_path = Path(args.privacy_api_file)
+    privacy_contract_path = Path(args.privacy_contract_file)
+    contract_scope_path = Path(args.contract_scope_file)
     migration_path = Path(args.migration_file)
     canonical_schema_path = Path(args.canonical_schema_file)
 
@@ -104,6 +119,9 @@ def main() -> int:
         maintenance_path,
         privacy_task_path,
         privacy_module_path,
+        privacy_api_path,
+        privacy_contract_path,
+        contract_scope_path,
         migration_path,
         canonical_schema_path,
     )
@@ -122,6 +140,9 @@ def main() -> int:
     maintenance_text = _read_text(maintenance_path)
     privacy_task_text = _read_text(privacy_task_path)
     privacy_module_text = _read_text(privacy_module_path)
+    privacy_api_text = _read_text(privacy_api_path)
+    privacy_contract_text = _read_text(privacy_contract_path)
+    contract_scope_text = _read_text(contract_scope_path)
     migration_text = _read_text(migration_path)
     canonical_schema_text = _read_text(canonical_schema_path)
 
@@ -171,18 +192,28 @@ def main() -> int:
         errors,
     )
     _require(
-        deletion_contract.get("exposure_model") == "internal_control_plane_worker",
-        "deletion_contract.exposure_model must be internal_control_plane_worker",
+        deletion_contract.get("exposure_model") == "public_backend_api_worker_orchestrated",
+        "deletion_contract.exposure_model must be public_backend_api_worker_orchestrated",
         errors,
     )
     _require(
-        deletion_contract.get("contract_exposure_status") == "temporary_internal_only_p0",
-        "deletion_contract.contract_exposure_status must be temporary_internal_only_p0",
+        deletion_contract.get("contract_exposure_status") == "openapi_3_1_authoritative",
+        "deletion_contract.contract_exposure_status must be openapi_3_1_authoritative",
         errors,
     )
     _require(
-        deletion_contract.get("public_api_exposed") is False,
-        "deletion_contract.public_api_exposed must be false",
+        deletion_contract.get("public_api_exposed") is True,
+        "deletion_contract.public_api_exposed must be true",
+        errors,
+    )
+    _require(
+        deletion_contract.get("public_api_path") == "/api/v1/privacy/delete",
+        "deletion_contract.public_api_path must be /api/v1/privacy/delete",
+        errors,
+    )
+    _require(
+        deletion_contract.get("public_api_operation_id") == "requestPrivacyDelete",
+        "deletion_contract.public_api_operation_id must be requestPrivacyDelete",
         errors,
     )
     _require(
@@ -190,39 +221,6 @@ def main() -> int:
         "deletion_contract.authority_task_name must match privacy worker task",
         errors,
     )
-    downstream_debt = deletion_contract.get("downstream_contract_debt", {})
-    _require(
-        isinstance(downstream_debt, dict),
-        "deletion_contract.downstream_contract_debt must be an object",
-        errors,
-    )
-    if isinstance(downstream_debt, dict):
-        _require(
-            downstream_debt.get("debt_id") == "B1.4-P1-DSAR-OPENAPI-EXPOSURE",
-            "deletion_contract.downstream_contract_debt.debt_id must be B1.4-P1-DSAR-OPENAPI-EXPOSURE",
-            errors,
-        )
-        _require(
-            downstream_debt.get("status") == "open",
-            "deletion_contract.downstream_contract_debt.status must be open",
-            errors,
-        )
-        _require(
-            downstream_debt.get("target_phase") == "B1.4-P1",
-            "deletion_contract.downstream_contract_debt.target_phase must be B1.4-P1",
-            errors,
-        )
-        required_artifact = str(downstream_debt.get("required_artifact", "")).strip()
-        _require(
-            required_artifact.startswith("api-contracts/openapi/v1/"),
-            "deletion_contract.downstream_contract_debt.required_artifact must point to api-contracts/openapi/v1/",
-            errors,
-        )
-        _require(
-            bool(str(downstream_debt.get("closure_condition", "")).strip()),
-            "deletion_contract.downstream_contract_debt.closure_condition must be non-empty",
-            errors,
-        )
     _require(
         isinstance(export_contract.get("allowed_fields"), list) and len(export_contract["allowed_fields"]) > 0,
         "export_contract.allowed_fields must be non-empty",
@@ -262,6 +260,13 @@ def main() -> int:
     _require(
         "app.tasks.privacy.erase_tenant_privacy_surfaces" in privacy_task_text,
         "privacy task module must expose authority-controlled erasure task",
+        errors,
+    )
+    _require(
+        "/privacy/delete" in privacy_api_text
+        and "requestPrivacyDelete" in privacy_api_text
+        and "app.tasks.privacy.erase_tenant_privacy_surfaces" in privacy_api_text,
+        "privacy API route must expose /api/v1/privacy/delete and enqueue authority erasure task",
         errors,
     )
     _require(
@@ -306,6 +311,18 @@ def main() -> int:
     _require(
         "pytest tests/contract/test_contract_semantics.py -q" in workflow_text,
         "workflow must contain merge-blocking contract semantic drift test command",
+        errors,
+    )
+    _require(
+        "/api/v1/privacy/delete:" in privacy_contract_text
+        and "operationId: requestPrivacyDelete" in privacy_contract_text,
+        "privacy OpenAPI contract must define /api/v1/privacy/delete with operationId requestPrivacyDelete",
+        errors,
+    )
+    _require(
+        "/api/v1/privacy" in contract_scope_text
+        and "privacy.bundled.yaml" in contract_scope_text,
+        "contract scope must map /api/v1/privacy to privacy bundled contract",
         errors,
     )
 

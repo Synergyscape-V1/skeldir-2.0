@@ -1,0 +1,131 @@
+openapi: 3.1.0
+info:
+  title: Skeldir Privacy API
+  version: 2.0.0
+  description: |
+    Privacy erasure and compliance request endpoints.
+    DSAR-style deletion requests are accepted asynchronously and executed by
+    tenant-scoped authority workers.
+  contact:
+    name: Skeldir Engineering
+    email: engineering@skeldir.com
+    url: https://skeldir.com
+
+servers:
+  - url: http://localhost:4019
+    description: Prism Mock Server (Privacy)
+
+tags:
+  - name: Privacy
+    description: Privacy erasure and compliance requests
+
+security:
+  - accessBearerAuth: ["viewer"]
+
+paths:
+  /api/v1/privacy/delete:
+    post:
+      summary: Request tenant-scoped privacy deletion
+      description: |
+        Accepts a tenant-scoped deletion selector and queues authority-controlled
+        redaction across erasable privacy surfaces.
+      operationId: requestPrivacyDelete
+      tags:
+        - Privacy
+      security:
+        - accessBearerAuth: ["viewer"]
+      parameters:
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyDeleteRequest'
+            examples:
+              by_idempotency_key:
+                summary: Select by idempotency key
+                value:
+                  idempotency_key: evt-4fca3e2f
+              by_correlation_id:
+                summary: Select by correlation id
+                value:
+                  correlation_id: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '202':
+          description: Deletion request accepted and queued
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyDeleteAccepted'
+              examples:
+                accepted:
+                  summary: Deletion accepted
+                  value:
+                    status: accepted
+                    tenant_id: 11111111-1111-1111-1111-111111111111
+                    request_id: 3a5f8f0d-9f74-4a57-a283-b4d04a5be6b0
+                    exposure_model: public_backend_api_worker_orchestrated
+                    selector:
+                      idempotency_key: evt-4fca3e2f
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+
+components:
+  schemas:
+    PrivacyDeleteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Event idempotency key selector
+        correlation_id:
+          type: string
+          format: uuid
+          description: Correlation id selector
+      anyOf:
+        - required: [idempotency_key]
+        - required: [correlation_id]
+      description: At least one selector is required.
+    PrivacyDeleteAccepted:
+      type: object
+      required:
+        - status
+        - tenant_id
+        - request_id
+        - exposure_model
+        - selector
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        tenant_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          description: Celery task request id
+        exposure_model:
+          type: string
+          enum: [public_backend_api_worker_orchestrated]
+        selector:
+          type: object
+          additionalProperties:
+            type: string
+
+  securitySchemes:
+    accessBearerAuth:
+      $ref: './_common/base.yaml#/components/securitySchemes/accessBearerAuth'

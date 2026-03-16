@@ -100,6 +100,10 @@ def run_b0_2_gate() -> dict:
     )
     summary["steps"].append({"name": "toolchain", "status": "success"})
 
+    # Ensure bundled contracts exist for all registered mock domains.
+    run_command(["bash", "scripts/contracts/bundle.sh"], "bundle_contracts.log")
+    summary["steps"].append({"name": "bundle_contracts", "status": "success"})
+
     mocks_started = False
     try:
         # Start mocks
