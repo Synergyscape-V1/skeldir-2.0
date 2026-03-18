@@ -1595,6 +1595,7 @@ async def scenario_s8_perf_gate(
 
     replay_canonical = await db_count_canonical_for_key(conn, tenant.tenant_id, replay_key)
     unique_canonical = await db_count_canonical_for_keys(conn, tenant.tenant_id, unique_keys)
+    pii_canonical = await db_count_canonical_for_keys(conn, tenant.tenant_id, pii_keys)
     malformed_dlq = await db_count_dlq_for_keys(conn, tenant.tenant_id, malformed_keys)
     pii_dlq = await db_count_dlq_for_keys(conn, tenant.tenant_id, pii_keys)
     canonical_for_all_keys = await db_count_canonical_for_keys(conn, tenant.tenant_id, all_keys)
@@ -1626,8 +1627,9 @@ async def scenario_s8_perf_gate(
         and resource_after["waiting_connections"] <= max(2, resource_before["waiting_connections"] + 2)
     )
 
-    expected_canonical = 1 + len(unique_keys)
-    expected_dlq = len(malformed_keys) + len(pii_keys)
+    # B1.4-P1 invariant: pii-bearing requests are accepted to canonical storage after sanitization.
+    expected_canonical = 1 + len(unique_keys) + len(pii_keys)
+    expected_dlq = len(malformed_keys)
 
     passed = (
         achieved_rps >= (profile.target_rps * 0.98)
@@ -1636,8 +1638,9 @@ async def scenario_s8_perf_gate(
         and error_rate == 0.0
         and replay_canonical == 1
         and unique_canonical == len(unique_keys)
+        and pii_canonical == len(pii_keys)
         and malformed_dlq == len(malformed_keys)
-        and pii_dlq == len(pii_keys)
+        and pii_dlq == 0
         and canonical_for_all_keys == expected_canonical
         and dlq_for_all_keys == expected_dlq
         and duplicate_keys == 0
@@ -1676,6 +1679,7 @@ async def scenario_s8_perf_gate(
             "window_end_utc": test_end_utc.isoformat(),
             "replay_canonical_rows_for_key": replay_canonical,
             "unique_canonical_rows_created": unique_canonical,
+            "pii_canonical_rows_created": pii_canonical,
             "malformed_dlq_rows_created": malformed_dlq,
             "pii_dlq_rows_created": pii_dlq,
             "canonical_rows_for_all_profile_keys": canonical_for_all_keys,
