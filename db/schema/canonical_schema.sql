@@ -259,22 +259,22 @@ CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
 
             IF TG_TABLE_NAME = 'dead_events' THEN
                 detected_key := NULL;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.email ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'email'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.email_address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'email_address'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.phone ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'phone'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.phone_number ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'phone_number'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.ssn ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'ssn'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.social_security_number ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'social_security_number'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.ip_address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'ip_address'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.ip ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'ip'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.first_name ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'first_name'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.last_name ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'last_name'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.full_name ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'full_name'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'address'; END IF;
-            IF jsonb_path_exists(NEW.raw_payload, '$.**.street_address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'street_address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.email') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'email'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.email_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'email_address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.phone') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'phone'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.phone_number') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'phone_number'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ssn') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ssn'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.social_security_number') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'social_security_number'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ip_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ip_address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ip') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ip'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.first_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'first_name'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.last_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'last_name'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.full_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'full_name'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.street_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'street_address'; END IF;
                 IF detected_key IS NOT NULL THEN
                     RAISE EXCEPTION
-                      'PII key detected in %.raw_payload with unredacted value. Dead-letter payloads must use [REDACTED_B1.4] for banned keys. Key found: %.',
+                      'PII key detected in %.raw_payload with unredacted value. Dead-letter payloads must use type-aware redaction masks ([REDACTED], 0, false, []). Key found: %.',
                       TG_TABLE_NAME,
                       detected_key
                     USING ERRCODE = '23514';
