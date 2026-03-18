@@ -208,6 +208,9 @@ class EventIngestionService:
             durable_payload = minimize_event_payload_for_storage(
                 {**boundary.sanitized_payload, "channel": channel_code}
             )
+            # Preserve the enforced boundary write path while applying P0 payload minimization.
+            boundary.sanitized_payload.clear()
+            boundary.sanitized_payload.update(durable_payload)
             event = AttributionEvent(
                 id=uuid4(),
                 tenant_id=tenant_id,
@@ -219,7 +222,7 @@ class EventIngestionService:
                 session_id=validated["session_id"],
                 revenue_cents=validated["revenue_cents"],
                 currency=validated.get("currency", "USD"),
-                raw_payload=durable_payload,
+                raw_payload=boundary.sanitized_payload,
                 correlation_id=validated.get("correlation_id"),
                 external_event_id=sanitized_event_data.get("external_event_id"),
                 campaign_id=sanitized_event_data.get("campaign_id"),
