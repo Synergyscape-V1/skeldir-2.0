@@ -327,7 +327,7 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
     assert int(dlq_count) >= 1
     assert int(canonical_count) == 0
 
-    # PII payload with valid signature must route to DLQ without 500 and without PII persistence.
+    # PII payload with valid signature must be accepted, sanitized, and persisted canonically.
     pii_key = f"b057_p3_pii_{uuid4().hex[:12]}"
     pii_payload = {
         "id": "evt_b057_p3_pii",
@@ -365,8 +365,8 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
     )
     assert res6.status_code == 200, res6.text
     pii_result = res6.json()
-    assert pii_result.get("status") == "dlq_routed"
-    assert pii_result.get("dead_event_id")
+    assert pii_result.get("status") == "success"
+    assert pii_result.get("event_id")
 
     with engine.begin() as conn:
         conn.execute(
@@ -380,28 +380,55 @@ def test_b057_p3_webhook_e2e_persists_under_runtime_identity(
             ),
             {"key": pii_key},
         ).scalar_one()
-        pii_canonical_count = conn.execute(
+        pii_event_row = conn.execute(
             text(
-                "SELECT COUNT(*) FROM public.attribution_events "
-                "WHERE idempotency_key = :key"
+                """
+                SELECT
+                    idempotency_key,
+                    session_id::text AS session_id,
+                    raw_payload
+                FROM public.attribution_events
+                WHERE idempotency_key = :key
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
             ),
             {"key": pii_key},
-        ).scalar_one()
+        ).mappings().one_or_none()
         pii_key_hits = conn.execute(
             text(
                 """
-                SELECT COUNT(*) FROM public.dead_events
-                WHERE raw_payload->>'idempotency_key' = :key
+                SELECT COUNT(*) FROM public.attribution_events
+                WHERE idempotency_key = :key
                   AND (
                     jsonb_path_exists(raw_payload, '$.**.email')
                     OR jsonb_path_exists(raw_payload, '$.**.receipt_email')
                     OR jsonb_path_exists(raw_payload, '$.**.ip_address')
+                    OR jsonb_path_exists(raw_payload, '$.**.first_name')
+                    OR jsonb_path_exists(raw_payload, '$.**.last_name')
+                  )
+                """
+            ),
+            {"key": pii_key},
+        ).scalar_one()
+        pii_value_hits = conn.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM public.attribution_events
+                WHERE idempotency_key = :key
+                  AND (
+                    raw_payload::text ILIKE '%pii_user@test.invalid%'
+                    OR raw_payload::text ILIKE '%receipt@test.invalid%'
+                    OR raw_payload::text ILIKE '%bill@test.invalid%'
+                    OR raw_payload::text ILIKE '%203.0.113.99%'
                   )
                 """
             ),
             {"key": pii_key},
         ).scalar_one()
 
-    assert int(pii_dlq_count) >= 1
-    assert int(pii_canonical_count) == 0
+    assert int(pii_dlq_count) == 0
+    assert pii_event_row is not None
+    UUID(str(pii_event_row["session_id"]))
     assert int(pii_key_hits) == 0
+    assert int(pii_value_hits) == 0

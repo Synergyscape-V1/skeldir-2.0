@@ -233,7 +233,7 @@ CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
         DECLARE
             detected_key TEXT;
         BEGIN
-            IF TG_TABLE_NAME IN ('attribution_events', 'dead_events') THEN
+            IF TG_TABLE_NAME = 'attribution_events' THEN
                 IF fn_detect_pii_keys(NEW.raw_payload) THEN
                     detected_key := NULL;
             IF jsonb_path_exists(NEW.raw_payload, '$.**.email') THEN detected_key := 'email'; END IF;
@@ -253,6 +253,30 @@ CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
                       'PII key detected in %.raw_payload. Ingestion blocked by database policy (Layer 2 guardrail). Key found: %. Reference: ADR-003-PII-Defense-Strategy.md. Action: Remove PII key from payload before retry.',
                       TG_TABLE_NAME,
                       COALESCE(detected_key, 'unknown')
+                    USING ERRCODE = '23514';
+                END IF;
+            END IF;
+
+            IF TG_TABLE_NAME = 'dead_events' THEN
+                detected_key := NULL;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.email ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'email'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.email_address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'email_address'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.phone ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'phone'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.phone_number ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'phone_number'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.ssn ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'ssn'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.social_security_number ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'social_security_number'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.ip_address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'ip_address'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.ip ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'ip'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.first_name ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'first_name'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.last_name ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'last_name'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.full_name ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'full_name'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'address'; END IF;
+            IF jsonb_path_exists(NEW.raw_payload, '$.**.street_address ? (@ != "[REDACTED_B1.4]")') THEN detected_key := 'street_address'; END IF;
+                IF detected_key IS NOT NULL THEN
+                    RAISE EXCEPTION
+                      'PII key detected in %.raw_payload with unredacted value. Dead-letter payloads must use [REDACTED_B1.4] for banned keys. Key found: %.',
+                      TG_TABLE_NAME,
+                      detected_key
                     USING ERRCODE = '23514';
                 END IF;
             END IF;

@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ingestion.channel_normalization import normalize_channel
 from app.ingestion.dlq_handler import DLQHandler
+from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
 from app.models import AttributionEvent, DeadEvent
 from app.observability.context import log_context
 from app.privacy.authority import minimize_event_payload_for_storage
@@ -131,7 +132,9 @@ class EventIngestionService:
         tenant_id: UUID,
         event_data: dict,
         idempotency_key: str,
-        source: str = "webhook"
+        source: str = "webhook",
+        identity_payload: Mapping[str, Any] | None = None,
+        request_headers: Mapping[str, str] | None = None,
     ) -> AttributionEvent:
         """
         Ingest event with idempotency guarantee and validation.
@@ -139,7 +142,7 @@ class EventIngestionService:
         Args:
             session: Database session with RLS context set (app.current_tenant_id)
             tenant_id: Tenant UUID for event ownership
-            event_data: Raw event payload (PII-stripped by middleware)
+            event_data: Event payload targeted for storage assembly.
             idempotency_key: Deduplication key (e.g., external_event_id)
             source: Event source identifier (e.g., 'shopify', 'stripe')
 
@@ -154,6 +157,21 @@ class EventIngestionService:
             Duplicate idempotency_key returns existing event without insert.
             Database UNIQUE constraint enforces deduplication at persistence layer.
         """
+        identity_payload = dict(identity_payload or event_data)
+        boundary = enforce_ingress_privacy_boundary(
+            storage_payload=event_data,
+            identity_payload=identity_payload,
+            source=source,
+            idempotency_key=idempotency_key,
+            fallback_session_id=str(event_data.get("session_id", "")) or None,
+            request_headers=request_headers,
+            mode="strip",
+        )
+        sanitized_event_data = dict(event_data)
+        sanitized_event_data["session_id"] = boundary.session_id
+        sanitized_event_data["global_idempotency_hash"] = boundary.global_idempotency_hash
+        sanitized_event_data["pii_redacted_paths"] = list(boundary.redacted_paths)
+
         # 1. Idempotency check - return existing event if duplicate
         existing = await self._check_duplicate(session, tenant_id, idempotency_key)
         if existing:
@@ -164,8 +182,8 @@ class EventIngestionService:
                     "idempotency_key": idempotency_key,
                     "existing_event_id": str(existing.id),
                     "tenant_id": str(tenant_id),
-                    "vendor": event_data.get("vendor", source),
-                    "event_type": event_data.get("event_type"),
+                    "vendor": sanitized_event_data.get("vendor", source),
+                    "event_type": sanitized_event_data.get("event_type"),
                     **log_context(),
                 }
             )
@@ -176,19 +194,19 @@ class EventIngestionService:
         start_time = time.perf_counter()
         try:
             # 2. Validate event schema
-            validated = self._validate_schema(event_data)
+            validated = self._validate_schema(sanitized_event_data)
 
             # 3. Normalize channel (vendor indicator → canonical code)
             channel_code = normalize_channel(
-                utm_source=event_data.get("utm_source"),
-                utm_medium=event_data.get("utm_medium"),
-                vendor=event_data.get("vendor", source),
+                utm_source=sanitized_event_data.get("utm_source"),
+                utm_medium=sanitized_event_data.get("utm_medium"),
+                vendor=sanitized_event_data.get("vendor", source),
                 tenant_id=str(tenant_id)
             )
 
             # 4. Create event entity
             durable_payload = minimize_event_payload_for_storage(
-                {**event_data, "channel": channel_code}
+                {**boundary.sanitized_payload, "channel": channel_code}
             )
             event = AttributionEvent(
                 id=uuid4(),
@@ -203,9 +221,9 @@ class EventIngestionService:
                 currency=validated.get("currency", "USD"),
                 raw_payload=durable_payload,
                 correlation_id=validated.get("correlation_id"),
-                external_event_id=event_data.get("external_event_id"),
-                campaign_id=event_data.get("campaign_id"),
-                conversion_value_cents=event_data.get("conversion_value_cents"),
+                external_event_id=sanitized_event_data.get("external_event_id"),
+                campaign_id=sanitized_event_data.get("campaign_id"),
+                conversion_value_cents=sanitized_event_data.get("conversion_value_cents"),
                 processing_status="pending",
                 retry_count=0,
                 created_at=datetime.now(timezone.utc),
@@ -226,7 +244,7 @@ class EventIngestionService:
                     "event_type": event.event_type,
                     "revenue_cents": event.revenue_cents,
                     "tenant_id": str(tenant_id),
-                    "vendor": event_data.get("vendor", source),
+                    "vendor": sanitized_event_data.get("vendor", source),
                     "correlation_id_business": idempotency_key,
                     **log_context(),
                 }
@@ -248,8 +266,8 @@ class EventIngestionService:
                     "idempotency_key": idempotency_key,
                     "source": source,
                     "tenant_id": str(tenant_id),
-                    "vendor": event_data.get("vendor", source),
-                    "event_type": event_data.get("event_type"),
+                    "vendor": sanitized_event_data.get("vendor", source),
+                    "event_type": sanitized_event_data.get("event_type"),
                     "correlation_id_business": idempotency_key,
                     **log_context(),
                 }
@@ -261,6 +279,8 @@ class EventIngestionService:
                 error_type="validation_error",
                 error_message=str(e),
                 source=source,
+                identity_payload=identity_payload,
+                request_headers=request_headers,
             )
             duration = time.perf_counter() - start_time
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
@@ -285,8 +305,8 @@ class EventIngestionService:
                         "idempotency_key": idempotency_key,
                         "existing_event_id": str(existing_after_race.id),
                         "tenant_id": str(tenant_id),
-                        "vendor": event_data.get("vendor", source),
-                        "event_type": event_data.get("event_type"),
+                        "vendor": sanitized_event_data.get("vendor", source),
+                        "event_type": sanitized_event_data.get("event_type"),
                         **log_context(),
                     },
                 )
@@ -408,6 +428,8 @@ class EventIngestionService:
         error_message: str,
         source: str,
         error_traceback: Optional[str] = None,
+        identity_payload: Mapping[str, Any] | None = None,
+        request_headers: Mapping[str, str] | None = None,
     ) -> DeadEvent:
         """
         Route failed event to dead-letter queue with enhanced error classification.
@@ -423,6 +445,8 @@ class EventIngestionService:
             error_message: Human-readable error description
             source: Event source identifier
             error_traceback: Optional stack trace
+            identity_payload: Full inbound payload used for hash + pseudonymization.
+            request_headers: Request headers used for pseudonymization entropy.
 
         Returns:
             DeadEvent instance with error classification and retry metadata
@@ -451,6 +475,8 @@ class EventIngestionService:
             error=error,
             correlation_id=correlation_id,
             source=source,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
         )
 
         return dead_event
@@ -463,8 +489,10 @@ async def ingest_with_transaction(
     tenant_id: UUID,
     event_data: dict,
     idempotency_key: str,
-    source: str = "webhook"
-) -> Dict[str, any]:
+    source: str = "webhook",
+    identity_payload: Mapping[str, Any] | None = None,
+    request_headers: Mapping[str, str] | None = None,
+) -> Dict[str, Any]:
     """
     Transactional wrapper for event ingestion.
 
@@ -499,6 +527,8 @@ async def ingest_with_transaction(
                 event_data=event_data,
                 idempotency_key=idempotency_key,
                 source=source,
+                identity_payload=identity_payload,
+                request_headers=request_headers,
             )
 
             # Commit handled by get_session context manager

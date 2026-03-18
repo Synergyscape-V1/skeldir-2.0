@@ -7,14 +7,16 @@ remediation status state machine for failed event ingestion.
 Related: B0.4.4 DLQ Handler Enhancement
 """
 import traceback
+import json
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
-from uuid import UUID
+from typing import Any, Mapping, Optional
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
 from app.observability.context import log_context
 from app.observability.api_metrics import events_dlq_total
 from app.db.session import engine
@@ -173,7 +175,9 @@ class DLQHandler:
         original_payload: dict,
         error: Exception,
         correlation_id: str,
-        source: str = "ingestion_service"
+        source: str = "ingestion_service",
+        identity_payload: Mapping[str, Any] | None = None,
+        request_headers: Mapping[str, str] | None = None,
     ) -> "DeadEvent":
         """
         Route failed event to dead_events table with error classification.
@@ -195,9 +199,17 @@ class DLQHandler:
             - Captures full traceback for debugging
         """
         from app.models.dead_event import DeadEvent
-        from uuid import uuid4
 
         error_type, classification = classify_error(error)
+        boundary = enforce_ingress_privacy_boundary(
+            storage_payload=original_payload,
+            identity_payload=identity_payload or original_payload,
+            source=source,
+            idempotency_key=correlation_id or str(uuid4()),
+            fallback_session_id=str((original_payload or {}).get("session_id", "")) or None,
+            request_headers=request_headers,
+            mode="redact",
+        )
 
         # Convert correlation_id to UUID if it's a string (or None if invalid)
         correlation_uuid = None
@@ -215,14 +227,14 @@ class DLQHandler:
             id=uuid4(),
             tenant_id=tenant_id,
             source=source,
-            raw_payload=original_payload,
+            raw_payload=boundary.sanitized_payload,
             correlation_id=correlation_uuid,
             error_type=error_type.value,
             error_code=type(error).__name__,
             error_detail={"error": str(error)[:500]},  # JSONB field requires dict
             error_message=str(error)[:500],  # Text field for error message
             error_traceback=traceback.format_exc()[:2000] if traceback.format_exc() != 'NoneType: None\n' else None,
-            event_type=original_payload.get("event_type", "unknown"),
+            event_type=boundary.sanitized_payload.get("event_type", "unknown"),
             retry_count=0,
             remediation_status=RemediationStatus.PENDING.value,
             ingested_at=datetime.now(timezone.utc),
@@ -245,7 +257,7 @@ class DLQHandler:
                 "correlation_id_business": correlation_id,
                 "event": "event_routed_to_dlq",
                 "vendor": source or "unknown",
-                "event_type": (original_payload or {}).get("event_type", "unknown"),
+                "event_type": boundary.sanitized_payload.get("event_type", "unknown"),
             }
         )
         # High-volume expected ingress failures (schema/PII) should not emit
@@ -335,10 +347,18 @@ class DLQHandler:
         service = EventIngestionService()
 
         try:
+            retry_payload = dead_event.raw_payload if isinstance(dead_event.raw_payload, dict) else {}
+            retry_idempotency_key = (
+                retry_payload.get("idempotency_key")
+                or (str(dead_event.correlation_id) if dead_event.correlation_id else None)
+                or f"dlq_retry:{dead_event.id}"
+            )
             event = await service.ingest_event(
                 session=session,
                 tenant_id=dead_event.tenant_id,
-                event_data=dead_event.raw_payload,
+                event_data=retry_payload,
+                idempotency_key=str(retry_idempotency_key),
+                source=dead_event.source or "dlq_retry",
             )
 
             # Success - mark resolved
@@ -401,6 +421,8 @@ async def route_unresolved_tenant_to_quarantine(
     error_message: str,
     error_type: str = "unresolved_tenant",
     correlation_id: str | None = None,
+    identity_payload: Mapping[str, Any] | None = None,
+    request_headers: Mapping[str, str] | None = None,
 ) -> None:
     """
     Write unresolved-tenant events into the quarantine DLQ lane.
@@ -414,6 +436,16 @@ async def route_unresolved_tenant_to_quarantine(
             correlation_uuid = UUID(str(correlation_id))
         except (TypeError, ValueError):
             correlation_uuid = None
+
+    boundary = enforce_ingress_privacy_boundary(
+        storage_payload=payload,
+        identity_payload=identity_payload or payload,
+        source=source,
+        idempotency_key=correlation_id or f"quarantine:{source}:{uuid4()}",
+        fallback_session_id=str((payload or {}).get("session_id", "")) or None,
+        request_headers=request_headers,
+        mode="redact",
+    )
 
     async with engine.begin() as conn:
         await conn.execute(
@@ -434,7 +466,7 @@ async def route_unresolved_tenant_to_quarantine(
                 (
                     NULL,
                     :source,
-                    :raw_payload::jsonb,
+                    CAST(:raw_payload AS jsonb),
                     :error_type,
                     :error_code,
                     :error_message,
@@ -445,7 +477,7 @@ async def route_unresolved_tenant_to_quarantine(
             ),
             {
                 "source": source,
-                "raw_payload": payload or {},
+                "raw_payload": json.dumps(boundary.sanitized_payload),
                 "error_type": error_type,
                 "error_code": "UNRESOLVED_TENANT",
                 "error_message": str(error_message)[:500],

@@ -23,11 +23,13 @@ from app.ingestion.dlq_handler import (
     ErrorClassification,
     RemediationStatus,
     classify_error,
+    route_unresolved_tenant_to_quarantine,
     validate_status_transition,
 )
+from app.ingestion.privacy_boundary import REDACTION_TOKEN
 from app.ingestion.event_service import EventIngestionService, ValidationError
 from app.models import DeadEvent, AttributionEvent
-from app.db.session import get_session
+from app.db.session import engine, get_session
 
 
 # ==============================================================================
@@ -148,6 +150,109 @@ async def test_qg42_dlq_routing_integration(test_tenant):
         assert persisted.error_type == ErrorType.SCHEMA_VALIDATION.value
 
     print(f"QG4.2 PASS: DLQ routing captures error with classification (dead_event_id={dead_event.id})")
+
+
+@pytest.mark.asyncio
+async def test_b14_p1_dlq_redaction_preserves_structure(test_tenant):
+    """B1.4-P1: DLQ stores redacted payload values while preserving JSON shape."""
+    handler = DLQHandler()
+    tenant_id = test_tenant
+    correlation_id = f"b14_p1_dlq_{uuid4()}"
+
+    pii_payload = {
+        "event_type": "purchase",
+        "idempotency_key": correlation_id,
+        "vendor_payload": {
+            "customer": {
+                "email": "dlq-user@test.invalid",
+                "first_name": "Ada",
+                "ip_address": "203.0.113.88",
+            },
+            "line_items": [{"sku": "sku-1", "qty": 2}],
+        },
+    }
+
+    async with get_session(tenant_id=tenant_id) as session:
+        dead_event = await handler.route_to_dlq(
+            session=session,
+            tenant_id=tenant_id,
+            original_payload=pii_payload,
+            error=ValueError("Intentional validation failure"),
+            correlation_id=correlation_id,
+            source="test_suite",
+            identity_payload=pii_payload,
+            request_headers={"user-agent": "b14-test-agent", "x-real-ip": "198.51.100.10"},
+        )
+        await session.commit()
+
+    async with get_session(tenant_id=tenant_id) as session:
+        result = await session.execute(select(DeadEvent).where(DeadEvent.id == dead_event.id))
+        persisted = result.scalar_one()
+
+    assert persisted.raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
+    assert persisted.raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
+    assert persisted.raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
+    assert persisted.raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-1"
+    assert persisted.raw_payload["vendor_payload"]["line_items"][0]["qty"] == 2
+    assert "dlq-user@test.invalid" not in str(persisted.raw_payload)
+    assert "203.0.113.88" not in str(persisted.raw_payload)
+
+
+@pytest.mark.asyncio
+async def test_b14_p1_quarantine_redaction_preserves_structure():
+    """B1.4-P1: unresolved-tenant quarantine redacts PII but retains payload structure."""
+    source = f"b14_p1_quarantine_{uuid4().hex[:10]}"
+    correlation_id = str(uuid4())
+    payload = {
+        "event_type": "purchase",
+        "vendor_payload": {
+            "customer": {
+                "email": "quarantine-user@test.invalid",
+                "ip_address": "203.0.113.77",
+                "first_name": "Grace",
+            },
+            "line_items": [{"sku": "sku-2", "qty": 1}],
+        },
+    }
+
+    await route_unresolved_tenant_to_quarantine(
+        source=source,
+        payload=payload,
+        error_message="tenant resolution failed",
+        correlation_id=correlation_id,
+        identity_payload=payload,
+        request_headers={"user-agent": "b14-quarantine-agent", "x-real-ip": "198.51.100.20"},
+    )
+
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT id, raw_payload
+                FROM dead_events_quarantine
+                WHERE source = :source
+                ORDER BY ingested_at DESC
+                LIMIT 1
+                """
+            ),
+            {"source": source},
+        )
+        row = result.mappings().first()
+        assert row is not None
+
+        raw_payload = row["raw_payload"]
+        assert raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
+        assert raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
+        assert raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
+        assert raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-2"
+        assert raw_payload["vendor_payload"]["line_items"][0]["qty"] == 1
+        assert "quarantine-user@test.invalid" not in str(raw_payload)
+        assert "203.0.113.77" not in str(raw_payload)
+
+        await conn.execute(
+            text("DELETE FROM dead_events_quarantine WHERE id = :id"),
+            {"id": row["id"]},
+        )
 
 
 # ==============================================================================
