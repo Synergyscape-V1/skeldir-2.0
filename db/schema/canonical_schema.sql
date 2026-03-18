@@ -259,19 +259,19 @@ CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
 
             IF TG_TABLE_NAME = 'dead_events' THEN
                 detected_key := NULL;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.email') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'email'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.email_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'email_address'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.phone') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'phone'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.phone_number') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'phone_number'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ssn') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ssn'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.social_security_number') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'social_security_number'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ip_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ip_address'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ip') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ip'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.first_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'first_name'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.last_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'last_name'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.full_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'full_name'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'address'; END IF;
-            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.street_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text) AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text) AND pii.value <> '0'::jsonb AND pii.value <> 'false'::jsonb AND pii.value <> '[]'::jsonb ) THEN detected_key := 'street_address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.email') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'email'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.email_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'email_address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.phone') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'phone'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.phone_number') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'phone_number'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ssn') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ssn'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.social_security_number') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'social_security_number'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ip_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ip_address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.ip') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'ip'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.first_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'first_name'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.last_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'last_name'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.full_name') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'full_name'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'address'; END IF;
+            IF EXISTS ( SELECT 1 FROM jsonb_path_query(NEW.raw_payload, '$.**.street_address') AS pii(value) WHERE pii.value <> to_jsonb('[REDACTED]'::text)   AND pii.value <> to_jsonb('[REDACTED_B1.4]'::text)   AND pii.value <> '0'::jsonb   AND pii.value <> 'false'::jsonb   AND pii.value <> '[]'::jsonb ) THEN detected_key := 'street_address'; END IF;
                 IF detected_key IS NOT NULL THEN
                     RAISE EXCEPTION
                       'PII key detected in %.raw_payload with unredacted value. Dead-letter payloads must use type-aware redaction masks ([REDACTED], 0, false, []). Key found: %.',
@@ -2250,7 +2250,7 @@ ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
 
@@ -2282,7 +2282,7 @@ CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = 
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -2332,9 +2332,9 @@ CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user U
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 
