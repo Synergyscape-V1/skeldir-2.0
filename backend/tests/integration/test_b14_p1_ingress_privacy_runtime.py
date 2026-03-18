@@ -58,8 +58,8 @@ async def test_b14_p1_canonical_ingress_strips_pii_before_write(test_tenant):
         persisted = await session.get(AttributionEvent, event_id)
         assert persisted is not None
         assert str(persisted.session_id) != provided_session
-        assert persisted.raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-100"
-        assert len(str(persisted.raw_payload.get("global_idempotency_hash", ""))) == 64
+        assert "vendor_payload" not in persisted.raw_payload
+        assert persisted.raw_payload["event_type"] == "purchase"
 
         pii_key_hits = await session.scalar(
             text(

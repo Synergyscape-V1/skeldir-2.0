@@ -42,7 +42,7 @@ SOURCE_REQUIREMENTS = (
         (
             "enforce_ingress_privacy_boundary(",
             "mode=\"strip\"",
-            "raw_payload=boundary.sanitized_payload",
+            "raw_payload=durable_payload",
         ),
     ),
     (
