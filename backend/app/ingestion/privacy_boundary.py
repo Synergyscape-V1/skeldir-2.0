@@ -13,13 +13,15 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.core.secrets import get_secret
 
-REDACTION_TOKEN = "[REDACTED_B1.4]"
+REDACTION_TOKEN = "[REDACTED]"
+LEGACY_REDACTION_TOKEN = "[REDACTED_B1.4]"
+_SESSION_STITCH_GRACE_HOURS = 2
 
 # P0-derived direct identifier taxonomy consumed by P1.
 BANNED_DIRECT_PII_KEYS: frozenset[str] = frozenset(
@@ -109,14 +111,28 @@ def _ensure_payload_dict(payload: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def compute_global_payload_hash(payload: Mapping[str, Any] | None) -> str:
     normalized = _ensure_payload_dict(payload)
-    canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    canonical = json.dumps(
+        normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _daily_pepper(now: datetime | None = None) -> str:
-    anchor = now or datetime.now(timezone.utc)
-    base_pepper = get_secret("AUTH_LOGIN_IDENTIFIER_PEPPER") or "skeldir-b14-default-pepper"
-    return hashlib.sha256(f"{base_pepper}:{anchor.date().isoformat()}".encode("utf-8")).hexdigest()
+def _daily_pepper(anchor: datetime) -> str:
+    base_pepper = (
+        get_secret("AUTH_LOGIN_IDENTIFIER_PEPPER") or "skeldir-b14-default-pepper"
+    )
+    return hashlib.sha256(
+        f"{base_pepper}:{anchor.date().isoformat()}".encode("utf-8")
+    ).hexdigest()
+
+
+def _session_pepper_candidates(
+    now: datetime | None = None,
+) -> tuple[datetime, str, str]:
+    anchor = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    current = _daily_pepper(anchor)
+    previous = _daily_pepper(anchor - timedelta(days=1))
+    return anchor, current, previous
 
 
 def _collect_identifier_values(
@@ -173,7 +189,9 @@ def derive_transient_session_id(
     global_idempotency_hash: str,
     fallback_session_id: str | None = None,
     request_headers: Mapping[str, str] | None = None,
+    now: datetime | None = None,
 ) -> str:
+    now_utc, current_pepper, previous_pepper = _session_pepper_candidates(now)
     identifiers = _collect_identifier_values(
         _ensure_payload_dict(identity_payload), request_headers=request_headers
     )
@@ -185,12 +203,45 @@ def derive_transient_session_id(
     else:
         basis = f"fallback:{source}:{idempotency_key}:{global_idempotency_hash[:24]}"
 
-    digest = hashlib.sha256(f"{_daily_pepper()}|{basis}".encode("utf-8")).hexdigest()
-    return str(uuid5(NAMESPACE_URL, f"b14-p1-session:{digest}"))
+    current_digest = hashlib.sha256(
+        f"{current_pepper}|{basis}".encode("utf-8")
+    ).hexdigest()
+    previous_digest = hashlib.sha256(
+        f"{previous_pepper}|{basis}".encode("utf-8")
+    ).hexdigest()
+    current_session_id = str(uuid5(NAMESPACE_URL, f"b14-p1-session:{current_digest}"))
+    previous_session_id = str(uuid5(NAMESPACE_URL, f"b14-p1-session:{previous_digest}"))
+
+    if fallback_session_id and fallback_session_id in {
+        current_session_id,
+        previous_session_id,
+    }:
+        return str(fallback_session_id)
+
+    if now_utc.hour < _SESSION_STITCH_GRACE_HOURS:
+        return previous_session_id
+
+    return current_session_id
 
 
 def _contains_direct_pii_value(value: str) -> bool:
     return bool(_EMAIL_PATTERN.search(value) or _IPV4_PATTERN.search(value))
+
+
+def _type_aware_redaction_value(value: Any) -> Any:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return 0
+    if isinstance(value, float):
+        return 0
+    if isinstance(value, list):
+        return []
+    if isinstance(value, tuple):
+        return []
+    if isinstance(value, set):
+        return []
+    return REDACTION_TOKEN
 
 
 def _sanitize_payload_recursive(
@@ -209,7 +260,7 @@ def _sanitize_payload_recursive(
             if normalized_key in BANNED_DIRECT_PII_KEYS:
                 redacted_paths.append(child_path)
                 if mode == "redact":
-                    sanitized[str(key)] = REDACTION_TOKEN
+                    sanitized[str(key)] = _type_aware_redaction_value(value)
                 continue
 
             sanitized[str(key)] = _sanitize_payload_recursive(

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from pydantic import BaseModel, ConfigDict
 
 from app.db.session import engine, get_session
 from app.ingestion.dlq_handler import DLQHandler, route_unresolved_tenant_to_quarantine
@@ -49,7 +50,10 @@ async def test_b14_p1_canonical_ingress_strips_pii_before_write(test_tenant):
             idempotency_key=idempotency_key,
             source="test_suite",
             identity_payload=event_data,
-            request_headers={"user-agent": "b14-test-agent", "x-real-ip": "198.51.100.31"},
+            request_headers={
+                "user-agent": "b14-test-agent",
+                "x-real-ip": "198.51.100.31",
+            },
         )
         await session.commit()
         event_id = event.id
@@ -120,7 +124,10 @@ async def test_b14_p1_dlq_path_redacts_pii_before_write(test_tenant):
             correlation_id=correlation_id,
             source="test_suite",
             identity_payload=payload,
-            request_headers={"user-agent": "b14-dlq-agent", "x-real-ip": "198.51.100.32"},
+            request_headers={
+                "user-agent": "b14-dlq-agent",
+                "x-real-ip": "198.51.100.32",
+            },
         )
         await session.commit()
         dead_event_id = dead_event.id
@@ -128,10 +135,21 @@ async def test_b14_p1_dlq_path_redacts_pii_before_write(test_tenant):
     async with get_session(tenant_id=tenant_id) as session:
         persisted = await session.get(DeadEvent, dead_event_id)
         assert persisted is not None
-        assert persisted.raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
-        assert persisted.raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
-        assert persisted.raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
-        assert persisted.raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-200"
+        assert (
+            persisted.raw_payload["vendor_payload"]["customer"]["email"]
+            == REDACTION_TOKEN
+        )
+        assert (
+            persisted.raw_payload["vendor_payload"]["customer"]["ip_address"]
+            == REDACTION_TOKEN
+        )
+        assert (
+            persisted.raw_payload["vendor_payload"]["customer"]["first_name"]
+            == REDACTION_TOKEN
+        )
+        assert (
+            persisted.raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-200"
+        )
         assert "dlq-user@test.invalid" not in str(persisted.raw_payload)
         assert "203.0.113.61" not in str(persisted.raw_payload)
 
@@ -179,8 +197,12 @@ async def test_b14_p1_quarantine_path_redacts_pii_before_write():
 
         raw_payload = row["raw_payload"]
         assert raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
-        assert raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
-        assert raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
+        assert (
+            raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
+        )
+        assert (
+            raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
+        )
         assert raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-300"
         assert "quarantine-user@test.invalid" not in str(raw_payload)
         assert "203.0.113.71" not in str(raw_payload)
@@ -189,3 +211,76 @@ async def test_b14_p1_quarantine_path_redacts_pii_before_write():
             text("DELETE FROM dead_events_quarantine WHERE id = :id"),
             {"id": row["id"]},
         )
+
+
+@pytest.mark.asyncio
+async def test_b14_p1_dlq_redaction_payload_round_trips_strict_pydantic_model(
+    test_tenant,
+):
+    """B1.4-P1 corrective: redact mode must preserve primitive contracts for model_validate()."""
+
+    class _StrictCustomerModel(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        email: str
+        ssn: int
+        phone: bool
+        address: list[str]
+
+    class _StrictVendorPayloadModel(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        customer: _StrictCustomerModel
+        line_items: list[dict[str, int | str]]
+
+    class _StrictDeadPayloadModel(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        event_type: str
+        idempotency_key: str
+        vendor_payload: _StrictVendorPayloadModel
+        global_idempotency_hash: str
+        session_id: str
+
+    tenant_id = test_tenant
+    correlation_id = f"b14_p1_dlq_typed_{uuid4()}"
+    payload = {
+        "event_type": "purchase",
+        "idempotency_key": correlation_id,
+        "vendor_payload": {
+            "customer": {
+                "email": "typed-dlq-user@test.invalid",
+                "ssn": 123456789,
+                "phone": True,
+                "address": ["42 Example Street", "Unit 9"],
+            },
+            "line_items": [{"sku": "sku-typed", "qty": 2}],
+        },
+    }
+
+    async with get_session(tenant_id=tenant_id) as session:
+        handler = DLQHandler()
+        dead_event = await handler.route_to_dlq(
+            session=session,
+            tenant_id=tenant_id,
+            original_payload=payload,
+            error=ValueError("forced typed-redaction validation failure"),
+            correlation_id=correlation_id,
+            source="test_suite",
+            identity_payload=payload,
+            request_headers={
+                "user-agent": "b14-dlq-typed-agent",
+                "x-real-ip": "198.51.100.34",
+            },
+        )
+        await session.commit()
+        dead_event_id = dead_event.id
+
+    async with get_session(tenant_id=tenant_id) as session:
+        persisted = await session.get(DeadEvent, dead_event_id)
+        assert persisted is not None
+        validated = _StrictDeadPayloadModel.model_validate(persisted.raw_payload)
+        assert validated.vendor_payload.customer.email == REDACTION_TOKEN
+        assert validated.vendor_payload.customer.ssn == 0
+        assert validated.vendor_payload.customer.phone is False
+        assert validated.vendor_payload.customer.address == []
