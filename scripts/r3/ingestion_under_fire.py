@@ -1262,9 +1262,10 @@ async def scenario_s4_pii_storm(
     pii_hits = await db_pii_key_hits_since(conn, run_start_utc, [tenant.tenant_id])
     http_5xx = sum(v for k, v in status_counts.items() if k.isdigit() and 500 <= int(k) <= 599)
 
+    # B1.4-P1 invariant: provider PII is accepted, pseudonymized/sanitized, then persisted only to canonical storage.
     passed = (
-        canonical == 0
-        and dlq == n
+        canonical == n
+        and dlq == 0
         and http_5xx == 0
         and timeouts == 0
         and conn_errors == 0
