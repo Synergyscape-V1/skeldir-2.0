@@ -51,6 +51,7 @@ SOURCE_REQUIREMENTS = (
             "enforce_ingress_privacy_boundary(",
             "mode=\"redact\"",
             "raw_payload=boundary.sanitized_payload",
+            "build_dlq_retry_payload(",
         ),
     ),
     (
@@ -70,6 +71,10 @@ SOURCE_FORBIDDEN_PATTERNS = (
     (
         REPO_ROOT / "backend/app/ingestion/dlq_handler.py",
         re.compile(r"raw_payload\s*=\s*original_payload\b"),
+    ),
+    (
+        REPO_ROOT / "backend/app/ingestion/dlq_handler.py",
+        re.compile(r"retry_payload\s*=\s*dead_event\.raw_payload\b"),
     ),
     (
         REPO_ROOT / "backend/app/api/webhooks.py",
@@ -108,6 +113,15 @@ def run_enforcement(extra_contract_files: list[Path]) -> tuple[int, list[str]]:
         if forbidden_pattern.search(text):
             violations.append(
                 f"forbidden_pattern_detected: {path}:{forbidden_pattern.pattern}"
+            )
+
+    app_source_root = REPO_ROOT / "backend" / "app"
+    raw_payload_model_validate = re.compile(r"model_validate\(\s*dead_event\.raw_payload")
+    for source_file in app_source_root.rglob("*.py"):
+        text = _read(source_file)
+        if raw_payload_model_validate.search(text):
+            violations.append(
+                f"forbidden_pattern_detected: {source_file}:{raw_payload_model_validate.pattern}"
             )
 
     for contract in (*INTERNAL_CONTRACT_FILES, *extra_contract_files):

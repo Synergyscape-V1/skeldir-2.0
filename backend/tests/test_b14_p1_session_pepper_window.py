@@ -26,11 +26,14 @@ def test_b14_p1_time_windowed_pepper_stitches_cross_midnight(monkeypatch):
 
     before_midnight = datetime(2026, 3, 18, 23, 59, tzinfo=timezone.utc)
     just_after_midnight = datetime(2026, 3, 19, 0, 1, tzinfo=timezone.utc)
-    after_grace_window = datetime(2026, 3, 19, 3, 0, tzinfo=timezone.utc)
+    pre_dawn_after_midnight = datetime(2026, 3, 19, 5, 30, tzinfo=timezone.utc)
+    after_grace_window = datetime(2026, 3, 19, 9, 0, tzinfo=timezone.utc)
 
     session_before = _session_for(payload, before_midnight)
     session_after = _session_for(payload, just_after_midnight)
+    session_pre_dawn = _session_for(payload, pre_dawn_after_midnight)
     session_after_grace = _session_for(payload, after_grace_window)
 
     assert session_after == session_before
+    assert session_pre_dawn == session_before
     assert session_after_grace != session_before

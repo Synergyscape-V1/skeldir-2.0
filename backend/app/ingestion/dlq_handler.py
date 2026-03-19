@@ -9,10 +9,12 @@ Related: B0.4.4 DLQ Handler Enhancement
 import traceback
 import json
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from enum import Enum
-from typing import Any, Mapping, Optional
+from typing import Annotated, Any, Mapping, Optional
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -64,6 +66,53 @@ class RemediationStatus(str, Enum):
     MAX_RETRIES_EXCEEDED = "abandoned"  # Gave up after max attempts (maps to 'abandoned')
     MANUAL_REVIEW = "in_progress"    # Needs human intervention (maps to 'in_progress')
     IGNORED = "abandoned"            # Intentionally skipped (maps to 'abandoned')
+
+
+class DLQReplayPayload(BaseModel):
+    """
+    Typed replay envelope for dead-event retries.
+
+    This model intentionally validates only the canonical replay contract and
+    ignores diagnostic extras (including redacted vendor payload structure).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    event_type: Annotated[str, Field(min_length=1, max_length=64)]
+    event_timestamp: datetime
+    revenue_amount: Decimal
+    session_id: UUID
+    idempotency_key: Annotated[str | None, Field(min_length=1, max_length=255)] = None
+    correlation_id: UUID | None = None
+    external_event_id: str | None = None
+    campaign_id: str | None = None
+    conversion_value_cents: Annotated[int | None, Field(ge=0)] = None
+    currency: Annotated[str | None, Field(pattern=r"^[A-Za-z]{3}$")] = None
+    vendor: str | None = None
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    vendor_payload: dict[str, Any] | None = None
+
+
+def build_dlq_retry_payload(raw_payload: Any) -> dict[str, Any]:
+    """
+    Build a typed replay payload from persisted dead-event JSON.
+
+    Raises:
+        ValueError: if required replay fields are missing or invalid.
+    """
+    if not isinstance(raw_payload, dict):
+        raise ValueError("Dead-event payload must be a JSON object for replay.")
+
+    try:
+        validated = DLQReplayPayload.model_validate(raw_payload)
+    except PydanticValidationError as exc:
+        raise ValueError(f"Dead-event payload is not replayable: {exc}") from exc
+
+    replay_payload = validated.model_dump(mode="python", exclude_none=True)
+    if "revenue_amount" in replay_payload:
+        replay_payload["revenue_amount"] = str(replay_payload["revenue_amount"])
+    return replay_payload
 
 
 # Remediation status state machine transitions
@@ -347,7 +396,7 @@ class DLQHandler:
         service = EventIngestionService()
 
         try:
-            retry_payload = dead_event.raw_payload if isinstance(dead_event.raw_payload, dict) else {}
+            retry_payload = build_dlq_retry_payload(dead_event.raw_payload)
             retry_idempotency_key = (
                 retry_payload.get("idempotency_key")
                 or (str(dead_event.correlation_id) if dead_event.correlation_id else None)
