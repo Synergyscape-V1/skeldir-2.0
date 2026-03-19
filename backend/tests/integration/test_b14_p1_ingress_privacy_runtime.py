@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from datetime import datetime, timezone
+from uuid import UUID
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select, text
 
 from app.db.session import engine, get_session
-from app.ingestion.dlq_handler import DLQHandler, route_unresolved_tenant_to_quarantine
+from app.ingestion.dlq_handler import (
+    DLQHandler,
+    DLQReplayPayload,
+    route_unresolved_tenant_to_quarantine,
+)
 from app.ingestion.event_service import EventIngestionService
 from app.ingestion.privacy_boundary import REDACTION_TOKEN
 from app.models import AttributionEvent, DeadEvent
@@ -214,38 +219,19 @@ async def test_b14_p1_quarantine_path_redacts_pii_before_write():
 
 
 @pytest.mark.asyncio
-async def test_b14_p1_dlq_redaction_payload_round_trips_strict_pydantic_model(
+async def test_b14_p1_dlq_redaction_payload_round_trips_production_replay_contract(
     test_tenant,
 ):
-    """B1.4-P1 corrective: redact mode must preserve primitive contracts for model_validate()."""
-
-    class _StrictCustomerModel(BaseModel):
-        model_config = ConfigDict(extra="forbid", strict=True)
-
-        email: str
-        ssn: int
-        phone: bool
-        address: list[str]
-
-    class _StrictVendorPayloadModel(BaseModel):
-        model_config = ConfigDict(extra="forbid", strict=True)
-
-        customer: _StrictCustomerModel
-        line_items: list[dict[str, int | str]]
-
-    class _StrictDeadPayloadModel(BaseModel):
-        model_config = ConfigDict(extra="forbid", strict=True)
-
-        event_type: str
-        idempotency_key: str
-        vendor_payload: _StrictVendorPayloadModel
-        global_idempotency_hash: str
-        session_id: str
+    """B1.4-P1: persisted redacted payload round-trips through the real retry contract."""
 
     tenant_id = test_tenant
     correlation_id = f"b14_p1_dlq_typed_{uuid4()}"
+    provided_session_id = str(uuid4())
     payload = {
         "event_type": "purchase",
+        "event_timestamp": datetime.now(timezone.utc).isoformat(),
+        "revenue_amount": "13.37",
+        "session_id": provided_session_id,
         "idempotency_key": correlation_id,
         "vendor_payload": {
             "customer": {
@@ -279,8 +265,79 @@ async def test_b14_p1_dlq_redaction_payload_round_trips_strict_pydantic_model(
     async with get_session(tenant_id=tenant_id) as session:
         persisted = await session.get(DeadEvent, dead_event_id)
         assert persisted is not None
-        validated = _StrictDeadPayloadModel.model_validate(persisted.raw_payload)
-        assert validated.vendor_payload.customer.email == REDACTION_TOKEN
-        assert validated.vendor_payload.customer.ssn == 0
-        assert validated.vendor_payload.customer.phone is False
-        assert validated.vendor_payload.customer.address == []
+        validated = DLQReplayPayload.model_validate(persisted.raw_payload)
+        assert validated.event_type == "purchase"
+        assert validated.revenue_amount == Decimal("13.37")
+        assert validated.session_id == UUID(provided_session_id)
+        assert validated.idempotency_key == correlation_id
+        assert persisted.raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
+        assert persisted.raw_payload["vendor_payload"]["customer"]["ssn"] == 0
+        assert persisted.raw_payload["vendor_payload"]["customer"]["phone"] is False
+        assert persisted.raw_payload["vendor_payload"]["customer"]["address"] == []
+
+    async with get_session(tenant_id=tenant_id) as session:
+        handler = DLQHandler()
+        success, message = await handler.retry_dead_event(session, dead_event_id)
+        await session.commit()
+        assert success is True, message
+
+    async with get_session(tenant_id=tenant_id) as session:
+        refreshed_dead_event = await session.get(DeadEvent, dead_event_id)
+        assert refreshed_dead_event is not None
+        assert refreshed_dead_event.remediation_status == "resolved"
+
+        persisted_event = await session.execute(
+            select(AttributionEvent).where(
+                AttributionEvent.tenant_id == tenant_id,
+                AttributionEvent.idempotency_key == correlation_id,
+            )
+        )
+        canonical = persisted_event.scalar_one_or_none()
+        assert canonical is not None
+        assert canonical.event_type == "purchase"
+        assert canonical.raw_payload["event_type"] == "purchase"
+        assert "vendor_payload" not in canonical.raw_payload
+
+
+@pytest.mark.asyncio
+async def test_b14_p1_dlq_replay_contract_negative_control_invalid_timestamp(
+    test_tenant,
+):
+    """B1.4-P1 non-vacuous proof: invalid replay contract must fail deterministically."""
+    tenant_id = test_tenant
+    correlation_id = f"b14_p1_dlq_bad_timestamp_{uuid4()}"
+    payload = {
+        "event_type": "purchase",
+        "event_timestamp": "not-a-timestamp",
+        "revenue_amount": "7.00",
+        "session_id": str(uuid4()),
+        "idempotency_key": correlation_id,
+        "vendor_payload": {
+            "customer": {"email": "bad-ts-user@test.invalid"},
+        },
+    }
+
+    async with get_session(tenant_id=tenant_id) as session:
+        handler = DLQHandler()
+        dead_event = await handler.route_to_dlq(
+            session=session,
+            tenant_id=tenant_id,
+            original_payload=payload,
+            error=ValueError("forced timestamp validation failure"),
+            correlation_id=correlation_id,
+            source="test_suite",
+            identity_payload=payload,
+            request_headers={
+                "user-agent": "b14-dlq-bad-ts-agent",
+                "x-real-ip": "198.51.100.35",
+            },
+        )
+        await session.commit()
+        dead_event_id = dead_event.id
+
+    async with get_session(tenant_id=tenant_id) as session:
+        handler = DLQHandler()
+        success, message = await handler.retry_dead_event(session, dead_event_id)
+        await session.commit()
+        assert success is False
+        assert "not replayable" in message

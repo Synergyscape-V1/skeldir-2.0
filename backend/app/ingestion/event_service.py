@@ -167,10 +167,10 @@ class EventIngestionService:
             request_headers=request_headers,
             mode="strip",
         )
-        sanitized_event_data = dict(event_data)
-        sanitized_event_data["session_id"] = boundary.session_id
-        sanitized_event_data["global_idempotency_hash"] = boundary.global_idempotency_hash
-        sanitized_event_data["pii_redacted_paths"] = list(boundary.redacted_paths)
+        ingestion_event_data = dict(event_data)
+        ingestion_event_data["session_id"] = boundary.session_id
+        ingestion_event_data["global_idempotency_hash"] = boundary.global_idempotency_hash
+        ingestion_event_data["pii_redacted_paths"] = list(boundary.redacted_paths)
 
         # 1. Idempotency check - return existing event if duplicate
         existing = await self._check_duplicate(session, tenant_id, idempotency_key)
@@ -182,8 +182,8 @@ class EventIngestionService:
                     "idempotency_key": idempotency_key,
                     "existing_event_id": str(existing.id),
                     "tenant_id": str(tenant_id),
-                    "vendor": sanitized_event_data.get("vendor", source),
-                    "event_type": sanitized_event_data.get("event_type"),
+                    "vendor": ingestion_event_data.get("vendor", source),
+                    "event_type": ingestion_event_data.get("event_type"),
                     **log_context(),
                 }
             )
@@ -194,13 +194,13 @@ class EventIngestionService:
         start_time = time.perf_counter()
         try:
             # 2. Validate event schema
-            validated = self._validate_schema(sanitized_event_data)
+            validated = self._validate_schema(ingestion_event_data)
 
             # 3. Normalize channel (vendor indicator → canonical code)
             channel_code = normalize_channel(
-                utm_source=sanitized_event_data.get("utm_source"),
-                utm_medium=sanitized_event_data.get("utm_medium"),
-                vendor=sanitized_event_data.get("vendor", source),
+                utm_source=ingestion_event_data.get("utm_source"),
+                utm_medium=ingestion_event_data.get("utm_medium"),
+                vendor=ingestion_event_data.get("vendor", source),
                 tenant_id=str(tenant_id)
             )
 
@@ -221,9 +221,9 @@ class EventIngestionService:
                 currency=validated.get("currency", "USD"),
                 raw_payload=durable_payload,
                 correlation_id=validated.get("correlation_id"),
-                external_event_id=sanitized_event_data.get("external_event_id"),
-                campaign_id=sanitized_event_data.get("campaign_id"),
-                conversion_value_cents=sanitized_event_data.get("conversion_value_cents"),
+                external_event_id=ingestion_event_data.get("external_event_id"),
+                campaign_id=ingestion_event_data.get("campaign_id"),
+                conversion_value_cents=ingestion_event_data.get("conversion_value_cents"),
                 processing_status="pending",
                 retry_count=0,
                 created_at=datetime.now(timezone.utc),
@@ -244,7 +244,7 @@ class EventIngestionService:
                     "event_type": event.event_type,
                     "revenue_cents": event.revenue_cents,
                     "tenant_id": str(tenant_id),
-                    "vendor": sanitized_event_data.get("vendor", source),
+                    "vendor": ingestion_event_data.get("vendor", source),
                     "correlation_id_business": idempotency_key,
                     **log_context(),
                 }
@@ -266,8 +266,8 @@ class EventIngestionService:
                     "idempotency_key": idempotency_key,
                     "source": source,
                     "tenant_id": str(tenant_id),
-                    "vendor": sanitized_event_data.get("vendor", source),
-                    "event_type": sanitized_event_data.get("event_type"),
+                    "vendor": ingestion_event_data.get("vendor", source),
+                    "event_type": ingestion_event_data.get("event_type"),
                     "correlation_id_business": idempotency_key,
                     **log_context(),
                 }
@@ -305,8 +305,8 @@ class EventIngestionService:
                         "idempotency_key": idempotency_key,
                         "existing_event_id": str(existing_after_race.id),
                         "tenant_id": str(tenant_id),
-                        "vendor": sanitized_event_data.get("vendor", source),
-                        "event_type": sanitized_event_data.get("event_type"),
+                        "vendor": ingestion_event_data.get("vendor", source),
+                        "event_type": ingestion_event_data.get("event_type"),
                         **log_context(),
                     },
                 )

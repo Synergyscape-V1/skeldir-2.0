@@ -21,7 +21,9 @@ from app.core.secrets import get_secret
 
 REDACTION_TOKEN = "[REDACTED]"
 LEGACY_REDACTION_TOKEN = "[REDACTED_B1.4]"
-_SESSION_STITCH_GRACE_HOURS = 2
+# Maintain late-night journey continuity across UTC midnight while still
+# rotating session derivation daily for privacy minimization.
+_SESSION_STITCH_GRACE_HOURS = 8
 
 # P0-derived direct identifier taxonomy consumed by P1.
 BANNED_DIRECT_PII_KEYS: frozenset[str] = frozenset(
