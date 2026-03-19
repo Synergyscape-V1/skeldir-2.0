@@ -24,6 +24,7 @@ from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
 from app.models import AttributionEvent, DeadEvent
 from app.observability.context import log_context
 from app.privacy.authority import minimize_event_payload_for_storage
+from app.privacy.session_authority import resolve_session_authority
 from app.observability.api_metrics import (
     events_dlq_total,
     events_duplicate_total,
@@ -167,8 +168,8 @@ class EventIngestionService:
             request_headers=request_headers,
             mode="strip",
         )
+        candidate_session_id = str(event_data.get("session_id", "")).strip() or None
         ingestion_event_data = dict(event_data)
-        ingestion_event_data["session_id"] = boundary.session_id
         ingestion_event_data["global_idempotency_hash"] = boundary.global_idempotency_hash
         ingestion_event_data["pii_redacted_paths"] = list(boundary.redacted_paths)
 
@@ -190,6 +191,14 @@ class EventIngestionService:
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
             events_duplicate_total.inc()
             return existing
+
+        session_resolution = await resolve_session_authority(
+            session=session,
+            tenant_id=tenant_id,
+            candidate_session_id=candidate_session_id,
+            source=source,
+        )
+        ingestion_event_data["session_id"] = str(session_resolution.session_id)
 
         start_time = time.perf_counter()
         try:
