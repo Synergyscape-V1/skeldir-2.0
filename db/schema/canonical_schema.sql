@@ -4,6 +4,10 @@ CREATE SCHEMA security;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
+-- Canonical bootstrap creates security-definer functions before some dependent tables.
+-- Disable body validation during schema apply to preserve deterministic creation order.
+SET check_function_bodies = off;
+
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
