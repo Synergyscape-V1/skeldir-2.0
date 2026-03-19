@@ -230,6 +230,7 @@ def upgrade() -> None:
     )
 
     op.execute("ALTER TABLE public.session_authority ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE ONLY public.session_authority FORCE ROW LEVEL SECURITY")
     op.execute("DROP POLICY IF EXISTS tenant_isolation_policy ON public.session_authority")
     op.execute(
         """
@@ -284,4 +285,3 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS public.idx_session_authority_tenant_last_seen")
     op.execute("DROP INDEX IF EXISTS public.idx_session_authority_tenant_expires")
     op.execute("DROP TABLE IF EXISTS public.session_authority")  # CI:DESTRUCTIVE_OK - rollback for B1.4-P2 session authority substrate
-
