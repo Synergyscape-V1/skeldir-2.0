@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from app.core.secrets import get_secret
 
@@ -306,14 +306,12 @@ def enforce_ingress_privacy_boundary(
 
     identity_payload_dict = _ensure_payload_dict(identity_payload)
     global_idempotency_hash = compute_global_payload_hash(identity_payload_dict)
-    session_id = derive_transient_session_id(
-        identity_payload=identity_payload_dict,
-        source=source,
-        idempotency_key=idempotency_key,
-        global_idempotency_hash=global_idempotency_hash,
-        fallback_session_id=fallback_session_id,
-        request_headers=request_headers,
-    )
+    if fallback_session_id and _UUID_PATTERN.match(str(fallback_session_id)):
+        session_id = str(fallback_session_id)
+    else:
+        # P2 runtime authority issues non-deterministic session ids.
+        # Boundary keeps a best-effort UUID only for transient envelope handling.
+        session_id = str(uuid4())
 
     storage_payload_dict = _ensure_payload_dict(storage_payload)
     redacted_paths: list[str] = []
@@ -327,7 +325,6 @@ def enforce_ingress_privacy_boundary(
         sanitized_payload = {"payload": sanitized_payload}
 
     sanitized_payload.setdefault("global_idempotency_hash", global_idempotency_hash)
-    sanitized_payload.setdefault("session_id", session_id)
 
     return IngressPrivacyBoundaryResult(
         global_idempotency_hash=global_idempotency_hash,

@@ -57,6 +57,7 @@ from app.models.oauth_handshake_session import OAuthHandshakeSession
 from app.models.platform_connection import PlatformConnection
 from app.models.platform_credential import PlatformCredential
 from app.models.revenue_cache import RevenueCacheEntry
+from app.models.session_authority import SessionAuthority
 
 __all__ = [
     "Base",
@@ -85,4 +86,5 @@ __all__ = [
     "PlatformConnection",
     "PlatformCredential",
     "RevenueCacheEntry",
+    "SessionAuthority",
 ]

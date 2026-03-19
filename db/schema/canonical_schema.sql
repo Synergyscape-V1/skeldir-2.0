@@ -4,10 +4,6 @@ CREATE SCHEMA security;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
--- Canonical bootstrap creates security-definer functions before some dependent tables.
--- Disable body validation during schema apply to preserve deterministic creation order.
-SET check_function_bodies = off;
-
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
@@ -18,7 +14,7 @@ CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text
                 u.auth_provider,
                 u.password_hash
             FROM public.users AS u
-            WHERE login_identifier_hash = p_login_identifier_hash
+            WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
 
@@ -31,7 +27,7 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
                 u.is_active,
                 u.auth_provider
             FROM public.users AS u
-            WHERE login_identifier_hash = p_login_identifier_hash
+            WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
 
@@ -41,16 +37,16 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1;
+            tolerance_cents INTEGER := 1; -- ±1 cent rounding tolerance
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
-            WHERE id = COALESCE(event_id, event_id);
+            WHERE id = COALESCE(NEW.event_id, OLD.event_id);
 
             SELECT COALESCE(SUM(allocated_revenue_cents), 0) INTO allocated_sum
             FROM attribution_allocations
-            WHERE event_id = COALESCE(event_id, event_id)
-              AND model_version = COALESCE(model_version, model_version);
+            WHERE event_id = COALESCE(NEW.event_id, OLD.event_id)
+              AND model_version = COALESCE(NEW.model_version, OLD.model_version);
 
             IF ABS(allocated_sum - event_revenue) > tolerance_cents THEN
                 RAISE EXCEPTION 'Allocation sum mismatch: allocated=% expected=% drift=%',
@@ -83,16 +79,16 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON tenant_id = tenant_id
-             AND id = event_id
+              ON e.tenant_id = a.tenant_id
+             AND e.id = a.event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE tenant_id = tenant_id
-                  AND event_id = event_id
-                  AND model_version = model_version
+                WHERE aa.tenant_id = a.tenant_id
+                  AND aa.event_id = a.event_id
+                  AND aa.model_version = a.model_version
             ) s
-            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
+            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -128,16 +124,16 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON tenant_id = tenant_id
-             AND id = event_id
+              ON e.tenant_id = a.tenant_id
+             AND e.id = a.event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE tenant_id = tenant_id
-                  AND event_id = event_id
-                  AND model_version = model_version
+                WHERE aa.tenant_id = a.tenant_id
+                  AND aa.event_id = a.event_id
+                  AND aa.model_version = a.model_version
             ) s
-            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
+            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -177,16 +173,16 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON tenant_id = tenant_id
-             AND id = event_id
+              ON e.tenant_id = a.tenant_id
+             AND e.id = a.event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE tenant_id = tenant_id
-                  AND event_id = event_id
-                  AND model_version = model_version
+                WHERE aa.tenant_id = a.tenant_id
+                  AND aa.event_id = a.event_id
+                  AND aa.model_version = a.model_version
             ) s
-            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
+            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -197,6 +193,63 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
             END IF;
 
             RETURN NULL;
+        END;
+        $$;
+
+CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        DECLARE
+            authority_now timestamptz;
+        BEGIN
+            authority_now := now();
+            IF NEW.session_id IS NULL THEN
+                NEW.session_id := gen_random_uuid();
+            END IF;
+
+            INSERT INTO public.session_authority
+            (
+                tenant_id,
+                session_id,
+                issued_at,
+                expires_at,
+                last_seen_at,
+                invalidated_at,
+                invalidation_reason,
+                issued_by,
+                created_at,
+                updated_at
+            )
+            VALUES
+            (
+                NEW.tenant_id,
+                NEW.session_id,
+                authority_now,
+                authority_now + interval '24 hours',
+                authority_now,
+                NULL,
+                NULL,
+                'attribution_event_insert',
+                authority_now,
+                authority_now
+            )
+            ON CONFLICT (tenant_id, session_id)
+            DO UPDATE SET
+                last_seen_at = GREATEST(public.session_authority.last_seen_at, EXCLUDED.last_seen_at),
+                updated_at = EXCLUDED.updated_at;
+
+            IF EXISTS (
+                SELECT 1
+                FROM public.session_authority sa
+                WHERE sa.tenant_id = NEW.tenant_id
+                  AND sa.session_id = NEW.session_id
+                  AND (sa.invalidated_at IS NOT NULL OR sa.expires_at <= authority_now)
+            ) THEN
+                RAISE EXCEPTION
+                    'session authority violation: stale or invalidated session_id on attribution_events insert';
+            END IF;
+
+            RETURN NEW;
         END;
         $$;
 
@@ -314,11 +367,12 @@ CREATE FUNCTION public.fn_events_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-
+            -- Allow migration_owner for emergency repairs (optional)
             IF current_user = 'migration_owner' THEN
-                RETURN NULL;
+                RETURN NULL; -- Allow operation
             END IF;
 
+            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'attribution_events is append-only; updates and deletes are not allowed. Use INSERT with correlation_id for corrections.';
         END;
         $$;
@@ -355,11 +409,12 @@ CREATE FUNCTION public.fn_ledger_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-
+            -- Allow migration_owner for emergency repairs (optional)
             IF current_user = 'migration_owner' THEN
-                RETURN NULL;
+                RETURN NULL; -- Allow operation
             END IF;
 
+            -- Block all other UPDATE/DELETE attempts
             RAISE EXCEPTION 'revenue_ledger is immutable; updates and deletes are not allowed. Use INSERT for corrections.';
         END;
         $$;
@@ -379,9 +434,10 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
             correction_by_val VARCHAR(255);
             correction_reason_val TEXT;
         BEGIN
-
+            -- Only log if the 'channel_code' column actually changed
             IF (NEW.channel_code IS DISTINCT FROM OLD.channel_code) THEN
-
+                -- Read session variables set by application layer
+                -- Fall back to 'system' if unset (indicates bypass attempt)
                 correction_by_val := COALESCE(
                     current_setting('app.correction_by', true),
                     'system'
@@ -391,6 +447,7 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     'No reason provided'
                 );
 
+                -- Insert audit record
                 INSERT INTO channel_assignment_corrections (
                     tenant_id,
                     entity_type,
@@ -424,9 +481,10 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
             change_by_val VARCHAR(255);
             change_reason_val TEXT;
         BEGIN
-
+            -- Only log if the 'state' column actually changed
             IF (NEW.state IS DISTINCT FROM OLD.state) THEN
-
+                -- Read session variables set by application layer
+                -- Fall back to 'system' if unset (indicates bypass attempt)
                 change_by_val := COALESCE(
                     current_setting('app.channel_state_change_by', true),
                     'system'
@@ -436,6 +494,7 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     ''
                 );
 
+                -- Insert audit record
                 INSERT INTO channel_state_transitions (
                     channel_code,
                     from_state,
@@ -491,15 +550,15 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             rec RECORD;
             detected_key_var TEXT;
         BEGIN
-
+            -- Scan attribution_events.raw_payload
             FOR rec IN
                 SELECT id, raw_payload
                 FROM attribution_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-
+                -- Find first PII key
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(raw_payload) key
+                FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -522,20 +581,21 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                     'raw_payload',
                     rec.id,
                     detected_key_var,
-                    'Redacted for security'
+                    'Redacted for security'  -- Do not log actual PII values
                 );
 
                 finding_count := finding_count + 1;
             END LOOP;
 
+            -- Scan dead_events.raw_payload
             FOR rec IN
                 SELECT id, raw_payload
                 FROM dead_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-
+                -- Find first PII key
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(raw_payload) key
+                FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -564,14 +624,15 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
                 finding_count := finding_count + 1;
             END LOOP;
 
+            -- Scan revenue_ledger.metadata (only non-NULL)
             FOR rec IN
                 SELECT id, metadata
                 FROM revenue_ledger
                 WHERE metadata IS NOT NULL AND fn_detect_pii_keys(metadata)
             LOOP
-
+                -- Find first PII key
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(metadata) key
+                FROM jsonb_object_keys(rec.metadata) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -619,8 +680,8 @@ CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETUR
             t.paypal_webhook_secret_key_id,
             t.woocommerce_webhook_secret_ciphertext,
             t.woocommerce_webhook_secret_key_id
-          FROM tenants t
-          WHERE api_key_hash = $1
+          FROM public.tenants t
+          WHERE t.api_key_hash = $1
           LIMIT 1
         $_$;
 
@@ -634,7 +695,7 @@ CREATE TABLE public.attribution_allocations (
     event_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    channel_code text NOT NULL,
+    channel_code text CONSTRAINT attribution_allocations_channel_not_null NOT NULL,
     allocated_revenue_cents integer DEFAULT 0 NOT NULL,
     model_metadata jsonb,
     correlation_id uuid,
@@ -1192,7 +1253,7 @@ CREATE SEQUENCE public.message_id_sequence
 
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
-CREATE MATERIALIZED VIEW mv_allocation_summary AS
+CREATE MATERIALIZED VIEW public.mv_allocation_summary AS
  SELECT aa.tenant_id,
     aa.event_id,
     aa.model_version,
@@ -1206,12 +1267,12 @@ CREATE MATERIALIZED VIEW mv_allocation_summary AS
             WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
             ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
         END AS drift_cents
-   FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
+   FROM (public.attribution_allocations aa
+     LEFT JOIN public.attribution_events e ON ((aa.event_id = e.id)))
   GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
   WITH NO DATA;
 
-CREATE MATERIALIZED VIEW mv_channel_performance AS
+CREATE MATERIALIZED VIEW public.mv_channel_performance AS
  SELECT tenant_id,
     channel_code,
     date_trunc('day'::text, created_at) AS allocation_date,
@@ -1219,7 +1280,7 @@ CREATE MATERIALIZED VIEW mv_channel_performance AS
     sum(allocated_revenue_cents) AS total_revenue_cents,
     avg(confidence_score) AS avg_confidence_score,
     count(*) AS total_allocations
-   FROM attribution_allocations
+   FROM public.attribution_allocations
   WHERE (created_at >= (CURRENT_DATE - '90 days'::interval))
   GROUP BY tenant_id, channel_code, (date_trunc('day'::text, created_at))
   WITH NO DATA;
@@ -1260,24 +1321,24 @@ CREATE TABLE public.revenue_ledger (
 
 ALTER TABLE ONLY public.revenue_ledger FORCE ROW LEVEL SECURITY;
 
-CREATE MATERIALIZED VIEW mv_daily_revenue_summary AS
+CREATE MATERIALIZED VIEW public.mv_daily_revenue_summary AS
  SELECT tenant_id,
     date_trunc('day'::text, verification_timestamp) AS revenue_date,
     state,
     currency,
     sum(amount_cents) AS total_amount_cents,
     count(*) AS transaction_count
-   FROM revenue_ledger
+   FROM public.revenue_ledger
   WHERE ((state)::text = ANY ((ARRAY['captured'::character varying, 'refunded'::character varying, 'chargeback'::character varying])::text[]))
   GROUP BY tenant_id, (date_trunc('day'::text, verification_timestamp)), state, currency
   WITH NO DATA;
 
-CREATE MATERIALIZED VIEW mv_realtime_revenue AS
+CREATE MATERIALIZED VIEW public.mv_realtime_revenue AS
  SELECT tenant_id,
     ((COALESCE(sum(COALESCE(amount_cents, revenue_cents)), (0)::bigint))::numeric / 100.0) AS total_revenue,
     bool_or(COALESCE(is_verified, false)) AS verified,
     (EXTRACT(epoch FROM (now() - max(updated_at))))::integer AS data_freshness_seconds
-   FROM revenue_ledger rl
+   FROM public.revenue_ledger rl
   GROUP BY tenant_id
   WITH NO DATA;
 
@@ -1296,16 +1357,16 @@ CREATE TABLE public.reconciliation_runs (
 
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
-CREATE MATERIALIZED VIEW mv_reconciliation_status AS
+CREATE MATERIALIZED VIEW public.mv_reconciliation_status AS
  SELECT rr.tenant_id,
     rr.state,
     rr.last_run_at,
     rr.id AS reconciliation_run_id
-   FROM (reconciliation_runs rr
-     JOIN ( SELECT tenant_id,
-            max(last_run_at) AS max_last_run_at
-           FROM reconciliation_runs
-          GROUP BY tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+   FROM (public.reconciliation_runs rr
+     JOIN ( SELECT reconciliation_runs.tenant_id,
+            max(reconciliation_runs.last_run_at) AS max_last_run_at
+           FROM public.reconciliation_runs
+          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.oauth_handshake_sessions (
@@ -1474,6 +1535,23 @@ CREATE TABLE public.roles (
     CONSTRAINT ck_roles_code_not_empty CHECK ((length(TRIM(BOTH FROM code)) > 0))
 );
 
+CREATE TABLE public.session_authority (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    invalidated_at timestamp with time zone,
+    invalidation_reason text,
+    issued_by text DEFAULT 'ingestion_runtime'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_session_authority_expires_after_issued CHECK ((expires_at > issued_at)),
+    CONSTRAINT ck_session_authority_invalidation_after_issued CHECK (((invalidated_at IS NULL) OR (invalidated_at >= issued_at))),
+    CONSTRAINT ck_session_authority_max_24h CHECK ((expires_at <= (issued_at + '24:00:00'::interval)))
+);
+
 CREATE SEQUENCE public.task_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -1549,25 +1627,25 @@ CREATE TABLE public.users (
 ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.worker_failed_jobs (
-    id uuid NOT NULL,
-    task_id character varying(155) NOT NULL,
-    task_name character varying(255) NOT NULL,
+    id uuid CONSTRAINT celery_task_failures_id_not_null NOT NULL,
+    task_id character varying(155) CONSTRAINT celery_task_failures_task_id_not_null NOT NULL,
+    task_name character varying(255) CONSTRAINT celery_task_failures_task_name_not_null NOT NULL,
     queue character varying(100),
     worker character varying(255),
     task_args jsonb,
     task_kwargs jsonb,
     tenant_id uuid,
-    error_type character varying(100) NOT NULL,
-    exception_class character varying(255) NOT NULL,
-    error_message text NOT NULL,
+    error_type character varying(100) CONSTRAINT celery_task_failures_error_type_not_null NOT NULL,
+    exception_class character varying(255) CONSTRAINT celery_task_failures_exception_class_not_null NOT NULL,
+    error_message text CONSTRAINT celery_task_failures_error_message_not_null NOT NULL,
     traceback text,
-    retry_count integer DEFAULT 0 NOT NULL,
+    retry_count integer DEFAULT 0 CONSTRAINT celery_task_failures_retry_count_not_null NOT NULL,
     last_retry_at timestamp with time zone,
-    status character varying(50) DEFAULT '''pending'''::character varying NOT NULL,
+    status character varying(50) DEFAULT '''pending'''::character varying CONSTRAINT celery_task_failures_status_not_null NOT NULL,
     remediation_notes text,
     resolved_at timestamp with time zone,
     correlation_id uuid,
-    failed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    failed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP CONSTRAINT celery_task_failures_failed_at_not_null NOT NULL,
     CONSTRAINT ck_worker_failed_jobs_retry_count_positive CHECK ((retry_count >= 0)),
     CONSTRAINT ck_worker_failed_jobs_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying, 'resolved'::character varying, 'abandoned'::character varying])::text[])))
 );
@@ -1754,6 +1832,9 @@ ALTER TABLE ONLY public.revenue_state_transitions
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (code);
 
+ALTER TABLE ONLY public.session_authority
+    ADD CONSTRAINT session_authority_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_pkey PRIMARY KEY (id);
 
@@ -1774,6 +1855,9 @@ ALTER TABLE ONLY public.llm_monthly_costs
 
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT uq_oauth_handshake_sessions_tenant_state_hash UNIQUE (tenant_id, state_nonce_hash);
+
+ALTER TABLE ONLY public.session_authority
+    ADD CONSTRAINT uq_session_authority_tenant_session_id UNIQUE (tenant_id, session_id);
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT uq_tenant_membership_roles_membership_role UNIQUE (membership_id, role_code);
@@ -1967,6 +2051,12 @@ CREATE INDEX idx_revenue_state_transitions_ledger_id ON public.revenue_state_tra
 
 CREATE INDEX idx_revenue_state_transitions_tenant_id ON public.revenue_state_transitions USING btree (tenant_id, transitioned_at DESC);
 
+CREATE INDEX idx_session_authority_active ON public.session_authority USING btree (tenant_id, session_id, expires_at DESC) WHERE (invalidated_at IS NULL);
+
+CREATE INDEX idx_session_authority_tenant_expires ON public.session_authority USING btree (tenant_id, expires_at DESC);
+
+CREATE INDEX idx_session_authority_tenant_last_seen ON public.session_authority USING btree (tenant_id, last_seen_at DESC);
+
 CREATE INDEX idx_tenant_membership_roles_tenant_created_at ON public.tenant_membership_roles USING btree (tenant_id, created_at DESC);
 
 CREATE INDEX idx_tenant_memberships_tenant_created_at ON public.tenant_memberships USING btree (tenant_id, created_at DESC);
@@ -2012,6 +2102,8 @@ CREATE UNIQUE INDEX ux_r4_task_attempts_tenant_task_attempt ON public.r4_task_at
 CREATE UNIQUE INDEX ux_worker_side_effects_tenant_task_id ON public.worker_side_effects USING btree (tenant_id, task_id);
 
 CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_code ON public.attribution_allocations FOR EACH ROW WHEN ((old.channel_code IS DISTINCT FROM new.channel_code)) EXECUTE FUNCTION public.fn_log_channel_assignment_correction();
+
+CREATE TRIGGER trg_bind_session_authority_from_event BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_bind_session_authority_from_event();
 
 CREATE TRIGGER trg_block_worker_mutation_dead_events BEFORE INSERT OR DELETE OR UPDATE ON public.dead_events FOR EACH ROW EXECUTE FUNCTION public.fn_block_worker_ingestion_mutation();
 
@@ -2094,6 +2186,9 @@ ALTER TABLE ONLY public.attribution_allocations
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_channel FOREIGN KEY (channel) REFERENCES public.channel_taxonomy(code) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.attribution_events
+    ADD CONSTRAINT fk_attribution_events_session_authority FOREIGN KEY (tenant_id, session_id) REFERENCES public.session_authority(tenant_id, session_id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT fk_kombu_message_queue FOREIGN KEY (queue_id) REFERENCES public.kombu_queue(id);
@@ -2179,6 +2274,9 @@ ALTER TABLE ONLY public.revenue_state_transitions
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.session_authority
+    ADD CONSTRAINT session_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_role_code_fkey FOREIGN KEY (role_code) REFERENCES public.roles(code) ON DELETE RESTRICT;
 
@@ -2250,7 +2348,7 @@ ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
 
@@ -2263,6 +2361,8 @@ ALTER TABLE public.revenue_cache_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.revenue_ledger ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.revenue_state_transitions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.session_authority ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_policy ON public.attribution_allocations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -2282,7 +2382,7 @@ CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = 
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -2324,6 +2424,8 @@ CREATE POLICY tenant_isolation_policy ON public.revenue_ledger USING ((tenant_id
 
 CREATE POLICY tenant_isolation_policy ON public.revenue_state_transitions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy ON public.session_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy ON public.tenant_membership_roles USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.tenant_memberships USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
@@ -2332,9 +2434,9 @@ CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user U
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 
@@ -2351,5 +2453,3 @@ CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
-
-SET check_function_bodies = on;
