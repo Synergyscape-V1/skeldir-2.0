@@ -496,6 +496,7 @@ async def _compute_allocations_deterministic_baseline(
                 rows,
             )
         session_scope_count = 0
+        active_session_scopes: set[UUID] = set()
         if session_scope is not None:
             session_scopes = await _resolve_active_session_scopes(
                 conn=conn,
@@ -506,6 +507,28 @@ async def _compute_allocations_deterministic_baseline(
                 session_scope=session_scope,
             )
             session_scope_count = len(session_scopes)
+            active_session_scopes = set(session_scopes)
+        else:
+            active_scope_result = await conn.execute(
+                text(
+                    """
+                    SELECT sa.session_id
+                    FROM session_authority sa
+                    WHERE sa.tenant_id = :tenant_id
+                      AND sa.invalidated_at IS NULL
+                      AND sa.expires_at > :authority_now
+                    ORDER BY sa.session_id ASC
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "authority_now": authority_now,
+                },
+            )
+            active_session_scopes = {
+                UUID(str(session_id)) for session_id in active_scope_result.scalars().all()
+            }
+            session_scope_count = len(active_session_scopes)
 
         if session_scope is not None:
             events_result = await conn.execute(
@@ -521,14 +544,6 @@ async def _compute_allocations_deterministic_baseline(
                       AND e.session_id = :session_id
                       AND e.occurred_at >= :window_start
                       AND e.occurred_at < :window_end
-                      AND EXISTS (
-                          SELECT 1
-                          FROM session_authority sa
-                          WHERE sa.tenant_id = e.tenant_id
-                            AND sa.session_id = e.session_id
-                            AND sa.invalidated_at IS NULL
-                            AND sa.expires_at > :authority_now
-                      )
                     ORDER BY e.occurred_at ASC, e.id ASC
                     """
                 ),
@@ -537,7 +552,6 @@ async def _compute_allocations_deterministic_baseline(
                     "session_id": session_scope,
                     "window_start": window_start,
                     "window_end": window_end,
-                    "authority_now": authority_now,
                 },
             )
         else:
@@ -553,14 +567,6 @@ async def _compute_allocations_deterministic_baseline(
                     WHERE e.tenant_id = :tenant_id
                       AND e.occurred_at >= :window_start
                       AND e.occurred_at < :window_end
-                      AND EXISTS (
-                          SELECT 1
-                          FROM session_authority sa
-                          WHERE sa.tenant_id = e.tenant_id
-                            AND sa.session_id = e.session_id
-                            AND sa.invalidated_at IS NULL
-                            AND sa.expires_at > :authority_now
-                      )
                     ORDER BY e.occurred_at ASC, e.id ASC
                     """
                 ),
@@ -568,10 +574,18 @@ async def _compute_allocations_deterministic_baseline(
                     "tenant_id": tenant_id,
                     "window_start": window_start,
                     "window_end": window_end,
-                    "authority_now": authority_now,
                 },
             )
         events = events_result.fetchall()
+        if session_scope is None:
+            if not active_session_scopes:
+                events = []
+            else:
+                events = [
+                    row for row in events
+                    if row[3] in active_session_scopes
+                ]
+                session_scope_count = len({row[3] for row in events})
         if not events:
             logger.info(
                 "attribution_baseline_no_active_sessions_in_window",
