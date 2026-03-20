@@ -507,39 +507,70 @@ async def _compute_allocations_deterministic_baseline(
             )
             session_scope_count = len(session_scopes)
 
-        events_result = await conn.execute(
-            text(
-                """
-                SELECT
-                    e.id,
-                    e.revenue_cents,
-                    e.occurred_at,
-                    e.external_event_id,
-                    e.campaign_id,
-                    e.channel,
-                    e.raw_payload,
-                    e.session_id
-                FROM attribution_events e
-                JOIN session_authority sa
-                  ON sa.tenant_id = e.tenant_id
-                 AND sa.session_id = e.session_id
-                WHERE e.tenant_id = :tenant_id
-                  AND e.occurred_at >= :window_start
-                  AND e.occurred_at < :window_end
-                  AND sa.invalidated_at IS NULL
-                  AND sa.expires_at > :authority_now
-                  AND (CAST(:session_id AS uuid) IS NULL OR e.session_id = CAST(:session_id AS uuid))
-                ORDER BY e.session_id ASC, e.occurred_at ASC, e.id ASC
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "session_id": session_scope,
-                "window_start": window_start,
-                "window_end": window_end,
-                "authority_now": authority_now,
-            },
-        )
+        if session_scope is not None:
+            events_result = await conn.execute(
+                text(
+                    """
+                    SELECT
+                        e.id,
+                        e.revenue_cents,
+                        e.occurred_at,
+                        e.session_id
+                    FROM attribution_events e
+                    WHERE e.tenant_id = :tenant_id
+                      AND e.session_id = :session_id
+                      AND e.occurred_at >= :window_start
+                      AND e.occurred_at < :window_end
+                      AND EXISTS (
+                          SELECT 1
+                          FROM session_authority sa
+                          WHERE sa.tenant_id = e.tenant_id
+                            AND sa.session_id = e.session_id
+                            AND sa.invalidated_at IS NULL
+                            AND sa.expires_at > :authority_now
+                      )
+                    ORDER BY e.occurred_at ASC, e.id ASC
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "session_id": session_scope,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "authority_now": authority_now,
+                },
+            )
+        else:
+            events_result = await conn.execute(
+                text(
+                    """
+                    SELECT
+                        e.id,
+                        e.revenue_cents,
+                        e.occurred_at,
+                        e.session_id
+                    FROM attribution_events e
+                    WHERE e.tenant_id = :tenant_id
+                      AND e.occurred_at >= :window_start
+                      AND e.occurred_at < :window_end
+                      AND EXISTS (
+                          SELECT 1
+                          FROM session_authority sa
+                          WHERE sa.tenant_id = e.tenant_id
+                            AND sa.session_id = e.session_id
+                            AND sa.invalidated_at IS NULL
+                            AND sa.expires_at > :authority_now
+                      )
+                    ORDER BY e.occurred_at ASC, e.id ASC
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "authority_now": authority_now,
+                },
+            )
         events = events_result.fetchall()
         if not events:
             logger.info(
@@ -578,13 +609,7 @@ async def _compute_allocations_deterministic_baseline(
                 "updated_ats": [],
             }
 
-            for event_id, revenue_cents, _occurred_at, external_event_id, campaign_id, channel, raw_payload, _session_id in batch:
-                _bounded_telemetry_from_event(
-                    channel=channel,
-                    external_event_id=external_event_id,
-                    campaign_id=campaign_id,
-                    raw_payload=raw_payload,
-                )
+            for event_id, revenue_cents, _occurred_at, _session_id in batch:
                 allocated = _split_revenue_cents_evenly(int(revenue_cents), len(BASELINE_CHANNELS))
                 for channel_code, allocated_revenue_cents in zip(
                     BASELINE_CHANNELS, allocated, strict=True
