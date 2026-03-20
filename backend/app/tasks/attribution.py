@@ -585,7 +585,7 @@ async def _compute_allocations_deterministic_baseline(
             return {"event_count": 0, "allocation_count": 0, "session_scope_count": session_scope_count}
 
         if session_scope_count == 0:
-            session_scope_count = len({row[7] for row in events})
+            session_scope_count = len({row[3] for row in events})
 
         event_count = len(events)
         allocation_count = 0
