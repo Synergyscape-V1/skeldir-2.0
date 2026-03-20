@@ -528,7 +528,7 @@ async def _compute_allocations_deterministic_baseline(
                   AND e.occurred_at < :window_end
                   AND sa.invalidated_at IS NULL
                   AND sa.expires_at > :authority_now
-                  AND (:session_id IS NULL OR e.session_id = :session_id)
+                  AND (:session_id::uuid IS NULL OR e.session_id = :session_id::uuid)
                 ORDER BY e.session_id ASC, e.occurred_at ASC, e.id ASC
                 """
             ),

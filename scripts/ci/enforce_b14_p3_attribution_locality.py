@@ -76,6 +76,7 @@ def run_enforcement(
     worker_session_predicates = (
         "AND e.session_id = :session_id",
         "(:session_id IS NULL OR e.session_id = :session_id)",
+        "(:session_id::uuid IS NULL OR e.session_id = :session_id::uuid)",
     )
     if not any(token in worker_text for token in worker_session_predicates):
         violations.append("worker_missing_session_local_predicate")
