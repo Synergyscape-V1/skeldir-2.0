@@ -394,22 +394,22 @@ async def test_b14_p2_runtime_db_rejects_stale_session_insert_despite_historical
         VALUES
         (
             :id,
-            :tenant_id::uuid,
-            :occurred_at::timestamptz,
+            CAST(:tenant_id AS uuid),
+            CAST(:occurred_at AS timestamptz),
             :external_event_id,
-            :correlation_id::uuid,
-            :session_id::uuid,
+            CAST(:correlation_id AS uuid),
+            CAST(:session_id AS uuid),
             :revenue_cents,
-            :raw_payload::jsonb,
+            CAST(:raw_payload AS jsonb),
             :idempotency_key,
             :event_type,
             :channel,
             :currency,
-            :event_timestamp::timestamptz,
+            CAST(:event_timestamp AS timestamptz),
             :processing_status,
             :retry_count,
-            :created_at::timestamptz,
-            :updated_at::timestamptz
+            CAST(:created_at AS timestamptz),
+            CAST(:updated_at AS timestamptz)
         )
         """
     )
