@@ -269,7 +269,7 @@ def _compute_recompute_window(event_timestamp: str) -> tuple[str, str]:
 
 
 def _schedule_downstream_tasks(
-    *, tenant_id, event_timestamp: str, correlation_id: str
+    *, tenant_id, event_timestamp: str, session_id: str, correlation_id: str
 ) -> None:
     try:
         from celery import chain
@@ -286,6 +286,7 @@ def _schedule_downstream_tasks(
                 kwargs={
                     "window_start": window_start,
                     "window_end": window_end,
+                    "session_id": session_id,
                     "correlation_id": correlation_id,
                     "model_version": "1.0.0",
                 },
@@ -307,6 +308,7 @@ def _schedule_downstream_tasks(
                 "correlation_id": correlation_id,
                 "window_start": window_start,
                 "window_end": window_end,
+                "session_id": session_id,
             },
         )
     except Exception:
@@ -316,6 +318,7 @@ def _schedule_downstream_tasks(
                 "tenant_id": str(tenant_id),
                 "correlation_id": correlation_id,
                 "event_timestamp": event_timestamp,
+                "session_id": session_id,
             },
         )
 
@@ -372,10 +375,12 @@ async def _handle_ingestion(
     if result.get("status") == "success":
         correlation_id = get_request_correlation_id() or idempotency_key
         event_timestamp = event_data.get("event_timestamp")
-        if event_timestamp:
+        session_id = result.get("session_id")
+        if event_timestamp and session_id:
             _schedule_downstream_tasks(
                 tenant_id=tenant_id,
                 event_timestamp=str(event_timestamp),
+                session_id=str(session_id),
                 correlation_id=str(correlation_id),
             )
         return {

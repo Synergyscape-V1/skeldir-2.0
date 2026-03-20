@@ -42,6 +42,7 @@ def schedule_recompute_window(
     tenant_id: UUID,
     window_start: WindowBoundary,
     window_end: WindowBoundary,
+    session_id: UUID | str | None = None,
     correlation_id: Optional[str] = None,
     model_version: str = "1.0.0",
     fail: bool = False,
@@ -60,6 +61,7 @@ def schedule_recompute_window(
         raise ValueError(f"window_start ({window_start}) must be < window_end ({window_end})")
 
     correlation_uuid = UUID(str(correlation_id)) if correlation_id else uuid4()
+    session_scope = UUID(str(session_id)) if session_id is not None else None
     start_payload = _isoformat_utc(start_dt)
     end_payload = _isoformat_utc(end_dt)
 
@@ -69,6 +71,7 @@ def schedule_recompute_window(
         kwargs={
             "window_start": start_payload,
             "window_end": end_payload,
+            "session_id": str(session_scope) if session_scope else None,
             "correlation_id": str(correlation_uuid),
             "model_version": model_version,
             "fail": fail,
