@@ -1,0 +1,19 @@
+B0.5.4.1 View Registry Gates	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935846
+B0.5.4.2 Refresh Executor Gates	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935831
+B0.5.4.3 Matview Task Layer Gates	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935865
+B0.6 Phase 0 Adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935852
+B0.6 Phase 2 Adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935833
+b057-p3-webhook-ingestion-least-privilege	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935834
+b057-p4-llm-audit-persistence	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935854
+b057-p5-full-chain	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935843
+b07-p4-e2e-operational-readiness	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935827
+b07-phase8-closure-pack	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935838
+b11-p1-control-plane-adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935867
+b11-p2-secret-readiness-adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935823
+b11-p3-crypto-rotation-adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935850
+b11-p4-db-provider-ci-audit-adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935855
+b11-p5-webhook-secret-redesign-adjudication	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935820
+b11-p6-end-to-end-closure-pack	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935830
+CI	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935825
+Empirical Validation - Directive Compliance	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935806
+R1: Contract/Runtime Viability	completed	success	https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935839
