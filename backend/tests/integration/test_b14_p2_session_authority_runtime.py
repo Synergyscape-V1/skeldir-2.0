@@ -422,7 +422,7 @@ async def test_b14_p2_runtime_db_rejects_stale_session_insert_despite_historical
                 {
                     "id": str(uuid4()),
                     "tenant_id": str(tenant_id),
-                    "occurred_at": now.isoformat(),
+                    "occurred_at": now,
                     "external_event_id": f"manual-stale-{uuid4().hex[:8]}",
                     "correlation_id": str(uuid4()),
                     "session_id": str(stale_session_id),
@@ -432,11 +432,11 @@ async def test_b14_p2_runtime_db_rejects_stale_session_insert_despite_historical
                     "event_type": "purchase",
                     "channel": warm_event.channel,
                     "currency": "USD",
-                    "event_timestamp": now.isoformat(),
+                    "event_timestamp": now,
                     "processing_status": "pending",
                     "retry_count": 0,
-                    "created_at": now.isoformat(),
-                    "updated_at": now.isoformat(),
+                    "created_at": now,
+                    "updated_at": now,
                 },
             )
             await session.flush()
