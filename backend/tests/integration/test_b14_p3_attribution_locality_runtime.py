@@ -119,6 +119,7 @@ async def _seed_event(
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
         await conn.execute(
+            # RAW_SQL_ALLOWLIST: Controlled integration seed for session-local attribution runtime proofs.
             text(
                 """
                 INSERT INTO attribution_events
