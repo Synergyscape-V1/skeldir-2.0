@@ -29,6 +29,7 @@ def run_enforcement(
     migration_file: Path,
     event_service_file: Path,
     privacy_boundary_file: Path,
+    runtime_proof_file: Path,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
 
@@ -39,6 +40,7 @@ def run_enforcement(
         migration_file,
         event_service_file,
         privacy_boundary_file,
+        runtime_proof_file,
     )
     for required in required_files:
         if not required.exists():
@@ -52,6 +54,7 @@ def run_enforcement(
     migration_text = _read(migration_file)
     event_service_text = _read(event_service_file)
     privacy_boundary_text = _read(privacy_boundary_file)
+    runtime_proof_text = _read(runtime_proof_file)
 
     if REQUIRED_CONTEXT not in workflow_text:
         violations.append(f"missing_required_context_in_workflow:{REQUIRED_CONTEXT}")
@@ -65,6 +68,7 @@ def run_enforcement(
         "uq_session_authority_tenant_session_id",
         "ck_session_authority_max_24h",
         "fk_attribution_events_session_authority",
+        "ON DELETE RESTRICT",
         "trg_bind_session_authority_from_event",
     )
     for token in required_schema_tokens:
@@ -88,6 +92,14 @@ def run_enforcement(
 
     if "session_id = derive_transient_session_id(" in privacy_boundary_text:
         violations.append("privacy_boundary_still_derives_session_id_deterministically")
+
+    required_runtime_proof_tokens = (
+        "test_b14_p2_runtime_persisted_expired_rows_cannot_bridge_rotated_session",
+        "test_b14_p2_runtime_db_rejects_stale_session_insert_despite_historical_rows",
+    )
+    for token in required_runtime_proof_tokens:
+        if token not in runtime_proof_text:
+            violations.append(f"runtime_proof_missing_token:{token}")
 
     return (1 if violations else 0), violations
 
@@ -119,6 +131,10 @@ def main(argv: list[str]) -> int:
         default="backend/app/ingestion/privacy_boundary.py",
     )
     parser.add_argument(
+        "--runtime-proof-file",
+        default="backend/tests/integration/test_b14_p2_session_authority_runtime.py",
+    )
+    parser.add_argument(
         "--simulate-regression",
         action="store_true",
     )
@@ -139,6 +155,7 @@ def main(argv: list[str]) -> int:
         migration_file=(REPO_ROOT / args.migration_file).resolve(),
         event_service_file=(REPO_ROOT / args.event_service_file).resolve(),
         privacy_boundary_file=(REPO_ROOT / args.privacy_boundary_file).resolve(),
+        runtime_proof_file=(REPO_ROOT / args.runtime_proof_file).resolve(),
     )
 
     lines = ["b14_p2_session_authority_enforcer"]
@@ -155,4 +172,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-
