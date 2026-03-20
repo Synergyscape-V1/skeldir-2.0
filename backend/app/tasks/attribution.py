@@ -495,15 +495,53 @@ async def _compute_allocations_deterministic_baseline(
                 ),
                 rows,
             )
-        session_scopes = await _resolve_active_session_scopes(
-            conn=conn,
-            tenant_id=tenant_id,
-            window_start=window_start,
-            window_end=window_end,
-            authority_now=authority_now,
-            session_scope=session_scope,
+        session_scope_count = 0
+        if session_scope is not None:
+            session_scopes = await _resolve_active_session_scopes(
+                conn=conn,
+                tenant_id=tenant_id,
+                window_start=window_start,
+                window_end=window_end,
+                authority_now=authority_now,
+                session_scope=session_scope,
+            )
+            session_scope_count = len(session_scopes)
+
+        events_result = await conn.execute(
+            text(
+                """
+                SELECT
+                    e.id,
+                    e.revenue_cents,
+                    e.occurred_at,
+                    e.external_event_id,
+                    e.campaign_id,
+                    e.channel,
+                    e.raw_payload,
+                    e.session_id
+                FROM attribution_events e
+                JOIN session_authority sa
+                  ON sa.tenant_id = e.tenant_id
+                 AND sa.session_id = e.session_id
+                WHERE e.tenant_id = :tenant_id
+                  AND e.occurred_at >= :window_start
+                  AND e.occurred_at < :window_end
+                  AND sa.invalidated_at IS NULL
+                  AND sa.expires_at > :authority_now
+                  AND (:session_id IS NULL OR e.session_id = :session_id)
+                ORDER BY e.session_id ASC, e.occurred_at ASC, e.id ASC
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "session_id": session_scope,
+                "window_start": window_start,
+                "window_end": window_end,
+                "authority_now": authority_now,
+            },
         )
-        if not session_scopes:
+        events = events_result.fetchall()
+        if not events:
             logger.info(
                 "attribution_baseline_no_active_sessions_in_window",
                 extra={
@@ -513,110 +551,82 @@ async def _compute_allocations_deterministic_baseline(
                     "model_version": model_version,
                 },
             )
-            return {"event_count": 0, "allocation_count": 0, "session_scope_count": 0}
+            return {"event_count": 0, "allocation_count": 0, "session_scope_count": session_scope_count}
 
-        event_count = 0
+        if session_scope_count == 0:
+            session_scope_count = len({row[7] for row in events})
+
+        event_count = len(events)
         allocation_count = 0
         batches_written = 0
 
-        for scoped_session_id in session_scopes:
-            events_result = await conn.execute(
-                text(
-                    """
-                    SELECT e.id, e.revenue_cents, e.occurred_at, e.external_event_id, e.campaign_id, e.channel, e.raw_payload
-                    FROM attribution_events e
-                    JOIN session_authority sa
-                      ON sa.tenant_id = e.tenant_id
-                     AND sa.session_id = e.session_id
-                    WHERE e.tenant_id = :tenant_id
-                      AND e.session_id = :session_id
-                      AND e.occurred_at >= :window_start
-                      AND e.occurred_at < :window_end
-                      AND sa.invalidated_at IS NULL
-                      AND sa.expires_at > :authority_now
-                    ORDER BY e.occurred_at ASC, e.id ASC
-                    """
-                ),
-                {
-                    "tenant_id": tenant_id,
-                    "session_id": scoped_session_id,
-                    "window_start": window_start,
-                    "window_end": window_end,
-                    "authority_now": authority_now,
-                },
-            )
-            events = events_result.fetchall()
-            if not events:
-                continue
-            event_count += len(events)
+        for offset in range(0, len(events), batch_events):
+            batch = events[offset : offset + batch_events]
 
-            for offset in range(0, len(events), batch_events):
-                batch = events[offset : offset + batch_events]
+            batch_rows: dict[str, list] = {
+                "ids": [],
+                "tenant_ids": [],
+                "event_ids": [],
+                "channel_codes": [],
+                "allocation_ratios": [],
+                "model_versions": [],
+                "model_types": [],
+                "confidence_scores": [],
+                "verifieds": [],
+                "allocated_revenue_cents": [],
+                "created_ats": [],
+                "updated_ats": [],
+            }
 
-                batch_rows: dict[str, list] = {
-                    "ids": [],
-                    "tenant_ids": [],
-                    "event_ids": [],
-                    "channel_codes": [],
-                    "allocation_ratios": [],
-                    "model_versions": [],
-                    "model_types": [],
-                    "confidence_scores": [],
-                    "verifieds": [],
-                    "allocated_revenue_cents": [],
-                    "created_ats": [],
-                    "updated_ats": [],
-                }
-
-                for event_id, revenue_cents, _occurred_at, external_event_id, campaign_id, channel, raw_payload in batch:
-                    _bounded_telemetry_from_event(
-                        channel=channel,
-                        external_event_id=external_event_id,
-                        campaign_id=campaign_id,
-                        raw_payload=raw_payload,
+            for event_id, revenue_cents, _occurred_at, external_event_id, campaign_id, channel, raw_payload, _session_id in batch:
+                _bounded_telemetry_from_event(
+                    channel=channel,
+                    external_event_id=external_event_id,
+                    campaign_id=campaign_id,
+                    raw_payload=raw_payload,
+                )
+                allocated = _split_revenue_cents_evenly(int(revenue_cents), len(BASELINE_CHANNELS))
+                for channel_code, allocated_revenue_cents in zip(
+                    BASELINE_CHANNELS, allocated, strict=True
+                ):
+                    batch_rows["ids"].append(
+                        _deterministic_allocation_id(
+                            tenant_id=tenant_id,
+                            event_id=event_id,
+                            model_version=model_version,
+                            channel_code=channel_code,
+                        )
                     )
-                    allocated = _split_revenue_cents_evenly(int(revenue_cents), len(BASELINE_CHANNELS))
-                    for channel_code, allocated_revenue_cents in zip(
-                        BASELINE_CHANNELS, allocated, strict=True
-                    ):
-                        batch_rows["ids"].append(
-                            _deterministic_allocation_id(
-                                tenant_id=tenant_id,
-                                event_id=event_id,
-                                model_version=model_version,
-                                channel_code=channel_code,
-                            )
-                        )
-                        batch_rows["tenant_ids"].append(tenant_id)
-                        batch_rows["event_ids"].append(event_id)
-                        batch_rows["channel_codes"].append(channel_code)
-                        batch_rows["allocation_ratios"].append(str(allocation_ratio))
-                        batch_rows["model_versions"].append(model_version)
-                        batch_rows["model_types"].append(model_type)
-                        batch_rows["confidence_scores"].append(str(confidence_score))
-                        batch_rows["verifieds"].append(False)
-                        batch_rows["allocated_revenue_cents"].append(int(allocated_revenue_cents))
-                        batch_rows["created_ats"].append(fixed_ts)
-                        batch_rows["updated_ats"].append(fixed_ts)
-                        allocation_count += 1
+                    batch_rows["tenant_ids"].append(tenant_id)
+                    batch_rows["event_ids"].append(event_id)
+                    batch_rows["channel_codes"].append(channel_code)
+                    batch_rows["allocation_ratios"].append(str(allocation_ratio))
+                    batch_rows["model_versions"].append(model_version)
+                    batch_rows["model_types"].append(model_type)
+                    batch_rows["confidence_scores"].append(str(confidence_score))
+                    batch_rows["verifieds"].append(False)
+                    batch_rows["allocated_revenue_cents"].append(int(allocated_revenue_cents))
+                    batch_rows["created_ats"].append(fixed_ts)
+                    batch_rows["updated_ats"].append(fixed_ts)
+                    allocation_count += 1
 
-                await _upsert_allocations_bulk(rows=batch_rows)
-                batches_written += 1
+            await _upsert_allocations_bulk(rows=batch_rows)
+            batches_written += 1
 
-                if inject_fail_once_key is not None:
-                    if inject_fail_once_key not in _R5_FAILED_ONCE_KEYS and batches_written >= inject_fail_after_batches:
-                        _R5_FAILED_ONCE_KEYS.add(inject_fail_once_key)
-                        logger.warning(
-                            "attribution_baseline_r5_retry_injection_triggered",
-                            extra={
-                                "tenant_id": str(tenant_id),
-                                "model_version": model_version,
-                                "inject_fail_once_key": inject_fail_once_key,
-                                "inject_fail_after_batches": inject_fail_after_batches,
-                                "batches_written": batches_written,
-                            },
-                        )
-                        raise RuntimeError("R5 retry injection: transient failure")
+            if inject_fail_once_key is not None:
+                if inject_fail_once_key not in _R5_FAILED_ONCE_KEYS and batches_written >= inject_fail_after_batches:
+                    _R5_FAILED_ONCE_KEYS.add(inject_fail_once_key)
+                    logger.warning(
+                        "attribution_baseline_r5_retry_injection_triggered",
+                        extra={
+                            "tenant_id": str(tenant_id),
+                            "model_version": model_version,
+                            "inject_fail_once_key": inject_fail_once_key,
+                            "inject_fail_after_batches": inject_fail_after_batches,
+                            "batches_written": batches_written,
+                        },
+                    )
+                    raise RuntimeError("R5 retry injection: transient failure")
 
         logger.info(
             "attribution_baseline_allocations_computed",
@@ -627,14 +637,14 @@ async def _compute_allocations_deterministic_baseline(
                 "model_version": model_version,
                 "event_count": event_count,
                 "allocation_count": allocation_count,
-                "session_scope_count": len(session_scopes),
+                "session_scope_count": session_scope_count,
             }
         )
 
         return {
             "event_count": event_count,
             "allocation_count": allocation_count,
-            "session_scope_count": len(session_scopes),
+            "session_scope_count": session_scope_count,
         }
 
 

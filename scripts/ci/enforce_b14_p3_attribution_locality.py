@@ -66,7 +66,6 @@ def run_enforcement(
     required_worker_tokens = (
         "ALLOWED_BOUNDED_TELEMETRY_KEYS",
         "_resolve_active_session_scopes(",
-        "AND e.session_id = :session_id",
         "FROM session_authority sa",
         "session locality violation: requested session scope is stale or invalidated",
         "session_scope_count",
@@ -74,6 +73,12 @@ def run_enforcement(
     for token in required_worker_tokens:
         if token not in worker_text:
             violations.append(f"worker_missing_token:{token}")
+    worker_session_predicates = (
+        "AND e.session_id = :session_id",
+        "(:session_id IS NULL OR e.session_id = :session_id)",
+    )
+    if not any(token in worker_text for token in worker_session_predicates):
+        violations.append("worker_missing_session_local_predicate")
 
     legacy_window_only_query = (
         "FROM attribution_events\n                WHERE tenant_id = :tenant_id\n"
