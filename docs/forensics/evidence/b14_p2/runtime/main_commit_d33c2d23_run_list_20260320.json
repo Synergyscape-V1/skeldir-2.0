@@ -1,0 +1,192 @@
+[
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935839,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935839",
+        "workflowName":  "R1: Contract/Runtime Viability"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935846,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935846",
+        "workflowName":  "B0.5.4.1 View Registry Gates"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935850,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935850",
+        "workflowName":  "b11-p3-crypto-rotation-adjudication"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935823,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935823",
+        "workflowName":  "b11-p2-secret-readiness-adjudication"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935820,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935820",
+        "workflowName":  "b11-p5-webhook-secret-redesign-adjudication"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935833,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935833",
+        "workflowName":  "B0.6 Phase 2 Adjudication"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935855,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935855",
+        "workflowName":  "b11-p4-db-provider-ci-audit-adjudication"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935865,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935865",
+        "workflowName":  "B0.5.4.3 Matview Task Layer Gates"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935867,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935867",
+        "workflowName":  "b11-p1-control-plane-adjudication"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935831,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935831",
+        "workflowName":  "B0.5.4.2 Refresh Executor Gates"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935834,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935834",
+        "workflowName":  "b057-p3-webhook-ingestion-least-privilege"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935843,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935843",
+        "workflowName":  "b057-p5-full-chain"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935852,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935852",
+        "workflowName":  "B0.6 Phase 0 Adjudication"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935854,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935854",
+        "workflowName":  "b057-p4-llm-audit-persistence"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935827,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935827",
+        "workflowName":  "b07-p4-e2e-operational-readiness"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935830,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935830",
+        "workflowName":  "b11-p6-end-to-end-closure-pack"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935806,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935806",
+        "workflowName":  "Empirical Validation - Directive Compliance"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935838,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935838",
+        "workflowName":  "b07-phase8-closure-pack"
+    },
+    {
+        "conclusion":  "success",
+        "createdAt":  "2026-03-20T17:08:31Z",
+        "databaseId":  23353935825,
+        "event":  "push",
+        "headSha":  "d33c2d23248d38c75fd7f07b7a0d45d8bd6a4430",
+        "status":  "completed",
+        "url":  "https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/23353935825",
+        "workflowName":  "CI"
+    }
+]
