@@ -40,6 +40,7 @@
     "B1.3 P10 Provider Tranche Proofs",
     "B1.3 P11 E2E System Proofs",
     "B1.4 P1 Ingress Contract Sanitization",
-    "B1.4 P2 Session Authority Proofs"
+    "B1.4 P2 Session Authority Proofs",
+    "B1.4 P3 Attribution Locality Proofs"
   ]
 }

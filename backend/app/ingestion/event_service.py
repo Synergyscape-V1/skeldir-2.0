@@ -544,6 +544,7 @@ async def ingest_with_transaction(
             return {
                 "status": "success",
                 "event_id": str(event.id),
+                "session_id": str(event.session_id),
                 "channel": event.channel,
                 "idempotency_key": event.idempotency_key,
             }
@@ -572,6 +573,7 @@ async def ingest_with_transaction(
                     return {
                         "status": "success",
                         "event_id": str(existing.id),
+                        "session_id": str(existing.session_id),
                         "channel": existing.channel,
                         "idempotency_key": existing.idempotency_key,
                     }

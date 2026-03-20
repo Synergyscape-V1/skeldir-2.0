@@ -8,12 +8,11 @@ B0.5.3.2: Added window-scoped idempotency enforcement via attribution_recompute_
 table and deterministic baseline allocation proof harness.
 """
 
-import asyncio
 import logging
 import os
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional
+from typing import Any, Optional
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import BaseModel, Field
@@ -23,6 +22,7 @@ from app.celery_app import celery_app
 from app.core.db import engine
 from app.db.session import set_tenant_guc
 from app.observability.context import set_request_correlation_id, set_tenant_id
+from app.privacy.authority import banned_identifier_key_set
 from app.tasks.context import run_in_worker_loop
 from app.tasks.tenant_base import TenantTask, task_tenant_id
 
@@ -33,6 +33,19 @@ logger = logging.getLogger(__name__)
 BASELINE_CHANNELS = ["direct", "email", "google_search_paid"]
 _ALLOCATION_ID_NAMESPACE = uuid5(NAMESPACE_URL, "skeldir:attribution_allocations:id:v1")
 _R5_FAILED_ONCE_KEYS: set[str] = set()
+ALLOWED_BOUNDED_TELEMETRY_KEYS = frozenset(
+    {
+        "event_type",
+        "event_timestamp",
+        "vendor",
+        "utm_source",
+        "utm_medium",
+        "external_event_id",
+        "campaign_id",
+        "channel",
+    }
+)
+FORBIDDEN_TELEMETRY_KEYS = banned_identifier_key_set()
 
 
 def _run_async(coro_factory, *args, **kwargs):
@@ -52,6 +65,7 @@ class AttributionTaskPayload(BaseModel):
     request_id: Optional[str] = Field(default_factory=lambda: str(uuid4()), description="Idempotency/trace id")
     window_start: Optional[str] = Field(None, description="Attribution window start timestamp")
     window_end: Optional[str] = Field(None, description="Attribution window end timestamp")
+    session_id: Optional[str] = Field(None, description="Optional session-local attribution scope")
 
 
 def _prepare_context(model: AttributionTaskPayload) -> str:
@@ -116,6 +130,110 @@ def _split_revenue_cents_evenly(revenue_cents: int, parts: int) -> list[int]:
     base = revenue_cents // parts
     remainder = revenue_cents % parts
     return [base + (1 if i < remainder else 0) for i in range(parts)]
+
+
+def _normalize_session_scope(session_id: Optional[str]) -> Optional[UUID]:
+    if session_id is None:
+        return None
+    raw = str(session_id).strip()
+    if not raw:
+        return None
+    try:
+        return UUID(raw)
+    except ValueError as exc:
+        raise ValueError(f"Invalid session_id scope: {session_id}") from exc
+
+
+def _bounded_telemetry_from_event(
+    *,
+    channel: str,
+    external_event_id: str | None,
+    campaign_id: str | None,
+    raw_payload: Any,
+) -> dict[str, str]:
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
+    payload_keys = {str(key).strip().lower() for key in payload.keys()}
+    forbidden = sorted(payload_keys.intersection(FORBIDDEN_TELEMETRY_KEYS))
+    if forbidden:
+        raise ValueError(
+            "session locality telemetry violation: forbidden payload keys present: "
+            + ",".join(forbidden)
+        )
+
+    telemetry = {
+        key: str(value)
+        for key, value in payload.items()
+        if str(key).strip().lower() in ALLOWED_BOUNDED_TELEMETRY_KEYS
+        and value is not None
+        and str(value).strip()
+    }
+    if external_event_id and str(external_event_id).strip():
+        telemetry["external_event_id"] = str(external_event_id).strip()
+    if campaign_id and str(campaign_id).strip():
+        telemetry["campaign_id"] = str(campaign_id).strip()
+    if channel and str(channel).strip():
+        telemetry["channel"] = str(channel).strip()
+    return telemetry
+
+
+async def _resolve_active_session_scopes(
+    *,
+    conn,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    authority_now: datetime,
+    session_scope: UUID | None,
+) -> list[UUID]:
+    if session_scope is not None:
+        active_scope = await conn.scalar(
+            text(
+                """
+                SELECT sa.session_id
+                FROM session_authority sa
+                WHERE sa.tenant_id = :tenant_id
+                  AND sa.session_id = :session_id
+                  AND sa.invalidated_at IS NULL
+                  AND sa.expires_at > :authority_now
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "session_id": session_scope,
+                "authority_now": authority_now,
+            },
+        )
+        if active_scope is None:
+            raise ValueError(
+                "session locality violation: requested session scope is stale or invalidated"
+            )
+        return [session_scope]
+
+    result = await conn.execute(
+        text(
+            """
+            SELECT DISTINCT e.session_id
+            FROM attribution_events e
+            JOIN session_authority sa
+              ON sa.tenant_id = e.tenant_id
+             AND sa.session_id = e.session_id
+            WHERE e.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
+              AND sa.invalidated_at IS NULL
+              AND sa.expires_at > :authority_now
+            ORDER BY e.session_id ASC
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "window_start": window_start,
+            "window_end": window_end,
+            "authority_now": authority_now,
+        },
+    )
+    return [UUID(str(value)) for value in result.scalars().all()]
 
 
 async def _upsert_job_identity(
@@ -248,6 +366,7 @@ async def _compute_allocations_deterministic_baseline(
     window_start: datetime,
     window_end: datetime,
     model_version: str = "1.0.0",
+    session_id: Optional[str] = None,
     *,
     inject_fail_once_key: Optional[str] = None,
     inject_fail_after_batches: int = 1,
@@ -258,6 +377,7 @@ async def _compute_allocations_deterministic_baseline(
     B0.5.3.2: This is NOT the final attribution model. This is a minimal
     deterministic proof harness that:
     1. Reads events in [window_start, window_end] from attribution_events (read-only)
+       under session-local authority scope
     2. Writes derived rows into attribution_allocations using the existing
        event-scoped overwrite strategy (upsert on unique key)
 
@@ -279,6 +399,8 @@ async def _compute_allocations_deterministic_baseline(
             raise ValueError("inject_fail_after_batches must be >= 1")
 
     fixed_ts = window_end
+    authority_now = datetime.now(timezone.utc)
+    session_scope = _normalize_session_scope(session_id)
     allocation_ratio = (Decimal(1) / Decimal(len(BASELINE_CHANNELS))).quantize(
         Decimal("0.00001"), rounding=ROUND_HALF_UP
     )
@@ -373,28 +495,100 @@ async def _compute_allocations_deterministic_baseline(
                 ),
                 rows,
             )
+        session_scope_count = 0
+        active_session_scopes: set[UUID] = set()
+        if session_scope is not None:
+            session_scopes = await _resolve_active_session_scopes(
+                conn=conn,
+                tenant_id=tenant_id,
+                window_start=window_start,
+                window_end=window_end,
+                authority_now=authority_now,
+                session_scope=session_scope,
+            )
+            session_scope_count = len(session_scopes)
+            active_session_scopes = set(session_scopes)
+        else:
+            active_scope_result = await conn.execute(
+                text(
+                    """
+                    SELECT sa.session_id
+                    FROM session_authority sa
+                    WHERE sa.tenant_id = :tenant_id
+                      AND sa.invalidated_at IS NULL
+                      AND sa.expires_at > :authority_now
+                    ORDER BY sa.session_id ASC
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "authority_now": authority_now,
+                },
+            )
+            active_session_scopes = {
+                UUID(str(session_id)) for session_id in active_scope_result.scalars().all()
+            }
+            session_scope_count = len(active_session_scopes)
 
-        events_result = await conn.execute(
-            text(
-                """
-                SELECT id, revenue_cents, occurred_at
-                FROM attribution_events
-                WHERE tenant_id = :tenant_id
-                  AND occurred_at >= :window_start
-                  AND occurred_at < :window_end
-                ORDER BY occurred_at ASC, id ASC
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "window_start": window_start,
-                "window_end": window_end,
-            },
-        )
+        if session_scope is not None:
+            events_result = await conn.execute(
+                text(
+                    """
+                    SELECT
+                        e.id,
+                        e.revenue_cents,
+                        e.occurred_at,
+                        e.session_id
+                    FROM attribution_events e
+                    WHERE e.tenant_id = :tenant_id
+                      AND e.session_id = :session_id
+                      AND e.occurred_at >= :window_start
+                      AND e.occurred_at < :window_end
+                    ORDER BY e.occurred_at ASC, e.id ASC
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "session_id": session_scope,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                },
+            )
+        else:
+            events_result = await conn.execute(
+                text(
+                    """
+                    SELECT
+                        e.id,
+                        e.revenue_cents,
+                        e.occurred_at,
+                        e.session_id
+                    FROM attribution_events e
+                    WHERE e.tenant_id = :tenant_id
+                      AND e.occurred_at >= :window_start
+                      AND e.occurred_at < :window_end
+                    ORDER BY e.occurred_at ASC, e.id ASC
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                },
+            )
         events = events_result.fetchall()
+        if session_scope is None:
+            if not active_session_scopes:
+                events = []
+            else:
+                events = [
+                    row for row in events
+                    if row[3] in active_session_scopes
+                ]
+                session_scope_count = len({row[3] for row in events})
         if not events:
             logger.info(
-                "attribution_baseline_no_events_in_window",
+                "attribution_baseline_no_active_sessions_in_window",
                 extra={
                     "tenant_id": str(tenant_id),
                     "window_start": window_start.isoformat(),
@@ -402,7 +596,10 @@ async def _compute_allocations_deterministic_baseline(
                     "model_version": model_version,
                 },
             )
-            return {"event_count": 0, "allocation_count": 0}
+            return {"event_count": 0, "allocation_count": 0, "session_scope_count": session_scope_count}
+
+        if session_scope_count == 0:
+            session_scope_count = len({row[3] for row in events})
 
         event_count = len(events)
         allocation_count = 0
@@ -426,7 +623,7 @@ async def _compute_allocations_deterministic_baseline(
                 "updated_ats": [],
             }
 
-            for event_id, revenue_cents, _occurred_at in batch:
+            for event_id, revenue_cents, _occurred_at, _session_id in batch:
                 allocated = _split_revenue_cents_evenly(int(revenue_cents), len(BASELINE_CHANNELS))
                 for channel_code, allocated_revenue_cents in zip(
                     BASELINE_CHANNELS, allocated, strict=True
@@ -479,12 +676,14 @@ async def _compute_allocations_deterministic_baseline(
                 "model_version": model_version,
                 "event_count": event_count,
                 "allocation_count": allocation_count,
+                "session_scope_count": session_scope_count,
             }
         )
 
         return {
             "event_count": event_count,
             "allocation_count": allocation_count,
+            "session_scope_count": session_scope_count,
         }
 
 
@@ -500,6 +699,7 @@ def recompute_window(
     self,
     window_start: Optional[str] = None,
     window_end: Optional[str] = None,
+    session_id: Optional[str] = None,
     correlation_id: Optional[str] = None,
     model_version: str = "1.0.0",
     fail: bool = False,
@@ -517,6 +717,7 @@ def recompute_window(
     Args:
         window_start: Start of attribution window (ISO timestamp, inclusive)
         window_end: End of attribution window (ISO timestamp, exclusive)
+        session_id: Optional session scope for locality-enforced recompute
         correlation_id: Request correlation for observability
         model_version: Attribution model version (default: 1.0.0)
         fail: If True, deliberately raise an error for DLQ testing
@@ -527,14 +728,13 @@ def recompute_window(
     Raises:
         ValueError: If fail=True (for DLQ testing) or invalid window bounds
     """
-    import asyncio
-
     tenant_id = task_tenant_id(self)
     model = AttributionTaskPayload(
         tenant_id=tenant_id,
         correlation_id=correlation_id,
         window_start=window_start,
         window_end=window_end,
+        session_id=session_id,
     )
     correlation = _prepare_context(model)
 
@@ -572,6 +772,7 @@ def recompute_window(
 
     if window_start_dt >= window_end_dt:
         raise ValueError(f"window_start ({window_start}) must be < window_end ({window_end})")
+    session_scope = _normalize_session_scope(session_id)
 
     # B0.5.3.2: Upsert job identity (idempotency gate)
     try:
@@ -606,6 +807,7 @@ def recompute_window(
             "correlation_id": correlation,
             "window_start": window_start,
             "window_end": window_end,
+            "session_id": str(session_scope) if session_scope else None,
             "model_version": model_version,
             "run_count": run_count,
             "previous_status": previous_status,
@@ -620,6 +822,7 @@ def recompute_window(
             window_start=window_start_dt,
             window_end=window_end_dt,
             model_version=model_version,
+            session_id=str(session_scope) if session_scope else None,
         )
 
         # Mark job as succeeded
@@ -639,10 +842,12 @@ def recompute_window(
                 "correlation_id": correlation,
                 "window_start": window_start,
                 "window_end": window_end,
+                "session_id": str(session_scope) if session_scope else None,
                 "model_version": model_version,
                 "run_count": run_count,
                 "event_count": result["event_count"],
                 "allocation_count": result["allocation_count"],
+                "session_scope_count": result.get("session_scope_count", 0),
             },
         )
 
@@ -652,9 +857,11 @@ def recompute_window(
             "run_count": run_count,
             "window_start": window_start,
             "window_end": window_end,
+            "session_id": str(session_scope) if session_scope else None,
             "model_version": model_version,
             "event_count": result["event_count"],
             "allocation_count": result["allocation_count"],
+            "session_scope_count": result.get("session_scope_count", 0),
             "request_id": model.request_id,
             "correlation_id": correlation,
         }
@@ -679,6 +886,7 @@ def recompute_window(
                 "correlation_id": correlation,
                 "window_start": window_start,
                 "window_end": window_end,
+                "session_id": str(session_scope) if session_scope else None,
                 "model_version": model_version,
             },
         )
