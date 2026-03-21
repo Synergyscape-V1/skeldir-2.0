@@ -495,7 +495,7 @@ async def test_b14_p3_runtime_export_partition_preserves_aggregate_and_session_s
     event_a = uuid4()
     event_b = uuid4()
 
-    async def _auth_override(*_args, **_kwargs) -> AuthContext:
+    async def _auth_override() -> AuthContext:
         return _auth_context_for_tenant(tenant_id)
 
     app.dependency_overrides[get_auth_context] = _auth_override
@@ -672,7 +672,7 @@ async def test_b14_p3_runtime_stripe_v2_recompute_coverage_and_session_hint_cont
     idempotency_key = f"b14_p3_stripe_v2_{uuid4().hex[:12]}"
     scheduled_calls: list[dict[str, object]] = []
 
-    async def _stripe_auth_override(*_args, **_kwargs) -> dict[str, UUID]:
+    async def _stripe_auth_override() -> dict[str, UUID]:
         return {"tenant_id": tenant_id}
 
     def _schedule_spy(**kwargs) -> None:
