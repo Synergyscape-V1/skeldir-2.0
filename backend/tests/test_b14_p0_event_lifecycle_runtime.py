@@ -453,6 +453,7 @@ def test_b14_p0_runtime_internal_erasure_surface_is_worker_authoritative(
             privacy_module._erase_tenant_privacy_surfaces(
                 tenant_id=tenant_id,
                 selector={"idempotency_key": idempotency_key},
+                correlation_id=uuid4(),
             )
         )
     finally:

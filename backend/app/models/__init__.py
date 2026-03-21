@@ -57,6 +57,7 @@ from app.models.llm import (
 from app.models.oauth_handshake_session import OAuthHandshakeSession
 from app.models.platform_connection import PlatformConnection
 from app.models.platform_credential import PlatformCredential
+from app.models.raw_event_payload import RawEventPayload
 from app.models.revenue_cache import RevenueCacheEntry
 from app.models.session_authority import SessionAuthority
 
@@ -86,6 +87,7 @@ __all__ = [
     "OAuthHandshakeSession",
     "PlatformConnection",
     "PlatformCredential",
+    "RawEventPayload",
     "RevenueCacheEntry",
     "SessionAuthority",
     "EphemeralOrderResolution",
