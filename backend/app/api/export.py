@@ -59,7 +59,7 @@ def _export_payload(
     }
 
 
-async def _fetch_session_local_rows(
+async def _fetch_reporting_rows(
     *,
     db_session: AsyncSession,
     tenant_id: UUID,
@@ -68,9 +68,6 @@ async def _fetch_session_local_rows(
     end: date,
     channels: list[str] | None = None,
 ) -> list[dict[str, object]]:
-    if session_scope is None:
-        return []
-
     start_ts = datetime.combine(start, time.min, tzinfo=timezone.utc)
     end_ts = datetime.combine(end + timedelta(days=1), time.min, tzinfo=timezone.utc)
     channel_filter = [value.strip().lower() for value in (channels or []) if value and value.strip()]
@@ -91,7 +88,10 @@ async def _fetch_session_local_rows(
           ON sa.tenant_id = e.tenant_id
          AND sa.session_id = e.session_id
         WHERE aa.tenant_id = :tenant_id
-          AND e.session_id = :session_id
+          AND (
+                :session_scope_missing
+                OR e.session_id = :session_id
+          )
           AND e.occurred_at >= :start_ts
           AND e.occurred_at < :end_ts
           AND sa.invalidated_at IS NULL
@@ -108,7 +108,8 @@ async def _fetch_session_local_rows(
         query,
         {
             "tenant_id": str(tenant_id),
-            "session_id": str(session_scope),
+            "session_scope_missing": session_scope is None,
+            "session_id": str(session_scope) if session_scope is not None else None,
             "start_ts": start_ts,
             "end_ts": end_ts,
             "authority_now": datetime.now(timezone.utc),
@@ -145,7 +146,7 @@ async def export_revenue(
 ):
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
     start, end = _resolve_date_range(start_date=start_date, end_date=end_date)
-    rows = await _fetch_session_local_rows(
+    rows = await _fetch_reporting_rows(
         db_session=db_session,
         tenant_id=auth_context.tenant_id,
         session_scope=x_attribution_session_id,
@@ -186,7 +187,7 @@ async def export_csv(
     x_attribution_session_id: Annotated[UUID | None, Header(alias="X-Attribution-Session-ID")] = None,
 ):
     start, end = _resolve_date_range(start_date=None, end_date=None)
-    rows = await _fetch_session_local_rows(
+    rows = await _fetch_reporting_rows(
         db_session=db_session,
         tenant_id=auth_context.tenant_id,
         session_scope=x_attribution_session_id,
@@ -213,7 +214,7 @@ async def export_json(
 ):
     response.headers["X-Correlation-ID"] = str(x_correlation_id)
     start, end = _resolve_date_range(start_date=None, end_date=None)
-    rows = await _fetch_session_local_rows(
+    rows = await _fetch_reporting_rows(
         db_session=db_session,
         tenant_id=auth_context.tenant_id,
         session_scope=x_attribution_session_id,
