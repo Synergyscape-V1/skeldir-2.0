@@ -28,7 +28,9 @@ paths:
       summary: Request tenant-scoped privacy deletion
       description: |
         Accepts a tenant-scoped deletion selector and queues authority-controlled
-        redaction across erasable privacy surfaces.
+        deletion across erasable privacy surfaces (`raw_event_payloads`,
+        `session_authority`) plus immutable privacy tombstone emission in the
+        append-only attribution ledger.
       operationId: requestPrivacyDelete
       tags:
         - Privacy

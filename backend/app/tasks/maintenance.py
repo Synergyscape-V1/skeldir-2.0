@@ -37,6 +37,7 @@ _PUBLIC_SCHEMA = _IDENTIFIER_PREPARER.quote_schema("public")
 _DEFAULT_DENYLIST_GC_BATCH_SIZE = 1000
 _DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY = 1205001
 _DEFAULT_EPHEMERAL_RESOLUTION_GC_BATCH_SIZE = 2000
+_DEFAULT_RAW_EVENT_PAYLOAD_GC_BATCH_SIZE = 2000
 _DEFAULT_PROVIDER_REFRESH_BATCH_SIZE = 100
 
 
@@ -270,12 +271,6 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
                 {"tenant_id": tenant_id, "cutoff": cutoff_90},
             )
         ).rowcount or 0
-        allocations_deleted = (
-            await conn.execute(
-                text("DELETE FROM attribution_allocations WHERE created_at < :cutoff"),
-                {"cutoff": cutoff_90},
-            )
-        ).rowcount or 0
         dead_events_deleted = (
             await conn.execute(
                 text(
@@ -289,7 +284,7 @@ async def _enforce_retention(tenant_id: UUID, cutoff_90: datetime, cutoff_30: da
             )
         ).rowcount or 0
         return {
-            "allocations_deleted": allocations_deleted,
+            "allocations_deleted": 0,
             "dead_events_payload_redacted": dead_events_payload_redacted,
             "dead_events_quarantine_payload_redacted": quarantine_payload_redacted,
             "dead_events_deleted": dead_events_deleted,
@@ -415,6 +410,17 @@ def _provider_refresh_batch_size() -> int:
         parsed = int(configured)
     except ValueError:
         return _DEFAULT_PROVIDER_REFRESH_BATCH_SIZE
+    return max(1, parsed)
+
+
+def _raw_event_payload_gc_batch_size() -> int:
+    configured = os.getenv("SKELDIR_B14_P4_RAW_EVENT_PAYLOAD_GC_BATCH_SIZE")
+    if not configured:
+        return _DEFAULT_RAW_EVENT_PAYLOAD_GC_BATCH_SIZE
+    try:
+        parsed = int(configured)
+    except ValueError:
+        return _DEFAULT_RAW_EVENT_PAYLOAD_GC_BATCH_SIZE
     return max(1, parsed)
 
 
@@ -664,6 +670,43 @@ async def _delete_expired_ephemeral_resolution_rows(batch_size: int) -> Dict[str
     }
 
 
+async def _delete_expired_raw_event_payload_rows(
+    tenant_id: UUID,
+    *,
+    cutoff: datetime,
+    batch_size: int,
+) -> Dict[str, int]:
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        result = await conn.execute(
+            text(
+                """
+                WITH doomed AS (
+                    SELECT id
+                    FROM public.raw_event_payloads
+                    WHERE tenant_id = :tenant_id
+                      AND created_at < :cutoff
+                    ORDER BY created_at ASC
+                    LIMIT :batch_size
+                )
+                DELETE FROM public.raw_event_payloads target
+                USING doomed
+                WHERE target.id = doomed.id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "cutoff": cutoff,
+                "batch_size": int(batch_size),
+            },
+        )
+    deleted_rows = int(result.rowcount or 0)
+    return {
+        "deleted_rows": deleted_rows,
+        "batch_size": int(batch_size),
+    }
+
+
 @celery_app.task(
     bind=True,
     name="app.tasks.maintenance.gc_expired_access_token_denylist",
@@ -730,6 +773,75 @@ def gc_expired_ephemeral_resolution(self) -> Dict[str, int]:
             },
         )
         raise self.retry(exc=exc, countdown=60)
+
+
+@celery_app.task(
+    bind=True,
+    base=TenantTask,
+    name="app.tasks.maintenance.gc_expired_raw_event_payloads",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def gc_expired_raw_event_payloads(self, correlation_id: Optional[str] = None) -> Dict[str, int]:
+    tenant_id = task_tenant_id(self)
+    correlation_id = correlation_id or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    set_tenant_id(tenant_id)
+    batch_size = _raw_event_payload_gc_batch_size()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    try:
+        result = run_in_worker_loop(
+            _delete_expired_raw_event_payload_rows(
+                tenant_id,
+                cutoff=cutoff,
+                batch_size=batch_size,
+            )
+        )
+        logger.info(
+            "raw_event_payload_gc_completed",
+            extra={
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                "cutoff": cutoff.isoformat(),
+                **result,
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "raw_event_payload_gc_failed",
+            exc_info=exc,
+            extra={
+                "tenant_id": str(tenant_id),
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                "batch_size": batch_size,
+            },
+        )
+        raise self.retry(exc=exc, countdown=60)
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.gc_expired_raw_event_payloads_all_tenants",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def gc_expired_raw_event_payloads_all_tenants(self) -> Dict[str, int]:
+    correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    tenant_ids = run_in_worker_loop(_fetch_all_tenant_ids())
+    dispatched = 0
+    for tenant_id in tenant_ids:
+        enqueue_tenant_task(
+            gc_expired_raw_event_payloads,
+            envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+            kwargs={"correlation_id": correlation_id},
+            correlation_id=correlation_id,
+        )
+        dispatched += 1
+    return {"tenant_count": len(tenant_ids), "tasks_dispatched": dispatched}
 
 
 @celery_app.task(

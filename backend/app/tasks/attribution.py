@@ -221,6 +221,7 @@ async def _resolve_active_session_scopes(
             WHERE e.tenant_id = :tenant_id
               AND e.occurred_at >= :window_start
               AND e.occurred_at < :window_end
+              AND e.event_type <> 'privacy_tombstone'
               AND sa.invalidated_at IS NULL
               AND sa.expires_at > :authority_now
             ORDER BY e.session_id ASC
@@ -544,6 +545,7 @@ async def _compute_allocations_deterministic_baseline(
                       AND e.session_id = :session_id
                       AND e.occurred_at >= :window_start
                       AND e.occurred_at < :window_end
+                      AND e.event_type <> 'privacy_tombstone'
                     ORDER BY e.occurred_at ASC, e.id ASC
                     """
                 ),
@@ -567,6 +569,7 @@ async def _compute_allocations_deterministic_baseline(
                     WHERE e.tenant_id = :tenant_id
                       AND e.occurred_at >= :window_start
                       AND e.occurred_at < :window_end
+                      AND e.event_type <> 'privacy_tombstone'
                     ORDER BY e.occurred_at ASC, e.id ASC
                     """
                 ),

@@ -67,6 +67,12 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "schedule": crontab(minute="*/10"),
             "options": {"expires": 600},
         }
+    if os.getenv("SKELDIR_B14_P4_DISABLE_RAW_EVENT_PAYLOAD_GC_JOB") != "1":
+        schedule["b14-p4-raw-event-payload-gc"] = {
+            "task": "app.tasks.maintenance.gc_expired_raw_event_payloads_all_tenants",
+            "schedule": crontab(hour=3, minute=15),
+            "options": {"expires": 3600},
+        }
     return schedule
 
 

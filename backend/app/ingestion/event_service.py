@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ingestion.channel_normalization import normalize_channel
 from app.ingestion.dlq_handler import DLQHandler
 from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
-from app.models import AttributionEvent, DeadEvent
+from app.models import AttributionEvent, DeadEvent, RawEventPayload
 from app.observability.context import log_context
 from app.privacy.authority import minimize_event_payload_for_storage
 from app.privacy.ephemeral_resolution import (
@@ -39,6 +39,16 @@ from app.observability.api_metrics import (
 logger = logging.getLogger(__name__)
 
 _IDEMPOTENCY_UNIQUE_CONSTRAINT = "uq_attribution_events_tenant_idempotency_key"
+_SENSITIVE_REQUEST_HEADER_KEYS = frozenset(
+    {
+        "authorization",
+        "cookie",
+        "set-cookie",
+        "x-skeldir-tenant-key",
+        "x-api-key",
+        "proxy-authorization",
+    }
+)
 
 
 def _first_non_empty_resolution_token(*values: Any) -> str | None:
@@ -48,6 +58,29 @@ def _first_non_empty_resolution_token(*values: Any) -> str | None:
         token = str(value).strip()
         if token:
             return token
+    return None
+
+
+def _normalized_request_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
+    if not headers:
+        return {}
+    normalized: dict[str, str] = {}
+    for key, value in headers.items():
+        normalized_key = str(key).strip().lower()
+        if not normalized_key or normalized_key in _SENSITIVE_REQUEST_HEADER_KEYS:
+            continue
+        normalized[normalized_key] = str(value).strip()
+    return normalized
+
+
+def _first_header_value(
+    headers: Mapping[str, str],
+    keys: tuple[str, ...],
+) -> str | None:
+    for key in keys:
+        value = (headers.get(key) or "").strip()
+        if value:
+            return value
     return None
 
 
@@ -311,9 +344,28 @@ class EventIngestionService:
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
+            normalized_headers = _normalized_request_headers(request_headers)
+            raw_event_payload = RawEventPayload(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                event_id=event.id,
+                payload_json=boundary.sanitized_payload,
+                ip_address=_first_header_value(
+                    normalized_headers,
+                    ("x-forwarded-for", "x-real-ip"),
+                ),
+                user_agent=_first_header_value(
+                    normalized_headers,
+                    ("user-agent",),
+                ),
+                raw_headers=normalized_headers or None,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
 
             # 5. Persist to database
             session.add(event)
+            session.add(raw_event_payload)
             await session.flush()  # Trigger constraint validation before commit
 
             logger.info(
