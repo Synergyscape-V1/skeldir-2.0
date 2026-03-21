@@ -13,6 +13,7 @@ from sqlalchemy import text
 from app.api import webhooks as webhooks_api
 from app.celery_app import celery_app
 from app.core.db import engine
+from app.ingestion.event_service import ingest_with_transaction
 from app.main import app
 from app.db.session import set_tenant_guc
 from app.security.auth import AuthContext, get_auth_context
@@ -627,36 +628,71 @@ async def test_b14_p3_runtime_forbidden_proxy_identifier_payload_fails_closed():
     window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
     window_end = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
     session_a = uuid4()
-    event_a = uuid4()
+    idempotency_key = f"b14_p3_telemetry_bad_{uuid4()}"
+    external_event_id = f"telemetry-bad-{uuid4().hex[:8]}"
 
     try:
         async with engine.begin() as conn:
             await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
         await _seed_active_session(tenant_id=tenant_id, session_id=session_a, issued_by="b14_p3_runtime")
-        await _seed_event(
+        ingress_result = await ingest_with_transaction(
             tenant_id=tenant_id,
-            event_id=event_a,
-            session_id=session_a,
-            occurred_at=now,
-            revenue_cents=1100,
-            external_event_id=f"telemetry-bad-{uuid4().hex[:8]}",
-            campaign_id="cmp-telemetry",
-            idempotency_key=f"b14_p3_telemetry_bad_{uuid4()}",
-            channel="direct",
-            utm_source="stripe",
-            utm_medium="checkout",
-            raw_payload_overrides={"gclid": "forbidden-click-proxy"},
+            event_data={
+                "event_type": "purchase",
+                "event_timestamp": _iso(now),
+                "revenue_amount": "11.00",
+                "currency": "USD",
+                "session_id": str(session_a),
+                "vendor": "stripe",
+                "utm_source": "stripe",
+                "utm_medium": "checkout",
+                "external_event_id": external_event_id,
+                "campaign_id": "cmp-telemetry",
+                "channel": "direct",
+                "gclid": "forbidden-click-proxy",
+            },
+            idempotency_key=idempotency_key,
+            source="stripe",
+            identity_payload={
+                "event_type": "purchase",
+                "event_timestamp": _iso(now),
+                "gclid": "forbidden-click-proxy",
+                "session_id": str(session_a),
+            },
+            request_headers={},
         )
+        assert ingress_result["status"] == "success"
 
-        with pytest.raises(Exception) as excinfo:
-            _enqueue_recompute(
-                tenant_id=tenant_id,
-                window_start=window_start,
-                window_end=window_end,
-                session_id=session_a,
+        async with engine.begin() as conn:
+            await set_tenant_guc(conn, tenant_id, local=True)
+            payload = await conn.scalar(
+                text(
+                    """
+                    SELECT raw_payload
+                    FROM attribution_events
+                    WHERE tenant_id = :tenant_id
+                      AND idempotency_key = :idempotency_key
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "idempotency_key": idempotency_key,
+                },
             )
-        assert "forbidden payload keys present: gclid" in str(excinfo.value).lower()
-        assert await _allocation_count_for_event(tenant_id=tenant_id, event_id=event_a) == 0
+        assert isinstance(payload, dict)
+        assert "gclid" not in payload
+
+        result = _enqueue_recompute(
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            session_id=session_a,
+        )
+        assert result["status"] == "succeeded"
+        assert result["event_count"] == 1
+        assert result["allocation_count"] == len(BASELINE_CHANNELS)
     finally:
         celery_app.conf.task_always_eager = original_eager
 
