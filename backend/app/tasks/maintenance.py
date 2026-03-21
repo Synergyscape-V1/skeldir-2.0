@@ -36,6 +36,7 @@ _IDENTIFIER_PREPARER = IdentifierPreparer(postgresql.dialect())
 _PUBLIC_SCHEMA = _IDENTIFIER_PREPARER.quote_schema("public")
 _DEFAULT_DENYLIST_GC_BATCH_SIZE = 1000
 _DENYLIST_GC_SINGLEFLIGHT_LOCK_KEY = 1205001
+_DEFAULT_EPHEMERAL_RESOLUTION_GC_BATCH_SIZE = 2000
 _DEFAULT_PROVIDER_REFRESH_BATCH_SIZE = 100
 
 
@@ -395,6 +396,17 @@ def _denylist_gc_batch_size() -> int:
     return max(1, parsed)
 
 
+def _ephemeral_resolution_gc_batch_size() -> int:
+    configured = os.getenv("SKELDIR_B14_P3_EPHEMERAL_RESOLUTION_GC_BATCH_SIZE")
+    if not configured:
+        return _DEFAULT_EPHEMERAL_RESOLUTION_GC_BATCH_SIZE
+    try:
+        parsed = int(configured)
+    except ValueError:
+        return _DEFAULT_EPHEMERAL_RESOLUTION_GC_BATCH_SIZE
+    return max(1, parsed)
+
+
 def _provider_refresh_batch_size() -> int:
     configured = os.getenv("SKELDIR_B13_P7_PROVIDER_REFRESH_BATCH_SIZE")
     if not configured:
@@ -574,6 +586,84 @@ async def _delete_expired_denylist_rows(batch_size: int) -> Dict[str, int]:
     }
 
 
+async def _delete_expired_ephemeral_resolution_rows(batch_size: int) -> Dict[str, int]:
+    deleted_order_rows = 0
+    deleted_click_rows = 0
+    scanned_tenants = 0
+    remaining = max(1, int(batch_size))
+
+    async with engine.begin() as conn:
+        tenants_result = await conn.execute(text("SELECT id FROM public.tenants ORDER BY id"))
+        tenant_rows = [row[0] for row in tenants_result]
+
+        for tenant_id in tenant_rows:
+            if remaining <= 0:
+                break
+            scanned_tenants += 1
+            await set_tenant_guc(conn, tenant_id, local=True)
+
+            order_result = await conn.execute(
+                text(
+                    """
+                    WITH doomed AS (
+                        SELECT id
+                        FROM public.ephemeral_order_resolution
+                        WHERE tenant_id = :tenant_id
+                          AND expires_at < now()
+                        ORDER BY expires_at
+                        LIMIT :batch_size
+                    )
+                    DELETE FROM public.ephemeral_order_resolution target
+                    USING doomed
+                    WHERE target.id = doomed.id
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "batch_size": int(remaining),
+                },
+            )
+            order_deleted = int(order_result.rowcount or 0)
+            deleted_order_rows += order_deleted
+            remaining -= order_deleted
+
+            if remaining <= 0:
+                break
+
+            click_result = await conn.execute(
+                text(
+                    """
+                    WITH doomed AS (
+                        SELECT id
+                        FROM public.ephemeral_click_resolution
+                        WHERE tenant_id = :tenant_id
+                          AND expires_at < now()
+                        ORDER BY expires_at
+                        LIMIT :batch_size
+                    )
+                    DELETE FROM public.ephemeral_click_resolution target
+                    USING doomed
+                    WHERE target.id = doomed.id
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "batch_size": int(remaining),
+                },
+            )
+            click_deleted = int(click_result.rowcount or 0)
+            deleted_click_rows += click_deleted
+            remaining -= click_deleted
+
+    return {
+        "deleted_order_rows": deleted_order_rows,
+        "deleted_click_rows": deleted_click_rows,
+        "total_deleted_rows": deleted_order_rows + deleted_click_rows,
+        "batch_size": int(batch_size),
+        "scanned_tenants": scanned_tenants,
+    }
+
+
 @celery_app.task(
     bind=True,
     name="app.tasks.maintenance.gc_expired_access_token_denylist",
@@ -598,6 +688,40 @@ def gc_expired_access_token_denylist(self) -> Dict[str, int]:
     except Exception as exc:
         logger.error(
             "denylist_gc_failed",
+            exc_info=exc,
+            extra={
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                "batch_size": batch_size,
+            },
+        )
+        raise self.retry(exc=exc, countdown=60)
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.maintenance.gc_expired_ephemeral_resolution",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def gc_expired_ephemeral_resolution(self) -> Dict[str, int]:
+    correlation_id = getattr(self.request, "correlation_id", None) or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    batch_size = _ephemeral_resolution_gc_batch_size()
+    try:
+        result = run_in_worker_loop(_delete_expired_ephemeral_resolution_rows(batch_size))
+        logger.info(
+            "ephemeral_resolution_gc_completed",
+            extra={
+                "task_id": self.request.id,
+                "correlation_id": correlation_id,
+                **result,
+            },
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "ephemeral_resolution_gc_failed",
             exc_info=exc,
             extra={
                 "task_id": self.request.id,

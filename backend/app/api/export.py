@@ -71,52 +71,77 @@ async def _fetch_reporting_rows(
     start_ts = datetime.combine(start, time.min, tzinfo=timezone.utc)
     end_ts = datetime.combine(end + timedelta(days=1), time.min, tzinfo=timezone.utc)
     channel_filter = [value.strip().lower() for value in (channels or []) if value and value.strip()]
+    query_params = {
+        "tenant_id": str(tenant_id),
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "channels_is_empty": len(channel_filter) == 0,
+        "channels": channel_filter,
+    }
 
-    query = text(
-        """
-        SELECT
-            date_trunc('day', e.occurred_at)::date AS export_date,
-            aa.channel_code AS channel_code,
-            COALESCE(SUM(aa.allocated_revenue_cents), 0)::bigint AS revenue_cents,
-            COUNT(DISTINCT aa.event_id)::bigint AS conversion_count,
-            COALESCE(AVG(aa.confidence_score), 0)::numeric AS confidence_score
-        FROM attribution_allocations aa
-        JOIN attribution_events e
-          ON e.id = aa.event_id
-         AND e.tenant_id = aa.tenant_id
-        JOIN session_authority sa
-          ON sa.tenant_id = e.tenant_id
-         AND sa.session_id = e.session_id
-        WHERE aa.tenant_id = :tenant_id
-          AND (
-                :session_scope_missing
-                OR e.session_id = :session_id
-          )
-          AND e.occurred_at >= :start_ts
-          AND e.occurred_at < :end_ts
-          AND sa.invalidated_at IS NULL
-          AND sa.expires_at > :authority_now
-          AND (
-                :channels_is_empty
-                OR lower(aa.channel_code) = ANY(CAST(:channels AS text[]))
-          )
-        GROUP BY export_date, aa.channel_code
-        ORDER BY export_date ASC, aa.channel_code ASC
-        """
-    )
-    result = await db_session.execute(
-        query,
-        {
-            "tenant_id": str(tenant_id),
-            "session_scope_missing": session_scope is None,
-            "session_id": str(session_scope) if session_scope is not None else None,
-            "start_ts": start_ts,
-            "end_ts": end_ts,
-            "authority_now": datetime.now(timezone.utc),
-            "channels_is_empty": len(channel_filter) == 0,
-            "channels": channel_filter,
-        },
-    )
+    if session_scope is None:
+        query = text(
+            """
+            SELECT
+                date_trunc('day', e.occurred_at)::date AS export_date,
+                aa.channel_code AS channel_code,
+                COALESCE(SUM(aa.allocated_revenue_cents), 0)::bigint AS revenue_cents,
+                COUNT(DISTINCT aa.event_id)::bigint AS conversion_count,
+                COALESCE(AVG(aa.confidence_score), 0)::numeric AS confidence_score
+            FROM attribution_allocations aa
+            JOIN attribution_events e
+              ON e.id = aa.event_id
+             AND e.tenant_id = aa.tenant_id
+            WHERE aa.tenant_id = :tenant_id
+              AND e.occurred_at >= :start_ts
+              AND e.occurred_at < :end_ts
+              AND (
+                    :channels_is_empty
+                    OR lower(aa.channel_code) = ANY(CAST(:channels AS text[]))
+              )
+            GROUP BY export_date, aa.channel_code
+            ORDER BY export_date ASC, aa.channel_code ASC
+            """
+        )
+        result = await db_session.execute(query, query_params)
+    else:
+        query = text(
+            """
+            SELECT
+                date_trunc('day', e.occurred_at)::date AS export_date,
+                aa.channel_code AS channel_code,
+                COALESCE(SUM(aa.allocated_revenue_cents), 0)::bigint AS revenue_cents,
+                COUNT(DISTINCT aa.event_id)::bigint AS conversion_count,
+                COALESCE(AVG(aa.confidence_score), 0)::numeric AS confidence_score
+            FROM attribution_allocations aa
+            JOIN attribution_events e
+              ON e.id = aa.event_id
+             AND e.tenant_id = aa.tenant_id
+            JOIN session_authority sa
+              ON sa.tenant_id = e.tenant_id
+             AND sa.session_id = e.session_id
+            WHERE aa.tenant_id = :tenant_id
+              AND e.session_id = :session_id
+              AND e.occurred_at >= :start_ts
+              AND e.occurred_at < :end_ts
+              AND sa.invalidated_at IS NULL
+              AND sa.expires_at > :authority_now
+              AND (
+                    :channels_is_empty
+                    OR lower(aa.channel_code) = ANY(CAST(:channels AS text[]))
+              )
+            GROUP BY export_date, aa.channel_code
+            ORDER BY export_date ASC, aa.channel_code ASC
+            """
+        )
+        result = await db_session.execute(
+            query,
+            {
+                **query_params,
+                "session_id": str(session_scope),
+                "authority_now": datetime.now(timezone.utc),
+            },
+        )
 
     rows: list[dict[str, object]] = []
     for export_date, channel_code, revenue_cents, conversion_count, confidence_score in result.fetchall():

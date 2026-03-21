@@ -232,6 +232,13 @@ def _coerce_event_timestamp(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _resolution_token(value: Any) -> str | None:
+    if value is None:
+        return None
+    token = str(value).strip()
+    return token if token else None
+
+
 def _request_headers_for_privacy_boundary(request: Request) -> dict[str, str]:
     return {str(key).lower(): str(value) for key, value in request.headers.items()}
 
@@ -435,6 +442,7 @@ async def shopify_order_create(
         "vendor": "shopify",
         "utm_source": "shopify",
         "external_event_id": str(payload.id),
+        "order_id": str(payload.id),
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(
@@ -477,6 +485,7 @@ async def stripe_payment_intent_succeeded(
         "vendor": "stripe",
         "utm_source": "stripe",
         "external_event_id": payload.id,
+        "order_id": payload.id,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(
@@ -545,6 +554,8 @@ async def stripe_payment_intent_succeeded_v2(
     utm_source_for_normalization = "stripe"
     utm_medium_for_normalization: str | None = None
     session_hint_for_authority: str | None = None
+    order_id_for_resolution: str | None = None
+    click_id_for_resolution: str | None = None
     if payload_parse_error is None:
         try:
             event_id = payload.get("id")
@@ -573,6 +584,16 @@ async def stripe_payment_intent_succeeded_v2(
                         session_hint_for_authority = None
                     else:
                         session_hint_for_authority = parsed_session_hint
+                order_id_for_resolution = _resolution_token(
+                    metadata.get("order_id") or metadata.get("order")
+                )
+                click_id_for_resolution = _resolution_token(
+                    metadata.get("click_id")
+                    or metadata.get("gclid")
+                    or metadata.get("fbclid")
+                )
+            if order_id_for_resolution is None:
+                order_id_for_resolution = _resolution_token(pi_id)
             if not idempotency_key and pi_id:
                 idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
         except Exception:
@@ -665,11 +686,14 @@ async def stripe_payment_intent_succeeded_v2(
         "vendor": vendor_for_normalization,
         "utm_source": utm_source_for_normalization,
         "external_event_id": pi_id,
+        "order_id": order_id_for_resolution or pi_id,
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,
     }
     if utm_medium_for_normalization:
         event_data["utm_medium"] = utm_medium_for_normalization
+    if click_id_for_resolution:
+        event_data["click_id"] = click_id_for_resolution
 
     result = await ingest_with_transaction(
         tenant_id=tenant_info["tenant_id"],
@@ -738,6 +762,7 @@ async def paypal_sale_completed(
         "vendor": "paypal",
         "utm_source": "paypal",
         "external_event_id": payload.id,
+        "order_id": payload.id,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(
@@ -775,6 +800,7 @@ async def woocommerce_order_completed(
         "vendor": "woocommerce",
         "utm_source": "woocommerce",
         "external_event_id": str(payload.id),
+        "order_id": str(payload.id),
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(

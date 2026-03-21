@@ -20,6 +20,7 @@ from app.security.auth import AuthContext, get_auth_context
 from app.tasks.attribution import BASELINE_CHANNELS, recompute_window
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import enqueue_tenant_task
+from app.tasks.maintenance import _delete_expired_ephemeral_resolution_rows
 from tests.conftest import _insert_tenant
 
 
@@ -38,7 +39,18 @@ async def _require_b14_p3_schema() -> None:
         has_recompute_jobs = await conn.scalar(
             text("SELECT to_regclass('public.attribution_recompute_jobs')")
         )
-    if not has_session_authority or not has_recompute_jobs:
+        has_ephemeral_order_resolution = await conn.scalar(
+            text("SELECT to_regclass('public.ephemeral_order_resolution')")
+        )
+        has_ephemeral_click_resolution = await conn.scalar(
+            text("SELECT to_regclass('public.ephemeral_click_resolution')")
+        )
+    if (
+        not has_session_authority
+        or not has_recompute_jobs
+        or not has_ephemeral_order_resolution
+        or not has_ephemeral_click_resolution
+    ):
         pytest.skip("B1.4-P3 runtime proofs require alembic head schema with session_authority")
 
 
@@ -91,6 +103,39 @@ async def _seed_active_session(*, tenant_id: UUID, session_id: UUID, issued_by: 
                 "last_seen_at": now,
                 "issued_by": issued_by,
                 "created_at": now - timedelta(minutes=5),
+                "updated_at": now,
+            },
+        )
+
+
+async def _expire_session_authority(*, tenant_id: UUID, session_id: UUID) -> None:
+    now = datetime.now(timezone.utc)
+    issued_at = now - timedelta(hours=26)
+    expires_at = now - timedelta(hours=2)
+    last_seen_at = now - timedelta(hours=2, minutes=30)
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        await conn.execute(
+            text(
+                """
+                UPDATE session_authority
+                SET issued_at = :issued_at,
+                    expires_at = :expires_at,
+                    last_seen_at = :last_seen_at,
+                    invalidated_at = :invalidated_at,
+                    invalidation_reason = 'runtime_test_expired',
+                    updated_at = :updated_at
+                WHERE tenant_id = :tenant_id
+                  AND session_id = :session_id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "session_id": str(session_id),
+                "issued_at": issued_at,
+                "expires_at": expires_at,
+                "last_seen_at": last_seen_at,
+                "invalidated_at": now - timedelta(hours=1),
                 "updated_at": now,
             },
         )
@@ -537,6 +582,8 @@ async def test_b14_p3_runtime_export_partition_preserves_aggregate_and_session_s
             window_end=window_end,
             session_id=None,
         )
+        await _expire_session_authority(tenant_id=tenant_id, session_id=session_a)
+        await _expire_session_authority(tenant_id=tenant_id, session_id=session_b)
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             aggregate = await client.get(
@@ -561,18 +608,18 @@ async def test_b14_p3_runtime_export_partition_preserves_aggregate_and_session_s
     scoped_rows = scoped.json()["data"]
 
     assert aggregate_rows
-    assert scoped_rows
+    assert scoped_rows == []
 
     aggregate_revenue = round(sum(float(row["revenue"]) for row in aggregate_rows), 2)
     scoped_revenue = round(sum(float(row["revenue"]) for row in scoped_rows), 2)
     assert aggregate_revenue == 42.00
-    assert scoped_revenue == 15.00
+    assert scoped_revenue == 0.00
     assert aggregate_revenue > scoped_revenue
 
     aggregate_conversions = sum(int(row["conversions"]) for row in aggregate_rows)
     scoped_conversions = sum(int(row["conversions"]) for row in scoped_rows)
     assert aggregate_conversions == len(BASELINE_CHANNELS) * 2
-    assert scoped_conversions == len(BASELINE_CHANNELS)
+    assert scoped_conversions == 0
 
 
 @pytest.mark.asyncio
@@ -781,3 +828,193 @@ async def test_b14_p3_runtime_stripe_v2_recompute_coverage_and_session_hint_cont
         assert scheduled_calls[0]["session_id"] == str(session_hint)
     finally:
         app.dependency_overrides.pop(webhooks_api.stripe_webhook_auth, None)
+
+
+@pytest.mark.asyncio
+async def test_b14_p3_runtime_universal_webhook_order_resolution_adopts_active_browser_session():
+    await _require_b14_p3_schema()
+    tenant_id = uuid4()
+    browser_session = uuid4()
+    order_id = f"order-universal-{uuid4().hex[:10]}"
+    ingress_idempotency = f"b14_p3_browser_order_seed_{uuid4().hex[:10]}"
+    webhook_idempotency = str(uuid5(NAMESPACE_URL, f"paypal_sale_completed_{order_id}"))
+
+    async def _paypal_auth_override() -> dict[str, UUID]:
+        return {"tenant_id": tenant_id}
+
+    app.dependency_overrides[webhooks_api.paypal_webhook_auth] = _paypal_auth_override
+    try:
+        async with engine.begin() as conn:
+            await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+        await _seed_active_session(
+            tenant_id=tenant_id,
+            session_id=browser_session,
+            issued_by="b14_p3_runtime",
+        )
+
+        seed_result = await ingest_with_transaction(
+            tenant_id=tenant_id,
+            event_data={
+                "event_type": "click",
+                "event_timestamp": _iso(datetime.now(timezone.utc) - timedelta(hours=12)),
+                "revenue_amount": "0.00",
+                "currency": "USD",
+                "session_id": str(browser_session),
+                "vendor": "browser",
+                "utm_source": "google",
+                "utm_medium": "cpc",
+                "order_id": order_id,
+                "external_event_id": f"browser-seed-{uuid4().hex[:8]}",
+                "campaign_id": "cmp-universal-order",
+            },
+            idempotency_key=ingress_idempotency,
+            source="browser",
+            identity_payload={"order_id": order_id, "session_id": str(browser_session)},
+            request_headers={},
+        )
+        assert seed_result["status"] == "success"
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/webhooks/paypal/sale_completed",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "id": order_id,
+                    "amount": {"total": "29.99", "currency": "USD"},
+                    "create_time": _iso(datetime.now(timezone.utc)),
+                },
+            )
+        assert response.status_code == 200, response.text
+        assert response.json().get("status") == "success"
+
+        async with engine.begin() as conn:
+            await set_tenant_guc(conn, tenant_id, local=True)
+            row = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT session_id::text
+                        FROM attribution_events
+                        WHERE tenant_id = :tenant_id
+                          AND idempotency_key = :idempotency_key
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "idempotency_key": webhook_idempotency,
+                    },
+                )
+            ).first()
+        assert row is not None
+        assert row[0] == str(browser_session)
+    finally:
+        app.dependency_overrides.pop(webhooks_api.paypal_webhook_auth, None)
+
+
+@pytest.mark.asyncio
+async def test_b14_p3_runtime_ephemeral_click_resolution_routes_and_expires_after_25h():
+    await _require_b14_p3_schema()
+    tenant_id = uuid4()
+    browser_session = uuid4()
+    click_id = f"click-{uuid4().hex[:10]}"
+    seed_key = f"b14_p3_click_seed_{uuid4().hex[:10]}"
+    conversion_key = f"b14_p3_click_conversion_{uuid4().hex[:10]}"
+    fallback_session = uuid4()
+
+    async with engine.begin() as conn:
+        await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+    await _seed_active_session(
+        tenant_id=tenant_id,
+        session_id=browser_session,
+        issued_by="b14_p3_runtime",
+    )
+
+    seed_result = await ingest_with_transaction(
+        tenant_id=tenant_id,
+        event_data={
+            "event_type": "click",
+            "event_timestamp": _iso(datetime.now(timezone.utc) - timedelta(hours=1)),
+            "revenue_amount": "0.00",
+            "currency": "USD",
+            "session_id": str(browser_session),
+            "vendor": "google",
+            "utm_source": "google",
+            "utm_medium": "cpc",
+            "click_id": click_id,
+            "campaign_id": "cmp-click",
+            "external_event_id": f"click-seed-{uuid4().hex[:8]}",
+        },
+        idempotency_key=seed_key,
+        source="browser",
+        identity_payload={"click_id": click_id, "session_id": str(browser_session)},
+        request_headers={},
+    )
+    assert seed_result["status"] == "success"
+
+    conversion_result = await ingest_with_transaction(
+        tenant_id=tenant_id,
+        event_data={
+            "event_type": "purchase",
+            "event_timestamp": _iso(datetime.now(timezone.utc)),
+            "revenue_amount": "55.00",
+            "currency": "USD",
+            "session_id": str(fallback_session),
+            "vendor": "shopify",
+            "utm_source": "shopify",
+            "utm_medium": "paid_social",
+            "click_id": click_id,
+            "campaign_id": "cmp-click",
+            "external_event_id": f"click-conv-{uuid4().hex[:8]}",
+        },
+        idempotency_key=conversion_key,
+        source="shopify",
+        identity_payload={"click_id": click_id},
+        request_headers={},
+    )
+    assert conversion_result["status"] == "success"
+    assert conversion_result["session_id"] == str(browser_session)
+
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        await conn.execute(
+            text(
+                """
+                UPDATE ephemeral_click_resolution
+                SET observed_at = :observed_at,
+                    expires_at = :expired_at,
+                    updated_at = :updated_at
+                WHERE tenant_id = :tenant_id
+                  AND click_id = :click_id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "click_id": click_id,
+                "observed_at": datetime.now(timezone.utc) - timedelta(hours=26),
+                "expired_at": datetime.now(timezone.utc) - timedelta(hours=25),
+                "updated_at": datetime.now(timezone.utc),
+            },
+        )
+
+    gc_result = await _delete_expired_ephemeral_resolution_rows(batch_size=50)
+    assert gc_result["deleted_click_rows"] >= 1
+
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        remaining = await conn.scalar(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM ephemeral_click_resolution
+                WHERE tenant_id = :tenant_id
+                  AND click_id = :click_id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "click_id": click_id,
+            },
+        )
+    assert int(remaining or 0) == 0

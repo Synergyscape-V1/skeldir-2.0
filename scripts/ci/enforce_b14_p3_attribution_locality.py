@@ -29,6 +29,8 @@ def run_enforcement(
     webhooks_file: Path,
     event_service_file: Path,
     export_file: Path,
+    maintenance_file: Path,
+    migration_file: Path,
     runtime_proof_file: Path,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
@@ -40,6 +42,8 @@ def run_enforcement(
         webhooks_file,
         event_service_file,
         export_file,
+        maintenance_file,
+        migration_file,
         runtime_proof_file,
     )
     for required in required_files:
@@ -54,6 +58,8 @@ def run_enforcement(
     webhooks_text = _read(webhooks_file)
     event_service_text = _read(event_service_file)
     export_text = _read(export_file)
+    maintenance_text = _read(maintenance_file)
+    migration_text = _read(migration_file)
     runtime_proof_text = _read(runtime_proof_file)
 
     if REQUIRED_CONTEXT not in workflow_text:
@@ -93,6 +99,7 @@ def run_enforcement(
         '"session_id": session_id',
         'session_id = result.get("session_id")',
         "session_id=str(session_id)",
+        '"order_id":',
     )
     for token in required_webhook_tokens:
         if token not in webhooks_text:
@@ -103,20 +110,56 @@ def run_enforcement(
 
     required_export_tokens = (
         "X-Attribution-Session-ID",
-        "JOIN session_authority sa",
-        "session_scope_missing",
+        "if session_scope is None:",
+        "AND e.session_id = :session_id",
     )
     for token in required_export_tokens:
         if token not in export_text:
             violations.append(f"export_missing_token:{token}")
-    export_session_predicates = (
-        "AND e.session_id = :session_id",
-        "OR e.session_id = :session_id",
-    )
-    if not any(token in export_text for token in export_session_predicates):
-        violations.append("export_missing_session_local_predicate")
+    if "JOIN session_authority sa" not in export_text:
+        violations.append("export_missing_session_authority_join_for_scoped_reads")
+    if "AND sa.expires_at > :authority_now" not in export_text:
+        violations.append("export_missing_active_authority_enforcement_for_scoped_reads")
     if "if session_scope is None:\n        return []" in export_text:
         violations.append("export_overconstrained_single_session_only")
+
+    if "if session_scope is None:" in export_text and "else:" in export_text:
+        aggregate_block = export_text.split("if session_scope is None:", 1)[1].split("else:", 1)[0]
+        if "sa.expires_at > :authority_now" in aggregate_block:
+            violations.append("export_aggregate_branch_leaks_authority_ttl_predicate")
+    else:
+        violations.append("export_missing_partitioned_aggregate_vs_scoped_branching")
+
+    required_event_service_tokens = (
+        "resolve_session_candidate_with_ephemeral_substrate(",
+        "upsert_ephemeral_resolution_links(",
+        "_extract_order_resolution_key(",
+        "_extract_click_resolution_key(",
+    )
+    for token in required_event_service_tokens:
+        if token not in event_service_text:
+            violations.append(f"event_service_missing_token:{token}")
+
+    required_maintenance_tokens = (
+        "gc_expired_ephemeral_resolution",
+        "_delete_expired_ephemeral_resolution_rows(",
+        "ephemeral_order_resolution",
+        "ephemeral_click_resolution",
+    )
+    for token in required_maintenance_tokens:
+        if token not in maintenance_text:
+            violations.append(f"maintenance_missing_token:{token}")
+
+    required_migration_tokens = (
+        "CREATE TABLE public.ephemeral_order_resolution",
+        "CREATE TABLE public.ephemeral_click_resolution",
+        "ck_ephemeral_order_resolution_max_24h",
+        "ck_ephemeral_click_resolution_max_24h",
+        "ENABLE ROW LEVEL SECURITY",
+    )
+    for token in required_migration_tokens:
+        if token not in migration_text:
+            violations.append(f"migration_missing_token:{token}")
 
     stripe_v2_marker = "async def stripe_payment_intent_succeeded_v2("
     if stripe_v2_marker not in webhooks_text:
@@ -137,6 +180,8 @@ def run_enforcement(
         "test_b14_p3_runtime_bounded_telemetry_allowlist_is_sufficient_for_baseline",
         "test_b14_p3_runtime_forbidden_proxy_identifier_payload_fails_closed",
         "test_b14_p3_runtime_stripe_v2_recompute_coverage_and_session_hint_continuity",
+        "test_b14_p3_runtime_universal_webhook_order_resolution_adopts_active_browser_session",
+        "test_b14_p3_runtime_ephemeral_click_resolution_routes_and_expires_after_25h",
     )
     for token in required_runtime_tokens:
         if token not in runtime_proof_text:
@@ -169,6 +214,17 @@ def main(argv: list[str]) -> int:
         default="backend/app/api/export.py",
     )
     parser.add_argument(
+        "--maintenance-file",
+        default="backend/app/tasks/maintenance.py",
+    )
+    parser.add_argument(
+        "--migration-file",
+        default=(
+            "alembic/versions/007_skeldir_foundation/"
+            "202603211810_b14_p3_terminal_ephemeral_resolution_substrate.py"
+        ),
+    )
+    parser.add_argument(
         "--runtime-proof-file",
         default="backend/tests/integration/test_b14_p3_attribution_locality_runtime.py",
     )
@@ -190,6 +246,8 @@ def main(argv: list[str]) -> int:
         webhooks_file=(REPO_ROOT / args.webhooks_file).resolve(),
         event_service_file=(REPO_ROOT / args.event_service_file).resolve(),
         export_file=(REPO_ROOT / args.export_file).resolve(),
+        maintenance_file=(REPO_ROOT / args.maintenance_file).resolve(),
+        migration_file=(REPO_ROOT / args.migration_file).resolve(),
         runtime_proof_file=(REPO_ROOT / args.runtime_proof_file).resolve(),
     )
 

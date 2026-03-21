@@ -61,6 +61,12 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "schedule": crontab(minute="*/10"),
             "options": {"expires": 600},
         }
+    if os.getenv("SKELDIR_B14_P3_DISABLE_EPHEMERAL_RESOLUTION_GC_JOB") != "1":
+        schedule["b14-p3-ephemeral-resolution-gc"] = {
+            "task": "app.tasks.maintenance.gc_expired_ephemeral_resolution",
+            "schedule": crontab(minute="*/10"),
+            "options": {"expires": 600},
+        }
     return schedule
 
 

@@ -24,6 +24,10 @@ from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
 from app.models import AttributionEvent, DeadEvent
 from app.observability.context import log_context
 from app.privacy.authority import minimize_event_payload_for_storage
+from app.privacy.ephemeral_resolution import (
+    resolve_session_candidate_with_ephemeral_substrate,
+    upsert_ephemeral_resolution_links,
+)
 from app.privacy.session_authority import resolve_session_authority
 from app.observability.api_metrics import (
     events_dlq_total,
@@ -35,6 +39,42 @@ from app.observability.api_metrics import (
 logger = logging.getLogger(__name__)
 
 _IDEMPOTENCY_UNIQUE_CONSTRAINT = "uq_attribution_events_tenant_idempotency_key"
+
+
+def _first_non_empty_resolution_token(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        token = str(value).strip()
+        if token:
+            return token
+    return None
+
+
+def _extract_order_resolution_key(
+    *,
+    event_data: Mapping[str, Any],
+    identity_payload: Mapping[str, Any],
+) -> str | None:
+    return _first_non_empty_resolution_token(
+        event_data.get("order_id"),
+        identity_payload.get("order_id"),
+    )
+
+
+def _extract_click_resolution_key(
+    *,
+    event_data: Mapping[str, Any],
+    identity_payload: Mapping[str, Any],
+) -> str | None:
+    for key in ("click_id", "gclid", "fbclid"):
+        resolved = _first_non_empty_resolution_token(
+            event_data.get(key),
+            identity_payload.get(key),
+        )
+        if resolved is not None:
+            return resolved
+    return None
 
 
 def _integrity_error_sqlstate(error: IntegrityError) -> str | None:
@@ -168,14 +208,39 @@ class EventIngestionService:
             request_headers=request_headers,
             mode="strip",
         )
-        candidate_session_id = str(event_data.get("session_id", "")).strip() or None
+        raw_candidate_session_id = str(event_data.get("session_id", "")).strip() or None
         ingestion_event_data = dict(event_data)
         ingestion_event_data["global_idempotency_hash"] = boundary.global_idempotency_hash
         ingestion_event_data["pii_redacted_paths"] = list(boundary.redacted_paths)
+        order_resolution_key = _extract_order_resolution_key(
+            event_data=ingestion_event_data,
+            identity_payload=identity_payload,
+        )
+        click_resolution_key = _extract_click_resolution_key(
+            event_data=ingestion_event_data,
+            identity_payload=identity_payload,
+        )
+
+        candidate_session_uuid = await resolve_session_candidate_with_ephemeral_substrate(
+            session=session,
+            tenant_id=tenant_id,
+            candidate_session_id=raw_candidate_session_id,
+            order_id=order_resolution_key,
+            click_id=click_resolution_key,
+        )
+        candidate_session_id = str(candidate_session_uuid) if candidate_session_uuid is not None else None
 
         # 1. Idempotency check - return existing event if duplicate
         existing = await self._check_duplicate(session, tenant_id, idempotency_key)
         if existing:
+            await upsert_ephemeral_resolution_links(
+                session=session,
+                tenant_id=tenant_id,
+                session_id=existing.session_id,
+                order_id=order_resolution_key,
+                click_id=click_resolution_key,
+                source=source,
+            )
             logger.info(
                 "duplicate_event_detected",
                 extra={
@@ -199,6 +264,14 @@ class EventIngestionService:
             source=source,
         )
         ingestion_event_data["session_id"] = str(session_resolution.session_id)
+        await upsert_ephemeral_resolution_links(
+            session=session,
+            tenant_id=tenant_id,
+            session_id=session_resolution.session_id,
+            order_id=order_resolution_key,
+            click_id=click_resolution_key,
+            source=source,
+        )
 
         start_time = time.perf_counter()
         try:
