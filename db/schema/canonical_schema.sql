@@ -944,6 +944,38 @@ CREATE TABLE public.dead_events_quarantine (
 
 ALTER TABLE ONLY public.dead_events_quarantine FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.ephemeral_click_resolution (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    click_id text NOT NULL,
+    session_id uuid NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    source text DEFAULT 'ingestion_runtime'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_ephemeral_click_resolution_expires_after_observed CHECK ((expires_at > observed_at)),
+    CONSTRAINT ck_ephemeral_click_resolution_max_24h CHECK ((expires_at <= (observed_at + '24:00:00'::interval)))
+);
+
+ALTER TABLE ONLY public.ephemeral_click_resolution FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.ephemeral_order_resolution (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    order_id text NOT NULL,
+    session_id uuid NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    source text DEFAULT 'ingestion_runtime'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_ephemeral_order_resolution_expires_after_observed CHECK ((expires_at > observed_at)),
+    CONSTRAINT ck_ephemeral_order_resolution_max_24h CHECK ((expires_at <= (observed_at + '24:00:00'::interval)))
+);
+
+ALTER TABLE ONLY public.ephemeral_order_resolution FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.explanation_cache (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1727,6 +1759,12 @@ ALTER TABLE ONLY public.dead_events
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.ephemeral_click_resolution
+    ADD CONSTRAINT ephemeral_click_resolution_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.ephemeral_order_resolution
+    ADD CONSTRAINT ephemeral_order_resolution_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_pkey PRIMARY KEY (id);
 
@@ -1853,6 +1891,12 @@ ALTER TABLE ONLY public.tenants
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT uq_attribution_events_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
 
+ALTER TABLE ONLY public.ephemeral_click_resolution
+    ADD CONSTRAINT uq_ephemeral_click_resolution_tenant_click UNIQUE (tenant_id, click_id);
+
+ALTER TABLE ONLY public.ephemeral_order_resolution
+    ADD CONSTRAINT uq_ephemeral_order_resolution_tenant_order UNIQUE (tenant_id, order_id);
+
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT uq_llm_api_calls_tenant_request_endpoint UNIQUE (tenant_id, request_id, endpoint);
 
@@ -1944,6 +1988,14 @@ CREATE INDEX idx_dead_events_remediation ON public.dead_events USING btree (reme
 CREATE INDEX idx_dead_events_source ON public.dead_events USING btree (source);
 
 CREATE INDEX idx_dead_events_tenant_ingested_at ON public.dead_events USING btree (tenant_id, ingested_at DESC);
+
+CREATE INDEX idx_ephemeral_click_resolution_tenant_click ON public.ephemeral_click_resolution USING btree (tenant_id, click_id);
+
+CREATE INDEX idx_ephemeral_click_resolution_tenant_expires ON public.ephemeral_click_resolution USING btree (tenant_id, expires_at);
+
+CREATE INDEX idx_ephemeral_order_resolution_tenant_expires ON public.ephemeral_order_resolution USING btree (tenant_id, expires_at);
+
+CREATE INDEX idx_ephemeral_order_resolution_tenant_order ON public.ephemeral_order_resolution USING btree (tenant_id, order_id);
 
 CREATE INDEX idx_events_processing_status ON public.attribution_events USING btree (processing_status, processed_at) WHERE ((processing_status)::text = 'pending'::text);
 
@@ -2181,6 +2233,12 @@ ALTER TABLE ONLY public.dead_events_quarantine
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.ephemeral_click_resolution
+    ADD CONSTRAINT ephemeral_click_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.ephemeral_order_resolution
+    ADD CONSTRAINT ephemeral_order_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -2320,6 +2378,10 @@ ALTER TABLE public.dead_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.ephemeral_click_resolution ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
@@ -2439,6 +2501,10 @@ CREATE POLICY tenant_isolation_policy ON public.tenant_memberships USING ((tenan
 CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user USING (((tenant_id IS NULL) OR ((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))));
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_ephemeral_click_resolution ON public.ephemeral_click_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_ephemeral_order_resolution ON public.ephemeral_order_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 

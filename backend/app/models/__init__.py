@@ -42,6 +42,7 @@ from app.models.auth_substrate import (
 from app.models.base import Base, TenantMixin
 from app.models.channel_taxonomy import ChannelTaxonomy
 from app.models.dead_event import DeadEvent
+from app.models.ephemeral_resolution import EphemeralClickResolution, EphemeralOrderResolution
 from app.models.llm import (
     BudgetOptimizationJob,
     Investigation,
@@ -87,4 +88,6 @@ __all__ = [
     "PlatformCredential",
     "RevenueCacheEntry",
     "SessionAuthority",
+    "EphemeralOrderResolution",
+    "EphemeralClickResolution",
 ]
