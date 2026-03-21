@@ -13,7 +13,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from collections.abc import Callable
-from uuid import uuid4, uuid5, NAMESPACE_URL
+from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
 from fastapi import Body
@@ -544,6 +544,7 @@ async def stripe_payment_intent_succeeded_v2(
     vendor_for_normalization = "stripe"
     utm_source_for_normalization = "stripe"
     utm_medium_for_normalization: str | None = None
+    session_hint_for_authority: str | None = None
     if payload_parse_error is None:
         try:
             event_id = payload.get("id")
@@ -563,6 +564,15 @@ async def stripe_payment_intent_succeeded_v2(
                 utm_medium_candidate = metadata.get("utm_medium")
                 if isinstance(utm_medium_candidate, str) and utm_medium_candidate.strip():
                     utm_medium_for_normalization = utm_medium_candidate.strip()
+                session_id_candidate = metadata.get("session_id") or metadata.get("skeldir_session_id")
+                if isinstance(session_id_candidate, str) and session_id_candidate.strip():
+                    parsed_session_hint = session_id_candidate.strip()
+                    try:
+                        UUID(parsed_session_hint)
+                    except ValueError:
+                        session_hint_for_authority = None
+                    else:
+                        session_hint_for_authority = parsed_session_hint
             if not idempotency_key and pi_id:
                 idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
         except Exception:
@@ -651,7 +661,7 @@ async def stripe_payment_intent_succeeded_v2(
         "event_timestamp": ts.isoformat(),
         "revenue_amount": revenue_amount,
         "currency": currency.upper(),
-        "session_id": str(generate_privacy_session_id()),
+        "session_id": session_hint_for_authority or str(generate_privacy_session_id()),
         "vendor": vendor_for_normalization,
         "utm_source": utm_source_for_normalization,
         "external_event_id": pi_id,
@@ -671,6 +681,16 @@ async def stripe_payment_intent_succeeded_v2(
     )
 
     if result.get("status") == "success":
+        correlation_id = get_request_correlation_id() or idempotency_key
+        event_timestamp = event_data.get("event_timestamp")
+        session_id = result.get("session_id")
+        if event_timestamp and session_id:
+            _schedule_downstream_tasks(
+                tenant_id=tenant_info["tenant_id"],
+                event_timestamp=str(event_timestamp),
+                session_id=str(session_id),
+                correlation_id=str(correlation_id),
+            )
         return {
             "status": "success",
             "event_id": result.get("event_id"),

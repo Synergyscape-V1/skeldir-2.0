@@ -103,17 +103,40 @@ def run_enforcement(
 
     required_export_tokens = (
         "X-Attribution-Session-ID",
-        "AND e.session_id = :session_id",
         "JOIN session_authority sa",
+        "session_scope_missing",
     )
     for token in required_export_tokens:
         if token not in export_text:
             violations.append(f"export_missing_token:{token}")
+    export_session_predicates = (
+        "AND e.session_id = :session_id",
+        "OR e.session_id = :session_id",
+    )
+    if not any(token in export_text for token in export_session_predicates):
+        violations.append("export_missing_session_local_predicate")
+    if "if session_scope is None:\n        return []" in export_text:
+        violations.append("export_overconstrained_single_session_only")
+
+    stripe_v2_marker = "async def stripe_payment_intent_succeeded_v2("
+    if stripe_v2_marker not in webhooks_text:
+        violations.append("webhooks_missing_stripe_v2_handler")
+    else:
+        stripe_v2_block = webhooks_text.split(stripe_v2_marker, 1)[1]
+        stripe_v2_block = stripe_v2_block.split("\n\n@router.post", 1)[0]
+        if "_schedule_downstream_tasks(" not in stripe_v2_block:
+            violations.append("webhooks_stripe_v2_missing_recompute_scheduling")
+        if "metadata.get(\"session_id\")" not in stripe_v2_block:
+            violations.append("webhooks_stripe_v2_missing_session_hint_continuity")
 
     required_runtime_tokens = (
         "test_b14_p3_runtime_query_locality_blocks_cross_session_reconstruction_attempt",
         "test_b14_p3_runtime_conversion_paths_are_session_local_without_durable_bridge_join",
         "test_b14_p3_runtime_session_local_replay_is_deterministic",
+        "test_b14_p3_runtime_export_partition_preserves_aggregate_and_session_scoped_reporting",
+        "test_b14_p3_runtime_bounded_telemetry_allowlist_is_sufficient_for_baseline",
+        "test_b14_p3_runtime_forbidden_proxy_identifier_payload_fails_closed",
+        "test_b14_p3_runtime_stripe_v2_recompute_coverage_and_session_hint_continuity",
     )
     for token in required_runtime_tokens:
         if token not in runtime_proof_text:

@@ -7,11 +7,16 @@ from datetime import datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
+from app.api import webhooks as webhooks_api
 from app.celery_app import celery_app
 from app.core.db import engine
+from app.ingestion.event_service import ingest_with_transaction
+from app.main import app
 from app.db.session import set_tenant_guc
+from app.security.auth import AuthContext, get_auth_context
 from app.tasks.attribution import BASELINE_CHANNELS, recompute_window
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import enqueue_tenant_task
@@ -104,6 +109,7 @@ async def _seed_event(
     channel: str,
     utm_source: str,
     utm_medium: str,
+    raw_payload_overrides: dict[str, str] | None = None,
 ) -> None:
     payload = {
         "event_type": "purchase",
@@ -115,6 +121,8 @@ async def _seed_event(
         "campaign_id": campaign_id,
         "channel": channel,
     }
+    if raw_payload_overrides:
+        payload.update(raw_payload_overrides)
     now = datetime.now(timezone.utc)
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
@@ -242,6 +250,19 @@ async def _allocated_sum_for_event(*, tenant_id: UUID, event_id: UUID) -> int:
             {"tenant_id": str(tenant_id), "event_id": str(event_id)},
         )
     return int(total or 0)
+
+
+def _auth_context_for_tenant(tenant_id: UUID) -> AuthContext:
+    return AuthContext(
+        tenant_id=tenant_id,
+        user_id=uuid4(),
+        jti=uuid4(),
+        issued_at_epoch=int(datetime.now(timezone.utc).timestamp()),
+        subject="b14-p3-runtime",
+        issuer="https://issuer.skeldir.test",
+        audience="skeldir-api",
+        claims={"scopes": ["viewer"], "tenant_id": str(tenant_id)},
+    )
 
 
 @pytest.mark.asyncio
@@ -459,3 +480,304 @@ async def test_b14_p3_runtime_session_local_replay_is_deterministic():
         assert await _allocation_count_for_event(tenant_id=tenant_id, event_id=event_b) == len(BASELINE_CHANNELS)
     finally:
         celery_app.conf.task_always_eager = original_eager
+
+
+@pytest.mark.asyncio
+async def test_b14_p3_runtime_export_partition_preserves_aggregate_and_session_scoped_reporting():
+    await _require_b14_p3_schema()
+    original_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = True
+    tenant_id = uuid4()
+    now = datetime.now(timezone.utc)
+    window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
+    window_end = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
+    session_a = uuid4()
+    session_b = uuid4()
+    event_a = uuid4()
+    event_b = uuid4()
+
+    async def _auth_override() -> AuthContext:
+        return _auth_context_for_tenant(tenant_id)
+
+    app.dependency_overrides[get_auth_context] = _auth_override
+    try:
+        async with engine.begin() as conn:
+            await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+        await _seed_active_session(tenant_id=tenant_id, session_id=session_a, issued_by="b14_p3_runtime")
+        await _seed_active_session(tenant_id=tenant_id, session_id=session_b, issued_by="b14_p3_runtime")
+        await _seed_event(
+            tenant_id=tenant_id,
+            event_id=event_a,
+            session_id=session_a,
+            occurred_at=now,
+            revenue_cents=1500,
+            external_event_id=f"export-a-{uuid4().hex[:8]}",
+            campaign_id="cmp-export",
+            idempotency_key=f"b14_p3_export_a_{uuid4()}",
+            channel="direct",
+            utm_source="shopify",
+            utm_medium="paid_social",
+        )
+        await _seed_event(
+            tenant_id=tenant_id,
+            event_id=event_b,
+            session_id=session_b,
+            occurred_at=now,
+            revenue_cents=2700,
+            external_event_id=f"export-b-{uuid4().hex[:8]}",
+            campaign_id="cmp-export",
+            idempotency_key=f"b14_p3_export_b_{uuid4()}",
+            channel="direct",
+            utm_source="shopify",
+            utm_medium="paid_social",
+        )
+        _enqueue_recompute(
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            session_id=None,
+        )
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            aggregate = await client.get(
+                "/api/export/json",
+                headers={"X-Correlation-ID": str(uuid4())},
+            )
+            scoped = await client.get(
+                "/api/export/json",
+                headers={
+                    "X-Correlation-ID": str(uuid4()),
+                    "X-Attribution-Session-ID": str(session_a),
+                },
+            )
+    finally:
+        app.dependency_overrides.pop(get_auth_context, None)
+        celery_app.conf.task_always_eager = original_eager
+
+    assert aggregate.status_code == 200, aggregate.text
+    assert scoped.status_code == 200, scoped.text
+
+    aggregate_rows = aggregate.json()["data"]
+    scoped_rows = scoped.json()["data"]
+
+    assert aggregate_rows
+    assert scoped_rows
+
+    aggregate_revenue = round(sum(float(row["revenue"]) for row in aggregate_rows), 2)
+    scoped_revenue = round(sum(float(row["revenue"]) for row in scoped_rows), 2)
+    assert aggregate_revenue == 42.00
+    assert scoped_revenue == 15.00
+    assert aggregate_revenue > scoped_revenue
+
+    aggregate_conversions = sum(int(row["conversions"]) for row in aggregate_rows)
+    scoped_conversions = sum(int(row["conversions"]) for row in scoped_rows)
+    assert aggregate_conversions == len(BASELINE_CHANNELS) * 2
+    assert scoped_conversions == len(BASELINE_CHANNELS)
+
+
+@pytest.mark.asyncio
+async def test_b14_p3_runtime_bounded_telemetry_allowlist_is_sufficient_for_baseline():
+    await _require_b14_p3_schema()
+    original_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = True
+    tenant_id = uuid4()
+    now = datetime.now(timezone.utc)
+    window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
+    window_end = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
+    session_a = uuid4()
+    event_a = uuid4()
+
+    try:
+        async with engine.begin() as conn:
+            await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+        await _seed_active_session(tenant_id=tenant_id, session_id=session_a, issued_by="b14_p3_runtime")
+        await _seed_event(
+            tenant_id=tenant_id,
+            event_id=event_a,
+            session_id=session_a,
+            occurred_at=now,
+            revenue_cents=1900,
+            external_event_id=f"telemetry-ok-{uuid4().hex[:8]}",
+            campaign_id="cmp-telemetry",
+            idempotency_key=f"b14_p3_telemetry_ok_{uuid4()}",
+            channel="direct",
+            utm_source="stripe",
+            utm_medium="checkout",
+        )
+
+        result = _enqueue_recompute(
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            session_id=session_a,
+        )
+        assert result["status"] == "succeeded"
+        assert await _allocation_count_for_event(tenant_id=tenant_id, event_id=event_a) == len(BASELINE_CHANNELS)
+        assert await _allocated_sum_for_event(tenant_id=tenant_id, event_id=event_a) == 1900
+    finally:
+        celery_app.conf.task_always_eager = original_eager
+
+
+@pytest.mark.asyncio
+async def test_b14_p3_runtime_forbidden_proxy_identifier_payload_fails_closed():
+    await _require_b14_p3_schema()
+    original_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = True
+    tenant_id = uuid4()
+    now = datetime.now(timezone.utc)
+    window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
+    window_end = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
+    session_a = uuid4()
+    idempotency_key = f"b14_p3_telemetry_bad_{uuid4()}"
+    external_event_id = f"telemetry-bad-{uuid4().hex[:8]}"
+
+    try:
+        async with engine.begin() as conn:
+            await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+        await _seed_active_session(tenant_id=tenant_id, session_id=session_a, issued_by="b14_p3_runtime")
+        ingress_result = await ingest_with_transaction(
+            tenant_id=tenant_id,
+            event_data={
+                "event_type": "purchase",
+                "event_timestamp": _iso(now),
+                "revenue_amount": "11.00",
+                "currency": "USD",
+                "session_id": str(session_a),
+                "vendor": "stripe",
+                "utm_source": "stripe",
+                "utm_medium": "checkout",
+                "external_event_id": external_event_id,
+                "campaign_id": "cmp-telemetry",
+                "channel": "direct",
+                "gclid": "forbidden-click-proxy",
+            },
+            idempotency_key=idempotency_key,
+            source="stripe",
+            identity_payload={
+                "event_type": "purchase",
+                "event_timestamp": _iso(now),
+                "gclid": "forbidden-click-proxy",
+                "session_id": str(session_a),
+            },
+            request_headers={},
+        )
+        assert ingress_result["status"] == "success"
+
+        async with engine.begin() as conn:
+            await set_tenant_guc(conn, tenant_id, local=True)
+            payload = await conn.scalar(
+                text(
+                    """
+                    SELECT raw_payload
+                    FROM attribution_events
+                    WHERE tenant_id = :tenant_id
+                      AND idempotency_key = :idempotency_key
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "idempotency_key": idempotency_key,
+                },
+            )
+        assert isinstance(payload, dict)
+        assert "gclid" not in payload
+
+        result = _enqueue_recompute(
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            session_id=session_a,
+        )
+        assert result["status"] == "succeeded"
+        assert result["event_count"] == 1
+        assert result["allocation_count"] == len(BASELINE_CHANNELS)
+    finally:
+        celery_app.conf.task_always_eager = original_eager
+
+
+@pytest.mark.asyncio
+async def test_b14_p3_runtime_stripe_v2_recompute_coverage_and_session_hint_continuity(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    await _require_b14_p3_schema()
+    tenant_id = uuid4()
+    session_hint = uuid4()
+    created_epoch = int(datetime.now(timezone.utc).timestamp())
+    idempotency_key = f"b14_p3_stripe_v2_{uuid4().hex[:12]}"
+    scheduled_calls: list[dict[str, object]] = []
+
+    async def _stripe_auth_override() -> dict[str, UUID]:
+        return {"tenant_id": tenant_id}
+
+    def _schedule_spy(**kwargs) -> None:
+        scheduled_calls.append(kwargs)
+
+    app.dependency_overrides[webhooks_api.stripe_webhook_auth] = _stripe_auth_override
+    monkeypatch.setattr(webhooks_api, "_schedule_downstream_tasks", _schedule_spy)
+    try:
+        async with engine.begin() as conn:
+            await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+        await _seed_active_session(
+            tenant_id=tenant_id,
+            session_id=session_hint,
+            issued_by="b14_p3_runtime",
+        )
+
+        payload = {
+            "id": f"evt_{uuid4().hex[:10]}",
+            "created": created_epoch,
+            "data": {
+                "object": {
+                    "id": f"pi_{uuid4().hex[:10]}",
+                    "amount": 1234,
+                    "currency": "usd",
+                    "metadata": {
+                        "session_id": str(session_hint),
+                        "utm_source": "stripe",
+                        "utm_medium": "checkout",
+                    },
+                }
+            },
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/webhooks/stripe/payment_intent/succeeded",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Idempotency-Key": idempotency_key,
+                },
+                content=json.dumps(payload).encode("utf-8"),
+            )
+        assert response.status_code == 200, response.text
+        assert response.json().get("status") == "success"
+
+        async with engine.begin() as conn:
+            await set_tenant_guc(conn, tenant_id, local=True)
+            row = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT session_id::text
+                        FROM attribution_events
+                        WHERE tenant_id = :tenant_id
+                          AND idempotency_key = :idempotency_key
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "idempotency_key": idempotency_key,
+                    },
+                )
+            ).first()
+        assert row is not None
+        assert row[0] == str(session_hint)
+        assert len(scheduled_calls) == 1
+        assert scheduled_calls[0]["tenant_id"] == tenant_id
+        assert scheduled_calls[0]["session_id"] == str(session_hint)
+    finally:
+        app.dependency_overrides.pop(webhooks_api.stripe_webhook_auth, None)
