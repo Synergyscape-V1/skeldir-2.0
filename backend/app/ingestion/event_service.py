@@ -8,6 +8,7 @@ B0.4.4 Enhancement: Integrated DLQHandler with error classification and retry lo
 """
 
 import logging
+import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import time
@@ -59,6 +60,10 @@ def _first_non_empty_resolution_token(*values: Any) -> str | None:
         if token:
             return token
     return None
+
+
+def _lookup_hash_for_selector(value: str) -> str:
+    return hashlib.sha256(value.strip().encode("utf-8")).hexdigest()
 
 
 def _normalized_request_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
@@ -350,6 +355,7 @@ class EventIngestionService:
                 tenant_id=tenant_id,
                 event_id=event.id,
                 payload_json=boundary.sanitized_payload,
+                lookup_hash=_lookup_hash_for_selector(idempotency_key),
                 ip_address=_first_header_value(
                     normalized_headers,
                     ("x-forwarded-for", "x-real-ip"),

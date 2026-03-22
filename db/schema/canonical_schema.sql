@@ -273,6 +273,15 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.fn_compliance_audit_ledger_append_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            RAISE EXCEPTION
+                'compliance_audit_ledger is append-only; UPDATE and DELETE are forbidden';
+        END;
+        $$;
+
 CREATE FUNCTION public.fn_detect_pii_keys(payload jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
     AS $_$
@@ -903,6 +912,24 @@ CREATE TABLE public.channel_taxonomy (
     CONSTRAINT channel_taxonomy_state_check CHECK (((state)::text = ANY ((ARRAY['draft'::character varying, 'active'::character varying, 'deprecated'::character varying, 'archived'::character varying])::text[])))
 );
 
+CREATE TABLE public.compliance_audit_ledger (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    audit_event_type character varying(64) NOT NULL,
+    correlation_id uuid,
+    idempotency_key character varying(255) NOT NULL,
+    selector jsonb DEFAULT '{}'::jsonb NOT NULL,
+    selector_hash character(64) NOT NULL,
+    effects jsonb DEFAULT '{}'::jsonb NOT NULL,
+    evidence_hash character(64) NOT NULL,
+    actor character varying(64) DEFAULT 'privacy_worker'::character varying NOT NULL
+);
+
+ALTER TABLE ONLY public.compliance_audit_ledger FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.dead_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -922,6 +949,7 @@ CREATE TABLE public.dead_events (
     remediation_status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
     remediation_notes text,
     resolved_at timestamp with time zone,
+    idempotency_key character varying(255),
     CONSTRAINT ck_dead_events_remediation_status_valid CHECK (((remediation_status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying, 'resolved'::character varying, 'abandoned'::character varying])::text[]))),
     CONSTRAINT ck_dead_events_retry_count_positive CHECK ((retry_count >= 0))
 );
@@ -939,7 +967,8 @@ CREATE TABLE public.dead_events_quarantine (
     error_detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     correlation_id uuid,
     ingested_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_by_role text DEFAULT CURRENT_USER NOT NULL
+    created_by_role text DEFAULT CURRENT_USER NOT NULL,
+    idempotency_key character varying(255)
 );
 
 ALTER TABLE ONLY public.dead_events_quarantine FORCE ROW LEVEL SECURITY;
@@ -1544,7 +1573,9 @@ CREATE TABLE public.raw_event_payloads (
     user_agent character varying(1024),
     raw_headers jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    lookup_hash character varying(64) NOT NULL,
+    CONSTRAINT ck_raw_event_payloads_lookup_hash_sha256 CHECK ((char_length((lookup_hash)::text) = 64))
 );
 
 ALTER TABLE ONLY public.raw_event_payloads FORCE ROW LEVEL SECURITY;
@@ -1767,6 +1798,9 @@ ALTER TABLE ONLY public.channel_state_transitions
 ALTER TABLE ONLY public.channel_taxonomy
     ADD CONSTRAINT channel_taxonomy_pkey PRIMARY KEY (code);
 
+ALTER TABLE ONLY public.compliance_audit_ledger
+    ADD CONSTRAINT compliance_audit_ledger_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_pkey PRIMARY KEY (id);
 
@@ -1908,6 +1942,9 @@ ALTER TABLE ONLY public.tenants
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT uq_attribution_events_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
 
+ALTER TABLE ONLY public.compliance_audit_ledger
+    ADD CONSTRAINT uq_compliance_audit_ledger_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
+
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT uq_ephemeral_click_resolution_tenant_click UNIQUE (tenant_id, click_id);
 
@@ -1997,15 +2034,23 @@ CREATE INDEX idx_channel_state_transitions_channel_changed_at ON public.channel_
 
 CREATE INDEX idx_channel_state_transitions_to_state_changed_at ON public.channel_state_transitions USING btree (to_state, changed_at DESC);
 
+CREATE INDEX idx_compliance_audit_ledger_tenant_correlation ON public.compliance_audit_ledger USING btree (tenant_id, correlation_id);
+
+CREATE INDEX idx_compliance_audit_ledger_tenant_created ON public.compliance_audit_ledger USING btree (tenant_id, created_at DESC);
+
 CREATE INDEX idx_dead_events_error_code ON public.dead_events USING btree (error_code);
 
 CREATE INDEX idx_dead_events_quarantine_null_lane ON public.dead_events_quarantine USING btree (ingested_at DESC) WHERE (tenant_id IS NULL);
+
+CREATE INDEX idx_dead_events_quarantine_tenant_idempotency_key ON public.dead_events_quarantine USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
 CREATE INDEX idx_dead_events_quarantine_tenant_ingested_at ON public.dead_events_quarantine USING btree (tenant_id, ingested_at DESC);
 
 CREATE INDEX idx_dead_events_remediation ON public.dead_events USING btree (remediation_status, ingested_at DESC);
 
 CREATE INDEX idx_dead_events_source ON public.dead_events USING btree (source);
+
+CREATE INDEX idx_dead_events_tenant_idempotency_key ON public.dead_events USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
 CREATE INDEX idx_dead_events_tenant_ingested_at ON public.dead_events USING btree (tenant_id, ingested_at DESC);
 
@@ -2105,7 +2150,11 @@ CREATE INDEX idx_r4_task_attempts_tenant_task ON public.r4_task_attempts USING b
 
 CREATE INDEX idx_raw_event_payloads_event_id ON public.raw_event_payloads USING btree (event_id);
 
+CREATE INDEX idx_raw_event_payloads_payload_json_gin ON public.raw_event_payloads USING gin (payload_json jsonb_path_ops);
+
 CREATE INDEX idx_raw_event_payloads_tenant_created ON public.raw_event_payloads USING btree (tenant_id, created_at DESC);
+
+CREATE INDEX idx_raw_event_payloads_tenant_lookup_hash ON public.raw_event_payloads USING btree (tenant_id, lookup_hash);
 
 CREATE INDEX idx_reconciliation_runs_state ON public.reconciliation_runs USING btree (state);
 
@@ -2199,6 +2248,8 @@ CREATE TRIGGER trg_check_allocation_sum_delete AFTER DELETE ON public.attributio
 
 CREATE TRIGGER trg_check_allocation_sum_update AFTER UPDATE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_update();
 
+CREATE TRIGGER trg_compliance_audit_ledger_append_only BEFORE DELETE OR UPDATE ON public.compliance_audit_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_compliance_audit_ledger_append_only();
+
 CREATE TRIGGER trg_events_prevent_mutation BEFORE DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_events_prevent_mutation();
 
 CREATE TRIGGER trg_guard_attribution_events_payload_identity BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_guard_attribution_events_payload_identity();
@@ -2250,6 +2301,9 @@ ALTER TABLE ONLY public.channel_assignment_corrections
 
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_channel_code_fkey FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.compliance_audit_ledger
+    ADD CONSTRAINT compliance_audit_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
@@ -2404,6 +2458,8 @@ ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.compliance_audit_ledger ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.dead_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
@@ -2446,7 +2502,7 @@ ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
 
@@ -2482,7 +2538,7 @@ CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = 
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -2534,15 +2590,17 @@ CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user U
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy_ephemeral_click_resolution ON public.ephemeral_click_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_ephemeral_order_resolution ON public.ephemeral_order_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_payloads USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 

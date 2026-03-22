@@ -137,6 +137,13 @@ VALID_TRANSITIONS = {
 }
 
 
+def _normalize_idempotency_key(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 def classify_error(error: Exception) -> tuple[ErrorType, ErrorClassification]:
     """
     Classify exception into error type and retriability.
@@ -277,6 +284,9 @@ class DLQHandler:
             tenant_id=tenant_id,
             source=source,
             raw_payload=boundary.sanitized_payload,
+            idempotency_key=_normalize_idempotency_key(
+                boundary.sanitized_payload.get("idempotency_key") or correlation_id
+            ),
             correlation_id=correlation_uuid,
             error_type=error_type.value,
             error_code=type(error).__name__,
@@ -497,6 +507,9 @@ async def route_unresolved_tenant_to_quarantine(
     )
 
     async with engine.begin() as conn:
+        idempotency_key = _normalize_idempotency_key(
+            boundary.sanitized_payload.get("idempotency_key") or correlation_id
+        )
         await conn.execute(
             text(
                 """
@@ -504,6 +517,7 @@ async def route_unresolved_tenant_to_quarantine(
                 (
                     tenant_id,
                     source,
+                    idempotency_key,
                     raw_payload,
                     error_type,
                     error_code,
@@ -515,6 +529,7 @@ async def route_unresolved_tenant_to_quarantine(
                 (
                     NULL,
                     :source,
+                    :idempotency_key,
                     CAST(:raw_payload AS jsonb),
                     :error_type,
                     :error_code,
@@ -526,6 +541,7 @@ async def route_unresolved_tenant_to_quarantine(
             ),
             {
                 "source": source,
+                "idempotency_key": idempotency_key,
                 "raw_payload": json.dumps(boundary.sanitized_payload),
                 "error_type": error_type,
                 "error_code": "UNRESOLVED_TENANT",

@@ -65,6 +65,7 @@ class DeadEvent(Base):
     raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     # Event Correlation
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     correlation_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     external_event_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

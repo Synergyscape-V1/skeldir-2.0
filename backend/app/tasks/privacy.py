@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, Optional
 from uuid import UUID, uuid4
 
@@ -50,7 +51,7 @@ def _selector_where_clause_for_dead_events(selector: Dict[str, str]) -> tuple[st
     predicates: list[str] = []
     params: Dict[str, str] = {}
     if "idempotency_key" in selector:
-        predicates.append("raw_payload->>'idempotency_key' = :idempotency_key")
+        predicates.append("idempotency_key = :idempotency_key")
         params["idempotency_key"] = selector["idempotency_key"]
     if "correlation_id" in selector:
         predicates.append("correlation_id = :correlation_id::uuid")
@@ -60,26 +61,9 @@ def _selector_where_clause_for_dead_events(selector: Dict[str, str]) -> tuple[st
     return "(" + " OR ".join(predicates) + ")", params
 
 
-def _build_privacy_tombstone_payload(
-    *,
-    idempotency_key: str,
-    occurred_at: datetime,
-    selector: Dict[str, str],
-    effects: Dict[str, int],
-) -> dict[str, object]:
-    return {
-        "event_type": "privacy_tombstone",
-        "event_timestamp": occurred_at.isoformat(),
-        "vendor": "privacy",
-        "utm_source": "privacy",
-        "utm_medium": "deletion",
-        "external_event_id": f"privacy-tombstone:{idempotency_key}",
-        "campaign_id": "privacy_tombstone",
-        "idempotency_key": idempotency_key,
-        "channel": "direct",
-        "selector": selector,
-        "effects": effects,
-    }
+def _stable_hash(payload: dict[str, object]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 async def _erase_tenant_privacy_surfaces(
@@ -92,28 +76,26 @@ async def _erase_tenant_privacy_surfaces(
     dead_events_where_sql, dead_events_params = _selector_where_clause_for_dead_events(selector)
     selector_with_tenant = {"tenant_id": str(tenant_id), **events_params}
     occurred_at = datetime.now(timezone.utc)
-    tombstone_idempotency = f"privacy-tombstone-{uuid4()}"
+    audit_idempotency = f"privacy-erasure-{uuid4()}"
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
+
         deleted_raw_event_payloads = (
             await conn.execute(
                 text(
                     f"""
-                    WITH target_events AS (
-                        SELECT id
-                        FROM attribution_events
-                        WHERE tenant_id = :tenant_id
-                          AND {events_where_sql}
-                    )
                     DELETE FROM raw_event_payloads rep
-                    USING target_events te
+                    USING attribution_events e
                     WHERE rep.tenant_id = :tenant_id
-                      AND rep.event_id = te.id
+                      AND rep.event_id = e.id
+                      AND e.tenant_id = :tenant_id
+                      AND {events_where_sql}
                     """
                 ),
                 selector_with_tenant,
             )
         ).rowcount or 0
+
         target_sessions = (
             await conn.execute(
                 text(
@@ -127,21 +109,26 @@ async def _erase_tenant_privacy_surfaces(
                 selector_with_tenant,
             )
         ).scalars().all()
-        deleted_session_authority = 0
+
+        invalidated_session_authority = 0
         if target_sessions:
-            # This FK is DEFERRABLE INITIALLY DEFERRED in P4 migration.
-            await conn.execute(
-                text(
-                    """
-                    SET CONSTRAINTS fk_attribution_events_session_authority DEFERRED
-                    """
-                )
-            )
-            deleted_session_authority = (
+            invalidated_session_authority = (
                 await conn.execute(
                     text(
                         """
-                        DELETE FROM session_authority
+                        UPDATE session_authority
+                        SET
+                            invalidated_at = GREATEST(
+                                COALESCE(invalidated_at, :occurred_at),
+                                issued_at
+                            ),
+                            invalidation_reason = 'privacy_erasure',
+                            issued_by = 'privacy_erasure',
+                            expires_at = GREATEST(
+                                issued_at + interval '1 second',
+                                LEAST(expires_at, :occurred_at)
+                            ),
+                            updated_at = :occurred_at
                         WHERE tenant_id = :tenant_id
                           AND session_id = ANY(CAST(:session_ids AS uuid[]))
                         """
@@ -149,60 +136,11 @@ async def _erase_tenant_privacy_surfaces(
                     {
                         "tenant_id": str(tenant_id),
                         "session_ids": [str(value) for value in target_sessions],
+                        "occurred_at": occurred_at,
                     },
                 )
             ).rowcount or 0
-            # Reinsert invalidated placeholders with identical (tenant_id, session_id)
-            # so immutable ledger rows remain referentially valid while live authority
-            # capability is erased deterministically.
-            await conn.execute(
-                text(
-                    """
-                    INSERT INTO session_authority
-                    (
-                        tenant_id,
-                        session_id,
-                        issued_at,
-                        expires_at,
-                        last_seen_at,
-                        invalidated_at,
-                        invalidation_reason,
-                        issued_by,
-                        created_at,
-                        updated_at
-                    )
-                    SELECT
-                        :tenant_id,
-                        sid,
-                        :issued_at,
-                        :expires_at,
-                        :last_seen_at,
-                        :invalidated_at,
-                        'privacy_erasure_tombstone',
-                        'privacy_erasure_tombstone',
-                        :created_at,
-                        :updated_at
-                    FROM unnest(CAST(:session_ids AS uuid[])) AS sid
-                    ON CONFLICT (tenant_id, session_id)
-                    DO UPDATE SET
-                        invalidated_at = EXCLUDED.invalidated_at,
-                        invalidation_reason = EXCLUDED.invalidation_reason,
-                        issued_by = EXCLUDED.issued_by,
-                        expires_at = EXCLUDED.expires_at,
-                        updated_at = EXCLUDED.updated_at
-                    """
-                ),
-                {
-                    "tenant_id": str(tenant_id),
-                    "session_ids": [str(value) for value in target_sessions],
-                    "issued_at": occurred_at - timedelta(minutes=1),
-                    "expires_at": occurred_at + timedelta(minutes=1),
-                    "last_seen_at": occurred_at - timedelta(minutes=1),
-                    "invalidated_at": occurred_at,
-                    "created_at": occurred_at,
-                    "updated_at": occurred_at,
-                },
-            )
+
         dead_events_redacted = (
             await conn.execute(
                 text(
@@ -210,12 +148,14 @@ async def _erase_tenant_privacy_surfaces(
                     UPDATE dead_events
                     SET raw_payload = '{{}}'::jsonb,
                         error_detail = '{{}}'::jsonb
-                    WHERE {dead_events_where_sql}
+                    WHERE tenant_id = :tenant_id
+                      AND {dead_events_where_sql}
                     """
                 ),
-                dead_events_params,
+                {"tenant_id": str(tenant_id), **dead_events_params},
             )
         ).rowcount or 0
+
         quarantine_redacted = (
             await conn.execute(
                 text(
@@ -230,42 +170,41 @@ async def _erase_tenant_privacy_surfaces(
                 {"tenant_id": str(tenant_id), **dead_events_params},
             )
         ).rowcount or 0
-        tombstone_payload = _build_privacy_tombstone_payload(
-            idempotency_key=tombstone_idempotency,
-            occurred_at=occurred_at,
-            selector=selector,
-            effects={
-                "raw_event_payloads_deleted": int(deleted_raw_event_payloads),
-                "session_authority_deleted": int(deleted_session_authority),
-                "dead_events_redacted": int(dead_events_redacted),
-                "dead_events_quarantine_redacted": int(quarantine_redacted),
-            },
+
+        audit_selector_hash = _stable_hash({"selector": selector})
+        effects = {
+            "raw_event_payloads_deleted": int(deleted_raw_event_payloads),
+            "session_authority_invalidated": int(invalidated_session_authority),
+            "dead_events_redacted": int(dead_events_redacted),
+            "dead_events_quarantine_redacted": int(quarantine_redacted),
+        }
+        evidence_hash = _stable_hash(
+            {
+                "tenant_id": str(tenant_id),
+                "correlation_id": str(correlation_id),
+                "selector_hash": audit_selector_hash,
+                "effects": effects,
+                "occurred_at": occurred_at.isoformat(),
+            }
         )
         await conn.execute(
             text(
                 """
-                INSERT INTO attribution_events
+                INSERT INTO compliance_audit_ledger
                 (
                     id,
                     tenant_id,
                     created_at,
                     updated_at,
                     occurred_at,
-                    external_event_id,
+                    audit_event_type,
                     correlation_id,
-                    session_id,
-                    revenue_cents,
-                    raw_payload,
                     idempotency_key,
-                    event_type,
-                    channel,
-                    campaign_id,
-                    conversion_value_cents,
-                    currency,
-                    event_timestamp,
-                    processed_at,
-                    processing_status,
-                    retry_count
+                    selector,
+                    selector_hash,
+                    effects,
+                    evidence_hash,
+                    actor
                 )
                 VALUES
                 (
@@ -274,21 +213,14 @@ async def _erase_tenant_privacy_surfaces(
                     :created_at,
                     :updated_at,
                     :occurred_at,
-                    :external_event_id,
+                    'privacy_erasure',
                     :correlation_id,
-                    :session_id,
-                    0,
-                    CAST(:raw_payload AS jsonb),
                     :idempotency_key,
-                    'privacy_tombstone',
-                    'direct',
-                    'privacy_tombstone',
-                    0,
-                    'USD',
-                    :event_timestamp,
-                    :processed_at,
-                    'processed',
-                    0
+                    CAST(:selector AS jsonb),
+                    :selector_hash,
+                    CAST(:effects AS jsonb),
+                    :evidence_hash,
+                    'privacy_worker'
                 )
                 """
             ),
@@ -298,21 +230,21 @@ async def _erase_tenant_privacy_surfaces(
                 "created_at": occurred_at,
                 "updated_at": occurred_at,
                 "occurred_at": occurred_at,
-                "external_event_id": f"privacy_tombstone:{uuid4()}",
                 "correlation_id": str(correlation_id),
-                "session_id": str(uuid4()),
-                "raw_payload": json.dumps(tombstone_payload),
-                "idempotency_key": tombstone_idempotency,
-                "event_timestamp": occurred_at,
-                "processed_at": occurred_at,
+                "idempotency_key": audit_idempotency,
+                "selector": json.dumps(selector),
+                "selector_hash": audit_selector_hash,
+                "effects": json.dumps(effects),
+                "evidence_hash": evidence_hash,
             },
         )
+
     return {
         "raw_event_payloads_deleted": deleted_raw_event_payloads,
-        "session_authority_deleted": deleted_session_authority,
+        "session_authority_invalidated": invalidated_session_authority,
         "dead_events_redacted": dead_events_redacted,
         "dead_events_quarantine_redacted": quarantine_redacted,
-        "privacy_tombstones_inserted": 1,
+        "privacy_audit_artifacts_inserted": 1,
     }
 
 

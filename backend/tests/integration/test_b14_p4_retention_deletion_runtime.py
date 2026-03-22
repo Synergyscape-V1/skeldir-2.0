@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -39,8 +40,11 @@ async def _require_b14_p4_schema() -> None:
         has_session_authority = await conn.scalar(
             text("SELECT to_regclass('public.session_authority')")
         )
-    if not has_raw_event_payloads or not has_session_authority:
-        pytest.skip("B1.4-P4 runtime proofs require alembic head schema with raw_event_payloads")
+        has_compliance_audit_ledger = await conn.scalar(
+            text("SELECT to_regclass('public.compliance_audit_ledger')")
+        )
+    if not has_raw_event_payloads or not has_session_authority or not has_compliance_audit_ledger:
+        pytest.skip("B1.4-P4 runtime proofs require alembic head schema with corrected P4 surfaces")
 
 
 def _auth_context_for_tenant(tenant_id: UUID) -> AuthContext:
@@ -111,7 +115,7 @@ async def test_b14_p4_runtime_schema_split_writes_raw_payloads_without_mutating_
             await conn.execute(
                 text(
                     """
-                    SELECT payload_json, user_agent, raw_headers
+                    SELECT payload_json, user_agent, raw_headers, lookup_hash
                     FROM raw_event_payloads
                     WHERE tenant_id = :tenant_id
                       AND event_id = :event_id
@@ -131,6 +135,9 @@ async def test_b14_p4_runtime_schema_split_writes_raw_payloads_without_mutating_
     assert "order_id" not in immutable_payload
     assert expirable_payload.get("order_id") is not None
     assert payload_row["user_agent"] == "b14-p4-runtime-agent"
+    assert payload_row["lookup_hash"] == hashlib.sha256(
+        idempotency_key.encode("utf-8")
+    ).hexdigest()
 
 
 @pytest.mark.asyncio
@@ -205,7 +212,7 @@ async def test_b14_p4_runtime_90_day_gc_deletes_raw_payloads_without_touching_at
 
 
 @pytest.mark.asyncio
-async def test_b14_p4_runtime_deterministic_delete_wipes_payloads_and_session_authority_and_emits_tombstone():
+async def test_b14_p4_runtime_deterministic_delete_wipes_payloads_and_invalidates_session_authority_and_emits_compliance_audit_artifact():
     await _require_b14_p4_schema()
     tenant_id = uuid4()
     now = datetime.now(timezone.utc)
@@ -245,8 +252,8 @@ async def test_b14_p4_runtime_deterministic_delete_wipes_payloads_and_session_au
         correlation_id=correlation_id,
     )
     assert delete_result["raw_event_payloads_deleted"] >= 1
-    assert delete_result["session_authority_deleted"] >= 1
-    assert delete_result["privacy_tombstones_inserted"] == 1
+    assert delete_result["session_authority_invalidated"] >= 1
+    assert delete_result["privacy_audit_artifacts_inserted"] == 1
 
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
@@ -296,13 +303,37 @@ async def test_b14_p4_runtime_deterministic_delete_wipes_payloads_and_session_au
                 "session_id": authoritative_session_id,
             },
         )
-        tombstones = await conn.scalar(
+        placeholder_rows = await conn.scalar(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM session_authority
+                WHERE tenant_id = :tenant_id
+                  AND issued_by = 'privacy_erasure_tombstone'
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+            },
+        )
+        ledger_tombstones = await conn.scalar(
             text(
                 """
                 SELECT COUNT(*)
                 FROM attribution_events
                 WHERE tenant_id = :tenant_id
                   AND event_type = 'privacy_tombstone'
+                """
+            ),
+            {"tenant_id": str(tenant_id)},
+        )
+        audit_rows = await conn.scalar(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM compliance_audit_ledger
+                WHERE tenant_id = :tenant_id
+                  AND audit_event_type = 'privacy_erasure'
                   AND correlation_id = :correlation_id
                 """
             ),
@@ -314,7 +345,39 @@ async def test_b14_p4_runtime_deterministic_delete_wipes_payloads_and_session_au
     assert int(remaining_payloads or 0) == 0
     assert int(remaining_active_authority or 0) == 0
     assert int(invalidated_authority or 0) >= 1
-    assert int(tombstones or 0) >= 1
+    assert int(placeholder_rows or 0) == 0
+    assert int(ledger_tombstones or 0) == 0
+    assert int(audit_rows or 0) >= 1
+
+
+@pytest.mark.asyncio
+async def test_b14_p4_runtime_lookup_strategy_is_index_backed():
+    await _require_b14_p4_schema()
+    async with engine.begin() as conn:
+        indexes = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT indexname
+                    FROM pg_indexes
+                    WHERE schemaname = 'public'
+                      AND indexname IN (
+                        'idx_raw_event_payloads_tenant_lookup_hash',
+                        'idx_raw_event_payloads_payload_json_gin',
+                        'idx_dead_events_tenant_idempotency_key',
+                        'idx_dead_events_quarantine_tenant_idempotency_key'
+                      )
+                    ORDER BY indexname
+                    """
+                )
+            )
+        ).scalars().all()
+    assert indexes == [
+        "idx_dead_events_quarantine_tenant_idempotency_key",
+        "idx_dead_events_tenant_idempotency_key",
+        "idx_raw_event_payloads_payload_json_gin",
+        "idx_raw_event_payloads_tenant_lookup_hash",
+    ]
 
 
 @pytest.mark.asyncio
