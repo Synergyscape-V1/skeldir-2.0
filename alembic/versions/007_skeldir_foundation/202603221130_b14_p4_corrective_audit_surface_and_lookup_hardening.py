@@ -252,7 +252,7 @@ def downgrade() -> None:
     op.execute(
         """
         ALTER TABLE public.dead_events_quarantine
-            DROP COLUMN IF EXISTS idempotency_key -- CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
+            DROP COLUMN IF EXISTS idempotency_key -- # CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
         """
     )
 
@@ -272,7 +272,7 @@ def downgrade() -> None:
     op.execute(
         """
         ALTER TABLE public.raw_event_payloads
-            DROP COLUMN IF EXISTS lookup_hash -- CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
+            DROP COLUMN IF EXISTS lookup_hash -- # CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
         """
     )
 
