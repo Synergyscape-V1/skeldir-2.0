@@ -252,12 +252,14 @@ def downgrade() -> None:
     op.execute(
         """
         ALTER TABLE public.dead_events_quarantine
-            DROP COLUMN IF EXISTS idempotency_key
+            DROP COLUMN IF EXISTS idempotency_key -- CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
         """
     )
 
     op.execute("DROP INDEX IF EXISTS public.idx_dead_events_tenant_idempotency_key")
-    op.execute("ALTER TABLE public.dead_events DROP COLUMN IF EXISTS idempotency_key")
+    op.execute(
+        "ALTER TABLE public.dead_events DROP COLUMN IF EXISTS idempotency_key"  # CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
+    )
 
     op.execute("DROP INDEX IF EXISTS public.idx_raw_event_payloads_payload_json_gin")
     op.execute("DROP INDEX IF EXISTS public.idx_raw_event_payloads_tenant_lookup_hash")
@@ -270,7 +272,7 @@ def downgrade() -> None:
     op.execute(
         """
         ALTER TABLE public.raw_event_payloads
-            DROP COLUMN IF EXISTS lookup_hash
+            DROP COLUMN IF EXISTS lookup_hash -- CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
         """
     )
 
@@ -289,4 +291,6 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS public.fn_compliance_audit_ledger_append_only")
     op.execute("DROP INDEX IF EXISTS public.idx_compliance_audit_ledger_tenant_correlation")
     op.execute("DROP INDEX IF EXISTS public.idx_compliance_audit_ledger_tenant_created")
-    op.execute("DROP TABLE IF EXISTS public.compliance_audit_ledger")
+    op.execute(
+        "DROP TABLE IF EXISTS public.compliance_audit_ledger"  # CI:DESTRUCTIVE_OK - rollback path only for B1.4-P4 corrective migration
+    )
