@@ -29,8 +29,10 @@ paths:
       description: |
         Accepts a tenant-scoped deletion selector and queues authority-controlled
         deletion across erasable privacy surfaces (`raw_event_payloads`,
-        `session_authority`) plus immutable privacy tombstone emission in the
-        append-only attribution ledger.
+        dead-letter payload envelopes) plus deterministic session-authority
+        invalidation. An immutable erasure audit artifact is emitted into
+        `compliance_audit_ledger` without mutating the append-only attribution
+        ledger.
       operationId: requestPrivacyDelete
       tags:
         - Privacy

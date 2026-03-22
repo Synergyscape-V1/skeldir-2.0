@@ -32,6 +32,7 @@ class RawEventPayload(Base, TenantMixin):
         nullable=False,
         server_default=text("'{}'::jsonb"),
     )
+    lookup_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     ip_address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     raw_headers: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -63,5 +64,16 @@ class RawEventPayload(Base, TenantMixin):
             "idx_raw_event_payloads_tenant_created",
             "tenant_id",
             "created_at",
+        ),
+        Index(
+            "idx_raw_event_payloads_tenant_lookup_hash",
+            "tenant_id",
+            "lookup_hash",
+        ),
+        Index(
+            "idx_raw_event_payloads_payload_json_gin",
+            "payload_json",
+            postgresql_using="gin",
+            postgresql_ops={"payload_json": "jsonb_path_ops"},
         ),
     )
