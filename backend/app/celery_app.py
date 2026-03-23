@@ -30,7 +30,7 @@ from app.observability.metrics_runtime_config import get_multiproc_dir, get_mult
 from app.observability.multiprocess_shard_pruner import prune_stale_multiproc_shards
 from app.observability.metrics_policy import normalize_task_name
 from app.core.secrets import assert_runtime_secret_contract, get_database_url, get_secret
-from app.security.secret_boundary import redact_text_fragments, sanitize_for_transport
+from app.privacy.output_redaction import redact_output_text, sanitize_output_payload
 from app.observability.celery_task_lifecycle import (
     configure_task_lifecycle_loggers,
     emit_lifecycle_event,
@@ -840,10 +840,10 @@ def _on_task_failure(task_id=None, exception=None, args=None, kwargs=None, einfo
             # B0.5.3.1: Serialize UUIDs to strings before JSON encoding
             serialized_args = _serialize_for_json(args if args else [])
             serialized_kwargs = _serialize_for_json(kwargs if kwargs else {})
-            sanitized_args = sanitize_for_transport(serialized_args)
-            sanitized_kwargs = sanitize_for_transport(serialized_kwargs)
-            sanitized_error_message = redact_text_fragments(str(exception)[:500]) if exception else ""
-            sanitized_traceback = redact_text_fragments(str(einfo)[:2000]) if einfo else None
+            sanitized_args = sanitize_output_payload(serialized_args)
+            sanitized_kwargs = sanitize_output_payload(serialized_kwargs)
+            sanitized_error_message = redact_output_text(str(exception)[:500]) if exception else ""
+            sanitized_traceback = redact_output_text(str(einfo)[:2000]) if einfo else None
 
             cur.execute("""
                 SELECT set_config('app.execution_context', 'worker', true);

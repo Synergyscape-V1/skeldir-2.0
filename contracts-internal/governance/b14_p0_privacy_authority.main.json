@@ -26,7 +26,15 @@
     "ip_hash",
     "identity_hash",
     "cross_session_id",
-    "vendor_payload"
+    "vendor_payload",
+    "session_id",
+    "idempotency_key",
+    "external_event_id",
+    "order_id",
+    "click_id",
+    "gclid",
+    "fbclid",
+    "transaction_id"
   ],
   "event_lifecycle": {
     "durable_store": {
@@ -98,12 +106,14 @@
   "export_contract": {
     "allowed_fields": [
       "tenant_id",
-      "time_window",
+      "generated_at",
+      "date_range",
+      "data",
+      "date",
       "channel",
-      "revenue_cents",
-      "attribution_model",
-      "last_updated",
-      "data_freshness_seconds"
+      "revenue",
+      "conversions",
+      "confidence"
     ],
     "forbidden_fields": [
       "email",
@@ -111,6 +121,12 @@
       "name",
       "address",
       "session_id",
+      "idempotency_key",
+      "external_event_id",
+      "order_id",
+      "click_id",
+      "gclid",
+      "fbclid",
       "device_fingerprint",
       "ip_address",
       "ip_hash"
@@ -126,6 +142,15 @@
       "phone",
       "ip_address",
       "session_id",
+      "idempotency_key",
+      "external_event_id",
+      "order_id",
+      "click_id",
+      "gclid",
+      "fbclid",
+      "user_agent",
+      "raw_payload",
+      "raw_headers",
       "device_fingerprint"
     ]
   }
