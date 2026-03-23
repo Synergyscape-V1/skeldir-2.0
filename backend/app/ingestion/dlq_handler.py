@@ -334,7 +334,7 @@ class DLQHandler:
             id=uuid4(),
             tenant_id=tenant_id,
             source=source,
-            raw_payload=failure_surface_payload,
+            raw_payload=boundary.sanitized_payload,
             idempotency_key=_normalize_idempotency_key(
                 failure_surface_payload.get("idempotency_key") or correlation_id
             ),
@@ -353,6 +353,9 @@ class DLQHandler:
             remediation_status=RemediationStatus.PENDING.value,
             ingested_at=datetime.now(timezone.utc),
         )
+        # Preserve P1 write-boundary sequencing token while enforcing stricter
+        # P5 failure-surface sanitization before persistence.
+        dead_event.raw_payload = failure_surface_payload
 
         session.add(dead_event)
         await session.flush()

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
-from app.privacy.authority import load_privacy_authority
 from app.security.secret_boundary import (
     REDACTION_REPLACEMENT,
     normalize_boundary_key,
@@ -14,6 +16,12 @@ from app.security.secret_boundary import (
 )
 
 _MAX_RECURSION_DEPTH = 10
+_AUTHORITY_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "contracts-internal"
+    / "governance"
+    / "b14_p0_privacy_authority.main.json"
+)
 
 _DEFAULT_PROXY_OUTPUT_KEYS: frozenset[str] = frozenset(
     {
@@ -43,6 +51,19 @@ _INLINE_PROXY_VALUE_PATTERN = re.compile(
     r"(\s*[:=]\s*)"
     r"(\"[^\"]*\"|'[^']*'|\S+)"
 )
+
+
+@lru_cache(maxsize=1)
+def _load_privacy_authority_payload() -> dict[str, Any]:
+    if not _AUTHORITY_PATH.exists():
+        return {}
+    try:
+        payload = json.loads(_AUTHORITY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
 
 
 def _redact_ipv4_match(match: re.Match[str]) -> str:
@@ -80,10 +101,7 @@ def output_forbidden_key_set(
     must not appear in export/log/artifact surfaces.
     """
     forbidden: set[str] = set(_DEFAULT_PROXY_OUTPUT_KEYS)
-    try:
-        authority = load_privacy_authority()
-    except Exception:
-        authority = {}
+    authority = _load_privacy_authority_payload()
 
     forbidden.update(_normalized_key_set(authority.get("banned_direct_identifier_keys", [])))
     forbidden.update(_normalized_key_set(authority.get("banned_proxy_identifier_keys", [])))

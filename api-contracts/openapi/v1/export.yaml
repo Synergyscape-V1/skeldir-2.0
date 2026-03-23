@@ -91,6 +91,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportData'
               example:
+                tenant_id: '7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f'
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
@@ -193,6 +194,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportData'
               example:
+                tenant_id: '7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f'
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
