@@ -163,7 +163,7 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
             },
             idempotency_key=idempotency_a,
             source="stripe",
-            identity_payload={"session_id": provided_session, "order_id": "order-composed-shared"},
+            identity_payload={"session_id": provided_session},
             request_headers={"user-agent": "b14-p7-runtime-agent", "x-real-ip": "198.51.100.45"},
         )
         assert ingest_a["status"] == "success"
@@ -202,11 +202,10 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
                 "utm_medium": "checkout",
                 "external_event_id": "order-composed-shared",
                 "campaign_id": "cmp-p7",
-                "order_id": "order-composed-shared",
             },
             idempotency_key=idempotency_b,
             source="stripe",
-            identity_payload={"session_id": provided_session, "order_id": "order-composed-shared"},
+            identity_payload={"session_id": provided_session},
             request_headers={"user-agent": "b14-p7-runtime-agent"},
         )
         assert ingest_b["status"] == "success"
@@ -256,7 +255,7 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
             },
             idempotency_key=idempotency_c,
             source="stripe",
-            identity_payload={"session_id": canonical_session_a, "order_id": "order-composed-shared"},
+            identity_payload={"session_id": canonical_session_a},
             request_headers={"user-agent": "b14-p7-runtime-agent"},
         )
         assert ingest_c["status"] == "success"
@@ -478,7 +477,7 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
             },
             idempotency_key=neg_a_key,
             source="shopify",
-            identity_payload={"session_id": deterministic_session, "order_id": "order-neg-shared"},
+            identity_payload={"session_id": deterministic_session},
             request_headers={},
         )
         ingress_b = await ingest_with_transaction(
@@ -497,7 +496,7 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
             },
             idempotency_key=neg_b_key,
             source="shopify",
-            identity_payload={"session_id": deterministic_session, "order_id": "order-neg-shared"},
+            identity_payload={"session_id": deterministic_session},
             request_headers={},
         )
         assert ingress_a["status"] == "success"
