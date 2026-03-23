@@ -1319,8 +1319,14 @@ jobs:
           cp artifacts/b14_p7/p7_composed_runtime_report.json artifacts/b14_p7/privacy_bundle/
           cp artifacts/b14_p7/p7_negative_controls_report.json artifacts/b14_p7/privacy_bundle/
           cp artifacts/b14_p7/p7_branch_protection_evidence.json artifacts/b14_p7/privacy_bundle/
-          cp artifacts/b14_p7/p7_required_status_checks_live.json artifacts/b14_p7/privacy_bundle/
-          cp artifacts/b14_p7/p7_branch_protection_live.json artifacts/b14_p7/privacy_bundle/
+          for optional in \
+            artifacts/b14_p7/p7_required_status_checks_live.json \
+            artifacts/b14_p7/p7_branch_protection_live.json
+          do
+            if [ -f "$optional" ]; then
+              cp "$optional" artifacts/b14_p7/privacy_bundle/
+            fi
+          done
           cp artifacts/b14_p7/p7_legal_signoff.json artifacts/b14_p7/privacy_bundle/
           cp artifacts/b14_p7/p7_runtime_logs.txt artifacts/b14_p7/privacy_bundle/
           python scripts/ci/scan_b14_p7_artifacts.py \
