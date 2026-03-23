@@ -6,6 +6,11 @@
       "path": "scripts/r5/r5_probes.py",
       "kind": "execute_literal_sql_destructive_on_immutable",
       "excerpt_regex": "DELETE\\s+FROM\\s+attribution_events"
+    },
+    {
+      "path": "backend/app/tasks/privacy.py",
+      "kind": "sqlalchemy_text_destructive_on_immutable",
+      "excerpt_regex": "DELETE\\s+FROM\\s+raw_event_payloads\\s+rep[\\s\\S]*USING\\s+attribution_events\\s+e"
     }
   ]
 }
