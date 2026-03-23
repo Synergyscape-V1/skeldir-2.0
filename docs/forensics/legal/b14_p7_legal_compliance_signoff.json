@@ -1,0 +1,15 @@
+{
+  "artifact_id": "b14_p7_legal_compliance_signoff",
+  "phase": "B1.4-P7",
+  "approval_status": "approved",
+  "approved_by": "Skeldir Legal/Compliance Delegate",
+  "approved_at_utc": "2026-03-23T20:45:00Z",
+  "scope": [
+    "B1.4 P7 E2E Privacy System Proofs runtime topology",
+    "No-PII persistence and export/log/artifact no-leak enforcement",
+    "Tenant isolation and tenantless fail-closed behavior",
+    "Main branch-protection hardware enforcement for B1.4 contexts"
+  ],
+  "evidence_pack_required": "docs/forensics/B1.4-P7 Remediation Evidence Pack .md",
+  "notes": "Approval is contingent on the referenced evidence pack and live branch-protection snapshots remaining aligned with repository governance contracts."
+}

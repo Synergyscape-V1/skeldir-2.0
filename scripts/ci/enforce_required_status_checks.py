@@ -37,6 +37,13 @@ def _workflow_text() -> str:
     return "\n".join(parts)
 
 
+def _is_main_push(branch: str) -> bool:
+    event_name = (os.environ.get("GITHUB_EVENT_NAME") or "").strip().lower()
+    ref_name = (os.environ.get("GITHUB_REF_NAME") or "").strip()
+    ref = (os.environ.get("GITHUB_REF") or "").strip()
+    return event_name == "push" and (ref_name == branch or ref == f"refs/heads/{branch}")
+
+
 def _context_declared(context: str, workflow_text: str) -> bool:
     if context in workflow_text:
         return True
@@ -79,12 +86,15 @@ def main() -> int:
     exact_match = bool(contract.get("exact_match", False))
     hardware_enforcement = contract.get("hardware_enforcement", {})
     deferred_contexts: list[str] = []
+    hardware_status = ""
     if isinstance(hardware_enforcement, dict):
-        if str(hardware_enforcement.get("status", "")).strip().lower() == "deferred":
+        hardware_status = str(hardware_enforcement.get("status", "")).strip().lower()
+        if hardware_status == "deferred":
             raw_deferred = hardware_enforcement.get("deferred_contexts", [])
             if isinstance(raw_deferred, list):
                 deferred_contexts = [ctx for ctx in raw_deferred if isinstance(ctx, str)]
 
+    require_live_on_main_push = hardware_status == "enforced" and _is_main_push(branch)
     unexpected_deferred = [ctx for ctx in deferred_contexts if ctx not in expected]
     if unexpected_deferred:
         print("required status checks contract invalid: deferred contexts must be part of required_contexts")
@@ -98,6 +108,13 @@ def main() -> int:
         payload = _fetch_required_status_checks(repo=repo, branch=branch, token=token)
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        if require_live_on_main_push:
+            print(
+                "required status checks enforcement failed: "
+                f"live branch-protection required on main push (HTTP {exc.code})"
+            )
+            print(body)
+            return 1
         if exc.code not in {403, 404}:
             print(f"failed to fetch branch protection required checks (HTTP {exc.code}): {body}")
             return 1
@@ -117,6 +134,12 @@ def main() -> int:
         )
         return 0
     except Exception as exc:  # pragma: no cover - defensive runtime path
+        if require_live_on_main_push:
+            print(
+                "required status checks enforcement failed: "
+                f"live branch-protection required on main push: {exc}"
+            )
+            return 1
         print(f"failed to fetch branch protection required checks: {exc}")
         return 1
 

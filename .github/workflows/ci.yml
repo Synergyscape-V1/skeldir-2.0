@@ -67,7 +67,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python scripts/ci/enforce_branch_protection_integrity.py --allow-api-unavailable
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            python scripts/ci/enforce_branch_protection_integrity.py
+          else
+            python scripts/ci/enforce_branch_protection_integrity.py --allow-api-unavailable
+          fi
           python scripts/ci/enforce_branch_protection_integrity.py --run-negative-control
 
   contract-semantic-drift-gate:
@@ -1213,6 +1217,144 @@ jobs:
         with:
           name: b14-p6-runtime-artifacts
           path: artifacts/b14_p6
+          if-no-files-found: error
+
+  b14-p7-e2e-privacy-system-proofs:
+    name: B1.4 P7 E2E Privacy System Proofs
+    runs-on: ubuntu-latest
+    needs:
+      - checkout
+      - validate-contracts
+      - b14-p0-privacy-authority-lock
+      - b14-p1-ingress-contract-sanitization
+      - b14-p2-session-authority-proofs
+      - b14-p3-attribution-locality-proofs
+      - b14-p4-retention-deletion-proofs
+      - b14-p5-export-log-artifact-no-leak
+      - b14-p6-proof-plane-binding
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install B1.4-P7 dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Apply migrations
+        run: |
+          alembic upgrade head
+
+      - name: Execute B1.4-P7 enforcer negative control
+        run: |
+          if python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py --simulate-regression; then
+            echo "expected B1.4-P7 regression simulation to fail"
+            exit 1
+          fi
+
+      - name: Enforce B1.4-P7 structure
+        run: |
+          python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
+
+      - name: Run B1.4-P7 final composed runtime proofs
+        run: |
+          mkdir -p artifacts/b14_p7
+          pytest backend/tests/integration/test_b14_p7_e2e_privacy_system_proofs.py -q -rs --junitxml=artifacts/b14_p7/junit.runtime.xml | tee artifacts/b14_p7/runtime.log
+
+      - name: Capture B1.4-P7 branch-protection evidence
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            python scripts/ci/capture_b14_p7_branch_protection_evidence.py \
+              --output artifacts/b14_p7/p7_branch_protection_evidence.json \
+              --required-status-output artifacts/b14_p7/p7_required_status_checks_live.json \
+              --branch-protection-output artifacts/b14_p7/p7_branch_protection_live.json \
+              --require-live
+          else
+            python scripts/ci/capture_b14_p7_branch_protection_evidence.py \
+              --output artifacts/b14_p7/p7_branch_protection_evidence.json \
+              --required-status-output artifacts/b14_p7/p7_required_status_checks_live.json \
+              --branch-protection-output artifacts/b14_p7/p7_branch_protection_live.json
+          fi
+
+      - name: Attach legal/compliance sign-off artifact
+        run: |
+          cp docs/forensics/legal/b14_p7_legal_compliance_signoff.json artifacts/b14_p7/p7_legal_signoff.json
+
+      - name: Verify B1.4-P7 artifact scanner non-vacuity and no-leak hygiene
+        run: |
+          if python scripts/ci/scan_b14_p7_artifacts.py --simulate-regression; then
+            echo "expected scanner regression simulation to fail"
+            exit 1
+          fi
+          mkdir -p artifacts/b14_p7/privacy_bundle
+          cp artifacts/b14_p7/p7_composed_runtime_report.json artifacts/b14_p7/privacy_bundle/
+          cp artifacts/b14_p7/p7_negative_controls_report.json artifacts/b14_p7/privacy_bundle/
+          cp artifacts/b14_p7/p7_branch_protection_evidence.json artifacts/b14_p7/privacy_bundle/
+          for optional in \
+            artifacts/b14_p7/p7_required_status_checks_live.json \
+            artifacts/b14_p7/p7_branch_protection_live.json
+          do
+            if [ -f "$optional" ]; then
+              cp "$optional" artifacts/b14_p7/privacy_bundle/
+            fi
+          done
+          cp artifacts/b14_p7/p7_legal_signoff.json artifacts/b14_p7/privacy_bundle/
+          cp artifacts/b14_p7/p7_runtime_logs.txt artifacts/b14_p7/privacy_bundle/
+          python scripts/ci/scan_b14_p7_artifacts.py \
+            --artifacts-dir artifacts/b14_p7/privacy_bundle \
+            --canary "p7_artifact_canary@test.invalid" \
+            --report-json artifacts/b14_p7/p7_artifact_scan_report.json
+
+      - name: Verify B1.4-P7 runtime proof execution and artifacts
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py \
+              --require-runtime-execution \
+              --require-live-branch-protection \
+              --junit-xml artifacts/b14_p7/junit.runtime.xml \
+              --artifacts-dir artifacts/b14_p7
+          else
+            python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py \
+              --require-runtime-execution \
+              --junit-xml artifacts/b14_p7/junit.runtime.xml \
+              --artifacts-dir artifacts/b14_p7
+          fi
+
+      - name: Upload B1.4-P7 runtime artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b14-p7-runtime-artifacts
+          path: artifacts/b14_p7
           if-no-files-found: error
   # Contract validation
 

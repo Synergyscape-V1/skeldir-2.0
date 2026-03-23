@@ -1,13 +1,12 @@
 {
   "contract_id": "main.branch_protection.integrity",
-  "contract_version": "1.2.0",
+  "contract_version": "1.3.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
-  "require_live_on_main": false,
+  "require_live_on_main": true,
   "hardware_enforcement": {
-    "status": "deferred",
-    "deferred_to_phase": "B1.4-P7",
-    "blocking_for_p6": false,
+    "status": "enforced",
+    "enforced_at_phase": "B1.4-P7",
     "required_for_p7_closure": true
   },
   "review_policy": {

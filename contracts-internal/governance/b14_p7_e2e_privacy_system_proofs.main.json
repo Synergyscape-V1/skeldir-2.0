@@ -1,0 +1,72 @@
+{
+  "contract_id": "b14.p7.e2e_privacy_system_proofs.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.4-P7",
+  "status": "authoritative",
+  "workflow_file": ".github/workflows/ci.yml",
+  "required_context": "B1.4 P7 E2E Privacy System Proofs",
+  "workflow_trigger_requirements": {
+    "push_branches": [
+      "main"
+    ],
+    "pull_request_branches": [
+      "main"
+    ]
+  },
+  "terminal_invariants": [
+    "pii_stripped_before_storage",
+    "session_expiry_24h_enforced",
+    "cross_session_reconstruction_blocked",
+    "attribution_session_scoped",
+    "raw_events_older_than_90d_expired",
+    "deletion_deterministic",
+    "export_privacy_safe",
+    "log_redaction_effective",
+    "artifact_no_leak_scan_passed",
+    "tenant_isolation_fail_closed"
+  ],
+  "negative_controls": [
+    "bad_ingress_payload_blocked",
+    "cross_session_linkage_attempt_blocked",
+    "stale_event_fixture_expired",
+    "deletion_edge_case_handled",
+    "export_leakage_attempt_blocked",
+    "artifact_canary_detected_in_negative_control",
+    "tenantless_worker_fail_closed",
+    "cross_tenant_access_blocked"
+  ],
+  "required_runtime_artifacts": [
+    "p7_composed_runtime_report.json",
+    "p7_negative_controls_report.json",
+    "p7_branch_protection_evidence.json",
+    "p7_artifact_scan_report.json",
+    "p7_legal_signoff.json",
+    "p7_runtime_logs.txt"
+  ],
+  "required_runtime_tests": [
+    "test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end",
+    "test_b14_p7_negative_controls_and_tenant_fail_closed_guards"
+  ],
+  "legal_signoff": {
+    "required": true,
+    "artifact_path": "docs/forensics/legal/b14_p7_legal_compliance_signoff.json",
+    "approval_status": "approved"
+  },
+  "branch_protection_hardware_enforcement": {
+    "status": "enforced",
+    "required_contexts": [
+      "B1.4 P0 Privacy Authority Lock",
+      "B1.4 P1 Ingress Contract Sanitization",
+      "B1.4 P2 Session Authority Proofs",
+      "B1.4 P3 Attribution Locality Proofs",
+      "B1.4 P4 Retention + Deterministic Deletion Proofs",
+      "B1.4 P5 Export Log Artifact No-Leak",
+      "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
+      "B1.4 P7 E2E Privacy System Proofs"
+    ],
+    "deferred_contexts": [],
+    "enforced_at_phase": "B1.4-P7",
+    "required_for_closure": true,
+    "contract_reference": "contracts-internal/governance/main_branch_protection_integrity.main.json"
+  }
+}

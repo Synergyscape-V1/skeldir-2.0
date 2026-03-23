@@ -306,42 +306,68 @@ def run_enforcement(
                 if dependency and dependency not in needs_list:
                     errors.append(f"p6_job_missing_dependency:{dependency}")
 
-    deferral = proof_plane_contract.get("branch_protection_hardware_enforcement", {})
-    if not isinstance(deferral, dict):
+    branch_protection_binding = proof_plane_contract.get("branch_protection_hardware_enforcement", {})
+    if not isinstance(branch_protection_binding, dict):
         errors.append("proof_plane_contract_missing_branch_protection_hardware_enforcement")
     else:
-        if str(deferral.get("status", "")).strip().lower() != "deferred":
-            errors.append("branch_protection_hardware_enforcement_status_must_be_deferred")
-        if str(deferral.get("deferred_to_phase", "")).strip() != EXPECTED_DEFERRED_PHASE:
-            errors.append(
-                "branch_protection_hardware_enforcement_deferred_phase_mismatch:"
-                f"{deferral.get('deferred_to_phase')}"
-            )
-        if bool(deferral.get("blocking_for_p6", True)):
-            errors.append("branch_protection_hardware_enforcement_blocking_for_p6_must_be_false")
-        if not bool(deferral.get("required_for_p7_closure", False)):
-            errors.append("branch_protection_hardware_enforcement_required_for_p7_closure_must_be_true")
+        binding_status = str(branch_protection_binding.get("status", "")).strip().lower()
+        if binding_status not in {"deferred", "enforced"}:
+            errors.append("branch_protection_hardware_enforcement_status_must_be_deferred_or_enforced")
+        if binding_status == "deferred":
+            if str(branch_protection_binding.get("deferred_to_phase", "")).strip() != EXPECTED_DEFERRED_PHASE:
+                errors.append(
+                    "branch_protection_hardware_enforcement_deferred_phase_mismatch:"
+                    f"{branch_protection_binding.get('deferred_to_phase')}"
+                )
+            if bool(branch_protection_binding.get("blocking_for_p6", True)):
+                errors.append("branch_protection_hardware_enforcement_blocking_for_p6_must_be_false")
+            if not bool(branch_protection_binding.get("required_for_p7_closure", False)):
+                errors.append(
+                    "branch_protection_hardware_enforcement_required_for_p7_closure_must_be_true"
+                )
+        if binding_status == "enforced":
+            deferred_contexts = branch_protection_binding.get("deferred_contexts", [])
+            if isinstance(deferred_contexts, list) and deferred_contexts:
+                errors.append(
+                    "branch_protection_hardware_enforcement_deferred_contexts_must_be_empty_when_enforced"
+                )
+            if "deferred_to_phase" in branch_protection_binding:
+                errors.append(
+                    "branch_protection_hardware_enforcement_deferred_to_phase_must_be_absent_when_enforced"
+                )
 
-    branch_protection_live_required = bool(
-        branch_protection_contract.get("require_live_on_main", True)
-    )
-    if branch_protection_live_required:
-        errors.append(
-            "main_branch_protection_integrity.require_live_on_main must be false while P7 deferral is active"
-        )
-
-    contract_deferral = required_checks.get("hardware_enforcement", {})
-    if not isinstance(contract_deferral, dict):
+    contract_hardware = required_checks.get("hardware_enforcement", {})
+    if not isinstance(contract_hardware, dict):
         errors.append("required_checks_contract_missing_hardware_enforcement")
     else:
-        if str(contract_deferral.get("status", "")).strip().lower() != "deferred":
-            errors.append("required_checks_contract_hardware_enforcement_status_must_be_deferred")
-        if str(contract_deferral.get("deferred_to_phase", "")).strip() != EXPECTED_DEFERRED_PHASE:
-            errors.append("required_checks_contract_hardware_enforcement_deferred_phase_mismatch")
-        deferred_contexts = contract_deferral.get("deferred_contexts", [])
-        if not isinstance(deferred_contexts, list) or EXPECTED_P6_CONTEXT not in deferred_contexts:
+        contract_status = str(contract_hardware.get("status", "")).strip().lower()
+        if contract_status not in {"deferred", "enforced"}:
+            errors.append("required_checks_contract_hardware_enforcement_status_must_be_deferred_or_enforced")
+        if contract_status == "deferred":
+            if str(contract_hardware.get("deferred_to_phase", "")).strip() != EXPECTED_DEFERRED_PHASE:
+                errors.append("required_checks_contract_hardware_enforcement_deferred_phase_mismatch")
+            deferred_contexts = contract_hardware.get("deferred_contexts", [])
+            if not isinstance(deferred_contexts, list) or EXPECTED_P6_CONTEXT not in deferred_contexts:
+                errors.append(
+                    "required_checks_contract_hardware_enforcement_missing_p6_deferred_context"
+                )
+        if contract_status == "enforced":
+            deferred_contexts = contract_hardware.get("deferred_contexts", [])
+            if isinstance(deferred_contexts, list) and deferred_contexts:
+                errors.append("required_checks_contract_deferred_contexts_must_be_empty_when_enforced")
+            if "deferred_to_phase" in contract_hardware:
+                errors.append("required_checks_contract_deferred_to_phase_must_be_absent_when_enforced")
+
+    branch_protection_live_required = bool(branch_protection_contract.get("require_live_on_main", True))
+    if isinstance(branch_protection_binding, dict):
+        binding_status = str(branch_protection_binding.get("status", "")).strip().lower()
+        if binding_status == "deferred" and branch_protection_live_required:
             errors.append(
-                "required_checks_contract_hardware_enforcement_missing_p6_deferred_context"
+                "main_branch_protection_integrity.require_live_on_main must be false while P7 deferral is active"
+            )
+        if binding_status == "enforced" and not branch_protection_live_required:
+            errors.append(
+                "main_branch_protection_integrity.require_live_on_main must be true once hardware enforcement is enabled"
             )
 
     if errors:
