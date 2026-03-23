@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -43,6 +43,22 @@
     "B1.4 P2 Session Authority Proofs",
     "B1.4 P3 Attribution Locality Proofs",
     "B1.4 P4 Retention + Deterministic Deletion Proofs",
-    "B1.4 P5 Export Log Artifact No-Leak"
-  ]
+    "B1.4 P5 Export Log Artifact No-Leak",
+    "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding"
+  ],
+  "hardware_enforcement": {
+    "status": "deferred",
+    "deferred_to_phase": "B1.4-P7",
+    "deferred_contexts": [
+      "B1.4 P1 Ingress Contract Sanitization",
+      "B1.4 P2 Session Authority Proofs",
+      "B1.4 P3 Attribution Locality Proofs",
+      "B1.4 P4 Retention + Deterministic Deletion Proofs",
+      "B1.4 P5 Export Log Artifact No-Leak",
+      "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding"
+    ],
+    "blocking_for_p6": false,
+    "required_for_p7_closure": true,
+    "rationale": "P6 binds workflow/governance/enforcer/artifact topology in-repo while live branch-protection API hardware enforcement is explicitly closed in P7."
+  }
 }
