@@ -135,6 +135,9 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
     async def _auth_override() -> AuthContext:
         return _auth_context_for_tenant(tenant_a)
 
+    async def _auth_override_tenant_b() -> AuthContext:
+        return _auth_context_for_tenant(tenant_b)
+
     app.dependency_overrides[get_auth_context] = _auth_override
     try:
         async with engine.begin() as conn:
@@ -381,19 +384,17 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
         assert "198.51.100.88" not in rendered_log
         assert "111-22-3333" not in rendered_log
 
-        async with engine.begin() as conn:
-            await set_tenant_guc(conn, tenant_b, local=True)
-            cross_tenant_rows = await conn.scalar(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM attribution_events
-                    WHERE tenant_id = :tenant_a
-                    """
-                ),
-                {"tenant_a": str(tenant_a)},
+        app.dependency_overrides[get_auth_context] = _auth_override_tenant_b
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            tenant_b_export_response = await client.get(
+                "/api/export/json",
+                headers={"X-Correlation-ID": str(uuid4())},
             )
-        assert int(cross_tenant_rows or 0) == 0
+        app.dependency_overrides[get_auth_context] = _auth_override
+        assert tenant_b_export_response.status_code == 200, tenant_b_export_response.text
+        tenant_b_export_payload = tenant_b_export_response.json()
+        assert tenant_b_export_payload["tenant_id"] == str(tenant_b)
+        assert tenant_b_export_payload["data"] == []
 
         tenantless_result = recompute_window.apply(
             kwargs={
@@ -624,19 +625,22 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
         with pytest.raises(ValueError, match="authority_envelope header is required"):
             tenantless_result.get(propagate=True)
 
-        async with engine.begin() as conn:
-            await set_tenant_guc(conn, tenant_other, local=True)
-            cross_rows = await conn.scalar(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM attribution_events
-                    WHERE tenant_id = :tenant_id
-                    """
-                ),
-                {"tenant_id": str(tenant_id)},
+        async def _auth_override_other() -> AuthContext:
+            return _auth_context_for_tenant(tenant_other)
+
+        app.dependency_overrides[get_auth_context] = _auth_override_other
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            tenant_other_export_response = await client.get(
+                "/api/export/json",
+                headers={"X-Correlation-ID": str(uuid4())},
             )
-        cross_tenant_blocked = int(cross_rows or 0) == 0
+        app.dependency_overrides.pop(get_auth_context, None)
+        tenant_other_export_payload = tenant_other_export_response.json()
+        cross_tenant_blocked = (
+            tenant_other_export_response.status_code == 200
+            and tenant_other_export_payload.get("tenant_id") == str(tenant_other)
+            and tenant_other_export_payload.get("data") == []
+        )
 
         negative_report = {
             "tenant_id": str(tenant_id),
@@ -659,4 +663,5 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
             ]
         )
     finally:
+        app.dependency_overrides.pop(get_auth_context, None)
         celery_app.conf.task_always_eager = original_eager
