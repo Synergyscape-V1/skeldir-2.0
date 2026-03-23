@@ -1,0 +1,109 @@
+{
+  "contract_id": "b14.p6.privacy_proof_plane.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.4-P6",
+  "status": "authoritative",
+  "workflow_file": ".github/workflows/ci.yml",
+  "workflow_trigger_requirements": {
+    "push_branches": [
+      "main"
+    ],
+    "pull_request_branches": [
+      "main"
+    ]
+  },
+  "proof_jobs": [
+    {
+      "phase": "P0",
+      "job_id": "b14-p0-privacy-authority-lock",
+      "required_context": "B1.4 P0 Privacy Authority Lock",
+      "invariant_surface": "privacy_authority_event_lifecycle",
+      "enforcer_command_token": "python scripts/ci/enforce_b14_p0_privacy_authority.py",
+      "negative_control_command_token": "pytest backend/tests/test_b14_p0_privacy_authority_contract.py -q",
+      "runtime_proof_command_token": "pytest backend/tests/test_b14_p0_event_lifecycle_runtime.py -q",
+      "artifact_dir": "artifacts/b14_p0",
+      "artifact_upload_name": "b14-p0-runtime-artifacts"
+    },
+    {
+      "phase": "P1",
+      "job_id": "b14-p1-ingress-contract-sanitization",
+      "required_context": "B1.4 P1 Ingress Contract Sanitization",
+      "invariant_surface": "ingress_contract_sanitization",
+      "enforcer_command_token": "python scripts/ci/enforce_b14_p1_ingress_privacy.py",
+      "negative_control_command_token": "pytest backend/tests/test_b14_p1_ingress_privacy_enforcer.py -q",
+      "runtime_proof_command_token": "pytest backend/tests/integration/test_b14_p1_ingress_privacy_runtime.py -q -rs",
+      "artifact_dir": "artifacts/b14_p1",
+      "artifact_upload_name": "b14-p1-runtime-artifacts"
+    },
+    {
+      "phase": "P2",
+      "job_id": "b14-p2-session-authority-proofs",
+      "required_context": "B1.4 P2 Session Authority Proofs",
+      "invariant_surface": "session_authority_non_linkability",
+      "enforcer_command_token": "python scripts/ci/enforce_b14_p2_session_authority.py",
+      "negative_control_command_token": "pytest backend/tests/test_b14_p2_session_authority_enforcer.py -q",
+      "runtime_proof_command_token": "pytest backend/tests/integration/test_b14_p2_session_authority_runtime.py -q -rs",
+      "artifact_dir": "artifacts/b14_p2",
+      "artifact_upload_name": "b14-p2-runtime-artifacts"
+    },
+    {
+      "phase": "P3",
+      "job_id": "b14-p3-attribution-locality-proofs",
+      "required_context": "B1.4 P3 Attribution Locality Proofs",
+      "invariant_surface": "attribution_session_locality",
+      "enforcer_command_token": "python scripts/ci/enforce_b14_p3_attribution_locality.py",
+      "negative_control_command_token": "pytest backend/tests/test_b14_p3_attribution_locality_enforcer.py -q",
+      "runtime_proof_command_token": "pytest backend/tests/integration/test_b14_p3_attribution_locality_runtime.py -q -rs",
+      "artifact_dir": "artifacts/b14_p3",
+      "artifact_upload_name": "b14-p3-runtime-artifacts"
+    },
+    {
+      "phase": "P4",
+      "job_id": "b14-p4-retention-deletion-proofs",
+      "required_context": "B1.4 P4 Retention + Deterministic Deletion Proofs",
+      "invariant_surface": "retention_and_deterministic_deletion",
+      "enforcer_command_token": "python scripts/ci/enforce_b14_p4_retention_deletion.py",
+      "negative_control_command_token": "pytest backend/tests/test_b14_p4_retention_deletion_enforcer.py -q",
+      "runtime_proof_command_token": "pytest backend/tests/integration/test_b14_p4_retention_deletion_runtime.py -q -rs",
+      "artifact_dir": "artifacts/b14_p4",
+      "artifact_upload_name": "b14-p4-runtime-artifacts"
+    },
+    {
+      "phase": "P5",
+      "job_id": "b14-p5-export-log-artifact-no-leak",
+      "required_context": "B1.4 P5 Export Log Artifact No-Leak",
+      "invariant_surface": "export_logging_artifact_no_leak",
+      "enforcer_command_token": "python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py",
+      "negative_control_command_token": "pytest backend/tests/test_b14_p5_export_log_artifact_no_leak_enforcer.py -q",
+      "runtime_proof_command_token": "pytest backend/tests/integration/test_b14_p5_export_log_artifact_no_leak_runtime.py -q -rs",
+      "artifact_dir": "artifacts/b14_p5",
+      "artifact_upload_name": "b14-p5-runtime-artifacts"
+    }
+  ],
+  "p6_binding_job": {
+    "job_id": "b14-p6-proof-plane-binding",
+    "required_context": "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
+    "enforcer_command_token": "python scripts/ci/enforce_b14_p6_proof_plane_binding.py --report-json artifacts/b14_p6/proof_plane_report.json",
+    "negative_control_command_token": "python scripts/ci/enforce_b14_p6_proof_plane_binding.py --simulate-regression",
+    "negative_control_assertion_token": "expected B1.4-P6 regression simulation to fail",
+    "test_command_token": "pytest backend/tests/test_b14_p6_proof_plane_binding_enforcer.py -q",
+    "artifact_dir": "artifacts/b14_p6",
+    "artifact_upload_name": "b14-p6-runtime-artifacts"
+  },
+  "branch_protection_hardware_enforcement": {
+    "status": "deferred",
+    "deferred_to_phase": "B1.4-P7",
+    "deferred_contexts": [
+      "B1.4 P1 Ingress Contract Sanitization",
+      "B1.4 P2 Session Authority Proofs",
+      "B1.4 P3 Attribution Locality Proofs",
+      "B1.4 P4 Retention + Deterministic Deletion Proofs",
+      "B1.4 P5 Export Log Artifact No-Leak",
+      "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding"
+    ],
+    "blocking_for_p6": false,
+    "required_for_p7_closure": true,
+    "contract_reference": "contracts-internal/governance/main_branch_protection_integrity.main.json",
+    "rationale": "P6 binds proof-plane topology, non-vacuity, artifacts, and governance in-repo; live branch-protection API hardware enforcement is closed in P7."
+  }
+}

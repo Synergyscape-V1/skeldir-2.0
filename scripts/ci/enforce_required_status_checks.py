@@ -77,6 +77,22 @@ def main() -> int:
     expected = contract.get("required_contexts", [])
     strict_expected = bool(contract.get("strict_required", True))
     exact_match = bool(contract.get("exact_match", False))
+    hardware_enforcement = contract.get("hardware_enforcement", {})
+    deferred_contexts: list[str] = []
+    if isinstance(hardware_enforcement, dict):
+        if str(hardware_enforcement.get("status", "")).strip().lower() == "deferred":
+            raw_deferred = hardware_enforcement.get("deferred_contexts", [])
+            if isinstance(raw_deferred, list):
+                deferred_contexts = [ctx for ctx in raw_deferred if isinstance(ctx, str)]
+
+    unexpected_deferred = [ctx for ctx in deferred_contexts if ctx not in expected]
+    if unexpected_deferred:
+        print("required status checks contract invalid: deferred contexts must be part of required_contexts")
+        for context in unexpected_deferred:
+            print(f"  - {context}")
+        return 1
+
+    expected_for_live = [ctx for ctx in expected if ctx not in deferred_contexts]
 
     try:
         payload = _fetch_required_status_checks(repo=repo, branch=branch, token=token)
@@ -105,8 +121,9 @@ def main() -> int:
         return 1
 
     actual = payload.get("contexts", [])
-    missing = [ctx for ctx in expected if ctx not in actual]
-    extra = [ctx for ctx in actual if ctx not in expected]
+    missing = [ctx for ctx in expected_for_live if ctx not in actual]
+    allowed_actual = set(expected_for_live).union(deferred_contexts)
+    extra = [ctx for ctx in actual if ctx not in allowed_actual]
     strict_actual = bool(payload.get("strict"))
 
     if strict_expected and not strict_actual:
@@ -121,6 +138,12 @@ def main() -> int:
         for context in actual:
             print(f"  - {context}")
         return 1
+
+    deferred_missing_live = [ctx for ctx in deferred_contexts if ctx not in actual]
+    if deferred_missing_live:
+        print("required status checks note: deferred hardware contexts are not yet live-enforced")
+        for context in deferred_missing_live:
+            print(f"  - {context}")
 
     if exact_match and extra:
         print("required status checks enforcement failed: unexpected extra contexts present")
