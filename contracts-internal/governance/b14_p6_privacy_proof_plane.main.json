@@ -1,6 +1,6 @@
 {
   "contract_id": "b14.p6.privacy_proof_plane.main",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "phase": "B1.4-P6",
   "status": "authoritative",
   "workflow_file": ".github/workflows/ci.yml",
@@ -91,19 +91,20 @@
     "artifact_upload_name": "b14-p6-runtime-artifacts"
   },
   "branch_protection_hardware_enforcement": {
-    "status": "deferred",
-    "deferred_to_phase": "B1.4-P7",
-    "deferred_contexts": [
+    "status": "enforced",
+    "required_contexts": [
       "B1.4 P1 Ingress Contract Sanitization",
       "B1.4 P2 Session Authority Proofs",
       "B1.4 P3 Attribution Locality Proofs",
       "B1.4 P4 Retention + Deterministic Deletion Proofs",
       "B1.4 P5 Export Log Artifact No-Leak",
-      "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding"
+      "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
+      "B1.4 P7 E2E Privacy System Proofs"
     ],
-    "blocking_for_p6": false,
+    "deferred_contexts": [],
+    "enforced_at_phase": "B1.4-P7",
     "required_for_p7_closure": true,
     "contract_reference": "contracts-internal/governance/main_branch_protection_integrity.main.json",
-    "rationale": "P6 binds proof-plane topology, non-vacuity, artifacts, and governance in-repo; live branch-protection API hardware enforcement is closed in P7."
+    "rationale": "P7 closes hardware enforcement and promotes full B1.4 proof contexts to live required status checks."
   }
 }

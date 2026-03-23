@@ -1,0 +1,7 @@
+{
+  "artifacts_dir": "artifacts\\b14_p7",
+  "findings": [],
+  "result": "PASS",
+  "scanned_file_count": 4,
+  "scanner": "b14_p7_artifact_scanner"
+}
