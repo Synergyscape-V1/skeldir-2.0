@@ -58,14 +58,14 @@ jobs:
 
       - name: Enforce main branch required status checks
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
           REQUIRED_STATUS_CHECKS_CONTRACT: contracts-internal/governance/b03_phase2_required_status_checks.main.json
         run: |
           python scripts/ci/enforce_required_status_checks.py
 
       - name: Enforce branch protection integrity (approval + admin enforcement)
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
             python scripts/ci/enforce_branch_protection_integrity.py
@@ -193,7 +193,7 @@ jobs:
 
       - name: Enforce B1.3-P0 CODEOWNERS and review governance
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python scripts/ci/enforce_b13_p0_codeowners.py --allow-api-unavailable
@@ -804,7 +804,7 @@ jobs:
 
       - name: Capture B1.3-P11 branch protection evidence
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python scripts/ci/capture_b13_p11_branch_protection_evidence.py \
@@ -1253,7 +1253,7 @@ jobs:
       TESTING: "1"
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       PLATFORM_TOKEN_KEY_ID: test-key
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
