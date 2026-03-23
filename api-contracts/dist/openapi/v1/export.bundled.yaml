@@ -76,6 +76,13 @@ paths:
             items:
               type: string
           description: Filter by specific channels
+        - name: X-Attribution-Session-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional session-local export scope
       responses:
         '200':
           description: Export file
@@ -96,16 +103,26 @@ paths:
               schema:
                 type: object
                 required: &ref_8
+                  - tenant_id
                   - generated_at
                   - date_range
                   - data
+                additionalProperties: false
                 properties: &ref_9
+                  tenant_id:
+                    type: string
+                    format: uuid
+                    description: Tenant scope for this export payload
                   generated_at:
                     type: string
                     format: date-time
                     description: When the export was generated
                   date_range:
                     type: object
+                    required:
+                      - start
+                      - end
+                    additionalProperties: false
                     properties:
                       start:
                         type: string
@@ -117,7 +134,14 @@ paths:
                     type: array
                     items:
                       type: object
-                      properties:
+                      required: &ref_10
+                        - date
+                        - channel
+                        - revenue
+                        - conversions
+                        - confidence
+                      additionalProperties: false
+                      properties: &ref_11
                         date:
                           type: string
                           format: date
@@ -131,21 +155,8 @@ paths:
                         confidence:
                           type: number
                           format: float
-                  summary:
-                    type: object
-                    properties:
-                      total_revenue:
-                        type: number
-                        format: double
-                        minimum: 0
-                      total_conversions:
-                        type: integer
-                      average_confidence:
-                        type: number
-                        format: double
-                        minimum: 0
-                        maximum: 1
               example:
+                tenant_id: 7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
@@ -167,12 +178,12 @@ paths:
                 format: binary
         '400':
           description: Bad Request - validation failed
-          headers: &ref_10
+          headers: &ref_12
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_11
+          content: &ref_13
             application/problem+json:
               schema:
                 type: object
@@ -288,6 +299,13 @@ paths:
           required: true
           schema: *ref_3
           description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Attribution-Session-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional session-local export scope
       responses:
         '200':
           description: CSV file
@@ -337,6 +355,13 @@ paths:
           required: true
           schema: *ref_3
           description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Attribution-Session-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional session-local export scope
       responses:
         '200':
           description: JSON data
@@ -350,8 +375,10 @@ paths:
               schema:
                 type: object
                 required: *ref_8
+                additionalProperties: false
                 properties: *ref_9
               example:
+                tenant_id: 7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
@@ -426,7 +453,13 @@ components:
     ExportData:
       type: object
       required: *ref_8
+      additionalProperties: false
       properties: *ref_9
+    ExportRow:
+      type: object
+      required: *ref_10
+      additionalProperties: false
+      properties: *ref_11
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -459,8 +492,8 @@ components:
   responses:
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_10
-      content: *ref_11
+      headers: *ref_12
+      content: *ref_13
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_4
