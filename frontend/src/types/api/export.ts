@@ -90,33 +90,41 @@ export interface components {
     schemas: {
         ExportData: {
             /**
+             * Format: uuid
+             * @description Tenant scope for this export payload
+             */
+            tenant_id: string;
+            /**
              * Format: date-time
              * @description When the export was generated
              */
             generated_at: string;
             date_range: {
                 /** Format: date */
-                start?: string;
+                start: string;
                 /** Format: date */
-                end?: string;
+                end: string;
             };
             data: {
                 /** Format: date */
-                date?: string;
-                channel?: string;
+                date: string;
+                channel: string;
                 /** Format: float */
-                revenue?: number;
-                conversions?: number;
+                revenue: number;
+                conversions: number;
                 /** Format: float */
-                confidence?: number;
+                confidence: number;
             }[];
-            summary?: {
-                /** Format: double */
-                total_revenue?: number;
-                total_conversions?: number;
-                /** Format: double */
-                average_confidence?: number;
-            };
+        };
+        ExportRow: {
+            /** Format: date */
+            date: string;
+            channel: string;
+            /** Format: float */
+            revenue: number;
+            conversions: number;
+            /** Format: float */
+            confidence: number;
         };
         /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
         ProblemDetails: {
@@ -399,6 +407,8 @@ export interface operations {
                 "X-Correlation-ID": string;
                 /** @description Bearer token for authentication (format - Bearer <token>) */
                 Authorization: string;
+                /** @description Optional session-local export scope */
+                "X-Attribution-Session-ID"?: string;
             };
             path?: never;
             cookie?: never;
@@ -417,6 +427,7 @@ export interface operations {
                     "text/csv": string;
                     /**
                      * @example {
+                     *       "tenant_id": "7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f",
                      *       "generated_at": "2025-11-26T14:30:00Z",
                      *       "date_range": {
                      *         "start": "2025-11-01",
@@ -442,33 +453,31 @@ export interface operations {
                      */
                     "application/json": {
                         /**
+                         * Format: uuid
+                         * @description Tenant scope for this export payload
+                         */
+                        tenant_id: string;
+                        /**
                          * Format: date-time
                          * @description When the export was generated
                          */
                         generated_at: string;
                         date_range: {
                             /** Format: date */
-                            start?: string;
+                            start: string;
                             /** Format: date */
-                            end?: string;
+                            end: string;
                         };
                         data: {
                             /** Format: date */
-                            date?: string;
-                            channel?: string;
+                            date: string;
+                            channel: string;
                             /** Format: float */
-                            revenue?: number;
-                            conversions?: number;
+                            revenue: number;
+                            conversions: number;
                             /** Format: float */
-                            confidence?: number;
+                            confidence: number;
                         }[];
-                        summary?: {
-                            /** Format: double */
-                            total_revenue?: number;
-                            total_conversions?: number;
-                            /** Format: double */
-                            average_confidence?: number;
-                        };
                     };
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
                 };
@@ -676,6 +685,8 @@ export interface operations {
                 "X-Correlation-ID": string;
                 /** @description Bearer token for authentication (format - Bearer <token>) */
                 Authorization: string;
+                /** @description Optional session-local export scope */
+                "X-Attribution-Session-ID"?: string;
             };
             path?: never;
             cookie?: never;
@@ -838,6 +849,8 @@ export interface operations {
                 "X-Correlation-ID": string;
                 /** @description Bearer token for authentication (format - Bearer <token>) */
                 Authorization: string;
+                /** @description Optional session-local export scope */
+                "X-Attribution-Session-ID"?: string;
             };
             path?: never;
             cookie?: never;
@@ -853,6 +866,7 @@ export interface operations {
                 content: {
                     /**
                      * @example {
+                     *       "tenant_id": "7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f",
                      *       "generated_at": "2025-11-26T14:30:00Z",
                      *       "date_range": {
                      *         "start": "2025-11-01",
@@ -878,33 +892,31 @@ export interface operations {
                      */
                     "application/json": {
                         /**
+                         * Format: uuid
+                         * @description Tenant scope for this export payload
+                         */
+                        tenant_id: string;
+                        /**
                          * Format: date-time
                          * @description When the export was generated
                          */
                         generated_at: string;
                         date_range: {
                             /** Format: date */
-                            start?: string;
+                            start: string;
                             /** Format: date */
-                            end?: string;
+                            end: string;
                         };
                         data: {
                             /** Format: date */
-                            date?: string;
-                            channel?: string;
+                            date: string;
+                            channel: string;
                             /** Format: float */
-                            revenue?: number;
-                            conversions?: number;
+                            revenue: number;
+                            conversions: number;
                             /** Format: float */
-                            confidence?: number;
+                            confidence: number;
                         }[];
-                        summary?: {
-                            /** Format: double */
-                            total_revenue?: number;
-                            total_conversions?: number;
-                            /** Format: double */
-                            average_confidence?: number;
-                        };
                     };
                 };
             };

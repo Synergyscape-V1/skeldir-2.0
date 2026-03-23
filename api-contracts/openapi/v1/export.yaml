@@ -64,6 +64,13 @@ paths:
             items:
               type: string
           description: Filter by specific channels
+        - name: X-Attribution-Session-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional session-local export scope
       responses:
         '200':
           description: Export file
@@ -84,6 +91,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportData'
               example:
+                tenant_id: '7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f'
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
@@ -122,6 +130,13 @@ paths:
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: X-Attribution-Session-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional session-local export scope
       responses:
         '200':
           description: CSV file
@@ -159,6 +174,13 @@ paths:
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - name: X-Attribution-Session-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional session-local export scope
       responses:
         '200':
           description: JSON data
@@ -172,6 +194,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportData'
               example:
+                tenant_id: '7d3f241c-0db3-4f5c-9a90-5f5b0e8f3f6f'
                 generated_at: '2025-11-26T14:30:00Z'
                 date_range:
                   start: '2025-11-01'
@@ -231,16 +254,26 @@ components:
     ExportData:
       type: object
       required:
+        - tenant_id
         - generated_at
         - date_range
         - data
+      additionalProperties: false
       properties:
+        tenant_id:
+          type: string
+          format: uuid
+          description: Tenant scope for this export payload
         generated_at:
           type: string
           format: date-time
           description: When the export was generated
         date_range:
           type: object
+          required:
+            - start
+            - end
+          additionalProperties: false
           properties:
             start:
               type: string
@@ -251,35 +284,30 @@ components:
         data:
           type: array
           items:
-            type: object
-            properties:
-              date:
-                type: string
-                format: date
-              channel:
-                type: string
-              revenue:
-                type: number
-                format: float
-              conversions:
-                type: integer
-              confidence:
-                type: number
-                format: float
-        summary:
-          type: object
-          properties:
-            total_revenue:
-              type: number
-              format: double
-              minimum: 0
-            total_conversions:
-              type: integer
-            average_confidence:
-              type: number
-              format: double
-              minimum: 0
-              maximum: 1
+            $ref: '#/components/schemas/ExportRow'
+    ExportRow:
+      type: object
+      required:
+        - date
+        - channel
+        - revenue
+        - conversions
+        - confidence
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+          format: date
+        channel:
+          type: string
+        revenue:
+          type: number
+          format: float
+        conversions:
+          type: integer
+        confidence:
+          type: number
+          format: float
 
   securitySchemes:
     accessBearerAuth:

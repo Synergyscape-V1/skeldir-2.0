@@ -21,6 +21,11 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
 from app.observability.context import log_context
 from app.observability.api_metrics import events_dlq_total
+from app.privacy.output_redaction import (
+    output_forbidden_key_set,
+    redact_output_text,
+    sanitize_output_payload,
+)
 from app.db.session import engine
 from sqlalchemy import text
 
@@ -136,12 +141,57 @@ VALID_TRANSITIONS = {
     "resolved": set(),
 }
 
+_DLQ_FAILURE_SURFACE_FORBIDDEN_KEYS = output_forbidden_key_set(
+    extra_forbidden=(
+        "order_id",
+        "click_id",
+        "gclid",
+        "fbclid",
+        "external_event_id",
+    ),
+    exclude=(
+        "session_id",
+        "idempotency_key",
+        "correlation_id",
+        "vendor_payload",
+        "email",
+        "email_address",
+        "customer_email",
+        "receipt_email",
+        "ip",
+        "ip_address",
+        "first_name",
+        "last_name",
+        "full_name",
+        "name",
+        "phone",
+        "phone_number",
+        "address",
+        "street_address",
+        "shipping_address",
+        "billing_address",
+        "ssn",
+        "social_security_number",
+    ),
+)
+
 
 def _normalize_idempotency_key(value: Any) -> str | None:
     if value is None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _sanitize_failure_surface_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    sanitized = sanitize_output_payload(
+        dict(payload),
+        forbidden_keys=_DLQ_FAILURE_SURFACE_FORBIDDEN_KEYS,
+        drop_forbidden_keys=True,
+    )
+    if isinstance(sanitized, dict):
+        return sanitized
+    return {}
 
 
 def classify_error(error: Exception) -> tuple[ErrorType, ErrorClassification]:
@@ -266,6 +316,7 @@ class DLQHandler:
             request_headers=request_headers,
             mode="redact",
         )
+        failure_surface_payload = _sanitize_failure_surface_payload(boundary.sanitized_payload)
 
         # Convert correlation_id to UUID if it's a string (or None if invalid)
         correlation_uuid = None
@@ -285,19 +336,26 @@ class DLQHandler:
             source=source,
             raw_payload=boundary.sanitized_payload,
             idempotency_key=_normalize_idempotency_key(
-                boundary.sanitized_payload.get("idempotency_key") or correlation_id
+                failure_surface_payload.get("idempotency_key") or correlation_id
             ),
             correlation_id=correlation_uuid,
             error_type=error_type.value,
             error_code=type(error).__name__,
-            error_detail={"error": str(error)[:500]},  # JSONB field requires dict
-            error_message=str(error)[:500],  # Text field for error message
-            error_traceback=traceback.format_exc()[:2000] if traceback.format_exc() != 'NoneType: None\n' else None,
-            event_type=boundary.sanitized_payload.get("event_type", "unknown"),
+            error_detail={"error": redact_output_text(str(error)[:500])},  # JSONB field requires dict
+            error_message=redact_output_text(str(error)[:500]),  # Text field for error message
+            error_traceback=(
+                redact_output_text(traceback.format_exc()[:2000])
+                if traceback.format_exc() != 'NoneType: None\n'
+                else None
+            ),
+            event_type=failure_surface_payload.get("event_type", "unknown"),
             retry_count=0,
             remediation_status=RemediationStatus.PENDING.value,
             ingested_at=datetime.now(timezone.utc),
         )
+        # Preserve P1 write-boundary sequencing token while enforcing stricter
+        # P5 failure-surface sanitization before persistence.
+        dead_event.raw_payload = failure_surface_payload
 
         session.add(dead_event)
         await session.flush()
@@ -316,7 +374,7 @@ class DLQHandler:
                 "correlation_id_business": correlation_id,
                 "event": "event_routed_to_dlq",
                 "vendor": source or "unknown",
-                "event_type": boundary.sanitized_payload.get("event_type", "unknown"),
+                "event_type": failure_surface_payload.get("event_type", "unknown"),
             }
         )
         # High-volume expected ingress failures (schema/PII) should not emit
@@ -505,10 +563,11 @@ async def route_unresolved_tenant_to_quarantine(
         request_headers=request_headers,
         mode="redact",
     )
+    failure_surface_payload = _sanitize_failure_surface_payload(boundary.sanitized_payload)
 
     async with engine.begin() as conn:
         idempotency_key = _normalize_idempotency_key(
-            boundary.sanitized_payload.get("idempotency_key") or correlation_id
+            failure_surface_payload.get("idempotency_key") or correlation_id
         )
         await conn.execute(
             text(
@@ -542,10 +601,10 @@ async def route_unresolved_tenant_to_quarantine(
             {
                 "source": source,
                 "idempotency_key": idempotency_key,
-                "raw_payload": json.dumps(boundary.sanitized_payload),
+                "raw_payload": json.dumps(failure_surface_payload),
                 "error_type": error_type,
                 "error_code": "UNRESOLVED_TENANT",
-                "error_message": str(error_message)[:500],
+                "error_message": redact_output_text(str(error_message)[:500]),
                 "correlation_id": str(correlation_uuid) if correlation_uuid else None,
             },
         )

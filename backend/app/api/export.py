@@ -2,14 +2,24 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, Response, Security
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, Security, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.deps import get_db_session
+from app.privacy.output_redaction import (
+    find_output_leaks,
+    output_forbidden_key_set,
+    sanitize_output_payload,
+)
 from app.security.auth import AuthContext, get_auth_context
 
 router = APIRouter()
+
+EXPORT_ROW_ALLOWLIST = ("date", "channel", "revenue", "conversions", "confidence")
+EXPORT_TOP_LEVEL_ALLOWLIST = ("tenant_id", "generated_at", "date_range", "data")
+EXPORT_DATE_RANGE_ALLOWLIST = ("start", "end")
+_EXPORT_FORBIDDEN_KEYS = output_forbidden_key_set()
 
 
 def _utcnow_iso() -> str:
@@ -32,6 +42,7 @@ def _resolve_date_range(
 def _csv_from_rows(rows: list[dict[str, object]]) -> str:
     lines = ["date,channel,revenue,conversions,confidence"]
     for row in rows:
+        _enforce_export_row_no_leak(row)
         lines.append(
             ",".join(
                 [
@@ -48,15 +59,49 @@ def _csv_from_rows(rows: list[dict[str, object]]) -> str:
 
 def _export_payload(
     *,
+    tenant_id: UUID,
     start: date,
     end: date,
     rows: list[dict[str, object]],
 ) -> dict[str, object]:
-    return {
+    payload = {
+        "tenant_id": str(tenant_id),
         "generated_at": _utcnow_iso(),
         "date_range": {"start": start.isoformat(), "end": end.isoformat()},
         "data": rows,
     }
+    _enforce_export_payload_no_leak(payload)
+    return sanitize_output_payload(payload, forbidden_keys=_EXPORT_FORBIDDEN_KEYS)
+
+
+def _filter_export_row_fields(row: dict[str, object]) -> dict[str, object]:
+    return {key: row[key] for key in EXPORT_ROW_ALLOWLIST}
+
+
+def _enforce_export_row_no_leak(row: dict[str, object]) -> None:
+    if set(row.keys()) != set(EXPORT_ROW_ALLOWLIST):
+        raise ValueError("export row contains non-allowlisted keys")
+    leaks = find_output_leaks(row, forbidden_keys=_EXPORT_FORBIDDEN_KEYS)
+    if leaks:
+        raise ValueError(f"export row violates no-leak policy at {', '.join(leaks)}")
+
+
+def _enforce_export_payload_no_leak(payload: dict[str, object]) -> None:
+    if set(payload.keys()) != set(EXPORT_TOP_LEVEL_ALLOWLIST):
+        raise ValueError("export payload contains non-allowlisted top-level keys")
+    date_range = payload.get("date_range")
+    if not isinstance(date_range, dict) or set(date_range.keys()) != set(EXPORT_DATE_RANGE_ALLOWLIST):
+        raise ValueError("export payload date_range contains non-allowlisted keys")
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        raise ValueError("export payload data must be a list")
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("export payload row must be an object")
+        _enforce_export_row_no_leak(row)
+    leaks = find_output_leaks(payload, forbidden_keys=_EXPORT_FORBIDDEN_KEYS)
+    if leaks:
+        raise ValueError(f"export payload violates no-leak policy at {', '.join(leaks)}")
 
 
 async def _fetch_reporting_rows(
@@ -145,7 +190,7 @@ async def _fetch_reporting_rows(
 
     rows: list[dict[str, object]] = []
     for export_date, channel_code, revenue_cents, conversion_count, confidence_score in result.fetchall():
-        rows.append(
+        row = _filter_export_row_fields(
             {
                 "date": export_date.isoformat(),
                 "channel": str(channel_code),
@@ -154,6 +199,8 @@ async def _fetch_reporting_rows(
                 "confidence": float(confidence_score),
             }
         )
+        _enforce_export_row_no_leak(row)
+        rows.append(sanitize_output_payload(row, forbidden_keys=_EXPORT_FORBIDDEN_KEYS))
     return rows
 
 
@@ -179,7 +226,13 @@ async def export_revenue(
         end=end,
         channels=channels,
     )
-    payload = _export_payload(start=start, end=end, rows=rows)
+    try:
+        payload = _export_payload(tenant_id=auth_context.tenant_id, start=start, end=end, rows=rows)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Export payload rejected by privacy no-leak boundary.",
+        ) from exc
 
     normalized_format = export_format.strip().lower()
     if normalized_format == "csv":
@@ -246,7 +299,13 @@ async def export_json(
         start=start,
         end=end,
     )
-    return _export_payload(start=start, end=end, rows=rows)
+    try:
+        return _export_payload(tenant_id=auth_context.tenant_id, start=start, end=end, rows=rows)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Export payload rejected by privacy no-leak boundary.",
+        ) from exc
 
 
 @router.get("/excel", operation_id="exportExcel")
