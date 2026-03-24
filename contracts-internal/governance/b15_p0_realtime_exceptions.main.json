@@ -1,0 +1,20 @@
+{
+  "contract_id": "b15.p0.realtime_exceptions.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P0",
+  "active_realtime_substrate_present": false,
+  "legacy_removed_surfaces": [
+    {
+      "surface_path": "frontend/src/services/verificationWebSocket.ts",
+      "status": "removed_in_main",
+      "note": "Historical realtime verification surface referenced in B1.5 inventory; no longer present on current main."
+    },
+    {
+      "surface_path": "frontend/src/contexts/VerificationSyncContext.tsx",
+      "status": "removed_in_main",
+      "note": "Historical realtime verification context referenced in B1.5 inventory; no longer present on current main."
+    }
+  ],
+  "exceptions": [
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "contract_id": "b15.p0.phase_start.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P0",
+  "phase_start_date_utc": "2026-03-24",
+  "inherits": {
+    "phase": "B1.4",
+    "status": "closed",
+    "reopen_allowed": false
+  },
+  "phase_intent": "Authority lock, scope lock, and invariant lock before lifecycle or UX implementation.",
+  "must_not_reopen": [
+    "B1.4 privacy closure adjudication",
+    "B1.4 retention and deterministic deletion closure",
+    "B1.4 export no-leak closure"
+  ],
+  "phase_successor_boundary": {
+    "b1_5_focus": "asynchronous review-driven Centaur control surfaces",
+    "deferred_b3_focus": "full investigation queue and detail productization"
+  }
+}
+

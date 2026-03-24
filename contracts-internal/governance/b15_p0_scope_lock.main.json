@@ -1,0 +1,44 @@
+{
+  "contract_id": "b15.p0.scope_lock.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P0",
+  "in_scope_surfaces": [
+    "investigation-state primitives",
+    "async status/progress surfaces",
+    "review-and-approve interaction templates",
+    "deterministic-authority and human-approval control patterns",
+    "anti-chat guardrails for decision surfaces",
+    "contract-first/mock-first integration binding for routed B1.5 surfaces"
+  ],
+  "out_of_scope_surfaces": [
+    "reopening B1.4 privacy closure",
+    "full investigation queue productization (B3.1)",
+    "full investigation detail productization (B3.2)",
+    "realtime streaming chat for financial or attribution decisions",
+    "autonomous-agent UX for financial or attribution decisions",
+    "unrelated backend/privacy/verification rewrites"
+  ],
+  "decision_surface_globs": [
+    "frontend/src/pages/BudgetOptimizerPage.tsx",
+    "frontend/src/pages/BudgetScenarioDetailPage.tsx",
+    "frontend/src/components/llm/**/*.tsx",
+    "frontend/src/api/services/llm-*.ts",
+    "backend/app/services/investigation.py",
+    "backend/app/tasks/llm.py",
+    "backend/app/workers/llm.py"
+  ],
+  "deferred_b3_surface_globs": [
+    "frontend/src/pages/InvestigationQueuePage.tsx",
+    "frontend/src/pages/InvestigationDetailPage.tsx",
+    "backend/app/api/investigation_queue*.py",
+    "backend/app/api/investigation_detail*.py"
+  ],
+  "forbidden_realtime_dependency_patterns": [
+    "@/services/verificationWebSocket",
+    "@/contexts/VerificationSyncContext",
+    "../services/verificationWebSocket",
+    "./services/verificationWebSocket"
+  ],
+  "realtime_exception_contract": "contracts-internal/governance/b15_p0_realtime_exceptions.main.json"
+}
+
