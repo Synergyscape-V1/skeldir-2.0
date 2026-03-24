@@ -2,31 +2,19 @@
   "contract_id": "b15.p0.realtime_exceptions.main",
   "contract_version": "1.0.0",
   "phase": "B1.5-P0",
-  "exceptions": [
+  "active_realtime_substrate_present": false,
+  "legacy_removed_surfaces": [
     {
-      "exception_id": "rtx-001",
       "surface_path": "frontend/src/services/verificationWebSocket.ts",
-      "domain": "verification_sync",
-      "justification": "Existing verification synchronization substrate; not a B1.5 financial decision surface.",
-      "allowed_for_b15_decision_surfaces": false,
-      "forbidden_import_patterns": [
-        "@/services/verificationWebSocket",
-        "../services/verificationWebSocket",
-        "./services/verificationWebSocket"
-      ]
+      "status": "removed_in_main",
+      "note": "Historical realtime verification surface referenced in B1.5 inventory; no longer present on current main."
     },
     {
-      "exception_id": "rtx-002",
       "surface_path": "frontend/src/contexts/VerificationSyncContext.tsx",
-      "domain": "verification_sync",
-      "justification": "Existing verification synchronization context; not a B1.5 financial decision surface.",
-      "allowed_for_b15_decision_surfaces": false,
-      "forbidden_import_patterns": [
-        "@/contexts/VerificationSyncContext",
-        "../contexts/VerificationSyncContext",
-        "./contexts/VerificationSyncContext"
-      ]
+      "status": "removed_in_main",
+      "note": "Historical realtime verification context referenced in B1.5 inventory; no longer present on current main."
     }
+  ],
+  "exceptions": [
   ]
 }
-

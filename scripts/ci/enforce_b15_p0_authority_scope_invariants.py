@@ -166,8 +166,15 @@ def run_enforcement(
         violations.append("invariant_manifest_enforced_now_mismatch")
 
     exceptions = realtime.get("exceptions")
-    if not isinstance(exceptions, list) or not exceptions:
-        violations.append("realtime_exception_manifest_empty")
+    active_realtime_present = bool(realtime.get("active_realtime_substrate_present", True))
+    if not isinstance(exceptions, list):
+        violations.append("realtime_exception_manifest_invalid_exceptions_shape")
+        return 1, violations
+    if active_realtime_present and not exceptions:
+        violations.append("realtime_exception_manifest_empty_with_active_realtime_true")
+        return 1, violations
+    if not active_realtime_present and exceptions:
+        violations.append("realtime_exception_manifest_has_exceptions_while_active_realtime_false")
         return 1, violations
 
     forbidden_patterns: list[str] = []
