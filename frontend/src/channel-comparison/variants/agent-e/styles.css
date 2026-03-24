@@ -1,0 +1,225 @@
+/* ============================================================
+   Agent E — Canonical Fidelity
+   Pixel-perfect alignment to reference screenshot.
+   Polished micro-interactions, entrance animations, enhanced
+   skeleton states. The "golden reference" implementation.
+   ============================================================ */
+
+/* --- Root & Layout --- */
+
+.cc-agent-e {
+  background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+  border-radius: 12px;
+  padding: var(--spacing-lg);
+}
+
+/* --- Content area --- */
+
+.cc-e-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* --- Budget Recommendation banner polish (top bar) --- */
+
+.cc-agent-e .cc-recommendation-banner {
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  animation: cc-e-fadein 0.35s ease-out both;
+}
+
+/* --- Channel Cards entrance animations --- */
+
+.cc-agent-e .cc-e-cards {
+  --cc-columns: 3;
+}
+
+.cc-agent-e .cc-panel {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  border-radius: 10px;
+  border-width: 1px;
+  border-top-width: 4px;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+  animation: cc-e-fadein 0.45s ease-out both;
+}
+
+.cc-agent-e .cc-panel:nth-child(1) { animation-delay: 0ms; }
+.cc-agent-e .cc-panel:nth-child(2) { animation-delay: 100ms; }
+.cc-agent-e .cc-panel:nth-child(3) { animation-delay: 200ms; }
+.cc-agent-e .cc-panel:nth-child(4) { animation-delay: 300ms; }
+
+.cc-agent-e .cc-panel:hover {
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Panel header polish */
+.cc-agent-e .cc-panel-name {
+  font-size: var(--heading-sm-size);
+  font-weight: 600;
+}
+
+.cc-agent-e .cc-panel-header-right button {
+  transition: color 0.15s ease;
+}
+
+.cc-agent-e .cc-panel-header-right button:hover {
+  color: var(--error);
+}
+
+/* Panel hero ROAS */
+.cc-agent-e .cc-panel-roas-value {
+  font-size: var(--display-md-size);
+}
+
+/* --- Enhanced Skeleton Loading --- */
+
+.cc-agent-e .cc-panel-loading {
+  padding: 8px 0;
+}
+
+.cc-agent-e .cc-skeleton-line {
+  border-radius: 6px;
+  background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 40%, #e5e7eb 100%);
+  background-size: 200% 100%;
+  animation: cc-skeleton 1.4s ease-in-out infinite;
+}
+
+.cc-agent-e .cc-skeleton-line.short {
+  width: 40%;
+  height: 12px;
+}
+
+.cc-agent-e .cc-skeleton-line.wide {
+  width: 75%;
+  height: 28px;
+}
+
+/* --- Panel Error polish --- */
+
+.cc-agent-e .cc-panel-error {
+  border-radius: 8px;
+  animation: cc-e-fadein 0.3s ease-out;
+}
+
+.cc-agent-e .cc-panel-error button {
+  transition: background-color 0.15s ease;
+  cursor: pointer;
+}
+
+.cc-agent-e .cc-panel-error button:hover {
+  background: var(--error-bg);
+}
+
+/* --- Confidence Range Figure polish --- */
+
+.cc-agent-e .cc-confidence-figure {
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  animation: cc-e-fadein 0.5s ease-out 0.25s both;
+}
+
+/* --- Dense Matrix polish --- */
+
+.cc-agent-e .cc-dense-matrix {
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  animation: cc-e-fadein 0.5s ease-out 0.35s both;
+}
+
+.cc-agent-e .cc-dense-matrix tr:nth-child(even) td {
+  background: rgba(248, 250, 252, 0.5);
+}
+
+.cc-agent-e .cc-dense-matrix tr:hover td {
+  background: rgba(241, 243, 245, 0.8);
+}
+
+/* --- Model Recommendation Panel polish --- */
+
+.cc-agent-e .cc-model-panel {
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  animation: cc-e-fadein 0.5s ease-out 0.4s both;
+}
+
+/* --- Revenue Chart polish --- */
+
+.cc-agent-e .cc-revenue-chart {
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  animation: cc-e-fadein 0.5s ease-out 0.45s both;
+}
+
+/* --- Winner Banner polish --- */
+
+.cc-agent-e .cc-winner-banner {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.08);
+  animation: cc-e-fadein 0.4s ease-out both;
+}
+
+/* --- Empty State polish --- */
+
+.cc-agent-e .cc-empty-state {
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  animation: cc-e-fadein 0.4s ease-out;
+}
+
+/* --- Global Error polish --- */
+
+.cc-agent-e .cc-global-error {
+  border-radius: 10px;
+  animation: cc-e-fadein 0.3s ease-out;
+}
+
+/* --- Entrance Animation Keyframe --- */
+
+@keyframes cc-e-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Responsive: Tablet (768-1023px) --- */
+
+@media (max-width: 1023px) {
+  .cc-agent-e {
+    padding: var(--spacing-md);
+  }
+
+  .cc-agent-e .cc-e-cards {
+    --cc-columns: 2;
+  }
+}
+
+/* --- Responsive: Mobile (<768px) --- */
+
+@media (max-width: 767px) {
+  .cc-agent-e {
+    padding: var(--spacing-sm);
+    border-radius: 8px;
+  }
+
+  .cc-agent-e .cc-e-cards {
+    --cc-columns: 1;
+  }
+
+  .cc-agent-e .cc-panel:hover {
+    transform: none;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  }
+
+  .cc-agent-e .cc-panel-roas-value {
+    font-size: var(--heading-lg-size);
+  }
+}

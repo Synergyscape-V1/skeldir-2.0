@@ -1,0 +1,436 @@
+/* ══════════════════════════════════════════════════════════════
+   Agent E — Atmos Field
+   Calm atmospheric glass-morphism. Ambient halos react to confidence.
+   Radial metric circles. Animated gradient background.
+   ══════════════════════════════════════════════════════════════ */
+
+.dhe-root {
+  --dhe-bg-page: var(--dh-bg-secondary, #F8F9FA);
+  --dhe-bg-card: var(--dh-bg-primary, #FFFFFF);
+  --dhe-border: var(--dh-border-default, #DEE2E6);
+  --dhe-text: var(--dh-text-primary, #212529);
+  --dhe-muted: var(--dh-text-secondary, #6C757D);
+  --dhe-success: var(--dh-success, #10B981);
+  --dhe-warning: var(--dh-warning, #F59E0B);
+  --dhe-danger: var(--dh-error, #EF4444);
+  --dhe-info: var(--dh-info, #3B82F6);
+  --dhe-success-bg: var(--dh-success-bg, #D1FAE5);
+  --dhe-warning-bg: var(--dh-warning-bg, #FEF3C7);
+  --dhe-danger-bg: var(--dh-error-bg, #FEE2E2);
+  --dhe-info-bg: var(--dh-info-bg, #DBEAFE);
+  padding: 24px;
+  color: var(--dhe-text);
+  background: var(--dhe-bg-page);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Animated Atmospheric Background ── */
+.dhe-atmos-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--theme-gradient, radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--dhe-info) 15%, transparent), transparent 45%));
+  background-size: 200% 200%;
+  animation: dhe-drift 20s ease infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes dhe-drift {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+
+/* Ensure content sits above the bg */
+.dhe-root > *:not(.dhe-atmos-bg) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── States ── */
+.dhe-state {
+  min-height: 280px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.dhe-pulse-circles {
+  display: flex;
+  gap: 24px;
+}
+
+.dhe-pulse-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dhe-info) 15%, var(--dhe-bg-card));
+  animation: dhe-pulse-load 1.4s ease-in-out infinite alternate;
+}
+.dhe-pulse-circle:nth-child(2) { animation-delay: 0.2s; }
+.dhe-pulse-circle:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dhe-pulse-load {
+  0% { opacity: 0.3; transform: scale(0.9); }
+  100% { opacity: 0.7; transform: scale(1.05); }
+}
+
+/* ── Header ── */
+.dhe-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dhe-title {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 300;
+  letter-spacing: -0.5px;
+}
+
+.dhe-sync {
+  margin: 6px 0 0;
+  color: var(--dhe-muted);
+  font-size: 14px;
+}
+
+/* ── Stale ── */
+.dhe-stale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--dhe-warning-bg) 70%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--dhe-warning);
+  margin-bottom: 20px;
+}
+.dhe-stale p { margin: 0; font-size: 14px; }
+
+/* ── Section ── */
+.dhe-section {
+  margin-bottom: 28px;
+}
+
+.dhe-section-title {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--dhe-muted);
+}
+
+/* ══ Metric Grid with Radial Values ══ */
+.dhe-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.dhe-metric-card {
+  padding: 24px;
+  text-align: center;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--dhe-bg-card) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--dhe-border) 50%, transparent);
+  transition: box-shadow 0.6s ease;
+}
+
+/* ── Ambient Halos ── */
+.dhe-halo-good {
+  box-shadow: 0 0 24px 4px color-mix(in srgb, var(--dhe-success) 20%, transparent);
+}
+.dhe-halo-warning {
+  box-shadow: 0 0 24px 4px color-mix(in srgb, var(--dhe-warning) 20%, transparent);
+}
+.dhe-halo-critical {
+  box-shadow: 0 0 24px 4px color-mix(in srgb, var(--dhe-danger) 25%, transparent);
+}
+
+.dhe-metric-label {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dhe-muted);
+}
+
+.dhe-radial-value {
+  width: 100px;
+  height: 100px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+  background: var(--theme-gradient, color-mix(in srgb, var(--dhe-info) 8%, var(--dhe-bg-card)));
+  border: 1px solid color-mix(in srgb, var(--dhe-border) 40%, transparent);
+}
+
+.dhe-radial-value strong {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.5px;
+}
+
+.dhe-metric-desc {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--dhe-muted);
+}
+
+/* ── Badges ── */
+.dhe-badge {
+  border-radius: 20px;
+  border: 1px solid transparent;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+.dhe-badge-good, .dhe-badge-connected {
+  background: var(--dhe-success-bg); border-color: color-mix(in srgb, var(--dhe-success) 40%, transparent);
+}
+.dhe-badge-warning, .dhe-badge-expiring, .dhe-badge-medium {
+  background: var(--dhe-warning-bg); border-color: color-mix(in srgb, var(--dhe-warning) 40%, transparent);
+}
+.dhe-badge-critical, .dhe-badge-disconnected {
+  background: var(--dhe-danger-bg); border-color: color-mix(in srgb, var(--dhe-danger) 40%, transparent);
+}
+
+/* ══ Integration Glass Cards ══ */
+.dhe-integration-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.dhe-glass-card {
+  padding: 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--dhe-bg-card) 75%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid color-mix(in srgb, var(--dhe-border) 40%, transparent);
+  transition: box-shadow 0.4s ease;
+}
+
+.dhe-glass-card:hover {
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--dhe-info) 10%, transparent);
+}
+
+/* Pulsing halo for problem cards */
+.dhe-pulse {
+  animation: dhe-halo-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes dhe-halo-pulse {
+  0%, 100% { box-shadow: 0 0 12px color-mix(in srgb, var(--dhe-danger) 15%, transparent); }
+  50% { box-shadow: 0 0 24px color-mix(in srgb, var(--dhe-danger) 25%, transparent); }
+}
+
+.dhe-integration-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dhe-integration-head h4 { margin: 0; font-size: 15px; font-weight: 600; }
+
+.dhe-integration-detail {
+  margin: 6px 0;
+  color: var(--dhe-muted);
+  font-size: 13px;
+}
+
+.dhe-integration-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* ══ Issues — Minimal Calm Style ══ */
+.dhe-issue-group {
+  margin-bottom: 12px;
+}
+
+.dhe-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px 0;
+  min-height: 44px;
+  min-width: 44px;
+  color: var(--dhe-text);
+}
+
+.dhe-group-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dhe-group-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--dhe-muted);
+}
+
+.dhe-issue-list {
+  display: grid;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.dhe-issue-item {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--dhe-bg-card) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dhe-border) 40%, transparent);
+}
+
+.dhe-issue-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Severity Orbs ── */
+.dhe-orb {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.dhe-orb-critical { background: var(--dhe-danger); }
+.dhe-orb-warning { background: var(--dhe-warning); }
+.dhe-orb-info { background: var(--dhe-info); }
+
+.dhe-issue-info {
+  flex: 1;
+  min-width: 0;
+}
+.dhe-issue-info p { margin: 0; font-size: 14px; font-weight: 600; }
+.dhe-issue-info small { color: var(--dhe-muted); font-size: 12px; }
+
+.dhe-issue-impact {
+  font-size: 13px;
+  color: var(--dhe-muted);
+}
+
+.dhe-issue-status {
+  font-size: 13px;
+  color: var(--dhe-muted);
+}
+
+.dhe-issue-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* ── Fix Guide (smooth expand) ── */
+.dhe-guide-wrap {
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+
+.dhe-guide {
+  padding: 12px 0 4px 18px;
+}
+.dhe-guide ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.dhe-guide li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  font-size: 14px;
+}
+.dhe-step-num {
+  width: 28px; height: 28px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--dhe-info); color: var(--dhe-bg-card); font-weight: 700; font-size: 13px;
+}
+.dhe-guide p { margin: 0; }
+.dhe-guide pre {
+  border: 1px solid var(--dhe-border); border-radius: 8px;
+  padding: 8px; overflow-x: auto; font-size: 13px;
+  margin: 4px 0;
+}
+.dhe-guide a {
+  color: var(--dhe-info);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* ── Buttons ── */
+.dhe-btn {
+  min-width: 44px; min-height: 44px;
+  border-radius: 20px; border: 1px solid var(--dhe-border);
+  padding: 6px 16px; cursor: pointer; font-weight: 600;
+  font-size: 14px;
+}
+.dhe-btn-pill {
+  border-radius: 20px;
+  padding: 6px 16px;
+  min-width: 44px; min-height: 44px;
+  border: 1px solid var(--dhe-border);
+  cursor: pointer; font-weight: 600; font-size: 13px;
+  background: var(--dhe-bg-card);
+}
+.dhe-btn:focus-visible,
+.dhe-btn-pill:focus-visible,
+.dhe-group-toggle:focus-visible,
+.dhe-guide a:focus-visible {
+  outline: 2px solid var(--dhe-info);
+  outline-offset: 2px;
+}
+.dhe-btn-primary { background: var(--dhe-info); color: var(--dhe-bg-card); border-color: var(--dhe-info); }
+.dhe-btn-secondary { background: var(--dhe-bg-card); }
+.dhe-btn-ghost, .dhe-btn-link { background: transparent; border-color: transparent; color: var(--dhe-info); }
+
+/* ── Responsive ── */
+@media (max-width: 1023px) {
+  .dhe-metric-grid { grid-template-columns: 1fr; }
+  .dhe-radial-value { width: 80px; height: 80px; }
+  .dhe-radial-value strong { font-size: 22px; }
+  .dhe-integration-grid { grid-template-columns: 1fr 1fr; }
+  .dhe-issue-head { flex-direction: column; align-items: flex-start; }
+  .dhe-issue-actions { margin-left: 0; }
+}
+
+@media (max-width: 767px) {
+  .dhe-root { padding: 16px; }
+  .dhe-header { flex-direction: column; align-items: flex-start; }
+  .dhe-stale { flex-direction: column; align-items: flex-start; }
+  .dhe-title { font-size: 26px; }
+  .dhe-integration-grid { grid-template-columns: 1fr; }
+  /* Remove backdrop-filter on mobile for performance */
+  .dhe-metric-card,
+  .dhe-glass-card,
+  .dhe-stale {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--dhe-bg-card);
+  }
+}

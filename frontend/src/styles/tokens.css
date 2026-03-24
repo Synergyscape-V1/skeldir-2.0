@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Backgrounds */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #f1f3f5;
+
+  /* Borders */
+  --border-subtle: #e9ecef;
+  --border-default: #dee2e6;
+
+  /* Text */
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --text-tertiary: #adb5bd;
+  --text-inverse: #ffffff;
+
+  /* Status */
+  --success: #10b981;
+  --success-bg: #d1fae5;
+  --warning: #f59e0b;
+  --warning-bg: #fef3c7;
+  --error: #ef4444;
+  --error-bg: #fee2e2;
+  --info: #3b82f6;
+
+  /* Data Visualization */
+  --data-1: #3b82f6;
+  --data-2: #8b5cf6;
+  --data-3: #ec4899;
+  --data-4: #f59e0b;
+  --data-5: #ef4444;
+  --data-6: #06b6d4;
+  --data-range-fill: rgba(59, 130, 246, 0.12);
+  --data-range-stroke: rgba(59, 130, 246, 0.35);
+
+  /* Channel comparison */
+  --cc-chip-border-google-ads: #3B82F6;
+  --cc-chip-border-meta: #8B5CF6;
+  --cc-chip-border-tiktok: #EC4899;
+  --cc-chip-border-linkedin: #10B981;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+
+  /* Typography */
+  --font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --display-lg-size: 48px;
+  --display-lg-weight: 600;
+  --display-md-size: 36px;
+  --display-md-weight: 600;
+  --heading-lg-size: 24px;
+  --heading-md-size: 20px;
+  --heading-sm-size: 16px;
+  --body-lg-size: 16px;
+  --body-md-size: 14px;
+  --body-sm-size: 12px;
+
+  /* Brand (Command Center & Channel Detail) */
+  --brand-primary: #1E40AF;
+  --brand-secondary: #0D9488;
+
+  /* Surface backgrounds */
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F9FAFB;
+  --bg-selected: #EFF6FF;
+  --bg-page: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F1F5F9;
+
+  /* Border extensions */
+  --border-strong: #D1D5DB;
+
+  /* Status extensions */
+  --status-verified: #059669;
+  --status-caution: #D97706;
+  --status-critical: #DC2626;
+  --status-info: #3B82F6;
+
+  /* Bucket colors (credible interval saturation) */
+  --narrow-bucket: #059669;
+  --medium-bucket: #D97706;
+  --wide-bucket: #DC2626;
+
+  /* Waterfall */
+  --waterfall-positive: #059669;
+  --waterfall-negative: #DC2626;
+  --waterfall-neutral: #1E40AF;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Transitions */
+  --transition-fast: 100ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease-in-out;
+}
+
+@keyframes shimmer {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}

@@ -1,0 +1,328 @@
+/* ============================================================
+   Agent D — Action-Forward
+   Budget recommendation and winner at maximum prominence.
+   Interface feels like a decision-support system.
+   ============================================================ */
+
+.cc-agent-d {
+  background: var(--bg-secondary);
+  position: relative;
+}
+
+.cc-d-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* --- Decision Hero --- */
+
+.cc-d-decision-hero {
+  border-radius: 12px;
+  padding: var(--spacing-xl) var(--spacing-lg);
+  border: 1px solid var(--border-subtle);
+}
+
+.cc-d-decision-hero.cc-d-has-winner {
+  background: linear-gradient(135deg, var(--success-bg) 0%, color-mix(in srgb, var(--success-bg) 40%, white) 100%);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+.cc-d-decision-hero.cc-d-no-winner {
+  background: linear-gradient(135deg, var(--warning-bg) 0%, color-mix(in srgb, var(--warning-bg) 40%, white) 100%);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.cc-d-decision-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-xl);
+}
+
+.cc-d-decision-label,
+.cc-d-budget-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.cc-d-winner-name {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--heading-lg-size);
+  font-weight: var(--display-md-weight);
+  color: var(--text-primary);
+}
+
+.cc-d-winner-detail {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--body-md-size);
+  color: var(--text-secondary);
+}
+
+.cc-d-winner-detail strong {
+  color: var(--text-primary);
+}
+
+.cc-d-winner-confidence {
+  margin: 0;
+  font-size: var(--body-sm-size);
+  color: var(--success);
+  font-weight: 600;
+}
+
+.cc-d-muted {
+  color: var(--text-tertiary) !important;
+}
+
+.cc-d-budget-text {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--body-md-size);
+  color: var(--text-secondary);
+}
+
+.cc-d-budget-text strong {
+  color: var(--text-primary);
+}
+
+.cc-d-budget-lift {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--body-sm-size);
+  color: var(--text-secondary);
+}
+
+.cc-d-budget-lift strong {
+  color: var(--success);
+}
+
+.cc-d-cta {
+  display: inline-block;
+  padding: 14px 28px;
+  background: var(--info);
+  color: var(--text-inverse);
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: var(--body-md-size);
+  font-weight: 600;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.cc-d-cta:hover {
+  background: color-mix(in srgb, var(--info) 85%, black);
+}
+
+.cc-d-cta:active {
+  transform: scale(0.98);
+}
+
+.cc-d-cta-muted {
+  background: var(--text-tertiary);
+}
+
+.cc-d-cta-muted:hover {
+  background: var(--text-secondary);
+}
+
+/* --- Evidence Accordion --- */
+
+.cc-d-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.cc-d-evidence-section {
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.cc-d-evidence-section[open] {
+  border-left-color: var(--info);
+}
+
+.cc-d-evidence-section summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px var(--spacing-md);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: background-color 0.15s ease;
+}
+
+.cc-d-evidence-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.cc-d-evidence-section summary::before {
+  content: "\25B6";
+  display: inline-block;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-right: var(--spacing-sm);
+  transition: transform 0.2s ease;
+}
+
+.cc-d-evidence-section[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.cc-d-evidence-section summary:hover {
+  background: var(--bg-secondary);
+}
+
+.cc-d-evidence-title {
+  font-size: var(--body-md-size);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cc-d-evidence-summary {
+  font-size: var(--body-sm-size);
+  color: var(--text-tertiary);
+}
+
+.cc-d-evidence-body {
+  padding: 0 var(--spacing-md) var(--spacing-md);
+}
+
+/* Reset margins on shared components inside accordion */
+.cc-d-evidence-body .cc-panels-grid {
+  margin-bottom: 0;
+}
+
+.cc-d-evidence-body .cc-confidence-figure {
+  margin-bottom: 0;
+}
+
+.cc-d-evidence-body .cc-revenue-chart {
+  margin-bottom: 0;
+}
+
+/* --- Secondary Action Bar --- */
+
+.cc-d-action-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: 12px var(--spacing-lg);
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-subtle);
+  box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.06);
+  transform: translateY(100%);
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  z-index: 10;
+}
+
+.cc-d-action-bar.cc-d-action-bar-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.cc-d-action-bar-text {
+  font-size: var(--body-sm-size);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.cc-d-action-bar-cta {
+  display: inline-block;
+  padding: 10px 20px;
+  background: var(--info);
+  color: var(--text-inverse);
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: var(--body-sm-size);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.cc-d-action-bar-cta:hover {
+  background: color-mix(in srgb, var(--info) 85%, black);
+}
+
+/* --- Override shared component columns inside accordion --- */
+
+.cc-agent-d .cc-panels-grid {
+  --cc-columns: 3;
+}
+
+/* --- Responsive: Tablet --- */
+
+@media (max-width: 1023px) {
+  .cc-d-decision-inner {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+  }
+
+  .cc-d-budget-section {
+    border-top: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
+    padding-top: var(--spacing-lg);
+  }
+
+  .cc-agent-d .cc-panels-grid {
+    --cc-columns: 2;
+  }
+}
+
+/* --- Responsive: Mobile --- */
+
+@media (max-width: 767px) {
+  .cc-agent-d {
+    padding: 0;
+  }
+
+  .cc-d-decision-hero {
+    border-radius: 8px;
+    padding: var(--spacing-md);
+  }
+
+  .cc-d-winner-name {
+    font-size: var(--heading-md-size);
+  }
+
+  .cc-d-cta {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 12px;
+  }
+
+  .cc-agent-d .cc-panels-grid {
+    --cc-columns: 1;
+  }
+
+  .cc-d-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 0;
+    flex-direction: column;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .cc-d-action-bar-cta {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* On mobile, only first section open by default */
+  .cc-d-evidence-section:not(:first-child) {
+    /* Handled via HTML open attribute in component */
+  }
+}
