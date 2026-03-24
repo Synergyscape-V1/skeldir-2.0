@@ -1,0 +1,407 @@
+/* Revenue Matching Breakdown — Interface 8 */
+
+.rmb-root {
+  --rmb-verified: #059669;
+  --rmb-verified-bg: #d1fae5;
+  --rmb-caution: #d97706;
+  --rmb-caution-bg: #fef3c7;
+  --rmb-critical: #dc2626;
+  --rmb-critical-bg: #fee2e2;
+  --rmb-info: #2563eb;
+  --rmb-inset: #f4f6f8;
+  --rmb-hover: #f1f5f9;
+  --rmb-selected: #eff6ff;
+  --rmb-border: rgba(15, 23, 42, 0.08);
+  --rmb-text-primary: #0f172a;
+  --rmb-text-secondary: #475569;
+  --rmb-text-tertiary: #64748b;
+  --rmb-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --rmb-radius: 8px;
+  /* Taller rows so large platform chips (e.g. Klaviyo wordmark) + label fit */
+  --rmb-row-h: 56px;
+  --rmb-head-h: 44px;
+}
+
+.rmb-root {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--rmb-radius);
+  box-shadow: var(--rmb-shadow);
+  overflow: hidden;
+}
+
+.rmb-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--rmb-border);
+}
+
+.rmb-title-block h2 {
+  margin: 0;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--rmb-text-primary);
+}
+
+.rmb-sub {
+  margin: 4px 0 0;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--rmb-text-tertiary);
+  max-width: 720px;
+  line-height: 1.4;
+}
+
+.rmb-export {
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2563eb;
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rmb-export:hover {
+  background: #f8fafc;
+}
+
+.rmb-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--rmb-border);
+}
+
+@media (max-width: 1100px) {
+  .rmb-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.rmb-sum-card {
+  background: #fff;
+  border: 1px solid var(--rmb-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 72px;
+}
+
+.rmb-sum-label {
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--rmb-text-tertiary);
+  margin-bottom: 6px;
+}
+
+.rmb-sum-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--rmb-text-primary);
+}
+
+.rmb-sum-card--verified .rmb-sum-value {
+  color: var(--rmb-verified);
+}
+
+.rmb-sum-card--critical .rmb-sum-value {
+  color: var(--rmb-critical);
+}
+
+.rmb-sum-card--caution .rmb-sum-value {
+  color: var(--rmb-caution);
+}
+
+.rmb-sum-sub {
+  margin-top: 4px;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--rmb-text-tertiary);
+}
+
+.rmb-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--rmb-critical-bg);
+  border-left: 3px solid var(--rmb-critical);
+  border-bottom: 1px solid var(--rmb-border);
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #7f1d1d;
+}
+
+.rmb-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rmb-border);
+  background: #fff;
+}
+
+.rmb-filters label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rmb-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rmb-filters select,
+.rmb-filters input {
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.rmb-filters input {
+  font-family: "JetBrains Mono", monospace;
+  width: 88px;
+}
+
+.rmb-refresh {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+}
+
+.rmb-refresh:hover {
+  background: #f8fafc;
+}
+
+.rmb-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.rmb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+.rmb-table thead th {
+  height: var(--rmb-head-h);
+  padding: 0 12px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--rmb-text-tertiary);
+  background: var(--rmb-inset);
+  border-bottom: 1px solid var(--rmb-border);
+  white-space: nowrap;
+}
+
+.rmb-table thead th.rmb-num,
+.rmb-table tbody td.rmb-num {
+  text-align: right;
+}
+
+.rmb-table tbody td {
+  height: var(--rmb-row-h);
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--rmb-text-primary);
+  border-bottom: 1px solid var(--rmb-border);
+  vertical-align: middle;
+}
+
+.rmb-table tbody tr:hover td {
+  background: var(--rmb-hover);
+}
+
+.rmb-table tbody tr.rmb-row-selected td {
+  background: var(--rmb-selected);
+}
+
+.rmb-table tbody tr[role="button"]:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.rmb-plat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rmb-plat-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--rmb-text-primary);
+}
+
+.rmb-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.rmb-mono-sm {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.rmb-check {
+  color: var(--rmb-verified);
+  margin-left: 4px;
+}
+
+.rmb-dir {
+  font-size: 11px;
+  color: var(--rmb-text-tertiary);
+  margin-top: 2px;
+}
+
+.rmb-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.rmb-badge--matched {
+  background: var(--rmb-verified-bg);
+  color: var(--rmb-verified);
+}
+
+.rmb-badge--flagged {
+  background: var(--rmb-caution-bg);
+  color: var(--rmb-caution);
+}
+
+.rmb-badge--severe {
+  background: var(--rmb-critical-bg);
+  color: var(--rmb-critical);
+}
+
+.rmb-badge--unmatched {
+  background: #dbeafe;
+  color: var(--rmb-info);
+}
+
+.rmb-meta {
+  font-size: 12px;
+  color: var(--rmb-text-tertiary);
+  line-height: 1.35;
+}
+
+.rmb-waterfall {
+  padding: 16px;
+  background: #f8fafc;
+  border-top: 1px solid var(--rmb-border);
+  border-bottom: 1px solid var(--rmb-border);
+}
+
+.rmb-waterfall h4 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--rmb-text-secondary);
+}
+
+.rmb-wf-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--rmb-text-secondary);
+}
+
+.rmb-wf-row strong {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--rmb-text-primary);
+}
+
+.rmb-wf-bullets {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--rmb-text-secondary);
+  line-height: 1.5;
+}
+
+.rmb-wf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.rmb-wf-actions button {
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+}
+
+.rmb-wf-actions button:first-child {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.rmb-sticky {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: 1px 0 0 var(--rmb-border);
+}
+
+.rmb-table thead th.rmb-sticky {
+  z-index: 3;
+  background: var(--rmb-inset);
+}

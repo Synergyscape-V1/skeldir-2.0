@@ -1,0 +1,160 @@
+.story-shell-wrap {
+  padding: 16px;
+}
+
+.story-compare-all-root {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.story-compare-all-card {
+  border: 1px solid #d4dce8;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.story-compare-all-card header {
+  border-bottom: 1px solid #d4dce8;
+  padding: 12px;
+}
+
+.story-compare-all-card h2,
+.story-compare-all-card p {
+  margin: 0;
+}
+
+.story-compare-all-card p {
+  margin-top: 4px;
+  color: #5c6b80;
+}
+
+.story-compare-all-frame {
+  overflow: auto;
+  max-height: 860px;
+}
+
+/* --- Compare toolbar --- */
+
+.cc-compare-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.cc-compare-toolbar-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cc-compare-toolbar-btn {
+  padding: 6px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cc-compare-toolbar-btn:hover {
+  background: #f3f4f6;
+}
+
+.cc-compare-toolbar-btn.is-active {
+  background: #3b82f6;
+  color: #ffffff;
+  border-color: #3b82f6;
+}
+
+/* --- Compare row --- */
+
+.cc-compare-row {
+  margin-top: 16px;
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.cc-compare-column {
+  border: 1px solid #d4dce8;
+  border-radius: 10px;
+  background: #ffffff;
+  min-width: max-content;
+  overflow: hidden;
+}
+
+.cc-compare-column > header {
+  border-bottom: 1px solid #d4dce8;
+  padding: 10px 12px;
+}
+
+.cc-compare-column > header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.cc-compare-column > header p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #5c6b80;
+}
+
+.cc-compare-frame {
+  overflow: auto;
+  max-height: 860px;
+}
+
+/* --- States Matrix --- */
+
+.cc-states-matrix {
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.cc-states-matrix-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.cc-states-matrix-table th,
+.cc-states-matrix-table td {
+  border: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.cc-states-matrix-table th {
+  background: #f9fafb;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.cc-states-matrix-label {
+  font-weight: 600;
+  font-size: 12px;
+  color: #374151;
+  white-space: nowrap;
+  background: #f9fafb;
+}
+
+.cc-states-matrix-cell {
+  width: 160px;
+  height: 160px;
+  overflow: hidden;
+  position: relative;
+}

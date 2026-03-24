@@ -1,0 +1,378 @@
+/* ══════════════════════════════════════════════════════════════
+   Agent C — Ledger Editorial
+   Financial broadsheet. Serif type, horizontal rules,
+   tabular integrations, footnote-style issues.
+   ══════════════════════════════════════════════════════════════ */
+
+.dhc-root {
+  --dhc-bg-page: var(--dh-bg-secondary, #F8F9FA);
+  --dhc-bg-card: var(--dh-bg-primary, #FFFFFF);
+  --dhc-border: var(--dh-border-default, #DEE2E6);
+  --dhc-text: var(--dh-text-primary, #212529);
+  --dhc-muted: var(--dh-text-secondary, #6C757D);
+  --dhc-success: var(--dh-success, #10B981);
+  --dhc-warning: var(--dh-warning, #F59E0B);
+  --dhc-danger: var(--dh-error, #EF4444);
+  --dhc-info: var(--dh-info, #3B82F6);
+  --dhc-success-bg: var(--dh-success-bg, #D1FAE5);
+  --dhc-warning-bg: var(--dh-warning-bg, #FEF3C7);
+  --dhc-danger-bg: var(--dh-error-bg, #FEE2E2);
+  --dhc-info-bg: var(--dh-info-bg, #DBEAFE);
+  --dhc-accent: var(--theme-accent, #8e5f2e);
+  padding: 32px;
+  color: var(--dhc-text);
+  background: var(--dhc-bg-card);
+  line-height: 1.65;
+}
+
+/* ── States ── */
+.dhc-state {
+  min-height: 280px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.dhc-skeleton {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--dhc-border) 40%, var(--dhc-bg-card));
+  animation: dhc-pulse 1.6s ease-in-out infinite alternate;
+  width: 100%;
+}
+.dhc-skeleton-text { height: 18px; }
+.dhc-skeleton-short { width: 60%; }
+
+@keyframes dhc-pulse {
+  0% { opacity: 0.4; }
+  100% { opacity: 0.8; }
+}
+
+/* ── Header ── */
+.dhc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.dhc-title {
+  margin: 0;
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.dhc-sync {
+  margin: 6px 0 0;
+  color: var(--dhc-muted);
+  font-size: 14px;
+}
+
+/* ── Pullquote ── */
+.dhc-pullquote {
+  margin: 0 0 8px;
+  padding: 0 0 0 16px;
+  border-left: 3px solid var(--dhc-accent);
+  font-style: italic;
+  color: var(--dhc-muted);
+  font-size: 15px;
+}
+.dhc-pullquote p { margin: 0; }
+
+/* ── Horizontal Rule ── */
+.dhc-rule {
+  border: none;
+  border-top: 1px solid var(--dhc-border);
+  margin: 24px 0;
+}
+
+/* ── Stale ── */
+.dhc-stale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--dhc-warning);
+  border-bottom: 1px solid var(--dhc-warning);
+  margin-bottom: 16px;
+}
+.dhc-stale p { margin: 0; font-size: 14px; }
+
+/* ── Section ── */
+.dhc-section {
+  margin-bottom: 8px;
+}
+
+.dhc-section-title {
+  margin: 0 0 16px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* ══ Editorial Columns — Metrics ══ */
+.dhc-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+}
+
+.dhc-column {
+  padding: 0 24px;
+}
+.dhc-column:first-child { padding-left: 0; }
+.dhc-column:last-child { padding-right: 0; }
+
+.dhc-column-rule {
+  border-right: 1px solid var(--dhc-border);
+}
+
+.dhc-metric-label {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant: small-caps;
+  letter-spacing: 0.5px;
+  color: var(--dhc-muted);
+}
+
+.dhc-metric-value {
+  display: block;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  margin: 8px 0 10px;
+  letter-spacing: -1.5px;
+}
+
+.dhc-confidence {
+  font-style: italic;
+  font-size: 14px;
+  display: block;
+  margin-bottom: 6px;
+}
+.dhc-confidence-good { color: var(--dhc-success); }
+.dhc-confidence-warning { color: var(--dhc-warning); }
+.dhc-confidence-critical { color: var(--dhc-danger); }
+
+.dhc-metric-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dhc-muted);
+}
+
+/* ══ Ledger Table — Integrations ══ */
+.dhc-ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.dhc-ledger thead th {
+  font-variant: small-caps;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--dhc-muted);
+  text-align: left;
+  padding: 8px 12px 8px 0;
+  border-bottom: 3px double var(--dhc-border);
+}
+
+.dhc-ledger tbody tr {
+  border-bottom: 1px solid var(--dhc-border);
+}
+.dhc-ledger tbody tr:last-child { border-bottom: none; }
+
+.dhc-ledger td {
+  padding: 10px 12px 10px 0;
+  vertical-align: middle;
+}
+
+.dhc-ledger-platform {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.dhc-ledger-muted {
+  color: var(--dhc-muted);
+  font-size: 13px;
+}
+
+/* ── Status Dots ── */
+.dhc-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+.dhc-dot-connected { background: var(--dhc-success); }
+.dhc-dot-critical { background: var(--dhc-danger); }
+.dhc-dot-warning { background: var(--dhc-warning); }
+.dhc-dot-info { background: var(--dhc-info); }
+
+/* ══ Footnote-Style Issues ══ */
+.dhc-issue-group {
+  margin-bottom: 16px;
+}
+
+.dhc-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: 16px;
+  min-height: 44px;
+  min-width: 44px;
+  color: var(--dhc-text);
+}
+.dhc-group-toggle strong {
+  font-weight: 700;
+}
+.dhc-group-toggle span {
+  color: var(--dhc-muted);
+  font-size: 14px;
+}
+
+.dhc-footnotes {
+  padding: 8px 0 8px 16px;
+  border-left: 2px solid var(--dhc-border);
+}
+
+.dhc-footnote {
+  margin-bottom: 16px;
+}
+.dhc-footnote:last-child { margin-bottom: 0; }
+
+.dhc-footnote-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 15px;
+}
+
+.dhc-footnote-sev {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.dhc-footnote-title {
+  font-weight: 600;
+}
+
+.dhc-footnote-sep {
+  color: var(--dhc-muted);
+}
+
+.dhc-footnote-impact {
+  font-size: 13px;
+  color: var(--dhc-muted);
+}
+
+.dhc-footnote-status {
+  font-size: 13px;
+  color: var(--dhc-muted);
+  margin-left: auto;
+}
+
+.dhc-footnote-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.dhc-footnote-meta small {
+  color: var(--dhc-muted);
+  font-size: 12px;
+}
+
+.dhc-footnote-actions {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+}
+
+/* ── Fix Guide ── */
+.dhc-guide {
+  margin-top: 10px;
+  padding: 12px 16px;
+  border-left: 2px solid var(--dhc-info);
+  background: color-mix(in srgb, var(--dhc-info-bg) 30%, var(--dhc-bg-card));
+}
+.dhc-guide ol {
+  margin: 0;
+  padding: 0 0 0 20px;
+  display: grid;
+  gap: 10px;
+}
+.dhc-guide li { font-size: 14px; }
+.dhc-guide p { margin: 0; }
+.dhc-guide pre {
+  border: 1px solid var(--dhc-border);
+  border-radius: 4px;
+  padding: 8px;
+  margin: 6px 0;
+  overflow-x: auto;
+  font-size: 13px;
+}
+.dhc-guide a {
+  color: var(--dhc-accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* ── Text-Link Buttons ── */
+.dhc-link-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--dhc-accent);
+  text-decoration: underline;
+  padding: 4px 2px;
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.dhc-link-btn:hover { text-decoration-thickness: 2px; }
+.dhc-link-btn-primary { color: var(--dhc-info); }
+.dhc-link-btn-muted { color: var(--dhc-muted); }
+
+.dhc-link-btn:focus-visible,
+.dhc-group-toggle:focus-visible,
+.dhc-guide a:focus-visible {
+  outline: 2px solid var(--dhc-info);
+  outline-offset: 2px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1023px) {
+  .dhc-columns { grid-template-columns: 1fr; gap: 20px; }
+  .dhc-column { padding: 0; }
+  .dhc-column-rule { border-right: none; border-bottom: 1px solid var(--dhc-border); padding-bottom: 20px; }
+  .dhc-ledger { display: block; overflow-x: auto; }
+}
+
+@media (max-width: 767px) {
+  .dhc-root { padding: 20px; }
+  .dhc-header { flex-direction: column; align-items: flex-start; }
+  .dhc-title { font-size: 28px; }
+  .dhc-metric-value { font-size: 36px; }
+  .dhc-stale { flex-direction: column; align-items: flex-start; }
+  .dhc-footnote-head { flex-direction: column; align-items: flex-start; }
+  .dhc-footnote-status { margin-left: 0; }
+}

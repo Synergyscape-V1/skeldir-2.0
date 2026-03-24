@@ -1,0 +1,300 @@
+/* ══════════════════════════════════════════════════════════════
+   Agent D — Command Console / Operational Density
+   Table/list hybrid for power users. All 6 visible at once.
+   Inline actions, sortable, filterable. GitHub Actions aesthetic.
+   ══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700&display=swap');
+
+.pid-root {
+  --pid-bg: var(--theme-bg, #F3F4F6);
+  --pid-panel: var(--theme-panel, #FFFFFF);
+  --pid-border: var(--theme-border, #D1D5DB);
+  --pid-text: var(--theme-text, #111827);
+  --pid-muted: var(--theme-muted, #6B7280);
+  --pid-success: #10B981;
+  --pid-error: #EF4444;
+  --pid-info: #3B82F6;
+  --pid-warning: #F59E0B;
+  --pid-success-bg: #ECFDF5;
+  --pid-error-bg: #FEF2F2;
+  --pid-info-bg: #EFF6FF;
+  --pid-warning-bg: #FFFBEB;
+  --pid-row-hover: color-mix(in srgb, var(--pid-border) 15%, var(--pid-panel));
+
+  padding: 28px;
+  color: var(--pid-text);
+  background: var(--pid-bg);
+  font-family: 'Manrope', var(--theme-font-body, sans-serif);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── States ── */
+.pid-state {
+  min-height: 300px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.pid-state h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.pid-state p { margin: 0; color: var(--pid-muted); max-width: 400px; }
+
+/* Skeleton */
+.pid-skel {
+  border-radius: 6px; width: 100%;
+  background: linear-gradient(90deg, var(--pid-border) 25%, color-mix(in srgb, var(--pid-border) 40%, var(--pid-panel)) 50%, var(--pid-border) 75%);
+  background-size: 200% 100%;
+  animation: pid-shimmer 1.5s ease infinite;
+}
+.pid-skel-header { height: 48px; max-width: 340px; }
+.pid-skel-row { height: 52px; margin-bottom: 2px; }
+@keyframes pid-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+/* ── Header ── */
+.pid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.pid-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.pid-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--pid-muted); }
+
+/* Filter chips */
+.pid-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pid-filter-chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--pid-border);
+  background: var(--pid-panel);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--pid-muted);
+  transition: all 0.12s ease;
+}
+.pid-filter-chip:hover { border-color: var(--pid-text); color: var(--pid-text); }
+.pid-filter-chip:focus-visible { outline: 2px solid var(--pid-info); outline-offset: 2px; }
+.pid-filter-chip-active {
+  background: var(--pid-text);
+  color: var(--pid-panel);
+  border-color: var(--pid-text);
+}
+.pid-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 15%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* ── Alert ── */
+.pid-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: 6px;
+  background: var(--pid-error-bg);
+  border: 1px solid color-mix(in srgb, var(--pid-error) 30%, transparent);
+  border-left: 3px solid var(--pid-error);
+  font-size: 13px;
+  font-weight: 500;
+}
+.pid-alert-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--pid-error); flex-shrink: 0;
+}
+.pid-alert strong { font-weight: 700; }
+
+/* ── Summary strip ── */
+.pid-summary {
+  display: flex; gap: 16px; margin-bottom: 16px; padding: 0; list-style: none;
+}
+.pid-summary-item {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 500; color: var(--pid-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pid-summary-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pid-summary-dot-connected { background: var(--pid-success); }
+.pid-summary-dot-disconnected { background: var(--pid-muted); }
+.pid-summary-dot-syncing { background: var(--pid-info); }
+.pid-summary-dot-error { background: var(--pid-error); }
+.pid-summary-num { font-weight: 700; color: var(--pid-text); }
+
+/* ── Table ── */
+.pid-table {
+  background: var(--pid-panel);
+  border: 1px solid var(--pid-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pid-table-head {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1.2fr 1.3fr 1fr;
+  gap: 8px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--pid-bg) 70%, var(--pid-panel));
+  border-bottom: 1px solid var(--pid-border);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pid-muted);
+}
+
+.pid-table-row {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1.2fr 1.3fr 1fr;
+  gap: 8px;
+  padding: 12px 16px;
+  align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--pid-border) 50%, transparent);
+  transition: background 0.1s ease;
+}
+.pid-table-row:last-child { border-bottom: none; }
+.pid-table-row:hover { background: var(--pid-row-hover); }
+
+/* Row state accent */
+.pid-table-row-error,
+.pid-table-row-disconnected {
+  border-left: 3px solid var(--pid-error);
+}
+.pid-table-row-syncing { border-left: 3px solid var(--pid-info); }
+.pid-table-row-connected { border-left: 3px solid transparent; }
+
+/* Platform cell */
+.pid-cell-platform {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pid-cell-logo {
+  width: 24px; height: 24px; object-fit: contain; flex-shrink: 0;
+}
+.pid-cell-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.pid-cell-desc {
+  font-size: 12px;
+  color: var(--pid-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status cell */
+.pid-cell-status { display: flex; align-items: center; gap: 6px; }
+.pid-status-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.pid-status-dot-connected { background: var(--pid-success); }
+.pid-status-dot-disconnected { background: var(--pid-muted); }
+.pid-status-dot-syncing { background: var(--pid-info); }
+.pid-status-dot-error { background: var(--pid-error); }
+.pid-status-label { font-size: 13px; font-weight: 500; }
+
+/* Last sync cell */
+.pid-cell-sync {
+  font-size: 12px;
+  color: var(--pid-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Detail cell — error or progress */
+.pid-cell-detail { font-size: 12px; color: var(--pid-muted); }
+.pid-cell-error-text { color: var(--pid-error); font-weight: 500; }
+
+.pid-inline-progress {
+  display: flex; align-items: center; gap: 8px;
+}
+.pid-inline-track {
+  flex: 1; height: 4px; border-radius: 2px; overflow: hidden;
+  background: color-mix(in srgb, var(--pid-info) 15%, transparent);
+}
+.pid-inline-fill {
+  height: 100%; border-radius: 2px; background: var(--pid-info);
+  transition: width 0.4s ease;
+}
+.pid-inline-pct {
+  font-size: 11px; font-weight: 600; color: var(--pid-info);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* Action cell */
+.pid-cell-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ── Buttons ── */
+.pid-btn {
+  min-height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--pid-border);
+  padding: 5px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  font-family: inherit;
+  transition: all 0.12s ease;
+  background: var(--pid-panel);
+  color: var(--pid-text);
+  white-space: nowrap;
+}
+.pid-btn:focus-visible { outline: 2px solid var(--pid-info); outline-offset: 2px; }
+.pid-btn-primary { background: var(--pid-text); color: var(--pid-panel); border-color: var(--pid-text); }
+.pid-btn-primary:hover { opacity: 0.85; }
+.pid-btn-danger { background: var(--pid-error); color: #fff; border-color: var(--pid-error); }
+.pid-btn-danger:hover { background: #DC2626; }
+.pid-btn-secondary:hover { background: var(--pid-bg); }
+.pid-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Empty filter state ── */
+.pid-empty-filter {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--pid-muted);
+  font-size: 14px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1023px) {
+  .pid-table-head { display: none; }
+  .pid-table-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 14px 16px;
+  }
+  .pid-cell-platform { grid-column: 1 / -1; }
+  .pid-cell-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 767px) {
+  .pid-root { padding: 16px; }
+  .pid-header { flex-direction: column; align-items: flex-start; }
+  .pid-table-row { grid-template-columns: 1fr; }
+  .pid-title { font-size: 20px; }
+  .pid-summary { flex-wrap: wrap; gap: 10px; }
+}

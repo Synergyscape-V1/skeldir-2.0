@@ -1,0 +1,352 @@
+/* ============================================================
+   Agent C — Confidence as the Hero
+   Confidence (not ROAS) is the visual anchor.
+   Uncertainty drives interpretation.
+   Tier-grouped layout, editorial feel.
+   ============================================================ */
+
+.cc-agent-c {
+  background: #0f172a;
+  color: #f1f5f9;
+  border-radius: 12px;
+  padding: var(--spacing-lg);
+}
+
+.cc-c-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+.cc-c-loading {
+  padding: var(--spacing-xl) 0;
+}
+
+.cc-agent-c .cc-skeleton-line {
+  background: linear-gradient(90deg, #1e293b 0%, #334155 40%, #1e293b 100%);
+  background-size: 200% 100%;
+}
+
+/* --- Confidence Hero Banner --- */
+
+.cc-c-hero-banner {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: var(--spacing-lg);
+  overflow: hidden;
+}
+
+.cc-c-hero-header {
+  margin-bottom: var(--spacing-md);
+}
+
+.cc-c-hero-header h3 {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--heading-md-size);
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.cc-c-hero-subtitle {
+  margin: 0;
+  font-size: var(--body-md-size);
+  color: #94a3b8;
+}
+
+.cc-c-hero-svg-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cc-c-hero-svg {
+  display: block;
+  min-width: 500px;
+}
+
+/* Mobile fallback: hidden by default, shown on small screens */
+.cc-c-hero-mobile-fallback {
+  display: none;
+}
+
+/* --- Confidence Tier Cards --- */
+
+.cc-c-tier-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.cc-c-tier-group {
+  border-radius: 10px;
+  padding: var(--spacing-md);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cc-c-tier-high {
+  border-left: 4px solid var(--success);
+}
+
+.cc-c-tier-medium {
+  border-left: 4px solid var(--warning);
+}
+
+.cc-c-tier-low {
+  border-left: 4px solid var(--error);
+}
+
+.cc-c-tier-header {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--body-sm-size);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.cc-c-tier-high .cc-c-tier-header { color: var(--success); }
+.cc-c-tier-medium .cc-c-tier-header { color: var(--warning); }
+.cc-c-tier-low .cc-c-tier-header { color: var(--error); }
+
+.cc-c-tier-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.cc-c-tier-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+  transition: background-color 0.15s ease;
+}
+
+.cc-c-tier-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cc-c-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--heading-sm-size);
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.cc-c-card-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+}
+
+.cc-c-metric {
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cc-c-metric label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.cc-c-metric strong {
+  display: block;
+  font-size: var(--heading-sm-size);
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.cc-c-metric small {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* --- Revenue Chart styling for dark bg --- */
+
+.cc-agent-c .cc-revenue-chart {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+
+.cc-agent-c .cc-revenue-chart figcaption {
+  color: #f1f5f9;
+}
+
+/* --- Budget Banner: confidence-aware --- */
+
+.cc-c-budget-banner {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 4px solid var(--data-1);
+  border-radius: 8px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cc-c-budget-prefix {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin-bottom: var(--spacing-xs);
+  font-weight: 600;
+}
+
+.cc-c-budget-banner h3 {
+  margin: 0 0 6px;
+  font-size: var(--heading-sm-size);
+  color: #f1f5f9;
+}
+
+.cc-c-budget-banner p {
+  margin: 0 0 6px;
+  color: #94a3b8;
+}
+
+.cc-c-budget-banner small {
+  color: #64748b;
+}
+
+.cc-c-budget-banner a {
+  text-decoration: none;
+  background: var(--info);
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: var(--body-md-size);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.cc-c-budget-banner a:hover {
+  background: color-mix(in srgb, var(--info) 85%, black);
+}
+
+/* --- Empty & Error states --- */
+
+.cc-agent-c .cc-empty-state {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+}
+
+.cc-agent-c .cc-empty-state p {
+  color: #94a3b8;
+}
+
+.cc-agent-c .cc-global-error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--error);
+}
+
+.cc-agent-c .cc-global-error p {
+  color: #fca5a5;
+}
+
+/* --- Focus visible for dark theme --- */
+
+.cc-agent-c button:focus-visible,
+.cc-agent-c a:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 4px;
+}
+
+/* --- Mobile confidence fallback --- */
+
+.cc-c-mobile-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--spacing-sm);
+  align-items: center;
+  padding: var(--spacing-sm);
+  border-radius: 6px;
+  margin-bottom: var(--spacing-xs);
+}
+
+.cc-c-mobile-tier-high { background: rgba(16, 185, 129, 0.1); }
+.cc-c-mobile-tier-medium { background: rgba(245, 158, 11, 0.1); }
+.cc-c-mobile-tier-low { background: rgba(239, 68, 68, 0.1); }
+
+.cc-c-mobile-name {
+  font-weight: 600;
+  font-size: var(--body-md-size);
+}
+
+.cc-c-mobile-roas {
+  font-size: var(--heading-sm-size);
+  font-weight: 700;
+}
+
+.cc-c-mobile-range {
+  font-size: var(--body-sm-size);
+  color: #94a3b8;
+}
+
+.cc-c-mobile-badge {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cc-c-badge-high { color: var(--success); }
+.cc-c-badge-medium { color: var(--warning); }
+.cc-c-badge-low { color: var(--error); }
+
+/* --- Responsive: Tablet --- */
+
+@media (max-width: 1023px) {
+  .cc-c-hero-banner {
+    padding: var(--spacing-md);
+  }
+
+  .cc-c-card-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Responsive: Mobile --- */
+
+@media (max-width: 767px) {
+  .cc-agent-c {
+    padding: var(--spacing-sm);
+    border-radius: 8px;
+  }
+
+  .cc-c-hero-svg-wrap {
+    display: none;
+  }
+
+  .cc-c-hero-mobile-fallback {
+    display: block;
+  }
+
+  .cc-c-tier-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .cc-c-budget-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cc-c-budget-banner a {
+    width: 100%;
+    text-align: center;
+  }
+}
