@@ -1,0 +1,68 @@
+{
+  "contract_id": "b15.p0.invariant_lock.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P0",
+  "invariants": [
+    {
+      "invariant_id": "INV-B15-P0-01",
+      "statement": "B1.5 evidence must anchor to authoritative main truth surfaces.",
+      "why": "Prevents stale branch, detached worktree, and prose-first authority drift.",
+      "governed_surfaces": [
+        "contracts-internal/governance/b15_p0_authority_lock.main.json",
+        "docs/forensics/B1.5-P0 Remediation Evidence Pack .md"
+      ],
+      "enforcement_surface": "scripts/ci/enforce_b15_p0_authority_scope_invariants.py#b15_p0_artifact_coherence_check",
+      "enforcement_status": "enforced_now"
+    },
+    {
+      "invariant_id": "INV-B15-P0-02",
+      "statement": "B1.5 scope remains bounded to control-pattern surfaces and excludes B3 queue/detail productization.",
+      "why": "Prevents scope bleed into deferred B3 investigation product work.",
+      "governed_surfaces": [
+        "contracts-internal/governance/b15_p0_scope_lock.main.json"
+      ],
+      "enforcement_surface": "manifest_scoped_review_gate",
+      "enforcement_status": "deferred"
+    },
+    {
+      "invariant_id": "INV-B15-P0-03",
+      "statement": "Decision surfaces must not become realtime streaming chat surfaces.",
+      "why": "Preserves asynchronous, review-driven Centaur doctrine.",
+      "governed_surfaces": [
+        "contracts-internal/governance/b15_p0_scope_lock.main.json",
+        "contracts-internal/governance/b15_p0_realtime_exceptions.main.json"
+      ],
+      "enforcement_surface": "b15_p0_realtime_import_fence",
+      "enforcement_status": "enforced_now"
+    },
+    {
+      "invariant_id": "INV-B15-P0-04",
+      "statement": "No hidden auto-accept paths for user-facing recommendation decisions.",
+      "why": "Keeps review-and-approve semantics non-skippable in user-facing flows.",
+      "governed_surfaces": [
+        "backend/app/services/investigation.py",
+        "backend/app/workers/llm.py",
+        "frontend/src/pages/BudgetScenarioDetailPage.tsx"
+      ],
+      "enforcement_surface": "runtime_contract_and_mutation_phase_checks",
+      "enforcement_status": "deferred"
+    },
+    {
+      "invariant_id": "INV-B15-P0-05",
+      "statement": "Deterministic authority and LLM synthesis must remain non-equivalent control roles.",
+      "why": "Prevents synthesis output from silently becoming calculation authority.",
+      "governed_surfaces": [
+        "api-contracts/openapi/v1/llm-budget.yaml",
+        "backend/app/workers/llm.py",
+        "backend/app/llm/provider_boundary.py"
+      ],
+      "enforcement_surface": "contract_runtime_authority_alignment_checks",
+      "enforcement_status": "deferred"
+    }
+  ],
+  "enforced_now_checks": [
+    "b15_p0_artifact_coherence_check",
+    "b15_p0_realtime_import_fence"
+  ]
+}
+

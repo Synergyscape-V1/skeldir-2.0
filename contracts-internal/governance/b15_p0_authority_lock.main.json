@@ -1,0 +1,29 @@
+{
+  "contract_id": "b15.p0.authority_lock.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P0",
+  "authoritative_branch": "main",
+  "authoritative_remote": "origin/main",
+  "authority_order": [
+    "code_in_main",
+    "openapi_contracts_in_repo",
+    "mounted_runtime_handlers",
+    "mock_topology_in_repo",
+    "ci_workflow_truth",
+    "runtime_proof_artifacts",
+    "prose_documents"
+  ],
+  "evidence_requirements": {
+    "must_anchor_to_main_truth": true,
+    "must_record_branch_and_sha": true,
+    "must_record_dirty_clean_state": true,
+    "must_not_claim_from_feature_branch_prose": true
+  },
+  "inheritance": {
+    "predecessor_phase": "B1.4",
+    "predecessor_status": "closed",
+    "reopen_predecessor_scope": false
+  },
+  "phase_start_marker_file": "contracts-internal/governance/b15_p0_phase_start.main.json"
+}
+

@@ -1356,6 +1356,36 @@ jobs:
           name: b14-p7-runtime-artifacts
           path: artifacts/b14_p7
           if-no-files-found: error
+
+  b15-p0-authority-scope-invariant-lock:
+    name: B1.5 P0 Authority Scope Invariant Lock
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install B1.5-P0 dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Enforce B1.5-P0 authority/scope/invariant structure
+        run: |
+          python scripts/ci/enforce_b15_p0_authority_scope_invariants.py
+
+      - name: Run B1.5-P0 enforcer negative controls
+        run: |
+          pytest backend/tests/test_b15_p0_authority_scope_invariants_enforcer.py -q
   # Contract validation
 
   validate-contracts:
