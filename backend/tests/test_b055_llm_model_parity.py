@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PGUUID
 
 from app.db.session import engine
 from app.models.llm import (
+    BudgetJob,
     BudgetOptimizationJob,
     Investigation,
     LLMApiCall,
@@ -51,6 +52,7 @@ async def test_llm_models_reflection_parity():
         "llm_budget_reservations": LLMBudgetReservation,
         "llm_semantic_cache": LLMSemanticCache,
         "investigations": Investigation,
+        "budget_jobs": BudgetJob,
         "budget_optimization_jobs": BudgetOptimizationJob,
         "llm_breaker_state": LLMBreakerState,
         "llm_hourly_shutoff_state": LLMHourlyShutoffState,

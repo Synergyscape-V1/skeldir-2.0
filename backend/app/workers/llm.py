@@ -19,10 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.llm.provider_boundary import get_llm_provider_boundary
 from app.models.llm import BudgetOptimizationJob, Investigation
 from app.schemas.llm_payloads import LLMTaskPayload
+from app.services.budget_job import BudgetJobService
+from app.services.investigation import InvestigationService
 
 logger = logging.getLogger(__name__)
 
 _PROVIDER_BOUNDARY = get_llm_provider_boundary()
+_INVESTIGATION_SERVICE = InvestigationService()
+_BUDGET_JOB_SERVICE = BudgetJobService()
 
 
 def _stable_fallback_id(model: LLMTaskPayload, endpoint: str, label: str) -> str:
@@ -65,6 +69,20 @@ def _normalize_payload_context(model: LLMTaskPayload, endpoint: str) -> LLMTaskP
             "max_cost_cents": model.max_cost_cents,
         }
     )
+
+
+def _trace_status_for_result(result_status: str) -> str:
+    if result_status == "success":
+        return "compute_succeeded"
+    if result_status == "timeout":
+        return "compute_timeout"
+    if result_status == "cancelled":
+        return "compute_cancelled"
+    if result_status == "running":
+        return "compute_running"
+    if result_status == "pending":
+        return "compute_pending"
+    return "compute_failed"
 
 
 async def route_request(
@@ -148,6 +166,17 @@ async def run_investigation(
 ) -> Dict[str, Any]:
     endpoint = "app.tasks.llm.investigation"
     payload = _normalize_payload_context(model, endpoint)
+    authority_job = await _INVESTIGATION_SERVICE.get_or_create_job(
+        session,
+        tenant_id=payload.tenant_id,
+        request_id=payload.request_id,
+        correlation_id=payload.correlation_id,
+    )
+    await _INVESTIGATION_SERVICE.mark_investigating(
+        session,
+        tenant_id=payload.tenant_id,
+        job_id=authority_job.id,
+    )
     result = await _PROVIDER_BOUNDARY.complete(
         model=payload,
         session=session,
@@ -155,22 +184,26 @@ async def run_investigation(
         force_failure=force_failure,
     )
     query = f"provider:{payload.request_id}"
+    trace_status = _trace_status_for_result(result.status)
     existing = (
         await session.execute(
             select(Investigation.id).where(
                 Investigation.tenant_id == payload.tenant_id,
-                Investigation.query == query,
+                Investigation.request_id == payload.request_id,
             )
         )
     ).scalar_one_or_none()
-    investigation_id = existing
-    if result.status == "success" and existing is None:
+    internal_trace_id = existing
+    if existing is None:
         investigation = Investigation(
             tenant_id=payload.tenant_id,
             query=query,
-            status="completed",
+            request_id=payload.request_id,
+            authority_job_id=authority_job.id,
+            lifecycle_role="internal_trace",
+            status=trace_status,
             result={
-                "status": "completed",
+                "status": trace_status,
                 "request_id": payload.request_id,
                 "summary": result.output_text,
             },
@@ -178,7 +211,47 @@ async def run_investigation(
         )
         session.add(investigation)
         await session.flush()
-        investigation_id = investigation.id
+        internal_trace_id = investigation.id
+    else:
+        trace_row = await session.get(Investigation, existing)
+        if trace_row is not None:
+            trace_row.query = query
+            trace_row.request_id = payload.request_id
+            trace_row.authority_job_id = authority_job.id
+            trace_row.lifecycle_role = "internal_trace"
+            trace_row.status = trace_status
+            trace_row.result = {
+                "status": trace_status,
+                "request_id": payload.request_id,
+                "summary": result.output_text,
+            }
+            trace_row.cost_cents = int(result.usage.get("cost_cents", 0))
+
+    if result.status == "success":
+        await _INVESTIGATION_SERVICE.mark_ready_for_review(
+            session,
+            tenant_id=payload.tenant_id,
+            job_id=authority_job.id,
+            result_payload={
+                "request_id": payload.request_id,
+                "provider_summary": result.output_text,
+            },
+        )
+    elif result.status == "timeout":
+        await _INVESTIGATION_SERVICE.timeout_job(
+            session,
+            tenant_id=payload.tenant_id,
+            job_id=authority_job.id,
+            failure_reason=result.failure_reason or "provider_timeout",
+        )
+    else:
+        await _INVESTIGATION_SERVICE.fail_job(
+            session,
+            tenant_id=payload.tenant_id,
+            job_id=authority_job.id,
+            failure_code=result.status,
+            failure_reason=result.failure_reason or result.block_reason or "provider_failed",
+        )
 
     logger.info(
         "llm_investigation_boundary",
@@ -196,7 +269,8 @@ async def run_investigation(
         "request_id": payload.request_id,
         "correlation_id": payload.correlation_id,
         "api_call_id": str(result.api_call_id),
-        "investigation_id": str(investigation_id) if investigation_id else None,
+        "investigation_id": str(authority_job.id),
+        "investigation_trace_id": str(internal_trace_id) if internal_trace_id else None,
         "blocked_reason": result.block_reason,
         "failure_reason": result.failure_reason,
         "was_cached": result.was_cached,
@@ -211,35 +285,89 @@ async def optimize_budget(
 ) -> Dict[str, Any]:
     endpoint = "app.tasks.llm.budget_optimization"
     payload = _normalize_payload_context(model, endpoint)
+    authority_job = await _BUDGET_JOB_SERVICE.get_or_create_job(
+        session,
+        tenant_id=payload.tenant_id,
+        request_id=payload.request_id,
+        correlation_id=payload.correlation_id,
+    )
+    await _BUDGET_JOB_SERVICE.mark_investigating(
+        session,
+        tenant_id=payload.tenant_id,
+        job_id=authority_job.id,
+    )
     result = await _PROVIDER_BOUNDARY.complete(
         model=payload,
         session=session,
         endpoint=endpoint,
         force_failure=force_failure,
     )
+    trace_status = _trace_status_for_result(result.status)
     existing = (
         await session.execute(
             select(BudgetOptimizationJob.id).where(
                 BudgetOptimizationJob.tenant_id == payload.tenant_id,
-                BudgetOptimizationJob.recommendations["request_id"].astext == payload.request_id,
+                BudgetOptimizationJob.request_id == payload.request_id,
             )
         )
     ).scalar_one_or_none()
-    job_id = existing
-    if result.status == "success" and existing is None:
+    internal_trace_id = existing
+    if existing is None:
         job = BudgetOptimizationJob(
             tenant_id=payload.tenant_id,
-            status="completed",
+            request_id=payload.request_id,
+            authority_job_id=authority_job.id,
+            lifecycle_role="internal_trace",
+            status=trace_status,
             recommendations={
                 "request_id": payload.request_id,
                 "provider_summary": result.output_text,
-                "status": "completed",
+                "status": trace_status,
             },
             cost_cents=int(result.usage.get("cost_cents", 0)),
         )
         session.add(job)
         await session.flush()
-        job_id = job.id
+        internal_trace_id = job.id
+    else:
+        trace_row = await session.get(BudgetOptimizationJob, existing)
+        if trace_row is not None:
+            trace_row.request_id = payload.request_id
+            trace_row.authority_job_id = authority_job.id
+            trace_row.lifecycle_role = "internal_trace"
+            trace_row.status = trace_status
+            trace_row.recommendations = {
+                "request_id": payload.request_id,
+                "provider_summary": result.output_text,
+                "status": trace_status,
+            }
+            trace_row.cost_cents = int(result.usage.get("cost_cents", 0))
+
+    if result.status == "success":
+        await _BUDGET_JOB_SERVICE.mark_ready_for_review(
+            session,
+            tenant_id=payload.tenant_id,
+            job_id=authority_job.id,
+            result_payload={
+                "request_id": payload.request_id,
+                "provider_summary": result.output_text,
+            },
+        )
+    elif result.status == "timeout":
+        await _BUDGET_JOB_SERVICE.timeout_job(
+            session,
+            tenant_id=payload.tenant_id,
+            job_id=authority_job.id,
+            failure_reason=result.failure_reason or "provider_timeout",
+        )
+    else:
+        await _BUDGET_JOB_SERVICE.fail_job(
+            session,
+            tenant_id=payload.tenant_id,
+            job_id=authority_job.id,
+            failure_code=result.status,
+            failure_reason=result.failure_reason or result.block_reason or "provider_failed",
+        )
 
     logger.info(
         "llm_budget_boundary",
@@ -257,7 +385,8 @@ async def optimize_budget(
         "request_id": payload.request_id,
         "correlation_id": payload.correlation_id,
         "api_call_id": str(result.api_call_id),
-        "budget_job_id": str(job_id) if job_id else None,
+        "budget_job_id": str(authority_job.id),
+        "budget_trace_id": str(internal_trace_id) if internal_trace_id else None,
         "blocked_reason": result.block_reason,
         "failure_reason": result.failure_reason,
         "was_cached": result.was_cached,

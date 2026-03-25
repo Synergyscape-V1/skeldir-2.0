@@ -1389,6 +1389,61 @@ jobs:
       - name: Run B1.5-P0 enforcer negative controls
         run: |
           pytest backend/tests/test_b15_p0_authority_scope_invariants_enforcer.py -q
+
+  b15-p1-lifecycle-authority-lock:
+    name: B1.5 P1 Lifecycle Authority Lock
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      TESTING: "1"
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install B1.5-P1 dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Apply migrations
+        run: |
+          alembic upgrade head
+
+      - name: Enforce B1.5-P1 lifecycle authority structure
+        run: |
+          python scripts/ci/enforce_b15_p1_lifecycle_authority.py
+
+      - name: Run B1.5-P1 enforcer negative controls
+        run: |
+          pytest backend/tests/test_b15_p1_lifecycle_authority_enforcer.py -q
+
+      - name: Run B1.5-P1 runtime lifecycle authority proofs
+        run: |
+          pytest backend/tests/test_b15_p1_runtime_lifecycle_authority.py -q
   # Contract validation
 
   validate-contracts:
