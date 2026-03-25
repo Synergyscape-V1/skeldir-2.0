@@ -31,7 +31,7 @@ def _drop_check_constraints(table_name: str) -> None:
                 WHERE conrelid = '{table_name}'::regclass
                   AND contype = 'c'
             LOOP
-                EXECUTE format('ALTER TABLE {table_name} DROP CONSTRAINT %I', constraint_row.conname);
+                EXECUTE format('ALTER TABLE {table_name} DROP CONSTRAINT %I', constraint_row.conname); -- # CI:DESTRUCTIVE_OK - Idempotent check-constraint replacement for lifecycle authority migration.
             END LOOP;
         END
         $$;
@@ -457,9 +457,9 @@ def downgrade() -> None:
         CHECK (status IN ('pending', 'running', 'completed', 'failed'))
         """
     )
-    op.execute("ALTER TABLE budget_optimization_jobs DROP COLUMN IF EXISTS lifecycle_role")
-    op.execute("ALTER TABLE budget_optimization_jobs DROP COLUMN IF EXISTS authority_job_id")
-    op.execute("ALTER TABLE budget_optimization_jobs DROP COLUMN IF EXISTS request_id")
+    op.execute("ALTER TABLE budget_optimization_jobs DROP COLUMN IF EXISTS lifecycle_role")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 trace-demotion column.
+    op.execute("ALTER TABLE budget_optimization_jobs DROP COLUMN IF EXISTS authority_job_id")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 authority link column.
+    op.execute("ALTER TABLE budget_optimization_jobs DROP COLUMN IF EXISTS request_id")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 request lineage column.
 
     _drop_check_constraints("investigations")
     op.execute(
@@ -483,15 +483,15 @@ def downgrade() -> None:
         CHECK (status IN ('pending', 'running', 'completed', 'failed'))
         """
     )
-    op.execute("ALTER TABLE investigations DROP COLUMN IF EXISTS lifecycle_role")
-    op.execute("ALTER TABLE investigations DROP COLUMN IF EXISTS authority_job_id")
-    op.execute("ALTER TABLE investigations DROP COLUMN IF EXISTS request_id")
+    op.execute("ALTER TABLE investigations DROP COLUMN IF EXISTS lifecycle_role")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 trace-demotion column.
+    op.execute("ALTER TABLE investigations DROP COLUMN IF EXISTS authority_job_id")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 authority link column.
+    op.execute("ALTER TABLE investigations DROP COLUMN IF EXISTS request_id")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 request lineage column.
 
     _revoke_if_role_exists("app_ro", "budget_jobs")
     _revoke_if_role_exists("app_user", "budget_jobs")
     _revoke_if_role_exists("app_rw", "budget_jobs")
     op.execute("DROP POLICY IF EXISTS tenant_isolation_policy ON budget_jobs")
-    op.execute("DROP TABLE IF EXISTS budget_jobs")
+    op.execute("DROP TABLE IF EXISTS budget_jobs")  # CI:DESTRUCTIVE_OK - Downgrade rollback for B1.5-P1 authoritative budget lifecycle substrate.
 
     _drop_check_constraints("investigation_jobs")
     op.execute(
@@ -535,13 +535,13 @@ def downgrade() -> None:
         CHECK (status NOT IN ('APPROVED', 'COMPLETED') OR ready_for_review_at IS NOT NULL)
         """
     )
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS failure_reason")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS failure_code")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS cancelled_at")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS timeout_at")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS failed_at")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS rerun_requested_at")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS refine_requested_at")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS rejected_at")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS updated_at")
-    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS request_id")
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS failure_reason")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 failure metadata.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS failure_code")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 failure metadata.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS cancelled_at")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 lifecycle timestamps.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS timeout_at")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 lifecycle timestamps.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS failed_at")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 lifecycle timestamps.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS rerun_requested_at")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 lifecycle timestamps.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS refine_requested_at")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 lifecycle timestamps.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS rejected_at")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 lifecycle timestamps.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS updated_at")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 lifecycle timestamps.
+    op.execute("ALTER TABLE investigation_jobs DROP COLUMN IF EXISTS request_id")  # CI:DESTRUCTIVE_OK - Downgrade rollback for additive B1.5-P1 request lineage.
