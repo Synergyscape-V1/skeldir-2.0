@@ -4669,7 +4669,7 @@ ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 -- Name: dead_events_quarantine quarantine_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
 
 
 --
@@ -4794,7 +4794,7 @@ CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant
 -- Name: investigation_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_rw, app_ro, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --
@@ -5004,14 +5004,14 @@ CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_pay
 -- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
 -- Name: dead_events_quarantine tenant_lane_select; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_rw, app_ro, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 
 --
@@ -5070,4 +5070,3 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 --
 
 \unrestrict gFM99rNSxp0CDaNCD09XdQtlbaGCqdX3zvVbKeUifRPPQDKRUih1n4XTMtSD0cQ
-
