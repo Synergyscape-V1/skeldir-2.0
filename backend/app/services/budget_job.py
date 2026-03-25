@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import clock as clock_module
 from app.services.centaur_lifecycle import LifecycleStatus
 
 logger = logging.getLogger(__name__)
@@ -61,13 +62,11 @@ class BudgetJobService:
         if existing is not None:
             return existing
 
-        now = datetime.now(timezone.utc)
-        job_id = uuid4()
-        await session.execute(
+        now = clock_module.utcnow()
+        insert_result = await session.execute(
             text(
                 """
                 INSERT INTO budget_jobs (
-                    id,
                     tenant_id,
                     request_id,
                     correlation_id,
@@ -75,7 +74,6 @@ class BudgetJobService:
                     created_at,
                     updated_at
                 ) VALUES (
-                    :id,
                     :tenant_id,
                     :request_id,
                     :correlation_id,
@@ -83,10 +81,10 @@ class BudgetJobService:
                     :created_at,
                     :updated_at
                 )
+                RETURNING id
                 """
             ),
             {
-                "id": str(job_id),
                 "tenant_id": str(tenant_id),
                 "request_id": request_id,
                 "correlation_id": correlation_id,
@@ -95,6 +93,7 @@ class BudgetJobService:
                 "updated_at": now,
             },
         )
+        job_id = UUID(str(insert_result.scalar_one()))
         logger.info(
             "budget_job_created",
             extra={
@@ -434,7 +433,7 @@ class BudgetJobService:
         failure_reason: Optional[str] = None,
         result_payload: Optional[dict[str, Any]] = None,
     ) -> None:
-        now = datetime.now(timezone.utc)
+        now = clock_module.utcnow()
         assignments = ["status = :status", "updated_at = :updated_at"]
         params: dict[str, Any] = {
             "status": next_status.value,

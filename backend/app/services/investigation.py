@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Optional, Protocol
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
+from app.core import clock as clock_module
 from app.services.centaur_lifecycle import LifecycleStatus
 
 logger = logging.getLogger(__name__)
@@ -29,14 +30,14 @@ class SystemClock:
     """Production clock using system time."""
 
     def now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return clock_module.utcnow()
 
 
 class FixedClock:
     """Test clock with controllable time."""
 
     def __init__(self, fixed_time: Optional[datetime] = None):
-        self._time = fixed_time or datetime.now(timezone.utc)
+        self._time = fixed_time or clock_module.utcnow()
 
     def now(self) -> datetime:
         return self._time
@@ -121,14 +122,16 @@ class InvestigationService:
     ) -> InvestigationJob:
         now = self.clock.now()
         min_hold_until = now + timedelta(seconds=self.min_hold_seconds)
-        job_id = uuid4()
-        resolved_request_id = request_id or correlation_id or f"investigation-{job_id}"
+        resolved_request_id = (
+            request_id
+            or correlation_id
+            or f"investigation-{tenant_id}-{now.isoformat()}"
+        )
 
-        await conn.execute(
+        insert_result = await conn.execute(
             text(
                 """
                 INSERT INTO investigation_jobs (
-                    id,
                     tenant_id,
                     request_id,
                     correlation_id,
@@ -138,7 +141,6 @@ class InvestigationService:
                     min_hold_until,
                     metadata
                 ) VALUES (
-                    :id,
                     :tenant_id,
                     :request_id,
                     :correlation_id,
@@ -148,10 +150,10 @@ class InvestigationService:
                     :min_hold_until,
                     CAST(:metadata AS JSONB)
                 )
+                RETURNING id
                 """
             ),
             {
-                "id": str(job_id),
                 "tenant_id": str(tenant_id),
                 "request_id": resolved_request_id,
                 "correlation_id": correlation_id,
@@ -162,6 +164,7 @@ class InvestigationService:
                 "metadata": json.dumps(metadata or {}),
             },
         )
+        job_id = UUID(str(insert_result.scalar_one()))
 
         logger.info(
             "investigation_job_created",
