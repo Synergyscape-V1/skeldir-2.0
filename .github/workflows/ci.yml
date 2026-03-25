@@ -99,7 +99,7 @@ jobs:
 
       - name: Enforce contract semantic drift gate
         run: |
-          pytest tests/contract/test_contract_semantics.py -q
+          pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q
 
   b14-p0-privacy-authority-lock:
     name: B1.4 P0 Privacy Authority Lock
