@@ -2,9 +2,8 @@ openapi: 3.1.0
 info:
   title: Skeldir LLM Investigations API
   description: |
-    Bounded agent system for exploratory data analysis (Insights Detective).
-    60-second timeout, 10 tool call maximum, $0.30 cost ceiling per investigation.
-    Async job pattern with status polling.
+    B1.5 Centaur investigation control plane.
+    Investigation jobs are asynchronous, review-gated, and contractually idempotent for review mutations.
   version: 1.0.0
   contact:
     name: Skeldir Engineering
@@ -18,14 +17,14 @@ security:
       - viewer
 tags:
   - name: Investigations
-    description: Bounded agent investigations
+    description: Asynchronous, review-driven investigation lifecycle
 paths:
   /api/investigations:
     post:
       summary: Start asynchronous investigation
       description: |
-        Initiates a new bounded agent investigation. Returns a job ID for polling.
-        Investigations have a 60-second timeout and 10 tool call maximum.
+        Creates an investigation job and returns domain-specific polling and retrieval URLs.
+        This endpoint does not perform financial calculations synchronously.
       operationId: createInvestigation
       tags:
         - Investigations
@@ -49,14 +48,14 @@ paths:
           application/json:
             schema:
               type: object
-              required:
+              required: &ref_16
                 - question
-              properties:
+              properties: &ref_17
                 question:
                   type: string
                   minLength: 10
                   maxLength: 500
-                  example: Why is Google Ads underperforming vs. last month?
+                  example: Why is Google Ads underperforming versus last month?
                 context:
                   type: object
                   properties:
@@ -77,7 +76,7 @@ paths:
                       type: object
       responses:
         '202':
-          description: Investigation queued
+          description: Investigation accepted
           headers:
             X-Correlation-ID:
               schema:
@@ -88,41 +87,60 @@ paths:
             application/json:
               schema:
                 type: object
-                required:
+                required: &ref_18
                   - investigation_id
+                  - tenant_id
                   - status
                   - estimated_duration_seconds
                   - status_url
-                properties:
+                  - result_url
+                properties: &ref_19
                   investigation_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
                     type: string
                     format: uuid
                   status:
                     type: string
-                    enum:
-                      - queued
+                    enum: &ref_4
+                      - submitted
+                      - validating
+                      - investigating
+                      - ready_for_review
+                      - approved
+                      - rejected
+                      - refine_requested
+                      - rerun_requested
+                      - completed
+                      - failed
+                      - timeout
+                      - cancelled
                   estimated_duration_seconds:
                     type: integer
                     minimum: 30
                     maximum: 60
-                    example: 45
                   status_url:
                     type: string
                     format: uri
-                    example: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+                  result_url:
+                    type: string
+                    format: uri
               example:
                 investigation_id: 550e8400-e29b-41d4-a716-446655440000
-                status: queued
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: submitted
                 estimated_duration_seconds: 45
                 status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+                result_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000
         '400':
           description: Bad Request - validation failed
-          headers: &ref_8
+          headers: &ref_9
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_9
+          content: &ref_10
             application/problem+json:
               schema:
                 type: object
@@ -190,13 +208,13 @@ paths:
                           example: INVALID_FORMAT
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: &ref_10
+          headers: &ref_31
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
               description: Request correlation ID for distributed tracing
-          content: &ref_11
+          content: &ref_32
             application/problem+json:
               schema:
                 type: object
@@ -205,12 +223,12 @@ paths:
                 properties: *ref_1
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: &ref_12
+          headers: &ref_33
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
+          content: &ref_34
             application/problem+json:
               schema:
                 type: object
@@ -224,8 +242,7 @@ paths:
     get:
       summary: Poll investigation status
       description: |
-        Returns the current status of an investigation including progress,
-        findings, and final synthesis when complete.
+        Returns lifecycle status across compute, review, approval, and terminal failure/cancel states.
       operationId: getInvestigationStatus
       tags:
         - Investigations
@@ -259,95 +276,183 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_4
+                required: &ref_20
                   - investigation_id
+                  - tenant_id
                   - status
-                  - elapsed_seconds
-                properties: &ref_5
+                  - review_required
+                  - available_actions
+                  - last_updated
+                  - data_freshness_seconds
+                properties: &ref_21
                   investigation_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
                     type: string
                     format: uuid
                   status:
                     type: string
-                    enum:
-                      - queued
-                      - running
-                      - complete
-                      - failed
-                      - timeout
+                    enum: *ref_4
                   progress_percentage:
                     type: integer
                     minimum: 0
                     maximum: 100
                   current_step:
                     type: string
-                    example: Analyzing channel performance data
-                  elapsed_seconds:
-                    type: integer
-                  findings:
+                  review_required:
+                    type: boolean
+                  available_actions:
                     type: array
                     items:
-                      type: object
-                      required: &ref_6
-                        - finding
-                        - evidence
-                        - confidence
-                      properties: &ref_7
-                        finding:
-                          type: string
-                        evidence:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              metric:
-                                type: string
-                              value:
-                                type: number
-                              source:
-                                type: string
-                        confidence:
-                          type: string
-                          enum:
-                            - high
-                            - medium
-                            - low
-                  synthesis:
+                      type: string
+                      enum: &ref_11
+                        - approve
+                        - reject
+                        - refine
+                        - rerun
+                        - retry
+                        - cancel
+                  failure:
+                    type: object
+                    required: &ref_29
+                      - code
+                      - reason
+                    properties: &ref_30
+                      code:
+                        type: string
+                        enum:
+                          - failed
+                          - timeout
+                          - cancelled
+                          - rejected
+                      reason:
+                        type: string
+                  result_preview:
+                    type: object
+                    required: &ref_5
+                      - deterministic_findings
+                    properties: &ref_6
+                      deterministic_findings:
+                        type: array
+                        description: Structured deterministic evidence used as authoritative investigation output.
+                        items:
+                          type: object
+                          required: &ref_23
+                            - finding_id
+                            - title
+                            - severity
+                            - evidence
+                            - deterministic_confidence_score
+                          properties: &ref_24
+                            finding_id:
+                              type: string
+                            title:
+                              type: string
+                            severity:
+                              type: string
+                              enum:
+                                - low
+                                - medium
+                                - high
+                            deterministic_confidence_score:
+                              type: number
+                              minimum: 0
+                              maximum: 1
+                            evidence:
+                              type: array
+                              items:
+                                type: object
+                                required: &ref_25
+                                  - metric_name
+                                  - metric_value
+                                  - source_table
+                                  - observed_at
+                                properties: &ref_26
+                                  metric_name:
+                                    type: string
+                                  metric_value:
+                                    type: number
+                                  baseline_value:
+                                    type: number
+                                  delta_percentage:
+                                    type: number
+                                  source_table:
+                                    type: string
+                                  observed_at:
+                                    type: string
+                                    format: date-time
+                      llm_synthesis:
+                        type: object
+                        description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
+                        required: &ref_27
+                          - non_authoritative_summary
+                          - generated_at
+                        properties: &ref_28
+                          non_authoritative_summary:
+                            type: string
+                          hypotheses:
+                            type: array
+                            items:
+                              type: string
+                          caveats:
+                            type: array
+                            items:
+                              type: string
+                          model:
+                            type: string
+                          generated_at:
+                            type: string
+                            format: date-time
+                  last_updated:
                     type: string
-                    description: Final synthesis (only when status=complete)
-                  cost_usd:
-                    type: number
-                    format: float
-                    description: Total LLM cost for investigation
-                    x-internal: true
-                  tool_calls_used:
+                    format: date-time
+                  data_freshness_seconds:
                     type: integer
-                    maximum: 10
-                    description: Number of tool calls (max 10)
-                    x-internal: true
+                    minimum: 0
               example:
                 investigation_id: 550e8400-e29b-41d4-a716-446655440000
-                status: complete
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: ready_for_review
                 progress_percentage: 100
-                current_step: Synthesizing findings
-                elapsed_seconds: 48
-                findings:
-                  - finding: Google Ads underperformance driven by lower CTR (-18% WoW)
-                    evidence:
-                      - source: attribution_events
-                        detail: CTR decreased from 2.5% to 2.0% week-over-week
-                    confidence: high
-                synthesis: Shift 10% budget from Google Search to Meta while monitoring CPA; retrain Google creatives.
-                cost_usd: 0.12
-                tool_calls_used: 6
+                current_step: Awaiting reviewer decision
+                review_required: true
+                available_actions:
+                  - approve
+                  - reject
+                  - refine
+                  - cancel
+                last_updated: '2026-03-25T18:22:00Z'
+                data_freshness_seconds: 2
+                result_preview:
+                  deterministic_findings:
+                    - finding_id: ctr_decline_google_ads
+                      title: Google Ads CTR declined week-over-week
+                      severity: high
+                      deterministic_confidence_score: 0.93
+                      evidence:
+                        - metric_name: ctr
+                          metric_value: 0.02
+                          baseline_value: 0.025
+                          delta_percentage: -20
+                          source_table: attribution_events
+                          observed_at: '2026-03-25T18:20:00Z'
+                  llm_synthesis:
+                    non_authoritative_summary: Creative fatigue and rising CPC are likely contributors; validate against experiment calendar before action.
+                    hypotheses:
+                      - Creative fatigue increased auction pressure.
+                    caveats:
+                      - Summary text is explanatory only and not an authoritative financial decision object.
+                    model: claude-4.5-opus
+                    generated_at: '2026-03-25T18:21:45Z'
         '404':
           description: Resource not found
-          headers: &ref_14
+          headers: &ref_7
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_15
+          content: &ref_8
             application/problem+json:
               schema:
                 type: object
@@ -357,16 +462,638 @@ paths:
       x-latency-requirement: 100ms
       x-cost-budget: 0
       x-complexity-score: 2
+  /api/investigations/{investigation_id}:
+    get:
+      summary: Retrieve investigation result payload
+      description: |
+        Returns deterministic findings and non-authoritative synthesis for an investigation result.
+      operationId: getInvestigationResult
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+      responses:
+        '200':
+          description: Investigation result available
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                allOf: &ref_22
+                  - type: object
+                    required: *ref_5
+                    properties: *ref_6
+                  - type: object
+                    required:
+                      - investigation_id
+                      - tenant_id
+                      - status
+                      - last_updated
+                      - data_freshness_seconds
+                    properties:
+                      investigation_id:
+                        type: string
+                        format: uuid
+                      tenant_id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        enum: *ref_4
+                      last_updated:
+                        type: string
+                        format: date-time
+                      data_freshness_seconds:
+                        type: integer
+                        minimum: 0
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: approved
+                last_updated: '2026-03-25T18:24:00Z'
+                data_freshness_seconds: 3
+                deterministic_findings:
+                  - finding_id: ctr_decline_google_ads
+                    title: Google Ads CTR declined week-over-week
+                    severity: high
+                    deterministic_confidence_score: 0.93
+                    evidence:
+                      - metric_name: ctr
+                        metric_value: 0.02
+                        baseline_value: 0.025
+                        delta_percentage: -20
+                        source_table: attribution_events
+                        observed_at: '2026-03-25T18:20:00Z'
+                llm_synthesis:
+                  non_authoritative_summary: Prioritize creative refresh and monitor CPC trend before budget redistribution.
+                  hypotheses:
+                    - Creative fatigue likely drives observed CTR decline.
+                  caveats:
+                    - This synthesis does not override deterministic evidence fields.
+                  model: claude-4.5-opus
+                  generated_at: '2026-03-25T18:23:45Z'
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/investigations/{investigation_id}/approve:
+    post:
+      summary: Approve investigation result
+      description: |
+        Approves a `ready_for_review` investigation.
+        `X-Idempotency-Key` is required. Reusing the same key with an identical payload must return the original logical mutation outcome with `idempotency_replayed=true`.
+      operationId: approveInvestigation
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: &ref_12
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: &ref_13
+                reason:
+                  type: string
+                  maxLength: 500
+                note:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Investigation approved
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+              description: True when this response replays a prior mutation result for the same idempotency key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: &ref_14
+                  - investigation_id
+                  - tenant_id
+                  - action
+                  - status
+                  - idempotency_key
+                  - idempotency_replayed
+                  - mutation_accepted
+                  - status_url
+                properties: &ref_15
+                  investigation_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  action:
+                    type: string
+                    enum: *ref_11
+                  status:
+                    type: string
+                    enum: *ref_4
+                  idempotency_key:
+                    type: string
+                    format: uuid
+                  idempotency_replayed:
+                    type: boolean
+                  mutation_accepted:
+                    type: boolean
+                  message:
+                    type: string
+                  status_url:
+                    type: string
+                    format: uri
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: approve
+                status: approved
+                idempotency_key: 550e8400-e29b-41d4-a716-446655440111
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Investigation approved and queued for completion.
+                status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/investigations/{investigation_id}/reject:
+    post:
+      summary: Reject investigation result
+      description: |
+        Rejects a `ready_for_review` investigation.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: rejectInvestigation
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Investigation rejected
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: reject
+                status: rejected
+                idempotency_key: 550e8400-e29b-41d4-a716-446655440112
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Investigation rejected.
+                status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/investigations/{investigation_id}/refine:
+    post:
+      summary: Request investigation refinement
+      description: |
+        Moves a `ready_for_review` investigation to `refine_requested`.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: refineInvestigation
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Investigation refinement requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: refine
+                status: refine_requested
+                idempotency_key: 550e8400-e29b-41d4-a716-446655440113
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Investigation marked for refinement.
+                status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/investigations/{investigation_id}/rerun:
+    post:
+      summary: Request investigation rerun
+      description: |
+        Moves a rejected, refined, failed, or timeout investigation to `rerun_requested`.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: rerunInvestigation
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Investigation rerun requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: rerun
+                status: rerun_requested
+                idempotency_key: 550e8400-e29b-41d4-a716-446655440114
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Investigation rerun requested.
+                status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/investigations/{investigation_id}/retry:
+    post:
+      summary: Retry failed or cancelled investigation
+      description: |
+        Convenience alias for replaying a failed, timeout, or cancelled investigation attempt.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: retryInvestigation
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Investigation retry requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: retry
+                status: rerun_requested
+                idempotency_key: 550e8400-e29b-41d4-a716-446655440115
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Investigation retry requested.
+                status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/investigations/{investigation_id}/cancel:
+    post:
+      summary: Cancel investigation
+      description: |
+        Cancels an active or review-stage investigation.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: cancelInvestigation
+      tags:
+        - Investigations
+      parameters:
+        - name: investigation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Investigation cancelled
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                investigation_id: 550e8400-e29b-41d4-a716-446655440000
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: cancel
+                status: cancelled
+                idempotency_key: 550e8400-e29b-41d4-a716-446655440116
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Investigation cancelled.
+                status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
 components:
   schemas:
-    InvestigationStatus:
+    CentaurLifecycleStatus:
+      type: string
+      enum: *ref_4
+    InvestigationLaunchRequest:
       type: object
-      required: *ref_4
-      properties: *ref_5
-    InvestigationFinding:
+      required: *ref_16
+      properties: *ref_17
+    InvestigationLaunchAccepted:
       type: object
-      required: *ref_6
-      properties: *ref_7
+      required: *ref_18
+      properties: *ref_19
+    InvestigationStatusResponse:
+      type: object
+      required: *ref_20
+      properties: *ref_21
+    InvestigationResultResponse:
+      allOf: *ref_22
+    InvestigationResultPayload:
+      type: object
+      required: *ref_5
+      properties: *ref_6
+    InvestigationDeterministicFinding:
+      type: object
+      required: *ref_23
+      properties: *ref_24
+    InvestigationEvidencePoint:
+      type: object
+      required: *ref_25
+      properties: *ref_26
+    LLMNonAuthoritativeSynthesis:
+      type: object
+      description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
+      required: *ref_27
+      properties: *ref_28
+    InvestigationFailure:
+      type: object
+      required: *ref_29
+      properties: *ref_30
+    InvestigationMutationAction:
+      type: string
+      enum: *ref_11
+    InvestigationMutationRequest:
+      type: object
+      properties: *ref_13
+    InvestigationMutationResponse:
+      type: object
+      required: *ref_14
+      properties: *ref_15
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -396,20 +1123,27 @@ components:
       required: true
       schema: *ref_3
       description: Bearer token for authentication (format - Bearer <token>)
+    idempotency_key:
+      name: X-Idempotency-Key
+      in: header
+      description: Idempotency key to prevent duplicate processing (UUID format)
+      required: true
+      schema: *ref_12
+      example: 550e8400-e29b-41d4-a716-446655440000
   responses:
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_8
-      content: *ref_9
+      headers: *ref_9
+      content: *ref_10
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers: *ref_10
-      content: *ref_11
+      headers: *ref_31
+      content: *ref_32
     ForbiddenError:
       description: Forbidden - authenticated but insufficient permissions
-      headers: *ref_12
-      content: *ref_13
+      headers: *ref_33
+      content: *ref_34
     NotFoundError:
       description: Resource not found
-      headers: *ref_14
-      content: *ref_15
+      headers: *ref_7
+      content: *ref_8

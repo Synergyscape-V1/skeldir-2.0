@@ -1,9 +1,9 @@
-openapi: 3.1.0
+﻿openapi: 3.1.0
 info:
   title: Skeldir LLM Budget Optimization API
   description: |
-    Budget Analyst hybrid workflow: deterministic optimization (Python linprog)
-    + LLM synthesis layer. Async job pattern.
+    B1.5 Centaur budget recommendation control plane.
+    Deterministic decision objects are authoritative. LLM synthesis is explanatory only.
   version: 1.0.0
   contact:
     name: Skeldir Engineering
@@ -16,7 +16,7 @@ servers:
 
 tags:
   - name: Budget
-    description: Budget optimization with LLM synthesis
+    description: Asynchronous, review-driven budget recommendation lifecycle
 
 security:
   - accessBearerAuth: ["viewer"]
@@ -24,10 +24,9 @@ security:
 paths:
   /api/budget/optimize:
     post:
-      summary: Generate budget optimization recommendation
+      summary: Start asynchronous budget recommendation job
       description: |
-        Initiates a budget optimization job using hybrid deterministic + LLM workflow.
-        Returns a job ID for polling the recommendation status.
+        Creates a budget recommendation job and returns domain-specific polling and retrieval URLs.
       operationId: createBudgetOptimization
       tags:
         - Budget
@@ -39,72 +38,28 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - total_budget
-                - optimization_goal
-              properties:
-                total_budget:
-                  type: number
-                  format: float
-                  minimum: 1000
-                  example: 50000
-                constraints:
-                  type: object
-                  properties:
-                    date_range:
-                      type: object
-                      properties:
-                        start_date:
-                          type: string
-                          format: date
-                        end_date:
-                          type: string
-                          format: date
-                    channel_minimums:
-                      type: object
-                      additionalProperties:
-                        type: number
-                    channel_maximums:
-                      type: object
-                      additionalProperties:
-                        type: number
-                optimization_goal:
-                  type: string
-                  enum: [maximize_roas, maximize_revenue, minimize_cpa]
+              $ref: '#/components/schemas/BudgetOptimizationRequest'
       responses:
         '202':
-          description: Optimization job started
+          description: Budget recommendation job accepted
           headers:
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-              description: Request correlation ID echoed back
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - job_id
-                  - estimated_duration_seconds
-                  - status_url
-                properties:
-                  job_id:
-                    type: string
-                    format: uuid
-                  estimated_duration_seconds:
-                    type: integer
-                    minimum: 5
-                    maximum: 30
-                    example: 15
-                  status_url:
-                    type: string
-                    format: uri
+                $ref: '#/components/schemas/BudgetLaunchAccepted'
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: submitted
                 estimated_duration_seconds: 15
-                status_url: https://api.skeldir.com/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+                result_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555
+        '400':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
@@ -113,12 +68,81 @@ paths:
       x-cost-budget: 0.00
       x-complexity-score: 3
 
+  /api/budget/recommendations/{job_id}/status:
+    get:
+      summary: Poll budget recommendation status
+      description: |
+        Returns lifecycle status across compute, review, approval, and terminal failure/cancel states.
+      operationId: getBudgetRecommendationStatus
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+      responses:
+        '200':
+          description: Budget recommendation status
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetStatusResponse'
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: ready_for_review
+                progress_percentage: 100
+                current_step: Awaiting reviewer decision
+                review_required: true
+                available_actions: [approve, reject, refine, cancel]
+                last_updated: '2026-03-25T18:33:00Z'
+                data_freshness_seconds: 2
+                result_preview:
+                  deterministic_recommendation:
+                    optimization_goal: maximize_roas
+                    allocations:
+                      - channel: meta
+                        current_budget: 20000
+                        recommended_budget: 22000
+                        delta_budget: 2000
+                        expected_roas: 3.1
+                      - channel: google
+                        current_budget: 20000
+                        recommended_budget: 18000
+                        delta_budget: -2000
+                        expected_roas: 2.7
+                    evidence:
+                      - metric_name: roas_7d
+                        channel: meta
+                        metric_value: 3.1
+                        baseline_value: 2.8
+                        source_table: attribution_events
+                        observed_at: '2026-03-25T18:31:30Z'
+                    generated_at: '2026-03-25T18:32:45Z'
+                  llm_synthesis:
+                    non_authoritative_summary: Shift spend toward Meta while monitoring CPA variance for two cycles.
+                    caveats:
+                      - Explanatory synthesis only; deterministic recommendation fields remain authoritative.
+                    model: claude-4.5-opus
+                    generated_at: '2026-03-25T18:32:50Z'
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+
   /api/budget/recommendations/{job_id}:
     get:
-      summary: Get budget recommendation
+      summary: Retrieve budget recommendation result payload
       description: |
-        Retrieves the budget optimization recommendation for a completed job.
-        Returns 202 if the job is still running, 200 when complete.
+        Returns deterministic recommendation objects plus non-authoritative synthesis for a completed or review-stage job.
       operationId: getBudgetRecommendation
       tags:
         - Budget
@@ -133,35 +157,7 @@ paths:
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
       responses:
         '200':
-          description: Recommendation ready
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-              description: Request correlation ID echoed back
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BudgetRecommendation'
-              example:
-                job_id: 11111111-2222-3333-4444-555555555555
-                status: complete
-                allocations:
-                  - channel: meta
-                    current_budget: 20000
-                    recommended_budget: 22000
-                    expected_roas: 3.1
-                  - channel: google
-                    current_budget: 20000
-                    recommended_budget: 18000
-                    expected_roas: 2.7
-                synthesis: "Allocate +20% to Meta due to higher ROAS; reduce Google spend until CPA stabilizes."
-                metrics:
-                  deterministic_runtime_ms: 120
-                  llm_cost_usd: 0.02
-        '202':
-          description: Job still running
+          description: Recommendation payload available
           headers:
             X-Correlation-ID:
               schema:
@@ -170,70 +166,567 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - job_id
-                  - status
-                properties:
-                  job_id:
-                    type: string
-                    format: uuid
-                  status:
-                    type: string
-                    enum: [running]
-                  progress_percentage:
-                    type: integer
-                    minimum: 0
-                    maximum: 100
+                $ref: '#/components/schemas/BudgetRecommendationResponse'
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
-                status: running
-                progress_percentage: 65
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: approved
+                last_updated: '2026-03-25T18:35:00Z'
+                data_freshness_seconds: 3
+                deterministic_recommendation:
+                  optimization_goal: maximize_roas
+                  allocations:
+                    - channel: meta
+                      current_budget: 20000
+                      recommended_budget: 22000
+                      delta_budget: 2000
+                      expected_roas: 3.1
+                    - channel: google
+                      current_budget: 20000
+                      recommended_budget: 18000
+                      delta_budget: -2000
+                      expected_roas: 2.7
+                  evidence:
+                    - metric_name: roas_7d
+                      channel: meta
+                      metric_value: 3.1
+                      baseline_value: 2.8
+                      source_table: attribution_events
+                      observed_at: '2026-03-25T18:31:30Z'
+                  generated_at: '2026-03-25T18:32:45Z'
+                llm_synthesis:
+                  non_authoritative_summary: Reallocation improves expected blended ROAS while limiting downside variance.
+                  caveats:
+                    - Narrative is advisory and not a financial authority object.
+                  model: claude-4.5-opus
+                  generated_at: '2026-03-25T18:34:40Z'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
-      x-latency-requirement: 200ms
-      x-cost-budget: 0.00
-      x-complexity-score: 2
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/budget/recommendations/{job_id}/approve:
+    post:
+      summary: Approve budget recommendation
+      description: |
+        Approves a `ready_for_review` budget recommendation.
+        `X-Idempotency-Key` is required. Reusing the same key with an identical payload must return the original logical mutation outcome with `idempotency_replayed=true`.
+      operationId: approveBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - $ref: './_common/parameters.yaml#/components/parameters/idempotency_key'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetMutationRequest'
+      responses:
+        '200':
+          description: Budget recommendation approved
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+              description: True when this response replays a prior mutation result for the same idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetMutationResponse'
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: approve
+                status: approved
+                idempotency_key: 11111111-2222-3333-4444-555555555501
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation approved.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/budget/recommendations/{job_id}/reject:
+    post:
+      summary: Reject budget recommendation
+      description: |
+        Rejects a `ready_for_review` budget recommendation.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: rejectBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - $ref: './_common/parameters.yaml#/components/parameters/idempotency_key'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetMutationRequest'
+      responses:
+        '200':
+          description: Budget recommendation rejected
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetMutationResponse'
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: reject
+                status: rejected
+                idempotency_key: 11111111-2222-3333-4444-555555555502
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation rejected.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/budget/recommendations/{job_id}/refine:
+    post:
+      summary: Request budget recommendation refinement
+      description: |
+        Moves a `ready_for_review` recommendation to `refine_requested`.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: refineBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - $ref: './_common/parameters.yaml#/components/parameters/idempotency_key'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetMutationRequest'
+      responses:
+        '200':
+          description: Budget recommendation refinement requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetMutationResponse'
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: refine
+                status: refine_requested
+                idempotency_key: 11111111-2222-3333-4444-555555555503
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation marked for refinement.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/budget/recommendations/{job_id}/rerun:
+    post:
+      summary: Request budget recommendation rerun
+      description: |
+        Moves a rejected, refined, failed, or timeout recommendation to `rerun_requested`.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: rerunBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - $ref: './_common/parameters.yaml#/components/parameters/idempotency_key'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetMutationRequest'
+      responses:
+        '200':
+          description: Budget recommendation rerun requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetMutationResponse'
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: rerun
+                status: rerun_requested
+                idempotency_key: 11111111-2222-3333-4444-555555555504
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation rerun requested.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/budget/recommendations/{job_id}/retry:
+    post:
+      summary: Retry failed or cancelled budget recommendation
+      description: |
+        Convenience alias for replaying a failed, timeout, or cancelled recommendation attempt.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: retryBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - $ref: './_common/parameters.yaml#/components/parameters/idempotency_key'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetMutationRequest'
+      responses:
+        '200':
+          description: Budget recommendation retry requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetMutationResponse'
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: retry
+                status: rerun_requested
+                idempotency_key: 11111111-2222-3333-4444-555555555505
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation retry requested.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
+
+  /api/budget/recommendations/{job_id}/cancel:
+    post:
+      summary: Cancel budget recommendation
+      description: |
+        Cancels an active or review-stage budget recommendation.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: cancelBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
+        - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - $ref: './_common/parameters.yaml#/components/parameters/idempotency_key'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetMutationRequest'
+      responses:
+        '200':
+          description: Budget recommendation cancelled
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetMutationResponse'
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: cancel
+                status: cancelled
+                idempotency_key: 11111111-2222-3333-4444-555555555506
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation cancelled.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
 
 components:
   schemas:
-    BudgetRecommendation:
+    CentaurLifecycleStatus:
+      type: string
+      enum:
+        - submitted
+        - validating
+        - investigating
+        - ready_for_review
+        - approved
+        - rejected
+        - refine_requested
+        - rerun_requested
+        - completed
+        - failed
+        - timeout
+        - cancelled
+
+    BudgetOptimizationRequest:
+      type: object
+      required:
+        - total_budget
+        - optimization_goal
+      properties:
+        total_budget:
+          type: number
+          format: float
+          minimum: 1000
+          example: 50000
+        constraints:
+          type: object
+          properties:
+            date_range:
+              type: object
+              properties:
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+            channel_minimums:
+              type: object
+              additionalProperties:
+                type: number
+            channel_maximums:
+              type: object
+              additionalProperties:
+                type: number
+        optimization_goal:
+          type: string
+          enum: [maximize_roas, maximize_revenue, minimize_cpa]
+
+    BudgetLaunchAccepted:
       type: object
       required:
         - job_id
+        - tenant_id
         - status
-        - allocations
+        - estimated_duration_seconds
+        - status_url
+        - result_url
       properties:
         job_id:
           type: string
           format: uuid
-        status:
+        tenant_id:
           type: string
-          enum: [complete, running, failed]
+          format: uuid
+        status:
+          $ref: '#/components/schemas/CentaurLifecycleStatus'
+        estimated_duration_seconds:
+          type: integer
+          minimum: 5
+          maximum: 30
+        status_url:
+          type: string
+          format: uri
+        result_url:
+          type: string
+          format: uri
+
+    BudgetStatusResponse:
+      type: object
+      required:
+        - job_id
+        - tenant_id
+        - status
+        - review_required
+        - available_actions
+        - last_updated
+        - data_freshness_seconds
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/CentaurLifecycleStatus'
+        progress_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        current_step:
+          type: string
+        review_required:
+          type: boolean
+        available_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetMutationAction'
+        failure:
+          $ref: '#/components/schemas/BudgetFailure'
+        result_preview:
+          $ref: '#/components/schemas/BudgetResultPayload'
+        last_updated:
+          type: string
+          format: date-time
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+
+    BudgetRecommendationResponse:
+      allOf:
+        - $ref: '#/components/schemas/BudgetResultPayload'
+        - type: object
+          required:
+            - job_id
+            - tenant_id
+            - status
+            - last_updated
+            - data_freshness_seconds
+          properties:
+            job_id:
+              type: string
+              format: uuid
+            tenant_id:
+              type: string
+              format: uuid
+            status:
+              $ref: '#/components/schemas/CentaurLifecycleStatus'
+            last_updated:
+              type: string
+              format: date-time
+            data_freshness_seconds:
+              type: integer
+              minimum: 0
+
+    BudgetResultPayload:
+      type: object
+      required:
+        - deterministic_recommendation
+      properties:
+        deterministic_recommendation:
+          $ref: '#/components/schemas/BudgetDeterministicRecommendation'
+        llm_synthesis:
+          $ref: '#/components/schemas/LLMNonAuthoritativeSynthesis'
+
+    BudgetDeterministicRecommendation:
+      type: object
+      description: Structured deterministic recommendation that is authoritative for decisions.
+      required:
+        - optimization_goal
+        - allocations
+        - evidence
+        - generated_at
+      properties:
+        optimization_goal:
+          type: string
+          enum: [maximize_roas, maximize_revenue, minimize_cpa]
         allocations:
           type: array
           items:
-            $ref: '#/components/schemas/ChannelAllocation'
-        synthesis:
+            $ref: '#/components/schemas/BudgetDeterministicAllocation'
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetEvidencePoint'
+        generated_at:
           type: string
-          description: LLM-generated strategic explanation
-        metrics:
-          type: object
-          properties:
-            deterministic_runtime_ms:
-              type: integer
-              x-internal: true
-            llm_cost_usd:
-              type: number
-              format: float
-              x-internal: true
+          format: date-time
 
-    ChannelAllocation:
+    BudgetDeterministicAllocation:
       type: object
       required:
         - channel
         - current_budget
         - recommended_budget
+        - delta_budget
         - expected_roas
       properties:
         channel:
@@ -244,16 +737,115 @@ components:
         recommended_budget:
           type: number
           format: float
+        delta_budget:
+          type: number
+          format: float
         expected_roas:
           type: number
           format: float
-        confidence_range:
-          type: object
-          properties:
-            min:
-              type: number
-            max:
-              type: number
+
+    BudgetEvidencePoint:
+      type: object
+      required:
+        - metric_name
+        - channel
+        - metric_value
+        - source_table
+        - observed_at
+      properties:
+        metric_name:
+          type: string
+        channel:
+          type: string
+        metric_value:
+          type: number
+        baseline_value:
+          type: number
+        source_table:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+
+    LLMNonAuthoritativeSynthesis:
+      type: object
+      description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
+      required:
+        - non_authoritative_summary
+        - generated_at
+      properties:
+        non_authoritative_summary:
+          type: string
+        caveats:
+          type: array
+          items:
+            type: string
+        model:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+
+    BudgetFailure:
+      type: object
+      required:
+        - code
+        - reason
+      properties:
+        code:
+          type: string
+          enum: [failed, timeout, cancelled, rejected]
+        reason:
+          type: string
+
+    BudgetMutationAction:
+      type: string
+      enum: [approve, reject, refine, rerun, retry, cancel]
+
+    BudgetMutationRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+        note:
+          type: string
+          maxLength: 1000
+
+    BudgetMutationResponse:
+      type: object
+      required:
+        - job_id
+        - tenant_id
+        - action
+        - status
+        - idempotency_key
+        - idempotency_replayed
+        - mutation_accepted
+        - status_url
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/BudgetMutationAction'
+        status:
+          $ref: '#/components/schemas/CentaurLifecycleStatus'
+        idempotency_key:
+          type: string
+          format: uuid
+        idempotency_replayed:
+          type: boolean
+        mutation_accepted:
+          type: boolean
+        message:
+          type: string
+        status_url:
+          type: string
+          format: uri
 
   securitySchemes:
     accessBearerAuth:

@@ -2,8 +2,8 @@ openapi: 3.1.0
 info:
   title: Skeldir LLM Budget Optimization API
   description: |
-    Budget Analyst hybrid workflow: deterministic optimization (Python linprog)
-    + LLM synthesis layer. Async job pattern.
+    B1.5 Centaur budget recommendation control plane.
+    Deterministic decision objects are authoritative. LLM synthesis is explanatory only.
   version: 1.0.0
   contact:
     name: Skeldir Engineering
@@ -17,14 +17,13 @@ security:
       - viewer
 tags:
   - name: Budget
-    description: Budget optimization with LLM synthesis
+    description: Asynchronous, review-driven budget recommendation lifecycle
 paths:
   /api/budget/optimize:
     post:
-      summary: Generate budget optimization recommendation
+      summary: Start asynchronous budget recommendation job
       description: |
-        Initiates a budget optimization job using hybrid deterministic + LLM workflow.
-        Returns a job ID for polling the recommendation status.
+        Creates a budget recommendation job and returns domain-specific polling and retrieval URLs.
       operationId: createBudgetOptimization
       tags:
         - Budget
@@ -48,10 +47,10 @@ paths:
           application/json:
             schema:
               type: object
-              required:
+              required: &ref_16
                 - total_budget
                 - optimization_goal
-              properties:
+              properties: &ref_17
                 total_budget:
                   type: number
                   format: float
@@ -85,46 +84,70 @@ paths:
                     - minimize_cpa
       responses:
         '202':
-          description: Optimization job started
+          description: Budget recommendation job accepted
           headers:
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-              description: Request correlation ID echoed back
           content:
             application/json:
               schema:
                 type: object
-                required:
+                required: &ref_18
                   - job_id
+                  - tenant_id
+                  - status
                   - estimated_duration_seconds
                   - status_url
-                properties:
+                  - result_url
+                properties: &ref_19
                   job_id:
                     type: string
                     format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: &ref_4
+                      - submitted
+                      - validating
+                      - investigating
+                      - ready_for_review
+                      - approved
+                      - rejected
+                      - refine_requested
+                      - rerun_requested
+                      - completed
+                      - failed
+                      - timeout
+                      - cancelled
                   estimated_duration_seconds:
                     type: integer
                     minimum: 5
                     maximum: 30
-                    example: 15
                   status_url:
+                    type: string
+                    format: uri
+                  result_url:
                     type: string
                     format: uri
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: submitted
                 estimated_duration_seconds: 15
-                status_url: https://api.skeldir.com/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
-        '401':
-          description: Unauthorized - invalid or missing authentication
-          headers: &ref_8
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+                result_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555
+        '400':
+          description: Bad Request - validation failed
+          headers: &ref_9
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-              description: Request correlation ID for distributed tracing
-          content: &ref_9
+          content: &ref_10
             application/problem+json:
               schema:
                 type: object
@@ -190,14 +213,29 @@ paths:
                         code:
                           type: string
                           example: INVALID_FORMAT
-        '403':
-          description: Forbidden - authenticated but insufficient permissions
-          headers: &ref_10
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_33
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_11
+              description: Request correlation ID for distributed tracing
+          content: &ref_34
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_35
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_36
             application/problem+json:
               schema:
                 type: object
@@ -207,12 +245,252 @@ paths:
       x-latency-requirement: 200ms
       x-cost-budget: 0
       x-complexity-score: 3
+  /api/budget/recommendations/{job_id}/status:
+    get:
+      summary: Poll budget recommendation status
+      description: |
+        Returns lifecycle status across compute, review, approval, and terminal failure/cancel states.
+      operationId: getBudgetRecommendationStatus
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+      responses:
+        '200':
+          description: Budget recommendation status
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: &ref_20
+                  - job_id
+                  - tenant_id
+                  - status
+                  - review_required
+                  - available_actions
+                  - last_updated
+                  - data_freshness_seconds
+                properties: &ref_21
+                  job_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: *ref_4
+                  progress_percentage:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                  current_step:
+                    type: string
+                  review_required:
+                    type: boolean
+                  available_actions:
+                    type: array
+                    items:
+                      type: string
+                      enum: &ref_11
+                        - approve
+                        - reject
+                        - refine
+                        - rerun
+                        - retry
+                        - cancel
+                  failure:
+                    type: object
+                    required: &ref_31
+                      - code
+                      - reason
+                    properties: &ref_32
+                      code:
+                        type: string
+                        enum:
+                          - failed
+                          - timeout
+                          - cancelled
+                          - rejected
+                      reason:
+                        type: string
+                  result_preview:
+                    type: object
+                    required: &ref_5
+                      - deterministic_recommendation
+                    properties: &ref_6
+                      deterministic_recommendation:
+                        type: object
+                        description: Structured deterministic recommendation that is authoritative for decisions.
+                        required: &ref_23
+                          - optimization_goal
+                          - allocations
+                          - evidence
+                          - generated_at
+                        properties: &ref_24
+                          optimization_goal:
+                            type: string
+                            enum:
+                              - maximize_roas
+                              - maximize_revenue
+                              - minimize_cpa
+                          allocations:
+                            type: array
+                            items:
+                              type: object
+                              required: &ref_25
+                                - channel
+                                - current_budget
+                                - recommended_budget
+                                - delta_budget
+                                - expected_roas
+                              properties: &ref_26
+                                channel:
+                                  type: string
+                                current_budget:
+                                  type: number
+                                  format: float
+                                recommended_budget:
+                                  type: number
+                                  format: float
+                                delta_budget:
+                                  type: number
+                                  format: float
+                                expected_roas:
+                                  type: number
+                                  format: float
+                          evidence:
+                            type: array
+                            items:
+                              type: object
+                              required: &ref_27
+                                - metric_name
+                                - channel
+                                - metric_value
+                                - source_table
+                                - observed_at
+                              properties: &ref_28
+                                metric_name:
+                                  type: string
+                                channel:
+                                  type: string
+                                metric_value:
+                                  type: number
+                                baseline_value:
+                                  type: number
+                                source_table:
+                                  type: string
+                                observed_at:
+                                  type: string
+                                  format: date-time
+                          generated_at:
+                            type: string
+                            format: date-time
+                      llm_synthesis:
+                        type: object
+                        description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
+                        required: &ref_29
+                          - non_authoritative_summary
+                          - generated_at
+                        properties: &ref_30
+                          non_authoritative_summary:
+                            type: string
+                          caveats:
+                            type: array
+                            items:
+                              type: string
+                          model:
+                            type: string
+                          generated_at:
+                            type: string
+                            format: date-time
+                  last_updated:
+                    type: string
+                    format: date-time
+                  data_freshness_seconds:
+                    type: integer
+                    minimum: 0
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: ready_for_review
+                progress_percentage: 100
+                current_step: Awaiting reviewer decision
+                review_required: true
+                available_actions:
+                  - approve
+                  - reject
+                  - refine
+                  - cancel
+                last_updated: '2026-03-25T18:33:00Z'
+                data_freshness_seconds: 2
+                result_preview:
+                  deterministic_recommendation:
+                    optimization_goal: maximize_roas
+                    allocations:
+                      - channel: meta
+                        current_budget: 20000
+                        recommended_budget: 22000
+                        delta_budget: 2000
+                        expected_roas: 3.1
+                      - channel: google
+                        current_budget: 20000
+                        recommended_budget: 18000
+                        delta_budget: -2000
+                        expected_roas: 2.7
+                    evidence:
+                      - metric_name: roas_7d
+                        channel: meta
+                        metric_value: 3.1
+                        baseline_value: 2.8
+                        source_table: attribution_events
+                        observed_at: '2026-03-25T18:31:30Z'
+                    generated_at: '2026-03-25T18:32:45Z'
+                  llm_synthesis:
+                    non_authoritative_summary: Shift spend toward Meta while monitoring CPA variance for two cycles.
+                    caveats:
+                      - Explanatory synthesis only; deterministic recommendation fields remain authoritative.
+                    model: claude-4.5-opus
+                    generated_at: '2026-03-25T18:32:50Z'
+        '404':
+          description: Resource not found
+          headers: &ref_7
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_8
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
   /api/budget/recommendations/{job_id}:
     get:
-      summary: Get budget recommendation
+      summary: Retrieve budget recommendation result payload
       description: |
-        Retrieves the budget optimization recommendation for a completed job.
-        Returns 202 if the job is still running, 200 when complete.
+        Returns deterministic recommendation objects plus non-authoritative synthesis for a completed or review-stage job.
       operationId: getBudgetRecommendation
       tags:
         - Budget
@@ -235,145 +513,623 @@ paths:
           description: Bearer token for authentication (format - Bearer <token>)
       responses:
         '200':
-          description: Recommendation ready
+          description: Recommendation payload available
           headers:
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-              description: Request correlation ID echoed back
           content:
             application/json:
               schema:
-                type: object
-                required: &ref_4
-                  - job_id
-                  - status
-                  - allocations
-                properties: &ref_5
-                  job_id:
-                    type: string
-                    format: uuid
-                  status:
-                    type: string
-                    enum:
-                      - complete
-                      - running
-                      - failed
-                  allocations:
-                    type: array
-                    items:
-                      type: object
-                      required: &ref_6
-                        - channel
-                        - current_budget
-                        - recommended_budget
-                        - expected_roas
-                      properties: &ref_7
-                        channel:
-                          type: string
-                        current_budget:
-                          type: number
-                          format: float
-                        recommended_budget:
-                          type: number
-                          format: float
-                        expected_roas:
-                          type: number
-                          format: float
-                        confidence_range:
-                          type: object
-                          properties:
-                            min:
-                              type: number
-                            max:
-                              type: number
-                  synthesis:
-                    type: string
-                    description: LLM-generated strategic explanation
-                  metrics:
-                    type: object
+                allOf: &ref_22
+                  - type: object
+                    required: *ref_5
+                    properties: *ref_6
+                  - type: object
+                    required:
+                      - job_id
+                      - tenant_id
+                      - status
+                      - last_updated
+                      - data_freshness_seconds
                     properties:
-                      deterministic_runtime_ms:
+                      job_id:
+                        type: string
+                        format: uuid
+                      tenant_id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        enum: *ref_4
+                      last_updated:
+                        type: string
+                        format: date-time
+                      data_freshness_seconds:
                         type: integer
-                        x-internal: true
-                      llm_cost_usd:
-                        type: number
-                        format: float
-                        x-internal: true
+                        minimum: 0
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
-                status: complete
-                allocations:
-                  - channel: meta
-                    current_budget: 20000
-                    recommended_budget: 22000
-                    expected_roas: 3.1
-                  - channel: google
-                    current_budget: 20000
-                    recommended_budget: 18000
-                    expected_roas: 2.7
-                synthesis: Allocate +20% to Meta due to higher ROAS; reduce Google spend until CPA stabilizes.
-                metrics:
-                  deterministic_runtime_ms: 120
-                  llm_cost_usd: 0.02
-        '202':
-          description: Job still running
-          headers:
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - job_id
-                  - status
-                properties:
-                  job_id:
-                    type: string
-                    format: uuid
-                  status:
-                    type: string
-                    enum:
-                      - running
-                  progress_percentage:
-                    type: integer
-                    minimum: 0
-                    maximum: 100
-              example:
-                job_id: 11111111-2222-3333-4444-555555555555
-                status: running
-                progress_percentage: 65
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                status: approved
+                last_updated: '2026-03-25T18:35:00Z'
+                data_freshness_seconds: 3
+                deterministic_recommendation:
+                  optimization_goal: maximize_roas
+                  allocations:
+                    - channel: meta
+                      current_budget: 20000
+                      recommended_budget: 22000
+                      delta_budget: 2000
+                      expected_roas: 3.1
+                    - channel: google
+                      current_budget: 20000
+                      recommended_budget: 18000
+                      delta_budget: -2000
+                      expected_roas: 2.7
+                  evidence:
+                    - metric_name: roas_7d
+                      channel: meta
+                      metric_value: 3.1
+                      baseline_value: 2.8
+                      source_table: attribution_events
+                      observed_at: '2026-03-25T18:31:30Z'
+                  generated_at: '2026-03-25T18:32:45Z'
+                llm_synthesis:
+                  non_authoritative_summary: Reallocation improves expected blended ROAS while limiting downside variance.
+                  caveats:
+                    - Narrative is advisory and not a financial authority object.
+                  model: claude-4.5-opus
+                  generated_at: '2026-03-25T18:34:40Z'
         '404':
           description: Resource not found
-          headers: &ref_12
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/budget/recommendations/{job_id}/approve:
+    post:
+      summary: Approve budget recommendation
+      description: |
+        Approves a `ready_for_review` budget recommendation.
+        `X-Idempotency-Key` is required. Reusing the same key with an identical payload must return the original logical mutation outcome with `idempotency_replayed=true`.
+      operationId: approveBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: &ref_12
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: &ref_13
+                reason:
+                  type: string
+                  maxLength: 500
+                note:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Budget recommendation approved
+          headers:
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
-            application/problem+json:
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+              description: True when this response replays a prior mutation result for the same idempotency key.
+          content:
+            application/json:
               schema:
                 type: object
-                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: *ref_0
-                properties: *ref_1
-      x-latency-requirement: 200ms
-      x-cost-budget: 0
-      x-complexity-score: 2
+                required: &ref_14
+                  - job_id
+                  - tenant_id
+                  - action
+                  - status
+                  - idempotency_key
+                  - idempotency_replayed
+                  - mutation_accepted
+                  - status_url
+                properties: &ref_15
+                  job_id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  action:
+                    type: string
+                    enum: *ref_11
+                  status:
+                    type: string
+                    enum: *ref_4
+                  idempotency_key:
+                    type: string
+                    format: uuid
+                  idempotency_replayed:
+                    type: boolean
+                  mutation_accepted:
+                    type: boolean
+                  message:
+                    type: string
+                  status_url:
+                    type: string
+                    format: uri
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: approve
+                status: approved
+                idempotency_key: 11111111-2222-3333-4444-555555555501
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation approved.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/budget/recommendations/{job_id}/reject:
+    post:
+      summary: Reject budget recommendation
+      description: |
+        Rejects a `ready_for_review` budget recommendation.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: rejectBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Budget recommendation rejected
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: reject
+                status: rejected
+                idempotency_key: 11111111-2222-3333-4444-555555555502
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation rejected.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/budget/recommendations/{job_id}/refine:
+    post:
+      summary: Request budget recommendation refinement
+      description: |
+        Moves a `ready_for_review` recommendation to `refine_requested`.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: refineBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Budget recommendation refinement requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: refine
+                status: refine_requested
+                idempotency_key: 11111111-2222-3333-4444-555555555503
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation marked for refinement.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/budget/recommendations/{job_id}/rerun:
+    post:
+      summary: Request budget recommendation rerun
+      description: |
+        Moves a rejected, refined, failed, or timeout recommendation to `rerun_requested`.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: rerunBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Budget recommendation rerun requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: rerun
+                status: rerun_requested
+                idempotency_key: 11111111-2222-3333-4444-555555555504
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation rerun requested.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/budget/recommendations/{job_id}/retry:
+    post:
+      summary: Retry failed or cancelled budget recommendation
+      description: |
+        Convenience alias for replaying a failed, timeout, or cancelled recommendation attempt.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: retryBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Budget recommendation retry requested
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: retry
+                status: rerun_requested
+                idempotency_key: 11111111-2222-3333-4444-555555555505
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation retry requested.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
+  /api/budget/recommendations/{job_id}/cancel:
+    post:
+      summary: Cancel budget recommendation
+      description: |
+        Cancels an active or review-stage budget recommendation.
+        `X-Idempotency-Key` is required and duplicate requests replay the first accepted outcome.
+      operationId: cancelBudgetRecommendation
+      tags:
+        - Budget
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: X-Idempotency-Key
+          in: header
+          description: Idempotency key to prevent duplicate processing (UUID format)
+          required: true
+          schema: *ref_12
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: *ref_13
+      responses:
+        '200':
+          description: Budget recommendation cancelled
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            X-Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                type: object
+                required: *ref_14
+                properties: *ref_15
+              example:
+                job_id: 11111111-2222-3333-4444-555555555555
+                tenant_id: 11111111-1111-1111-1111-111111111111
+                action: cancel
+                status: cancelled
+                idempotency_key: 11111111-2222-3333-4444-555555555506
+                idempotency_replayed: false
+                mutation_accepted: true
+                message: Budget recommendation cancelled.
+                status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
+        '404':
+          description: Resource not found
+          headers: *ref_7
+          content: *ref_8
+        '409':
+          description: Bad Request - validation failed
+          headers: *ref_9
+          content: *ref_10
 components:
   schemas:
-    BudgetRecommendation:
+    CentaurLifecycleStatus:
+      type: string
+      enum: *ref_4
+    BudgetOptimizationRequest:
       type: object
-      required: *ref_4
-      properties: *ref_5
-    ChannelAllocation:
+      required: *ref_16
+      properties: *ref_17
+    BudgetLaunchAccepted:
       type: object
-      required: *ref_6
-      properties: *ref_7
+      required: *ref_18
+      properties: *ref_19
+    BudgetStatusResponse:
+      type: object
+      required: *ref_20
+      properties: *ref_21
+    BudgetRecommendationResponse:
+      allOf: *ref_22
+    BudgetResultPayload:
+      type: object
+      required: *ref_5
+      properties: *ref_6
+    BudgetDeterministicRecommendation:
+      type: object
+      description: Structured deterministic recommendation that is authoritative for decisions.
+      required: *ref_23
+      properties: *ref_24
+    BudgetDeterministicAllocation:
+      type: object
+      required: *ref_25
+      properties: *ref_26
+    BudgetEvidencePoint:
+      type: object
+      required: *ref_27
+      properties: *ref_28
+    LLMNonAuthoritativeSynthesis:
+      type: object
+      description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
+      required: *ref_29
+      properties: *ref_30
+    BudgetFailure:
+      type: object
+      required: *ref_31
+      properties: *ref_32
+    BudgetMutationAction:
+      type: string
+      enum: *ref_11
+    BudgetMutationRequest:
+      type: object
+      properties: *ref_13
+    BudgetMutationResponse:
+      type: object
+      required: *ref_14
+      properties: *ref_15
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -403,16 +1159,27 @@ components:
       required: true
       schema: *ref_3
       description: Bearer token for authentication (format - Bearer <token>)
+    idempotency_key:
+      name: X-Idempotency-Key
+      in: header
+      description: Idempotency key to prevent duplicate processing (UUID format)
+      required: true
+      schema: *ref_12
+      example: 550e8400-e29b-41d4-a716-446655440000
   responses:
+    ValidationError:
+      description: Bad Request - validation failed
+      headers: *ref_9
+      content: *ref_10
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers: *ref_8
-      content: *ref_9
+      headers: *ref_33
+      content: *ref_34
     ForbiddenError:
       description: Forbidden - authenticated but insufficient permissions
-      headers: *ref_10
-      content: *ref_11
+      headers: *ref_35
+      content: *ref_36
     NotFoundError:
       description: Resource not found
-      headers: *ref_12
-      content: *ref_13
+      headers: *ref_7
+      content: *ref_8
