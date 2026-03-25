@@ -45,6 +45,7 @@ from app.models.compliance_audit_ledger import ComplianceAuditLedger
 from app.models.dead_event import DeadEvent
 from app.models.ephemeral_resolution import EphemeralClickResolution, EphemeralOrderResolution
 from app.models.llm import (
+    BudgetJob,
     BudgetOptimizationJob,
     Investigation,
     LLMApiCall,
@@ -84,6 +85,7 @@ __all__ = [
     "LLMSemanticCache",
     "LLMBreakerState",
     "LLMHourlyShutoffState",
+    "BudgetJob",
     "Investigation",
     "BudgetOptimizationJob",
     "OAuthHandshakeSession",

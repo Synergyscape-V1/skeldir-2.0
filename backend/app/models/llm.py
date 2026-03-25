@@ -258,7 +258,7 @@ class LLMMonthlyCost(Base):
 
 
 class Investigation(Base):
-    """Investigation job tracking for LLM investigations."""
+    """Internal compute trace for investigation execution (non-authoritative)."""
 
     __tablename__ = "investigations"
 
@@ -282,6 +282,16 @@ class Investigation(Base):
         nullable=False,
     )
     query: Mapped[str] = mapped_column(Text, nullable=False)
+    request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_job_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    lifecycle_role: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="internal_trace",
+        server_default="internal_trace",
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False)
     result: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     cost_cents: Mapped[int] = mapped_column(
@@ -293,17 +303,26 @@ class Investigation(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'running', 'completed', 'failed')",
+            "status IN ('compute_pending', 'compute_running', 'compute_succeeded', 'compute_failed', 'compute_timeout', 'compute_cancelled')",
             name="ck_investigations_status_valid",
         ),
         CheckConstraint(
+            "lifecycle_role = 'internal_trace'",
+            name="ck_investigations_internal_trace_only",
+        ),
+        CheckConstraint(
             "cost_cents >= 0", name="ck_investigations_cost_cents_positive"
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "request_id",
+            name="uq_investigations_tenant_request_id",
         ),
     )
 
 
 class BudgetOptimizationJob(Base):
-    """Budget optimization job tracking for LLM workflows."""
+    """Internal compute trace for budget optimization execution (non-authoritative)."""
 
     __tablename__ = "budget_optimization_jobs"
 
@@ -326,6 +345,16 @@ class BudgetOptimizationJob(Base):
         server_default=func.now(),
         nullable=False,
     )
+    request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_job_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    lifecycle_role: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="internal_trace",
+        server_default="internal_trace",
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False)
     recommendations: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     cost_cents: Mapped[int] = mapped_column(
@@ -337,11 +366,91 @@ class BudgetOptimizationJob(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'running', 'completed', 'failed')",
+            "status IN ('compute_pending', 'compute_running', 'compute_succeeded', 'compute_failed', 'compute_timeout', 'compute_cancelled')",
             name="ck_budget_optimization_jobs_status_valid",
         ),
         CheckConstraint(
+            "lifecycle_role = 'internal_trace'",
+            name="ck_budget_optimization_jobs_internal_trace_only",
+        ),
+        CheckConstraint(
             "cost_cents >= 0", name="ck_budget_optimization_jobs_cost_cents_positive"
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "request_id",
+            name="uq_budget_optimization_jobs_tenant_request_id",
+        ),
+    )
+
+
+class BudgetJob(Base):
+    """Authoritative public lifecycle state for budget domain jobs."""
+
+    __tablename__ = "budget_jobs"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    correlation_id: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    ready_for_review_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rejected_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    refine_requested_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rerun_requested_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    timeout_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    result: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    failure_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitted', 'validating', 'investigating', 'ready_for_review', 'approved', 'rejected', 'refine_requested', 'rerun_requested', 'completed', 'failed', 'timeout', 'cancelled')",
+            name="ck_budget_jobs_status_valid",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "request_id",
+            name="uq_budget_jobs_tenant_request_id",
         ),
     )
 

@@ -1,73 +1,33 @@
-"""Investigation lifecycle authority service for B1.5 centaur control."""
+"""Budget lifecycle authority service for B1.5 centaur review control."""
 
 from __future__ import annotations
 
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Protocol
+from datetime import datetime, timezone
+from typing import Any, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.centaur_lifecycle import LifecycleStatus
 
 logger = logging.getLogger(__name__)
 
 
-class Clock(Protocol):
-    """Protocol for time abstraction (testability)."""
-
-    def now(self) -> datetime:
-        """Return current UTC time."""
-        ...
-
-
-class SystemClock:
-    """Production clock using system time."""
-
-    def now(self) -> datetime:
-        return datetime.now(timezone.utc)
-
-
-class FixedClock:
-    """Test clock with controllable time."""
-
-    def __init__(self, fixed_time: Optional[datetime] = None):
-        self._time = fixed_time or datetime.now(timezone.utc)
-
-    def now(self) -> datetime:
-        return self._time
-
-    def advance(self, seconds: int) -> datetime:
-        self._time = self._time + timedelta(seconds=seconds)
-        return self._time
-
-    def set(self, time: datetime) -> None:
-        self._time = time
-
-
-# Backwards-compatible alias used by existing tests.
-InvestigationStatus = LifecycleStatus
-
-# Default minimum hold period in seconds.
-DEFAULT_MIN_HOLD_SECONDS = 45
-
-
 @dataclass(frozen=True)
-class InvestigationJob:
-    """Authoritative investigation lifecycle row."""
+class BudgetJobRecord:
+    """Authoritative budget lifecycle row."""
 
     id: UUID
     tenant_id: UUID
     request_id: str
-    correlation_id: Optional[str]
+    correlation_id: str
     status: LifecycleStatus
     created_at: datetime
     updated_at: datetime
-    min_hold_until: datetime
     ready_for_review_at: Optional[datetime]
     approved_at: Optional[datetime]
     rejected_at: Optional[datetime]
@@ -80,63 +40,40 @@ class InvestigationJob:
     result: Optional[dict[str, Any]]
     failure_code: Optional[str]
     failure_reason: Optional[str]
-    remaining_hold_seconds: int
-
-    @property
-    def can_transition_to_ready(self) -> bool:
-        return (
-            self.status
-            in (
-                LifecycleStatus.SUBMITTED,
-                LifecycleStatus.VALIDATING,
-                LifecycleStatus.INVESTIGATING,
-                LifecycleStatus.RERUN_REQUESTED,
-            )
-            and self.remaining_hold_seconds <= 0
-        )
-
-    @property
-    def can_approve(self) -> bool:
-        return self.status == LifecycleStatus.READY_FOR_REVIEW
 
 
-class InvestigationService:
-    """Service-owned investigation lifecycle authority."""
+class BudgetJobService:
+    """Service-owned budget lifecycle authority."""
 
-    def __init__(
+    async def get_or_create_job(
         self,
-        clock: Optional[Clock] = None,
-        min_hold_seconds: int = DEFAULT_MIN_HOLD_SECONDS,
-    ):
-        self.clock = clock or SystemClock()
-        self.min_hold_seconds = min_hold_seconds
-
-    async def create_job(
-        self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
+        *,
         tenant_id: UUID,
-        correlation_id: Optional[str] = None,
-        request_id: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> InvestigationJob:
-        now = self.clock.now()
-        min_hold_until = now + timedelta(seconds=self.min_hold_seconds)
-        job_id = uuid4()
-        resolved_request_id = request_id or correlation_id or f"investigation-{job_id}"
+        request_id: str,
+        correlation_id: str,
+    ) -> BudgetJobRecord:
+        existing = await self.get_by_request_id(
+            session,
+            tenant_id=tenant_id,
+            request_id=request_id,
+        )
+        if existing is not None:
+            return existing
 
-        await conn.execute(
+        now = datetime.now(timezone.utc)
+        job_id = uuid4()
+        await session.execute(
             text(
                 """
-                INSERT INTO investigation_jobs (
+                INSERT INTO budget_jobs (
                     id,
                     tenant_id,
                     request_id,
                     correlation_id,
                     status,
                     created_at,
-                    updated_at,
-                    min_hold_until,
-                    metadata
+                    updated_at
                 ) VALUES (
                     :id,
                     :tenant_id,
@@ -144,88 +81,38 @@ class InvestigationService:
                     :correlation_id,
                     :status,
                     :created_at,
-                    :updated_at,
-                    :min_hold_until,
-                    CAST(:metadata AS JSONB)
+                    :updated_at
                 )
                 """
             ),
             {
                 "id": str(job_id),
                 "tenant_id": str(tenant_id),
-                "request_id": resolved_request_id,
+                "request_id": request_id,
                 "correlation_id": correlation_id,
                 "status": LifecycleStatus.SUBMITTED.value,
                 "created_at": now,
                 "updated_at": now,
-                "min_hold_until": min_hold_until,
-                "metadata": json.dumps(metadata or {}),
             },
         )
-
         logger.info(
-            "investigation_job_created",
+            "budget_job_created",
             extra={
-                "job_id": str(job_id),
                 "tenant_id": str(tenant_id),
-                "request_id": resolved_request_id,
+                "request_id": request_id,
+                "job_id": str(job_id),
             },
         )
+        return await self.get_by_id(session, tenant_id=tenant_id, job_id=job_id)
 
-        return InvestigationJob(
-            id=job_id,
-            tenant_id=tenant_id,
-            request_id=resolved_request_id,
-            correlation_id=correlation_id,
-            status=LifecycleStatus.SUBMITTED,
-            created_at=now,
-            updated_at=now,
-            min_hold_until=min_hold_until,
-            ready_for_review_at=None,
-            approved_at=None,
-            rejected_at=None,
-            refine_requested_at=None,
-            rerun_requested_at=None,
-            completed_at=None,
-            failed_at=None,
-            timeout_at=None,
-            cancelled_at=None,
-            result=None,
-            failure_code=None,
-            failure_reason=None,
-            remaining_hold_seconds=self.min_hold_seconds,
-        )
-
-    async def get_or_create_job(
+    async def get_by_request_id(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         request_id: str,
-        correlation_id: Optional[str] = None,
-    ) -> InvestigationJob:
-        existing = await self.get_job_by_request_id(
-            conn,
-            tenant_id=tenant_id,
-            request_id=request_id,
-        )
-        if existing is not None:
-            return existing
-        return await self.create_job(
-            conn,
-            tenant_id=tenant_id,
-            request_id=request_id,
-            correlation_id=correlation_id,
-        )
-
-    async def get_job_by_request_id(
-        self,
-        conn: AsyncConnection | AsyncSession,
-        *,
-        tenant_id: UUID,
-        request_id: str,
-    ) -> Optional[InvestigationJob]:
-        result = await conn.execute(
+    ) -> Optional[BudgetJobRecord]:
+        result = await session.execute(
             text(
                 """
                 SELECT
@@ -236,7 +123,6 @@ class InvestigationService:
                     status,
                     created_at,
                     updated_at,
-                    min_hold_until,
                     ready_for_review_at,
                     approved_at,
                     rejected_at,
@@ -249,7 +135,7 @@ class InvestigationService:
                     result,
                     failure_code,
                     failure_reason
-                FROM investigation_jobs
+                FROM budget_jobs
                 WHERE tenant_id = :tenant_id
                   AND request_id = :request_id
                 """
@@ -259,15 +145,16 @@ class InvestigationService:
         row = result.mappings().first()
         if row is None:
             return None
-        return await self._hydrate_with_auto_transition(conn, row)
+        return self._to_record(row)
 
-    async def get_job(
+    async def get_by_id(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
+        *,
         tenant_id: UUID,
         job_id: UUID,
-    ) -> Optional[InvestigationJob]:
-        result = await conn.execute(
+    ) -> BudgetJobRecord:
+        result = await session.execute(
             text(
                 """
                 SELECT
@@ -278,7 +165,6 @@ class InvestigationService:
                     status,
                     created_at,
                     updated_at,
-                    min_hold_until,
                     ready_for_review_at,
                     approved_at,
                     rejected_at,
@@ -291,27 +177,27 @@ class InvestigationService:
                     result,
                     failure_code,
                     failure_reason
-                FROM investigation_jobs
-                WHERE id = :job_id
-                  AND tenant_id = :tenant_id
+                FROM budget_jobs
+                WHERE tenant_id = :tenant_id
+                  AND id = :job_id
                 """
             ),
-            {"job_id": str(job_id), "tenant_id": str(tenant_id)},
+            {"tenant_id": str(tenant_id), "job_id": str(job_id)},
         )
         row = result.mappings().first()
         if row is None:
-            return None
-        return await self._hydrate_with_auto_transition(conn, row)
+            raise ValueError(f"Budget job {job_id} not found")
+        return self._to_record(row)
 
     async def mark_validating(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.VALIDATING,
@@ -320,13 +206,13 @@ class InvestigationService:
 
     async def mark_investigating(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.INVESTIGATING,
@@ -339,14 +225,14 @@ class InvestigationService:
 
     async def mark_ready_for_review(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
         result_payload: Optional[dict[str, Any]] = None,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.READY_FOR_REVIEW,
@@ -356,39 +242,36 @@ class InvestigationService:
                 LifecycleStatus.INVESTIGATING,
                 LifecycleStatus.RERUN_REQUESTED,
             ),
-            ready_for_review=True,
             result_payload=result_payload,
+            ready_for_review=True,
         )
 
     async def approve_job(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
+        *,
         tenant_id: UUID,
         job_id: UUID,
-    ) -> InvestigationJob:
+    ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.APPROVED,
             allowed_current=(LifecycleStatus.READY_FOR_REVIEW,),
             approved=True,
         )
-        job = await self.get_job(conn, tenant_id, job_id)
-        if job is None:
-            raise ValueError(f"Job {job_id} not found")
-        return job
 
     async def reject_job(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
         reason: Optional[str] = None,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.REJECTED,
@@ -399,14 +282,14 @@ class InvestigationService:
 
     async def request_refine(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
         reason: Optional[str] = None,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.REFINE_REQUESTED,
@@ -417,14 +300,14 @@ class InvestigationService:
 
     async def request_rerun(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
         reason: Optional[str] = None,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.RERUN_REQUESTED,
@@ -440,13 +323,13 @@ class InvestigationService:
 
     async def complete_job(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.COMPLETED,
@@ -456,7 +339,7 @@ class InvestigationService:
 
     async def fail_job(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
@@ -464,7 +347,7 @@ class InvestigationService:
         failure_reason: Optional[str] = None,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.FAILED,
@@ -481,14 +364,14 @@ class InvestigationService:
 
     async def timeout_job(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
         failure_reason: Optional[str] = None,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.TIMEOUT,
@@ -505,14 +388,14 @@ class InvestigationService:
 
     async def cancel_job(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
         reason: Optional[str] = None,
     ) -> None:
         await self._transition(
-            conn,
+            session,
             tenant_id=tenant_id,
             job_id=job_id,
             next_status=LifecycleStatus.CANCELLED,
@@ -530,79 +413,9 @@ class InvestigationService:
             failure_reason=reason,
         )
 
-    async def _hydrate_with_auto_transition(
-        self,
-        conn: AsyncConnection | AsyncSession,
-        row: Any,
-    ) -> InvestigationJob:
-        now = self.clock.now()
-        status = LifecycleStatus(str(row["status"]))
-        min_hold_until = row["min_hold_until"]
-        ready_for_review_at = row["ready_for_review_at"]
-        if (
-            status
-            in (
-                LifecycleStatus.SUBMITTED,
-                LifecycleStatus.VALIDATING,
-                LifecycleStatus.INVESTIGATING,
-                LifecycleStatus.RERUN_REQUESTED,
-            )
-            and now >= min_hold_until
-            and ready_for_review_at is None
-        ):
-            await self._transition(
-                conn,
-                tenant_id=UUID(str(row["tenant_id"])),
-                job_id=UUID(str(row["id"])),
-                next_status=LifecycleStatus.READY_FOR_REVIEW,
-                allowed_current=(
-                    LifecycleStatus.SUBMITTED,
-                    LifecycleStatus.VALIDATING,
-                    LifecycleStatus.INVESTIGATING,
-                    LifecycleStatus.RERUN_REQUESTED,
-                ),
-                ready_for_review=True,
-            )
-            status = LifecycleStatus.READY_FOR_REVIEW
-            ready_for_review_at = now
-
-        if status in (
-            LifecycleStatus.SUBMITTED,
-            LifecycleStatus.VALIDATING,
-            LifecycleStatus.INVESTIGATING,
-            LifecycleStatus.RERUN_REQUESTED,
-        ):
-            remaining_hold_seconds = max(0, int((min_hold_until - now).total_seconds()))
-        else:
-            remaining_hold_seconds = 0
-
-        return InvestigationJob(
-            id=UUID(str(row["id"])),
-            tenant_id=UUID(str(row["tenant_id"])),
-            request_id=str(row["request_id"]),
-            correlation_id=row["correlation_id"],
-            status=status,
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            min_hold_until=min_hold_until,
-            ready_for_review_at=ready_for_review_at,
-            approved_at=row["approved_at"],
-            rejected_at=row["rejected_at"],
-            refine_requested_at=row["refine_requested_at"],
-            rerun_requested_at=row["rerun_requested_at"],
-            completed_at=row["completed_at"],
-            failed_at=row["failed_at"],
-            timeout_at=row["timeout_at"],
-            cancelled_at=row["cancelled_at"],
-            result=row["result"],
-            failure_code=row["failure_code"],
-            failure_reason=row["failure_reason"],
-            remaining_hold_seconds=remaining_hold_seconds,
-        )
-
     async def _transition(
         self,
-        conn: AsyncConnection | AsyncSession,
+        session: AsyncSession,
         *,
         tenant_id: UUID,
         job_id: UUID,
@@ -621,7 +434,7 @@ class InvestigationService:
         failure_reason: Optional[str] = None,
         result_payload: Optional[dict[str, Any]] = None,
     ) -> None:
-        now = self.clock.now()
+        now = datetime.now(timezone.utc)
         assignments = ["status = :status", "updated_at = :updated_at"]
         params: dict[str, Any] = {
             "status": next_status.value,
@@ -672,10 +485,10 @@ class InvestigationService:
         for idx, value in enumerate(allowed_values):
             params[f"allowed_{idx}"] = value
 
-        result = await conn.execute(
+        result = await session.execute(
             text(
                 f"""
-                UPDATE investigation_jobs
+                UPDATE budget_jobs
                 SET {", ".join(assignments)}
                 WHERE id = :job_id
                   AND tenant_id = :tenant_id
@@ -687,10 +500,33 @@ class InvestigationService:
         if result.rowcount == 1:
             return
 
-        current = await self.get_job(conn, tenant_id=tenant_id, job_id=job_id)
-        if current is not None and current.status == next_status:
+        current = await self.get_by_id(session, tenant_id=tenant_id, job_id=job_id)
+        if current.status == next_status:
             return
-        current_status = current.status.value if current is not None else "missing"
         raise ValueError(
-            f"Illegal investigation transition {current_status} -> {next_status.value}"
+            f"Illegal budget job transition {current.status.value} -> {next_status.value}"
+        )
+
+    @staticmethod
+    def _to_record(row: Any) -> BudgetJobRecord:
+        return BudgetJobRecord(
+            id=UUID(str(row["id"])),
+            tenant_id=UUID(str(row["tenant_id"])),
+            request_id=str(row["request_id"]),
+            correlation_id=str(row["correlation_id"]),
+            status=LifecycleStatus(str(row["status"])),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            ready_for_review_at=row["ready_for_review_at"],
+            approved_at=row["approved_at"],
+            rejected_at=row["rejected_at"],
+            refine_requested_at=row["refine_requested_at"],
+            rerun_requested_at=row["rerun_requested_at"],
+            completed_at=row["completed_at"],
+            failed_at=row["failed_at"],
+            timeout_at=row["timeout_at"],
+            cancelled_at=row["cancelled_at"],
+            result=row["result"],
+            failure_code=row["failure_code"],
+            failure_reason=row["failure_reason"],
         )

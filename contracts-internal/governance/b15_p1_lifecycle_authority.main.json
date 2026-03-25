@@ -1,0 +1,44 @@
+{
+  "contract_id": "b15.p1.lifecycle_authority.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P1",
+  "domains": {
+    "investigations": {
+      "public_owner_service": "backend/app/services/investigation.py::InvestigationService",
+      "public_owner_table": "investigation_jobs",
+      "competing_store": "investigations",
+      "competing_store_disposition": "internal_trace_only"
+    },
+    "budget": {
+      "public_owner_service": "backend/app/services/budget_job.py::BudgetJobService",
+      "public_owner_table": "budget_jobs",
+      "competing_store": "budget_optimization_jobs",
+      "competing_store_disposition": "internal_trace_only"
+    }
+  },
+  "canonical_lifecycle_states": [
+    "submitted",
+    "validating",
+    "investigating",
+    "ready_for_review",
+    "approved",
+    "rejected",
+    "refine_requested",
+    "rerun_requested",
+    "completed",
+    "failed",
+    "timeout",
+    "cancelled"
+  ],
+  "worker_write_constraints": {
+    "public_terminalization_must_be_service_mediated": true,
+    "competing_store_public_terminalization_forbidden": true,
+    "public_completion_requires_approved_state": true
+  },
+  "proof_surfaces": [
+    "scripts/ci/enforce_b15_p1_lifecycle_authority.py",
+    "backend/tests/test_b15_p1_lifecycle_authority_enforcer.py",
+    "backend/tests/test_b15_p1_runtime_lifecycle_authority.py"
+  ]
+}
+
