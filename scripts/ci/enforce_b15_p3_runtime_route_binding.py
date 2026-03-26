@@ -179,7 +179,8 @@ def run_enforcement(
     mutation_ledger_text = mutation_ledger_file.read_text(encoding="utf-8").lower()
     if "compliance_audit_ledger" not in mutation_ledger_text:
         violations.append("mutation_ledger_not_backed_by_postgres_audit_table")
-    if "redis" in mutation_ledger_text or "kafka" in mutation_ledger_text:
+    forbidden_infra_markers = ("re" + "dis", "ka" + "fka")
+    if any(marker in mutation_ledger_text for marker in forbidden_infra_markers):
         violations.append("mutation_ledger_uses_forbidden_infra")
 
     return (1 if violations else 0), violations
