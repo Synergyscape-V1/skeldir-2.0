@@ -1,0 +1,48 @@
+{
+  "contract_id": "b15.p3.runtime_route_binding.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P3",
+  "required_runtime_routes": {
+    "investigations": [
+      "/api/investigations",
+      "/api/investigations/{investigation_id}/status",
+      "/api/investigations/{investigation_id}",
+      "/api/investigations/{investigation_id}/approve",
+      "/api/investigations/{investigation_id}/reject",
+      "/api/investigations/{investigation_id}/refine",
+      "/api/investigations/{investigation_id}/rerun",
+      "/api/investigations/{investigation_id}/retry",
+      "/api/investigations/{investigation_id}/cancel"
+    ],
+    "budget": [
+      "/api/budget/optimize",
+      "/api/budget/recommendations/{job_id}/status",
+      "/api/budget/recommendations/{job_id}",
+      "/api/budget/recommendations/{job_id}/approve",
+      "/api/budget/recommendations/{job_id}/reject",
+      "/api/budget/recommendations/{job_id}/refine",
+      "/api/budget/recommendations/{job_id}/rerun",
+      "/api/budget/recommendations/{job_id}/retry",
+      "/api/budget/recommendations/{job_id}/cancel"
+    ]
+  },
+  "runtime_conformance_requirements": {
+    "contract_scope_prefixes": [
+      "/api/investigations",
+      "/api/budget"
+    ],
+    "contract_scope_mapping": {
+      "/api/investigations": "api-contracts/dist/openapi/v1/llm-investigations.bundled.yaml",
+      "/api/budget": "api-contracts/dist/openapi/v1/llm-budget.bundled.yaml"
+    },
+    "semantics_skip_allowlist_must_not_include": [
+      "llm-investigations.bundled.yaml",
+      "llm-budget.bundled.yaml"
+    ]
+  },
+  "proof_surfaces": [
+    "scripts/ci/enforce_b15_p3_runtime_route_binding.py",
+    "backend/tests/test_b15_p3_runtime_route_binding.py",
+    "backend/tests/test_b15_p3_runtime_route_binding_enforcer.py"
+  ]
+}

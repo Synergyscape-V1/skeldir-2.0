@@ -320,6 +320,28 @@ class BudgetJobService:
             failure_reason=reason,
         )
 
+    async def request_retry(
+        self,
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        job_id: UUID,
+        reason: Optional[str] = None,
+    ) -> None:
+        await self._transition(
+            session,
+            tenant_id=tenant_id,
+            job_id=job_id,
+            next_status=LifecycleStatus.RERUN_REQUESTED,
+            allowed_current=(
+                LifecycleStatus.FAILED,
+                LifecycleStatus.TIMEOUT,
+                LifecycleStatus.CANCELLED,
+            ),
+            rerun_requested=True,
+            failure_reason=reason,
+        )
+
     async def complete_job(
         self,
         session: AsyncSession,
@@ -410,6 +432,68 @@ class BudgetJobService:
             ),
             cancelled=True,
             failure_reason=reason,
+        )
+
+    async def get_status_projection(
+        self,
+        session: AsyncSession,
+        *,
+        tenant_id: UUID,
+        job_id: UUID,
+    ) -> Optional[BudgetJobRecord]:
+        """Read status-only projection without hydrating full recommendation payload."""
+        result = await session.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    tenant_id,
+                    request_id,
+                    correlation_id,
+                    status,
+                    created_at,
+                    updated_at,
+                    ready_for_review_at,
+                    approved_at,
+                    rejected_at,
+                    refine_requested_at,
+                    rerun_requested_at,
+                    completed_at,
+                    failed_at,
+                    timeout_at,
+                    cancelled_at,
+                    failure_code,
+                    failure_reason
+                FROM budget_jobs
+                WHERE tenant_id = :tenant_id
+                  AND id = :job_id
+                """
+            ),
+            {"tenant_id": str(tenant_id), "job_id": str(job_id)},
+        )
+        row = result.mappings().first()
+        if row is None:
+            return None
+        return BudgetJobRecord(
+            id=UUID(str(row["id"])),
+            tenant_id=UUID(str(row["tenant_id"])),
+            request_id=str(row["request_id"]),
+            correlation_id=str(row["correlation_id"]),
+            status=LifecycleStatus(str(row["status"])),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            ready_for_review_at=row["ready_for_review_at"],
+            approved_at=row["approved_at"],
+            rejected_at=row["rejected_at"],
+            refine_requested_at=row["refine_requested_at"],
+            rerun_requested_at=row["rerun_requested_at"],
+            completed_at=row["completed_at"],
+            failed_at=row["failed_at"],
+            timeout_at=row["timeout_at"],
+            cancelled_at=row["cancelled_at"],
+            result=None,
+            failure_code=row["failure_code"],
+            failure_reason=row["failure_reason"],
         )
 
     async def _transition(

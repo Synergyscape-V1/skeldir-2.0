@@ -133,6 +133,10 @@ paths:
                     generated_at: '2026-03-25T18:21:45Z'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
       x-latency-requirement: 100ms
       x-cost-budget: 0.00
       x-complexity-score: 2
@@ -196,6 +200,10 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/investigations/{investigation_id}/approve:
     post:
@@ -252,6 +260,10 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/investigations/{investigation_id}/reject:
     post:
@@ -307,6 +319,10 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/investigations/{investigation_id}/refine:
     post:
@@ -362,6 +378,10 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/investigations/{investigation_id}/rerun:
     post:
@@ -417,6 +437,10 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/investigations/{investigation_id}/retry:
     post:
@@ -472,6 +496,10 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
   /api/investigations/{investigation_id}/cancel:
     post:
@@ -527,6 +555,10 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '401':
+          $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
+        '403':
+          $ref: './_common/base.yaml#/components/responses/ForbiddenError'
 
 components:
   schemas:

@@ -47,10 +47,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_16
+              required: &ref_20
                 - total_budget
                 - optimization_goal
-              properties: &ref_17
+              properties: &ref_21
                 total_budget:
                   type: number
                   format: float
@@ -94,14 +94,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_18
+                required: &ref_22
                   - job_id
                   - tenant_id
                   - status
                   - estimated_duration_seconds
                   - status_url
                   - result_url
-                properties: &ref_19
+                properties: &ref_23
                   job_id:
                     type: string
                     format: uuid
@@ -142,12 +142,12 @@ paths:
                 result_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555
         '400':
           description: Bad Request - validation failed
-          headers: &ref_9
+          headers: &ref_13
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_10
+          content: &ref_14
             application/problem+json:
               schema:
                 type: object
@@ -215,13 +215,13 @@ paths:
                           example: INVALID_FORMAT
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: &ref_33
+          headers: &ref_5
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
               description: Request correlation ID for distributed tracing
-          content: &ref_34
+          content: &ref_6
             application/problem+json:
               schema:
                 type: object
@@ -230,12 +230,12 @@ paths:
                 properties: *ref_1
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: &ref_35
+          headers: &ref_7
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_36
+          content: &ref_8
             application/problem+json:
               schema:
                 type: object
@@ -282,7 +282,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_20
+                required: &ref_24
                   - job_id
                   - tenant_id
                   - status
@@ -290,7 +290,7 @@ paths:
                   - available_actions
                   - last_updated
                   - data_freshness_seconds
-                properties: &ref_21
+                properties: &ref_25
                   job_id:
                     type: string
                     format: uuid
@@ -312,7 +312,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &ref_11
+                      enum: &ref_15
                         - approve
                         - reject
                         - refine
@@ -321,10 +321,10 @@ paths:
                         - cancel
                   failure:
                     type: object
-                    required: &ref_31
+                    required: &ref_35
                       - code
                       - reason
-                    properties: &ref_32
+                    properties: &ref_36
                       code:
                         type: string
                         enum:
@@ -336,18 +336,18 @@ paths:
                         type: string
                   result_preview:
                     type: object
-                    required: &ref_5
+                    required: &ref_9
                       - deterministic_recommendation
-                    properties: &ref_6
+                    properties: &ref_10
                       deterministic_recommendation:
                         type: object
                         description: Structured deterministic recommendation that is authoritative for decisions.
-                        required: &ref_23
+                        required: &ref_27
                           - optimization_goal
                           - allocations
                           - evidence
                           - generated_at
-                        properties: &ref_24
+                        properties: &ref_28
                           optimization_goal:
                             type: string
                             enum:
@@ -358,13 +358,13 @@ paths:
                             type: array
                             items:
                               type: object
-                              required: &ref_25
+                              required: &ref_29
                                 - channel
                                 - current_budget
                                 - recommended_budget
                                 - delta_budget
                                 - expected_roas
-                              properties: &ref_26
+                              properties: &ref_30
                                 channel:
                                   type: string
                                 current_budget:
@@ -383,13 +383,13 @@ paths:
                             type: array
                             items:
                               type: object
-                              required: &ref_27
+                              required: &ref_31
                                 - metric_name
                                 - channel
                                 - metric_value
                                 - source_table
                                 - observed_at
-                              properties: &ref_28
+                              properties: &ref_32
                                 metric_name:
                                   type: string
                                 channel:
@@ -409,10 +409,10 @@ paths:
                       llm_synthesis:
                         type: object
                         description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
-                        required: &ref_29
+                        required: &ref_33
                           - non_authoritative_summary
                           - generated_at
-                        properties: &ref_30
+                        properties: &ref_34
                           non_authoritative_summary:
                             type: string
                           caveats:
@@ -472,14 +472,22 @@ paths:
                       - Explanatory synthesis only; deterministic recommendation fields remain authoritative.
                     model: claude-4.5-opus
                     generated_at: '2026-03-25T18:32:50Z'
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '404':
           description: Resource not found
-          headers: &ref_7
+          headers: &ref_11
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_8
+          content: &ref_12
             application/problem+json:
               schema:
                 type: object
@@ -522,10 +530,10 @@ paths:
           content:
             application/json:
               schema:
-                allOf: &ref_22
+                allOf: &ref_26
                   - type: object
-                    required: *ref_5
-                    properties: *ref_6
+                    required: *ref_9
+                    properties: *ref_10
                   - type: object
                     required:
                       - job_id
@@ -582,14 +590,22 @@ paths:
                     - Narrative is advisory and not a financial authority object.
                   model: claude-4.5-opus
                   generated_at: '2026-03-25T18:34:40Z'
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/budget/recommendations/{job_id}/approve:
     post:
       summary: Approve budget recommendation
@@ -620,7 +636,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: &ref_12
+          schema: &ref_16
             type: string
             format: uuid
           example: 550e8400-e29b-41d4-a716-446655440000
@@ -630,7 +646,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: &ref_13
+              properties: &ref_17
                 reason:
                   type: string
                   maxLength: 500
@@ -653,7 +669,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_14
+                required: &ref_18
                   - job_id
                   - tenant_id
                   - action
@@ -662,7 +678,7 @@ paths:
                   - idempotency_replayed
                   - mutation_accepted
                   - status_url
-                properties: &ref_15
+                properties: &ref_19
                   job_id:
                     type: string
                     format: uuid
@@ -671,7 +687,7 @@ paths:
                     format: uuid
                   action:
                     type: string
-                    enum: *ref_11
+                    enum: *ref_15
                   status:
                     type: string
                     enum: *ref_4
@@ -697,14 +713,22 @@ paths:
                 mutation_accepted: true
                 message: Budget recommendation approved.
                 status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/budget/recommendations/{job_id}/reject:
     post:
       summary: Reject budget recommendation
@@ -735,7 +759,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: true
@@ -743,7 +767,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Budget recommendation rejected
@@ -759,8 +783,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -771,14 +795,22 @@ paths:
                 mutation_accepted: true
                 message: Budget recommendation rejected.
                 status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/budget/recommendations/{job_id}/refine:
     post:
       summary: Request budget recommendation refinement
@@ -809,7 +841,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: true
@@ -817,7 +849,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Budget recommendation refinement requested
@@ -833,8 +865,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -845,14 +877,22 @@ paths:
                 mutation_accepted: true
                 message: Budget recommendation marked for refinement.
                 status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/budget/recommendations/{job_id}/rerun:
     post:
       summary: Request budget recommendation rerun
@@ -883,7 +923,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: false
@@ -891,7 +931,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Budget recommendation rerun requested
@@ -907,8 +947,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -919,14 +959,22 @@ paths:
                 mutation_accepted: true
                 message: Budget recommendation rerun requested.
                 status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/budget/recommendations/{job_id}/retry:
     post:
       summary: Retry failed or cancelled budget recommendation
@@ -957,7 +1005,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: false
@@ -965,7 +1013,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Budget recommendation retry requested
@@ -981,8 +1029,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -993,14 +1041,22 @@ paths:
                 mutation_accepted: true
                 message: Budget recommendation retry requested.
                 status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/budget/recommendations/{job_id}/cancel:
     post:
       summary: Cancel budget recommendation
@@ -1031,7 +1087,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: false
@@ -1039,7 +1095,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Budget recommendation cancelled
@@ -1055,8 +1111,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 job_id: 11111111-2222-3333-4444-555555555555
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -1067,14 +1123,22 @@ paths:
                 mutation_accepted: true
                 message: Budget recommendation cancelled.
                 status_url: http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
 components:
   schemas:
     CentaurLifecycleStatus:
@@ -1082,54 +1146,54 @@ components:
       enum: *ref_4
     BudgetOptimizationRequest:
       type: object
-      required: *ref_16
-      properties: *ref_17
-    BudgetLaunchAccepted:
-      type: object
-      required: *ref_18
-      properties: *ref_19
-    BudgetStatusResponse:
-      type: object
       required: *ref_20
       properties: *ref_21
+    BudgetLaunchAccepted:
+      type: object
+      required: *ref_22
+      properties: *ref_23
+    BudgetStatusResponse:
+      type: object
+      required: *ref_24
+      properties: *ref_25
     BudgetRecommendationResponse:
-      allOf: *ref_22
+      allOf: *ref_26
     BudgetResultPayload:
       type: object
-      required: *ref_5
-      properties: *ref_6
+      required: *ref_9
+      properties: *ref_10
     BudgetDeterministicRecommendation:
       type: object
       description: Structured deterministic recommendation that is authoritative for decisions.
-      required: *ref_23
-      properties: *ref_24
-    BudgetDeterministicAllocation:
-      type: object
-      required: *ref_25
-      properties: *ref_26
-    BudgetEvidencePoint:
-      type: object
       required: *ref_27
       properties: *ref_28
-    LLMNonAuthoritativeSynthesis:
+    BudgetDeterministicAllocation:
       type: object
-      description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
       required: *ref_29
       properties: *ref_30
-    BudgetFailure:
+    BudgetEvidencePoint:
       type: object
       required: *ref_31
       properties: *ref_32
+    LLMNonAuthoritativeSynthesis:
+      type: object
+      description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
+      required: *ref_33
+      properties: *ref_34
+    BudgetFailure:
+      type: object
+      required: *ref_35
+      properties: *ref_36
     BudgetMutationAction:
       type: string
-      enum: *ref_11
+      enum: *ref_15
     BudgetMutationRequest:
       type: object
-      properties: *ref_13
+      properties: *ref_17
     BudgetMutationResponse:
       type: object
-      required: *ref_14
-      properties: *ref_15
+      required: *ref_18
+      properties: *ref_19
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -1164,22 +1228,22 @@ components:
       in: header
       description: Idempotency key to prevent duplicate processing (UUID format)
       required: true
-      schema: *ref_12
+      schema: *ref_16
       example: 550e8400-e29b-41d4-a716-446655440000
   responses:
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_9
-      content: *ref_10
+      headers: *ref_13
+      content: *ref_14
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers: *ref_33
-      content: *ref_34
+      headers: *ref_5
+      content: *ref_6
     ForbiddenError:
       description: Forbidden - authenticated but insufficient permissions
-      headers: *ref_35
-      content: *ref_36
-    NotFoundError:
-      description: Resource not found
       headers: *ref_7
       content: *ref_8
+    NotFoundError:
+      description: Resource not found
+      headers: *ref_11
+      content: *ref_12

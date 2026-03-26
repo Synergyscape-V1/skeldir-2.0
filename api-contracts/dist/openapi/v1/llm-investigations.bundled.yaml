@@ -48,9 +48,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_16
+              required: &ref_20
                 - question
-              properties: &ref_17
+              properties: &ref_21
                 question:
                   type: string
                   minLength: 10
@@ -87,14 +87,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_18
+                required: &ref_22
                   - investigation_id
                   - tenant_id
                   - status
                   - estimated_duration_seconds
                   - status_url
                   - result_url
-                properties: &ref_19
+                properties: &ref_23
                   investigation_id:
                     type: string
                     format: uuid
@@ -135,12 +135,12 @@ paths:
                 result_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000
         '400':
           description: Bad Request - validation failed
-          headers: &ref_9
+          headers: &ref_13
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_10
+          content: &ref_14
             application/problem+json:
               schema:
                 type: object
@@ -208,13 +208,13 @@ paths:
                           example: INVALID_FORMAT
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: &ref_31
+          headers: &ref_5
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
               description: Request correlation ID for distributed tracing
-          content: &ref_32
+          content: &ref_6
             application/problem+json:
               schema:
                 type: object
@@ -223,12 +223,12 @@ paths:
                 properties: *ref_1
         '403':
           description: Forbidden - authenticated but insufficient permissions
-          headers: &ref_33
+          headers: &ref_7
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_34
+          content: &ref_8
             application/problem+json:
               schema:
                 type: object
@@ -276,7 +276,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_20
+                required: &ref_24
                   - investigation_id
                   - tenant_id
                   - status
@@ -284,7 +284,7 @@ paths:
                   - available_actions
                   - last_updated
                   - data_freshness_seconds
-                properties: &ref_21
+                properties: &ref_25
                   investigation_id:
                     type: string
                     format: uuid
@@ -306,7 +306,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &ref_11
+                      enum: &ref_15
                         - approve
                         - reject
                         - refine
@@ -315,10 +315,10 @@ paths:
                         - cancel
                   failure:
                     type: object
-                    required: &ref_29
+                    required: &ref_33
                       - code
                       - reason
-                    properties: &ref_30
+                    properties: &ref_34
                       code:
                         type: string
                         enum:
@@ -330,21 +330,21 @@ paths:
                         type: string
                   result_preview:
                     type: object
-                    required: &ref_5
+                    required: &ref_9
                       - deterministic_findings
-                    properties: &ref_6
+                    properties: &ref_10
                       deterministic_findings:
                         type: array
                         description: Structured deterministic evidence used as authoritative investigation output.
                         items:
                           type: object
-                          required: &ref_23
+                          required: &ref_27
                             - finding_id
                             - title
                             - severity
                             - evidence
                             - deterministic_confidence_score
-                          properties: &ref_24
+                          properties: &ref_28
                             finding_id:
                               type: string
                             title:
@@ -363,12 +363,12 @@ paths:
                               type: array
                               items:
                                 type: object
-                                required: &ref_25
+                                required: &ref_29
                                   - metric_name
                                   - metric_value
                                   - source_table
                                   - observed_at
-                                properties: &ref_26
+                                properties: &ref_30
                                   metric_name:
                                     type: string
                                   metric_value:
@@ -385,10 +385,10 @@ paths:
                       llm_synthesis:
                         type: object
                         description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
-                        required: &ref_27
+                        required: &ref_31
                           - non_authoritative_summary
                           - generated_at
-                        properties: &ref_28
+                        properties: &ref_32
                           non_authoritative_summary:
                             type: string
                           hypotheses:
@@ -445,14 +445,22 @@ paths:
                       - Summary text is explanatory only and not an authoritative financial decision object.
                     model: claude-4.5-opus
                     generated_at: '2026-03-25T18:21:45Z'
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '404':
           description: Resource not found
-          headers: &ref_7
+          headers: &ref_11
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_8
+          content: &ref_12
             application/problem+json:
               schema:
                 type: object
@@ -498,10 +506,10 @@ paths:
           content:
             application/json:
               schema:
-                allOf: &ref_22
+                allOf: &ref_26
                   - type: object
-                    required: *ref_5
-                    properties: *ref_6
+                    required: *ref_9
+                    properties: *ref_10
                   - type: object
                     required:
                       - investigation_id
@@ -551,14 +559,22 @@ paths:
                     - This synthesis does not override deterministic evidence fields.
                   model: claude-4.5-opus
                   generated_at: '2026-03-25T18:23:45Z'
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/investigations/{investigation_id}/approve:
     post:
       summary: Approve investigation result
@@ -589,7 +605,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: &ref_12
+          schema: &ref_16
             type: string
             format: uuid
           example: 550e8400-e29b-41d4-a716-446655440000
@@ -599,7 +615,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: &ref_13
+              properties: &ref_17
                 reason:
                   type: string
                   maxLength: 500
@@ -622,7 +638,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_14
+                required: &ref_18
                   - investigation_id
                   - tenant_id
                   - action
@@ -631,7 +647,7 @@ paths:
                   - idempotency_replayed
                   - mutation_accepted
                   - status_url
-                properties: &ref_15
+                properties: &ref_19
                   investigation_id:
                     type: string
                     format: uuid
@@ -640,7 +656,7 @@ paths:
                     format: uuid
                   action:
                     type: string
-                    enum: *ref_11
+                    enum: *ref_15
                   status:
                     type: string
                     enum: *ref_4
@@ -666,14 +682,22 @@ paths:
                 mutation_accepted: true
                 message: Investigation approved and queued for completion.
                 status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/investigations/{investigation_id}/reject:
     post:
       summary: Reject investigation result
@@ -704,7 +728,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: true
@@ -712,7 +736,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Investigation rejected
@@ -728,8 +752,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 investigation_id: 550e8400-e29b-41d4-a716-446655440000
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -740,14 +764,22 @@ paths:
                 mutation_accepted: true
                 message: Investigation rejected.
                 status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/investigations/{investigation_id}/refine:
     post:
       summary: Request investigation refinement
@@ -778,7 +810,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: true
@@ -786,7 +818,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Investigation refinement requested
@@ -802,8 +834,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 investigation_id: 550e8400-e29b-41d4-a716-446655440000
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -814,14 +846,22 @@ paths:
                 mutation_accepted: true
                 message: Investigation marked for refinement.
                 status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/investigations/{investigation_id}/rerun:
     post:
       summary: Request investigation rerun
@@ -852,7 +892,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: false
@@ -860,7 +900,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Investigation rerun requested
@@ -876,8 +916,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 investigation_id: 550e8400-e29b-41d4-a716-446655440000
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -888,14 +928,22 @@ paths:
                 mutation_accepted: true
                 message: Investigation rerun requested.
                 status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/investigations/{investigation_id}/retry:
     post:
       summary: Retry failed or cancelled investigation
@@ -926,7 +974,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: false
@@ -934,7 +982,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Investigation retry requested
@@ -950,8 +998,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 investigation_id: 550e8400-e29b-41d4-a716-446655440000
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -962,14 +1010,22 @@ paths:
                 mutation_accepted: true
                 message: Investigation retry requested.
                 status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
   /api/investigations/{investigation_id}/cancel:
     post:
       summary: Cancel investigation
@@ -1000,7 +1056,7 @@ paths:
           in: header
           description: Idempotency key to prevent duplicate processing (UUID format)
           required: true
-          schema: *ref_12
+          schema: *ref_16
           example: 550e8400-e29b-41d4-a716-446655440000
       requestBody:
         required: false
@@ -1008,7 +1064,7 @@ paths:
           application/json:
             schema:
               type: object
-              properties: *ref_13
+              properties: *ref_17
       responses:
         '200':
           description: Investigation cancelled
@@ -1024,8 +1080,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_18
+                properties: *ref_19
               example:
                 investigation_id: 550e8400-e29b-41d4-a716-446655440000
                 tenant_id: 11111111-1111-1111-1111-111111111111
@@ -1036,14 +1092,22 @@ paths:
                 mutation_accepted: true
                 message: Investigation cancelled.
                 status_url: http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status
-        '404':
-          description: Resource not found
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
           headers: *ref_7
           content: *ref_8
+        '404':
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
           description: Bad Request - validation failed
-          headers: *ref_9
-          content: *ref_10
+          headers: *ref_13
+          content: *ref_14
 components:
   schemas:
     CentaurLifecycleStatus:
@@ -1051,49 +1115,49 @@ components:
       enum: *ref_4
     InvestigationLaunchRequest:
       type: object
-      required: *ref_16
-      properties: *ref_17
-    InvestigationLaunchAccepted:
-      type: object
-      required: *ref_18
-      properties: *ref_19
-    InvestigationStatusResponse:
-      type: object
       required: *ref_20
       properties: *ref_21
+    InvestigationLaunchAccepted:
+      type: object
+      required: *ref_22
+      properties: *ref_23
+    InvestigationStatusResponse:
+      type: object
+      required: *ref_24
+      properties: *ref_25
     InvestigationResultResponse:
-      allOf: *ref_22
+      allOf: *ref_26
     InvestigationResultPayload:
       type: object
-      required: *ref_5
-      properties: *ref_6
+      required: *ref_9
+      properties: *ref_10
     InvestigationDeterministicFinding:
       type: object
-      required: *ref_23
-      properties: *ref_24
-    InvestigationEvidencePoint:
-      type: object
-      required: *ref_25
-      properties: *ref_26
-    LLMNonAuthoritativeSynthesis:
-      type: object
-      description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
       required: *ref_27
       properties: *ref_28
-    InvestigationFailure:
+    InvestigationEvidencePoint:
       type: object
       required: *ref_29
       properties: *ref_30
+    LLMNonAuthoritativeSynthesis:
+      type: object
+      description: Non-authoritative explanatory synthesis generated by an LLM. Never a substitute for deterministic decision fields.
+      required: *ref_31
+      properties: *ref_32
+    InvestigationFailure:
+      type: object
+      required: *ref_33
+      properties: *ref_34
     InvestigationMutationAction:
       type: string
-      enum: *ref_11
+      enum: *ref_15
     InvestigationMutationRequest:
       type: object
-      properties: *ref_13
+      properties: *ref_17
     InvestigationMutationResponse:
       type: object
-      required: *ref_14
-      properties: *ref_15
+      required: *ref_18
+      properties: *ref_19
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -1128,22 +1192,22 @@ components:
       in: header
       description: Idempotency key to prevent duplicate processing (UUID format)
       required: true
-      schema: *ref_12
+      schema: *ref_16
       example: 550e8400-e29b-41d4-a716-446655440000
   responses:
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_9
-      content: *ref_10
+      headers: *ref_13
+      content: *ref_14
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers: *ref_31
-      content: *ref_32
+      headers: *ref_5
+      content: *ref_6
     ForbiddenError:
       description: Forbidden - authenticated but insufficient permissions
-      headers: *ref_33
-      content: *ref_34
-    NotFoundError:
-      description: Resource not found
       headers: *ref_7
       content: *ref_8
+    NotFoundError:
+      description: Resource not found
+      headers: *ref_11
+      content: *ref_12
