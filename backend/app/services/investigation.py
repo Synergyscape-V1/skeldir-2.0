@@ -441,6 +441,28 @@ class InvestigationService:
             failure_reason=reason,
         )
 
+    async def request_retry(
+        self,
+        conn: AsyncConnection | AsyncSession,
+        *,
+        tenant_id: UUID,
+        job_id: UUID,
+        reason: Optional[str] = None,
+    ) -> None:
+        await self._transition(
+            conn,
+            tenant_id=tenant_id,
+            job_id=job_id,
+            next_status=LifecycleStatus.RERUN_REQUESTED,
+            allowed_current=(
+                LifecycleStatus.FAILED,
+                LifecycleStatus.TIMEOUT,
+                LifecycleStatus.CANCELLED,
+            ),
+            rerun_requested=True,
+            failure_reason=reason,
+        )
+
     async def complete_job(
         self,
         conn: AsyncConnection | AsyncSession,
@@ -531,6 +553,114 @@ class InvestigationService:
             ),
             cancelled=True,
             failure_reason=reason,
+        )
+
+    async def get_status_projection(
+        self,
+        conn: AsyncConnection | AsyncSession,
+        *,
+        tenant_id: UUID,
+        job_id: UUID,
+    ) -> Optional[InvestigationJob]:
+        """Read status-only projection without hydrating full result payload."""
+        result = await conn.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    tenant_id,
+                    request_id,
+                    correlation_id,
+                    status,
+                    created_at,
+                    updated_at,
+                    min_hold_until,
+                    ready_for_review_at,
+                    approved_at,
+                    rejected_at,
+                    refine_requested_at,
+                    rerun_requested_at,
+                    completed_at,
+                    failed_at,
+                    timeout_at,
+                    cancelled_at,
+                    failure_code,
+                    failure_reason
+                FROM investigation_jobs
+                WHERE id = :job_id
+                  AND tenant_id = :tenant_id
+                """
+            ),
+            {"job_id": str(job_id), "tenant_id": str(tenant_id)},
+        )
+        row = result.mappings().first()
+        if row is None:
+            return None
+
+        # Mirror hold-to-ready auto-transition while staying on projection columns.
+        now = self.clock.now()
+        status = LifecycleStatus(str(row["status"]))
+        min_hold_until = row["min_hold_until"]
+        ready_for_review_at = row["ready_for_review_at"]
+        if (
+            status
+            in (
+                LifecycleStatus.SUBMITTED,
+                LifecycleStatus.VALIDATING,
+                LifecycleStatus.INVESTIGATING,
+                LifecycleStatus.RERUN_REQUESTED,
+            )
+            and now >= min_hold_until
+            and ready_for_review_at is None
+        ):
+            await self._transition(
+                conn,
+                tenant_id=tenant_id,
+                job_id=job_id,
+                next_status=LifecycleStatus.READY_FOR_REVIEW,
+                allowed_current=(
+                    LifecycleStatus.SUBMITTED,
+                    LifecycleStatus.VALIDATING,
+                    LifecycleStatus.INVESTIGATING,
+                    LifecycleStatus.RERUN_REQUESTED,
+                ),
+                ready_for_review=True,
+            )
+            status = LifecycleStatus.READY_FOR_REVIEW
+            ready_for_review_at = now
+
+        if status in (
+            LifecycleStatus.SUBMITTED,
+            LifecycleStatus.VALIDATING,
+            LifecycleStatus.INVESTIGATING,
+            LifecycleStatus.RERUN_REQUESTED,
+        ):
+            remaining_hold_seconds = max(0, int((min_hold_until - now).total_seconds()))
+        else:
+            remaining_hold_seconds = 0
+
+        return InvestigationJob(
+            id=UUID(str(row["id"])),
+            tenant_id=UUID(str(row["tenant_id"])),
+            request_id=str(row["request_id"]),
+            correlation_id=row["correlation_id"],
+            status=status,
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            min_hold_until=min_hold_until,
+            ready_for_review_at=ready_for_review_at,
+            approved_at=row["approved_at"],
+            rejected_at=row["rejected_at"],
+            refine_requested_at=row["refine_requested_at"],
+            rerun_requested_at=row["rerun_requested_at"],
+            completed_at=row["completed_at"],
+            failed_at=row["failed_at"],
+            timeout_at=row["timeout_at"],
+            cancelled_at=row["cancelled_at"],
+            result=None,
+            failure_code=row["failure_code"],
+            failure_reason=row["failure_reason"],
+            remaining_hold_seconds=remaining_hold_seconds,
         )
 
     async def _hydrate_with_auto_transition(

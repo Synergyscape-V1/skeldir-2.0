@@ -11,6 +11,8 @@ in_scope_prefixes:
   - /api/export
   - /api/health
   - /api/webhooks
+  - /api/investigations
+  - /api/budget
 
 # Out-of-scope paths: Routes explicitly excluded from contract enforcement
 # These are internal/infrastructure endpoints that don't require OpenAPI contracts
@@ -43,6 +45,8 @@ spec_mappings:
   /api/webhooks/woocommerce: api-contracts/dist/openapi/v1/webhooks.woocommerce.bundled.yaml
   /api/webhooks/stripe: api-contracts/dist/openapi/v1/webhooks.stripe.bundled.yaml
   /api/webhooks/paypal: api-contracts/dist/openapi/v1/webhooks.paypal.bundled.yaml
+  /api/investigations: api-contracts/dist/openapi/v1/llm-investigations.bundled.yaml
+  /api/budget: api-contracts/dist/openapi/v1/llm-budget.bundled.yaml
 
 # Governance notes:
 # - Every FastAPI route MUST be either in-scope or explicitly out-of-scope

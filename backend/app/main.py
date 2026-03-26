@@ -35,8 +35,10 @@ configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 from app.api import (
     auth,
     attribution,
+    budget,
     export,
     health,
+    investigations,
     privacy,
     platform_oauth,
     platforms,
@@ -89,6 +91,8 @@ app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["R
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(health.router, tags=["Health"])
 app.include_router(webhooks.router, prefix="/api", tags=["Webhooks"])
+app.include_router(investigations.router, tags=["Investigations"])
+app.include_router(budget.router, tags=["Budget"])
 
 WEBHOOK_AUTH_HEADER_NAMES = {
     "authorization",
