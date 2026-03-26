@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUNDLES_DIR="$REPO_ROOT/api-contracts/dist/openapi/v1"
 OUTPUT_DIR="$REPO_ROOT/frontend/src/types/api"
+RELATIVE_BUNDLES_DIR="api-contracts/dist/openapi/v1"
+RELATIVE_OUTPUT_DIR="frontend/src/types/api"
 
 if [[ ! -d "$BUNDLES_DIR" ]]; then
   echo "[frontend-typegen] Missing bundles directory: $BUNDLES_DIR"
@@ -15,6 +17,7 @@ if [[ ! -d "$BUNDLES_DIR" ]]; then
   exit 1
 fi
 
+rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 install_openapi_typescript() {
@@ -42,16 +45,19 @@ fi
 generate() {
   local input_bundle="$1"
   local output_file="$2"
-  local input_path="$BUNDLES_DIR/$input_bundle"
-  local output_path="$OUTPUT_DIR/$output_file"
+  local input_path="$RELATIVE_BUNDLES_DIR/$input_bundle"
+  local output_path="$RELATIVE_OUTPUT_DIR/$output_file"
 
-  if [[ ! -f "$input_path" ]]; then
-    echo "[frontend-typegen] Missing bundle: $input_path"
+  if [[ ! -f "$REPO_ROOT/$input_path" ]]; then
+    echo "[frontend-typegen] Missing bundle: $REPO_ROOT/$input_path"
     exit 1
   fi
 
   echo "[frontend-typegen] $input_bundle -> $output_file"
-  "$OPENAPI_TYPESCRIPT_BIN" "$input_path" -o "$output_path"
+  (
+    cd "$REPO_ROOT"
+    "$OPENAPI_TYPESCRIPT_BIN" "$input_path" -o "$output_path"
+  )
 }
 
 generate "auth.bundled.yaml" "auth.ts"
@@ -67,5 +73,21 @@ generate "webhooks.shopify.bundled.yaml" "webhooks-shopify.ts"
 generate "webhooks.stripe.bundled.yaml" "webhooks-stripe.ts"
 generate "webhooks.woocommerce.bundled.yaml" "webhooks-woocommerce.ts"
 generate "webhooks.paypal.bundled.yaml" "webhooks-paypal.ts"
+
+cat > "$OUTPUT_DIR/index.ts" <<'TS'
+export type { paths as AuthPaths, operations as AuthOperations, components as AuthComponents } from "./auth";
+export type { paths as AttributionPaths, operations as AttributionOperations, components as AttributionComponents } from "./attribution";
+export type { paths as ReconciliationPaths, operations as ReconciliationOperations, components as ReconciliationComponents } from "./reconciliation";
+export type { paths as ExportPaths, operations as ExportOperations, components as ExportComponents } from "./export";
+export type { paths as PrivacyPaths, operations as PrivacyOperations, components as PrivacyComponents } from "./privacy";
+export type { paths as HealthPaths, operations as HealthOperations, components as HealthComponents } from "./health";
+export type { paths as LlmInvestigationsPaths, operations as LlmInvestigationsOperations, components as LlmInvestigationsComponents } from "./llm-investigations";
+export type { paths as LlmBudgetPaths, operations as LlmBudgetOperations, components as LlmBudgetComponents } from "./llm-budget";
+export type { paths as LlmExplanationsPaths, operations as LlmExplanationsOperations, components as LlmExplanationsComponents } from "./llm-explanations";
+export type { paths as WebhooksShopifyPaths, operations as WebhooksShopifyOperations, components as WebhooksShopifyComponents } from "./webhooks-shopify";
+export type { paths as WebhooksStripePaths, operations as WebhooksStripeOperations, components as WebhooksStripeComponents } from "./webhooks-stripe";
+export type { paths as WebhooksWoocommercePaths, operations as WebhooksWoocommerceOperations, components as WebhooksWoocommerceComponents } from "./webhooks-woocommerce";
+export type { paths as WebhooksPaypalPaths, operations as WebhooksPaypalOperations, components as WebhooksPaypalComponents } from "./webhooks-paypal";
+TS
 
 echo "[frontend-typegen] Completed. Updated files in $OUTPUT_DIR"

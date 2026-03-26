@@ -2,7 +2,7 @@
 
 # Skeldir 2.0 - Native Prism Mock Server Startup Script
 # Process-based approach (no container runtime)
-# Starts Prism mock servers for contract domains on ports 4010-4019
+# Starts Prism mock servers for contract domains on ports 4010-4026
 
 set -e
 
@@ -73,14 +73,28 @@ start_prism_server() {
     local pid=$!
     echo $pid > "$pid_file"
     
-    # Wait briefly and verify process started
-    sleep 1
-    if kill -0 $pid 2>/dev/null; then
+    # Wait for the process to bind the target port and stay alive.
+    local ready=0
+    for _ in {1..10}; do
+        if ! kill -0 $pid 2>/dev/null; then
+            break
+        fi
+        if lsof -i :$port > /dev/null 2>&1; then
+            ready=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$ready" -eq 1 ]; then
         echo -e "${GREEN}✓ Started: $name${NC}"
         echo "   PID: $pid"
         echo "   URL: http://localhost:$port"
     else
         echo -e "${RED}✗ Failed to start: $name${NC}"
+        if [ -f "$PID_DIR/prism_$port.log" ]; then
+            echo "   Last log lines:"
+            tail -n 20 "$PID_DIR/prism_$port.log" || true
+        fi
         return 1
     fi
     echo ""
@@ -110,7 +124,7 @@ fi
 echo -e "${GREEN}✓ Contract directory exists${NC}"
 echo ""
 
-# Start Frontend-Facing Mock Servers (ports 4010-4014, 4019)
+# Start Frontend-Facing Mock Servers (ports 4010-4014, 4019, 4024-4026)
 echo "Starting Frontend-Facing Services:"
 echo "-----------------------------------"
 start_prism_server "$CONTRACT_DIR/auth.bundled.yaml" 4010 "Auth Service"
@@ -119,6 +133,9 @@ start_prism_server "$CONTRACT_DIR/reconciliation.bundled.yaml" 4012 "Reconciliat
 start_prism_server "$CONTRACT_DIR/export.bundled.yaml" 4013 "Export Service"
 start_prism_server "$CONTRACT_DIR/health.bundled.yaml" 4014 "Health Service"
 start_prism_server "$CONTRACT_DIR/privacy.bundled.yaml" 4019 "Privacy Service"
+start_prism_server "$CONTRACT_DIR/llm-investigations.bundled.yaml" 4024 "LLM Investigations Service"
+start_prism_server "$CONTRACT_DIR/llm-budget.bundled.yaml" 4025 "LLM Budget Service"
+start_prism_server "$CONTRACT_DIR/llm-explanations.bundled.yaml" 4026 "LLM Explanations Service"
 
 # Start Backend-Only Webhook Mock Servers (ports 4015-4018)
 echo "Starting Webhook Services (Backend-Only):"
@@ -138,6 +155,9 @@ echo "  • Reconciliation: http://localhost:4012"
 echo "  • Export:         http://localhost:4013"
 echo "  • Health:         http://localhost:4014"
 echo "  • Privacy:        http://localhost:4019"
+echo "  • LLM Investigations: http://localhost:4024"
+echo "  • LLM Budget:         http://localhost:4025"
+echo "  • LLM Explanations:   http://localhost:4026"
 echo ""
 echo "Webhook Services (Backend-Only):"
 echo "  • Shopify:        http://localhost:4015"

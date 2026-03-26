@@ -118,7 +118,67 @@ services:
       - PRISM_ERRORS=true
     command: prism mock /contracts/webhooks/paypal.yaml -p 4018 -h 0.0.0.0
 
+  privacy:
+    image: stoplight/prism:latest
+    container_name: skeldir-mock-privacy
+    ports:
+      - "4019:4019"
+    volumes:
+      - ./api-contracts/openapi/v1:/contracts:ro
+    environment:
+      - PRISM_ERRORS=true
+    command: prism mock /contracts/privacy.yaml -p 4019 -h 0.0.0.0
 
+  llm-investigations:
+    image: stoplight/prism:latest
+    container_name: skeldir-mock-llm-investigations
+    ports:
+      - "4024:4024"
+    volumes:
+      - ./api-contracts/openapi/v1:/contracts:ro
+    environment:
+      - PRISM_ERRORS=true
+    command: prism mock /contracts/llm-investigations.yaml -p 4024 -h 0.0.0.0
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status -H 'Authorization: Bearer mock' -H 'X-Correlation-ID: test' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 2
+      start_period: 30s
+
+  llm-budget:
+    image: stoplight/prism:latest
+    container_name: skeldir-mock-llm-budget
+    ports:
+      - "4025:4025"
+    volumes:
+      - ./api-contracts/openapi/v1:/contracts:ro
+    environment:
+      - PRISM_ERRORS=true
+    command: prism mock /contracts/llm-budget.yaml -p 4025 -h 0.0.0.0
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status -H 'Authorization: Bearer mock' -H 'X-Correlation-ID: test' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 2
+      start_period: 30s
+
+  llm-explanations:
+    image: stoplight/prism:latest
+    container_name: skeldir-mock-llm-explanations
+    ports:
+      - "4026:4026"
+    volumes:
+      - ./api-contracts/openapi/v1:/contracts:ro
+    environment:
+      - PRISM_ERRORS=true
+    command: prism mock /contracts/llm-explanations.yaml -p 4026 -h 0.0.0.0
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:4026/api/v1/explain/attribution_score/550e8400-e29b-41d4-a716-446655440000 -H 'Authorization: Bearer mock' -H 'X-Correlation-ID: test' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 2
+      start_period: 30s
 
 
 

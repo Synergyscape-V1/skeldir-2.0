@@ -9,12 +9,35 @@ echo "[negative-control] Start"
 ORIG_RT="backend/app/services/realtime_revenue_response.py"
 BACKUP_RT="$(mktemp)"
 cp "$ORIG_RT" "$BACKUP_RT"
+NEG_CONTROL_FILE="frontend/src/contract-consumption-negative-control.ts"
+NEG_TSCONFIG_FILE="frontend/tsconfig.contract-gate.negative.json"
+BACKUP_NEG_CONTROL="$(mktemp)"
+BACKUP_NEG_TSCONFIG="$(mktemp)"
+if [ -f "$NEG_CONTROL_FILE" ]; then
+  cp "$NEG_CONTROL_FILE" "$BACKUP_NEG_CONTROL"
+else
+  : >"$BACKUP_NEG_CONTROL"
+fi
+if [ -f "$NEG_TSCONFIG_FILE" ]; then
+  cp "$NEG_TSCONFIG_FILE" "$BACKUP_NEG_TSCONFIG"
+else
+  : >"$BACKUP_NEG_TSCONFIG"
+fi
 
 cleanup() {
   cp "$BACKUP_RT" "$ORIG_RT" || true
   rm -f "$BACKUP_RT" || true
-  rm -f frontend/src/contract-consumption-negative-control.ts || true
-  rm -f frontend/tsconfig.contract-gate.negative.json || true
+  if [ -s "$BACKUP_NEG_CONTROL" ]; then
+    cp "$BACKUP_NEG_CONTROL" "$NEG_CONTROL_FILE" || true
+  else
+    rm -f "$NEG_CONTROL_FILE" || true
+  fi
+  if [ -s "$BACKUP_NEG_TSCONFIG" ]; then
+    cp "$BACKUP_NEG_TSCONFIG" "$NEG_TSCONFIG_FILE" || true
+  else
+    rm -f "$NEG_TSCONFIG_FILE" || true
+  fi
+  rm -f "$BACKUP_NEG_CONTROL" "$BACKUP_NEG_TSCONFIG" || true
   rm -f /tmp/auth.breaking.yaml || true
 }
 trap cleanup EXIT
@@ -40,7 +63,7 @@ fi
 cp "$BACKUP_RT" "$ORIG_RT"
 
 echo "[negative-control] 2/3 Frontend contract compile should fail under type drift"
-cat > frontend/src/contract-consumption-negative-control.ts <<'TS'
+cat > "$NEG_CONTROL_FILE" <<'TS'
 import type { operations as attributionOps } from "./types/api/attribution";
 
 type Realtime200 =
@@ -58,7 +81,7 @@ const shouldFail: Realtime200 = {
 void shouldFail;
 TS
 
-cat > frontend/tsconfig.contract-gate.negative.json <<'JSON'
+cat > "$NEG_TSCONFIG_FILE" <<'JSON'
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -73,7 +96,16 @@ if npx --yes -p typescript@5.6.3 tsc -p frontend/tsconfig.contract-gate.negative
   echo "[negative-control] ERROR: frontend compile did not fail under intentional type drift"
   exit 1
 fi
-rm -f frontend/src/contract-consumption-negative-control.ts frontend/tsconfig.contract-gate.negative.json
+if [ -s "$BACKUP_NEG_CONTROL" ]; then
+  cp "$BACKUP_NEG_CONTROL" "$NEG_CONTROL_FILE"
+else
+  rm -f "$NEG_CONTROL_FILE"
+fi
+if [ -s "$BACKUP_NEG_TSCONFIG" ]; then
+  cp "$BACKUP_NEG_TSCONFIG" "$NEG_TSCONFIG_FILE"
+else
+  rm -f "$NEG_TSCONFIG_FILE"
+fi
 
 echo "[negative-control] 3/3 oasdiff should fail on breaking contract change"
 if ! command -v oasdiff >/dev/null 2>&1; then

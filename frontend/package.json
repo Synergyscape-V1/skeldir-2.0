@@ -8,6 +8,8 @@
     "app:dev": "vite --port 5173",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
+    "contract:compile": "tsc -p tsconfig.contract-gate.json --noEmit",
+    "contract:compile:negative": "node scripts/contractNegativeControl.mjs",
     "certify:data-health": "npx tsc --noEmit && node scripts/check-data-health-colors.mjs && node scripts/check-data-health-stories.mjs",
     "certify:channel-comparison": "npx tsc --noEmit && node scripts/check-channel-comparison-tokens.mjs && node scripts/check-channel-comparison-stories.mjs && node scripts/check-channel-comparison-validation.mjs",
     "storybook:eval": "storybook dev -p 6007 --config-dir .storybook-eval"

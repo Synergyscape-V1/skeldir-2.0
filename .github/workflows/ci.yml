@@ -1499,6 +1499,68 @@ jobs:
       - name: Run B1.5-P3 runtime route binding proofs
         run: |
           pytest backend/tests/test_b15_p3_runtime_route_binding.py -q
+
+  b15-p4-mock-sdk-typed-boundary:
+    name: B1.5 P4 Mock Plane, SDK, and Typed Boundary Enforcement
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "root npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install test dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Generate canonical bundles and frontend SDK types
+        run: |
+          bash scripts/contracts/bundle.sh
+          bash scripts/contracts/generate_frontend_types.sh
+          git diff --exit-code -- frontend/src/types/api
+
+      - name: Enforce B1.5-P4 static mock/SDK typed boundary contract
+        run: |
+          python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
+
+      - name: Run B1.5-P4 enforcer negative controls
+        run: |
+          pytest backend/tests/test_b15_p4_mock_sdk_boundary_enforcer.py -q
+
+      - name: Compile frontend contract boundary against generated artifacts
+        run: |
+          cd frontend
+          npm ci
+          npm run contract:compile
+          npm run contract:compile:negative
   # Contract validation
 
   validate-contracts:
@@ -1638,12 +1700,12 @@ jobs:
       - name: Compile frontend contract consumption gate
         run: |
           cd frontend
-          if node -e "const s=require('./package.json').scripts||{}; process.exit(s['contract:compile']?0:1)"; then
-            npm run contract:compile
-          else
-            echo "contract:compile missing in frontend/package.json; running Storybook compile fallback"
-            npm run build-storybook -- --quiet
-          fi
+          npm run contract:compile
+
+      - name: Run frontend contract negative control gate
+        run: |
+          cd frontend
+          npm run contract:compile:negative
 
   mock-usability-gate:
     name: Mock Usability Gate
@@ -1673,68 +1735,75 @@ jobs:
             sleep 2
           done
 
-      - name: Install Prism CLI
-        run: |
-          for attempt in 1 2 3 4 5; do
-            if npm install --no-save @stoplight/prism-cli@5.14.2; then
-              break
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              echo "Prism CLI install failed after 5 attempts"
-              exit 1
-            fi
-            sleep 2
-          done
-
-      - name: Bundle canonical OpenAPI artifacts
-        run: |
-          bash scripts/contracts/bundle.sh
-
-      - name: Start Prism mocks (revenue + health) and run usability smoke
+      - name: Run B1.5 mock usability and fidelity smoke
         run: |
           set -euo pipefail
-          ./node_modules/.bin/prism mock -h 127.0.0.1 -p 4011 api-contracts/dist/openapi/v1/attribution.bundled.yaml > /tmp/prism-attribution.log 2>&1 &
-          ATTR_PID=$!
-          ./node_modules/.bin/prism mock -h 127.0.0.1 -p 4014 api-contracts/dist/openapi/v1/health.bundled.yaml > /tmp/prism-health.log 2>&1 &
-          HEALTH_PID=$!
-
+          bash scripts/contracts/bundle.sh
+          chmod +x scripts/start-mocks.sh scripts/stop-mocks.sh scripts/health-check-mocks.sh
+          bash scripts/start-mocks.sh
           cleanup() {
-            kill $ATTR_PID $HEALTH_PID 2>/dev/null || true
+            bash scripts/stop-mocks.sh || true
           }
           trap cleanup EXIT
+          bash scripts/health-check-mocks.sh
 
-          for i in {1..20}; do
-            if curl -sSf "http://127.0.0.1:4011/api/attribution/revenue/realtime" \
-              -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000001" \
-              -H "Authorization: Bearer mock-token" >/tmp/attr.json 2>/dev/null; then
-              break
-            fi
-            if ! kill -0 "$ATTR_PID" 2>/dev/null; then
-              echo "Attribution Prism process exited early"
-              tail -n 200 /tmp/prism-attribution.log || true
-              exit 1
-            fi
-            sleep 1
-          done
+          curl -sSf "http://127.0.0.1:4011/api/attribution/revenue/realtime" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000001" \
+            -H "Authorization: Bearer mock-token" >/tmp/attr.json
+          curl -sSf "http://127.0.0.1:4014/api/health" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000002" >/tmp/health.json
 
-          for i in {1..20}; do
-            if curl -sSf "http://127.0.0.1:4014/api/health" \
-              -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000002" >/tmp/health.json 2>/dev/null; then
-              break
-            fi
-            if ! kill -0 "$HEALTH_PID" 2>/dev/null; then
-              echo "Health Prism process exited early"
-              tail -n 200 /tmp/prism-health.log || true
-              exit 1
-            fi
-            sleep 1
-          done
+          curl -sSf -X POST "http://127.0.0.1:4024/api/investigations" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000010" \
+            -H "Authorization: Bearer mock-token" \
+            -H "Content-Type: application/json" \
+            -d '{"question":"why did roas decline","context":{"lookback_days":30}}' >/tmp/inv_create.json
+          curl -sSf "http://127.0.0.1:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000/status" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000011" \
+            -H "Authorization: Bearer mock-token" >/tmp/inv_status.json
+          curl -sSf "http://127.0.0.1:4024/api/investigations/550e8400-e29b-41d4-a716-446655440000" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000012" \
+            -H "Authorization: Bearer mock-token" >/tmp/inv_result.json
+
+          curl -sSf -X POST "http://127.0.0.1:4025/api/budget/optimize" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000020" \
+            -H "Authorization: Bearer mock-token" \
+            -H "Content-Type: application/json" \
+            -d '{"total_budget":50000,"optimization_goal":"maximize_roas"}' >/tmp/budget_create.json
+          curl -sSf "http://127.0.0.1:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555/status" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000021" \
+            -H "Authorization: Bearer mock-token" >/tmp/budget_status.json
+          curl -sSf "http://127.0.0.1:4025/api/budget/recommendations/11111111-2222-3333-4444-555555555555" \
+            -H "X-Correlation-ID: 00000000-0000-0000-0000-000000000022" \
+            -H "Authorization: Bearer mock-token" >/tmp/budget_result.json
 
           python - <<'PY'
           import json
 
           attr = json.loads(open("/tmp/attr.json", encoding="utf-8").read())
           health = json.loads(open("/tmp/health.json", encoding="utf-8").read())
+          inv_create = json.loads(open("/tmp/inv_create.json", encoding="utf-8").read())
+          inv_status = json.loads(open("/tmp/inv_status.json", encoding="utf-8").read())
+          inv_result = json.loads(open("/tmp/inv_result.json", encoding="utf-8").read())
+          budget_create = json.loads(open("/tmp/budget_create.json", encoding="utf-8").read())
+          budget_status = json.loads(open("/tmp/budget_status.json", encoding="utf-8").read())
+          budget_result = json.loads(open("/tmp/budget_result.json", encoding="utf-8").read())
+
+          lifecycle = {
+              "submitted",
+              "validating",
+              "investigating",
+              "ready_for_review",
+              "approved",
+              "rejected",
+              "refine_requested",
+              "rerun_requested",
+              "completed",
+              "failed",
+              "timeout",
+              "cancelled",
+          }
+          failure_codes = {"failed", "timeout", "cancelled", "rejected"}
 
           required_attr = ["total_revenue", "event_count", "last_updated", "verified", "tenant_id"]
           missing_attr = [k for k in required_attr if k not in attr]
@@ -1746,7 +1815,61 @@ jobs:
           if missing_health:
               raise SystemExit(f"Health mock missing required fields: {missing_health}")
 
-          print("Prism usability smoke PASS")
+          required_inv_create = ["investigation_id", "status", "status_url", "result_url", "tenant_id"]
+          missing_inv_create = [k for k in required_inv_create if k not in inv_create]
+          if missing_inv_create:
+              raise SystemExit(f"Investigation create mock missing required fields: {missing_inv_create}")
+          if inv_create["status"] not in lifecycle:
+              raise SystemExit(f"Investigation create status not in lifecycle enum: {inv_create['status']}")
+
+          required_inv_status = ["investigation_id", "status", "tenant_id", "last_updated", "data_freshness_seconds"]
+          missing_inv_status = [k for k in required_inv_status if k not in inv_status]
+          if missing_inv_status:
+              raise SystemExit(f"Investigation status mock missing required fields: {missing_inv_status}")
+          if inv_status["status"] not in lifecycle:
+              raise SystemExit(f"Investigation status not in lifecycle enum: {inv_status['status']}")
+          if "failure" in inv_status and inv_status["failure"] is not None:
+              code = inv_status["failure"].get("code")
+              if code not in failure_codes:
+                  raise SystemExit(f"Investigation status failure code invalid: {code}")
+          if "deterministic_findings" in inv_status and "llm_synthesis" not in inv_status:
+              raise SystemExit("Investigation status includes deterministic_findings without llm_synthesis")
+
+          if "deterministic_findings" not in inv_result:
+              raise SystemExit("Investigation result missing deterministic_findings")
+          if "llm_synthesis" not in inv_result:
+              raise SystemExit("Investigation result missing llm_synthesis")
+          if "synthesis" in inv_result:
+              raise SystemExit("Investigation result must not use ambiguous synthesis field")
+
+          required_budget_create = ["job_id", "status", "status_url", "result_url", "tenant_id"]
+          missing_budget_create = [k for k in required_budget_create if k not in budget_create]
+          if missing_budget_create:
+              raise SystemExit(f"Budget create mock missing required fields: {missing_budget_create}")
+          if budget_create["status"] not in lifecycle:
+              raise SystemExit(f"Budget create status not in lifecycle enum: {budget_create['status']}")
+
+          required_budget_status = ["job_id", "status", "tenant_id", "last_updated", "data_freshness_seconds"]
+          missing_budget_status = [k for k in required_budget_status if k not in budget_status]
+          if missing_budget_status:
+              raise SystemExit(f"Budget status mock missing required fields: {missing_budget_status}")
+          if budget_status["status"] not in lifecycle:
+              raise SystemExit(f"Budget status not in lifecycle enum: {budget_status['status']}")
+          if "failure" in budget_status and budget_status["failure"] is not None:
+              code = budget_status["failure"].get("code")
+              if code not in failure_codes:
+                  raise SystemExit(f"Budget status failure code invalid: {code}")
+          if "deterministic_recommendation" in budget_status and "llm_synthesis" not in budget_status:
+              raise SystemExit("Budget status includes deterministic_recommendation without llm_synthesis")
+
+          if "deterministic_recommendation" not in budget_result:
+              raise SystemExit("Budget result missing deterministic_recommendation")
+          if "llm_synthesis" not in budget_result:
+              raise SystemExit("Budget result missing llm_synthesis")
+          if "synthesis" in budget_result:
+              raise SystemExit("Budget result must not use ambiguous synthesis field")
+
+          print("Prism usability + B1.5 fidelity smoke PASS")
           PY
 
   phase1-negative-controls:

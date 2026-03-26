@@ -25,6 +25,7 @@ mock_attribution: prism mock api-contracts/dist/openapi/v1/attribution.bundled.y
 mock_reconciliation: prism mock api-contracts/dist/openapi/v1/reconciliation.bundled.yaml -p 4012 -h 0.0.0.0
 mock_export: prism mock api-contracts/dist/openapi/v1/export.bundled.yaml -p 4013 -h 0.0.0.0
 mock_health: prism mock api-contracts/dist/openapi/v1/health.bundled.yaml -p 4014 -h 0.0.0.0
+mock_privacy: prism mock api-contracts/dist/openapi/v1/privacy.bundled.yaml -p 4019 -h 0.0.0.0
 mock_shopify: prism mock api-contracts/dist/openapi/v1/webhooks.shopify.bundled.yaml -p 4015 -h 0.0.0.0
 mock_woocommerce: prism mock api-contracts/dist/openapi/v1/webhooks.woocommerce.bundled.yaml -p 4016 -h 0.0.0.0
 mock_stripe: prism mock api-contracts/dist/openapi/v1/webhooks.stripe.bundled.yaml -p 4017 -h 0.0.0.0
