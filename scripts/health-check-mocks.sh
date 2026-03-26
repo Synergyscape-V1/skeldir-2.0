@@ -26,32 +26,41 @@ check_service() {
     local port=$2
     local endpoint=$3
     local method=${4:-GET}
+    local retries=5
     
     ((total_count++))
     
     echo -e "${BLUE}→ Checking: $name (port $port)${NC}"
     
     local url="http://localhost:$port$endpoint"
-    local response
+    local response=""
     local http_code
-    
-    # Make request with correlation ID header
-    if [ "$method" == "POST" ]; then
-        response=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST \
-            -H "X-Correlation-ID: $(uuidgen 2>/dev/null || echo 'health-check-uuid')" \
-            -H "Content-Type: application/json" \
-            -d '{}' \
-            --max-time 5 \
-            "$url" 2>/dev/null)
-    else
-        response=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "X-Correlation-ID: $(uuidgen 2>/dev/null || echo 'health-check-uuid')" \
-            --max-time 5 \
-            "$url" 2>/dev/null)
-    fi
-    
-    http_code=$response
+
+    for attempt in $(seq 1 $retries); do
+        # Make request with correlation ID header
+        if [ "$method" == "POST" ]; then
+            response=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST \
+                -H "X-Correlation-ID: $(uuidgen 2>/dev/null || echo 'health-check-uuid')" \
+                -H "Content-Type: application/json" \
+                -d '{}' \
+                --max-time 5 \
+                "$url" 2>/dev/null)
+        else
+            response=$(curl -s -o /dev/null -w "%{http_code}" \
+                -H "X-Correlation-ID: $(uuidgen 2>/dev/null || echo 'health-check-uuid')" \
+                --max-time 5 \
+                "$url" 2>/dev/null)
+        fi
+
+        http_code=$response
+        if [ "$http_code" != "000" ]; then
+            break
+        fi
+        if [ "$attempt" -lt "$retries" ]; then
+            sleep 1
+        fi
+    done
     
     # Check response code
     if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 500 ]; then

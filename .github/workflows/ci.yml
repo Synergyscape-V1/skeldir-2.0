@@ -1504,6 +1504,9 @@ jobs:
     name: B1.5 P4 Mock Plane, SDK, and Typed Boundary Enforcement
     runs-on: ubuntu-latest
     needs: [checkout, validate-contracts]
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -73,14 +73,28 @@ start_prism_server() {
     local pid=$!
     echo $pid > "$pid_file"
     
-    # Wait briefly and verify process started
-    sleep 1
-    if kill -0 $pid 2>/dev/null; then
+    # Wait for the process to bind the target port and stay alive.
+    local ready=0
+    for _ in {1..10}; do
+        if ! kill -0 $pid 2>/dev/null; then
+            break
+        fi
+        if lsof -i :$port > /dev/null 2>&1; then
+            ready=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$ready" -eq 1 ]; then
         echo -e "${GREEN}✓ Started: $name${NC}"
         echo "   PID: $pid"
         echo "   URL: http://localhost:$port"
     else
         echo -e "${RED}✗ Failed to start: $name${NC}"
+        if [ -f "$PID_DIR/prism_$port.log" ]; then
+            echo "   Last log lines:"
+            tail -n 20 "$PID_DIR/prism_$port.log" || true
+        fi
         return 1
     fi
     echo ""
