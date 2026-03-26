@@ -7,10 +7,14 @@
     "reconciliation",
     "export",
     "health",
+    "privacy",
     "webhooks.shopify",
     "webhooks.woocommerce",
     "webhooks.stripe",
-    "webhooks.paypal"
+    "webhooks.paypal",
+    "llm-investigations",
+    "llm-budget",
+    "llm-explanations"
   ],
   "port_mapping": {
     "auth": 4010,
@@ -18,6 +22,7 @@
     "reconciliation": 4012,
     "export": 4013,
     "health": 4014,
+    "privacy": 4019,
     "webhooks.shopify": 4015,
     "webhooks.woocommerce": 4016,
     "webhooks.stripe": 4017,
@@ -32,7 +37,8 @@
       { "name": "attribution", "port": 4011, "contract": "attribution.yaml" },
       { "name": "reconciliation", "port": 4012, "contract": "reconciliation.yaml" },
       { "name": "export", "port": 4013, "contract": "export.yaml" },
-      { "name": "health", "port": 4014, "contract": "health.yaml" }
+      { "name": "health", "port": 4014, "contract": "health.yaml" },
+      { "name": "privacy", "port": 4019, "contract": "privacy.yaml" }
     ],
     "webhooks": [
       { "name": "shopify", "port": 4015, "contract": "webhooks/shopify.yaml" },

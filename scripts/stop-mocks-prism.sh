@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Skeldir 2.0 - Native Prism Mock Server Stop Script
-# Stops all running Prism mock servers (ports 4010-4018)
+# Stops all running default Prism mock servers (ports 4010-4019, 4024-4026)
 
 echo "=============================================="
 echo "  Skeldir 2.0 - Stop Prism Mock Servers"
@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 PID_DIR="/tmp/skeldir-mocks"
 
 # Ports to check
-PORTS=(4010 4011 4012 4013 4014 4015 4016 4017 4018)
+PORTS=(4010 4011 4012 4013 4014 4015 4016 4017 4018 4019 4024 4025 4026)
 
 stopped_count=0
 not_running_count=0

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Skeldir 2.0 - Mock Server Health Check Script
-# Validates all 9 Prism mock servers are responding
+# Validates all default Prism mock servers are responding (core, webhook, and B1.5 LLM)
 
 echo "=============================================="
 echo "  Skeldir 2.0 - Mock Server Health Check"
@@ -71,13 +71,17 @@ check_service() {
 }
 
 # Check Frontend-Facing Services
-echo "Frontend Services (ports 4010-4014):"
-echo "-------------------------------------"
+echo "Frontend Services (ports 4010-4014, 4019, 4024-4026):"
+echo "-------------------------------------------------------"
 check_service "Auth" 4010 "/api/auth/verify"
 check_service "Attribution" 4011 "/api/attribution/revenue/realtime"
 check_service "Reconciliation" 4012 "/api/reconciliation/status"
 check_service "Export" 4013 "/api/export/csv"
 check_service "Health" 4014 "/api/health"
+check_service "Privacy" 4019 "/api/v1/privacy/delete" "POST"
+check_service "LLM Investigations" 4024 "/api/investigations/00000000-0000-0000-0000-000000000000/status"
+check_service "LLM Budget" 4025 "/api/budget/recommendations/00000000-0000-0000-0000-000000000000/status"
+check_service "LLM Explanations" 4026 "/api/v1/explain/attribution_score/00000000-0000-0000-0000-000000000000"
 
 # Check Webhook Services
 echo "Webhook Services (ports 4015-4018):"
@@ -114,7 +118,7 @@ else
     echo -e "${RED}✗ Some mock servers are not responding.${NC}"
     echo ""
     echo "Troubleshooting:"
-    echo "  1. Start mock servers: ./scripts/start-mocks-prism.sh"
+    echo "  1. Start mock servers: ./scripts/start-mocks.sh"
     echo "  2. Check logs: tail -f /tmp/skeldir-mocks/prism_<port>.log"
     echo "  3. Verify contracts: ./scripts/validate-contracts.sh"
     echo "=============================================="

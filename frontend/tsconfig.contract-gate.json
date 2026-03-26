@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": [
+    "src/contract-consumption-gate.ts",
+    "src/api/contracts/**/*.ts",
+    "src/types/api/**/*.ts"
+  ]
+}

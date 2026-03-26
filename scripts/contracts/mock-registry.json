@@ -1,20 +1,50 @@
 {
   "version": "2.0.0",
-  "baseline": "28b165c",
+  "baseline": "74a3019",
+  "primary_mocks": [
+    "auth",
+    "attribution",
+    "reconciliation",
+    "export",
+    "health",
+    "privacy",
+    "webhooks.shopify",
+    "webhooks.woocommerce",
+    "webhooks.stripe",
+    "webhooks.paypal",
+    "llm-investigations",
+    "llm-budget",
+    "llm-explanations"
+  ],
+  "port_mapping": {
+    "auth": 4010,
+    "attribution": 4011,
+    "reconciliation": 4012,
+    "export": 4013,
+    "health": 4014,
+    "webhooks.shopify": 4015,
+    "webhooks.woocommerce": 4016,
+    "webhooks.stripe": 4017,
+    "webhooks.paypal": 4018,
+    "privacy": 4019,
+    "llm-investigations": 4024,
+    "llm-budget": 4025,
+    "llm-explanations": 4026
+  },
   "contracts": {
     "core": [
       { "name": "auth", "port": 4010, "contract": "auth.yaml" },
       { "name": "attribution", "port": 4011, "contract": "attribution.yaml" },
-      { "name": "reconciliation", "port": 4014, "contract": "reconciliation.yaml" },
-      { "name": "export", "port": 4015, "contract": "export.yaml" },
-      { "name": "health", "port": 4016, "contract": "health.yaml" },
+      { "name": "reconciliation", "port": 4012, "contract": "reconciliation.yaml" },
+      { "name": "export", "port": 4013, "contract": "export.yaml" },
+      { "name": "health", "port": 4014, "contract": "health.yaml" },
       { "name": "privacy", "port": 4019, "contract": "privacy.yaml" }
     ],
     "webhooks": [
-      { "name": "shopify", "port": 4020, "contract": "webhooks/shopify.yaml" },
-      { "name": "stripe", "port": 4021, "contract": "webhooks/stripe.yaml" },
-      { "name": "woocommerce", "port": 4022, "contract": "webhooks/woocommerce.yaml" },
-      { "name": "paypal", "port": 4023, "contract": "webhooks/paypal.yaml" }
+      { "name": "shopify", "port": 4015, "contract": "webhooks/shopify.yaml" },
+      { "name": "woocommerce", "port": 4016, "contract": "webhooks/woocommerce.yaml" },
+      { "name": "stripe", "port": 4017, "contract": "webhooks/stripe.yaml" },
+      { "name": "paypal", "port": 4018, "contract": "webhooks/paypal.yaml" }
     ],
     "llm": [
       { "name": "llm-investigations", "port": 4024, "contract": "llm-investigations.yaml" },

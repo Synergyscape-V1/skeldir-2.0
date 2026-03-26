@@ -1,0 +1,21 @@
+{
+  "contract_id": "b15.p4.mock_sdk_boundary.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P4",
+  "required_mock_ports": [4024, 4025, 4026],
+  "required_mock_domains": ["llm-investigations", "llm-budget", "llm-explanations"],
+  "required_typegen_bundles": [
+    "llm-investigations.bundled.yaml",
+    "llm-budget.bundled.yaml",
+    "llm-explanations.bundled.yaml"
+  ],
+  "forbidden_wrapper_markers": [
+    "startInvestigation",
+    "optimizeBudget",
+    "/api/budget/optimization"
+  ],
+  "proof_surfaces": [
+    "scripts/ci/enforce_b15_p4_mock_sdk_boundary.py",
+    "backend/tests/test_b15_p4_mock_sdk_boundary_enforcer.py"
+  ]
+}
