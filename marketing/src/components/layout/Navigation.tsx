@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,27 @@ const navLinks = [
   { href: "/agencies", label: "Agencies" },
   { href: "/resources", label: "Resources" },
 ];
+
+function BrandMark({
+  className = "h-[76px] w-auto shrink-0 md:h-[80px]",
+  sizes = "(max-width: 767px) 116px, 146px",
+}: {
+  className?: string;
+  sizes?: string;
+} = {}) {
+  return (
+    <Image
+      src="/images/logos/skeldir-x-synergyscape-lockup.png"
+      alt=""
+      aria-hidden="true"
+      width={335}
+      height={273}
+      sizes={sizes}
+      className={className}
+      priority
+    />
+  );
+}
 
 export function Navigation({ forceVisible = false }: { forceVisible?: boolean }) {
   const pathname = usePathname();
@@ -65,7 +87,7 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
 
   return (
     <header
-      className="fixed top-0 z-[9999] w-full pb-2 transition-all duration-300"
+      className="fixed top-0 z-[9999] w-full transition-all duration-300"
       style={{
         // Visible state (scrolled or forceVisible): solid white to prevent overlap with content
         backgroundColor: isVisible ? "#FFFFFF" : "transparent",
@@ -79,22 +101,17 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
         backdropFilter: isVisible ? "none" : "none",
       }}
     >
-      <nav className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
+      <nav className="container mx-auto flex h-20 items-center justify-between px-4 md:px-6">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2" style={{ transform: 'translateY(2px)' }}>
-          <picture>
-            <source srcSet="/images/logos/skeldir-logo.webp" type="image/webp" />
-            <img
-              src="/images/logos/skeldir-logo.png"
-              alt="Skeldir"
-              width={140}
-              height={32}
-              className="h-[4.2rem] w-auto"
-              loading="eager"
-              fetchPriority="high"
-              decoding="async"
-            />
-          </picture>
+        <Link
+          href="/"
+          aria-label="Skeldir by Synergyscape"
+          className="flex items-center gap-2 -translate-y-1 md:-translate-y-2"
+        >
+          <BrandMark
+            className="h-[91.2px] w-auto shrink-0 origin-left scale-[1.03] md:h-[96px]"
+            sizes="(max-width: 767px) 116px, 146px"
+          />
         </Link>
 
         {/* Desktop Navigation Links */}
@@ -328,20 +345,19 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
                 <Link
                   href="/"
                   onClick={() => setMobileMenuOpen(false)}
+                  aria-label="Skeldir by Synergyscape"
                   style={{ display: 'flex', alignItems: 'center' }}
                 >
-                  <picture>
-                    <source srcSet="/images/logos/skeldir-logo.webp" type="image/webp" />
-                    <img
-                      src="/images/logos/skeldir-logo.png"
-                      alt="Skeldir"
-                      width={140}
-                      height={32}
-                      className="h-[4.2rem] w-auto"
-                      loading="eager"
-                      decoding="async"
-                    />
-                  </picture>
+                  <BrandMark
+                    className={`w-auto shrink-0 transition-transform duration-300 ${
+                      mobileMenuOpen ? "h-[80px] origin-left scale-[1.03]" : "h-[76px] origin-left scale-[1.03]"
+                    }`}
+                    sizes={
+                      mobileMenuOpen
+                        ? "(max-width: 767px) 146px, 170px"
+                        : "(max-width: 767px) 116px, 146px"
+                    }
+                  />
                 </Link>
                 <button
                   type="button"

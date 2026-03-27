@@ -27,36 +27,36 @@ export function Footer() {
       links: [
         { label: "Plans", href: "/pricing" },
         { label: "Request Demo", href: "/book-demo" },
-        { label: "Features", href: "#features" },
-        { label: "Security", href: "#security" },
-        { label: "Status", href: "#status" },
+        { label: "Features", href: "/product" },
+        { label: "Security", href: "/product" },
+        { label: "Status", href: "/resources" },
       ],
     },
     company: {
       title: "COMPANY",
       links: [
-        { label: "About", href: "#about" },
-        { label: "Careers", href: "#careers" },
-        { label: "Blog", href: "#blog" },
-        { label: "Press", href: "#press" },
+        { label: "About", href: "/agencies" },
+        { label: "Careers", href: "/resources" },
+        { label: "Blog", href: "/resources" },
+        { label: "Press", href: "/resources" },
       ],
     },
     support: {
       title: "SUPPORT",
       links: [
-        { label: "Documentation", href: "#docs" },
-        { label: "API Reference", href: "#api" },
-        { label: "Status", href: "#status" },
-        { label: "Feedback", href: "#feedback" },
+        { label: "Documentation", href: "/resources" },
+        { label: "API Reference", href: "/resources" },
+        { label: "Status", href: "/resources" },
+        { label: "Feedback", href: "/book-demo" },
       ],
     },
   };
 
   const legalLinks = [
-    { label: "Privacy Policy", href: "#privacy" },
-    { label: "Terms of Service", href: "#terms" },
-    { label: "GDPR", href: "#gdpr" },
-    { label: "Security", href: "#security" },
+    { label: "Privacy Policy", href: "/resources" },
+    { label: "Terms of Service", href: "/resources" },
+    { label: "GDPR", href: "/resources" },
+    { label: "Security", href: "/product" },
   ];
 
   return (
@@ -439,7 +439,7 @@ export function Footer() {
             </h3>
             <div style={{ marginBottom: "24px" }}>
               <a
-                href="mailto:info@synergyscape.io"
+                href="mailto:sales@skeldir.com"
                 style={{
                   color: "#FFFFFF",
                   fontSize: "14px",
@@ -454,7 +454,7 @@ export function Footer() {
                   e.currentTarget.style.color = "#FFFFFF";
                 }}
               >
-                info@synergyscape.io
+                sales@skeldir.com
               </a>
             </div>
             <a
