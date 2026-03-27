@@ -130,7 +130,7 @@ def test_b15_p5_enforcer_negative_control_missing_idempotency_regression(
     mutated_budget_hook = tmp_path / "useBudgetCentaurController.idempotency.regression.ts"
     mutated_budget_hook.write_text(
         original_budget_hook.replace(
-            "idempotencyKey: createStableUuid(),",
+            "idempotencyKey: idempotencyKey,",
             "idempotencyKey: undefined as unknown as string,",
             1,
         ),
@@ -151,3 +151,79 @@ def test_b15_p5_enforcer_negative_control_missing_idempotency_regression(
     )
     assert result.returncode != 0
     assert "budget_hook_missing_idempotency_key" in (result.stdout + result.stderr)
+
+
+def test_b15_p5_enforcer_negative_control_per_call_idempotency_regression(
+    tmp_path: Path,
+) -> None:
+    original_budget_hook = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "components"
+        / "llm"
+        / "useBudgetCentaurController.ts"
+    ).read_text(encoding="utf-8")
+    mutated_budget_hook = (
+        tmp_path / "useBudgetCentaurController.per_call_idempotency.regression.ts"
+    )
+    mutated_budget_hook.write_text(
+        original_budget_hook.replace(
+            "idempotencyKey: idempotencyKey,",
+            "idempotencyKey: createStableUuid(),",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_script_path()),
+            "--budget-hook-file",
+            str(mutated_budget_hook),
+        ],
+        cwd=_repo_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "budget_hook_per_call_idempotency_key_generation_detected" in (
+        result.stdout + result.stderr
+    )
+
+
+def test_b15_p5_enforcer_negative_control_problem_mapping_marker_regression(
+    tmp_path: Path,
+) -> None:
+    original_helper = (
+        _repo_root() / "frontend" / "src" / "components" / "llm" / "controlPlane.ts"
+    ).read_text(encoding="utf-8")
+    mutated_helper = tmp_path / "controlPlane.problem_mapping.regression.ts"
+    mutated_helper.write_text(
+        original_helper.replace(
+            "error instanceof ApiContractError",
+            "error instanceof Error",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_script_path()),
+            "--lifecycle-helper-file",
+            str(mutated_helper),
+        ],
+        cwd=_repo_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert (
+        "lifecycle_helper_missing_problem_mapping_marker:error instanceof ApiContractError"
+        in (result.stdout + result.stderr)
+    )

@@ -1,6 +1,6 @@
 {
   "contract_id": "b15.p5.frontend_control_grammar.main",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "phase": "B1.5-P5",
   "required_lifecycle_statuses": [
     "submitted",
@@ -31,7 +31,19 @@
     "frontend/src/components/llm/useInvestigationCentaurController.ts"
   ],
   "required_poll_interval_ms": 5000,
-  "required_idempotency_header_marker": "idempotencyKey: createStableUuid()",
+  "required_idempotency_header_marker": "idempotencyKey: idempotencyKey",
+  "required_attempt_scoped_idempotency_markers": [
+    "createMutationAttemptFingerprint(",
+    "resolveAttemptIdempotencyKey(",
+    "clearMutationAttemptState(",
+    "mutationAttemptRef"
+  ],
+  "required_problem_response_mapping_markers": [
+    "error instanceof ApiContractError",
+    "INVALID_STATE_TRANSITION",
+    "IDEMPOTENCY_KEY_CONFLICT",
+    "status === 400 || status === 422"
+  ],
   "forbidden_local_simulation_markers": [
     "mockApi",
     "mockInvestigations",

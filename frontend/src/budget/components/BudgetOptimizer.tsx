@@ -45,6 +45,7 @@ export function BudgetOptimizer() {
     authorityRecommendation,
     synthesis,
     pendingAction,
+    mutationIssue,
     requestError,
     mutationResponse,
     submitOptimization,
@@ -107,6 +108,7 @@ export function BudgetOptimizer() {
               snapshot={snapshot}
               pendingAction={pendingAction}
               onAction={(action) => void runMutation(action, reviewNote)}
+              mutationIssue={mutationIssue}
               errorMessage={requestError}
             />
           ) : (
