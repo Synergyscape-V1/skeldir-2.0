@@ -10,29 +10,24 @@ export function SignUpPage() {
             {/* Skeldir Logo - Top Left Corner */}
             <Link 
                 href="/" 
+                aria-label="Skeldir by Synergyscape"
                 className="auth-page-logo absolute z-50 flex items-center"
                 style={{
                     top: '24px',
                     left: '24px',
                     padding: '0',
                     margin: '0',
-                    height: '75px',
                 }}
             >
                 <Image
-                    src="/images/skeldir-logo-black-wording.png"
-                    alt="Skeldir"
-                    width={230}
-                    height={75}
+                    src="/images/logos/skeldir-x-synergyscape-lockup.png"
+                    alt=""
+                    aria-hidden="true"
+                    width={335}
+                    height={273}
+                    sizes="(max-width: 767px) 116px, 146px"
                     priority
-                    style={{
-                        width: 'auto',
-                        height: '75px',
-                        maxWidth: 'none',
-                        objectFit: 'contain',
-                        display: 'block',
-                    }}
-                    className="drop-shadow-2xl"
+                    className="h-[91.2px] w-auto shrink-0 origin-left scale-[1.03] md:h-[96px] drop-shadow-2xl"
                 />
             </Link>
 
@@ -67,18 +62,11 @@ export function SignUpPage() {
                     .auth-page-logo {
                         top: 16px !important;
                         left: 16px !important;
-                        height: 50px !important;
                         max-width: calc(100vw - 32px) !important;
                     }
 
-                    .auth-page-logo img {
-                        height: 50px !important;
-                        max-width: 180px !important;
-                        width: auto !important;
-                    }
-
                     .auth-page-content {
-                        padding: 80px 20px 24px 20px !important;
+                        padding: 128px 20px 24px 20px !important;
                         width: 100% !important;
                         max-width: 100% !important;
                         box-sizing: border-box !important;
