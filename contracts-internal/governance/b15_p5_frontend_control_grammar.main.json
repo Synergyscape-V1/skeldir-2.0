@@ -1,0 +1,51 @@
+{
+  "contract_id": "b15.p5.frontend_control_grammar.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P5",
+  "required_lifecycle_statuses": [
+    "submitted",
+    "validating",
+    "investigating",
+    "ready_for_review",
+    "approved",
+    "rejected",
+    "refine_requested",
+    "rerun_requested",
+    "completed",
+    "failed",
+    "timeout",
+    "cancelled"
+  ],
+  "result_ready_statuses": [
+    "ready_for_review",
+    "approved",
+    "rejected",
+    "completed"
+  ],
+  "bounded_surfaces": [
+    "frontend/src/budget/components/BudgetOptimizer.tsx",
+    "frontend/src/investigations/InvestigationConsole.tsx",
+    "frontend/src/components/llm/InvestigationStatePanel.tsx",
+    "frontend/src/components/llm/controlPlane.ts",
+    "frontend/src/components/llm/useBudgetCentaurController.ts",
+    "frontend/src/components/llm/useInvestigationCentaurController.ts"
+  ],
+  "required_poll_interval_ms": 5000,
+  "required_idempotency_header_marker": "idempotencyKey: createStableUuid()",
+  "forbidden_local_simulation_markers": [
+    "mockApi",
+    "mockInvestigations",
+    "startBudgetOptimizationJob",
+    "setTimeout("
+  ],
+  "forbidden_authority_from_synthesis_markers": [
+    "non_authoritative_summary.match",
+    "non_authoritative_summary.replace",
+    "non_authoritative_summary.split",
+    "summaryText"
+  ],
+  "proof_surfaces": [
+    "scripts/ci/enforce_b15_p5_frontend_control_grammar.py",
+    "backend/tests/test_b15_p5_frontend_control_grammar_enforcer.py"
+  ]
+}

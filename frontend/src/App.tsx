@@ -6,8 +6,6 @@ import { AgentShellDataHealth } from "./comparison/AgentShellDataHealth";
 import { AgentShellPlatformIntegrations } from "./comparison/AgentShellPlatformIntegrations";
 import { AgentShellSingleChannelDetail } from "./comparison/AgentShellSingleChannelDetail";
 import { AgentShellBudgetOptimizer } from "./comparison/AgentShellBudgetOptimizer";
-import { AgentShellBudgetScenarioDetail } from "./comparison/AgentShellBudgetScenarioDetail";
-import { AgentShellBudgetScenarioList } from "./comparison/AgentShellBudgetScenarioList";
 import { AgentShellInvestigations } from "./investigations/AgentShellInvestigations";
 import { AGENTS } from "./comparison/agents";
 
@@ -76,11 +74,11 @@ function BudgetOptimizerPage() {
 }
 
 function BudgetScenarioListPage() {
-  return <AgentShellBudgetScenarioList theme={BUDGET_OPTIMIZER_THEME} density={100} />;
+  return <Navigate to="/budget" replace />;
 }
 
 function BudgetScenarioDetailPage() {
-  return <AgentShellBudgetScenarioDetail theme={BUDGET_OPTIMIZER_THEME} density={100} />;
+  return <Navigate to="/budget" replace />;
 }
 
 function InvestigationsQueuePage() {

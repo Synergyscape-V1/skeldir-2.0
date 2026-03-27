@@ -1,8 +1,7 @@
 import React from "react";
 import type { AgentTheme } from "../comparison/agents";
 import { ShellNavItems } from "../comparison/ShellNavItems";
-import { InvestigationQueue } from "./InvestigationQueue";
-import { InvestigationDetail } from "./InvestigationDetail";
+import { InvestigationConsole } from "./InvestigationConsole";
 import "./investigations.css";
 
 const NAV_COLLAPSED_STORAGE_KEY = "skeldir.shellNav.collapsed";
@@ -10,7 +9,6 @@ const NAV_COLLAPSED_STORAGE_KEY = "skeldir.shellNav.collapsed";
 export function AgentShellInvestigations({
   theme,
   density = 100,
-  view = "queue",
 }: {
   theme: AgentTheme;
   density?: 90 | 100;
@@ -55,7 +53,6 @@ export function AgentShellInvestigations({
         } as React.CSSProperties
       }
     >
-      {/* ─── Sidebar Nav (same pattern as other shells) ─── */}
       <header
         className="shell-nav"
         data-collapsed={navCollapsed}
@@ -68,9 +65,9 @@ export function AgentShellInvestigations({
             onClick={toggleNav}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
                 toggleNav();
               }
             }}
@@ -91,7 +88,11 @@ export function AgentShellInvestigations({
               />
             </button>
             <a href="/" aria-label="Skeldir home" className="logo-link nav-logo-toggle-logo">
-              <img src="/assets/Final_Skeldir_Logo__No_wording_.png" alt="Skeldir logo" style={{ height: 40, width: "auto", display: "block" }} />
+              <img
+                src="/assets/Final_Skeldir_Logo__No_wording_.png"
+                alt="Skeldir logo"
+                style={{ height: 40, width: "auto", display: "block" }}
+              />
             </a>
           </div>
         </div>
@@ -102,10 +103,12 @@ export function AgentShellInvestigations({
         </div>
       </header>
 
-      {/* ─── Main content ─── */}
-      <main className="canvas" style={{ display: "block", padding: "20px clamp(16px, 2.5vw, 48px) 48px" }}>
+      <main
+        className="canvas"
+        style={{ display: "block", padding: "20px clamp(16px, 2.5vw, 48px) 48px" }}
+      >
         <div className="inv-page">
-          {view === "detail" ? <InvestigationDetail /> : <InvestigationQueue />}
+          <InvestigationConsole />
         </div>
       </main>
     </div>

@@ -1561,6 +1561,64 @@ jobs:
           npm ci
           npm run contract:compile
           npm run contract:compile:negative
+
+  b15-p5-frontend-control-grammar:
+    name: B1.5 P5 Frontend Control Grammar Enforcement
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts]
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install root dependencies
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "root npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install test dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Enforce B1.5-P5 frontend control grammar structure
+        run: |
+          python scripts/ci/enforce_b15_p5_frontend_control_grammar.py
+
+      - name: Run B1.5-P5 enforcer negative controls
+        run: |
+          pytest backend/tests/test_b15_p5_frontend_control_grammar_enforcer.py -q
+
+      - name: Compile frontend contract boundary against generated artifacts
+        run: |
+          bash scripts/contracts/bundle.sh
+          bash scripts/contracts/generate_frontend_types.sh
+          git diff --exit-code -- frontend/src/types/api
+          cd frontend
+          npm ci
+          npm run contract:compile
   # Contract validation
 
   validate-contracts:
