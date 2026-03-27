@@ -13,6 +13,7 @@ export function InvestigationConsole() {
     authorityFindings,
     synthesis,
     pendingAction,
+    mutationIssue,
     requestError,
     mutationResponse,
     submitInvestigation,
@@ -84,6 +85,7 @@ export function InvestigationConsole() {
           snapshot={snapshot}
           pendingAction={pendingAction}
           onAction={(action) => void runMutation(action, reviewNote)}
+          mutationIssue={mutationIssue}
           errorMessage={requestError}
         />
       ) : null}

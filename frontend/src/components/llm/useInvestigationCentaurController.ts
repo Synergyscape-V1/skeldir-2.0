@@ -11,8 +11,13 @@ import {
   type InvestigationStatusResponse,
 } from "../../api/contracts";
 import {
+  clearMutationAttemptState,
+  createMutationAttemptFingerprint,
   createStableUuid,
   isResultReadyStatus,
+  mapMutationErrorToIssue,
+  resolveAttemptIdempotencyKey,
+  type CentaurMutationIssue,
   type CentaurLifecycleSnapshot,
 } from "./controlPlane";
 
@@ -46,6 +51,7 @@ export interface UseInvestigationCentaurControllerState {
   authorityFindings: InvestigationResultResponse["deterministic_findings"] | null;
   synthesis: InvestigationResultResponse["llm_synthesis"] | undefined | null;
   pendingAction: InvestigationMutationAction | null;
+  mutationIssue: CentaurMutationIssue | null;
   requestError: string | null;
   mutationResponse: InvestigationMutationResponse | null;
   submitInvestigation: (question: string) => Promise<void>;
@@ -66,6 +72,9 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
   const [requestError, setRequestError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] =
     useState<InvestigationMutationAction | null>(null);
+  const [mutationIssue, setMutationIssue] = useState<CentaurMutationIssue | null>(
+    null,
+  );
   const [mutationResponse, setMutationResponse] =
     useState<InvestigationMutationResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -79,6 +88,13 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
   }>({
     investigationId: null,
     lastHydratedStatus: null,
+  });
+  const mutationAttemptRef = useRef<{
+    fingerprint: string | null;
+    idempotencyKey: string | null;
+  }>({
+    fingerprint: null,
+    idempotencyKey: null,
   });
 
   const runtimeConfig = (globalThis as { __SKELDIR_RUNTIME_CONFIG__?: {
@@ -117,6 +133,7 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
 
   useEffect(() => {
     if (!investigationId) {
+      clearMutationAttemptState(mutationAttemptRef.current);
       return;
     }
     let cancelled = false;
@@ -180,6 +197,8 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
       setStatusResponse(null);
       setResultResponse(null);
       setMutationResponse(null);
+      setMutationIssue(null);
+      clearMutationAttemptState(mutationAttemptRef.current);
 
       try {
         const payload: CreateInvestigationRequest = { question: trimmedQuestion };
@@ -193,6 +212,7 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
           investigationId: next.investigation_id,
           lastHydratedStatus: null,
         };
+        clearMutationAttemptState(mutationAttemptRef.current);
       } catch (error) {
         setRequestError(error instanceof Error ? error.message : String(error));
       } finally {
@@ -210,11 +230,20 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
 
       setPendingAction(action);
       setRequestError(null);
+      setMutationIssue(null);
       try {
+        const attemptFingerprint = createMutationAttemptFingerprint(
+          action,
+          reasonOrNote,
+        );
+        const idempotencyKey = resolveAttemptIdempotencyKey(
+          mutationAttemptRef.current,
+          attemptFingerprint,
+        );
         const headers = {
           correlationId: createStableUuid(),
           authorization,
-          idempotencyKey: createStableUuid(),
+          idempotencyKey: idempotencyKey,
         };
         const payload = buildMutationPayload(action, reasonOrNote);
 
@@ -272,12 +301,16 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
         }
 
         setMutationResponse(response);
+        setMutationIssue(null);
+        clearMutationAttemptState(mutationAttemptRef.current);
         await fetchStatus(investigationId);
         if (isResultReadyStatus(response.status)) {
           await refreshResult(investigationId);
         }
       } catch (error) {
-        setRequestError(error instanceof Error ? error.message : String(error));
+        const issue = mapMutationErrorToIssue(error);
+        setMutationIssue(issue);
+        setRequestError(`${issue.title}: ${issue.detail}`);
       } finally {
         setPendingAction(null);
       }
@@ -334,6 +367,8 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
       setStatusResponse(null);
       setResultResponse(null);
       setMutationResponse(null);
+      setMutationIssue(null);
+      clearMutationAttemptState(mutationAttemptRef.current);
     }
   }, []);
 
@@ -344,6 +379,7 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
     authorityFindings,
     synthesis,
     pendingAction,
+    mutationIssue,
     requestError,
     mutationResponse,
     submitInvestigation,

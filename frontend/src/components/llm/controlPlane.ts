@@ -1,5 +1,6 @@
 import type { BudgetStatusResponse } from "../../api/contracts";
 import type { InvestigationStatusResponse } from "../../api/contracts";
+import { ApiContractError } from "../../api/contracts";
 
 export type CentaurLifecycleStatus =
   | BudgetStatusResponse["status"]
@@ -30,6 +31,36 @@ export interface CentaurLifecycleDescriptor {
   detail: string;
 }
 
+export interface CentaurMutationAttemptState {
+  fingerprint: string | null;
+  idempotencyKey: string | null;
+}
+
+export type CentaurMutationIssueKind =
+  | "invalid_state_transition"
+  | "validation_error"
+  | "idempotency_conflict"
+  | "result_not_ready"
+  | "not_found"
+  | "server_or_network"
+  | "unknown";
+
+export interface CentaurMutationIssue {
+  kind: CentaurMutationIssueKind;
+  status?: number;
+  code?: string;
+  title: string;
+  detail: string;
+  retryable: boolean;
+}
+
+interface ProblemDetailsPayload {
+  status?: number;
+  title?: string;
+  detail?: string;
+  code?: string;
+}
+
 const RESULT_READY_STATUSES = new Set<CentaurLifecycleStatus>([
   "ready_for_review",
   "approved",
@@ -46,6 +77,149 @@ export function createStableUuid(): string {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+export function createMutationAttemptFingerprint(
+  action: CentaurMutationAction,
+  reasonOrNote: string,
+): string {
+  return `${action}:${reasonOrNote.trim()}`;
+}
+
+export function resolveAttemptIdempotencyKey(
+  attemptState: CentaurMutationAttemptState,
+  fingerprint: string,
+): string {
+  if (
+    attemptState.fingerprint === fingerprint &&
+    typeof attemptState.idempotencyKey === "string" &&
+    attemptState.idempotencyKey.length > 0
+  ) {
+    return attemptState.idempotencyKey;
+  }
+  const nextKey = createStableUuid();
+  attemptState.fingerprint = fingerprint;
+  attemptState.idempotencyKey = nextKey;
+  return nextKey;
+}
+
+export function clearMutationAttemptState(
+  attemptState: CentaurMutationAttemptState,
+): void {
+  attemptState.fingerprint = null;
+  attemptState.idempotencyKey = null;
+}
+
+function parseProblemDetails(bodyText: string): ProblemDetailsPayload | null {
+  if (!bodyText || bodyText.trim().length === 0) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(bodyText) as ProblemDetailsPayload;
+    if (typeof parsed !== "object" || parsed === null) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function mapMutationErrorToIssue(error: unknown): CentaurMutationIssue {
+  if (error instanceof ApiContractError) {
+    const problem = parseProblemDetails(error.bodyText);
+    const status = problem?.status ?? error.status;
+    const code = problem?.code;
+    const detail =
+      problem?.detail ??
+      (error.bodyText.trim().length > 0 ? error.bodyText : "Mutation request failed.");
+    const title = problem?.title ?? "Mutation Error";
+
+    if (status === 409 && code === "INVALID_STATE_TRANSITION") {
+      return {
+        kind: "invalid_state_transition",
+        status,
+        code,
+        title: "Invalid State Transition",
+        detail,
+        retryable: false,
+      };
+    }
+    if (status === 409 && code === "IDEMPOTENCY_KEY_CONFLICT") {
+      return {
+        kind: "idempotency_conflict",
+        status,
+        code,
+        title: "Idempotency Conflict",
+        detail,
+        retryable: false,
+      };
+    }
+    if (status === 409 && code === "RESULT_NOT_READY") {
+      return {
+        kind: "result_not_ready",
+        status,
+        code,
+        title: "Result Not Ready",
+        detail,
+        retryable: true,
+      };
+    }
+    if (status === 400 || status === 422) {
+      return {
+        kind: "validation_error",
+        status,
+        code,
+        title: "Validation Error",
+        detail,
+        retryable: false,
+      };
+    }
+    if (status === 404) {
+      return {
+        kind: "not_found",
+        status,
+        code,
+        title: "Resource Not Found",
+        detail,
+        retryable: false,
+      };
+    }
+    if (status >= 500) {
+      return {
+        kind: "server_or_network",
+        status,
+        code,
+        title: "Server Failure",
+        detail,
+        retryable: true,
+      };
+    }
+    return {
+      kind: "unknown",
+      status,
+      code,
+      title,
+      detail,
+      retryable: false,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      kind: "server_or_network",
+      title: "Network or Runtime Failure",
+      detail: error.message,
+      retryable: true,
+    };
+  }
+
+  return {
+    kind: "unknown",
+    title: "Unknown Mutation Failure",
+    detail: String(error),
+    retryable: false,
+  };
 }
 
 export function isResultReadyStatus(status: CentaurLifecycleStatus): boolean {

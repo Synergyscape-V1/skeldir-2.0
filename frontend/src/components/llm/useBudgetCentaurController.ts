@@ -11,8 +11,13 @@ import {
   type CreateBudgetOptimizationRequest,
 } from "../../api/contracts";
 import {
+  clearMutationAttemptState,
+  createMutationAttemptFingerprint,
   createStableUuid,
   isResultReadyStatus,
+  mapMutationErrorToIssue,
+  resolveAttemptIdempotencyKey,
+  type CentaurMutationIssue,
   type CentaurLifecycleSnapshot,
 } from "./controlPlane";
 
@@ -60,6 +65,7 @@ export interface UseBudgetCentaurControllerState {
     | undefined
     | null;
   pendingAction: BudgetMutationAction | null;
+  mutationIssue: CentaurMutationIssue | null;
   requestError: string | null;
   mutationResponse: BudgetMutationResponse | null;
   submitOptimization: (
@@ -85,6 +91,9 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
   const [pendingAction, setPendingAction] = useState<BudgetMutationAction | null>(
     null,
   );
+  const [mutationIssue, setMutationIssue] = useState<CentaurMutationIssue | null>(
+    null,
+  );
   const [mutationResponse, setMutationResponse] =
     useState<BudgetMutationResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -95,6 +104,13 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
   }>({
     jobId: null,
     lastHydratedStatus: null,
+  });
+  const mutationAttemptRef = useRef<{
+    fingerprint: string | null;
+    idempotencyKey: string | null;
+  }>({
+    fingerprint: null,
+    idempotencyKey: null,
   });
 
   const runtimeConfig = (globalThis as { __SKELDIR_RUNTIME_CONFIG__?: {
@@ -120,6 +136,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
 
   const refreshResult = useCallback(async () => {
     if (!jobId) {
+      clearMutationAttemptState(mutationAttemptRef.current);
       return;
     }
     const next = await client.getBudgetRecommendation(jobId, {
@@ -192,6 +209,8 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
       setStatusResponse(null);
       setResultResponse(null);
       setMutationResponse(null);
+      setMutationIssue(null);
+      clearMutationAttemptState(mutationAttemptRef.current);
       try {
         const payload = mapLaunchToCreatePayload(totalBudget, goal);
         const next = await client.createBudgetOptimization(payload, {
@@ -203,6 +222,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
           jobId: next.job_id,
           lastHydratedStatus: null,
         };
+        clearMutationAttemptState(mutationAttemptRef.current);
       } catch (error) {
         setRequestError(error instanceof Error ? error.message : String(error));
       } finally {
@@ -220,11 +240,20 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
 
       setPendingAction(action);
       setRequestError(null);
+      setMutationIssue(null);
       try {
+        const attemptFingerprint = createMutationAttemptFingerprint(
+          action,
+          reasonOrNote,
+        );
+        const idempotencyKey = resolveAttemptIdempotencyKey(
+          mutationAttemptRef.current,
+          attemptFingerprint,
+        );
         const headers = {
           correlationId: createStableUuid(),
           authorization,
-          idempotencyKey: createStableUuid(),
+          idempotencyKey: idempotencyKey,
         };
         const payload = buildMutationPayload(action, reasonOrNote);
 
@@ -254,12 +283,16 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
         }
 
         setMutationResponse(response);
+        setMutationIssue(null);
+        clearMutationAttemptState(mutationAttemptRef.current);
         await fetchStatus(jobId);
         if (isResultReadyStatus(response.status)) {
           await refreshResult();
         }
       } catch (error) {
-        setRequestError(error instanceof Error ? error.message : String(error));
+        const issue = mapMutationErrorToIssue(error);
+        setMutationIssue(issue);
+        setRequestError(`${issue.title}: ${issue.detail}`);
       } finally {
         setPendingAction(null);
       }
@@ -316,6 +349,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
     authorityRecommendation,
     synthesis,
     pendingAction,
+    mutationIssue,
     requestError,
     mutationResponse,
     submitOptimization,

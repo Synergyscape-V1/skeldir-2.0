@@ -4,6 +4,7 @@ import {
   formatIsoDateTime,
   isReviewRailVisible,
   type CentaurLifecycleSnapshot,
+  type CentaurMutationIssue,
   type CentaurMutationAction,
 } from "./controlPlane";
 import "./llm-control.css";
@@ -22,6 +23,7 @@ interface InvestigationStatePanelProps {
   snapshot: CentaurLifecycleSnapshot;
   pendingAction: CentaurMutationAction | null;
   onAction: (action: CentaurMutationAction) => void;
+  mutationIssue?: CentaurMutationIssue | null;
   errorMessage?: string | null;
 }
 
@@ -30,6 +32,7 @@ export function InvestigationStatePanel({
   snapshot,
   pendingAction,
   onAction,
+  mutationIssue,
   errorMessage,
 }: InvestigationStatePanelProps) {
   const descriptor = describeCentaurLifecycle(snapshot);
@@ -148,7 +151,19 @@ export function InvestigationStatePanel({
         </div>
       )}
 
-      {errorMessage ? <p className="llm-state-panel__error">{errorMessage}</p> : null}
+      {mutationIssue ? (
+        <div
+          className="llm-state-panel__error"
+          data-mutation-issue-kind={mutationIssue.kind}
+        >
+          <strong>{mutationIssue.title}</strong>
+          <p>{mutationIssue.detail}</p>
+          <p>{mutationIssue.retryable ? "Retryable mutation issue." : "Non-retryable mutation issue."}</p>
+        </div>
+      ) : null}
+      {!mutationIssue && errorMessage ? (
+        <p className="llm-state-panel__error">{errorMessage}</p>
+      ) : null}
     </section>
   );
 }
