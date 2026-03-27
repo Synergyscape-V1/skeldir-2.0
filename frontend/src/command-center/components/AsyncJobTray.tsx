@@ -6,7 +6,7 @@ import {
   retryAsyncJob,
   type AsyncJob,
   type AsyncJobStatus,
-} from '../../lib/asyncJobs';
+} from '../../runtime/asyncJobs';
 
 function shortAgo(msDelta: number): string {
   const s = Math.max(0, Math.floor(msDelta / 1000));

@@ -9,7 +9,7 @@ import ChannelAttributionTable from './components/ChannelAttributionTable';
 import RevenueDiscrepancyBanner from './components/RevenueDiscrepancyBanner';
 import { MOCK_DATA } from './data';
 import './command-center.css';
-import { bootstrapAsyncJobRuntime, ensureSeedJobs, getAsyncJobs, subscribeAsyncJobs, type AsyncJob } from '../lib/asyncJobs';
+import { bootstrapAsyncJobRuntime, ensureSeedJobs, getAsyncJobs, subscribeAsyncJobs, type AsyncJob } from '../runtime/asyncJobs';
 
 export default function CommandCenterContent() {
   const navigate = useNavigate();
