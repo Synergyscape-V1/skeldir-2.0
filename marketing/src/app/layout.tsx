@@ -19,7 +19,16 @@ const playfairDisplay = Playfair_Display({
 export const metadata: Metadata = {
   metadataBase: new URL("https://skeldir.com"),
   title: "Skeldir - See exactly where your ad budget is wasted",
-  description: "Skeldir shows you the gap between what ad platforms claim and what actually hits your bank account—so you can move budget with confidence, not guesswork.",
+  description:
+    "Skeldir shows you the gap between what ad platforms claim and what actually hits your bank account-so you can move budget with confidence, not guesswork.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", type: "image/x-icon" },
+      { url: "/icon.png", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
@@ -54,3 +63,4 @@ export default function RootLayout({
     </html>
   );
 }
+
