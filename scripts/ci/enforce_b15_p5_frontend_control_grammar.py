@@ -28,11 +28,11 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _extract_block(text: str, marker: str) -> str:
+def _extract_block(text: str, marker: str, *, window: int = 1500) -> str:
     index = text.find(marker)
     if index < 0:
         return ""
-    return text[index : index + 1500]
+    return text[index : index + window]
 
 
 def run_enforcement(
@@ -136,6 +136,44 @@ def run_enforcement(
         violations.append("budget_hook_missing_idempotency_key")
     if required_idempotency_marker not in investigation_hook_text:
         violations.append("investigation_hook_missing_idempotency_key")
+    if "idempotencyKey: createStableUuid()," in budget_hook_text:
+        violations.append("budget_hook_per_call_idempotency_key_generation_detected")
+    if "idempotencyKey: createStableUuid()," in investigation_hook_text:
+        violations.append(
+            "investigation_hook_per_call_idempotency_key_generation_detected"
+        )
+
+    required_attempt_markers = contract.get(
+        "required_attempt_scoped_idempotency_markers", []
+    )
+    for marker in required_attempt_markers:
+        if marker not in budget_hook_text:
+            violations.append(f"budget_hook_missing_attempt_marker:{marker}")
+        if marker not in investigation_hook_text:
+            violations.append(f"investigation_hook_missing_attempt_marker:{marker}")
+
+    required_problem_markers = contract.get(
+        "required_problem_response_mapping_markers", []
+    )
+    for marker in required_problem_markers:
+        if marker not in lifecycle_helper_text:
+            violations.append(f"lifecycle_helper_missing_problem_mapping_marker:{marker}")
+
+    budget_mutation_block = _extract_block(
+        budget_hook_text, "const runMutation = useCallback", window=5000
+    )
+    if "mapMutationErrorToIssue(error)" not in budget_mutation_block:
+        violations.append("budget_hook_mutation_catch_missing_problem_mapping")
+    if "setMutationIssue(issue)" not in budget_mutation_block:
+        violations.append("budget_hook_mutation_catch_missing_issue_state")
+
+    investigation_mutation_block = _extract_block(
+        investigation_hook_text, "const runMutation = useCallback", window=5000
+    )
+    if "mapMutationErrorToIssue(error)" not in investigation_mutation_block:
+        violations.append("investigation_hook_mutation_catch_missing_problem_mapping")
+    if "setMutationIssue(issue)" not in investigation_mutation_block:
+        violations.append("investigation_hook_mutation_catch_missing_issue_state")
 
     budget_surface_text = _read_text(budget_surface_file)
     investigations_surface_text = _read_text(investigations_surface_file)
