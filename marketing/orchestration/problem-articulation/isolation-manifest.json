@@ -1,0 +1,44 @@
+{
+  "target_section": "marketing/src/components/layout/ProblemStatement.tsx",
+  "no_touch": [
+    "marketing/src/components/layout/SolutionOverview.tsx",
+    "marketing/src/app/page.tsx (section ordering)"
+  ],
+  "agents": [
+    { "id": "agent-1", "branch": "feat/problem-articulation-agent-1", "status": "implemented-in-iteration-component" },
+    { "id": "agent-2", "branch": "feat/problem-articulation-agent-2", "status": "implemented-in-iteration-component" },
+    { "id": "agent-3", "branch": "feat/problem-articulation-agent-3", "status": "implemented-in-iteration-component" },
+    { "id": "agent-4", "branch": "feat/problem-articulation-agent-4", "status": "implemented-in-iteration-component" },
+    { "id": "agent-5", "branch": "feat/problem-articulation-agent-5", "status": "implemented-in-iteration-component" }
+  ],
+  "storybook": {
+    "url": "http://localhost:6006",
+    "comparison_story": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--comparison-grid",
+    "focus_stories": {
+      "agent_a": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-a-focus",
+      "agent_b": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-b-focus",
+      "agent_c": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-c-focus",
+      "agent_d": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-d-focus",
+      "agent_e": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-e-focus"
+    }
+  },
+  "phase_8_storybook_comparison_gate": {
+    "mode": "sequential",
+    "required_before_archive": true,
+    "normalized_mounts": [
+      "marketing/public/implementations/agent-a",
+      "marketing/public/implementations/agent-b",
+      "marketing/public/implementations/agent-c",
+      "marketing/public/implementations/agent-d",
+      "marketing/public/implementations/agent-e",
+      "marketing/public/implementations/reference/solution-articulation-final.jpg"
+    ],
+    "deliverables": [
+      "marketing/orchestration/problem-articulation/comparisons/storybook-url.txt",
+      "marketing/orchestration/problem-articulation/comparisons/storybook-story-links.json",
+      "marketing/orchestration/problem-articulation/comparisons/comparison-grid-screenshot-desktop.png",
+      "marketing/orchestration/problem-articulation/comparisons/comparison-grid-screenshot-tablet.png",
+      "marketing/orchestration/problem-articulation/comparisons/comparison-grid-screenshot-mobile.png"
+    ]
+  }
+}
