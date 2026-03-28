@@ -16,10 +16,22 @@ const playfairDisplay = Playfair_Display({
   style: ["normal", "italic"],
 });
 
+const FAVICON_VERSION = "20260328b";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://skeldir.com"),
   title: "Skeldir - See exactly where your ad budget is wasted",
-  description: "Skeldir shows you the gap between what ad platforms claim and what actually hits your bank account—so you can move budget with confidence, not guesswork.",
+  description:
+    "Skeldir shows you the gap between what ad platforms claim and what actually hits your bank account-so you can move budget with confidence, not guesswork.",
+  icons: {
+    icon: [
+      { url: `/favicon.ico?v=${FAVICON_VERSION}`, type: "image/x-icon" },
+      { url: `/icon.png?v=${FAVICON_VERSION}`, type: "image/png" },
+    ],
+    shortcut: [{ url: `/favicon.ico?v=${FAVICON_VERSION}`, type: "image/x-icon" }],
+    apple: [{ url: `/apple-icon.png?v=${FAVICON_VERSION}`, sizes: "180x180", type: "image/png" }],
+  },
+  manifest: `/manifest.webmanifest?v=${FAVICON_VERSION}`,
 };
 
 export default function RootLayout({
@@ -54,3 +66,4 @@ export default function RootLayout({
     </html>
   );
 }
+
