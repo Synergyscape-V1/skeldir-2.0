@@ -1,6 +1,6 @@
 {
   "contract_id": "b15.p5.frontend_control_grammar.main",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "phase": "B1.5-P5",
   "required_lifecycle_statuses": [
     "submitted",
@@ -43,6 +43,16 @@
     "INVALID_STATE_TRANSITION",
     "IDEMPOTENCY_KEY_CONFLICT",
     "status === 400 || status === 422"
+  ],
+  "required_branch_specific_reconciliation_markers": [
+    "if (issue.kind === \"invalid_state_transition\")",
+    "if (issue.kind === \"not_found\")",
+    "if (issue.kind === \"result_not_ready\")",
+    "reconcileAuthoritativeSnapshot(",
+    "teardownForMissingResource(",
+    "setIsSnapshotAuthoritative(false);",
+    "snapshot.isAuthoritative === false",
+    "data-authoritative-reconciliation=\"true\""
   ],
   "forbidden_local_simulation_markers": [
     "mockApi",

@@ -77,6 +77,11 @@ export function InvestigationConsole() {
             Active Investigation ID: <code>{investigationId}</code>
           </p>
         ) : null}
+        {!snapshot && requestError ? (
+          <p className="llm-state-panel__error" style={{ marginTop: 8 }}>
+            {requestError}
+          </p>
+        ) : null}
       </section>
 
       {snapshot ? (
