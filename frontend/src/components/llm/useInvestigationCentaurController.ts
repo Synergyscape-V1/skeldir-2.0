@@ -78,6 +78,7 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
   const [mutationResponse, setMutationResponse] =
     useState<InvestigationMutationResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSnapshotAuthoritative, setIsSnapshotAuthoritative] = useState(true);
   const [manualInvestigationId, setManualInvestigationId] = useState<string | null>(
     null,
   );
@@ -116,6 +117,8 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
         authorization,
       });
       setStatusResponse(next);
+      setIsSnapshotAuthoritative(true);
+      return next;
     },
     [authorization, client],
   );
@@ -129,6 +132,31 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
       setResultResponse(next);
     },
     [authorization, client],
+  );
+
+  const teardownForMissingResource = useCallback(() => {
+    setLaunchResponse(null);
+    setManualInvestigationId(null);
+    setStatusResponse(null);
+    setResultResponse(null);
+    setMutationResponse(null);
+    setMutationIssue(null);
+    setIsSnapshotAuthoritative(false);
+    hydrationStateRef.current = {
+      investigationId: null,
+      lastHydratedStatus: null,
+    };
+    clearMutationAttemptState(mutationAttemptRef.current);
+  }, []);
+
+  const reconcileAuthoritativeSnapshot = useCallback(
+    async (targetInvestigationId: string) => {
+      const nextStatus = await fetchStatus(targetInvestigationId);
+      if (isResultReadyStatus(nextStatus.status)) {
+        await refreshResult(targetInvestigationId);
+      }
+    },
+    [fetchStatus, refreshResult],
   );
 
   useEffect(() => {
@@ -198,6 +226,7 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
       setResultResponse(null);
       setMutationResponse(null);
       setMutationIssue(null);
+      setIsSnapshotAuthoritative(true);
       clearMutationAttemptState(mutationAttemptRef.current);
 
       try {
@@ -212,6 +241,7 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
           investigationId: next.investigation_id,
           lastHydratedStatus: null,
         };
+        setIsSnapshotAuthoritative(true);
         clearMutationAttemptState(mutationAttemptRef.current);
       } catch (error) {
         setRequestError(error instanceof Error ? error.message : String(error));
@@ -311,11 +341,63 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
         const issue = mapMutationErrorToIssue(error);
         setMutationIssue(issue);
         setRequestError(`${issue.title}: ${issue.detail}`);
+        if (issue.kind === "invalid_state_transition") {
+          setIsSnapshotAuthoritative(false);
+          clearMutationAttemptState(mutationAttemptRef.current);
+          try {
+            await reconcileAuthoritativeSnapshot(investigationId);
+          } catch (reconcileError) {
+            setRequestError(
+              `${issue.title}: ${
+                reconcileError instanceof Error
+                  ? reconcileError.message
+                  : String(reconcileError)
+              }`,
+            );
+          }
+        } else if (issue.kind === "not_found") {
+          teardownForMissingResource();
+        } else if (issue.kind === "result_not_ready") {
+          setIsSnapshotAuthoritative(false);
+          try {
+            await reconcileAuthoritativeSnapshot(investigationId);
+          } catch (reconcileError) {
+            setRequestError(
+              `${issue.title}: ${
+                reconcileError instanceof Error
+                  ? reconcileError.message
+                  : String(reconcileError)
+              }`,
+            );
+          }
+        } else if (issue.kind === "idempotency_conflict") {
+          setIsSnapshotAuthoritative(false);
+          try {
+            await reconcileAuthoritativeSnapshot(investigationId);
+          } catch (reconcileError) {
+            setRequestError(
+              `${issue.title}: ${
+                reconcileError instanceof Error
+                  ? reconcileError.message
+                  : String(reconcileError)
+              }`,
+            );
+          }
+        }
       } finally {
         setPendingAction(null);
       }
     },
-    [authorization, client, fetchStatus, investigationId, refreshResult, statusResponse],
+    [
+      authorization,
+      client,
+      fetchStatus,
+      investigationId,
+      reconcileAuthoritativeSnapshot,
+      refreshResult,
+      statusResponse,
+      teardownForMissingResource,
+    ],
   );
 
   const snapshot = useMemo<CentaurLifecycleSnapshot | null>(() => {
@@ -327,6 +409,7 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
 
     return {
       status: statusResponse?.status ?? fallbackStatus,
+      isAuthoritative: isSnapshotAuthoritative,
       progressPercentage: statusResponse?.progress_percentage,
       currentStep: statusResponse?.current_step,
       reviewRequired: statusResponse?.review_required ?? false,
@@ -336,7 +419,12 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
       lastUpdated: statusResponse?.last_updated,
       failure: statusResponse?.failure,
     };
-  }, [launchResponse, manualInvestigationId, statusResponse]);
+  }, [
+    isSnapshotAuthoritative,
+    launchResponse,
+    manualInvestigationId,
+    statusResponse,
+  ]);
 
   const authorityFindings = useMemo(() => {
     if (resultResponse) {
@@ -368,7 +456,10 @@ export function useInvestigationCentaurController(): UseInvestigationCentaurCont
       setResultResponse(null);
       setMutationResponse(null);
       setMutationIssue(null);
+      setIsSnapshotAuthoritative(false);
       clearMutationAttemptState(mutationAttemptRef.current);
+    } else {
+      setIsSnapshotAuthoritative(true);
     }
   }, []);
 

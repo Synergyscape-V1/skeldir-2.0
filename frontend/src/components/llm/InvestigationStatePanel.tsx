@@ -37,6 +37,7 @@ export function InvestigationStatePanel({
 }: InvestigationStatePanelProps) {
   const descriptor = describeCentaurLifecycle(snapshot);
   const showReviewRail = isReviewRailVisible(snapshot);
+  const allowActions = snapshot.isAuthoritative !== false;
   const reviewOnlyActions: CentaurMutationAction[] = ["approve", "reject", "refine"];
   const nonReviewActions = snapshot.availableActions.filter(
     (action) => !reviewOnlyActions.includes(action),
@@ -119,7 +120,13 @@ export function InvestigationStatePanel({
         </p>
       )}
 
-      {showReviewRail && (
+      {!allowActions && (
+        <p className="llm-state-panel__terminal" data-authoritative-reconciliation="true">
+          Authoritative reconciliation in progress. Review actions are temporarily disabled.
+        </p>
+      )}
+
+      {allowActions && showReviewRail && (
         <div className="llm-state-panel__actions">
           {snapshot.availableActions.map((action) => (
             <button
@@ -135,7 +142,7 @@ export function InvestigationStatePanel({
         </div>
       )}
 
-      {!showReviewRail && nonReviewActions.length > 0 && (
+      {allowActions && !showReviewRail && nonReviewActions.length > 0 && (
         <div className="llm-state-panel__actions">
           {nonReviewActions.map((action) => (
             <button

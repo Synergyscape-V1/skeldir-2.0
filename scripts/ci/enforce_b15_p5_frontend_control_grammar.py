@@ -35,6 +35,19 @@ def _extract_block(text: str, marker: str, *, window: int = 1500) -> str:
     return text[index : index + window]
 
 
+def _extract_conditional_branch(text: str, marker: str) -> str:
+    index = text.find(marker)
+    if index < 0:
+        return ""
+    tail = text[index:]
+    end = len(tail)
+    for delimiter in ("} else if", "} finally", "} catch"):
+        position = tail.find(delimiter, len(marker))
+        if position >= 0 and position < end:
+            end = position
+    return tail[:end]
+
+
 def run_enforcement(
     *,
     contract_file: Path,
@@ -159,6 +172,25 @@ def run_enforcement(
         if marker not in lifecycle_helper_text:
             violations.append(f"lifecycle_helper_missing_problem_mapping_marker:{marker}")
 
+    required_branch_markers = contract.get(
+        "required_branch_specific_reconciliation_markers", []
+    )
+    for marker in required_branch_markers:
+        if (
+            marker not in budget_hook_text
+            and marker not in investigation_hook_text
+            and marker not in lifecycle_helper_text
+            and marker not in lifecycle_component_text
+        ):
+            violations.append(
+                f"missing_branch_specific_reconciliation_marker:{marker}"
+            )
+
+    if "snapshot.isAuthoritative === false" not in lifecycle_helper_text:
+        violations.append("review_gating_helper_missing_authoritative_snapshot_guard")
+    if 'data-authoritative-reconciliation="true"' not in lifecycle_component_text:
+        violations.append("lifecycle_component_missing_reconciliation_state_render")
+
     budget_mutation_block = _extract_block(
         budget_hook_text, "const runMutation = useCallback", window=5000
     )
@@ -167,6 +199,29 @@ def run_enforcement(
     if "setMutationIssue(issue)" not in budget_mutation_block:
         violations.append("budget_hook_mutation_catch_missing_issue_state")
 
+    if 'if (issue.kind === "invalid_state_transition")' not in budget_mutation_block:
+        violations.append("budget_hook_missing_invalid_state_transition_branch")
+    if 'if (issue.kind === "not_found")' not in budget_mutation_block:
+        violations.append("budget_hook_missing_not_found_branch")
+    if 'if (issue.kind === "result_not_ready")' not in budget_mutation_block:
+        violations.append("budget_hook_missing_result_not_ready_branch")
+    if "teardownForMissingResource();" not in budget_mutation_block:
+        violations.append("budget_hook_missing_not_found_teardown_action")
+
+    budget_invalid_state_block = _extract_conditional_branch(
+        budget_hook_text, 'if (issue.kind === "invalid_state_transition")'
+    )
+    if "reconcileAuthoritativeSnapshot(" not in budget_invalid_state_block:
+        violations.append("budget_hook_invalid_state_transition_missing_reconciliation")
+
+    budget_not_found_block = _extract_conditional_branch(
+        budget_hook_text, 'if (issue.kind === "not_found")'
+    )
+    if "teardownForMissingResource();" not in budget_not_found_block:
+        violations.append("budget_hook_not_found_branch_missing_teardown")
+    if "reconcileAuthoritativeSnapshot(" in budget_not_found_block:
+        violations.append("budget_hook_not_found_branch_must_not_reconcile")
+
     investigation_mutation_block = _extract_block(
         investigation_hook_text, "const runMutation = useCallback", window=5000
     )
@@ -174,6 +229,34 @@ def run_enforcement(
         violations.append("investigation_hook_mutation_catch_missing_problem_mapping")
     if "setMutationIssue(issue)" not in investigation_mutation_block:
         violations.append("investigation_hook_mutation_catch_missing_issue_state")
+
+    if (
+        'if (issue.kind === "invalid_state_transition")'
+        not in investigation_mutation_block
+    ):
+        violations.append("investigation_hook_missing_invalid_state_transition_branch")
+    if 'if (issue.kind === "not_found")' not in investigation_mutation_block:
+        violations.append("investigation_hook_missing_not_found_branch")
+    if 'if (issue.kind === "result_not_ready")' not in investigation_mutation_block:
+        violations.append("investigation_hook_missing_result_not_ready_branch")
+    if "teardownForMissingResource();" not in investigation_mutation_block:
+        violations.append("investigation_hook_missing_not_found_teardown_action")
+
+    investigation_invalid_state_block = _extract_conditional_branch(
+        investigation_hook_text, 'if (issue.kind === "invalid_state_transition")'
+    )
+    if "reconcileAuthoritativeSnapshot(" not in investigation_invalid_state_block:
+        violations.append(
+            "investigation_hook_invalid_state_transition_missing_reconciliation"
+        )
+
+    investigation_not_found_block = _extract_conditional_branch(
+        investigation_hook_text, 'if (issue.kind === "not_found")'
+    )
+    if "teardownForMissingResource();" not in investigation_not_found_block:
+        violations.append("investigation_hook_not_found_branch_missing_teardown")
+    if "reconcileAuthoritativeSnapshot(" in investigation_not_found_block:
+        violations.append("investigation_hook_not_found_branch_must_not_reconcile")
 
     budget_surface_text = _read_text(budget_surface_file)
     investigations_surface_text = _read_text(investigations_surface_file)

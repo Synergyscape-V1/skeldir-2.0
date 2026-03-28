@@ -99,6 +99,11 @@ export function BudgetOptimizer() {
               Active Job ID: <code>{jobId}</code>
             </p>
           ) : null}
+          {!snapshot && requestError ? (
+            <p className="llm-state-panel__error" style={{ marginTop: 12 }}>
+              {requestError}
+            </p>
+          ) : null}
         </section>
 
         <section className="bo-results-rail">

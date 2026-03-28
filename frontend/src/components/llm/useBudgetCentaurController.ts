@@ -97,6 +97,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
   const [mutationResponse, setMutationResponse] =
     useState<BudgetMutationResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSnapshotAuthoritative, setIsSnapshotAuthoritative] = useState(true);
 
   const hydrationStateRef = useRef<{
     jobId: string | null;
@@ -130,6 +131,8 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
         authorization,
       });
       setStatusResponse(next);
+      setIsSnapshotAuthoritative(true);
+      return next;
     },
     [authorization, client],
   );
@@ -145,6 +148,29 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
     });
     setResultResponse(next);
   }, [authorization, client, jobId]);
+
+  const teardownForMissingResource = useCallback(() => {
+    setLaunchResponse(null);
+    setStatusResponse(null);
+    setResultResponse(null);
+    setMutationResponse(null);
+    setIsSnapshotAuthoritative(false);
+    hydrationStateRef.current = {
+      jobId: null,
+      lastHydratedStatus: null,
+    };
+    clearMutationAttemptState(mutationAttemptRef.current);
+  }, []);
+
+  const reconcileAuthoritativeSnapshot = useCallback(
+    async (currentJobId: string) => {
+      const nextStatus = await fetchStatus(currentJobId);
+      if (isResultReadyStatus(nextStatus.status)) {
+        await refreshResult();
+      }
+    },
+    [fetchStatus, refreshResult],
+  );
 
   useEffect(() => {
     if (!jobId) {
@@ -210,6 +236,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
       setResultResponse(null);
       setMutationResponse(null);
       setMutationIssue(null);
+      setIsSnapshotAuthoritative(true);
       clearMutationAttemptState(mutationAttemptRef.current);
       try {
         const payload = mapLaunchToCreatePayload(totalBudget, goal);
@@ -222,6 +249,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
           jobId: next.job_id,
           lastHydratedStatus: null,
         };
+        setIsSnapshotAuthoritative(true);
         clearMutationAttemptState(mutationAttemptRef.current);
       } catch (error) {
         setRequestError(error instanceof Error ? error.message : String(error));
@@ -293,11 +321,63 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
         const issue = mapMutationErrorToIssue(error);
         setMutationIssue(issue);
         setRequestError(`${issue.title}: ${issue.detail}`);
+        if (issue.kind === "invalid_state_transition") {
+          setIsSnapshotAuthoritative(false);
+          clearMutationAttemptState(mutationAttemptRef.current);
+          try {
+            await reconcileAuthoritativeSnapshot(jobId);
+          } catch (reconcileError) {
+            setRequestError(
+              `${issue.title}: ${
+                reconcileError instanceof Error
+                  ? reconcileError.message
+                  : String(reconcileError)
+              }`,
+            );
+          }
+        } else if (issue.kind === "not_found") {
+          teardownForMissingResource();
+        } else if (issue.kind === "result_not_ready") {
+          setIsSnapshotAuthoritative(false);
+          try {
+            await reconcileAuthoritativeSnapshot(jobId);
+          } catch (reconcileError) {
+            setRequestError(
+              `${issue.title}: ${
+                reconcileError instanceof Error
+                  ? reconcileError.message
+                  : String(reconcileError)
+              }`,
+            );
+          }
+        } else if (issue.kind === "idempotency_conflict") {
+          setIsSnapshotAuthoritative(false);
+          try {
+            await reconcileAuthoritativeSnapshot(jobId);
+          } catch (reconcileError) {
+            setRequestError(
+              `${issue.title}: ${
+                reconcileError instanceof Error
+                  ? reconcileError.message
+                  : String(reconcileError)
+              }`,
+            );
+          }
+        }
       } finally {
         setPendingAction(null);
       }
     },
-    [authorization, client, fetchStatus, jobId, refreshResult, statusResponse],
+    [
+      authorization,
+      client,
+      fetchStatus,
+      jobId,
+      reconcileAuthoritativeSnapshot,
+      refreshResult,
+      statusResponse,
+      teardownForMissingResource,
+    ],
   );
 
   const snapshot = useMemo<CentaurLifecycleSnapshot | null>(() => {
@@ -309,6 +389,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
 
     return {
       status: statusResponse?.status ?? fallbackStatus,
+      isAuthoritative: isSnapshotAuthoritative,
       progressPercentage: statusResponse?.progress_percentage,
       currentStep: statusResponse?.current_step,
       reviewRequired: statusResponse?.review_required ?? false,
@@ -318,7 +399,7 @@ export function useBudgetCentaurController(): UseBudgetCentaurControllerState {
       lastUpdated: statusResponse?.last_updated,
       failure: statusResponse?.failure,
     };
-  }, [launchResponse, statusResponse]);
+  }, [isSnapshotAuthoritative, launchResponse, statusResponse]);
 
   const authorityRecommendation = useMemo(() => {
     if (resultResponse) {

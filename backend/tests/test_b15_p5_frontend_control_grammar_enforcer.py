@@ -227,3 +227,119 @@ def test_b15_p5_enforcer_negative_control_problem_mapping_marker_regression(
         "lifecycle_helper_missing_problem_mapping_marker:error instanceof ApiContractError"
         in (result.stdout + result.stderr)
     )
+
+
+def test_b15_p5_enforcer_negative_control_invalid_state_branch_without_reconcile(
+    tmp_path: Path,
+) -> None:
+    original_budget_hook = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "components"
+        / "llm"
+        / "useBudgetCentaurController.ts"
+    ).read_text(encoding="utf-8")
+    mutated_budget_hook = (
+        tmp_path / "useBudgetCentaurController.invalid_state.reconcile.regression.ts"
+    )
+    mutated_budget_hook.write_text(
+        original_budget_hook.replace(
+            "await reconcileAuthoritativeSnapshot(jobId);",
+            "void jobId;",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_script_path()),
+            "--budget-hook-file",
+            str(mutated_budget_hook),
+        ],
+        cwd=_repo_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "budget_hook_invalid_state_transition_missing_reconciliation" in (
+        result.stdout + result.stderr
+    )
+
+
+def test_b15_p5_enforcer_negative_control_not_found_branch_missing_teardown(
+    tmp_path: Path,
+) -> None:
+    original_investigation_hook = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "components"
+        / "llm"
+        / "useInvestigationCentaurController.ts"
+    ).read_text(encoding="utf-8")
+    mutated_investigation_hook = (
+        tmp_path / "useInvestigationCentaurController.not_found_teardown.regression.ts"
+    )
+    mutated_investigation_hook.write_text(
+        original_investigation_hook.replace(
+            "teardownForMissingResource();",
+            "await reconcileAuthoritativeSnapshot(investigationId);",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_script_path()),
+            "--investigation-hook-file",
+            str(mutated_investigation_hook),
+        ],
+        cwd=_repo_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "investigation_hook_not_found_branch_missing_teardown" in combined
+    assert "investigation_hook_not_found_branch_must_not_reconcile" in combined
+
+
+def test_b15_p5_enforcer_negative_control_authoritative_review_guard_missing(
+    tmp_path: Path,
+) -> None:
+    original_helper = (
+        _repo_root() / "frontend" / "src" / "components" / "llm" / "controlPlane.ts"
+    ).read_text(encoding="utf-8")
+    mutated_helper = tmp_path / "controlPlane.authoritative_guard.regression.ts"
+    mutated_helper.write_text(
+        original_helper.replace(
+            "if (snapshot.isAuthoritative === false) {\n    return false;\n  }\n",
+            "",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_script_path()),
+            "--lifecycle-helper-file",
+            str(mutated_helper),
+        ],
+        cwd=_repo_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "review_gating_helper_missing_authoritative_snapshot_guard" in (
+        result.stdout + result.stderr
+    )

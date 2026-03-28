@@ -12,6 +12,7 @@ export type CentaurMutationAction =
 
 export interface CentaurLifecycleSnapshot {
   status: CentaurLifecycleStatus;
+  isAuthoritative: boolean;
   progressPercentage?: number;
   currentStep?: string;
   reviewRequired: boolean;
@@ -229,6 +230,9 @@ export function isResultReadyStatus(status: CentaurLifecycleStatus): boolean {
 export function isReviewRailVisible(
   snapshot: CentaurLifecycleSnapshot,
 ): boolean {
+  if (snapshot.isAuthoritative === false) {
+    return false;
+  }
   if (!snapshot.reviewRequired) {
     return false;
   }
