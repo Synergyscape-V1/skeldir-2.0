@@ -1,0 +1,26 @@
+{
+  "contract_id": "b15.p6.realtime_exception_registry.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P6",
+  "active_realtime_substrates_present": true,
+  "registry_owner": "b15-governance",
+  "exceptions": [
+    {
+      "exception_id": "verification_realtime_revenue_contract_surface",
+      "owner_domain": "verification",
+      "owner_team": "frontend-platform",
+      "purpose": "Typed verification/realtime revenue substrate for non-B1.5 decision domains.",
+      "exception_surface_files": [
+        "frontend/src/types/api/attribution.ts"
+      ],
+      "allowed_scope_roots": [
+        "frontend/src/command-center",
+        "frontend/src/channel-detail",
+        "frontend/src/channel-comparison",
+        "frontend/src/data-health",
+        "frontend/src/types/api"
+      ],
+      "allowed_for_b15_decision_surfaces": false
+    }
+  ]
+}

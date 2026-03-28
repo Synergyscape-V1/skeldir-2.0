@@ -1,0 +1,76 @@
+{
+  "contract_id": "b15.p6.prohibited_signature_matrix.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P6",
+  "decision_surface_roots": [
+    "frontend/src/components/llm",
+    "frontend/src/budget/components",
+    "frontend/src/investigations"
+  ],
+  "decision_surface_files": [
+    "frontend/src/App.tsx",
+    "frontend/src/comparison/AgentShellBudgetOptimizer.tsx"
+  ],
+  "forbidden_signatures": [
+    {
+      "signature_id": "transport.websocket.new_expression",
+      "kind": "new_expression_identifier",
+      "match": "WebSocket",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "transport.eventsource.new_expression",
+      "kind": "new_expression_identifier",
+      "match": "EventSource",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "transport.readable_stream.new_expression",
+      "kind": "new_expression_identifier",
+      "match": "ReadableStream",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "transport.sse.accept_header",
+      "kind": "string_literal",
+      "match": "text/event-stream",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "import.socket_io_client",
+      "kind": "import_specifier",
+      "match": "socket.io-client",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "import.fetch_event_source",
+      "kind": "import_specifier",
+      "match": "@microsoft/fetch-event-source",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "import.react_use_websocket",
+      "kind": "import_specifier",
+      "match": "react-use-websocket",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "import.openai_realtime",
+      "kind": "import_specifier",
+      "match": "openai/realtime",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "import.ai_sdk_react",
+      "kind": "import_specifier",
+      "match": "ai/react",
+      "override_allowed": true
+    },
+    {
+      "signature_id": "import.ai_sdk_core",
+      "kind": "import_specifier",
+      "match": "ai",
+      "override_allowed": true
+    }
+  ]
+}

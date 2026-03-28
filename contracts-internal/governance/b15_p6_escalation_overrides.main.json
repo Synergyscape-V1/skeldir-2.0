@@ -1,0 +1,21 @@
+{
+  "contract_id": "b15.p6.escalation_overrides.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P6",
+  "deny_by_default": true,
+  "override_policy": {
+    "requires_checked_in_override": true,
+    "max_override_days": 30
+  },
+  "baseline_exception_approvals": [
+    {
+      "exception_id": "verification_realtime_revenue_contract_surface",
+      "ticket": "B15-P6-BASELINE-VERIFICATION-REALTIME",
+      "approved_by": [
+        "centaur-governance"
+      ],
+      "justification": "Preserve pre-existing verification realtime substrate outside bounded B1.5 decision surfaces."
+    }
+  ],
+  "active_overrides": []
+}
