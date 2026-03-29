@@ -1684,7 +1684,7 @@ jobs:
           pytest backend/tests/test_b15_p6_anti_cyborg_governance_enforcer.py -q
 
   b15-p7-ci-adjudication-closure:
-    name: B1.5 P7 CI Adjudication Closure, E2E Truth, and Mental-Model Gate
+    name: B1.5 P7 Technical Closure Harness, Browser E2E Truth, and Mental-Model Blocking Gate
     runs-on: ubuntu-latest
     needs: [checkout, validate-contracts, b15-p6-anti-cyborg-governance-lock]
     services:
@@ -1717,14 +1717,109 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install B1.5-P7 dependencies
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
+          for attempt in 1 2 3 4 5; do
+            if npm ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "root npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
+          for attempt in 1 2 3 4 5; do
+            if npm --prefix frontend ci; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "frontend npm ci failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
+          # Guard against transient 403s from Microsoft apt repos on ubuntu-latest runners.
+          # Playwright `--with-deps` runs `apt-get update`; remove these sources to keep CI deterministic.
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/*microsoft*.list
+          for attempt in 1 2 3 4 5; do
+            if npx playwright install --with-deps chromium; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "playwright install failed after 5 attempts"
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Apply migrations
         run: |
           alembic upgrade head
+
+      - name: Generate JWT keypair for browser closure runtime
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric import rsa
+
+          private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+          private_pem = private_key.private_bytes(
+              encoding=serialization.Encoding.PEM,
+              format=serialization.PrivateFormat.PKCS8,
+              encryption_algorithm=serialization.NoEncryption(),
+          ).decode("utf-8")
+          public_pem = private_key.public_key().public_bytes(
+              encoding=serialization.Encoding.PEM,
+              format=serialization.PublicFormat.SubjectPublicKeyInfo,
+          ).decode("utf-8")
+          Path("/tmp/b15_p7_browser_private.pem").write_text(private_pem, encoding="utf-8")
+          Path("/tmp/b15_p7_browser_public.pem").write_text(public_pem, encoding="utf-8")
+          print("b15_p7_browser_keypair_written")
+          PY
+
+      - name: Prepare B1.5-P7 browser runtime
+        run: |
+          python scripts/ci/prepare_b15_p7_browser_runtime.py \
+            --private-key-path /tmp/b15_p7_browser_private.pem \
+            --public-key-path /tmp/b15_p7_browser_public.pem \
+            --emit-github-env "$GITHUB_ENV" \
+            --migration-dsn "$MIGRATION_DATABASE_URL" \
+            --investigation-hold-seconds 15
+
+      - name: Start B1.5-P7 browser proof runtime stack
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 4024 > /tmp/b15_p7_backend.log 2>&1 &
+          nohup npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 > /tmp/b15_p7_frontend.log 2>&1 &
+
+      - name: Wait for B1.5-P7 browser proof runtime stack
+        run: |
+          python - <<'PY'
+          import socket
+          import time
+
+          def wait_for_port(host: str, port: int, timeout_s: int = 120) -> None:
+              deadline = time.time() + timeout_s
+              while time.time() < deadline:
+                  try:
+                      with socket.create_connection((host, port), timeout=2):
+                          return
+                  except OSError:
+                      time.sleep(1)
+              raise SystemExit(f"service not reachable on {host}:{port}")
+
+          wait_for_port("127.0.0.1", 4024)
+          wait_for_port("127.0.0.1", 5173)
+          print("b15_p7_browser_runtime_stack_ready")
+          PY
 
       - name: Enforce B1.5-P7 closure dependency and honesty contract
         run: |
@@ -1737,6 +1832,28 @@ jobs:
       - name: Run B1.5-P7 runtime closure proofs
         run: |
           pytest backend/tests/test_b15_p7_ci_adjudication_closure.py -q
+
+      - name: Run B1.5-P7 browser closure proofs
+        run: |
+          npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1
+
+      - name: Print B1.5-P7 browser runtime logs on failure
+        if: failure()
+        run: |
+          echo "=== backend log ==="
+          cat /tmp/b15_p7_backend.log || true
+          echo "=== frontend log ==="
+          cat /tmp/b15_p7_frontend.log || true
+
+      - name: Upload B1.5-P7 browser proof artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b15-p7-browser-proof-artifacts
+          path: |
+            playwright-report/**
+            test-results/**
+          retention-days: 7
   # Contract validation
 
   validate-contracts:

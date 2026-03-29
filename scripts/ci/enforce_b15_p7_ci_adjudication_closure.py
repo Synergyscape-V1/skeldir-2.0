@@ -38,9 +38,10 @@ def run_enforcement(
     contract_file: Path,
     ci_file: Path,
     runtime_tests_file: Path,
+    browser_tests_file: Path,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
-    required_files = (contract_file, ci_file, runtime_tests_file)
+    required_files = (contract_file, ci_file, runtime_tests_file, browser_tests_file)
     missing = [path for path in required_files if not path.exists()]
     if missing:
         return 1, [f"missing_file:{path}" for path in missing]
@@ -51,6 +52,7 @@ def run_enforcement(
 
     ci_text = ci_file.read_text(encoding="utf-8")
     runtime_tests_text = runtime_tests_file.read_text(encoding="utf-8")
+    browser_tests_text = browser_tests_file.read_text(encoding="utf-8")
 
     runtime_markers = contract.get("required_runtime_test_markers", [])
     if not isinstance(runtime_markers, list) or not runtime_markers:
@@ -94,7 +96,28 @@ def run_enforcement(
                     if str(command) not in job_block:
                         violations.append(f"ci_job_missing_command:{command}")
 
+    required_browser_test = contract.get("required_browser_test")
+    if not isinstance(required_browser_test, dict):
+        violations.append("contract_missing_required_browser_test")
+    else:
+        browser_test_path = str(required_browser_test.get("file", "")).strip()
+        if browser_test_path:
+            declared_browser_file = _resolve(REPO_ROOT, browser_test_path)
+            if declared_browser_file != browser_tests_file:
+                violations.append(
+                    f"browser_test_file_mismatch:{browser_test_path}:{browser_tests_file}"
+                )
+        browser_markers = required_browser_test.get("required_markers", [])
+        if not isinstance(browser_markers, list) or not browser_markers:
+            violations.append("contract_missing_browser_test_markers")
+        else:
+            for marker in browser_markers:
+                if str(marker) not in browser_tests_text:
+                    violations.append(f"browser_marker_missing:{marker}")
+
     mental = contract.get("mental_model_study")
+    study_status = ""
+    status_payload: dict[str, Any] = {}
     if not isinstance(mental, dict):
         violations.append("contract_missing_mental_model_study")
     else:
@@ -116,15 +139,15 @@ def run_enforcement(
                 violations.append("mental_model_status_file_missing")
             else:
                 status_payload = _read_json(status_path)
-                status = str(status_payload.get("study_status", "")).strip()
+                study_status = str(status_payload.get("study_status", "")).strip()
                 allowed = mental.get("allowed_statuses", [])
                 if not isinstance(allowed, list) or not allowed:
                     violations.append("mental_model_missing_allowed_statuses_contract")
-                elif status not in {str(item) for item in allowed}:
-                    violations.append(f"mental_model_invalid_status:{status}")
+                elif study_status not in {str(item) for item in allowed}:
+                    violations.append(f"mental_model_invalid_status:{study_status}")
 
                 if bool(mental.get("pending_requires_zero_participants", False)):
-                    if status == "pending_human_execution":
+                    if study_status == "pending_human_execution":
                         completed = int(status_payload.get("participants_completed", -1))
                         if completed != 0:
                             violations.append(
@@ -132,10 +155,40 @@ def run_enforcement(
                             )
 
                 if bool(mental.get("pending_must_not_claim_success", False)):
-                    if status == "pending_human_execution":
+                    if study_status == "pending_human_execution":
                         if bool(status_payload.get("result_claim_present", True)):
                             violations.append(
                                 "mental_model_pending_claims_success_without_human_execution"
+                            )
+                pending_phase_closure_state = str(
+                    mental.get("pending_requires_phase_closure_state", "")
+                ).strip()
+                if pending_phase_closure_state and study_status == "pending_human_execution":
+                    observed_phase_state = str(
+                        status_payload.get("phase_closure_state", "")
+                    ).strip()
+                    if observed_phase_state != pending_phase_closure_state:
+                        violations.append(
+                            "mental_model_pending_invalid_phase_closure_state"
+                        )
+
+                if bool(mental.get("pending_requires_full_phase_claim_false", False)):
+                    if study_status == "pending_human_execution" and bool(
+                        status_payload.get("full_phase_closure_claim_present", True)
+                    ):
+                        violations.append(
+                            "mental_model_pending_full_phase_claim_present"
+                        )
+
+                if bool(mental.get("validated_requires_eight_of_ten", False)):
+                    if study_status == "validated_by_humans":
+                        completed = int(status_payload.get("participants_completed", 0))
+                        understood = int(
+                            status_payload.get("understood_async_review_count", 0)
+                        )
+                        if completed < 10 or understood < 8:
+                            violations.append(
+                                "mental_model_validated_below_eight_of_ten_threshold"
                             )
 
         marker_paths = [
@@ -154,6 +207,29 @@ def run_enforcement(
             for marker in markers:
                 if str(marker) not in marker_text:
                     violations.append(f"mental_model_marker_missing:{marker}")
+
+    closure_integrity = contract.get("closure_integrity")
+    if not isinstance(closure_integrity, dict):
+        violations.append("contract_missing_closure_integrity")
+    else:
+        evidence_file_raw = str(closure_integrity.get("evidence_file", "")).strip()
+        if not evidence_file_raw:
+            violations.append("closure_integrity_missing_evidence_file")
+        else:
+            evidence_file = _resolve(REPO_ROOT, evidence_file_raw)
+            if not evidence_file.exists():
+                violations.append("closure_integrity_evidence_file_missing")
+            elif study_status == "pending_human_execution":
+                evidence_text = evidence_file.read_text(encoding="utf-8")
+                pending_markers = closure_integrity.get(
+                    "pending_requires_evidence_markers", []
+                )
+                if not isinstance(pending_markers, list) or not pending_markers:
+                    violations.append("closure_integrity_missing_pending_markers_contract")
+                else:
+                    for marker in pending_markers:
+                        if str(marker) not in evidence_text:
+                            violations.append(f"closure_integrity_marker_missing:{marker}")
 
     p6_dep = contract.get("p6_dependency")
     if not isinstance(p6_dep, dict):
@@ -191,6 +267,10 @@ def main(argv: list[str]) -> int:
         "--runtime-tests-file",
         default="backend/tests/test_b15_p7_ci_adjudication_closure.py",
     )
+    parser.add_argument(
+        "--browser-tests-file",
+        default="tests/b15-p7-browser-e2e.spec.ts",
+    )
     parser.add_argument("--simulate-regression", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -207,6 +287,7 @@ def main(argv: list[str]) -> int:
         contract_file=_resolve(repo_root, args.contract_file),
         ci_file=_resolve(repo_root, args.ci_file),
         runtime_tests_file=_resolve(repo_root, args.runtime_tests_file),
+        browser_tests_file=_resolve(repo_root, args.browser_tests_file),
     )
 
     lines = ["b15_p7_ci_adjudication_closure_enforcer"]
