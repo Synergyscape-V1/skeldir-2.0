@@ -1,6 +1,8 @@
 {
   "phase": "B1.5-P7",
   "study_status": "pending_human_execution",
+  "phase_closure_state": "open_pending_human_execution",
+  "full_phase_closure_claim_present": false,
   "participants_completed": 0,
   "participants_target": 10,
   "understood_async_review_count": 0,

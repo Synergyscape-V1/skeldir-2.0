@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_INVESTIGATION_SERVICE = InvestigationService()
 _MUTATION_LEDGER = ReviewMutationLedger()
 
 _PROBLEM_NOT_FOUND = "https://api.skeldir.com/problems/not-found"
@@ -36,6 +35,28 @@ _PROBLEM_VALIDATION = "https://api.skeldir.com/problems/request-validation-faile
 _PROBLEM_CONFLICT = "https://api.skeldir.com/problems/conflict"
 
 InvestigationAction = Literal["approve", "reject", "refine", "rerun", "retry", "cancel"]
+
+
+def _resolve_min_hold_seconds() -> int:
+    raw_value = (
+        os.getenv("B15_INVESTIGATION_MIN_HOLD_SECONDS")
+        or os.getenv("INVESTIGATION_MIN_HOLD_SECONDS")
+        or ""
+    ).strip()
+    if not raw_value:
+        return 45
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        logger.warning(
+            "invalid_investigation_min_hold_seconds",
+            extra={"value": raw_value},
+        )
+        return 45
+    return max(1, parsed)
+
+
+_INVESTIGATION_SERVICE = InvestigationService(min_hold_seconds=_resolve_min_hold_seconds())
 
 
 class InvestigationDateRange(BaseModel):

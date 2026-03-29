@@ -71,6 +71,8 @@ def test_b15_p7_enforcer_negative_control_pending_study_cannot_claim_success(
             {
                 "phase": "B1.5-P7",
                 "study_status": "pending_human_execution",
+                "phase_closure_state": "open_pending_human_execution",
+                "full_phase_closure_claim_present": False,
                 "participants_completed": 0,
                 "participants_target": 10,
                 "result_claim_present": True,
@@ -94,6 +96,45 @@ def test_b15_p7_enforcer_negative_control_pending_study_cannot_claim_success(
     result = _run_enforcer("--contract-file", str(contract_file))
     assert result.returncode != 0
     assert "mental_model_pending_claims_success_without_human_execution" in (
+        result.stdout + result.stderr
+    )
+
+
+def test_b15_p7_enforcer_negative_control_pending_study_must_keep_phase_open(
+    tmp_path: Path,
+) -> None:
+    contract = _load_json(_contract_file())
+    status_file = tmp_path / "status.regression.json"
+    status_file.write_text(
+        json.dumps(
+            {
+                "phase": "B1.5-P7",
+                "study_status": "pending_human_execution",
+                "phase_closure_state": "closed",
+                "full_phase_closure_claim_present": False,
+                "participants_completed": 0,
+                "participants_target": 10,
+                "result_claim_present": False,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    mental = contract["mental_model_study"]
+    original_status = str(mental["status_file"])
+    mental["status_file"] = str(status_file)
+    required_files = [str(item) for item in mental["required_files"]]
+    mental["required_files"] = [
+        str(status_file) if item == original_status else item for item in required_files
+    ]
+
+    contract_file = tmp_path / "contract.json"
+    _write_json(contract_file, contract)
+
+    result = _run_enforcer("--contract-file", str(contract_file))
+    assert result.returncode != 0
+    assert "mental_model_pending_invalid_phase_closure_state" in (
         result.stdout + result.stderr
     )
 
@@ -155,3 +196,48 @@ def test_b15_p7_enforcer_negative_control_ci_job_must_include_required_commands(
         in (result.stdout + result.stderr)
     )
 
+
+def test_b15_p7_enforcer_negative_control_ci_job_must_include_browser_e2e_command(
+    tmp_path: Path,
+) -> None:
+    ci_file = _repo_root() / ".github" / "workflows" / "ci.yml"
+    mutated_ci = tmp_path / "ci.browser.regression.yml"
+    text = ci_file.read_text(encoding="utf-8")
+    mutated_ci.write_text(
+        text.replace(
+            "npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1",
+            "echo 'regression: removed required p7 browser proof command'",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_enforcer("--ci-file", str(mutated_ci))
+    assert result.returncode != 0
+    assert (
+        "ci_job_missing_command:npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1"
+        in (result.stdout + result.stderr)
+    )
+
+
+def test_b15_p7_enforcer_negative_control_browser_marker_missing(
+    tmp_path: Path,
+) -> None:
+    browser_file = _repo_root() / "tests" / "b15-p7-browser-e2e.spec.ts"
+    mutated_browser = tmp_path / "b15-p7-browser-e2e.regression.spec.ts"
+    text = browser_file.read_text(encoding="utf-8")
+    mutated_browser.write_text(
+        text.replace(
+            "test_b15_p7_browser_conflict_response_surfaces_ui_issue_and_reconciliation",
+            "test_b15_p7_browser_conflict_marker_removed_for_negative_control",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_enforcer("--browser-tests-file", str(mutated_browser))
+    assert result.returncode != 0
+    assert (
+        "browser_marker_missing:test_b15_p7_browser_conflict_response_surfaces_ui_issue_and_reconciliation"
+        in (result.stdout + result.stderr)
+    )
