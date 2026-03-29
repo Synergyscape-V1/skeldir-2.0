@@ -1,0 +1,52 @@
+{
+  "contract_id": "b15.p7.ci_adjudication_closure.main",
+  "contract_version": "1.0.0",
+  "phase": "B1.5-P7",
+  "required_ci_job": {
+    "job_id": "b15-p7-ci-adjudication-closure",
+    "job_name": "B1.5 P7 CI Adjudication Closure, E2E Truth, and Mental-Model Gate",
+    "needs": [
+      "checkout",
+      "validate-contracts",
+      "b15-p6-anti-cyborg-governance-lock"
+    ],
+    "required_commands": [
+      "python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py",
+      "pytest backend/tests/test_b15_p7_ci_adjudication_closure.py -q",
+      "pytest backend/tests/test_b15_p7_ci_adjudication_closure_enforcer.py -q"
+    ]
+  },
+  "required_runtime_test_markers": [
+    "test_b15_p7_canonical_launch_poll_review_terminalization_journey",
+    "test_b15_p7_poll_cadence_controlled_time_stays_within_three_to_seven_seconds",
+    "test_b15_p7_failure_timeout_cancel_and_retry_are_distinct_and_recoverable",
+    "test_b15_p7_network_layer_duplicate_review_actions_are_single_effect",
+    "test_b15_p7_runtime_anti_theater_no_streaming_and_no_hidden_auto_accept"
+  ],
+  "mental_model_study": {
+    "required_files": [
+      "docs/forensics/evidence/b15_p7/mental_model_study/README.md",
+      "docs/forensics/evidence/b15_p7/mental_model_study/protocol.md",
+      "docs/forensics/evidence/b15_p7/mental_model_study/facilitator_script.md",
+      "docs/forensics/evidence/b15_p7/mental_model_study/scoring_rubric.md",
+      "docs/forensics/evidence/b15_p7/mental_model_study/execution_checklist.md",
+      "docs/forensics/evidence/b15_p7/mental_model_study/participant_results_template.csv",
+      "docs/forensics/evidence/b15_p7/mental_model_study/status.json"
+    ],
+    "status_file": "docs/forensics/evidence/b15_p7/mental_model_study/status.json",
+    "allowed_statuses": [
+      "pending_human_execution",
+      "validated_by_humans"
+    ],
+    "pending_requires_zero_participants": true,
+    "pending_must_not_claim_success": true,
+    "required_human_execution_markers": [
+      "Human Execution Required",
+      "No fabricated participant outcomes"
+    ]
+  },
+  "p6_dependency": {
+    "overrides_file": "contracts-internal/governance/b15_p6_escalation_overrides.main.json",
+    "active_overrides_must_be_empty": true
+  }
+}

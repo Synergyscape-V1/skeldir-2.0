@@ -1682,6 +1682,61 @@ jobs:
       - name: Run B1.5-P6 enforcer negative controls
         run: |
           pytest backend/tests/test_b15_p6_anti_cyborg_governance_enforcer.py -q
+
+  b15-p7-ci-adjudication-closure:
+    name: B1.5 P7 CI Adjudication Closure, E2E Truth, and Mental-Model Gate
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts, b15-p6-anti-cyborg-governance-lock]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      TESTING: "1"
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install B1.5-P7 dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Apply migrations
+        run: |
+          alembic upgrade head
+
+      - name: Enforce B1.5-P7 closure dependency and honesty contract
+        run: |
+          python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
+
+      - name: Run B1.5-P7 closure enforcer negative controls
+        run: |
+          pytest backend/tests/test_b15_p7_ci_adjudication_closure_enforcer.py -q
+
+      - name: Run B1.5-P7 runtime closure proofs
+        run: |
+          pytest backend/tests/test_b15_p7_ci_adjudication_closure.py -q
   # Contract validation
 
   validate-contracts:
