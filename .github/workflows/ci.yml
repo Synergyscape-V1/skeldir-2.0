@@ -1792,6 +1792,7 @@ jobs:
             --private-key-path /tmp/b15_p7_browser_private.pem \
             --public-key-path /tmp/b15_p7_browser_public.pem \
             --emit-github-env "$GITHUB_ENV" \
+            --migration-dsn "$MIGRATION_DATABASE_URL" \
             --investigation-hold-seconds 15
 
       - name: Start B1.5-P7 browser proof runtime stack

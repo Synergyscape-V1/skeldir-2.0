@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -119,6 +118,7 @@ def main() -> int:
     parser.add_argument("--private-key-path", required=True)
     parser.add_argument("--public-key-path", required=True)
     parser.add_argument("--emit-github-env", required=True)
+    parser.add_argument("--migration-dsn", required=True)
     parser.add_argument("--tenant-id", default=DEFAULT_TENANT_ID)
     parser.add_argument("--user-id", default=DEFAULT_USER_ID)
     parser.add_argument("--jwt-kid", default=DEFAULT_JWT_KID)
@@ -132,10 +132,7 @@ def main() -> int:
     private_key = _read_key(Path(args.private_key_path))
     public_key = _read_key(Path(args.public_key_path))
 
-    migration_dsn = os.getenv("MIGRATION_DATABASE_URL") or os.getenv("DATABASE_URL")
-    if not migration_dsn:
-        raise RuntimeError("MIGRATION_DATABASE_URL or DATABASE_URL must be set.")
-    sync_dsn = _sync_dsn(migration_dsn)
+    sync_dsn = _sync_dsn(args.migration_dsn)
 
     _ensure_tenant_exists(dsn=sync_dsn, tenant_id=tenant_id)
 
