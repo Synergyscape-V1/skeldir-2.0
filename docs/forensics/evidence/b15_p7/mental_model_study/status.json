@@ -1,0 +1,12 @@
+{
+  "phase": "B1.5-P7",
+  "study_status": "pending_human_execution",
+  "participants_completed": 0,
+  "participants_target": 10,
+  "understood_async_review_count": 0,
+  "comprehension_rate": null,
+  "gate_target": "at_least_8_of_10_understand_async_review_model",
+  "result_claim_present": false,
+  "last_updated": "2026-03-29",
+  "notes": "Human study package prepared. No participant outcomes recorded by automation."
+}
