@@ -1,0 +1,3 @@
+from app.services.investigation import InvestigationService
+
+SQL = "SELECT id FROM investigation_jobs WHERE tenant_id = :tenant_id"
