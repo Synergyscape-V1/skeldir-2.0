@@ -1834,8 +1834,18 @@ jobs:
           pytest backend/tests/test_b15_p7_ci_adjudication_closure.py -q
 
       - name: Run B1.5-P7 browser closure proofs
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: b15_p7_playwright.json
+          PLAYWRIGHT_JSON_OUTPUT_DIR: test-results
         run: |
-          npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1
+          npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1 --reporter=line,json
+
+      - name: Assert B1.5-P7 browser closure proofs executed fail-closed
+        run: |
+          python scripts/ci/assert_b15_p7_playwright_execution.py \
+            --report-json test-results/b15_p7_playwright.json \
+            --expected-test test_b15_p7_browser_launch_poll_review_terminalized_state \
+            --expected-test test_b15_p7_browser_conflict_response_surfaces_ui_issue_and_reconciliation
 
       - name: Print B1.5-P7 browser runtime logs on failure
         if: failure()

@@ -39,9 +39,16 @@ def run_enforcement(
     ci_file: Path,
     runtime_tests_file: Path,
     browser_tests_file: Path,
+    deploy_file: Path,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
-    required_files = (contract_file, ci_file, runtime_tests_file, browser_tests_file)
+    required_files = (
+        contract_file,
+        ci_file,
+        runtime_tests_file,
+        browser_tests_file,
+        deploy_file,
+    )
     missing = [path for path in required_files if not path.exists()]
     if missing:
         return 1, [f"missing_file:{path}" for path in missing]
@@ -53,6 +60,7 @@ def run_enforcement(
     ci_text = ci_file.read_text(encoding="utf-8")
     runtime_tests_text = runtime_tests_file.read_text(encoding="utf-8")
     browser_tests_text = browser_tests_file.read_text(encoding="utf-8")
+    deploy_text = deploy_file.read_text(encoding="utf-8")
 
     runtime_markers = contract.get("required_runtime_test_markers", [])
     if not isinstance(runtime_markers, list) or not runtime_markers:
@@ -114,6 +122,31 @@ def run_enforcement(
             for marker in browser_markers:
                 if str(marker) not in browser_tests_text:
                     violations.append(f"browser_marker_missing:{marker}")
+        forbidden_markers = required_browser_test.get("forbidden_markers", [])
+        if isinstance(forbidden_markers, list):
+            for marker in forbidden_markers:
+                marker_text = str(marker)
+                if marker_text and marker_text in browser_tests_text:
+                    violations.append(f"browser_forbidden_marker_present:{marker_text}")
+
+    required_deploy_gate = contract.get("required_deploy_gate")
+    if not isinstance(required_deploy_gate, dict):
+        violations.append("contract_missing_required_deploy_gate")
+    else:
+        deploy_path_raw = str(required_deploy_gate.get("workflow_file", "")).strip()
+        if deploy_path_raw:
+            declared_deploy_file = _resolve(REPO_ROOT, deploy_path_raw)
+            if declared_deploy_file != deploy_file:
+                violations.append(
+                    f"deploy_workflow_file_mismatch:{deploy_path_raw}:{deploy_file}"
+                )
+        deploy_commands = required_deploy_gate.get("required_commands", [])
+        if not isinstance(deploy_commands, list) or not deploy_commands:
+            violations.append("deploy_gate_missing_required_commands_contract")
+        else:
+            for command in deploy_commands:
+                if str(command) not in deploy_text:
+                    violations.append(f"deploy_gate_missing_command:{command}")
 
     mental = contract.get("mental_model_study")
     study_status = ""
@@ -271,6 +304,10 @@ def main(argv: list[str]) -> int:
         "--browser-tests-file",
         default="tests/b15-p7-browser-e2e.spec.ts",
     )
+    parser.add_argument(
+        "--deploy-file",
+        default=".github/workflows/schema-deploy-production.yml",
+    )
     parser.add_argument("--simulate-regression", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -288,6 +325,7 @@ def main(argv: list[str]) -> int:
         ci_file=_resolve(repo_root, args.ci_file),
         runtime_tests_file=_resolve(repo_root, args.runtime_tests_file),
         browser_tests_file=_resolve(repo_root, args.browser_tests_file),
+        deploy_file=_resolve(repo_root, args.deploy_file),
     )
 
     lines = ["b15_p7_ci_adjudication_closure_enforcer"]

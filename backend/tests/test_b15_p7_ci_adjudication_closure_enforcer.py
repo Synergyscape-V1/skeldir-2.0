@@ -205,7 +205,7 @@ def test_b15_p7_enforcer_negative_control_ci_job_must_include_browser_e2e_comman
     text = ci_file.read_text(encoding="utf-8")
     mutated_ci.write_text(
         text.replace(
-            "npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1",
+            "npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1 --reporter=line,json",
             "echo 'regression: removed required p7 browser proof command'",
             1,
         ),
@@ -215,7 +215,53 @@ def test_b15_p7_enforcer_negative_control_ci_job_must_include_browser_e2e_comman
     result = _run_enforcer("--ci-file", str(mutated_ci))
     assert result.returncode != 0
     assert (
-        "ci_job_missing_command:npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1"
+        "ci_job_missing_command:npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1 --reporter=line,json"
+        in (result.stdout + result.stderr)
+    )
+
+
+def test_b15_p7_enforcer_negative_control_ci_job_must_include_browser_execution_assertion(
+    tmp_path: Path,
+) -> None:
+    ci_file = _repo_root() / ".github" / "workflows" / "ci.yml"
+    mutated_ci = tmp_path / "ci.browser.assert.regression.yml"
+    text = ci_file.read_text(encoding="utf-8")
+    mutated_ci.write_text(
+        text.replace(
+            "python scripts/ci/assert_b15_p7_playwright_execution.py",
+            "echo 'regression: removed browser execution assertion'",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_enforcer("--ci-file", str(mutated_ci))
+    assert result.returncode != 0
+    assert (
+        "ci_job_missing_command:python scripts/ci/assert_b15_p7_playwright_execution.py"
+        in (result.stdout + result.stderr)
+    )
+
+
+def test_b15_p7_enforcer_negative_control_deploy_gate_must_include_phase_closure_command(
+    tmp_path: Path,
+) -> None:
+    deploy_file = _repo_root() / ".github" / "workflows" / "schema-deploy-production.yml"
+    mutated_deploy = tmp_path / "deploy.regression.yml"
+    text = deploy_file.read_text(encoding="utf-8")
+    mutated_deploy.write_text(
+        text.replace(
+            "python scripts/ci/b15_p7_phase_closure_gate.py",
+            "echo 'regression: removed phase closure deploy gate'",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_enforcer("--deploy-file", str(mutated_deploy))
+    assert result.returncode != 0
+    assert (
+        "deploy_gate_missing_command:python scripts/ci/b15_p7_phase_closure_gate.py"
         in (result.stdout + result.stderr)
     )
 
@@ -240,4 +286,38 @@ def test_b15_p7_enforcer_negative_control_browser_marker_missing(
     assert (
         "browser_marker_missing:test_b15_p7_browser_conflict_response_surfaces_ui_issue_and_reconciliation"
         in (result.stdout + result.stderr)
+    )
+
+
+def test_b15_p7_enforcer_negative_control_browser_skip_marker_forbidden(
+    tmp_path: Path,
+) -> None:
+    browser_file = _repo_root() / "tests" / "b15-p7-browser-e2e.spec.ts"
+    mutated_browser = tmp_path / "b15-p7-browser-e2e.skip.regression.spec.ts"
+    text = browser_file.read_text(encoding="utf-8")
+    mutated_browser.write_text(
+        f"{text}\n\ntest.skip(true, 'regression-forbidden-skip-marker');\n",
+        encoding="utf-8",
+    )
+
+    result = _run_enforcer("--browser-tests-file", str(mutated_browser))
+    assert result.returncode != 0
+    assert "browser_forbidden_marker_present:test.skip(" in (result.stdout + result.stderr)
+
+
+def test_b15_p7_enforcer_negative_control_browser_route_fulfill_forbidden(
+    tmp_path: Path,
+) -> None:
+    browser_file = _repo_root() / "tests" / "b15-p7-browser-e2e.spec.ts"
+    mutated_browser = tmp_path / "b15-p7-browser-e2e.fulfill.regression.spec.ts"
+    text = browser_file.read_text(encoding="utf-8")
+    mutated_browser.write_text(
+        f"{text}\n\n// regression-forbidden-route-fulfill\nvoid 'route.fulfill(';\n",
+        encoding="utf-8",
+    )
+
+    result = _run_enforcer("--browser-tests-file", str(mutated_browser))
+    assert result.returncode != 0
+    assert "browser_forbidden_marker_present:route.fulfill(" in (
+        result.stdout + result.stderr
     )
