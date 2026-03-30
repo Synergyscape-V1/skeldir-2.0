@@ -63,10 +63,9 @@ async function waitUntilReadyForReview(page: Page): Promise<void> {
 }
 
 test.describe("B1.5-P7 Browser Closure Proofs", () => {
-  test.skip(
-    !AUTH_BEARER_TOKEN,
-    "Set B15_P7_E2E_BEARER_TOKEN to run browser-level B1.5-P7 closure proofs.",
-  );
+  test.beforeAll(() => {
+    assertBrowserRuntimeConfigAvailable();
+  });
 
   // Marker for P7 static enforcer.
   test("test_b15_p7_browser_launch_poll_review_terminalized_state", async ({
@@ -148,34 +147,47 @@ test.describe("B1.5-P7 Browser Closure Proofs", () => {
       "Why did deterministic conversion quality shift in the last seven days?",
     );
     const statusPath = `/api/investigations/${investigationId}/status`;
+    const approvePath = `${INVESTIGATIONS_BASE_URL}/api/investigations/${investigationId}/approve`;
 
     await waitUntilReadyForReview(page);
 
-    let conflictIntercepted = false;
-    await page.route(
-      `${INVESTIGATIONS_BASE_URL}/api/investigations/${investigationId}/approve`,
-      async (route) => {
-        if (conflictIntercepted) {
-          await route.continue();
-          return;
-        }
-        conflictIntercepted = true;
-        await route.fulfill({
-          status: 409,
-          contentType: "application/json",
-          headers: {
-            "X-Correlation-ID": "00000000-0000-4000-8000-000000000409",
-          },
-          body: JSON.stringify({
-            type: "https://api.skeldir.com/problems/conflict",
-            title: "Conflict",
-            status: 409,
-            detail: "Idempotency key already used with a different payload digest.",
-            code: "IDEMPOTENCY_KEY_CONFLICT",
-            correlation_id: "00000000-0000-4000-8000-000000000409",
-          }),
-        });
-      },
+    let backendSeeded = false;
+    await page.route(approvePath, async (route) => {
+      if (backendSeeded) {
+        await route.continue();
+        return;
+      }
+
+      backendSeeded = true;
+      const request = route.request();
+      const requestHeaders = request.headers();
+      const idempotencyKey = requestHeaders["x-idempotency-key"];
+      const authorization = requestHeaders["authorization"];
+
+      expect(idempotencyKey).toBeTruthy();
+      expect(authorization).toBeTruthy();
+
+      const seedResponse = await page.request.post(approvePath, {
+        headers: {
+          Authorization: String(authorization),
+          "X-Correlation-ID": "00000000-0000-4000-8000-000000000410",
+          "X-Idempotency-Key": String(idempotencyKey),
+          "Content-Type": "application/json",
+        },
+        data: {
+          reason: "seed_backend_conflict_path",
+          note: "seed_backend_conflict_path",
+        },
+      });
+      expect(seedResponse.status()).toBe(200);
+      await route.continue();
+    });
+
+    const conflictResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url() === approvePath &&
+        response.status() === 409,
     );
 
     const reconcileResponsePromise = page.waitForResponse(
@@ -185,6 +197,14 @@ test.describe("B1.5-P7 Browser Closure Proofs", () => {
         response.status() === 200,
     );
     await page.locator("button[data-action='approve']").click();
+    const conflictResponse = await conflictResponsePromise;
+    const conflictBody = (await conflictResponse.json()) as {
+      code?: string;
+      status?: number;
+      detail?: string;
+    };
+    expect(conflictBody.code).toBe("IDEMPOTENCY_KEY_CONFLICT");
+    expect(conflictBody.status).toBe(409);
     await reconcileResponsePromise;
 
     const issueSurface = page.locator(
@@ -193,10 +213,11 @@ test.describe("B1.5-P7 Browser Closure Proofs", () => {
     await expect(issueSurface).toBeVisible({ timeout: 15_000 });
     await expect(issueSurface).toContainText("Idempotency Conflict");
     await expect(issueSurface).toContainText(
-      "Idempotency key already used with a different payload digest.",
+      "idempotency key was reused with a different authority-boundary payload",
     );
-    await expect(page.locator("button[data-action='approve']")).toBeEnabled({
+    await expect(page.locator(".llm-state-panel__title")).toHaveText(/Approved/i, {
       timeout: 15_000,
     });
+    await expect(page.locator("button[data-action='approve']")).toHaveCount(0);
   });
 });

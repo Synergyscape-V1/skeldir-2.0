@@ -29,6 +29,15 @@ jobs:
       AWS_REGION: us-east-2
       SKELDIR_ENV: prod
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enforce B1.5-P7 full-phase closure gate (block deploy while human gate is open)
+        run: |
+          python scripts/ci/b15_p7_phase_closure_gate.py \
+            --mode full-phase \
+            --status-file docs/forensics/evidence/b15_p7/mental_model_study/status.json
+
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -51,10 +60,6 @@ jobs:
           echo "NEON_PROJECT_ID=${NEON_PROJECT_ID}" >> "$GITHUB_ENV"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout code
-        if: steps.neon-guard.outputs.enabled == 'true'
-        uses: actions/checkout@v4
-      
       - name: Set up Python
         if: steps.neon-guard.outputs.enabled == 'true'
         uses: actions/setup-python@v4

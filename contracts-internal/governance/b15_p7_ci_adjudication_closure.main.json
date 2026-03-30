@@ -1,6 +1,6 @@
 {
   "contract_id": "b15.p7.ci_adjudication_closure.main",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "phase": "B1.5-P7",
   "required_ci_job": {
     "job_id": "b15-p7-ci-adjudication-closure",
@@ -15,7 +15,8 @@
       "pytest backend/tests/test_b15_p7_ci_adjudication_closure_enforcer.py -q",
       "pytest backend/tests/test_b15_p7_ci_adjudication_closure.py -q",
       "python scripts/ci/prepare_b15_p7_browser_runtime.py",
-      "npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1"
+      "npx playwright test tests/b15-p7-browser-e2e.spec.ts --project=chromium --workers=1 --reporter=line,json",
+      "python scripts/ci/assert_b15_p7_playwright_execution.py"
     ]
   },
   "required_runtime_test_markers": [
@@ -30,6 +31,19 @@
     "required_markers": [
       "test_b15_p7_browser_launch_poll_review_terminalized_state",
       "test_b15_p7_browser_conflict_response_surfaces_ui_issue_and_reconciliation"
+    ],
+    "forbidden_markers": [
+      "route.fulfill(",
+      "test.skip(",
+      "Set B15_P7_E2E_BEARER_TOKEN to run browser-level B1.5-P7 closure proofs."
+    ]
+  },
+  "required_deploy_gate": {
+    "workflow_file": ".github/workflows/schema-deploy-production.yml",
+    "required_commands": [
+      "python scripts/ci/b15_p7_phase_closure_gate.py",
+      "--mode full-phase",
+      "--status-file docs/forensics/evidence/b15_p7/mental_model_study/status.json"
     ]
   },
   "mental_model_study": {
