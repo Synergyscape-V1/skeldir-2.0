@@ -215,8 +215,12 @@ test.describe("B1.5-P7 Browser Closure Proofs", () => {
     await expect(issueSurface).toContainText(
       "idempotency key was reused with a different authority-boundary payload",
     );
-    await expect(page.locator("button[data-action='approve']")).toBeEnabled({
+    await expect(page.locator(".llm-state-panel__title")).toHaveText(/Approved/i, {
       timeout: 15_000,
     });
+    await expect(page.getByText("Action: approve | Status: approved")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator("button[data-action='approve']")).toHaveCount(0);
   });
 });

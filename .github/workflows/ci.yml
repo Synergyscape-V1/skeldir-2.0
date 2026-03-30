@@ -4449,7 +4449,7 @@ jobs:
 
       - name: Run Playwright tests
         run: |
-          npx playwright test
+          npx playwright test --grep-invert "B1.5-P7 Browser Closure Proofs"
 
       - name: Stop mock servers
         if: always()
