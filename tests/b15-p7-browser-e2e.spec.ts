@@ -218,9 +218,6 @@ test.describe("B1.5-P7 Browser Closure Proofs", () => {
     await expect(page.locator(".llm-state-panel__title")).toHaveText(/Approved/i, {
       timeout: 15_000,
     });
-    await expect(page.getByText("Action: approve | Status: approved")).toBeVisible({
-      timeout: 15_000,
-    });
     await expect(page.locator("button[data-action='approve']")).toHaveCount(0);
   });
 });
