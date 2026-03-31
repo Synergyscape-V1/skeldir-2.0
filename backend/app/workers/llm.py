@@ -16,12 +16,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm.output_validation import validation_spec_for_endpoint
 from app.llm.provider_boundary import get_llm_provider_boundary
 from app.models.llm import BudgetOptimizationJob, Investigation
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.services.llm_authority_contract import (
     build_budget_authority_payload,
     build_investigation_authority_payload,
+    build_validation_context,
 )
 from app.services.budget_job import BudgetJobService
 from app.services.investigation import InvestigationService
@@ -33,6 +35,15 @@ _PROVIDER_BOUNDARY = get_llm_provider_boundary()
 _INVESTIGATION_SERVICE = InvestigationService()
 _BUDGET_JOB_SERVICE = BudgetJobService()
 _VALIDATION_FAILURE_SERVICE = LLMValidationFailureService()
+_ENDPOINT_VALIDATION_SPECS = {
+    endpoint: validation_spec_for_endpoint(endpoint)
+    for endpoint in (
+        "app.tasks.llm.route",
+        "app.tasks.llm.explanation",
+        "app.tasks.llm.investigation",
+        "app.tasks.llm.budget_optimization",
+    )
+}
 
 
 def _stable_fallback_id(model: LLMTaskPayload, endpoint: str, label: str) -> str:
@@ -77,6 +88,13 @@ def _normalize_payload_context(model: LLMTaskPayload, endpoint: str) -> LLMTaskP
     )
 
 
+def _validation_spec(endpoint: str):
+    spec = _ENDPOINT_VALIDATION_SPECS.get(endpoint)
+    if spec is None:
+        raise RuntimeError(f"missing_validation_spec:{endpoint}")
+    return spec
+
+
 def _trace_status_for_result(result_status: str) -> str:
     if result_status == "success":
         return "compute_succeeded"
@@ -104,6 +122,7 @@ async def route_request(
         session=session,
         endpoint=endpoint,
         force_failure=force_failure,
+        validation_spec=_validation_spec(endpoint),
     )
     logger.info(
         "llm_route_boundary",
@@ -124,6 +143,8 @@ async def route_request(
         "blocked_reason": result.block_reason,
         "failure_reason": result.failure_reason,
         "was_cached": result.was_cached,
+        "validation_code": result.validation_code,
+        "validation_stage": result.validation_stage,
     }
 
 
@@ -140,6 +161,7 @@ async def generate_explanation(
         session=session,
         endpoint=endpoint,
         force_failure=force_failure,
+        validation_spec=_validation_spec(endpoint),
     )
     logger.info(
         "llm_explanation_boundary",
@@ -161,6 +183,8 @@ async def generate_explanation(
         "blocked_reason": result.block_reason,
         "failure_reason": result.failure_reason,
         "was_cached": result.was_cached,
+        "validation_code": result.validation_code,
+        "validation_stage": result.validation_stage,
     }
 
 
@@ -183,11 +207,23 @@ async def run_investigation(
         tenant_id=payload.tenant_id,
         job_id=authority_job.id,
     )
+    validation_context = build_validation_context(
+        feature_surface="investigation",
+        request_id=payload.request_id,
+        correlation_id=payload.correlation_id,
+        deterministic_truth={
+            "authority_status": 1,
+            "authority_job_id": str(authority_job.id),
+        },
+        deterministic_truth_sources=["investigation_jobs"],
+    )
     result = await _PROVIDER_BOUNDARY.complete(
         model=payload,
         session=session,
         endpoint=endpoint,
         force_failure=force_failure,
+        validation_spec=_validation_spec(endpoint),
+        validation_context=validation_context.model_dump(mode="json"),
     )
     query = f"provider:{payload.request_id}"
     trace_status = _trace_status_for_result(result.status)
@@ -328,6 +364,8 @@ async def run_investigation(
         "blocked_reason": result.block_reason,
         "failure_reason": effective_failure_reason,
         "was_cached": result.was_cached,
+        "validation_code": result.validation_code,
+        "validation_stage": result.validation_stage,
     }
 
 
@@ -350,11 +388,25 @@ async def optimize_budget(
         tenant_id=payload.tenant_id,
         job_id=authority_job.id,
     )
+    optimization_goal = str(payload.prompt.get("optimization_goal", "maximize_roas"))
+    validation_context = build_validation_context(
+        feature_surface="budget",
+        request_id=payload.request_id,
+        correlation_id=payload.correlation_id,
+        deterministic_truth={
+            "authority_status": 1,
+            "authority_job_id": str(authority_job.id),
+            "optimization_goal": optimization_goal,
+        },
+        deterministic_truth_sources=["budget_jobs"],
+    )
     result = await _PROVIDER_BOUNDARY.complete(
         model=payload,
         session=session,
         endpoint=endpoint,
         force_failure=force_failure,
+        validation_spec=_validation_spec(endpoint),
+        validation_context=validation_context.model_dump(mode="json"),
     )
     trace_status = _trace_status_for_result(result.status)
     existing = (
@@ -401,9 +453,6 @@ async def optimize_budget(
     effective_failure_reason = result.failure_reason
     if result.status == "success":
         try:
-            optimization_goal = str(
-                payload.prompt.get("optimization_goal", "maximize_roas")
-            )
             authority_payload = build_budget_authority_payload(
                 request_id=payload.request_id,
                 correlation_id=payload.correlation_id,
@@ -496,4 +545,6 @@ async def optimize_budget(
         "blocked_reason": result.block_reason,
         "failure_reason": effective_failure_reason,
         "was_cached": result.was_cached,
+        "validation_code": result.validation_code,
+        "validation_stage": result.validation_stage,
     }

@@ -29,6 +29,11 @@ except ModuleNotFoundError:
 from app.core.config import settings
 from app.db.session import set_tenant_guc_async, set_user_guc_async
 from app.llm.complexity_router import RoutingDecision, route_request
+from app.llm.output_validation import (
+    OutputValidationResult,
+    ProviderOutputValidationSpec,
+    validate_provider_output_text,
+)
 from app.models.llm import (
     LLMBreakerState,
     LLMBudgetReservation,
@@ -38,6 +43,7 @@ from app.models.llm import (
     LLMSemanticCache,
 )
 from app.schemas.llm_payloads import LLMTaskPayload
+from app.services.llm_validation_failures import LLMValidationFailureService
 
 
 def _month_start_utc(occurred_at: datetime) -> date:
@@ -92,11 +98,15 @@ class ProviderBoundaryResult:
     block_reason: str | None = None
     failure_reason: str | None = None
     response_metadata: Mapping[str, Any] | None = None
+    validation_code: str | None = None
+    validation_stage: str | None = None
+    validated_output: Mapping[str, Any] | None = None
 
 
 class SkeldirLLMProvider:
     boundary_id = "b07_p3_aisuite_chokepoint"
     breaker_key = "llm-provider"
+    _validation_failure_service = LLMValidationFailureService()
 
     async def _db_now(self, session: AsyncSession) -> datetime:
         now = (await session.execute(text("SELECT now()"))).scalar_one()
@@ -111,6 +121,8 @@ class SkeldirLLMProvider:
         session: AsyncSession,
         endpoint: str,
         force_failure: bool = False,
+        validation_spec: ProviderOutputValidationSpec | None = None,
+        validation_context: Mapping[str, Any] | None = None,
     ) -> ProviderBoundaryResult:
         await self._ensure_rls_context(session, model.tenant_id, model.user_id)
 
@@ -153,6 +165,7 @@ class SkeldirLLMProvider:
                 api_call_id=api_call_id,
                 request_id=request_id,
                 correlation_id=correlation_id,
+                validation_spec=validation_spec,
             )
 
         # Emergency stop-path: block before reservation/cache/provider call while keeping
@@ -259,69 +272,112 @@ class SkeldirLLMProvider:
             )
 
         cache_enabled = bool(prompt.get("cache_enabled", True))
+        cache_validation_failed = False
         if cache_enabled:
             hit = await self._cache_hit(
                 session, model.tenant_id, model.user_id, endpoint, key, watermark
             )
             if hit is not None:
-                await self._release(
-                    session,
-                    model.tenant_id,
-                    model.user_id,
-                    endpoint,
-                    request_id,
-                    month,
-                    reservation,
+                cache_validation = self._validate_output_text(
+                    raw_output_text=str(hit.response_text),
+                    validation_spec=validation_spec,
+                    stage="cache",
                 )
-                usage = {
-                    "input_tokens": int(hit.input_tokens),
-                    "output_tokens": int(hit.output_tokens),
-                    "cost_cents": 0,
-                    "latency_ms": 0,
-                }
-                await self._finalize_success(
-                    session=session,
-                    api_call_id=api_call_id,
-                    provider=str(hit.provider),
-                    model_name=str(hit.model),
-                    output_text=str(hit.response_text),
-                    usage=usage,
-                    was_cached=True,
-                    response_metadata=hit.response_metadata_ref or {},
-                    reasoning_trace=hit.reasoning_trace_ref or {},
-                    reservation=reservation,
-                    settled=0,
-                    breaker_state="closed",
-                )
-                await self._write_call_audit(
+                if cache_validation.ok:
+                    await self._mark_cache_hit(session, hit)
+                    await self._release(
+                        session,
+                        model.tenant_id,
+                        model.user_id,
+                        endpoint,
+                        request_id,
+                        month,
+                        reservation,
+                    )
+                    usage = {
+                        "input_tokens": int(hit.input_tokens),
+                        "output_tokens": int(hit.output_tokens),
+                        "cost_cents": 0,
+                        "latency_ms": 0,
+                    }
+                    cached_metadata = dict(hit.response_metadata_ref or {})
+                    cached_metadata["boundary_id"] = self.boundary_id
+                    cached_metadata["validation_code"] = cache_validation.code
+                    cached_metadata["validation_stage"] = cache_validation.stage
+                    cached_metadata["validation_schema_key"] = cache_validation.schema_key
+                    cached_metadata["normalization_source"] = (
+                        cache_validation.normalization_source
+                    )
+                    await self._finalize_success(
+                        session=session,
+                        api_call_id=api_call_id,
+                        provider=str(hit.provider),
+                        model_name=str(hit.model),
+                        output_text=cache_validation.normalized_output_text,
+                        usage=usage,
+                        was_cached=True,
+                        response_metadata=cached_metadata,
+                        reasoning_trace=hit.reasoning_trace_ref or {},
+                        reservation=reservation,
+                        settled=0,
+                        breaker_state="closed",
+                    )
+                    await self._write_call_audit(
+                        session=session,
+                        tenant_id=model.tenant_id,
+                        user_id=model.user_id,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        requested_model=requested_model,
+                        resolved_model=str(hit.model),
+                        estimated_cost_cents=0,
+                        decision="ALLOW",
+                        reason="cache_hit",
+                        input_tokens=int(hit.input_tokens),
+                        output_tokens=int(hit.output_tokens),
+                        prompt_fingerprint=prompt_fingerprint,
+                    )
+                    await session.commit()
+                    return ProviderBoundaryResult(
+                        provider=str(hit.provider),
+                        model=str(hit.model),
+                        output_text=cache_validation.normalized_output_text,
+                        reasoning_trace=hit.reasoning_trace_ref,
+                        usage=usage,
+                        status="success",
+                        was_cached=True,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        api_call_id=api_call_id,
+                        response_metadata=cached_metadata,
+                        validation_code=cache_validation.code,
+                        validation_stage=cache_validation.stage,
+                        validated_output=cache_validation.normalized_payload,
+                    )
+
+                cache_validation_failed = True
+                await self._record_validation_failure(
                     session=session,
                     tenant_id=model.tenant_id,
-                    user_id=model.user_id,
+                    endpoint=endpoint,
+                    validation_error=f"cache_{cache_validation.code}",
                     request_id=request_id,
                     correlation_id=correlation_id,
-                    requested_model=requested_model,
-                    resolved_model=str(hit.model),
-                    estimated_cost_cents=0,
-                    decision="ALLOW",
-                    reason="cache_hit",
-                    input_tokens=int(hit.input_tokens),
-                    output_tokens=int(hit.output_tokens),
-                    prompt_fingerprint=prompt_fingerprint,
+                    request_payload={
+                        "request_id": request_id,
+                        "correlation_id": correlation_id,
+                        "endpoint": endpoint,
+                        "validation_schema_key": cache_validation.schema_key,
+                        "stage": "cache",
+                    },
+                    response_payload={
+                        "provider": str(hit.provider),
+                        "model": str(hit.model),
+                        "output_text": str(hit.response_text),
+                        "validation_error": cache_validation.error_detail,
+                    },
                 )
-                await session.commit()
-                return ProviderBoundaryResult(
-                    provider=str(hit.provider),
-                    model=str(hit.model),
-                    output_text=str(hit.response_text),
-                    reasoning_trace=hit.reasoning_trace_ref,
-                    usage=usage,
-                    status="success",
-                    was_cached=True,
-                    request_id=request_id,
-                    correlation_id=correlation_id,
-                    api_call_id=api_call_id,
-                    response_metadata=hit.response_metadata_ref,
-                )
+                await self._invalidate_cache_row(session, hit)
 
         if await self._breaker_open(session, model.tenant_id, model.user_id, now):
             await self._release(
@@ -359,24 +415,160 @@ class SkeldirLLMProvider:
         await session.commit()
 
         timeout_s = max(0.001, int(settings.LLM_PROVIDER_TIMEOUT_MS) / 1000.0)
-        started = time.perf_counter()
+        max_validation_attempts = max(
+            1, int(validation_spec.max_attempts) if validation_spec is not None else 1
+        )
+        total_usage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_cents": 0,
+            "latency_ms": 0,
+        }
+        attempts_executed = 0
+        last_payload: Mapping[str, Any] | None = None
+        last_validation: OutputValidationResult | None = None
+        successful_payload: Mapping[str, Any] | None = None
+        successful_validation: OutputValidationResult | None = None
         try:
-            payload = await asyncio.wait_for(
-                self._provider_call(
+            for attempt in range(1, max_validation_attempts + 1):
+                attempts_executed = attempt
+                started = time.perf_counter()
+                payload = await asyncio.wait_for(
+                    self._provider_call(
+                        requested_model=requested_model,
+                        prompt=prompt,
+                        reservation=reservation,
+                    ),
+                    timeout=timeout_s,
+                )
+                if force_failure:
+                    raise RuntimeError("forced_failure_after_provider_call")
+
+                usage = dict(payload.get("usage", {}))
+                usage.setdefault("input_tokens", 0)
+                usage.setdefault("output_tokens", 0)
+                usage.setdefault("cost_cents", 0)
+                usage["latency_ms"] = max(1, int((time.perf_counter() - started) * 1000))
+                total_usage["input_tokens"] += max(0, int(usage.get("input_tokens", 0)))
+                total_usage["output_tokens"] += max(
+                    0, int(usage.get("output_tokens", 0))
+                )
+                total_usage["cost_cents"] += max(0, int(usage.get("cost_cents", 0)))
+                total_usage["latency_ms"] += max(0, int(usage.get("latency_ms", 0)))
+
+                last_payload = payload
+                validation = self._validate_output_text(
+                    raw_output_text=str(payload.get("output_text", "")),
+                    validation_spec=validation_spec,
+                    stage="provider",
+                )
+                last_validation = validation
+                if validation.ok:
+                    normalized_payload = dict(payload)
+                    normalized_payload["output_text"] = validation.normalized_output_text
+                    successful_payload = normalized_payload
+                    successful_validation = validation
+                    break
+
+                await self._record_validation_failure(
+                    session=session,
+                    tenant_id=model.tenant_id,
+                    endpoint=endpoint,
+                    validation_error=validation.code,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                    request_payload={
+                        "request_id": request_id,
+                        "correlation_id": correlation_id,
+                        "endpoint": endpoint,
+                        "attempt": attempt,
+                        "max_attempts": max_validation_attempts,
+                        "validation_schema_key": validation.schema_key,
+                        "validation_context": dict(validation_context or {}),
+                    },
+                    response_payload={
+                        "provider": str(payload.get("provider", "unknown")),
+                        "model": str(payload.get("model", requested_model)),
+                        "output_text": str(payload.get("output_text", "")),
+                        "validation_error": validation.error_detail,
+                    },
+                )
+
+            if successful_payload is None:
+                failed_at = await self._db_now(session)
+                validation_reason = "validation_failed"
+                if last_validation is not None:
+                    validation_reason = (
+                        "validation_normalization_failed"
+                        if last_validation.code == "normalization_failed"
+                        else "validation_schema_failed"
+                    )
+                await self._ensure_rls_context(session, model.tenant_id, model.user_id)
+                settled = min(max(0, int(total_usage["cost_cents"])), reservation)
+                await self._settle(
+                    session,
+                    model.tenant_id,
+                    model.user_id,
+                    endpoint,
+                    request_id,
+                    month,
+                    reservation,
+                    settled,
+                )
+                await self._breaker_success(session, model.tenant_id, model.user_id)
+                settled_at = await self._db_now(session)
+                await self._hourly_record(
+                    session, model.tenant_id, model.user_id, settled_at, settled
+                )
+                await self._monthly_cost_record(
+                    session,
+                    model.tenant_id,
+                    model.user_id,
+                    str((last_payload or {}).get("model") or requested_model),
+                    settled,
+                    created_at,
+                )
+                await self._apply_breaker_failure_accounting(
+                    session=session,
+                    tenant_id=model.tenant_id,
+                    user_id=model.user_id,
+                    failed_at=failed_at,
+                    failure_reason=validation_reason,
+                )
+                await self._finalize_failed(session, api_call_id, validation_reason)
+                await self._write_call_audit(
+                    session=session,
+                    tenant_id=model.tenant_id,
+                    user_id=model.user_id,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
                     requested_model=requested_model,
-                    prompt=prompt,
-                    reservation=reservation,
-                ),
-                timeout=timeout_s,
-            )
-            if force_failure:
-                raise RuntimeError("forced_failure_after_provider_call")
-            usage = dict(payload.get("usage", {}))
-            usage.setdefault("input_tokens", 0)
-            usage.setdefault("output_tokens", 0)
-            usage.setdefault("cost_cents", 0)
-            usage["latency_ms"] = max(1, int((time.perf_counter() - started) * 1000))
-            settled = min(max(0, int(usage["cost_cents"])), reservation)
+                    resolved_model=str((last_payload or {}).get("model") or requested_model),
+                    estimated_cost_cents=settled,
+                    decision="ALLOW",
+                    reason=validation_reason,
+                    input_tokens=int(total_usage.get("input_tokens", 0)),
+                    output_tokens=int(total_usage.get("output_tokens", 0)),
+                    prompt_fingerprint=prompt_fingerprint,
+                )
+                await session.commit()
+                return ProviderBoundaryResult(
+                    provider=str((last_payload or {}).get("provider") or "validation"),
+                    model=str((last_payload or {}).get("model") or requested_model),
+                    output_text="",
+                    reasoning_trace=None,
+                    usage=total_usage,
+                    status="failed",
+                    was_cached=False,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                    api_call_id=api_call_id,
+                    failure_reason=validation_reason,
+                    validation_code=validation_reason.removeprefix("validation_"),
+                    validation_stage="provider",
+                )
+
+            settled = min(max(0, int(total_usage["cost_cents"])), reservation)
             settled_at = await self._db_now(session)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._settle(
@@ -397,11 +589,27 @@ class SkeldirLLMProvider:
                 session,
                 model.tenant_id,
                 model.user_id,
-                str(payload["model"]),
+                str(successful_payload["model"]),
                 settled,
                 created_at,
             )
+            metadata = dict(successful_payload.get("response_metadata", {}))
+            metadata["boundary_id"] = self.boundary_id
+            metadata["validation_code"] = successful_validation.code if successful_validation else "success"
+            metadata["validation_stage"] = successful_validation.stage if successful_validation else "provider"
+            metadata["validation_schema_key"] = (
+                successful_validation.schema_key if successful_validation else None
+            )
+            metadata["normalization_source"] = (
+                successful_validation.normalization_source
+                if successful_validation
+                else None
+            )
+            metadata["validation_attempts"] = attempts_executed
+            metadata["cache_invalidated"] = cache_validation_failed
             if cache_enabled:
+                cache_payload = dict(successful_payload)
+                cache_payload["response_metadata"] = metadata
                 await self._cache_write(
                     session,
                     model.tenant_id,
@@ -409,21 +617,19 @@ class SkeldirLLMProvider:
                     endpoint,
                     key,
                     watermark,
-                    payload,
-                    usage,
+                    cache_payload,
+                    total_usage,
                 )
-            metadata = dict(payload.get("response_metadata", {}))
-            metadata["boundary_id"] = self.boundary_id
             await self._finalize_success(
                 session=session,
                 api_call_id=api_call_id,
-                provider=str(payload["provider"]),
-                model_name=str(payload["model"]),
-                output_text=str(payload["output_text"]),
-                usage=usage,
+                provider=str(successful_payload["provider"]),
+                model_name=str(successful_payload["model"]),
+                output_text=str(successful_payload["output_text"]),
+                usage=total_usage,
                 was_cached=False,
                 response_metadata=metadata,
-                reasoning_trace=payload.get("reasoning_trace") or {},
+                reasoning_trace=successful_payload.get("reasoning_trace") or {},
                 reservation=reservation,
                 settled=settled,
                 breaker_state="closed",
@@ -435,27 +641,34 @@ class SkeldirLLMProvider:
                 request_id=request_id,
                 correlation_id=correlation_id,
                 requested_model=requested_model,
-                resolved_model=str(payload["model"]),
+                resolved_model=str(successful_payload["model"]),
                 estimated_cost_cents=settled,
                 decision="ALLOW",
                 reason="success",
-                input_tokens=int(usage.get("input_tokens", 0)),
-                output_tokens=int(usage.get("output_tokens", 0)),
+                input_tokens=int(total_usage.get("input_tokens", 0)),
+                output_tokens=int(total_usage.get("output_tokens", 0)),
                 prompt_fingerprint=prompt_fingerprint,
             )
             await session.commit()
             return ProviderBoundaryResult(
-                provider=str(payload["provider"]),
-                model=str(payload["model"]),
-                output_text=str(payload["output_text"]),
-                reasoning_trace=payload.get("reasoning_trace"),
-                usage=usage,
+                provider=str(successful_payload["provider"]),
+                model=str(successful_payload["model"]),
+                output_text=str(successful_payload["output_text"]),
+                reasoning_trace=successful_payload.get("reasoning_trace"),
+                usage=total_usage,
                 status="success",
                 was_cached=False,
                 request_id=request_id,
                 correlation_id=correlation_id,
                 api_call_id=api_call_id,
                 response_metadata=metadata,
+                validation_code=successful_validation.code if successful_validation else "success",
+                validation_stage=successful_validation.stage if successful_validation else "provider",
+                validated_output=(
+                    successful_validation.normalized_payload
+                    if successful_validation is not None
+                    else None
+                ),
             )
         except TimeoutError:
             failed_at = await self._db_now(session)
@@ -705,6 +918,61 @@ class SkeldirLLMProvider:
             block_reason=reason,
         )
 
+    def _validate_output_text(
+        self,
+        *,
+        raw_output_text: str,
+        validation_spec: ProviderOutputValidationSpec | None,
+        stage: str,
+    ) -> OutputValidationResult:
+        return validate_provider_output_text(
+            raw_output_text=raw_output_text,
+            validation_spec=validation_spec,
+            stage=stage,
+        )
+
+    async def _record_validation_failure(
+        self,
+        *,
+        session: AsyncSession,
+        tenant_id: UUID,
+        endpoint: str,
+        validation_error: str,
+        request_id: str,
+        correlation_id: str,
+        request_payload: Mapping[str, Any],
+        response_payload: Mapping[str, Any] | None,
+    ) -> None:
+        payload = dict(request_payload)
+        payload.setdefault("request_id", request_id)
+        payload.setdefault("correlation_id", correlation_id)
+        await self._validation_failure_service.record_failure(
+            session,
+            tenant_id=tenant_id,
+            endpoint=endpoint,
+            validation_error=validation_error,
+            request_payload=payload,
+            response_payload=dict(response_payload or {}),
+        )
+
+    async def _invalidate_cache_row(
+        self, session: AsyncSession, row: LLMSemanticCache
+    ) -> None:
+        row.watermark = int(row.watermark) + 1
+        row.response_text = ""
+        metadata = dict(row.response_metadata_ref or {})
+        metadata["cache_invalidated"] = True
+        row.response_metadata_ref = metadata
+        row.reasoning_trace_ref = {}
+        row.updated_at = await self._db_now(session)
+        await session.flush()
+
+    async def _mark_cache_hit(
+        self, session: AsyncSession, row: LLMSemanticCache
+    ) -> None:
+        row.hit_count = int(row.hit_count) + 1
+        row.updated_at = await self._db_now(session)
+
     async def _claim(
         self,
         *,
@@ -786,14 +1054,47 @@ class SkeldirLLMProvider:
         api_call_id: UUID,
         request_id: str,
         correlation_id: str,
+        validation_spec: ProviderOutputValidationSpec | None = None,
     ) -> ProviderBoundaryResult:
         row = await session.get(LLMApiCall, api_call_id)
         if row is None:
             raise RuntimeError("missing llm_api_calls row after idempotency replay")
+        output_text = (row.response_metadata_ref or {}).get("output_text", "")
+        replay_validation = self._validate_output_text(
+            raw_output_text=str(output_text),
+            validation_spec=validation_spec,
+            stage="replay",
+        )
+        if row.status == "success" and not replay_validation.ok:
+            return ProviderBoundaryResult(
+                provider=row.provider,
+                model=row.model,
+                output_text="",
+                reasoning_trace=row.reasoning_trace_ref,
+                usage={
+                    "input_tokens": int(row.input_tokens),
+                    "output_tokens": int(row.output_tokens),
+                    "cost_cents": int(row.cost_cents),
+                    "latency_ms": int(row.latency_ms),
+                },
+                status="failed",
+                was_cached=bool(row.was_cached),
+                request_id=request_id,
+                correlation_id=correlation_id,
+                api_call_id=api_call_id,
+                failure_reason=f"validation_replay_{replay_validation.code}",
+                response_metadata=row.response_metadata_ref,
+                validation_code=replay_validation.code,
+                validation_stage=replay_validation.stage,
+            )
         return ProviderBoundaryResult(
             provider=row.provider,
             model=row.model,
-            output_text=(row.response_metadata_ref or {}).get("output_text", ""),
+            output_text=(
+                replay_validation.normalized_output_text
+                if row.status == "success"
+                else str(output_text or "")
+            ),
             reasoning_trace=row.reasoning_trace_ref,
             usage={
                 "input_tokens": int(row.input_tokens),
@@ -809,6 +1110,15 @@ class SkeldirLLMProvider:
             block_reason=row.block_reason,
             failure_reason=row.failure_reason,
             response_metadata=row.response_metadata_ref,
+            validation_code=(
+                replay_validation.code if row.status == "success" else None
+            ),
+            validation_stage=(
+                replay_validation.stage if row.status == "success" else None
+            ),
+            validated_output=(
+                replay_validation.normalized_payload if row.status == "success" else None
+            ),
         )
 
     async def _hourly_block_reason(
@@ -1149,8 +1459,6 @@ class SkeldirLLMProvider:
         )
         if row is None or int(row.watermark) != int(watermark):
             return None
-        row.hit_count = int(row.hit_count) + 1
-        row.updated_at = await self._db_now(session)
         return row
 
     async def _cache_write(
