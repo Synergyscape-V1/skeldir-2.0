@@ -374,7 +374,7 @@ def test_eg65_budget_pressure_downgrade_and_negative_control(tmp_path):
 async def test_eg63_chokepoint_enforcement_via_worker_paths(monkeypatch, test_tenant):
     calls: list[str] = []
 
-    async def _fake_complete(*, model, session, endpoint, force_failure=False):
+    async def _fake_complete(*, model, session, endpoint, force_failure=False, **_kwargs):
         calls.append(endpoint)
         return ProviderBoundaryResult(
             provider="stub",
