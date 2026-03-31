@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -49,6 +50,12 @@ class OutputValidationResult:
     schema_key: str | None = None
     normalization_source: str | None = None
     error_detail: str | None = None
+    numeric_tolerance_ratio: float | None = None
+    numeric_mismatch_count: int = 0
+
+
+NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO = 0.05
+NUMERIC_AUTHORITY_POLICY_ID = "b1.6-p3-numeric-authority-v1"
 
 
 ROUTE_VALIDATION_SPEC = ProviderOutputValidationSpec(
@@ -96,6 +103,7 @@ def validate_provider_output_text(
     raw_output_text: str,
     validation_spec: ProviderOutputValidationSpec | None,
     stage: str,
+    validation_context: Mapping[str, Any] | None = None,
 ) -> OutputValidationResult:
     if validation_spec is None:
         return OutputValidationResult(
@@ -153,6 +161,24 @@ def validate_provider_output_text(
             error_detail=f"missing_or_empty_text_field:{validation_spec.text_field}",
         )
 
+    numeric_validation = _validate_numeric_authority(
+        normalized_payload=payload,
+        validation_context=validation_context,
+    )
+    if not numeric_validation["ok"]:
+        return OutputValidationResult(
+            ok=False,
+            code="numeric_mismatch",
+            stage=stage,
+            normalized_output_text="",
+            normalized_payload=None,
+            schema_key=validation_spec.schema_key,
+            normalization_source=str(normalized.get("source") or "unknown"),
+            error_detail=str(numeric_validation["error_detail"] or "numeric_mismatch"),
+            numeric_tolerance_ratio=float(numeric_validation["tolerance_ratio"]),
+            numeric_mismatch_count=int(numeric_validation["mismatch_count"]),
+        )
+
     return OutputValidationResult(
         ok=True,
         code="success",
@@ -161,6 +187,11 @@ def validate_provider_output_text(
         normalized_payload=payload,
         schema_key=validation_spec.schema_key,
         normalization_source=str(normalized.get("source") or "unknown"),
+        numeric_tolerance_ratio=(
+            float(numeric_validation["tolerance_ratio"])
+            if numeric_validation["active"]
+            else None
+        ),
     )
 
 
@@ -248,3 +279,214 @@ def _extract_first_json_object(text: str) -> str | None:
             if depth == 0:
                 return text[start : idx + 1]
     return None
+
+
+def _validate_numeric_authority(
+    *,
+    normalized_payload: Mapping[str, Any],
+    validation_context: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    context = validation_context if isinstance(validation_context, Mapping) else {}
+    bindings = _numeric_claim_bindings(context)
+    default_tolerance = _coerce_tolerance_ratio(
+        context.get("numeric_tolerance_ratio"),
+        default=NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO,
+    )
+    if not bindings:
+        return {
+            "ok": True,
+            "active": False,
+            "tolerance_ratio": default_tolerance,
+            "mismatch_count": 0,
+            "error_detail": None,
+        }
+
+    deterministic_truth = context.get("deterministic_truth")
+    truth_mapping = deterministic_truth if isinstance(deterministic_truth, Mapping) else {}
+    mismatches: list[str] = []
+    for binding in bindings:
+        expected = _extract_numeric_from_mapping(
+            truth_mapping,
+            str(binding["truth_path"]),
+        )
+        if expected is None:
+            continue
+        observed = _extract_numeric_claim(
+            normalized_payload=normalized_payload,
+            claim_path=str(binding["claim_path"]),
+        )
+        if observed is None:
+            continue
+        tolerance_ratio = _coerce_tolerance_ratio(
+            binding.get("tolerance_ratio"),
+            default=default_tolerance,
+        )
+        if _numeric_within_tolerance(
+            observed=observed,
+            expected=expected,
+            tolerance_ratio=tolerance_ratio,
+        ):
+            continue
+        delta = _relative_delta(observed=observed, expected=expected)
+        mismatches.append(
+            "claim_path="
+            + str(binding["claim_path"])
+            + ",truth_path="
+            + str(binding["truth_path"])
+            + ",expected="
+            + _format_numeric(expected)
+            + ",observed="
+            + _format_numeric(observed)
+            + ",tolerance_ratio="
+            + _format_numeric(tolerance_ratio)
+            + ",delta_ratio="
+            + _format_numeric(delta)
+        )
+
+    if mismatches:
+        return {
+            "ok": False,
+            "active": True,
+            "tolerance_ratio": default_tolerance,
+            "mismatch_count": len(mismatches),
+            "error_detail": f"numeric_authority_policy={NUMERIC_AUTHORITY_POLICY_ID};"
+            + ";".join(mismatches),
+        }
+    return {
+        "ok": True,
+        "active": True,
+        "tolerance_ratio": default_tolerance,
+        "mismatch_count": 0,
+        "error_detail": None,
+    }
+
+
+def _numeric_claim_bindings(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    bindings: list[dict[str, Any]] = []
+    raw_bindings = context.get("numeric_claim_bindings")
+    if isinstance(raw_bindings, list):
+        for entry in raw_bindings:
+            if not isinstance(entry, Mapping):
+                continue
+            claim_path = entry.get("claim_path")
+            truth_path = entry.get("truth_path")
+            if not isinstance(claim_path, str) or not claim_path.strip():
+                continue
+            if not isinstance(truth_path, str) or not truth_path.strip():
+                continue
+            bindings.append(
+                {
+                    "claim_path": claim_path.strip(),
+                    "truth_path": truth_path.strip(),
+                    "tolerance_ratio": entry.get("tolerance_ratio"),
+                }
+            )
+    if bindings:
+        return bindings
+
+    raw_paths = context.get("numeric_claim_paths")
+    if not isinstance(raw_paths, list):
+        return []
+    for path in raw_paths:
+        if isinstance(path, str) and path.strip():
+            normalized = path.strip()
+            bindings.append(
+                {
+                    "claim_path": normalized,
+                    "truth_path": normalized,
+                    "tolerance_ratio": None,
+                }
+            )
+    return bindings
+
+
+def _extract_numeric_claim(
+    *,
+    normalized_payload: Mapping[str, Any],
+    claim_path: str,
+) -> float | None:
+    direct = _extract_numeric_from_mapping(normalized_payload, claim_path)
+    if direct is not None:
+        return direct
+    first_key, _, label = claim_path.partition(".")
+    candidate_text = normalized_payload.get(first_key)
+    if not isinstance(candidate_text, str):
+        return None
+    if not label:
+        return _extract_first_number(candidate_text)
+    return _extract_labeled_number(candidate_text, label)
+
+
+def _extract_numeric_from_mapping(payload: Mapping[str, Any], path: str) -> float | None:
+    current: Any = payload
+    for segment in path.split("."):
+        if not segment:
+            return None
+        if not isinstance(current, Mapping) or segment not in current:
+            return None
+        current = current[segment]
+    return _coerce_numeric(current)
+
+
+def _extract_labeled_number(text: str, label: str) -> float | None:
+    normalized = re.escape(label.strip()).replace("\\_", r"[_\s-]*")
+    pattern = re.compile(
+        rf"(?i)\b{normalized}\b[^0-9+\-]*([-+]?\d[\d,]*(?:\.\d+)?)"
+    )
+    match = pattern.search(text)
+    if not match:
+        return None
+    return _coerce_numeric(match.group(1))
+
+
+def _extract_first_number(text: str) -> float | None:
+    match = re.search(r"([-+]?\d[\d,]*(?:\.\d+)?)", text)
+    if not match:
+        return None
+    return _coerce_numeric(match.group(1))
+
+
+def _coerce_numeric(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        candidate = value.strip().replace(",", "")
+        if not candidate:
+            return None
+        try:
+            return float(candidate)
+        except ValueError:
+            return None
+    return None
+
+
+def _numeric_within_tolerance(
+    *,
+    observed: float,
+    expected: float,
+    tolerance_ratio: float,
+) -> bool:
+    delta = abs(observed - expected)
+    if expected == 0:
+        return delta <= tolerance_ratio
+    return (delta / abs(expected)) <= tolerance_ratio
+
+
+def _relative_delta(*, observed: float, expected: float) -> float:
+    delta = abs(observed - expected)
+    if expected == 0:
+        return delta
+    return delta / abs(expected)
+
+
+def _coerce_tolerance_ratio(value: Any, *, default: float) -> float:
+    numeric = _coerce_numeric(value)
+    if numeric is None:
+        return default
+    return max(0.0, min(1.0, numeric))
+
+
+def _format_numeric(value: float) -> str:
+    return f"{value:.8f}".rstrip("0").rstrip(".")

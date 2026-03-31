@@ -214,33 +214,31 @@ def _failure_payload(job: InvestigationJob) -> InvestigationFailure | None:
 
 
 def _coerce_result_payload(job: InvestigationJob) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    def _validated_synthesis_or_none(candidate: Any) -> dict[str, Any] | None:
+        if not isinstance(candidate, dict):
+            return None
+        validation_state = candidate.get("validation_state")
+        if validation_state != "validated":
+            return None
+        return candidate
+
     payload = dict(job.result or {})
     findings = payload.get("deterministic_findings")
     synthesis = payload.get("llm_synthesis")
     if isinstance(findings, list) and findings:
-        return findings, synthesis if isinstance(synthesis, dict) else None
+        return findings, _validated_synthesis_or_none(synthesis)
 
     try:
         authority_payload = InvestigationResultAuthorityPayload.model_validate(payload)
+        synthesis_payload = authority_payload.llm_synthesis.model_dump(mode="json")
         return (
             authority_payload.deterministic_authority.deterministic_findings,
-            authority_payload.llm_synthesis.model_dump(mode="json"),
+            _validated_synthesis_or_none(synthesis_payload),
         )
     except ValidationError:
         pass
 
     observed_at = _as_utc(job.updated_at).isoformat().replace("+00:00", "Z")
-    llm_audit = payload.get("llm_audit")
-    if (
-        isinstance(llm_audit, dict)
-        and llm_audit.get("authority_class") == "audit_only_raw_provider_artifact"
-        and isinstance(llm_audit.get("provider_summary_raw"), str)
-    ):
-        summary = str(llm_audit.get("provider_summary_raw"))
-    elif isinstance(payload.get("provider_summary"), str):
-        summary = payload.get("provider_summary")
-    else:
-        summary = "Summary unavailable"
     fallback_findings = [
         {
             "finding_id": f"investigation-{job.id}",
@@ -258,14 +256,16 @@ def _coerce_result_payload(job: InvestigationJob) -> tuple[list[dict[str, Any]],
         }
     ]
     fallback_synthesis = {
-        "non_authoritative_summary": summary,
+        "validation_state": "rejected",
+        "non_authoritative_summary": "Synthesis unavailable pending authority validation.",
         "caveats": [
             "Synthesis is explanatory only and cannot override deterministic findings.",
+            "Unvalidated synthesis content is never surfaced on this response path.",
         ],
         "model": "unknown",
         "generated_at": observed_at,
     }
-    return fallback_findings, fallback_synthesis
+    return fallback_findings, _validated_synthesis_or_none(fallback_synthesis)
 
 
 def _contract_mode_enabled() -> bool:

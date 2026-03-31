@@ -59,10 +59,10 @@ async def test_b16_p1_investigation_persists_authority_contract(test_tenant: UUI
         assert job is not None
         contract = InvestigationResultAuthorityPayload.model_validate(job.result or {})
 
-    assert contract.authority_contract_version == "b1.6-p1"
+    assert contract.authority_contract_version == "b1.6-p3"
     assert contract.deterministic_authority.authority_class == "deterministic_authority"
     assert contract.llm_synthesis.authority_class == "validated_synthesis"
-    assert contract.llm_synthesis.validation_state == "pending_validation"
+    assert contract.llm_synthesis.validation_state == "validated"
     assert contract.llm_audit.authority_class == "audit_only_raw_provider_artifact"
     assert contract.llm_audit.provider_summary_raw == expected_summary
     assert contract.validation_context.feature_surface == "investigation"
@@ -101,10 +101,10 @@ async def test_b16_p1_budget_persists_authority_contract(test_tenant: UUID) -> N
         )
         contract = BudgetResultAuthorityPayload.model_validate(record.result or {})
 
-    assert contract.authority_contract_version == "b1.6-p1"
+    assert contract.authority_contract_version == "b1.6-p3"
     assert contract.deterministic_authority.authority_class == "deterministic_authority"
     assert contract.llm_synthesis.authority_class == "validated_synthesis"
-    assert contract.llm_synthesis.validation_state == "pending_validation"
+    assert contract.llm_synthesis.validation_state == "validated"
     assert contract.llm_audit.authority_class == "audit_only_raw_provider_artifact"
     assert contract.llm_audit.provider_summary_raw == expected_summary
     assert contract.validation_context.feature_surface == "budget"

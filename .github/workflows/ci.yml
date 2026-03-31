@@ -3281,6 +3281,12 @@ jobs:
           mkdir -p artifacts/b16-p2
           pytest -q backend/tests/test_b16_p2_validation_kernel.py | tee artifacts/b16-p2/b16_p2_kernel_proofs.log
 
+      - name: Run B1.6-P3 numeric authority enforcement gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b16-p3
+          pytest -q backend/tests/test_b16_p3_numeric_authority.py | tee artifacts/b16-p3/b16_p3_numeric_authority_proofs.log
+
       - name: Run B0.7 P6 router non-vacuity + choke-point gate
         run: |
           set -euo pipefail
