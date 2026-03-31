@@ -17,8 +17,12 @@ from app.llm.authority_contract import (
 )
 
 
-def _observed_at_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+def _normalized_observed_at(observed_at: datetime | str) -> str:
+    if isinstance(observed_at, str):
+        return observed_at
+    if observed_at.tzinfo is None:
+        return observed_at.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    return observed_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def build_validation_context(
@@ -45,10 +49,11 @@ def build_investigation_authority_payload(
     request_id: str,
     correlation_id: str,
     authority_job_id: UUID,
+    observed_at: datetime | str,
     provider_summary: str,
     model_name: str,
 ) -> InvestigationResultAuthorityPayload:
-    observed_at = _observed_at_iso()
+    observed_at_iso = _normalized_observed_at(observed_at)
     deterministic_findings = [
         {
             "finding_id": f"investigation-{authority_job_id}",
@@ -60,7 +65,7 @@ def build_investigation_authority_payload(
                     "metric_name": "authority_status",
                     "metric_value": 1,
                     "source_table": "investigation_jobs",
-                    "observed_at": observed_at,
+                    "observed_at": observed_at_iso,
                 }
             ],
         }
@@ -90,7 +95,7 @@ def build_investigation_authority_payload(
                 "Numeric authority remains deterministic until B1.6 validation acceptance.",
             ],
             model=model_name,
-            generated_at=observed_at,
+            generated_at=observed_at_iso,
         ),
         llm_audit=AuditOnlyRawProviderArtifact(
             authority_class="audit_only_raw_provider_artifact",
@@ -105,11 +110,12 @@ def build_budget_authority_payload(
     request_id: str,
     correlation_id: str,
     authority_job_id: UUID,
+    observed_at: datetime | str,
     provider_summary: str,
     model_name: str,
     optimization_goal: str,
 ) -> BudgetResultAuthorityPayload:
-    observed_at = _observed_at_iso()
+    observed_at_iso = _normalized_observed_at(observed_at)
     deterministic_recommendation = {
         "optimization_goal": optimization_goal,
         "allocations": [],
@@ -119,10 +125,10 @@ def build_budget_authority_payload(
                 "channel": "aggregate",
                 "metric_value": 1,
                 "source_table": "budget_jobs",
-                "observed_at": observed_at,
+                "observed_at": observed_at_iso,
             }
         ],
-        "generated_at": observed_at,
+        "generated_at": observed_at_iso,
     }
     validation_context = build_validation_context(
         feature_surface="budget",
@@ -150,7 +156,7 @@ def build_budget_authority_payload(
                 "Numeric authority remains deterministic until B1.6 validation acceptance.",
             ],
             model=model_name,
-            generated_at=observed_at,
+            generated_at=observed_at_iso,
         ),
         llm_audit=AuditOnlyRawProviderArtifact(
             authority_class="audit_only_raw_provider_artifact",

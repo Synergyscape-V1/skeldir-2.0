@@ -241,6 +241,7 @@ async def run_investigation(
                 request_id=payload.request_id,
                 correlation_id=payload.correlation_id,
                 authority_job_id=authority_job.id,
+                observed_at=authority_job.updated_at,
                 provider_summary=result.output_text,
                 model_name=result.model,
             )
@@ -407,6 +408,7 @@ async def optimize_budget(
                 request_id=payload.request_id,
                 correlation_id=payload.correlation_id,
                 authority_job_id=authority_job.id,
+                observed_at=authority_job.updated_at,
                 provider_summary=result.output_text,
                 model_name=result.model,
                 optimization_goal=optimization_goal,
