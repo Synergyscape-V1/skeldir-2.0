@@ -166,6 +166,7 @@ class SkeldirLLMProvider:
                 request_id=request_id,
                 correlation_id=correlation_id,
                 validation_spec=validation_spec,
+                validation_context=validation_context,
             )
 
         # Emergency stop-path: block before reservation/cache/provider call while keeping
@@ -282,6 +283,7 @@ class SkeldirLLMProvider:
                     raw_output_text=str(hit.response_text),
                     validation_spec=validation_spec,
                     stage="cache",
+                    validation_context=validation_context,
                 )
                 if cache_validation.ok:
                     await self._mark_cache_hit(session, hit)
@@ -369,6 +371,7 @@ class SkeldirLLMProvider:
                         "endpoint": endpoint,
                         "validation_schema_key": cache_validation.schema_key,
                         "stage": "cache",
+                        "validation_context": dict(validation_context or {}),
                     },
                     response_payload={
                         "provider": str(hit.provider),
@@ -461,6 +464,7 @@ class SkeldirLLMProvider:
                     raw_output_text=str(payload.get("output_text", "")),
                     validation_spec=validation_spec,
                     stage="provider",
+                    validation_context=validation_context,
                 )
                 last_validation = validation
                 if validation.ok:
@@ -501,7 +505,11 @@ class SkeldirLLMProvider:
                     validation_reason = (
                         "validation_normalization_failed"
                         if last_validation.code == "normalization_failed"
-                        else "validation_schema_failed"
+                        else (
+                            "validation_schema_failed"
+                            if last_validation.code == "schema_failed"
+                            else "validation_numeric_mismatch"
+                        )
                     )
                 await self._ensure_rls_context(session, model.tenant_id, model.user_id)
                 settled = min(max(0, int(total_usage["cost_cents"])), reservation)
@@ -564,6 +572,19 @@ class SkeldirLLMProvider:
                     correlation_id=correlation_id,
                     api_call_id=api_call_id,
                     failure_reason=validation_reason,
+                    response_metadata={
+                        "raw_output_text": str((last_payload or {}).get("output_text") or ""),
+                        "validation_error": (
+                            last_validation.error_detail
+                            if last_validation is not None
+                            else None
+                        ),
+                        "validation_policy": (
+                            "b1.6-p3-numeric-authority-v1"
+                            if validation_reason == "validation_numeric_mismatch"
+                            else None
+                        ),
+                    },
                     validation_code=validation_reason.removeprefix("validation_"),
                     validation_stage="provider",
                 )
@@ -924,11 +945,13 @@ class SkeldirLLMProvider:
         raw_output_text: str,
         validation_spec: ProviderOutputValidationSpec | None,
         stage: str,
+        validation_context: Mapping[str, Any] | None = None,
     ) -> OutputValidationResult:
         return validate_provider_output_text(
             raw_output_text=raw_output_text,
             validation_spec=validation_spec,
             stage=stage,
+            validation_context=validation_context,
         )
 
     async def _record_validation_failure(
@@ -1055,6 +1078,7 @@ class SkeldirLLMProvider:
         request_id: str,
         correlation_id: str,
         validation_spec: ProviderOutputValidationSpec | None = None,
+        validation_context: Mapping[str, Any] | None = None,
     ) -> ProviderBoundaryResult:
         row = await session.get(LLMApiCall, api_call_id)
         if row is None:
@@ -1064,6 +1088,7 @@ class SkeldirLLMProvider:
             raw_output_text=str(output_text),
             validation_spec=validation_spec,
             stage="replay",
+            validation_context=validation_context,
         )
         if row.status == "success" and not replay_validation.ok:
             return ProviderBoundaryResult(

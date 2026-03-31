@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from app.llm.authority_contract import (
@@ -12,6 +12,7 @@ from app.llm.authority_contract import (
     BudgetResultAuthorityPayload,
     InvestigationDeterministicAuthority,
     InvestigationResultAuthorityPayload,
+    NumericClaimBinding,
     ValidationContext,
     ValidatedSynthesisArtifact,
 )
@@ -33,14 +34,28 @@ def build_validation_context(
     deterministic_truth: dict[str, Any],
     deterministic_truth_sources: list[str],
     numeric_claim_paths: list[str] | None = None,
+    numeric_claim_bindings: list[dict[str, Any] | NumericClaimBinding] | None = None,
+    numeric_tolerance_ratio: float = 0.05,
 ) -> ValidationContext:
+    parsed_bindings: list[NumericClaimBinding] = []
+    for raw_binding in numeric_claim_bindings or []:
+        if isinstance(raw_binding, NumericClaimBinding):
+            parsed_bindings.append(raw_binding)
+            continue
+        if isinstance(raw_binding, dict):
+            parsed_bindings.append(NumericClaimBinding.model_validate(raw_binding))
+    claim_paths = list(numeric_claim_paths or [])
+    if not claim_paths:
+        claim_paths = [binding.claim_path for binding in parsed_bindings]
     return ValidationContext(
         feature_surface=feature_surface,
         request_id=request_id,
         correlation_id=correlation_id,
         deterministic_truth=deterministic_truth,
         deterministic_truth_sources=deterministic_truth_sources,
-        numeric_claim_paths=numeric_claim_paths or [],
+        numeric_claim_paths=claim_paths,
+        numeric_claim_bindings=parsed_bindings,
+        numeric_tolerance_ratio=float(numeric_tolerance_ratio),
     )
 
 
@@ -52,6 +67,11 @@ def build_investigation_authority_payload(
     observed_at: datetime | str,
     provider_summary: str,
     model_name: str,
+    validation_context: ValidationContext | None = None,
+    synthesis_validation_state: Literal["pending_validation", "validated", "rejected"] = "validated",
+    synthesis_caveats: list[str] | None = None,
+    rejection_reason: str | None = None,
+    audit_provider_summary_raw: str | None = None,
 ) -> InvestigationResultAuthorityPayload:
     observed_at_iso = _normalized_observed_at(observed_at)
     deterministic_findings = [
@@ -70,7 +90,7 @@ def build_investigation_authority_payload(
             ],
         }
     ]
-    validation_context = build_validation_context(
+    validation_context = validation_context or build_validation_context(
         feature_surface="investigation",
         request_id=request_id,
         correlation_id=correlation_id,
@@ -80,6 +100,10 @@ def build_investigation_authority_payload(
         },
         deterministic_truth_sources=["investigation_jobs"],
     )
+    caveats = synthesis_caveats or [
+        "Synthesis is explanatory only and cannot override deterministic findings.",
+        "Numeric authority is enforced against deterministic truth.",
+    ]
     return InvestigationResultAuthorityPayload(
         request_id=request_id,
         deterministic_authority=InvestigationDeterministicAuthority(
@@ -88,18 +112,16 @@ def build_investigation_authority_payload(
         ),
         llm_synthesis=ValidatedSynthesisArtifact(
             authority_class="validated_synthesis",
-            validation_state="pending_validation",
+            validation_state=synthesis_validation_state,
             non_authoritative_summary=provider_summary,
-            caveats=[
-                "Synthesis is explanatory only and cannot override deterministic findings.",
-                "Numeric authority remains deterministic until B1.6 validation acceptance.",
-            ],
+            caveats=caveats,
             model=model_name,
             generated_at=observed_at_iso,
+            rejection_reason=rejection_reason,
         ),
         llm_audit=AuditOnlyRawProviderArtifact(
             authority_class="audit_only_raw_provider_artifact",
-            provider_summary_raw=provider_summary,
+            provider_summary_raw=audit_provider_summary_raw or provider_summary,
         ),
         validation_context=validation_context,
     )
@@ -114,6 +136,11 @@ def build_budget_authority_payload(
     provider_summary: str,
     model_name: str,
     optimization_goal: str,
+    validation_context: ValidationContext | None = None,
+    synthesis_validation_state: Literal["pending_validation", "validated", "rejected"] = "validated",
+    synthesis_caveats: list[str] | None = None,
+    rejection_reason: str | None = None,
+    audit_provider_summary_raw: str | None = None,
 ) -> BudgetResultAuthorityPayload:
     observed_at_iso = _normalized_observed_at(observed_at)
     deterministic_recommendation = {
@@ -130,7 +157,7 @@ def build_budget_authority_payload(
         ],
         "generated_at": observed_at_iso,
     }
-    validation_context = build_validation_context(
+    validation_context = validation_context or build_validation_context(
         feature_surface="budget",
         request_id=request_id,
         correlation_id=correlation_id,
@@ -141,6 +168,10 @@ def build_budget_authority_payload(
         },
         deterministic_truth_sources=["budget_jobs"],
     )
+    caveats = synthesis_caveats or [
+        "Synthesis is explanatory only and cannot override deterministic recommendation fields.",
+        "Numeric authority is enforced against deterministic truth.",
+    ]
     return BudgetResultAuthorityPayload(
         request_id=request_id,
         deterministic_authority=BudgetDeterministicAuthority(
@@ -149,18 +180,16 @@ def build_budget_authority_payload(
         ),
         llm_synthesis=ValidatedSynthesisArtifact(
             authority_class="validated_synthesis",
-            validation_state="pending_validation",
+            validation_state=synthesis_validation_state,
             non_authoritative_summary=provider_summary,
-            caveats=[
-                "Synthesis is explanatory only and cannot override deterministic recommendation fields.",
-                "Numeric authority remains deterministic until B1.6 validation acceptance.",
-            ],
+            caveats=caveats,
             model=model_name,
             generated_at=observed_at_iso,
+            rejection_reason=rejection_reason,
         ),
         llm_audit=AuditOnlyRawProviderArtifact(
             authority_class="audit_only_raw_provider_artifact",
-            provider_summary_raw=provider_summary,
+            provider_summary_raw=audit_provider_summary_raw or provider_summary,
         ),
         validation_context=validation_context,
     )
