@@ -52,7 +52,7 @@ async def test_b15_p1_investigation_worker_success_stops_at_ready_for_review(
 ) -> None:
     request_id = f"b15-p1-investigation-{uuid4().hex[:8]}"
 
-    async def _fake_complete(*, model, session, endpoint, force_failure=False):
+    async def _fake_complete(*, model, session, endpoint, force_failure=False, **_kwargs):
         return _provider_result(status="success", request_id=model.request_id)
 
     monkeypatch.setattr(
@@ -113,7 +113,7 @@ async def test_b15_p1_budget_worker_success_stops_at_ready_for_review(
 ) -> None:
     request_id = f"b15-p1-budget-{uuid4().hex[:8]}"
 
-    async def _fake_complete(*, model, session, endpoint, force_failure=False):
+    async def _fake_complete(*, model, session, endpoint, force_failure=False, **_kwargs):
         return _provider_result(status="success", request_id=model.request_id)
 
     monkeypatch.setattr(
@@ -189,4 +189,3 @@ async def test_b15_p1_budget_complete_requires_approved_state(test_tenant) -> No
                 tenant_id=test_tenant,
                 job_id=job.id,
             )
-

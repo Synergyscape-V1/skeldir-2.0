@@ -3275,6 +3275,12 @@ jobs:
           mkdir -p artifacts/b16-p1
           pytest -q backend/tests/test_b16_p1_authority_contract.py backend/tests/test_b16_p1_validation_failure_sink_runtime.py backend/tests/test_b16_p1_breaker_accounting_policy.py | tee artifacts/b16-p1/b16_p1_proofs.log
 
+      - name: Run B1.6-P2 canonical validation kernel gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b16-p2
+          pytest -q backend/tests/test_b16_p2_validation_kernel.py | tee artifacts/b16-p2/b16_p2_kernel_proofs.log
+
       - name: Run B0.7 P6 router non-vacuity + choke-point gate
         run: |
           set -euo pipefail
