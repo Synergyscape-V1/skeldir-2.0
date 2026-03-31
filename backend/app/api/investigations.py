@@ -7,11 +7,12 @@ from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.problem_details import problem_details_response
 from app.db.deps import get_db_session
+from app.llm.authority_contract import InvestigationResultAuthorityPayload
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.security.auth import AuthContext, get_auth_context
 from app.services.centaur_lifecycle import LifecycleStatus
@@ -219,8 +220,27 @@ def _coerce_result_payload(job: InvestigationJob) -> tuple[list[dict[str, Any]],
     if isinstance(findings, list) and findings:
         return findings, synthesis if isinstance(synthesis, dict) else None
 
+    try:
+        authority_payload = InvestigationResultAuthorityPayload.model_validate(payload)
+        return (
+            authority_payload.deterministic_authority.deterministic_findings,
+            authority_payload.llm_synthesis.model_dump(mode="json"),
+        )
+    except ValidationError:
+        pass
+
     observed_at = _as_utc(job.updated_at).isoformat().replace("+00:00", "Z")
-    summary = payload.get("provider_summary") if isinstance(payload.get("provider_summary"), str) else "Summary unavailable"
+    llm_audit = payload.get("llm_audit")
+    if (
+        isinstance(llm_audit, dict)
+        and llm_audit.get("authority_class") == "audit_only_raw_provider_artifact"
+        and isinstance(llm_audit.get("provider_summary_raw"), str)
+    ):
+        summary = str(llm_audit.get("provider_summary_raw"))
+    elif isinstance(payload.get("provider_summary"), str):
+        summary = payload.get("provider_summary")
+    else:
+        summary = "Summary unavailable"
     fallback_findings = [
         {
             "finding_id": f"investigation-{job.id}",

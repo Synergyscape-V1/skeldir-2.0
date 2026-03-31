@@ -19,14 +19,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.llm.provider_boundary import get_llm_provider_boundary
 from app.models.llm import BudgetOptimizationJob, Investigation
 from app.schemas.llm_payloads import LLMTaskPayload
+from app.services.llm_authority_contract import (
+    build_budget_authority_payload,
+    build_investigation_authority_payload,
+)
 from app.services.budget_job import BudgetJobService
 from app.services.investigation import InvestigationService
+from app.services.llm_validation_failures import LLMValidationFailureService
 
 logger = logging.getLogger(__name__)
 
 _PROVIDER_BOUNDARY = get_llm_provider_boundary()
 _INVESTIGATION_SERVICE = InvestigationService()
 _BUDGET_JOB_SERVICE = BudgetJobService()
+_VALIDATION_FAILURE_SERVICE = LLMValidationFailureService()
 
 
 def _stable_fallback_id(model: LLMTaskPayload, endpoint: str, label: str) -> str:
@@ -227,16 +233,64 @@ async def run_investigation(
             }
             trace_row.cost_cents = int(result.usage.get("cost_cents", 0))
 
+    effective_status = result.status
+    effective_failure_reason = result.failure_reason
     if result.status == "success":
-        await _INVESTIGATION_SERVICE.mark_ready_for_review(
-            session,
-            tenant_id=payload.tenant_id,
-            job_id=authority_job.id,
-            result_payload={
-                "request_id": payload.request_id,
-                "provider_summary": result.output_text,
-            },
-        )
+        try:
+            authority_payload = build_investigation_authority_payload(
+                request_id=payload.request_id,
+                correlation_id=payload.correlation_id,
+                authority_job_id=authority_job.id,
+                observed_at=authority_job.updated_at,
+                provider_summary=result.output_text,
+                model_name=result.model,
+            )
+            await _INVESTIGATION_SERVICE.mark_ready_for_review(
+                session,
+                tenant_id=payload.tenant_id,
+                job_id=authority_job.id,
+                result_payload=authority_payload.model_dump(mode="json"),
+            )
+        except Exception as exc:  # pragma: no cover - defensive fail-closed path
+            validation_error = f"authority_contract_build_failed:{type(exc).__name__}"
+            await _VALIDATION_FAILURE_SERVICE.record_failure(
+                session,
+                tenant_id=payload.tenant_id,
+                endpoint=endpoint,
+                validation_error=validation_error,
+                request_payload={
+                    "request_id": payload.request_id,
+                    "correlation_id": payload.correlation_id,
+                    "prompt": payload.prompt,
+                },
+                response_payload={
+                    "provider": result.provider,
+                    "model": result.model,
+                    "output_text": result.output_text,
+                },
+            )
+            await _INVESTIGATION_SERVICE.fail_job(
+                session,
+                tenant_id=payload.tenant_id,
+                job_id=authority_job.id,
+                failure_code="validation_failed",
+                failure_reason=validation_error,
+            )
+            trace_row = (
+                await session.get(Investigation, internal_trace_id)
+                if internal_trace_id is not None
+                else None
+            )
+            if trace_row is not None:
+                trace_row.status = "compute_failed"
+                trace_row.result = {
+                    "status": "compute_failed",
+                    "request_id": payload.request_id,
+                    "summary": result.output_text,
+                    "failure_reason": validation_error,
+                }
+            effective_status = "failed"
+            effective_failure_reason = validation_error
     elif result.status == "timeout":
         await _INVESTIGATION_SERVICE.timeout_job(
             session,
@@ -260,19 +314,19 @@ async def run_investigation(
             "correlation_id": payload.correlation_id,
             "event_type": "llm.investigation",
             "request_id": payload.request_id,
-            "status": result.status,
+            "status": effective_status,
         },
     )
     return {
-        "status": "accepted" if result.status == "success" else result.status,
-        "investigation": "queued" if result.status == "success" else "blocked",
+        "status": "accepted" if effective_status == "success" else effective_status,
+        "investigation": "queued" if effective_status == "success" else "blocked",
         "request_id": payload.request_id,
         "correlation_id": payload.correlation_id,
         "api_call_id": str(result.api_call_id),
         "investigation_id": str(authority_job.id),
         "investigation_trace_id": str(internal_trace_id) if internal_trace_id else None,
         "blocked_reason": result.block_reason,
-        "failure_reason": result.failure_reason,
+        "failure_reason": effective_failure_reason,
         "was_cached": result.was_cached,
     }
 
@@ -343,16 +397,68 @@ async def optimize_budget(
             }
             trace_row.cost_cents = int(result.usage.get("cost_cents", 0))
 
+    effective_status = result.status
+    effective_failure_reason = result.failure_reason
     if result.status == "success":
-        await _BUDGET_JOB_SERVICE.mark_ready_for_review(
-            session,
-            tenant_id=payload.tenant_id,
-            job_id=authority_job.id,
-            result_payload={
-                "request_id": payload.request_id,
-                "provider_summary": result.output_text,
-            },
-        )
+        try:
+            optimization_goal = str(
+                payload.prompt.get("optimization_goal", "maximize_roas")
+            )
+            authority_payload = build_budget_authority_payload(
+                request_id=payload.request_id,
+                correlation_id=payload.correlation_id,
+                authority_job_id=authority_job.id,
+                observed_at=authority_job.updated_at,
+                provider_summary=result.output_text,
+                model_name=result.model,
+                optimization_goal=optimization_goal,
+            )
+            await _BUDGET_JOB_SERVICE.mark_ready_for_review(
+                session,
+                tenant_id=payload.tenant_id,
+                job_id=authority_job.id,
+                result_payload=authority_payload.model_dump(mode="json"),
+            )
+        except Exception as exc:  # pragma: no cover - defensive fail-closed path
+            validation_error = f"authority_contract_build_failed:{type(exc).__name__}"
+            await _VALIDATION_FAILURE_SERVICE.record_failure(
+                session,
+                tenant_id=payload.tenant_id,
+                endpoint=endpoint,
+                validation_error=validation_error,
+                request_payload={
+                    "request_id": payload.request_id,
+                    "correlation_id": payload.correlation_id,
+                    "prompt": payload.prompt,
+                },
+                response_payload={
+                    "provider": result.provider,
+                    "model": result.model,
+                    "output_text": result.output_text,
+                },
+            )
+            await _BUDGET_JOB_SERVICE.fail_job(
+                session,
+                tenant_id=payload.tenant_id,
+                job_id=authority_job.id,
+                failure_code="validation_failed",
+                failure_reason=validation_error,
+            )
+            trace_row = (
+                await session.get(BudgetOptimizationJob, internal_trace_id)
+                if internal_trace_id is not None
+                else None
+            )
+            if trace_row is not None:
+                trace_row.status = "compute_failed"
+                trace_row.recommendations = {
+                    "status": "compute_failed",
+                    "request_id": payload.request_id,
+                    "provider_summary": result.output_text,
+                    "failure_reason": validation_error,
+                }
+            effective_status = "failed"
+            effective_failure_reason = validation_error
     elif result.status == "timeout":
         await _BUDGET_JOB_SERVICE.timeout_job(
             session,
@@ -376,18 +482,18 @@ async def optimize_budget(
             "correlation_id": payload.correlation_id,
             "event_type": "llm.budget_optimization",
             "request_id": payload.request_id,
-            "status": result.status,
+            "status": effective_status,
         },
     )
     return {
-        "status": "accepted" if result.status == "success" else result.status,
-        "budget_action": "noop" if result.status == "success" else "blocked",
+        "status": "accepted" if effective_status == "success" else effective_status,
+        "budget_action": "noop" if effective_status == "success" else "blocked",
         "request_id": payload.request_id,
         "correlation_id": payload.correlation_id,
         "api_call_id": str(result.api_call_id),
         "budget_job_id": str(authority_job.id),
         "budget_trace_id": str(internal_trace_id) if internal_trace_id else None,
         "blocked_reason": result.block_reason,
-        "failure_reason": result.failure_reason,
+        "failure_reason": effective_failure_reason,
         "was_cached": result.was_cached,
     }

@@ -459,6 +459,7 @@ class SkeldirLLMProvider:
             )
         except TimeoutError:
             failed_at = await self._db_now(session)
+            failure_reason = "provider_timeout"
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._release(
                 session,
@@ -469,10 +470,14 @@ class SkeldirLLMProvider:
                 month,
                 reservation,
             )
-            await self._breaker_failure(
-                session, model.tenant_id, model.user_id, failed_at
+            await self._apply_breaker_failure_accounting(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                failed_at=failed_at,
+                failure_reason=failure_reason,
             )
-            await self._finalize_failed(session, api_call_id, "provider_timeout")
+            await self._finalize_failed(session, api_call_id, failure_reason)
             await self._write_call_audit(
                 session=session,
                 tenant_id=model.tenant_id,
@@ -483,7 +488,7 @@ class SkeldirLLMProvider:
                 resolved_model=requested_model,
                 estimated_cost_cents=0,
                 decision="ALLOW",
-                reason="provider_timeout",
+                reason=failure_reason,
                 input_tokens=0,
                 output_tokens=0,
                 prompt_fingerprint=prompt_fingerprint,
@@ -505,10 +510,11 @@ class SkeldirLLMProvider:
                 request_id=request_id,
                 correlation_id=correlation_id,
                 api_call_id=api_call_id,
-                failure_reason="provider_timeout",
+                failure_reason=failure_reason,
             )
         except Exception as exc:
             failed_at = await self._db_now(session)
+            failure_reason = f"provider_error:{type(exc).__name__}"
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._release(
                 session,
@@ -519,12 +525,14 @@ class SkeldirLLMProvider:
                 month,
                 reservation,
             )
-            await self._breaker_failure(
-                session, model.tenant_id, model.user_id, failed_at
+            await self._apply_breaker_failure_accounting(
+                session=session,
+                tenant_id=model.tenant_id,
+                user_id=model.user_id,
+                failed_at=failed_at,
+                failure_reason=failure_reason,
             )
-            await self._finalize_failed(
-                session, api_call_id, f"provider_error:{type(exc).__name__}"
-            )
+            await self._finalize_failed(session, api_call_id, failure_reason)
             await self._write_call_audit(
                 session=session,
                 tenant_id=model.tenant_id,
@@ -535,7 +543,7 @@ class SkeldirLLMProvider:
                 resolved_model=requested_model,
                 estimated_cost_cents=0,
                 decision="ALLOW",
-                reason=f"provider_error:{type(exc).__name__}",
+                reason=failure_reason,
                 input_tokens=0,
                 output_tokens=0,
                 prompt_fingerprint=prompt_fingerprint,
@@ -557,7 +565,7 @@ class SkeldirLLMProvider:
                 request_id=request_id,
                 correlation_id=correlation_id,
                 api_call_id=api_call_id,
-                failure_reason=f"provider_error:{type(exc).__name__}",
+                failure_reason=failure_reason,
             )
 
     async def _write_call_audit(
@@ -974,6 +982,32 @@ class SkeldirLLMProvider:
                 "settled": settled,
             },
         )
+
+    @staticmethod
+    def _is_breaker_eligible_failure(failure_reason: str) -> bool:
+        """
+        Breaker policy lock for B1.6-P1.
+
+        Only provider/transport failures are breaker-accountable.
+        Semantic validation failures (e.g., ``validation_*``) are request-local and
+        must not open the global provider breaker.
+        """
+        return failure_reason == "provider_timeout" or failure_reason.startswith(
+            "provider_error:"
+        )
+
+    async def _apply_breaker_failure_accounting(
+        self,
+        *,
+        session: AsyncSession,
+        tenant_id: UUID,
+        user_id: UUID,
+        failed_at: datetime,
+        failure_reason: str,
+    ) -> None:
+        if not self._is_breaker_eligible_failure(failure_reason):
+            return
+        await self._breaker_failure(session, tenant_id, user_id, failed_at)
 
     async def _breaker_open(
         self,

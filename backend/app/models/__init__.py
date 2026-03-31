@@ -54,6 +54,7 @@ from app.models.llm import (
     LLMHourlyShutoffState,
     LLMMonthlyBudgetState,
     LLMMonthlyCost,
+    LLMValidationFailure,
     LLMSemanticCache,
 )
 from app.models.oauth_handshake_session import OAuthHandshakeSession
@@ -80,6 +81,7 @@ __all__ = [
     "ChannelTaxonomy",
     "LLMApiCall",
     "LLMMonthlyCost",
+    "LLMValidationFailure",
     "LLMMonthlyBudgetState",
     "LLMBudgetReservation",
     "LLMSemanticCache",

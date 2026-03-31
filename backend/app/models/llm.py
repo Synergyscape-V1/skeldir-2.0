@@ -257,6 +257,30 @@ class LLMMonthlyCost(Base):
     )
 
 
+class LLMValidationFailure(Base):
+    """Structured validation-failure quarantine rows for B1.6 controls."""
+
+    __tablename__ = "llm_validation_failures"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    validation_error: Mapped[str] = mapped_column(Text, nullable=False)
+    request_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    response_payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+
 class Investigation(Base):
     """Internal compute trace for investigation execution (non-authoritative)."""
 
