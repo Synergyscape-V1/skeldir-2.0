@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -9,15 +10,20 @@ from app.api.budget import _coerce_result_payload as coerce_budget_payload
 from app.api.investigations import _coerce_result_payload as coerce_investigation_payload
 from app.core.identity import SYSTEM_USER_ID
 from app.db.session import get_session
+from app.llm.output_validation import (
+    INVESTIGATION_VALIDATION_SPEC,
+    NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO,
+    validate_provider_output_text,
+)
 from app.llm.authority_contract import (
     BudgetResultAuthorityPayload,
     InvestigationResultAuthorityPayload,
 )
-from app.llm.output_validation import NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO
 from app.models.llm import LLMApiCall, LLMSemanticCache
 from app.schemas.llm_payloads import LLMTaskPayload
-from app.services.budget_job import BudgetJobService
-from app.services.investigation import InvestigationService
+from app.services.budget_job import BudgetJobRecord, BudgetJobService
+from app.services.centaur_lifecycle import LifecycleStatus
+from app.services.investigation import InvestigationJob, InvestigationService
 from app.workers.llm import _PROVIDER_BOUNDARY, optimize_budget, run_investigation
 
 
@@ -55,6 +61,76 @@ def _numeric_prompt(*, output_text: str, cache_enabled: bool = False) -> dict:
 
 def test_b16_p3_canonical_numeric_tolerance_policy_is_5_percent() -> None:
     assert NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO == 0.05
+
+
+def test_b16_p3_missing_truth_path_fails_closed_in_kernel() -> None:
+    result = validate_provider_output_text(
+        raw_output_text='{"summary":"Projected ROAS is 3.2 and revenue is 12000."}',
+        validation_spec=INVESTIGATION_VALIDATION_SPEC,
+        stage="provider",
+        validation_context={
+            "deterministic_truth": {"revenue": 12000.0},
+            "numeric_claim_bindings": [
+                {"claim_path": "summary.roas", "truth_path": "roas"},
+            ],
+        },
+    )
+    assert result.ok is False
+    assert result.code == "numeric_mismatch"
+    assert "reason=truth_path_missing" in str(result.error_detail)
+
+
+def test_b16_p3_missing_claim_path_fails_closed_in_kernel() -> None:
+    result = validate_provider_output_text(
+        raw_output_text='{"summary":"Projected revenue is 12000."}',
+        validation_spec=INVESTIGATION_VALIDATION_SPEC,
+        stage="provider",
+        validation_context={
+            "deterministic_truth": {"roas": 3.2},
+            "numeric_claim_bindings": [
+                {"claim_path": "summary.roas", "truth_path": "roas"},
+            ],
+        },
+    )
+    assert result.ok is False
+    assert result.code == "numeric_mismatch"
+    assert "reason=claim_labeled_text_number_missing" in str(result.error_detail)
+
+
+def test_b16_p3_binding_driven_tolerance_override_is_enforced() -> None:
+    default_tolerance_pass = validate_provider_output_text(
+        raw_output_text='{"summary":"Projected ROAS is 3.3."}',
+        validation_spec=INVESTIGATION_VALIDATION_SPEC,
+        stage="provider",
+        validation_context={
+            "deterministic_truth": {"roas": 3.2},
+            "numeric_tolerance_ratio": 0.05,
+            "numeric_claim_bindings": [
+                {"claim_path": "summary.roas", "truth_path": "roas"},
+            ],
+        },
+    )
+    override_tolerance_fail = validate_provider_output_text(
+        raw_output_text='{"summary":"Projected ROAS is 3.3."}',
+        validation_spec=INVESTIGATION_VALIDATION_SPEC,
+        stage="provider",
+        validation_context={
+            "deterministic_truth": {"roas": 3.2},
+            "numeric_tolerance_ratio": 0.05,
+            "numeric_claim_bindings": [
+                {
+                    "claim_path": "summary.roas",
+                    "truth_path": "roas",
+                    "tolerance_ratio": 0.01,
+                },
+            ],
+        },
+    )
+
+    assert default_tolerance_pass.ok is True
+    assert override_tolerance_fail.ok is False
+    assert override_tolerance_fail.code == "numeric_mismatch"
+    assert "tolerance_ratio=0.01" in str(override_tolerance_fail.error_detail)
 
 
 @pytest.mark.asyncio
@@ -271,3 +347,146 @@ async def test_b16_p3_cache_replay_numeric_mismatch_is_invalidated_then_fresh_pa
 
     assert provider_calls["count"] == 1
     assert mismatch_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_b16_p3_numeric_rejection_cache_marker_bounds_repeat_spend(
+    test_tenant: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_request = f"b16-p3-marker-1-{uuid4().hex[:8]}"
+    second_request = f"b16-p3-marker-2-{uuid4().hex[:8]}"
+    prompt = _numeric_prompt(
+        output_text="Projected ROAS is 10.5 and revenue is 12000.",
+        cache_enabled=True,
+    )
+    prompt["cache_watermark"] = 912
+
+    provider_calls = {"count": 0}
+
+    async def _provider_spy(*, requested_model, prompt, reservation):
+        provider_calls["count"] += 1
+        return {
+            "provider": "stub",
+            "model": requested_model,
+            "output_text": "Projected ROAS is 10.5 and revenue is 12000.",
+            "reasoning_trace": {"trace_type": "b16-p3-marker"},
+            "response_metadata": {"source": "b16-p3-marker"},
+            "usage": {"input_tokens": 2, "output_tokens": 2, "cost_cents": 2},
+        }
+
+    monkeypatch.setattr(_PROVIDER_BOUNDARY, "_provider_call", _provider_spy, raising=True)
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        first = await run_investigation(
+            _payload(test_tenant, request_id=first_request, prompt=prompt),
+            session=session,
+        )
+        first_provider_calls = provider_calls["count"]
+        second = await run_investigation(
+            _payload(test_tenant, request_id=second_request, prompt=prompt),
+            session=session,
+        )
+
+        second_call = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.user_id == SYSTEM_USER_ID,
+                    LLMApiCall.endpoint == "app.tasks.llm.investigation",
+                    LLMApiCall.request_id == second_request,
+                )
+            )
+        ).scalars().one()
+
+    assert first["status"] == "accepted"
+    assert first["validation_code"] == "numeric_mismatch"
+    assert first_provider_calls >= 1
+    assert second["status"] == "accepted"
+    assert second["validation_code"] == "numeric_mismatch"
+    assert second["was_cached"] is True
+    assert provider_calls["count"] == first_provider_calls
+    assert int(second_call.cost_cents) == 0
+
+
+def _investigation_job(result_payload: dict) -> InvestigationJob:
+    now = datetime.now(timezone.utc)
+    return InvestigationJob(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        request_id=f"req-{uuid4().hex[:8]}",
+        correlation_id=f"corr-{uuid4().hex[:8]}",
+        status=LifecycleStatus.COMPLETED,
+        created_at=now,
+        updated_at=now,
+        min_hold_until=now,
+        ready_for_review_at=now,
+        approved_at=now,
+        rejected_at=None,
+        refine_requested_at=None,
+        rerun_requested_at=None,
+        completed_at=now,
+        failed_at=None,
+        timeout_at=None,
+        cancelled_at=None,
+        result=result_payload,
+        failure_code=None,
+        failure_reason=None,
+        remaining_hold_seconds=0,
+    )
+
+
+def _budget_job(result_payload: dict) -> BudgetJobRecord:
+    now = datetime.now(timezone.utc)
+    return BudgetJobRecord(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        request_id=f"req-{uuid4().hex[:8]}",
+        correlation_id=f"corr-{uuid4().hex[:8]}",
+        status=LifecycleStatus.COMPLETED,
+        created_at=now,
+        updated_at=now,
+        ready_for_review_at=now,
+        approved_at=now,
+        rejected_at=None,
+        refine_requested_at=None,
+        rerun_requested_at=None,
+        completed_at=now,
+        failed_at=None,
+        timeout_at=None,
+        cancelled_at=None,
+        result=result_payload,
+        failure_code=None,
+        failure_reason=None,
+    )
+
+
+def test_b16_p3_investigation_router_coercion_suppresses_rejected_synthesis() -> None:
+    findings, synthesis = coerce_investigation_payload(
+        _investigation_job(
+            {
+                "deterministic_findings": [{"finding_id": "f-1"}],
+                "llm_synthesis": {
+                    "validation_state": "rejected",
+                    "non_authoritative_summary": "bad output",
+                },
+            }
+        )
+    )
+    assert findings == [{"finding_id": "f-1"}]
+    assert synthesis is None
+
+
+def test_b16_p3_budget_router_coercion_suppresses_rejected_synthesis() -> None:
+    recommendation, synthesis = coerce_budget_payload(
+        _budget_job(
+            {
+                "deterministic_recommendation": {"optimization_goal": "maximize_roas"},
+                "llm_synthesis": {
+                    "validation_state": "rejected",
+                    "non_authoritative_summary": "bad output",
+                },
+            }
+        )
+    )
+    assert recommendation == {"optimization_goal": "maximize_roas"}
+    assert synthesis is None

@@ -54,6 +54,30 @@ class OutputValidationResult:
     numeric_mismatch_count: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class NumericAuthorityBindingSpec:
+    claim_path: str
+    truth_path: str
+    tolerance_ratio: float
+
+
+@dataclass(frozen=True, slots=True)
+class NumericAuthorityPolicySpec:
+    active: bool
+    default_tolerance_ratio: float
+    bindings: tuple[NumericAuthorityBindingSpec, ...]
+    configuration_errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class NumericAuthorityValidationResult:
+    ok: bool
+    active: bool
+    tolerance_ratio: float
+    mismatch_count: int
+    error_detail: str | None = None
+
+
 NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO = 0.05
 NUMERIC_AUTHORITY_POLICY_ID = "b1.6-p3-numeric-authority-v1"
 
@@ -165,7 +189,7 @@ def validate_provider_output_text(
         normalized_payload=payload,
         validation_context=validation_context,
     )
-    if not numeric_validation["ok"]:
+    if not numeric_validation.ok:
         return OutputValidationResult(
             ok=False,
             code="numeric_mismatch",
@@ -174,9 +198,9 @@ def validate_provider_output_text(
             normalized_payload=None,
             schema_key=validation_spec.schema_key,
             normalization_source=str(normalized.get("source") or "unknown"),
-            error_detail=str(numeric_validation["error_detail"] or "numeric_mismatch"),
-            numeric_tolerance_ratio=float(numeric_validation["tolerance_ratio"]),
-            numeric_mismatch_count=int(numeric_validation["mismatch_count"]),
+            error_detail=str(numeric_validation.error_detail or "numeric_mismatch"),
+            numeric_tolerance_ratio=float(numeric_validation.tolerance_ratio),
+            numeric_mismatch_count=int(numeric_validation.mismatch_count),
         )
 
     return OutputValidationResult(
@@ -188,8 +212,8 @@ def validate_provider_output_text(
         schema_key=validation_spec.schema_key,
         normalization_source=str(normalized.get("source") or "unknown"),
         numeric_tolerance_ratio=(
-            float(numeric_validation["tolerance_ratio"])
-            if numeric_validation["active"]
+            float(numeric_validation.tolerance_ratio)
+            if numeric_validation.active
             else None
         ),
     )
@@ -285,119 +309,176 @@ def _validate_numeric_authority(
     *,
     normalized_payload: Mapping[str, Any],
     validation_context: Mapping[str, Any] | None,
-) -> dict[str, Any]:
+) -> NumericAuthorityValidationResult:
     context = validation_context if isinstance(validation_context, Mapping) else {}
-    bindings = _numeric_claim_bindings(context)
-    default_tolerance = _coerce_tolerance_ratio(
-        context.get("numeric_tolerance_ratio"),
-        default=NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO,
-    )
-    if not bindings:
-        return {
-            "ok": True,
-            "active": False,
-            "tolerance_ratio": default_tolerance,
-            "mismatch_count": 0,
-            "error_detail": None,
-        }
+    policy = _numeric_authority_policy(context)
+    if not policy.active:
+        return NumericAuthorityValidationResult(
+            ok=True,
+            active=False,
+            tolerance_ratio=policy.default_tolerance_ratio,
+            mismatch_count=0,
+            error_detail=None,
+        )
+
+    policy_failures: list[str] = []
+    if policy.configuration_errors:
+        for error in policy.configuration_errors:
+            policy_failures.append(f"type=binding_config_error,reason={error}")
+        return NumericAuthorityValidationResult(
+            ok=False,
+            active=True,
+            tolerance_ratio=policy.default_tolerance_ratio,
+            mismatch_count=len(policy_failures),
+            error_detail=f"numeric_authority_policy={NUMERIC_AUTHORITY_POLICY_ID};"
+            + ";".join(policy_failures),
+        )
 
     deterministic_truth = context.get("deterministic_truth")
-    truth_mapping = deterministic_truth if isinstance(deterministic_truth, Mapping) else {}
+    if not isinstance(deterministic_truth, Mapping):
+        return NumericAuthorityValidationResult(
+            ok=False,
+            active=True,
+            tolerance_ratio=policy.default_tolerance_ratio,
+            mismatch_count=1,
+            error_detail=(
+                f"numeric_authority_policy={NUMERIC_AUTHORITY_POLICY_ID};"
+                "type=binding_resolution_error,reason=deterministic_truth_missing_or_invalid"
+            ),
+        )
+    truth_mapping = deterministic_truth
+
     mismatches: list[str] = []
-    for binding in bindings:
-        expected = _extract_numeric_from_mapping(
+    for binding in policy.bindings:
+        expected, truth_status = _extract_numeric_from_mapping_with_status(
             truth_mapping,
-            str(binding["truth_path"]),
+            binding.truth_path,
         )
         if expected is None:
+            mismatches.append(
+                "type=binding_resolution_error,claim_path="
+                + binding.claim_path
+                + ",truth_path="
+                + binding.truth_path
+                + ",reason=truth_"
+                + truth_status
+            )
             continue
-        observed = _extract_numeric_claim(
+
+        observed, claim_status = _extract_numeric_claim_with_status(
             normalized_payload=normalized_payload,
-            claim_path=str(binding["claim_path"]),
+            claim_path=binding.claim_path,
         )
         if observed is None:
+            mismatches.append(
+                "type=binding_resolution_error,claim_path="
+                + binding.claim_path
+                + ",truth_path="
+                + binding.truth_path
+                + ",reason=claim_"
+                + claim_status
+            )
             continue
-        tolerance_ratio = _coerce_tolerance_ratio(
-            binding.get("tolerance_ratio"),
-            default=default_tolerance,
-        )
+
         if _numeric_within_tolerance(
             observed=observed,
             expected=expected,
-            tolerance_ratio=tolerance_ratio,
+            tolerance_ratio=binding.tolerance_ratio,
         ):
             continue
+
         delta = _relative_delta(observed=observed, expected=expected)
         mismatches.append(
-            "claim_path="
-            + str(binding["claim_path"])
+            "type=value_mismatch,claim_path="
+            + binding.claim_path
             + ",truth_path="
-            + str(binding["truth_path"])
+            + binding.truth_path
             + ",expected="
             + _format_numeric(expected)
             + ",observed="
             + _format_numeric(observed)
             + ",tolerance_ratio="
-            + _format_numeric(tolerance_ratio)
+            + _format_numeric(binding.tolerance_ratio)
             + ",delta_ratio="
             + _format_numeric(delta)
         )
 
     if mismatches:
-        return {
-            "ok": False,
-            "active": True,
-            "tolerance_ratio": default_tolerance,
-            "mismatch_count": len(mismatches),
-            "error_detail": f"numeric_authority_policy={NUMERIC_AUTHORITY_POLICY_ID};"
+        return NumericAuthorityValidationResult(
+            ok=False,
+            active=True,
+            tolerance_ratio=policy.default_tolerance_ratio,
+            mismatch_count=len(mismatches),
+            error_detail=f"numeric_authority_policy={NUMERIC_AUTHORITY_POLICY_ID};"
             + ";".join(mismatches),
-        }
-    return {
-        "ok": True,
-        "active": True,
-        "tolerance_ratio": default_tolerance,
-        "mismatch_count": 0,
-        "error_detail": None,
-    }
+        )
+
+    return NumericAuthorityValidationResult(
+        ok=True,
+        active=True,
+        tolerance_ratio=policy.default_tolerance_ratio,
+        mismatch_count=0,
+        error_detail=None,
+    )
 
 
-def _numeric_claim_bindings(context: Mapping[str, Any]) -> list[dict[str, Any]]:
-    bindings: list[dict[str, Any]] = []
+def _numeric_authority_policy(context: Mapping[str, Any]) -> NumericAuthorityPolicySpec:
+    default_tolerance = _coerce_tolerance_ratio(
+        context.get("numeric_tolerance_ratio"),
+        default=NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO,
+    )
+    bindings: list[NumericAuthorityBindingSpec] = []
+    configuration_errors: list[str] = []
+
     raw_bindings = context.get("numeric_claim_bindings")
     if isinstance(raw_bindings, list):
-        for entry in raw_bindings:
+        for idx, entry in enumerate(raw_bindings):
             if not isinstance(entry, Mapping):
+                configuration_errors.append(f"binding_{idx}_not_mapping")
                 continue
             claim_path = entry.get("claim_path")
             truth_path = entry.get("truth_path")
             if not isinstance(claim_path, str) or not claim_path.strip():
+                configuration_errors.append(f"binding_{idx}_claim_path_invalid")
                 continue
             if not isinstance(truth_path, str) or not truth_path.strip():
+                configuration_errors.append(f"binding_{idx}_truth_path_invalid")
                 continue
-            bindings.append(
-                {
-                    "claim_path": claim_path.strip(),
-                    "truth_path": truth_path.strip(),
-                    "tolerance_ratio": entry.get("tolerance_ratio"),
-                }
+            tolerance_ratio = _coerce_tolerance_ratio(
+                entry.get("tolerance_ratio"),
+                default=default_tolerance,
             )
-    if bindings:
-        return bindings
+            bindings.append(
+                NumericAuthorityBindingSpec(
+                    claim_path=claim_path.strip(),
+                    truth_path=truth_path.strip(),
+                    tolerance_ratio=tolerance_ratio,
+                )
+            )
 
-    raw_paths = context.get("numeric_claim_paths")
-    if not isinstance(raw_paths, list):
-        return []
-    for path in raw_paths:
-        if isinstance(path, str) and path.strip():
-            normalized = path.strip()
-            bindings.append(
-                {
-                    "claim_path": normalized,
-                    "truth_path": normalized,
-                    "tolerance_ratio": None,
-                }
-            )
-    return bindings
+    if not bindings:
+        raw_paths = context.get("numeric_claim_paths")
+        if isinstance(raw_paths, list):
+            for idx, path in enumerate(raw_paths):
+                if not isinstance(path, str) or not path.strip():
+                    configuration_errors.append(f"path_{idx}_claim_path_invalid")
+                    continue
+                normalized_path = path.strip()
+                bindings.append(
+                    NumericAuthorityBindingSpec(
+                        claim_path=normalized_path,
+                        truth_path=normalized_path,
+                        tolerance_ratio=default_tolerance,
+                    )
+                )
+
+    is_active = bool(bindings) or bool(configuration_errors)
+    return NumericAuthorityPolicySpec(
+        active=is_active,
+        default_tolerance_ratio=default_tolerance,
+        bindings=tuple(bindings),
+        configuration_errors=tuple(configuration_errors),
+    )
 
 
 def _extract_numeric_claim(
@@ -426,6 +507,45 @@ def _extract_numeric_from_mapping(payload: Mapping[str, Any], path: str) -> floa
             return None
         current = current[segment]
     return _coerce_numeric(current)
+
+
+def _extract_numeric_from_mapping_with_status(
+    payload: Mapping[str, Any], path: str
+) -> tuple[float | None, str]:
+    current: Any = payload
+    for segment in path.split("."):
+        if not segment:
+            return None, "path_invalid"
+        if not isinstance(current, Mapping):
+            return None, "path_missing"
+        if segment not in current:
+            return None, "path_missing"
+        current = current[segment]
+    coerced = _coerce_numeric(current)
+    if coerced is None:
+        return None, "value_not_numeric"
+    return coerced, "ok"
+
+
+def _extract_numeric_claim_with_status(
+    *,
+    normalized_payload: Mapping[str, Any],
+    claim_path: str,
+) -> tuple[float | None, str]:
+    direct, direct_status = _extract_numeric_from_mapping_with_status(
+        normalized_payload, claim_path
+    )
+    if direct is not None:
+        return direct, "ok"
+    first_key, _, label = claim_path.partition(".")
+    candidate_text = normalized_payload.get(first_key)
+    if not isinstance(candidate_text, str):
+        return None, direct_status
+    if not label:
+        value = _extract_first_number(candidate_text)
+        return (value, "ok") if value is not None else (None, "text_number_missing")
+    value = _extract_labeled_number(candidate_text, label)
+    return (value, "ok") if value is not None else (None, "labeled_text_number_missing")
 
 
 def _extract_labeled_number(text: str, label: str) -> float | None:

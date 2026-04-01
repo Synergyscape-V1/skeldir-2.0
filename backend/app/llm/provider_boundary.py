@@ -45,6 +45,9 @@ from app.models.llm import (
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.services.llm_validation_failures import LLMValidationFailureService
 
+NUMERIC_REJECTION_CACHE_STATE = "numeric_authority_rejected"
+NUMERIC_REJECTION_CACHE_SUPPRESS_SECONDS = 900
+
 
 def _month_start_utc(occurred_at: datetime) -> date:
     at = occurred_at if occurred_at.tzinfo else occurred_at.replace(tzinfo=timezone.utc)
@@ -62,10 +65,70 @@ def _json(value: Mapping[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def _cache_key(prompt: Mapping[str, Any], endpoint: str, model_name: str) -> str:
+def _validation_context_fingerprint(validation_context: Mapping[str, Any] | None) -> str:
+    if not isinstance(validation_context, Mapping):
+        return ""
+    deterministic_truth = validation_context.get("deterministic_truth")
+    truth_mapping = deterministic_truth if isinstance(deterministic_truth, Mapping) else {}
+
+    normalized_bindings: list[dict[str, Any]] = []
+    raw_bindings = validation_context.get("numeric_claim_bindings")
+    if isinstance(raw_bindings, list):
+        for entry in raw_bindings:
+            if not isinstance(entry, Mapping):
+                continue
+            claim_path = entry.get("claim_path")
+            truth_path = entry.get("truth_path")
+            if not isinstance(claim_path, str) or not claim_path.strip():
+                continue
+            if not isinstance(truth_path, str) or not truth_path.strip():
+                continue
+            normalized_bindings.append(
+                {
+                    "claim_path": claim_path.strip(),
+                    "truth_path": truth_path.strip(),
+                    "tolerance_ratio": entry.get("tolerance_ratio"),
+                }
+            )
+    if not normalized_bindings:
+        raw_claim_paths = validation_context.get("numeric_claim_paths")
+        if isinstance(raw_claim_paths, list):
+            for claim_path in raw_claim_paths:
+                if isinstance(claim_path, str) and claim_path.strip():
+                    normalized = claim_path.strip()
+                    normalized_bindings.append(
+                        {
+                            "claim_path": normalized,
+                            "truth_path": normalized,
+                            "tolerance_ratio": None,
+                        }
+                    )
+
+    truth_snapshot: dict[str, Any] = {}
+    for binding in normalized_bindings:
+        path = str(binding["truth_path"])
+        truth_snapshot[path] = _mapping_path_value(truth_mapping, path)
+
+    seed = {
+        "truth_snapshot": truth_snapshot,
+        "numeric_claim_bindings": normalized_bindings,
+        "numeric_tolerance_ratio": validation_context.get("numeric_tolerance_ratio"),
+    }
+    return hashlib.sha256(_json(seed).encode("utf-8")).hexdigest()
+
+
+def _cache_key(
+    prompt: Mapping[str, Any],
+    endpoint: str,
+    model_name: str,
+    *,
+    validation_context_fingerprint: str = "",
+) -> str:
     seed = dict(prompt)
     seed.pop("cache_watermark", None)
     seed.pop("cache_enabled", None)
+    if validation_context_fingerprint:
+        seed["_validation_context_fingerprint"] = validation_context_fingerprint
     return hashlib.sha256(
         f"{endpoint}|{model_name}|{_json(seed)}".encode("utf-8")
     ).hexdigest()
@@ -81,6 +144,34 @@ def _watermark(prompt: Mapping[str, Any]) -> int:
         return int(raw or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _parse_iso8601_utc(value: str | None) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    candidate = value.strip()
+    if candidate.endswith("Z"):
+        candidate = candidate[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _mapping_path_value(payload: Mapping[str, Any], path: str) -> Any:
+    current: Any = payload
+    for segment in path.split("."):
+        if not segment:
+            return None
+        if not isinstance(current, Mapping):
+            return None
+        if segment not in current:
+            return None
+        current = current[segment]
+    return current
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +232,15 @@ class SkeldirLLMProvider:
             policy_path=settings.LLM_COMPLEXITY_POLICY_PATH,
         )
         requested_model = f"{routing.chosen_provider}:{routing.chosen_model}"
-        key = _cache_key(prompt, endpoint, requested_model)
+        validation_context_fingerprint = _validation_context_fingerprint(
+            validation_context
+        )
+        key = _cache_key(
+            prompt,
+            endpoint,
+            requested_model,
+            validation_context_fingerprint=validation_context_fingerprint,
+        )
         prompt_fingerprint = _prompt_fingerprint(prompt)
         watermark = _watermark(prompt)
         reservation = max(0, int(model.max_cost_cents))
@@ -279,6 +378,67 @@ class SkeldirLLMProvider:
                 session, model.tenant_id, model.user_id, endpoint, key, watermark
             )
             if hit is not None:
+                if self._is_active_numeric_rejection_marker(
+                    row=hit,
+                    now=now,
+                    validation_context_fingerprint=validation_context_fingerprint,
+                ):
+                    await self._mark_cache_hit(session, hit)
+                    await self._release(
+                        session,
+                        model.tenant_id,
+                        model.user_id,
+                        endpoint,
+                        request_id,
+                        month,
+                        reservation,
+                    )
+                    usage = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_cents": 0,
+                        "latency_ms": 0,
+                    }
+                    cached_metadata = dict(hit.response_metadata_ref or {})
+                    cached_metadata["boundary_id"] = self.boundary_id
+                    cached_metadata["validation_code"] = "numeric_mismatch"
+                    cached_metadata["validation_stage"] = "cache"
+                    await self._finalize_failed(
+                        session, api_call_id, "validation_numeric_mismatch"
+                    )
+                    await self._write_call_audit(
+                        session=session,
+                        tenant_id=model.tenant_id,
+                        user_id=model.user_id,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        requested_model=requested_model,
+                        resolved_model=str(hit.model),
+                        estimated_cost_cents=0,
+                        decision="ALLOW",
+                        reason="cache_numeric_rejection_marker",
+                        input_tokens=0,
+                        output_tokens=0,
+                        prompt_fingerprint=prompt_fingerprint,
+                    )
+                    await session.commit()
+                    return ProviderBoundaryResult(
+                        provider=str(hit.provider),
+                        model=str(hit.model),
+                        output_text="",
+                        reasoning_trace=hit.reasoning_trace_ref,
+                        usage=usage,
+                        status="failed",
+                        was_cached=True,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        api_call_id=api_call_id,
+                        failure_reason="validation_numeric_mismatch",
+                        response_metadata=cached_metadata,
+                        validation_code="numeric_mismatch",
+                        validation_stage="cache",
+                    )
+
                 cache_validation = self._validate_output_text(
                     raw_output_text=str(hit.response_text),
                     validation_spec=validation_spec,
@@ -309,6 +469,9 @@ class SkeldirLLMProvider:
                     cached_metadata["validation_schema_key"] = cache_validation.schema_key
                     cached_metadata["normalization_source"] = (
                         cache_validation.normalization_source
+                    )
+                    cached_metadata["validation_context_fingerprint"] = (
+                        validation_context_fingerprint
                     )
                     await self._finalize_success(
                         session=session,
@@ -511,6 +674,23 @@ class SkeldirLLMProvider:
                             else "validation_numeric_mismatch"
                         )
                     )
+                if cache_enabled and validation_reason == "validation_numeric_mismatch":
+                    await self._cache_write_numeric_rejection_marker(
+                        session=session,
+                        tenant_id=model.tenant_id,
+                        user_id=model.user_id,
+                        endpoint=endpoint,
+                        key=key,
+                        watermark=watermark,
+                        provider=str((last_payload or {}).get("provider") or "validation"),
+                        model_name=str((last_payload or {}).get("model") or requested_model),
+                        validation_context_fingerprint=validation_context_fingerprint,
+                        validation_error=(
+                            last_validation.error_detail
+                            if last_validation is not None
+                            else "numeric_mismatch"
+                        ),
+                    )
                 await self._ensure_rls_context(session, model.tenant_id, model.user_id)
                 settled = min(max(0, int(total_usage["cost_cents"])), reservation)
                 await self._settle(
@@ -626,6 +806,7 @@ class SkeldirLLMProvider:
                 if successful_validation
                 else None
             )
+            metadata["validation_context_fingerprint"] = validation_context_fingerprint
             metadata["validation_attempts"] = attempts_executed
             metadata["cache_invalidated"] = cache_validation_failed
             if cache_enabled:
@@ -977,6 +1158,89 @@ class SkeldirLLMProvider:
             request_payload=payload,
             response_payload=dict(response_payload or {}),
         )
+
+    def _is_active_numeric_rejection_marker(
+        self,
+        *,
+        row: LLMSemanticCache,
+        now: datetime,
+        validation_context_fingerprint: str,
+    ) -> bool:
+        metadata = dict(row.response_metadata_ref or {})
+        if metadata.get("cache_numeric_state") != NUMERIC_REJECTION_CACHE_STATE:
+            return False
+        marker_fingerprint = str(metadata.get("validation_context_fingerprint") or "")
+        if (
+            validation_context_fingerprint
+            and marker_fingerprint
+            and marker_fingerprint != validation_context_fingerprint
+        ):
+            return False
+        expires_at = _parse_iso8601_utc(
+            str(metadata.get("cache_numeric_reject_until") or "")
+        )
+        if expires_at is None:
+            return False
+        return now < expires_at
+
+    async def _cache_write_numeric_rejection_marker(
+        self,
+        *,
+        session: AsyncSession,
+        tenant_id: UUID,
+        user_id: UUID,
+        endpoint: str,
+        key: str,
+        watermark: int,
+        provider: str,
+        model_name: str,
+        validation_context_fingerprint: str,
+        validation_error: str,
+    ) -> None:
+        now = await self._db_now(session)
+        reject_until = now + timedelta(seconds=NUMERIC_REJECTION_CACHE_SUPPRESS_SECONDS)
+        metadata = {
+            "cache_invalidated": True,
+            "cache_numeric_state": NUMERIC_REJECTION_CACHE_STATE,
+            "cache_numeric_reject_until": reject_until.isoformat().replace("+00:00", "Z"),
+            "cache_numeric_reject_reason": str(validation_error or "numeric_mismatch"),
+            "validation_context_fingerprint": validation_context_fingerprint,
+        }
+        stmt = (
+            insert(LLMSemanticCache)
+            .values(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                endpoint=endpoint,
+                cache_key=key,
+                watermark=watermark,
+                provider=provider,
+                model=model_name,
+                response_text="",
+                response_metadata_ref=metadata,
+                reasoning_trace_ref={},
+                input_tokens=0,
+                output_tokens=0,
+                cost_cents=0,
+                hit_count=0,
+            )
+            .on_conflict_do_update(
+                index_elements=["tenant_id", "user_id", "endpoint", "cache_key"],
+                set_={
+                    "watermark": watermark,
+                    "provider": provider,
+                    "model": model_name,
+                    "response_text": "",
+                    "response_metadata_ref": metadata,
+                    "reasoning_trace_ref": {},
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_cents": 0,
+                    "updated_at": now,
+                },
+            )
+        )
+        await session.execute(stmt)
 
     async def _invalidate_cache_row(
         self, session: AsyncSession, row: LLMSemanticCache
