@@ -190,6 +190,15 @@ def _audit_provider_summary(result: Any) -> str:
     return ""
 
 
+def _validated_summary_or_empty(result: Any) -> str:
+    if getattr(result, "status", None) != "success":
+        return ""
+    if str(getattr(result, "validation_code", "success") or "success") != "success":
+        return ""
+    output_text = getattr(result, "output_text", "")
+    return str(output_text or "")
+
+
 async def route_request(
     model: LLMTaskPayload,
     session: AsyncSession,
@@ -305,6 +314,7 @@ async def run_investigation(
         validation_spec=_validation_spec(endpoint),
         validation_context=validation_context.model_dump(mode="json"),
     )
+    validated_summary = _validated_summary_or_empty(result)
     query = f"provider:{payload.request_id}"
     numeric_authority_rejected = result.failure_reason == "validation_numeric_mismatch"
     trace_status = (
@@ -332,7 +342,7 @@ async def run_investigation(
             result={
                 "status": trace_status,
                 "request_id": payload.request_id,
-                "summary": result.output_text,
+                "summary": validated_summary,
             },
             cost_cents=int(result.usage.get("cost_cents", 0)),
         )
@@ -350,7 +360,7 @@ async def run_investigation(
             trace_row.result = {
                 "status": trace_status,
                 "request_id": payload.request_id,
-                "summary": result.output_text,
+                "summary": validated_summary,
             }
             trace_row.cost_cents = int(result.usage.get("cost_cents", 0))
 
@@ -363,7 +373,7 @@ async def run_investigation(
                 correlation_id=payload.correlation_id,
                 authority_job_id=authority_job.id,
                 observed_at=authority_job.updated_at,
-                provider_summary=result.output_text,
+                provider_summary=validated_summary,
                 model_name=result.model,
                 validation_context=validation_context,
                 synthesis_validation_state="validated",
@@ -409,7 +419,7 @@ async def run_investigation(
                 trace_row.result = {
                     "status": "compute_failed",
                     "request_id": payload.request_id,
-                    "summary": result.output_text,
+                    "summary": validated_summary,
                     "failure_reason": validation_error,
                 }
             effective_status = "failed"
@@ -519,6 +529,7 @@ async def optimize_budget(
         validation_spec=_validation_spec(endpoint),
         validation_context=validation_context.model_dump(mode="json"),
     )
+    validated_summary = _validated_summary_or_empty(result)
     numeric_authority_rejected = result.failure_reason == "validation_numeric_mismatch"
     trace_status = (
         "compute_succeeded"
@@ -543,7 +554,7 @@ async def optimize_budget(
             status=trace_status,
             recommendations={
                 "request_id": payload.request_id,
-                "provider_summary": result.output_text,
+                "provider_summary": validated_summary,
                 "status": trace_status,
             },
             cost_cents=int(result.usage.get("cost_cents", 0)),
@@ -560,7 +571,7 @@ async def optimize_budget(
             trace_row.status = trace_status
             trace_row.recommendations = {
                 "request_id": payload.request_id,
-                "provider_summary": result.output_text,
+                "provider_summary": validated_summary,
                 "status": trace_status,
             }
             trace_row.cost_cents = int(result.usage.get("cost_cents", 0))
@@ -574,7 +585,7 @@ async def optimize_budget(
                 correlation_id=payload.correlation_id,
                 authority_job_id=authority_job.id,
                 observed_at=authority_job.updated_at,
-                provider_summary=result.output_text,
+                provider_summary=validated_summary,
                 model_name=result.model,
                 optimization_goal=optimization_goal,
                 validation_context=validation_context,
@@ -621,7 +632,7 @@ async def optimize_budget(
                 trace_row.recommendations = {
                     "status": "compute_failed",
                     "request_id": payload.request_id,
-                    "provider_summary": result.output_text,
+                    "provider_summary": validated_summary,
                     "failure_reason": validation_error,
                 }
             effective_status = "failed"
