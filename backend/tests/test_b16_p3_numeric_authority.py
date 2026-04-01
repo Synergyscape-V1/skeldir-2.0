@@ -4,20 +4,23 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select, text
 
+import app.workers.llm as llm_worker_module
 from app.api.budget import _coerce_result_payload as coerce_budget_payload
 from app.api.investigations import _coerce_result_payload as coerce_investigation_payload
 from app.core.identity import SYSTEM_USER_ID
 from app.db.session import get_session
+from app.llm.authority_contract import (
+    BudgetResultAuthorityPayload,
+    InvestigationResultAuthorityPayload,
+    ValidationContext,
+)
 from app.llm.output_validation import (
     INVESTIGATION_VALIDATION_SPEC,
     NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO,
     validate_provider_output_text,
-)
-from app.llm.authority_contract import (
-    BudgetResultAuthorityPayload,
-    InvestigationResultAuthorityPayload,
 )
 from app.models.llm import LLMApiCall, LLMSemanticCache
 from app.schemas.llm_payloads import LLMTaskPayload
@@ -63,6 +66,25 @@ def test_b16_p3_canonical_numeric_tolerance_policy_is_5_percent() -> None:
     assert NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO == 0.05
 
 
+def test_b16_p3_schema_composed_numeric_validation_uses_pydantic_context() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        INVESTIGATION_VALIDATION_SPEC.schema_model.model_validate(
+            {"summary": "Projected ROAS is 10.5 and revenue is 12000."},
+            context={
+                "deterministic_truth": {"roas": 3.2, "revenue": 12000.0},
+                "numeric_claim_bindings": [
+                    {"claim_path": "summary.roas", "truth_path": "roas"},
+                    {"claim_path": "summary.revenue", "truth_path": "revenue"},
+                ],
+            },
+        )
+
+    assert any(
+        str(error.get("type")) == "numeric_mismatch"
+        for error in exc_info.value.errors()
+    )
+
+
 def test_b16_p3_missing_truth_path_fails_closed_in_kernel() -> None:
     result = validate_provider_output_text(
         raw_output_text='{"summary":"Projected ROAS is 3.2 and revenue is 12000."}',
@@ -95,6 +117,40 @@ def test_b16_p3_missing_claim_path_fails_closed_in_kernel() -> None:
     assert result.ok is False
     assert result.code == "numeric_mismatch"
     assert "reason=claim_labeled_text_number_missing" in str(result.error_detail)
+
+
+def test_b16_p3_invalid_binding_config_fails_closed_in_kernel() -> None:
+    result = validate_provider_output_text(
+        raw_output_text='{"summary":"Projected ROAS is 3.2."}',
+        validation_spec=INVESTIGATION_VALIDATION_SPEC,
+        stage="provider",
+        validation_context={
+            "deterministic_truth": {"roas": 3.2},
+            "numeric_claim_bindings": [
+                {"claim_path": "summary.roas"},
+            ],
+        },
+    )
+    assert result.ok is False
+    assert result.code == "numeric_mismatch"
+    assert "reason=binding_0_truth_path_invalid" in str(result.error_detail)
+
+
+def test_b16_p3_non_numeric_truth_value_fails_closed_in_kernel() -> None:
+    result = validate_provider_output_text(
+        raw_output_text='{"summary":"Projected ROAS is 3.2."}',
+        validation_spec=INVESTIGATION_VALIDATION_SPEC,
+        stage="provider",
+        validation_context={
+            "deterministic_truth": {"roas": "not-a-number"},
+            "numeric_claim_bindings": [
+                {"claim_path": "summary.roas", "truth_path": "roas"},
+            ],
+        },
+    )
+    assert result.ok is False
+    assert result.code == "numeric_mismatch"
+    assert "reason=truth_value_not_numeric" in str(result.error_detail)
 
 
 def test_b16_p3_binding_driven_tolerance_override_is_enforced() -> None:
@@ -261,7 +317,7 @@ async def test_b16_p3_numeric_mismatch_is_rejected_before_budget_success_sinks(
 
 
 @pytest.mark.asyncio
-async def test_b16_p3_cache_replay_numeric_mismatch_is_invalidated_then_fresh_path_runs(
+async def test_b16_p3_cache_replay_numeric_mismatch_degrades_without_fresh_provider_call(
     test_tenant: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seed_request = f"b16-p3-cache-seed-{uuid4().hex[:8]}"
@@ -324,8 +380,8 @@ async def test_b16_p3_cache_replay_numeric_mismatch_is_invalidated_then_fresh_pa
             session=session,
         )
         assert replay["status"] == "accepted"
-        assert replay["was_cached"] is False
-        assert replay["validation_code"] == "success"
+        assert replay["was_cached"] is True
+        assert replay["validation_code"] == "numeric_mismatch"
 
         mismatch_count = int(
             (
@@ -344,8 +400,19 @@ async def test_b16_p3_cache_replay_numeric_mismatch_is_invalidated_then_fresh_pa
                 )
             ).scalar_one()
         )
+        replay_call = (
+            await session.execute(
+                select(LLMApiCall).where(
+                    LLMApiCall.tenant_id == test_tenant,
+                    LLMApiCall.user_id == SYSTEM_USER_ID,
+                    LLMApiCall.endpoint == "app.tasks.llm.investigation",
+                    LLMApiCall.request_id == replay_request,
+                )
+            )
+        ).scalars().one()
 
-    assert provider_calls["count"] == 1
+    assert provider_calls["count"] == 0
+    assert int(replay_call.cost_cents) == 0
     assert mismatch_count >= 1
 
 
@@ -406,6 +473,126 @@ async def test_b16_p3_numeric_rejection_cache_marker_bounds_repeat_spend(
     assert second["was_cached"] is True
     assert provider_calls["count"] == first_provider_calls
     assert int(second_call.cost_cents) == 0
+
+
+@pytest.mark.asyncio
+async def test_b16_p3_invalid_binding_config_rejects_before_investigation_success_sinks(
+    test_tenant: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request_id = f"b16-p3-invalid-binding-{uuid4().hex[:8]}"
+    prompt = _numeric_prompt(output_text="Projected ROAS is 3.2 and revenue is 12000.")
+
+    class _MalformedBindingValidationContext(ValidationContext):
+        def model_dump(self, *args, **kwargs):  # type: ignore[override]
+            payload = super().model_dump(*args, **kwargs)
+            payload["numeric_claim_bindings"] = [{"claim_path": "summary.roas"}]
+            return payload
+
+    original_builder = llm_worker_module._build_numeric_validation_context
+
+    def _malformed_builder(**kwargs) -> ValidationContext:
+        base_context = original_builder(**kwargs)
+        return _MalformedBindingValidationContext.model_validate(
+            base_context.model_dump(mode="json")
+        )
+
+    monkeypatch.setattr(
+        llm_worker_module,
+        "_build_numeric_validation_context",
+        _malformed_builder,
+        raising=True,
+    )
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        result = await run_investigation(
+            _payload(test_tenant, request_id=request_id, prompt=prompt),
+            session=session,
+        )
+        assert result["status"] == "accepted"
+        assert result["validation_code"] == "numeric_mismatch"
+
+        failure_details = (
+            await session.execute(
+                text(
+                    """
+                    SELECT response_payload ->> 'validation_error'
+                    FROM llm_validation_failures
+                    WHERE tenant_id = :tenant_id
+                      AND endpoint = 'app.tasks.llm.investigation'
+                      AND validation_error = 'numeric_mismatch'
+                      AND request_payload ->> 'request_id' = :request_id
+                    """
+                ),
+                {"tenant_id": str(test_tenant), "request_id": request_id},
+            )
+        ).scalars().all()
+
+        job = await InvestigationService(min_hold_seconds=0).get_job(
+            session,
+            tenant_id=test_tenant,
+            job_id=UUID(result["investigation_id"]),
+        )
+        assert job is not None
+        findings, synthesis = coerce_investigation_payload(job)
+        contract = InvestigationResultAuthorityPayload.model_validate(job.result or {})
+
+    assert findings
+    assert synthesis is None
+    assert contract.llm_synthesis.validation_state == "rejected"
+    assert any(
+        "reason=binding_0_truth_path_invalid" in str(detail or "")
+        for detail in failure_details
+    )
+
+
+@pytest.mark.asyncio
+async def test_b16_p3_non_numeric_truth_value_rejects_before_investigation_success_sinks(
+    test_tenant: UUID,
+) -> None:
+    request_id = f"b16-p3-truth-nonnumeric-{uuid4().hex[:8]}"
+    prompt = _numeric_prompt(output_text="Projected ROAS is 3.2 and revenue is 12000.")
+    prompt["deterministic_truth"] = {"roas": "not-a-number", "revenue": 12000.0}
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        result = await run_investigation(
+            _payload(test_tenant, request_id=request_id, prompt=prompt),
+            session=session,
+        )
+        assert result["status"] == "accepted"
+        assert result["validation_code"] == "numeric_mismatch"
+
+        failure_details = (
+            await session.execute(
+                text(
+                    """
+                    SELECT response_payload ->> 'validation_error'
+                    FROM llm_validation_failures
+                    WHERE tenant_id = :tenant_id
+                      AND endpoint = 'app.tasks.llm.investigation'
+                      AND validation_error = 'numeric_mismatch'
+                      AND request_payload ->> 'request_id' = :request_id
+                    """
+                ),
+                {"tenant_id": str(test_tenant), "request_id": request_id},
+            )
+        ).scalars().all()
+
+        job = await InvestigationService(min_hold_seconds=0).get_job(
+            session,
+            tenant_id=test_tenant,
+            job_id=UUID(result["investigation_id"]),
+        )
+        assert job is not None
+        findings, synthesis = coerce_investigation_payload(job)
+        contract = InvestigationResultAuthorityPayload.model_validate(job.result or {})
+
+    assert findings
+    assert synthesis is None
+    assert contract.llm_synthesis.validation_state == "rejected"
+    assert any(
+        "reason=truth_value_not_numeric" in str(detail or "")
+        for detail in failure_details
+    )
 
 
 def _investigation_job(result_payload: dict) -> InvestigationJob:

@@ -121,14 +121,10 @@ def _cache_key(
     prompt: Mapping[str, Any],
     endpoint: str,
     model_name: str,
-    *,
-    validation_context_fingerprint: str = "",
 ) -> str:
     seed = dict(prompt)
     seed.pop("cache_watermark", None)
     seed.pop("cache_enabled", None)
-    if validation_context_fingerprint:
-        seed["_validation_context_fingerprint"] = validation_context_fingerprint
     return hashlib.sha256(
         f"{endpoint}|{model_name}|{_json(seed)}".encode("utf-8")
     ).hexdigest()
@@ -239,7 +235,6 @@ class SkeldirLLMProvider:
             prompt,
             endpoint,
             requested_model,
-            validation_context_fingerprint=validation_context_fingerprint,
         )
         prompt_fingerprint = _prompt_fingerprint(prompt)
         watermark = _watermark(prompt)
@@ -543,6 +538,82 @@ class SkeldirLLMProvider:
                         "validation_error": cache_validation.error_detail,
                     },
                 )
+                if cache_validation.code == "numeric_mismatch":
+                    await self._cache_write_numeric_rejection_marker(
+                        session=session,
+                        tenant_id=model.tenant_id,
+                        user_id=model.user_id,
+                        endpoint=endpoint,
+                        key=key,
+                        watermark=watermark,
+                        provider=str(hit.provider),
+                        model_name=str(hit.model),
+                        validation_context_fingerprint=validation_context_fingerprint,
+                        validation_error=cache_validation.error_detail
+                        or "cache_numeric_mismatch",
+                    )
+                    await self._mark_cache_hit(session, hit)
+                    await self._release(
+                        session,
+                        model.tenant_id,
+                        model.user_id,
+                        endpoint,
+                        request_id,
+                        month,
+                        reservation,
+                    )
+                    usage = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_cents": 0,
+                        "latency_ms": 0,
+                    }
+                    cached_metadata = dict(hit.response_metadata_ref or {})
+                    cached_metadata["boundary_id"] = self.boundary_id
+                    cached_metadata["validation_code"] = "numeric_mismatch"
+                    cached_metadata["validation_stage"] = "cache"
+                    cached_metadata["validation_schema_key"] = cache_validation.schema_key
+                    cached_metadata["normalization_source"] = (
+                        cache_validation.normalization_source
+                    )
+                    cached_metadata["validation_context_fingerprint"] = (
+                        validation_context_fingerprint
+                    )
+                    await self._finalize_failed(
+                        session, api_call_id, "validation_numeric_mismatch"
+                    )
+                    await self._write_call_audit(
+                        session=session,
+                        tenant_id=model.tenant_id,
+                        user_id=model.user_id,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        requested_model=requested_model,
+                        resolved_model=str(hit.model),
+                        estimated_cost_cents=0,
+                        decision="ALLOW",
+                        reason="cache_numeric_mismatch_degraded",
+                        input_tokens=0,
+                        output_tokens=0,
+                        prompt_fingerprint=prompt_fingerprint,
+                    )
+                    await session.commit()
+                    return ProviderBoundaryResult(
+                        provider=str(hit.provider),
+                        model=str(hit.model),
+                        output_text="",
+                        reasoning_trace=hit.reasoning_trace_ref,
+                        usage=usage,
+                        status="failed",
+                        was_cached=True,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        api_call_id=api_call_id,
+                        failure_reason="validation_numeric_mismatch",
+                        response_metadata=cached_metadata,
+                        validation_code="numeric_mismatch",
+                        validation_stage="cache",
+                    )
                 await self._invalidate_cache_row(session, hit)
 
         if await self._breaker_open(session, model.tenant_id, model.user_id, now):
