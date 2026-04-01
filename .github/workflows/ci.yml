@@ -3290,6 +3290,15 @@ jobs:
           mkdir -p artifacts/b16-p3
           pytest -q backend/tests/test_b16_p3_numeric_authority.py | tee artifacts/b16-p3/b16_p3_numeric_authority_proofs.log
 
+      - name: Run B1.6-P4 regeneration + sink hardening gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b16-p4
+          pytest -q backend/tests/test_b16_p4_regeneration_sink_hardening.py | tee artifacts/b16-p4/b16_p4_regeneration_sink_hardening_proofs.log
+          grep -n "test_b16_p4_regeneration_uses_structured_correction_payload" artifacts/b16-p4/b16_p4_regeneration_sink_hardening_proofs.log >/dev/null
+          grep -n "test_b16_p4_request_local_attempt_budget_is_capped_at_three" artifacts/b16-p4/b16_p4_regeneration_sink_hardening_proofs.log >/dev/null
+          grep -n "test_b16_p4_invalid_synthesis_isolation_preserves_only_audit_raw_artifact" artifacts/b16-p4/b16_p4_regeneration_sink_hardening_proofs.log >/dev/null
+
       - name: Run B0.7 P6 router non-vacuity + choke-point gate
         run: |
           set -euo pipefail

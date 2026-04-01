@@ -57,7 +57,7 @@ class ProviderOutputValidationSpec:
     schema_key: str
     schema_model: type[BaseModel]
     text_field: str
-    max_attempts: int = 2
+    max_attempts: int = 3
 
 
 @dataclass(frozen=True, slots=True)

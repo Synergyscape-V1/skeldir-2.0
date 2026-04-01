@@ -47,6 +47,7 @@ from app.services.llm_validation_failures import LLMValidationFailureService
 
 NUMERIC_REJECTION_CACHE_STATE = "numeric_authority_rejected"
 NUMERIC_REJECTION_CACHE_SUPPRESS_SECONDS = 900
+REQUEST_LOCAL_MAX_ATTEMPTS = 3
 
 
 def _month_start_utc(occurred_at: datetime) -> date:
@@ -200,6 +201,110 @@ class SkeldirLLMProvider:
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
         return now.astimezone(timezone.utc)
+
+    @staticmethod
+    def _request_local_attempt_budget(
+        validation_spec: ProviderOutputValidationSpec | None,
+    ) -> int:
+        requested = (
+            int(validation_spec.max_attempts)
+            if validation_spec is not None
+            else REQUEST_LOCAL_MAX_ATTEMPTS
+        )
+        bounded = max(1, min(REQUEST_LOCAL_MAX_ATTEMPTS, requested))
+        return bounded
+
+    @staticmethod
+    def _build_validation_correction_payload(
+        *,
+        validation: OutputValidationResult,
+        attempt: int,
+        max_attempts: int,
+        validation_spec: ProviderOutputValidationSpec | None,
+    ) -> dict[str, Any]:
+        instructions = [
+            "Return a strict JSON object that satisfies the expected schema.",
+            "Do not restate or copy prior invalid output.",
+            "If numeric authority claims exist, align every claim to deterministic truth within tolerance.",
+        ]
+        payload: dict[str, Any] = {
+            "correction_type": "validation_regeneration",
+            "attempt": int(attempt),
+            "next_attempt": int(attempt + 1),
+            "max_attempts": int(max_attempts),
+            "validation_code": str(validation.code),
+            "validation_stage": str(validation.stage),
+            "schema_key": str(validation.schema_key or "unknown"),
+            "text_field": (
+                str(validation_spec.text_field)
+                if validation_spec is not None
+                else "output_text"
+            ),
+            "error_detail": str(validation.error_detail or validation.code),
+            "normalization_source": str(validation.normalization_source or "unknown"),
+            "instructions": instructions,
+        }
+        if validation.numeric_tolerance_ratio is not None:
+            payload["numeric_tolerance_ratio"] = float(validation.numeric_tolerance_ratio)
+        if int(validation.numeric_mismatch_count) > 0:
+            payload["numeric_mismatch_count"] = int(validation.numeric_mismatch_count)
+        return payload
+
+    @staticmethod
+    def _prompt_for_attempt(
+        *,
+        base_prompt: Mapping[str, Any],
+        attempt: int,
+        max_attempts: int,
+        correction_payload: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        attempt_prompt = dict(base_prompt)
+        attempt_prompt["request_local_attempt"] = int(attempt)
+        attempt_prompt["request_local_attempt_budget"] = int(max_attempts)
+        if correction_payload is None:
+            attempt_prompt.pop("validation_correction_payload", None)
+            attempt_prompt.pop("validation_regeneration_active", None)
+            return attempt_prompt
+
+        attempt_prompt["validation_regeneration_active"] = True
+        attempt_prompt["validation_correction_payload"] = dict(correction_payload)
+        messages: list[dict[str, Any]] = []
+        raw_messages = base_prompt.get("messages")
+        if isinstance(raw_messages, list):
+            for entry in raw_messages:
+                if not isinstance(entry, Mapping):
+                    continue
+                normalized = dict(entry)
+                role = normalized.get("role")
+                if not isinstance(role, str) or not role.strip():
+                    normalized["role"] = "user"
+                content = normalized.get("content")
+                if content is None:
+                    normalized["content"] = ""
+                elif not isinstance(content, (str, list, dict)):
+                    normalized["content"] = str(content)
+                messages.append(normalized)
+
+        if not messages:
+            user_text = (
+                base_prompt.get("input")
+                or base_prompt.get("text")
+                or _json(base_prompt)
+            )
+            messages = [{"role": "user", "content": str(user_text)}]
+
+        correction_text = (
+            "Validation regeneration payload (JSON): "
+            + json.dumps(
+                dict(correction_payload),
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+        messages.append({"role": "system", "content": correction_text})
+        attempt_prompt["messages"] = messages
+        return attempt_prompt
 
     async def complete(
         self,
@@ -652,9 +757,7 @@ class SkeldirLLMProvider:
         await session.commit()
 
         timeout_s = max(0.001, int(settings.LLM_PROVIDER_TIMEOUT_MS) / 1000.0)
-        max_validation_attempts = max(
-            1, int(validation_spec.max_attempts) if validation_spec is not None else 1
-        )
+        max_validation_attempts = self._request_local_attempt_budget(validation_spec)
         total_usage = {
             "input_tokens": 0,
             "output_tokens": 0,
@@ -662,6 +765,7 @@ class SkeldirLLMProvider:
             "latency_ms": 0,
         }
         attempts_executed = 0
+        correction_payload: dict[str, Any] | None = None
         last_payload: Mapping[str, Any] | None = None
         last_validation: OutputValidationResult | None = None
         successful_payload: Mapping[str, Any] | None = None
@@ -669,11 +773,17 @@ class SkeldirLLMProvider:
         try:
             for attempt in range(1, max_validation_attempts + 1):
                 attempts_executed = attempt
+                attempt_prompt = self._prompt_for_attempt(
+                    base_prompt=prompt,
+                    attempt=attempt,
+                    max_attempts=max_validation_attempts,
+                    correction_payload=correction_payload,
+                )
                 started = time.perf_counter()
                 payload = await asyncio.wait_for(
                     self._provider_call(
                         requested_model=requested_model,
-                        prompt=prompt,
+                        prompt=attempt_prompt,
                         reservation=reservation,
                     ),
                     timeout=timeout_s,
@@ -721,8 +831,14 @@ class SkeldirLLMProvider:
                         "endpoint": endpoint,
                         "attempt": attempt,
                         "max_attempts": max_validation_attempts,
+                        "request_local_attempt_budget": max_validation_attempts,
                         "validation_schema_key": validation.schema_key,
                         "validation_context": dict(validation_context or {}),
+                        "validation_correction_payload": (
+                            dict(correction_payload)
+                            if correction_payload is not None
+                            else None
+                        ),
                     },
                     response_payload={
                         "provider": str(payload.get("provider", "unknown")),
@@ -731,6 +847,13 @@ class SkeldirLLMProvider:
                         "validation_error": validation.error_detail,
                     },
                 )
+                if attempt < max_validation_attempts:
+                    correction_payload = self._build_validation_correction_payload(
+                        validation=validation,
+                        attempt=attempt,
+                        max_attempts=max_validation_attempts,
+                        validation_spec=validation_spec,
+                    )
 
             if successful_payload is None:
                 failed_at = await self._db_now(session)
@@ -830,6 +953,12 @@ class SkeldirLLMProvider:
                             if last_validation is not None
                             else None
                         ),
+                        "validation_attempts": attempts_executed,
+                        "validation_attempt_budget": max_validation_attempts,
+                        "validation_regeneration_active": attempts_executed > 1,
+                        "validation_correction_payload": (
+                            correction_payload if correction_payload is not None else None
+                        ),
                         "validation_policy": (
                             "b1.6-p3-numeric-authority-v1"
                             if validation_reason == "validation_numeric_mismatch"
@@ -879,6 +1008,11 @@ class SkeldirLLMProvider:
             )
             metadata["validation_context_fingerprint"] = validation_context_fingerprint
             metadata["validation_attempts"] = attempts_executed
+            metadata["validation_attempt_budget"] = max_validation_attempts
+            metadata["validation_regeneration_active"] = attempts_executed > 1
+            metadata["validation_correction_payload"] = (
+                correction_payload if correction_payload is not None else None
+            )
             metadata["cache_invalidated"] = cache_validation_failed
             if cache_enabled:
                 cache_payload = dict(successful_payload)

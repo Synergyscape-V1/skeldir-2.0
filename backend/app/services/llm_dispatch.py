@@ -29,6 +29,7 @@ def _payload_to_kwargs(payload: LLMTaskPayload) -> Dict[str, object]:
         "correlation_id": payload.correlation_id,
         "request_id": payload.request_id,
         "max_cost_cents": payload.max_cost_cents,
+        "retry_on_failure": False,
     }
 
 

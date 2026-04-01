@@ -195,20 +195,34 @@ def _failure_payload(job: BudgetJobRecord) -> BudgetFailure | None:
 
 
 def _coerce_result_payload(job: BudgetJobRecord) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    synthesis_allowed = job.status in (
+        LifecycleStatus.READY_FOR_REVIEW,
+        LifecycleStatus.APPROVED,
+        LifecycleStatus.COMPLETED,
+    )
+
     def _validated_synthesis_or_none(candidate: Any) -> dict[str, Any] | None:
+        if not synthesis_allowed:
+            return None
         if not isinstance(candidate, dict):
+            return None
+        if candidate.get("authority_class") != "validated_synthesis":
             return None
         validation_state = candidate.get("validation_state")
         if validation_state != "validated":
             return None
+        summary = candidate.get("non_authoritative_summary")
+        generated_at = candidate.get("generated_at")
+        model_name = candidate.get("model")
+        if not isinstance(summary, str) or not summary.strip():
+            return None
+        if not isinstance(generated_at, str) or not generated_at.strip():
+            return None
+        if not isinstance(model_name, str) or not model_name.strip():
+            return None
         return candidate
 
     payload = dict(job.result or {})
-    recommendation = payload.get("deterministic_recommendation")
-    synthesis = payload.get("llm_synthesis")
-    if isinstance(recommendation, dict):
-        return recommendation, _validated_synthesis_or_none(synthesis)
-
     try:
         authority_payload = BudgetResultAuthorityPayload.model_validate(payload)
         synthesis_payload = authority_payload.llm_synthesis.model_dump(mode="json")
@@ -218,6 +232,10 @@ def _coerce_result_payload(job: BudgetJobRecord) -> tuple[dict[str, Any], dict[s
         )
     except ValidationError:
         pass
+
+    recommendation = payload.get("deterministic_recommendation")
+    if isinstance(recommendation, dict):
+        return recommendation, None
 
     observed_at = _as_utc(job.updated_at).isoformat().replace("+00:00", "Z")
     fallback_recommendation = {
@@ -234,17 +252,7 @@ def _coerce_result_payload(job: BudgetJobRecord) -> tuple[dict[str, Any], dict[s
         ],
         "generated_at": observed_at,
     }
-    fallback_synthesis = {
-        "validation_state": "rejected",
-        "non_authoritative_summary": "Synthesis unavailable pending authority validation.",
-        "caveats": [
-            "Synthesis is explanatory only and cannot override deterministic recommendation fields.",
-            "Unvalidated synthesis content is never surfaced on this response path.",
-        ],
-        "model": "unknown",
-        "generated_at": observed_at,
-    }
-    return fallback_recommendation, _validated_synthesis_or_none(fallback_synthesis)
+    return fallback_recommendation, None
 
 
 def _contract_mode_enabled() -> bool:
