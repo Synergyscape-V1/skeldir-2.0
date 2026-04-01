@@ -3299,6 +3299,16 @@ jobs:
           grep -n "test_b16_p4_request_local_attempt_budget_is_capped_at_three" artifacts/b16-p4/b16_p4_regeneration_sink_hardening_proofs.log >/dev/null
           grep -n "test_b16_p4_invalid_synthesis_isolation_preserves_only_audit_raw_artifact" artifacts/b16-p4/b16_p4_regeneration_sink_hardening_proofs.log >/dev/null
 
+      - name: Run B1.6-P5 observability readiness gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/b16-p5
+          pytest -q backend/tests/test_b16_p5_observability_readiness.py | tee artifacts/b16-p5/b16_p5_observability_readiness_proofs.log
+          grep -n "test_b16_p5_structured_failure_rows_are_metric_grade" artifacts/b16-p5/b16_p5_observability_readiness_proofs.log >/dev/null
+          grep -n "test_b16_p5_runtime_identity_has_insert_privilege_on_failure_sink" artifacts/b16-p5/b16_p5_observability_readiness_proofs.log >/dev/null
+          grep -n "test_b16_p5_rejection_rate_computation_by_feature_model_window" artifacts/b16-p5/b16_p5_observability_readiness_proofs.log >/dev/null
+          grep -n "test_b16_p5_alert_threshold_simulation_breach_and_non_breach" artifacts/b16-p5/b16_p5_observability_readiness_proofs.log >/dev/null
+
       - name: Run B0.7 P6 router non-vacuity + choke-point gate
         run: |
           set -euo pipefail
