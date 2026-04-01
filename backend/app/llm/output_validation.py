@@ -7,11 +7,31 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, model_validator
+from pydantic_core import PydanticCustomError
 
 
 class _StrictOutputModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _enforce_numeric_authority(self, info: ValidationInfo) -> "_StrictOutputModel":
+        context = info.context if isinstance(info.context, Mapping) else {}
+        validation = _validate_numeric_authority(
+            normalized_payload=self.model_dump(mode="json"),
+            validation_context=context,
+        )
+        if validation.ok:
+            return self
+        raise PydanticCustomError(
+            "numeric_mismatch",
+            "{error_detail}",
+            {
+                "error_detail": str(validation.error_detail or "numeric_mismatch"),
+                "mismatch_count": int(validation.mismatch_count),
+                "tolerance_ratio": float(validation.tolerance_ratio),
+            },
+        )
 
 
 class RouteOutputSchema(_StrictOutputModel):
@@ -157,9 +177,27 @@ def validate_provider_output_text(
     else:
         candidate_payload = normalized["payload"]
 
+    context = validation_context if isinstance(validation_context, Mapping) else {}
     try:
-        parsed = validation_spec.schema_model.model_validate(candidate_payload)
+        parsed = validation_spec.schema_model.model_validate(
+            candidate_payload,
+            context=context,
+        )
     except ValidationError as exc:
+        numeric_mismatch = _extract_numeric_mismatch_error(exc)
+        if numeric_mismatch is not None:
+            return OutputValidationResult(
+                ok=False,
+                code="numeric_mismatch",
+                stage=stage,
+                normalized_output_text="",
+                normalized_payload=None,
+                schema_key=validation_spec.schema_key,
+                normalization_source=str(normalized.get("source") or "unknown"),
+                error_detail=str(numeric_mismatch["error_detail"]),
+                numeric_tolerance_ratio=float(numeric_mismatch["tolerance_ratio"]),
+                numeric_mismatch_count=int(numeric_mismatch["mismatch_count"]),
+            )
         return OutputValidationResult(
             ok=False,
             code="schema_failed",
@@ -185,23 +223,7 @@ def validate_provider_output_text(
             error_detail=f"missing_or_empty_text_field:{validation_spec.text_field}",
         )
 
-    numeric_validation = _validate_numeric_authority(
-        normalized_payload=payload,
-        validation_context=validation_context,
-    )
-    if not numeric_validation.ok:
-        return OutputValidationResult(
-            ok=False,
-            code="numeric_mismatch",
-            stage=stage,
-            normalized_output_text="",
-            normalized_payload=None,
-            schema_key=validation_spec.schema_key,
-            normalization_source=str(normalized.get("source") or "unknown"),
-            error_detail=str(numeric_validation.error_detail or "numeric_mismatch"),
-            numeric_tolerance_ratio=float(numeric_validation.tolerance_ratio),
-            numeric_mismatch_count=int(numeric_validation.mismatch_count),
-        )
+    numeric_policy = _numeric_authority_policy(context)
 
     return OutputValidationResult(
         ok=True,
@@ -212,11 +234,36 @@ def validate_provider_output_text(
         schema_key=validation_spec.schema_key,
         normalization_source=str(normalized.get("source") or "unknown"),
         numeric_tolerance_ratio=(
-            float(numeric_validation.tolerance_ratio)
-            if numeric_validation.active
+            float(numeric_policy.default_tolerance_ratio)
+            if numeric_policy.active
             else None
         ),
     )
+
+
+def _extract_numeric_mismatch_error(
+    exc: ValidationError,
+) -> dict[str, float | int | str] | None:
+    for error in exc.errors():
+        if str(error.get("type") or "") != "numeric_mismatch":
+            continue
+        context = error.get("ctx") if isinstance(error.get("ctx"), Mapping) else {}
+        tolerance_ratio = _coerce_numeric(context.get("tolerance_ratio"))
+        mismatch_count = _coerce_numeric(context.get("mismatch_count"))
+        return {
+            "error_detail": str(
+                context.get("error_detail") or error.get("msg") or "numeric_mismatch"
+            ),
+            "tolerance_ratio": (
+                float(tolerance_ratio)
+                if tolerance_ratio is not None
+                else NUMERIC_AUTHORITY_DEFAULT_TOLERANCE_RATIO
+            ),
+            "mismatch_count": (
+                int(mismatch_count) if mismatch_count is not None else 1
+            ),
+        }
+    return None
 
 
 def _normalize_provider_output_text(raw_output_text: str) -> dict[str, Any]:
