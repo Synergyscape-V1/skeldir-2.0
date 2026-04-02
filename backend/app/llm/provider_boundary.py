@@ -43,7 +43,10 @@ from app.models.llm import (
     LLMSemanticCache,
 )
 from app.schemas.llm_payloads import LLMTaskPayload
-from app.services.llm_validation_failures import LLMValidationFailureService
+from app.services.llm_validation_failures import (
+    LLMValidationFailureService,
+    ValidationFailureSinkWriteOutcome,
+)
 
 NUMERIC_REJECTION_CACHE_STATE = "numeric_authority_rejected"
 NUMERIC_REJECTION_CACHE_SUPPRESS_SECONDS = 900
@@ -66,11 +69,15 @@ def _json(value: Mapping[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def _validation_context_fingerprint(validation_context: Mapping[str, Any] | None) -> str:
+def _validation_context_fingerprint(
+    validation_context: Mapping[str, Any] | None,
+) -> str:
     if not isinstance(validation_context, Mapping):
         return ""
     deterministic_truth = validation_context.get("deterministic_truth")
-    truth_mapping = deterministic_truth if isinstance(deterministic_truth, Mapping) else {}
+    truth_mapping = (
+        deterministic_truth if isinstance(deterministic_truth, Mapping) else {}
+    )
 
     normalized_bindings: list[dict[str, Any]] = []
     raw_bindings = validation_context.get("numeric_claim_bindings")
@@ -196,6 +203,21 @@ class SkeldirLLMProvider:
     breaker_key = "llm-provider"
     _validation_failure_service = LLMValidationFailureService()
 
+    @staticmethod
+    def _validation_failure_sink_metadata(
+        *,
+        attempted: bool,
+        degraded_reason: str | None,
+    ) -> dict[str, Any]:
+        if not attempted:
+            return {"validation_failure_sink_status": "not_attempted"}
+        if degraded_reason is not None:
+            return {
+                "validation_failure_sink_status": "degraded",
+                "validation_failure_sink_degraded_reason": degraded_reason,
+            }
+        return {"validation_failure_sink_status": "recorded"}
+
     async def _db_now(self, session: AsyncSession) -> datetime:
         now = (await session.execute(text("SELECT now()"))).scalar_one()
         if now.tzinfo is None:
@@ -245,7 +267,9 @@ class SkeldirLLMProvider:
             "instructions": instructions,
         }
         if validation.numeric_tolerance_ratio is not None:
-            payload["numeric_tolerance_ratio"] = float(validation.numeric_tolerance_ratio)
+            payload["numeric_tolerance_ratio"] = float(
+                validation.numeric_tolerance_ratio
+            )
         if int(validation.numeric_mismatch_count) > 0:
             payload["numeric_mismatch_count"] = int(validation.numeric_mismatch_count)
         return payload
@@ -293,14 +317,11 @@ class SkeldirLLMProvider:
             )
             messages = [{"role": "user", "content": str(user_text)}]
 
-        correction_text = (
-            "Validation regeneration payload (JSON): "
-            + json.dumps(
-                dict(correction_payload),
-                sort_keys=True,
-                separators=(",", ":"),
-                default=str,
-            )
+        correction_text = "Validation regeneration payload (JSON): " + json.dumps(
+            dict(correction_payload),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
         )
         messages.append({"role": "system", "content": correction_text})
         attempt_prompt["messages"] = messages
@@ -473,6 +494,8 @@ class SkeldirLLMProvider:
 
         cache_enabled = bool(prompt.get("cache_enabled", True))
         cache_validation_failed = False
+        validation_failure_sink_attempted = False
+        validation_failure_sink_degraded_reason: str | None = None
         if cache_enabled:
             hit = await self._cache_hit(
                 session, model.tenant_id, model.user_id, endpoint, key, watermark
@@ -566,7 +589,9 @@ class SkeldirLLMProvider:
                     cached_metadata["boundary_id"] = self.boundary_id
                     cached_metadata["validation_code"] = cache_validation.code
                     cached_metadata["validation_stage"] = cache_validation.stage
-                    cached_metadata["validation_schema_key"] = cache_validation.schema_key
+                    cached_metadata["validation_schema_key"] = (
+                        cache_validation.schema_key
+                    )
                     cached_metadata["normalization_source"] = (
                         cache_validation.normalization_source
                     )
@@ -621,7 +646,7 @@ class SkeldirLLMProvider:
                     )
 
                 cache_validation_failed = True
-                await self._record_validation_failure(
+                sink_outcome = await self._record_validation_failure(
                     session=session,
                     tenant_id=model.tenant_id,
                     endpoint=endpoint,
@@ -643,6 +668,14 @@ class SkeldirLLMProvider:
                         "validation_error": cache_validation.error_detail,
                     },
                 )
+                validation_failure_sink_attempted = True
+                if (
+                    sink_outcome.is_degraded
+                    and validation_failure_sink_degraded_reason is None
+                ):
+                    validation_failure_sink_degraded_reason = (
+                        sink_outcome.degraded_reason
+                    )
                 if cache_validation.code == "numeric_mismatch":
                     await self._cache_write_numeric_rejection_marker(
                         session=session,
@@ -677,15 +710,26 @@ class SkeldirLLMProvider:
                     cached_metadata["boundary_id"] = self.boundary_id
                     cached_metadata["validation_code"] = "numeric_mismatch"
                     cached_metadata["validation_stage"] = "cache"
-                    cached_metadata["validation_schema_key"] = cache_validation.schema_key
+                    cached_metadata["validation_schema_key"] = (
+                        cache_validation.schema_key
+                    )
                     cached_metadata["normalization_source"] = (
                         cache_validation.normalization_source
                     )
                     cached_metadata["validation_context_fingerprint"] = (
                         validation_context_fingerprint
                     )
+                    cached_metadata.update(
+                        self._validation_failure_sink_metadata(
+                            attempted=validation_failure_sink_attempted,
+                            degraded_reason=validation_failure_sink_degraded_reason,
+                        )
+                    )
                     await self._finalize_failed(
-                        session, api_call_id, "validation_numeric_mismatch"
+                        session,
+                        api_call_id,
+                        "validation_numeric_mismatch",
+                        response_metadata=cached_metadata,
                     )
                     await self._write_call_audit(
                         session=session,
@@ -795,7 +839,9 @@ class SkeldirLLMProvider:
                 usage.setdefault("input_tokens", 0)
                 usage.setdefault("output_tokens", 0)
                 usage.setdefault("cost_cents", 0)
-                usage["latency_ms"] = max(1, int((time.perf_counter() - started) * 1000))
+                usage["latency_ms"] = max(
+                    1, int((time.perf_counter() - started) * 1000)
+                )
                 total_usage["input_tokens"] += max(0, int(usage.get("input_tokens", 0)))
                 total_usage["output_tokens"] += max(
                     0, int(usage.get("output_tokens", 0))
@@ -813,12 +859,14 @@ class SkeldirLLMProvider:
                 last_validation = validation
                 if validation.ok:
                     normalized_payload = dict(payload)
-                    normalized_payload["output_text"] = validation.normalized_output_text
+                    normalized_payload["output_text"] = (
+                        validation.normalized_output_text
+                    )
                     successful_payload = normalized_payload
                     successful_validation = validation
                     break
 
-                await self._record_validation_failure(
+                sink_outcome = await self._record_validation_failure(
                     session=session,
                     tenant_id=model.tenant_id,
                     endpoint=endpoint,
@@ -847,6 +895,14 @@ class SkeldirLLMProvider:
                         "validation_error": validation.error_detail,
                     },
                 )
+                validation_failure_sink_attempted = True
+                if (
+                    sink_outcome.is_degraded
+                    and validation_failure_sink_degraded_reason is None
+                ):
+                    validation_failure_sink_degraded_reason = (
+                        sink_outcome.degraded_reason
+                    )
                 if attempt < max_validation_attempts:
                     correction_payload = self._build_validation_correction_payload(
                         validation=validation,
@@ -876,8 +932,12 @@ class SkeldirLLMProvider:
                         endpoint=endpoint,
                         key=key,
                         watermark=watermark,
-                        provider=str((last_payload or {}).get("provider") or "validation"),
-                        model_name=str((last_payload or {}).get("model") or requested_model),
+                        provider=str(
+                            (last_payload or {}).get("provider") or "validation"
+                        ),
+                        model_name=str(
+                            (last_payload or {}).get("model") or requested_model
+                        ),
                         validation_context_fingerprint=validation_context_fingerprint,
                         validation_error=(
                             last_validation.error_detail
@@ -917,7 +977,39 @@ class SkeldirLLMProvider:
                     failed_at=failed_at,
                     failure_reason=validation_reason,
                 )
-                await self._finalize_failed(session, api_call_id, validation_reason)
+                failed_metadata = {
+                    "raw_output_text": str(
+                        (last_payload or {}).get("output_text") or ""
+                    ),
+                    "validation_error": (
+                        last_validation.error_detail
+                        if last_validation is not None
+                        else None
+                    ),
+                    "validation_attempts": attempts_executed,
+                    "validation_attempt_budget": max_validation_attempts,
+                    "validation_regeneration_active": attempts_executed > 1,
+                    "validation_correction_payload": (
+                        correction_payload if correction_payload is not None else None
+                    ),
+                    "validation_policy": (
+                        "b1.6-p3-numeric-authority-v1"
+                        if validation_reason == "validation_numeric_mismatch"
+                        else None
+                    ),
+                }
+                failed_metadata.update(
+                    self._validation_failure_sink_metadata(
+                        attempted=validation_failure_sink_attempted,
+                        degraded_reason=validation_failure_sink_degraded_reason,
+                    )
+                )
+                await self._finalize_failed(
+                    session,
+                    api_call_id,
+                    validation_reason,
+                    response_metadata=failed_metadata,
+                )
                 await self._write_call_audit(
                     session=session,
                     tenant_id=model.tenant_id,
@@ -925,7 +1017,9 @@ class SkeldirLLMProvider:
                     request_id=request_id,
                     correlation_id=correlation_id,
                     requested_model=requested_model,
-                    resolved_model=str((last_payload or {}).get("model") or requested_model),
+                    resolved_model=str(
+                        (last_payload or {}).get("model") or requested_model
+                    ),
                     estimated_cost_cents=settled,
                     decision="ALLOW",
                     reason=validation_reason,
@@ -946,25 +1040,7 @@ class SkeldirLLMProvider:
                     correlation_id=correlation_id,
                     api_call_id=api_call_id,
                     failure_reason=validation_reason,
-                    response_metadata={
-                        "raw_output_text": str((last_payload or {}).get("output_text") or ""),
-                        "validation_error": (
-                            last_validation.error_detail
-                            if last_validation is not None
-                            else None
-                        ),
-                        "validation_attempts": attempts_executed,
-                        "validation_attempt_budget": max_validation_attempts,
-                        "validation_regeneration_active": attempts_executed > 1,
-                        "validation_correction_payload": (
-                            correction_payload if correction_payload is not None else None
-                        ),
-                        "validation_policy": (
-                            "b1.6-p3-numeric-authority-v1"
-                            if validation_reason == "validation_numeric_mismatch"
-                            else None
-                        ),
-                    },
+                    response_metadata=failed_metadata,
                     validation_code=validation_reason.removeprefix("validation_"),
                     validation_stage="provider",
                 )
@@ -996,8 +1072,12 @@ class SkeldirLLMProvider:
             )
             metadata = dict(successful_payload.get("response_metadata", {}))
             metadata["boundary_id"] = self.boundary_id
-            metadata["validation_code"] = successful_validation.code if successful_validation else "success"
-            metadata["validation_stage"] = successful_validation.stage if successful_validation else "provider"
+            metadata["validation_code"] = (
+                successful_validation.code if successful_validation else "success"
+            )
+            metadata["validation_stage"] = (
+                successful_validation.stage if successful_validation else "provider"
+            )
             metadata["validation_schema_key"] = (
                 successful_validation.schema_key if successful_validation else None
             )
@@ -1014,6 +1094,12 @@ class SkeldirLLMProvider:
                 correction_payload if correction_payload is not None else None
             )
             metadata["cache_invalidated"] = cache_validation_failed
+            metadata.update(
+                self._validation_failure_sink_metadata(
+                    attempted=validation_failure_sink_attempted,
+                    degraded_reason=validation_failure_sink_degraded_reason,
+                )
+            )
             if cache_enabled:
                 cache_payload = dict(successful_payload)
                 cache_payload["response_metadata"] = metadata
@@ -1069,8 +1155,12 @@ class SkeldirLLMProvider:
                 correlation_id=correlation_id,
                 api_call_id=api_call_id,
                 response_metadata=metadata,
-                validation_code=successful_validation.code if successful_validation else "success",
-                validation_stage=successful_validation.stage if successful_validation else "provider",
+                validation_code=(
+                    successful_validation.code if successful_validation else "success"
+                ),
+                validation_stage=(
+                    successful_validation.stage if successful_validation else "provider"
+                ),
                 validated_output=(
                     successful_validation.normalized_payload
                     if successful_validation is not None
@@ -1351,11 +1441,11 @@ class SkeldirLLMProvider:
         correlation_id: str,
         request_payload: Mapping[str, Any],
         response_payload: Mapping[str, Any] | None,
-    ) -> None:
+    ) -> ValidationFailureSinkWriteOutcome:
         payload = dict(request_payload)
         payload.setdefault("request_id", request_id)
         payload.setdefault("correlation_id", correlation_id)
-        await self._validation_failure_service.record_failure(
+        return await self._validation_failure_service.record_failure_best_effort(
             session,
             tenant_id=tenant_id,
             endpoint=endpoint,
@@ -1407,7 +1497,9 @@ class SkeldirLLMProvider:
         metadata = {
             "cache_invalidated": True,
             "cache_numeric_state": NUMERIC_REJECTION_CACHE_STATE,
-            "cache_numeric_reject_until": reject_until.isoformat().replace("+00:00", "Z"),
+            "cache_numeric_reject_until": reject_until.isoformat().replace(
+                "+00:00", "Z"
+            ),
             "cache_numeric_reject_reason": str(validation_error or "numeric_mismatch"),
             "validation_context_fingerprint": validation_context_fingerprint,
         }
@@ -1611,7 +1703,9 @@ class SkeldirLLMProvider:
                 replay_validation.stage if row.status == "success" else None
             ),
             validated_output=(
-                replay_validation.normalized_payload if row.status == "success" else None
+                replay_validation.normalized_payload
+                if row.status == "success"
+                else None
             ),
         )
 
@@ -2249,7 +2343,11 @@ class SkeldirLLMProvider:
         row.distillation_eligible = False
 
     async def _finalize_failed(
-        self, session: AsyncSession, api_call_id: UUID, reason: str
+        self,
+        session: AsyncSession,
+        api_call_id: UUID,
+        reason: str,
+        response_metadata: Mapping[str, Any] | None = None,
     ) -> None:
         row = await session.get(LLMApiCall, api_call_id)
         if row is None:
@@ -2258,7 +2356,9 @@ class SkeldirLLMProvider:
         row.failure_reason = reason
         row.block_reason = None
         row.provider_attempted = True
-        row.response_metadata_ref = {"output_text": ""}
+        metadata = dict(response_metadata or {})
+        metadata.setdefault("output_text", "")
+        row.response_metadata_ref = metadata
         row.reasoning_trace_ref = {}
         row.distillation_eligible = False
 

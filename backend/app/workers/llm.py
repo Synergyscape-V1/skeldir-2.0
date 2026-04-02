@@ -127,7 +127,9 @@ def _coerce_numeric(value: Any) -> float | None:
     return None
 
 
-def _numeric_claim_bindings_from_prompt(prompt: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _numeric_claim_bindings_from_prompt(
+    prompt: Mapping[str, Any],
+) -> list[dict[str, Any]]:
     raw = prompt.get("numeric_claim_bindings")
     if not isinstance(raw, list):
         return []
@@ -181,7 +183,11 @@ def _build_numeric_validation_context(
 
 
 def _audit_provider_summary(result: Any) -> str:
-    metadata = result.response_metadata if isinstance(result.response_metadata, Mapping) else {}
+    metadata = (
+        result.response_metadata
+        if isinstance(result.response_metadata, Mapping)
+        else {}
+    )
     raw_output_text = metadata.get("raw_output_text")
     if isinstance(raw_output_text, str) and raw_output_text.strip():
         return raw_output_text.strip()
@@ -386,7 +392,7 @@ async def run_investigation(
             )
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
             validation_error = f"authority_contract_build_failed:{type(exc).__name__}"
-            await _VALIDATION_FAILURE_SERVICE.record_failure(
+            sink_outcome = await _VALIDATION_FAILURE_SERVICE.record_failure_best_effort(
                 session,
                 tenant_id=payload.tenant_id,
                 endpoint=endpoint,
@@ -402,6 +408,18 @@ async def run_investigation(
                     "output_text": result.output_text,
                 },
             )
+            if sink_outcome.is_degraded:
+                logger.warning(
+                    "llm_validation_failure_sink_write_degraded",
+                    extra={
+                        "tenant_id": str(payload.tenant_id),
+                        "correlation_id": payload.correlation_id,
+                        "event_type": "llm.validation_failure_sink_degraded",
+                        "endpoint": endpoint,
+                        "request_id": payload.request_id,
+                        "degraded_reason": sink_outcome.degraded_reason,
+                    },
+                )
             await _INVESTIGATION_SERVICE.fail_job(
                 session,
                 tenant_id=payload.tenant_id,
@@ -462,7 +480,9 @@ async def run_investigation(
             tenant_id=payload.tenant_id,
             job_id=authority_job.id,
             failure_code=result.status,
-            failure_reason=result.failure_reason or result.block_reason or "provider_failed",
+            failure_reason=result.failure_reason
+            or result.block_reason
+            or "provider_failed",
         )
 
     logger.info(
@@ -599,7 +619,7 @@ async def optimize_budget(
             )
         except Exception as exc:  # pragma: no cover - defensive fail-closed path
             validation_error = f"authority_contract_build_failed:{type(exc).__name__}"
-            await _VALIDATION_FAILURE_SERVICE.record_failure(
+            sink_outcome = await _VALIDATION_FAILURE_SERVICE.record_failure_best_effort(
                 session,
                 tenant_id=payload.tenant_id,
                 endpoint=endpoint,
@@ -615,6 +635,18 @@ async def optimize_budget(
                     "output_text": result.output_text,
                 },
             )
+            if sink_outcome.is_degraded:
+                logger.warning(
+                    "llm_validation_failure_sink_write_degraded",
+                    extra={
+                        "tenant_id": str(payload.tenant_id),
+                        "correlation_id": payload.correlation_id,
+                        "event_type": "llm.validation_failure_sink_degraded",
+                        "endpoint": endpoint,
+                        "request_id": payload.request_id,
+                        "degraded_reason": sink_outcome.degraded_reason,
+                    },
+                )
             await _BUDGET_JOB_SERVICE.fail_job(
                 session,
                 tenant_id=payload.tenant_id,
@@ -676,7 +708,9 @@ async def optimize_budget(
             tenant_id=payload.tenant_id,
             job_id=authority_job.id,
             failure_code=result.status,
-            failure_reason=result.failure_reason or result.block_reason or "provider_failed",
+            failure_reason=result.failure_reason
+            or result.block_reason
+            or "provider_failed",
         )
 
     logger.info(
