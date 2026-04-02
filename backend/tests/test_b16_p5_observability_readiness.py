@@ -6,16 +6,25 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.identity import SYSTEM_USER_ID
 from app.db.session import engine, get_session
 from app.models.llm import LLMApiCall, LLMValidationFailure
 from app.schemas.llm_payloads import LLMTaskPayload
+from app.services.budget_job import BudgetJobService
+from app.services.centaur_lifecycle import LifecycleStatus
+from app.services.investigation import InvestigationService
 from app.services.llm_validation_failures import LLMValidationFailureService
 from app.services.llm_validation_observability import (
     LLMValidationObservabilityService,
 )
-from app.workers.llm import generate_explanation
+from app.workers.llm import (
+    _PROVIDER_BOUNDARY,
+    generate_explanation,
+    optimize_budget,
+    run_investigation,
+)
 
 
 def _payload(
@@ -227,6 +236,188 @@ async def test_b16_p5_runtime_identity_has_insert_privilege_on_failure_sink(
         )
 
     assert str(inserted.id) == str(failure_id)
+
+
+@pytest.mark.asyncio
+async def test_b16_p5_sink_write_failure_isolated_from_provider_failure_path(
+    test_tenant: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request_id = f"b16-p5-sink-degraded-explanation-{uuid4().hex[:8]}"
+
+    async def _forced_sink_failure(*args, **kwargs):
+        raise SQLAlchemyError("forced_sink_write_failure")
+
+    monkeypatch.setattr(
+        _PROVIDER_BOUNDARY._validation_failure_service,
+        "record_failure",
+        _forced_sink_failure,
+        raising=True,
+    )
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        failed = await generate_explanation(
+            _payload(
+                test_tenant,
+                request_id=request_id,
+                prompt={
+                    "cache_enabled": False,
+                    "simulated_output_text": '{"summary":"schema mismatch"}',
+                },
+            ),
+            session=session,
+        )
+        api_call = (
+            (
+                await session.execute(
+                    select(LLMApiCall).where(
+                        LLMApiCall.tenant_id == test_tenant,
+                        LLMApiCall.endpoint == "app.tasks.llm.explanation",
+                        LLMApiCall.request_id == request_id,
+                    )
+                )
+            )
+            .scalars()
+            .one()
+        )
+        sink_row_count = int(
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM llm_validation_failures
+                        WHERE tenant_id = :tenant_id
+                          AND endpoint = 'app.tasks.llm.explanation'
+                          AND request_payload ->> 'request_id' = :request_id
+                        """
+                    ),
+                    {"tenant_id": str(test_tenant), "request_id": request_id},
+                )
+            ).scalar_one()
+        )
+
+    assert failed["status"] == "failed"
+    assert failed["failure_reason"] == "validation_schema_failed"
+    assert sink_row_count == 0
+    metadata = dict(api_call.response_metadata_ref or {})
+    assert metadata.get("validation_failure_sink_status") == "degraded"
+    assert str(
+        metadata.get("validation_failure_sink_degraded_reason") or ""
+    ).startswith("validation_failure_sink_write_failed:")
+
+
+@pytest.mark.asyncio
+async def test_b16_p5_sink_write_failure_isolated_with_non_processing_finalization(
+    test_tenant: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    investigation_request_id = f"b16-p5-sink-degraded-investigation-{uuid4().hex[:8]}"
+    budget_request_id = f"b16-p5-sink-degraded-budget-{uuid4().hex[:8]}"
+
+    async def _forced_sink_failure(*args, **kwargs):
+        raise SQLAlchemyError("forced_sink_write_failure")
+
+    monkeypatch.setattr(
+        _PROVIDER_BOUNDARY._validation_failure_service,
+        "record_failure",
+        _forced_sink_failure,
+        raising=True,
+    )
+
+    hallucinated_output = "Projected ROAS is 10.5 and revenue is 12000."
+    investigation_prompt = {
+        "simulated_output_text": hallucinated_output,
+        "cache_enabled": False,
+        "deterministic_truth": {"roas": 3.2, "revenue": 12000.0},
+        "numeric_claim_bindings": [
+            {"claim_path": "summary.roas", "truth_path": "roas"},
+            {"claim_path": "summary.revenue", "truth_path": "revenue"},
+        ],
+    }
+    budget_prompt = dict(investigation_prompt)
+    budget_prompt["optimization_goal"] = "maximize_roas"
+
+    async with get_session(tenant_id=test_tenant, user_id=SYSTEM_USER_ID) as session:
+        investigation_result = await run_investigation(
+            _payload(
+                test_tenant,
+                request_id=investigation_request_id,
+                prompt=investigation_prompt,
+            ),
+            session=session,
+        )
+        budget_result = await optimize_budget(
+            _payload(
+                test_tenant,
+                request_id=budget_request_id,
+                prompt=budget_prompt,
+            ),
+            session=session,
+        )
+        investigation_job = await InvestigationService(min_hold_seconds=0).get_job(
+            session,
+            tenant_id=test_tenant,
+            job_id=UUID(investigation_result["investigation_id"]),
+        )
+        budget_job = await BudgetJobService().get_by_id(
+            session,
+            tenant_id=test_tenant,
+            job_id=UUID(budget_result["budget_job_id"]),
+        )
+        api_calls = (
+            (
+                await session.execute(
+                    select(LLMApiCall).where(
+                        LLMApiCall.tenant_id == test_tenant,
+                        LLMApiCall.request_id.in_(
+                            [investigation_request_id, budget_request_id]
+                        ),
+                        LLMApiCall.endpoint.in_(
+                            [
+                                "app.tasks.llm.investigation",
+                                "app.tasks.llm.budget_optimization",
+                            ]
+                        ),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        sink_row_count = int(
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM llm_validation_failures
+                        WHERE tenant_id = :tenant_id
+                          AND request_payload ->> 'request_id' IN (:req_one, :req_two)
+                        """
+                    ),
+                    {
+                        "tenant_id": str(test_tenant),
+                        "req_one": investigation_request_id,
+                        "req_two": budget_request_id,
+                    },
+                )
+            ).scalar_one()
+        )
+
+    assert investigation_result["status"] == "accepted"
+    assert budget_result["status"] == "accepted"
+    assert investigation_job is not None
+    assert investigation_job.status == LifecycleStatus.READY_FOR_REVIEW
+    assert investigation_job.status != LifecycleStatus.INVESTIGATING
+    assert budget_job.status == LifecycleStatus.READY_FOR_REVIEW
+    assert budget_job.status != LifecycleStatus.INVESTIGATING
+    assert sink_row_count == 0
+    assert len(api_calls) == 2
+    for call in api_calls:
+        metadata = dict(call.response_metadata_ref or {})
+        assert metadata.get("validation_failure_sink_status") == "degraded"
+        assert str(
+            metadata.get("validation_failure_sink_degraded_reason") or ""
+        ).startswith("validation_failure_sink_write_failed:")
 
 
 @pytest.mark.asyncio
