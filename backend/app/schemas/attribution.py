@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -259,6 +259,48 @@ class ProviderOAuthRefreshStateResponse(BaseModel):
     last_error_code: Optional[ProviderLifecycleErrorCode] = None
     data_freshness_seconds: Annotated[int, Field(ge=0)]
     last_updated: datetime
+
+
+class AttributionExplanationRevenueContext(BaseModel):
+    cache_key: str
+    total_revenue: Annotated[float, Field(ge=0)]
+    total_revenue_cents: Annotated[int, Field(ge=0)]
+    data_as_of: datetime
+
+
+class AttributionAuthoritativeMetric(BaseModel):
+    entity_type: Literal[
+        'attribution_score',
+        'channel_performance',
+        'reconciliation_discrepancy',
+    ]
+    entity_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    metric_key: str
+    metric_value: float
+    metric_value_cents: int
+    currency: Literal['USD']
+    channel_code: str
+    model_type: str
+    model_version: str
+    confidence_score: Annotated[float, Field(ge=0.0, le=1.0)]
+    verification_state: Literal['verified', 'unverified']
+    last_updated: datetime
+    data_freshness_seconds: Annotated[int, Field(ge=0)]
+    deterministic_truth_sources: list[str]
+    revenue_context: AttributionExplanationRevenueContext
+
+
+class AttributionNonAuthoritativeExplanation(BaseModel):
+    explanation_class: Literal['deterministic_placeholder']
+    non_authoritative_summary: Annotated[str, Field(min_length=1, max_length=2000)]
+    generated_at: datetime
+    caveats: list[str]
+
+
+class AttributionExplanationResponse(BaseModel):
+    authoritative_metric: AttributionAuthoritativeMetric
+    non_authoritative_explanation: AttributionNonAuthoritativeExplanation
 
 
 # Alias for CI compatibility (must be a class definition to match workflow grep pattern)

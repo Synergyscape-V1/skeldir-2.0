@@ -106,7 +106,7 @@ llm_explanation:
       operation_id: explainAttributionEntity
       status: implemented
       canonical_event: null
-      description: Canonical explanation route mounted with contract-defined non-operational mode in B1.7-P0
+      description: Canonical explanation route mounted with deterministic DB authority read and separated explanation payload in B1.7-P1
 
 llm_investigations:
   requirements:

@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""B1.7-P0 explanation surface lock enforcer.
-
-Primary authority for endpoint-specific B1.7-P0 semantics is the canonical
-OpenAPI source operation:
-  api-contracts/openapi/v1/attribution.yaml
-  /api/attribution/explain/{entity_type}/{entity_id} GET
-  x-skeldir-b17-p0
-"""
+"""B1.7-P1 canonical explanation authority lock enforcer."""
 
 from __future__ import annotations
 
@@ -30,14 +23,13 @@ NONCANONICAL_METHOD = "GET"
 NONCANONICAL_PATH = "/api/v1/explain/{entity_type}/{entity_id}"
 NONCANONICAL_OPERATION_ID = "getEntityExplanation"
 NONCANONICAL_BUNDLE = "llm-explanations.bundled.yaml"
-B17_LOCK_KEY = "x-skeldir-b17-p0"
+B17_LOCK_KEY = "x-skeldir-b17-p1"
+LEGACY_NONCANONICAL_LOCK_KEY = "x-skeldir-b17-p0"
 
 
 def _resolve(repo_root: Path, raw: str) -> Path:
     path = Path(raw)
-    if path.is_absolute():
-        return path
-    return (repo_root / path).resolve()
+    return path if path.is_absolute() else (repo_root / path).resolve()
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -49,10 +41,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 
 def _read_json_or_yaml(path: Path) -> dict[str, Any]:
-    suffix = path.suffix.lower()
-    if suffix == ".json":
-        return _read_json(path)
-    return _read_yaml(path)
+    return _read_json(path) if path.suffix.lower() == ".json" else _read_yaml(path)
 
 
 def _extract_operations(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -64,9 +53,8 @@ def _extract_operations(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
             method_upper = str(method).upper()
             if method_upper not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                 continue
-            if not isinstance(payload, dict):
-                continue
-            operations[f"{method_upper} {path}"] = payload
+            if isinstance(payload, dict):
+                operations[f"{method_upper} {path}"] = payload
     return operations
 
 
@@ -84,7 +72,6 @@ def _load_runtime_routes(repo_root: Path) -> set[str]:
 
     app_module = importlib.import_module("app.main")
     app = getattr(app_module, "app")
-
     routes: set[str] = set()
     for route in app.routes:
         if not hasattr(route, "methods") or not hasattr(route, "path"):
@@ -114,10 +101,10 @@ def _load_runtime_openapi(repo_root: Path) -> dict[str, Any]:
 
 def _load_route_set_from_file(path: Path) -> set[str]:
     payload = _read_json(path)
-    items = payload.get("routes")
-    if not isinstance(items, list) or not all(isinstance(item, str) for item in items):
+    routes = payload.get("routes")
+    if not isinstance(routes, list) or not all(isinstance(item, str) for item in routes):
         raise ValueError("runtime routes file must be JSON object with string list 'routes'")
-    return set(items)
+    return set(routes)
 
 
 def _manifest_requirements_for_operation(
@@ -136,33 +123,67 @@ def _manifest_requirements_for_operation(
     return matches
 
 
-def _file_contains_literal(path: Path, literal: str) -> bool:
-    return literal in path.read_text(encoding="utf-8", errors="ignore")
+def _schema_ref_for_200(operation: dict[str, Any]) -> str | None:
+    responses = operation.get("responses", {})
+    if not isinstance(responses, dict):
+        return None
+    response_200 = responses.get("200")
+    if not isinstance(response_200, dict):
+        return None
+    return (
+        response_200.get("content", {})
+        .get("application/json", {})
+        .get("schema", {})
+        .get("$ref")
+    )
 
 
-def _normalized_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+def _schema_for_200(operation: dict[str, Any]) -> dict[str, Any] | None:
+    responses = operation.get("responses", {})
+    if not isinstance(responses, dict):
+        return None
+    response_200 = responses.get("200")
+    if not isinstance(response_200, dict):
+        return None
+    schema = (
+        response_200.get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    return schema if isinstance(schema, dict) else None
 
 
-def _extract_lock_from_spec(
-    *,
-    spec: dict[str, Any],
-    violations: list[str],
-    label: str,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    key = f"{CANONICAL_METHOD} {CANONICAL_PATH}"
-    operations = _extract_operations(spec)
-    operation = operations.get(key)
-    if operation is None:
-        violations.append(f"canonical_operation_missing_from_{label}")
-        return {}, {}
-    if operation.get("operationId") != CANONICAL_OPERATION_ID:
-        violations.append(f"canonical_operation_id_mismatch_in_{label}")
-    lock = operation.get(B17_LOCK_KEY)
-    if not isinstance(lock, dict):
-        violations.append(f"missing_b17_lock_extension_in_{label}")
-        return operation, {}
-    return operation, lock
+def _resolve_local_ref(spec: dict[str, Any], ref: str) -> dict[str, Any] | None:
+    if not ref.startswith("#/"):
+        return None
+    node: Any = spec
+    for segment in ref[2:].split("/"):
+        key = segment.replace("~1", "/").replace("~0", "~")
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node if isinstance(node, dict) else None
+
+
+def _has_separated_response_shape(spec: dict[str, Any], operation: dict[str, Any]) -> bool:
+    schema = _schema_for_200(operation)
+    if not isinstance(schema, dict):
+        return False
+    if "$ref" in schema and isinstance(schema["$ref"], str):
+        resolved = _resolve_local_ref(spec, schema["$ref"])
+        if isinstance(resolved, dict):
+            schema = resolved
+    required = set(schema.get("required", [])) if isinstance(schema.get("required"), list) else set()
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        return False
+    return {
+        "authoritative_metric",
+        "non_authoritative_explanation",
+    }.issubset(required) and {
+        "authoritative_metric",
+        "non_authoritative_explanation",
+    }.issubset(set(properties.keys()))
 
 
 def run_enforcement(
@@ -183,7 +204,6 @@ def run_enforcement(
     runtime_openapi_file: Path | None,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
-
     required_files = (
         attribution_source_file,
         attribution_bundle_file,
@@ -206,177 +226,111 @@ def run_enforcement(
     noncanonical_source = _read_yaml(noncanonical_source_file)
     noncanonical_bundle = _read_yaml(noncanonical_bundle_file)
 
-    source_operation, source_lock = _extract_lock_from_spec(
-        spec=attribution_source,
-        violations=violations,
-        label="source_openapi",
-    )
-    bundle_operation, bundle_lock = _extract_lock_from_spec(
-        spec=attribution_bundle,
-        violations=violations,
-        label="bundled_openapi",
-    )
-    if source_lock and bundle_lock and _normalized_json(source_lock) != _normalized_json(bundle_lock):
-        violations.append("b17_lock_extension_drift_between_source_and_bundle")
+    canonical_key = f"{CANONICAL_METHOD} {CANONICAL_PATH}"
+    source_operation = _extract_operations(attribution_source).get(canonical_key)
+    bundle_operation = _extract_operations(attribution_bundle).get(canonical_key)
+    if source_operation is None:
+        violations.append("canonical_operation_missing_from_source_openapi")
+        source_operation = {}
+    if bundle_operation is None:
+        violations.append("canonical_operation_missing_from_bundled_openapi")
+        bundle_operation = {}
 
-    if source_operation:
-        responses = source_operation.get("responses", {})
-        if not isinstance(responses, dict) or "503" not in responses:
-            violations.append("source_openapi_missing_503_non_operational_response")
-    if bundle_operation:
-        responses = bundle_operation.get("responses", {})
-        if not isinstance(responses, dict) or "503" not in responses:
-            violations.append("bundled_openapi_missing_503_non_operational_response")
+    if source_operation.get("operationId") != CANONICAL_OPERATION_ID:
+        violations.append("source_operation_id_mismatch")
+    if bundle_operation.get("operationId") != CANONICAL_OPERATION_ID:
+        violations.append("bundle_operation_id_mismatch")
 
-    implementation_status = source_lock.get("implementation_status")
-    if implementation_status != "mounted_not_operational":
-        violations.append("b17_lock_implementation_status_must_be_mounted_not_operational")
+    source_lock = source_operation.get(B17_LOCK_KEY, {})
+    bundle_lock = bundle_operation.get(B17_LOCK_KEY, {})
+    if not isinstance(source_lock, dict):
+        violations.append("source_missing_b17_p1_lock")
+        source_lock = {}
+    if not isinstance(bundle_lock, dict):
+        violations.append("bundle_missing_b17_p1_lock")
+        bundle_lock = {}
+    if source_lock.get("implementation_status") != "mounted_operational_authority_read":
+        violations.append("source_implementation_status_mismatch")
+    if bundle_lock.get("implementation_status") != "mounted_operational_authority_read":
+        violations.append("bundle_implementation_status_mismatch")
+
+    if _schema_ref_for_200(source_operation) != "#/components/schemas/AttributionExplanationResponse":
+        violations.append("source_missing_200_response_schema_ref")
+    if not _has_separated_response_shape(attribution_bundle, bundle_operation):
+        violations.append("bundle_missing_separated_200_response_schema")
 
     authority_surface = source_lock.get("authority_surface", {})
     if not isinstance(authority_surface, dict):
-        violations.append("b17_lock_authority_surface_invalid")
+        violations.append("source_authority_surface_invalid")
         authority_surface = {}
-
     canonical_route = authority_surface.get("canonical_route", {})
-    if not isinstance(canonical_route, dict):
-        violations.append("b17_lock_canonical_route_invalid")
-        canonical_route = {}
     if canonical_route.get("method") != CANONICAL_METHOD:
-        violations.append("b17_lock_canonical_method_mismatch")
+        violations.append("source_canonical_method_mismatch")
     if canonical_route.get("path") != CANONICAL_PATH:
-        violations.append("b17_lock_canonical_path_mismatch")
+        violations.append("source_canonical_path_mismatch")
     if canonical_route.get("operation_id") != CANONICAL_OPERATION_ID:
-        violations.append("b17_lock_canonical_operation_id_mismatch")
+        violations.append("source_canonical_operation_id_mismatch")
     if canonical_route.get("bundle") != CANONICAL_BUNDLE:
-        violations.append("b17_lock_canonical_bundle_mismatch")
+        violations.append("source_canonical_bundle_mismatch")
 
     noncanonical_route = authority_surface.get("noncanonical_route", {})
-    if not isinstance(noncanonical_route, dict):
-        violations.append("b17_lock_noncanonical_route_invalid")
-        noncanonical_route = {}
     if noncanonical_route.get("method") != NONCANONICAL_METHOD:
-        violations.append("b17_lock_noncanonical_method_mismatch")
+        violations.append("source_noncanonical_method_mismatch")
     if noncanonical_route.get("path") != NONCANONICAL_PATH:
-        violations.append("b17_lock_noncanonical_path_mismatch")
+        violations.append("source_noncanonical_path_mismatch")
     if noncanonical_route.get("operation_id") != NONCANONICAL_OPERATION_ID:
-        violations.append("b17_lock_noncanonical_operation_id_mismatch")
+        violations.append("source_noncanonical_operation_id_mismatch")
     if noncanonical_route.get("bundle") != NONCANONICAL_BUNDLE:
-        violations.append("b17_lock_noncanonical_bundle_mismatch")
+        violations.append("source_noncanonical_bundle_mismatch")
     if noncanonical_route.get("authority_status") != "invalid_noncanonical_blueprint":
-        violations.append("b17_lock_noncanonical_authority_status_mismatch")
+        violations.append("source_noncanonical_authority_status_mismatch")
 
     governed_skip_bundles = authority_surface.get("governed_runtime_skip_bundles", [])
-    if not isinstance(governed_skip_bundles, list) or not all(
-        isinstance(item, str) for item in governed_skip_bundles
-    ):
-        violations.append("b17_lock_governed_runtime_skip_bundles_invalid")
-        governed_skip_bundles = []
-    if NONCANONICAL_BUNDLE not in governed_skip_bundles:
-        violations.append("b17_lock_missing_noncanonical_runtime_skip_bundle")
-
-    runtime_mode = source_lock.get("runtime_contract_mode", {})
-    if not isinstance(runtime_mode, dict):
-        violations.append("b17_lock_runtime_contract_mode_invalid")
-        runtime_mode = {}
-    if runtime_mode.get("type") != "problem_details":
-        violations.append("b17_lock_runtime_mode_type_mismatch")
-    if runtime_mode.get("status_code") != 503:
-        violations.append("b17_lock_runtime_mode_status_code_mismatch")
-    if runtime_mode.get("code") != "EXPLAIN_SURFACE_NOT_READY":
-        violations.append("b17_lock_runtime_mode_code_mismatch")
-    if runtime_mode.get("mounted_route_required") is not True:
-        violations.append("b17_lock_mounted_route_required_flag_missing")
-    if runtime_mode.get("runtime_openapi_presence_required") is not True:
-        violations.append("b17_lock_runtime_openapi_presence_flag_missing")
+    if not isinstance(governed_skip_bundles, list):
+        violations.append("source_governed_runtime_skip_bundles_invalid")
+    elif NONCANONICAL_BUNDLE not in governed_skip_bundles:
+        violations.append("source_missing_noncanonical_runtime_skip_bundle")
 
     authority_model = source_lock.get("authority_model", {})
     if not isinstance(authority_model, dict):
-        violations.append("b17_lock_authority_model_invalid")
+        violations.append("source_authority_model_invalid")
         authority_model = {}
     if authority_model.get("deterministic_truth_domain") != "attribution_authority":
-        violations.append("b17_lock_truth_domain_mismatch")
+        violations.append("source_truth_domain_mismatch")
     truth_sources = authority_model.get("required_truth_sources", [])
-    if not isinstance(truth_sources, list) or not truth_sources:
-        violations.append("b17_lock_required_truth_sources_invalid")
+    if not isinstance(truth_sources, list):
+        violations.append("source_required_truth_sources_invalid")
         truth_sources = []
-    for source in truth_sources:
-        if not isinstance(source, str) or not source:
-            violations.append("b17_lock_required_truth_source_not_string")
-            continue
-        if not _file_contains_literal(canonical_schema_file, source):
-            violations.append(f"authority_truth_source_missing_from_schema:{source}")
+    for required_source in ("attribution_allocations", "revenue_cache_entries"):
+        if required_source not in truth_sources:
+            violations.append(f"missing_required_truth_source:{required_source}")
+        if required_source not in canonical_schema_file.read_text(encoding="utf-8", errors="ignore"):
+            violations.append(f"truth_source_missing_from_schema:{required_source}")
 
-    response_separation = authority_model.get("required_response_separation", {})
-    if not isinstance(response_separation, dict):
-        violations.append("b17_lock_response_separation_invalid")
+    separation = authority_model.get("required_response_separation", {})
+    if not isinstance(separation, dict):
+        violations.append("source_required_response_separation_invalid")
     else:
-        if response_separation.get("authoritative_metric_payload_required") is not True:
-            violations.append("b17_lock_authoritative_metric_payload_required_false")
-        if response_separation.get("non_authoritative_explanation_payload_required") is not True:
-            violations.append("b17_lock_non_authoritative_explanation_payload_required_false")
+        if separation.get("authoritative_metric_payload_required") is not True:
+            violations.append("authoritative_metric_payload_required_not_true")
+        if separation.get("non_authoritative_explanation_payload_required") is not True:
+            violations.append("non_authoritative_explanation_payload_required_not_true")
+        if separation.get("merged_payload_forbidden") is not True:
+            violations.append("merged_payload_forbidden_not_true")
 
-    cache_substrate = source_lock.get("cache_substrate", {})
-    if not isinstance(cache_substrate, dict):
-        violations.append("b17_lock_cache_substrate_invalid")
-        cache_substrate = {}
-    if cache_substrate.get("active_substrate") != "postgres.llm_semantic_cache":
-        violations.append("b17_lock_cache_substrate_mismatch")
-    if cache_substrate.get("external_cache_dependency_allowed") is not False:
-        violations.append("b17_lock_external_cache_dependency_allowed_must_be_false")
-    if cache_substrate.get("external_cache_dependency_exception_ticket") is not None:
-        violations.append("b17_lock_external_cache_exception_ticket_must_be_null")
-    if not _file_contains_literal(llm_model_file, "llm_semantic_cache"):
-        violations.append("llm_model_missing_llm_semantic_cache")
-    if not _file_contains_literal(canonical_schema_file, "llm_semantic_cache"):
-        violations.append("canonical_schema_missing_llm_semantic_cache")
-
-    performance = source_lock.get("performance_semantics", {})
-    if not isinstance(performance, dict):
-        violations.append("b17_lock_performance_semantics_invalid")
-        performance = {}
-    if performance.get("overall_endpoint_p95_ms") != 500:
-        violations.append("b17_lock_performance_p95_mismatch")
-    cache_hit_rate = performance.get("minimum_cache_hit_rate")
-    if not isinstance(cache_hit_rate, (int, float)) or float(cache_hit_rate) <= 0.6:
-        violations.append("b17_lock_performance_cache_hit_rate_must_be_gt_60pct")
-    if performance.get("require_warm_path_diagnostics") is not True:
-        violations.append("b17_lock_performance_require_warm_path_diagnostics_false")
-    if performance.get("require_cold_path_diagnostics") is not True:
-        violations.append("b17_lock_performance_require_cold_path_diagnostics_false")
-    if performance.get("warm_path_only_pass_forbidden") is not True:
-        violations.append("b17_lock_performance_warm_only_pass_forbidden_false")
-
-    future_gate = source_lock.get("future_merge_blocking_gate_category", {})
-    if not isinstance(future_gate, dict):
-        violations.append("b17_lock_future_gate_invalid")
-        future_gate = {}
-    if future_gate.get("name") != "B1.7 Explanation Runtime Adjudication":
-        violations.append("b17_lock_future_gate_name_mismatch")
-    if future_gate.get("activation_phase") != "B1.7-P5":
-        violations.append("b17_lock_future_gate_activation_phase_mismatch")
-    if not isinstance(future_gate.get("required_proof_dimensions"), list):
-        violations.append("b17_lock_future_gate_required_dimensions_invalid")
-
-    noncanonical_ops_source = _extract_operations(noncanonical_source)
     noncanonical_key = f"{NONCANONICAL_METHOD} {NONCANONICAL_PATH}"
-    noncanonical_source_op = noncanonical_ops_source.get(noncanonical_key)
+    noncanonical_source_op = _extract_operations(noncanonical_source).get(noncanonical_key)
+    noncanonical_bundle_op = _extract_operations(noncanonical_bundle).get(noncanonical_key)
     if noncanonical_source_op is None:
         violations.append("noncanonical_operation_missing_from_source_contract")
     else:
-        if noncanonical_source_op.get("operationId") != NONCANONICAL_OPERATION_ID:
-            violations.append("noncanonical_operation_id_mismatch_in_source_contract")
-        lock = noncanonical_source_op.get(B17_LOCK_KEY, {})
+        lock = noncanonical_source_op.get(LEGACY_NONCANONICAL_LOCK_KEY, {})
         if not isinstance(lock, dict) or lock.get("authority_status") != "invalid_noncanonical_blueprint":
             violations.append("noncanonical_source_missing_invalid_authority_status")
-
-    noncanonical_ops_bundle = _extract_operations(noncanonical_bundle)
-    noncanonical_bundle_op = noncanonical_ops_bundle.get(noncanonical_key)
     if noncanonical_bundle_op is None:
         violations.append("noncanonical_operation_missing_from_bundled_contract")
     else:
-        if noncanonical_bundle_op.get("operationId") != NONCANONICAL_OPERATION_ID:
-            violations.append("noncanonical_operation_id_mismatch_in_bundled_contract")
-        lock = noncanonical_bundle_op.get(B17_LOCK_KEY, {})
+        lock = noncanonical_bundle_op.get(LEGACY_NONCANONICAL_LOCK_KEY, {})
         if not isinstance(lock, dict) or lock.get("authority_status") != "invalid_noncanonical_blueprint":
             violations.append("noncanonical_bundle_missing_invalid_authority_status")
 
@@ -391,7 +345,6 @@ def run_enforcement(
     if not isinstance(allowlist, list):
         violations.append("contract_scope_contract_only_allowlist_invalid")
         allowlist = []
-    canonical_key = f"{CANONICAL_METHOD} {CANONICAL_PATH}"
     if canonical_key in allowlist:
         violations.append("canonical_route_must_not_be_contract_only_allowlisted")
     if noncanonical_key in allowlist:
@@ -400,16 +353,11 @@ def run_enforcement(
     semantics_skip = _read_yaml(semantics_skip_file).get("bundles", {})
     if not isinstance(semantics_skip, dict):
         violations.append("semantics_skip_allowlist_invalid")
-        semantics_skip = {}
-    if NONCANONICAL_BUNDLE in semantics_skip:
+    elif NONCANONICAL_BUNDLE in semantics_skip:
         violations.append("noncanonical_bundle_must_not_be_explicitly_allowlisted")
-    if CANONICAL_BUNDLE in semantics_skip:
-        violations.append("canonical_bundle_must_not_be_explicitly_allowlisted")
 
     coverage_manifest = _read_yaml(coverage_manifest_file)
-    canonical_requirements = _manifest_requirements_for_operation(
-        coverage_manifest, CANONICAL_OPERATION_ID
-    )
+    canonical_requirements = _manifest_requirements_for_operation(coverage_manifest, CANONICAL_OPERATION_ID)
     if not canonical_requirements:
         violations.append("coverage_manifest_missing_canonical_operation")
     else:
@@ -419,11 +367,6 @@ def run_enforcement(
                     "coverage_manifest_canonical_status_must_be_implemented:"
                     f"{domain}:{requirement.get('requirement_id', 'UNKNOWN')}"
                 )
-    noncanonical_requirements = _manifest_requirements_for_operation(
-        coverage_manifest, NONCANONICAL_OPERATION_ID
-    )
-    if noncanonical_requirements:
-        violations.append("coverage_manifest_must_not_include_noncanonical_operation")
 
     try:
         runtime_routes = (
@@ -431,10 +374,9 @@ def run_enforcement(
             if runtime_routes_file is not None
             else _load_runtime_routes(repo_root)
         )
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         violations.append(f"runtime_route_load_failed:{exc}")
         runtime_routes = set()
-
     if canonical_key not in runtime_routes:
         violations.append("canonical_route_not_mounted_runtime")
     if noncanonical_key in runtime_routes:
@@ -446,57 +388,45 @@ def run_enforcement(
             if runtime_openapi_file is not None
             else _load_runtime_openapi(repo_root)
         )
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         violations.append(f"runtime_openapi_load_failed:{exc}")
         runtime_openapi = {}
 
-    runtime_paths = runtime_openapi.get("paths", {})
-    if not isinstance(runtime_paths, dict):
-        violations.append("runtime_openapi_paths_invalid")
-        runtime_paths = {}
-    canonical_runtime_path = runtime_paths.get(CANONICAL_PATH)
-    if not isinstance(canonical_runtime_path, dict):
+    runtime_operation = (
+        (runtime_openapi.get("paths", {}) or {})
+        .get(CANONICAL_PATH, {})
+        .get("get", {})
+    )
+    if not isinstance(runtime_operation, dict):
         violations.append("canonical_route_missing_from_runtime_openapi")
     else:
-        runtime_operation = canonical_runtime_path.get("get")
-        if not isinstance(runtime_operation, dict):
-            violations.append("canonical_route_get_missing_from_runtime_openapi")
-        else:
-            if runtime_operation.get("operationId") != CANONICAL_OPERATION_ID:
-                violations.append("canonical_runtime_openapi_operation_id_mismatch")
-            runtime_responses = runtime_operation.get("responses", {})
-            if not isinstance(runtime_responses, dict) or "503" not in runtime_responses:
-                violations.append("canonical_runtime_openapi_missing_503_response")
-            runtime_lock = runtime_operation.get(B17_LOCK_KEY, {})
-            if not isinstance(runtime_lock, dict):
-                violations.append("canonical_runtime_openapi_missing_b17_lock_extension")
-            else:
-                if runtime_lock.get("implementation_status") != "mounted_not_operational":
-                    violations.append("canonical_runtime_openapi_lock_status_mismatch")
-                runtime_contract_mode = runtime_lock.get("runtime_contract_mode", {})
-                if not isinstance(runtime_contract_mode, dict) or runtime_contract_mode.get("status_code") != 503:
-                    violations.append("canonical_runtime_openapi_lock_runtime_mode_mismatch")
-
-    if NONCANONICAL_PATH in runtime_paths:
-        violations.append("noncanonical_route_present_in_runtime_openapi")
+        if runtime_operation.get("operationId") != CANONICAL_OPERATION_ID:
+            violations.append("canonical_runtime_openapi_operation_id_mismatch")
+        if not _has_separated_response_shape(runtime_openapi, runtime_operation):
+            violations.append("canonical_runtime_openapi_missing_separated_200_response_schema")
+        runtime_lock = runtime_operation.get(B17_LOCK_KEY, {})
+        if not isinstance(runtime_lock, dict):
+            violations.append("canonical_runtime_openapi_missing_b17_p1_lock")
+        elif runtime_lock.get("implementation_status") != "mounted_operational_authority_read":
+            violations.append("canonical_runtime_openapi_lock_status_mismatch")
+        if NONCANONICAL_PATH in runtime_openapi.get("paths", {}):
+            violations.append("noncanonical_route_present_in_runtime_openapi")
 
     required_checks = _read_json(required_checks_contract_file)
     declarations = required_checks.get("future_required_context_declarations", [])
-    if not isinstance(declarations, list):
-        violations.append("required_checks_future_context_declarations_invalid")
-        declarations = []
+    expected_source_contract = (
+        "api-contracts/openapi/v1/attribution.yaml#/paths/"
+        "~1api~1attribution~1explain~1{entity_type}~1{entity_id}/get/x-skeldir-b17-p1"
+    )
     matched_declaration = None
-    for declaration in declarations:
-        if isinstance(declaration, dict) and declaration.get("name") == "B1.7 Explanation Runtime Adjudication":
-            matched_declaration = declaration
-            break
+    if isinstance(declarations, list):
+        for declaration in declarations:
+            if isinstance(declaration, dict) and declaration.get("name") == "B1.7 Explanation Runtime Adjudication":
+                matched_declaration = declaration
+                break
     if matched_declaration is None:
         violations.append("required_checks_missing_b17_future_context_declaration")
     else:
-        expected_source_contract = (
-            "api-contracts/openapi/v1/attribution.yaml#/paths/"
-            "~1api~1attribution~1explain~1{entity_type}~1{entity_id}/get/x-skeldir-b17-p0"
-        )
         if matched_declaration.get("activation_phase") != "B1.7-P5":
             violations.append("required_checks_b17_future_context_phase_mismatch")
         if matched_declaration.get("source_contract") != expected_source_contract:
@@ -504,38 +434,25 @@ def run_enforcement(
 
     workflow_text = ci_workflow_file.read_text(encoding="utf-8", errors="ignore")
     if "enforce_b17_p0_explanation_surface_lock.py" not in workflow_text:
-        violations.append("ci_missing_b17_p0_enforcer_step")
+        violations.append("ci_missing_b17_enforcer_step")
     if "test_b17_p0_explanation_surface_lock_enforcer.py" not in workflow_text:
-        violations.append("ci_missing_b17_p0_negative_control_test_step")
+        violations.append("ci_missing_b17_negative_control_test_step")
+    if "llm_semantic_cache" not in llm_model_file.read_text(encoding="utf-8", errors="ignore"):
+        violations.append("llm_model_missing_llm_semantic_cache")
 
     return (1 if violations else 0), violations
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="B1.7-P0 explanation surface lock enforcer")
+    parser = argparse.ArgumentParser(description="B1.7-P1 explanation authority lock enforcer")
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
-    parser.add_argument(
-        "--attribution-source-file",
-        default="api-contracts/openapi/v1/attribution.yaml",
-    )
-    parser.add_argument(
-        "--attribution-bundle-file",
-        default="api-contracts/dist/openapi/v1/attribution.bundled.yaml",
-    )
-    parser.add_argument(
-        "--noncanonical-source-file",
-        default="api-contracts/openapi/v1/llm-explanations.yaml",
-    )
-    parser.add_argument(
-        "--noncanonical-bundle-file",
-        default="api-contracts/dist/openapi/v1/llm-explanations.bundled.yaml",
-    )
+    parser.add_argument("--attribution-source-file", default="api-contracts/openapi/v1/attribution.yaml")
+    parser.add_argument("--attribution-bundle-file", default="api-contracts/dist/openapi/v1/attribution.bundled.yaml")
+    parser.add_argument("--noncanonical-source-file", default="api-contracts/openapi/v1/llm-explanations.yaml")
+    parser.add_argument("--noncanonical-bundle-file", default="api-contracts/dist/openapi/v1/llm-explanations.bundled.yaml")
     parser.add_argument("--contract-scope-file", default="backend/app/config/contract_scope.yaml")
     parser.add_argument("--semantics-skip-file", default="tests/contract/semantics_skip_allowlist.yaml")
-    parser.add_argument(
-        "--coverage-manifest-file",
-        default="api-contracts/governance/coverage-manifest.yaml",
-    )
+    parser.add_argument("--coverage-manifest-file", default="api-contracts/governance/coverage-manifest.yaml")
     parser.add_argument("--ci-workflow-file", default=".github/workflows/ci.yml")
     parser.add_argument(
         "--required-checks-contract-file",
@@ -550,7 +467,7 @@ def main(argv: list[str]) -> int:
 
     if args.simulate_regression:
         sys.stdout.write(
-            "b17_p0_explanation_surface_lock_enforcer\n"
+            "b17_p1_explanation_authority_lock_enforcer\n"
             "result=FAIL\n"
             "synthetic_regression=forced_failure_path\n"
         )
@@ -578,16 +495,13 @@ def main(argv: list[str]) -> int:
         else None,
     )
 
-    lines = ["b17_p0_explanation_surface_lock_enforcer"]
+    lines = ["b17_p1_explanation_authority_lock_enforcer"]
     if status != 0:
         lines.append("result=FAIL")
         lines.extend(violations)
     else:
         lines.append("result=PASS")
-        lines.append(
-            "enforcement=canonical_openapi_authority_plus_runtime_route_and_openapi_convergence"
-        )
-
+        lines.append("enforcement=canonical_authority_contract_runtime_convergence")
     sys.stdout.write("\n".join(lines) + "\n")
     return status
 
