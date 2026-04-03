@@ -104,9 +104,9 @@ llm_explanation:
   requirements:
     - requirement_id: LLM-001
       operation_id: explainAttributionEntity
-      status: deferred
+      status: implemented
       canonical_event: null
-      description: Deferred authoritative explanation scope for attribution entities
+      description: Canonical explanation route mounted with contract-defined non-operational mode in B1.7-P0
 
 llm_investigations:
   requirements:

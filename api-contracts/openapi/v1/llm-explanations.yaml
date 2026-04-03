@@ -107,6 +107,9 @@ paths:
       x-llm-usage: true
       x-deterministic-guarantee: false
       x-model-routing: haiku-first
+      x-skeldir-b17-p0:
+        authority_status: invalid_noncanonical_blueprint
+        canonical_route_family: /api/attribution/explain/{entity_type}/{entity_id}
 
 components:
   schemas:

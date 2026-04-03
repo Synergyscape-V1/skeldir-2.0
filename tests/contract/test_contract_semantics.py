@@ -82,19 +82,29 @@ def _load_explicit_skip_allowlist() -> set[str]:
 
 
 def _load_governed_skip_allowlist() -> set[str]:
-    """Load machine-governed deferred bundles from B1.7-P0 contract."""
-    governance_path = (
+    """Load machine-governed skip bundles from canonical OpenAPI contract semantics."""
+    attribution_source_path = (
         Path(__file__).parent.parent.parent
-        / "contracts-internal"
-        / "governance"
-        / "b17_p0_explanation_surface_lock.main.json"
+        / "api-contracts"
+        / "openapi"
+        / "v1"
+        / "attribution.yaml"
     )
-    if not governance_path.exists():
-        raise ValueError(f"Missing governance contract: {governance_path}")
-    payload = json.loads(governance_path.read_text(encoding="utf-8"))
-    bundles = payload.get("governed_runtime_skip_bundles", [])
+    if not attribution_source_path.exists():
+        raise ValueError(f"Missing canonical attribution contract: {attribution_source_path}")
+    payload = yaml.safe_load(attribution_source_path.read_text(encoding="utf-8")) or {}
+    operation = (
+        payload.get("paths", {})
+        .get("/api/attribution/explain/{entity_type}/{entity_id}", {})
+        .get("get", {})
+    )
+    b17_lock = operation.get("x-skeldir-b17-p0", {})
+    authority_surface = b17_lock.get("authority_surface", {}) if isinstance(b17_lock, dict) else {}
+    bundles = authority_surface.get("governed_runtime_skip_bundles", [])
     if not isinstance(bundles, list) or not all(isinstance(item, str) for item in bundles):
-        raise ValueError("b17_p0_explanation_surface_lock.main.json must define governed_runtime_skip_bundles")
+        raise ValueError(
+            "attribution.yaml x-skeldir-b17-p0.authority_surface must define governed_runtime_skip_bundles"
+        )
     return set(bundles)
 
 

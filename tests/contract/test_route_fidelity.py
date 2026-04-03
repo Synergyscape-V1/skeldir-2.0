@@ -8,6 +8,7 @@ Exit criteria:
 - Operation IDs match between implementation and contract
 """
 
+import os
 import sys
 from pathlib import Path
 import yaml
@@ -15,6 +16,20 @@ import pytest
 
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
+from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
+
+os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
+os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
+os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
+os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
+os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
+os.environ.setdefault(
+    "MIGRATION_DATABASE_URL",
+    "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
+)
+os.environ.setdefault("TESTING", "1")
+os.environ.setdefault("CONTRACT_TESTING", "1")
 
 # Contract scope configuration
 CONTRACT_SCOPE_FILE = Path(__file__).parent.parent.parent / "backend" / "app" / "config" / "contract_scope.yaml"
@@ -198,6 +213,36 @@ def test_operation_id_consistency():
             for m in mismatched_ids
         )
     )
+
+
+def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
+    """B1.7-P0 hard gate: canonical explanation route must exist in runtime and runtime OpenAPI."""
+    attribution_source = Path(__file__).parent.parent.parent / "api-contracts" / "openapi" / "v1" / "attribution.yaml"
+    with open(attribution_source, "r", encoding="utf-8") as handle:
+        source_doc = yaml.safe_load(handle) or {}
+
+    canonical_path = "/api/attribution/explain/{entity_type}/{entity_id}"
+    source_operation = source_doc.get("paths", {}).get(canonical_path, {}).get("get", {})
+    assert source_operation.get("operationId") == "explainAttributionEntity"
+
+    b17_lock = source_operation.get("x-skeldir-b17-p0", {})
+    assert b17_lock.get("implementation_status") == "mounted_not_operational"
+
+    routes = extract_fastapi_routes()
+    route_keys = {f"{item['method']} {item['path']}" for item in routes}
+    assert "GET /api/attribution/explain/{entity_type}/{entity_id}" in route_keys
+
+    from app.main import app
+
+    runtime_openapi = app.openapi()
+    runtime_paths = runtime_openapi.get("paths", {})
+    assert canonical_path in runtime_paths
+    runtime_operation = runtime_paths[canonical_path]["get"]
+    assert runtime_operation.get("operationId") == "explainAttributionEntity"
+    assert "503" in runtime_operation.get("responses", {})
+
+    runtime_lock = runtime_operation.get("x-skeldir-b17-p0", {})
+    assert runtime_lock.get("implementation_status") == "mounted_not_operational"
 
 
 if __name__ == "__main__":
