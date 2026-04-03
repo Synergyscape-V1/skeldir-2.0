@@ -216,7 +216,7 @@ def test_operation_id_consistency():
 
 
 def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
-    """B1.7-P0 hard gate: canonical explanation route must exist in runtime and runtime OpenAPI."""
+    """B1.7-P1 hard gate: canonical explanation route and separated contract must exist in runtime."""
     attribution_source = Path(__file__).parent.parent.parent / "api-contracts" / "openapi" / "v1" / "attribution.yaml"
     with open(attribution_source, "r", encoding="utf-8") as handle:
         source_doc = yaml.safe_load(handle) or {}
@@ -225,8 +225,8 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
     source_operation = source_doc.get("paths", {}).get(canonical_path, {}).get("get", {})
     assert source_operation.get("operationId") == "explainAttributionEntity"
 
-    b17_lock = source_operation.get("x-skeldir-b17-p0", {})
-    assert b17_lock.get("implementation_status") == "mounted_not_operational"
+    b17_lock = source_operation.get("x-skeldir-b17-p1", {})
+    assert b17_lock.get("implementation_status") == "mounted_operational_authority_read"
 
     routes = extract_fastapi_routes()
     route_keys = {f"{item['method']} {item['path']}" for item in routes}
@@ -239,13 +239,22 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
     assert canonical_path in runtime_paths
     runtime_operation = runtime_paths[canonical_path]["get"]
     assert runtime_operation.get("operationId") == "explainAttributionEntity"
-    assert "503" in runtime_operation.get("responses", {})
+    responses = runtime_operation.get("responses", {})
+    assert "200" in responses
+    assert "503" in responses
+    schema_ref = (
+        responses["200"]
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema", {})
+        .get("$ref")
+    )
+    assert schema_ref == "#/components/schemas/AttributionExplanationResponse"
 
-    runtime_lock = runtime_operation.get("x-skeldir-b17-p0", {})
-    assert runtime_lock.get("implementation_status") == "mounted_not_operational"
+    runtime_lock = runtime_operation.get("x-skeldir-b17-p1", {})
+    assert runtime_lock.get("implementation_status") == "mounted_operational_authority_read"
 
 
 if __name__ == "__main__":
     # Run tests with pytest
     pytest.main([__file__, "-v", "-s"])
-

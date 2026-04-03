@@ -184,9 +184,10 @@ paths:
       summary: Get natural language explanation for attribution entities
       description: |
         Canonical B1.7 explanation authority surface.
-        In B1.7-P0 this route is mounted but intentionally non-operational for
-        deterministic explanation serving, and returns RFC7807 Problem Details.
-        This preserves authority-surface convergence without fabricating financial payloads.
+        In B1.7-P1 this route performs a tenant-scoped deterministic authority read
+        from DB-backed truth sources and returns a response that separates:
+        - authoritative metric truth
+        - non-authoritative explanation text
       operationId: explainAttributionEntity
       tags:
         - Attribution
@@ -215,7 +216,7 @@ paths:
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
       responses:
         '200':
-          description: Explanation with citations and confidence scoring
+          description: Deterministic authority metric plus non-authoritative explanation
           headers:
             X-Correlation-ID:
               schema:
@@ -225,29 +226,50 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AttributionExplanation'
+                $ref: '#/components/schemas/AttributionExplanationResponse'
               example:
-                explanation: "Facebook ROAS of $3.20 is outperforming Google ROAS of $2.10 because last-touch conversions skew toward paid social during the Black Friday campaign. Confidence is high given 90 days of stable conversion data."
-                citations:
-                  - metric: facebook_roas
-                    value: 3.20
-                    source: attribution_results.channel_roas
-                  - metric: google_roas
-                    value: 2.10
-                    source: attribution_results.channel_roas
-                confidence: high
-                generated_at: '2025-11-26T14:30:00Z'
-                cost_cents: 1.8
+                authoritative_metric:
+                  entity_type: channel_performance
+                  entity_id: 22222222-2222-2222-2222-222222222222
+                  tenant_id: 00000000-0000-0000-0000-000000000000
+                  metric_key: channel_performance_revenue
+                  metric_value: 452.75
+                  metric_value_cents: 45275
+                  currency: USD
+                  channel_code: paid_social
+                  model_type: deterministic
+                  model_version: 1.0.0
+                  confidence_score: 0.92
+                  verification_state: unverified
+                  last_updated: '2026-04-03T14:30:00Z'
+                  data_freshness_seconds: 12
+                  deterministic_truth_sources:
+                    - attribution_allocations
+                    - revenue_cache_entries
+                  revenue_context:
+                    cache_key: realtime_revenue:shared:v1
+                    total_revenue: 125430.5
+                    total_revenue_cents: 12543050
+                    data_as_of: '2026-04-03T14:29:48Z'
+                non_authoritative_explanation:
+                  explanation_class: deterministic_placeholder
+                  non_authoritative_summary: Non-authoritative explanation derived from deterministic truth.
+                  generated_at: '2026-04-03T14:30:00Z'
+                  caveats:
+                    - Explanation text cannot override deterministic authority values.
+                    - Deterministic truth is sourced from tenant-scoped DB authority tables.
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
         '404':
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
         '500':
           $ref: './_common/base.yaml#/components/responses/ServerError'
         '503':
-          description: Explanation surface mounted but not operational in B1.7-P0
+          description: Deterministic authority dependencies unavailable
           headers:
             X-Correlation-ID:
               schema:
@@ -266,19 +288,19 @@ paths:
               schema:
                 $ref: './_common/base.yaml#/components/schemas/ProblemDetails'
               example:
-                type: https://api.skeldir.com/problems/explanation-surface-not-ready
-                title: Explanation Surface Not Ready
+                type: https://api.skeldir.com/problems/deterministic-authority-unavailable
+                title: Deterministic Authority Unavailable
                 status: 503
-                detail: The canonical explanation endpoint is mounted but deterministic explanation serving is not operational in B1.7-P0.
+                detail: Deterministic authority dependencies are unavailable for this tenant.
                 instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000
                 correlation_id: 550e8400-e29b-41d4-a716-446655440000
                 timestamp: '2026-04-03T14:30:00Z'
-                code: EXPLAIN_SURFACE_NOT_READY
+                code: DETERMINISTIC_AUTHORITY_UNAVAILABLE
       x-latency-requirement: 500ms
       x-cost-budget: 0.02
       x-complexity-score: 5
-      x-skeldir-b17-p0:
-        implementation_status: mounted_not_operational
+      x-skeldir-b17-p1:
+        implementation_status: mounted_operational_authority_read
         authority_surface:
           canonical_public_route_family: attribution
           canonical_route:
@@ -294,12 +316,6 @@ paths:
             authority_status: invalid_noncanonical_blueprint
           governed_runtime_skip_bundles:
             - llm-explanations.bundled.yaml
-        runtime_contract_mode:
-          type: problem_details
-          status_code: 503
-          code: EXPLAIN_SURFACE_NOT_READY
-          mounted_route_required: true
-          runtime_openapi_presence_required: true
         authority_model:
           deterministic_truth_domain: attribution_authority
           required_truth_sources:
@@ -308,6 +324,7 @@ paths:
           required_response_separation:
             authoritative_metric_payload_required: true
             non_authoritative_explanation_payload_required: true
+            merged_payload_forbidden: true
         cache_substrate:
           active_substrate: postgres.llm_semantic_cache
           external_cache_dependency_allowed: false
@@ -1288,52 +1305,130 @@ components:
           format: float
           description: Return on Ad Spend (revenue/spend)
 
-    AttributionExplanation:
+    AttributionExplanationRevenueContext:
       type: object
       required:
-        - explanation
-        - citations
-        - confidence
-        - generated_at
+        - cache_key
+        - total_revenue
+        - total_revenue_cents
+        - data_as_of
       properties:
-        explanation:
+        cache_key:
           type: string
-          minLength: 150
-          maxLength: 500
-          description: Natural language explanation of attribution result
-          example: "Your Facebook ROAS of $3.20 indicates strong performance because you have 90 days of stable conversion data with narrow confidence bounds ($2.95-$3.45)."
-        citations:
+        total_revenue:
+          type: number
+          format: double
+          minimum: 0
+        total_revenue_cents:
+          type: integer
+          minimum: 0
+        data_as_of:
+          type: string
+          format: date-time
+
+    AttributionAuthoritativeMetric:
+      type: object
+      required:
+        - entity_type
+        - entity_id
+        - tenant_id
+        - metric_key
+        - metric_value
+        - metric_value_cents
+        - currency
+        - channel_code
+        - model_type
+        - model_version
+        - confidence_score
+        - verification_state
+        - last_updated
+        - data_freshness_seconds
+        - deterministic_truth_sources
+        - revenue_context
+      properties:
+        entity_type:
+          type: string
+          enum:
+            - attribution_score
+            - channel_performance
+            - reconciliation_discrepancy
+        entity_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        metric_key:
+          type: string
+        metric_value:
+          type: number
+          format: double
+        metric_value_cents:
+          type: integer
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          enum: [USD]
+        channel_code:
+          type: string
+        model_type:
+          type: string
+        model_version:
+          type: string
+        confidence_score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        verification_state:
+          type: string
+          enum: [verified, unverified]
+        last_updated:
+          type: string
+          format: date-time
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+        deterministic_truth_sources:
           type: array
           items:
-            type: object
-            required:
-              - metric
-              - value
-              - source
-            properties:
-              metric:
-                type: string
-                example: facebook_roas
-              value:
-                type: number
-                example: 3.20
-              source:
-                type: string
-                description: Database table.column reference
-                example: attribution_results.channel_roas
-        confidence:
+            type: string
+        revenue_context:
+          $ref: '#/components/schemas/AttributionExplanationRevenueContext'
+
+    AttributionNonAuthoritativeExplanation:
+      type: object
+      required:
+        - explanation_class
+        - non_authoritative_summary
+        - generated_at
+        - caveats
+      properties:
+        explanation_class:
           type: string
-          enum: [high, medium, low]
-          description: Explanation confidence based on data quality
+          enum: [deterministic_placeholder]
+        non_authoritative_summary:
+          type: string
+          minLength: 1
+          maxLength: 2000
         generated_at:
           type: string
           format: date-time
-        cost_cents:
-          type: number
-          format: float
-          description: LLM API cost for this explanation
-          example: 1.8
-          x-internal: true
+        caveats:
+          type: array
+          items:
+            type: string
+
+    AttributionExplanationResponse:
+      type: object
+      required:
+        - authoritative_metric
+        - non_authoritative_explanation
+      properties:
+        authoritative_metric:
+          $ref: '#/components/schemas/AttributionAuthoritativeMetric'
+        non_authoritative_explanation:
+          $ref: '#/components/schemas/AttributionNonAuthoritativeExplanation'
 
   responses:
     ProviderNotConnectedError:

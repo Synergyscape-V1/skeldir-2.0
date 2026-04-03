@@ -56,9 +56,10 @@ export interface paths {
         /**
          * Get natural language explanation for attribution entities
          * @description Canonical B1.7 explanation authority surface.
-         *     In B1.7-P0 this route is mounted but intentionally non-operational for
-         *     deterministic explanation serving, and returns RFC7807 Problem Details.
-         *     This preserves authority-surface convergence without fabricating financial payloads.
+         *     In B1.7-P1 this route performs a tenant-scoped deterministic authority read
+         *     from DB-backed truth sources and returns a response that separates:
+         *     - authoritative metric truth
+         *     - non-authoritative explanation text
          */
         get: operations["explainAttributionEntity"];
         put?: never;
@@ -618,36 +619,97 @@ export interface components {
              */
             roas?: number;
         };
-        AttributionExplanation: {
-            /**
-             * @description Natural language explanation of attribution result
-             * @example Your Facebook ROAS of $3.20 indicates strong performance because you have 90 days of stable conversion data with narrow confidence bounds ($2.95-$3.45).
-             */
-            explanation: string;
-            citations: {
-                /** @example facebook_roas */
-                metric: string;
-                /** @example 3.2 */
-                value: number;
-                /**
-                 * @description Database table.column reference
-                 * @example attribution_results.channel_roas
-                 */
-                source: string;
-            }[];
-            /**
-             * @description Explanation confidence based on data quality
-             * @enum {string}
-             */
-            confidence: "high" | "medium" | "low";
+        AttributionExplanationRevenueContext: {
+            cache_key: string;
+            /** Format: double */
+            total_revenue: number;
+            total_revenue_cents: number;
+            /** Format: date-time */
+            data_as_of: string;
+        };
+        AttributionAuthoritativeMetric: {
+            /** @enum {string} */
+            entity_type: "attribution_score" | "channel_performance" | "reconciliation_discrepancy";
+            /** Format: uuid */
+            entity_id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            metric_key: string;
+            /** Format: double */
+            metric_value: number;
+            metric_value_cents: number;
+            /** @enum {string} */
+            currency: "USD";
+            channel_code: string;
+            model_type: string;
+            model_version: string;
+            /** Format: double */
+            confidence_score: number;
+            /** @enum {string} */
+            verification_state: "verified" | "unverified";
+            /** Format: date-time */
+            last_updated: string;
+            data_freshness_seconds: number;
+            deterministic_truth_sources: string[];
+            revenue_context: {
+                cache_key: string;
+                /** Format: double */
+                total_revenue: number;
+                total_revenue_cents: number;
+                /** Format: date-time */
+                data_as_of: string;
+            };
+        };
+        AttributionNonAuthoritativeExplanation: {
+            /** @enum {string} */
+            explanation_class: "deterministic_placeholder";
+            non_authoritative_summary: string;
             /** Format: date-time */
             generated_at: string;
-            /**
-             * Format: float
-             * @description LLM API cost for this explanation
-             * @example 1.8
-             */
-            cost_cents?: number;
+            caveats: string[];
+        };
+        AttributionExplanationResponse: {
+            authoritative_metric: {
+                /** @enum {string} */
+                entity_type: "attribution_score" | "channel_performance" | "reconciliation_discrepancy";
+                /** Format: uuid */
+                entity_id: string;
+                /** Format: uuid */
+                tenant_id: string;
+                metric_key: string;
+                /** Format: double */
+                metric_value: number;
+                metric_value_cents: number;
+                /** @enum {string} */
+                currency: "USD";
+                channel_code: string;
+                model_type: string;
+                model_version: string;
+                /** Format: double */
+                confidence_score: number;
+                /** @enum {string} */
+                verification_state: "verified" | "unverified";
+                /** Format: date-time */
+                last_updated: string;
+                data_freshness_seconds: number;
+                deterministic_truth_sources: string[];
+                revenue_context: {
+                    cache_key: string;
+                    /** Format: double */
+                    total_revenue: number;
+                    total_revenue_cents: number;
+                    /** Format: date-time */
+                    data_as_of: string;
+                };
+            };
+            non_authoritative_explanation: {
+                /** @enum {string} */
+                explanation_class: "deterministic_placeholder";
+                non_authoritative_summary: string;
+                /** Format: date-time */
+                generated_at: string;
+                caveats: string[];
+            };
         };
         /** @description RFC7807 Problem Details for HTTP APIs with Skeldir extensions */
         ProblemDetails: {
@@ -2210,7 +2272,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Explanation with citations and confidence scoring */
+            /** @description Deterministic authority metric plus non-authoritative explanation */
             200: {
                 headers: {
                     /** @description Request correlation ID echoed back */
@@ -2220,54 +2282,85 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "explanation": "Facebook ROAS of $3.20 is outperforming Google ROAS of $2.10 because last-touch conversions skew toward paid social during the Black Friday campaign. Confidence is high given 90 days of stable conversion data.",
-                     *       "citations": [
-                     *         {
-                     *           "metric": "facebook_roas",
-                     *           "value": 3.2,
-                     *           "source": "attribution_results.channel_roas"
-                     *         },
-                     *         {
-                     *           "metric": "google_roas",
-                     *           "value": 2.1,
-                     *           "source": "attribution_results.channel_roas"
+                     *       "authoritative_metric": {
+                     *         "entity_type": "channel_performance",
+                     *         "entity_id": "22222222-2222-2222-2222-222222222222",
+                     *         "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *         "metric_key": "channel_performance_revenue",
+                     *         "metric_value": 452.75,
+                     *         "metric_value_cents": 45275,
+                     *         "currency": "USD",
+                     *         "channel_code": "paid_social",
+                     *         "model_type": "deterministic",
+                     *         "model_version": "1.0.0",
+                     *         "confidence_score": 0.92,
+                     *         "verification_state": "unverified",
+                     *         "last_updated": "2026-04-03T14:30:00Z",
+                     *         "data_freshness_seconds": 12,
+                     *         "deterministic_truth_sources": [
+                     *           "attribution_allocations",
+                     *           "revenue_cache_entries"
+                     *         ],
+                     *         "revenue_context": {
+                     *           "cache_key": "realtime_revenue:shared:v1",
+                     *           "total_revenue": 125430.5,
+                     *           "total_revenue_cents": 12543050,
+                     *           "data_as_of": "2026-04-03T14:29:48Z"
                      *         }
-                     *       ],
-                     *       "confidence": "high",
-                     *       "generated_at": "2025-11-26T14:30:00Z",
-                     *       "cost_cents": 1.8
+                     *       },
+                     *       "non_authoritative_explanation": {
+                     *         "explanation_class": "deterministic_placeholder",
+                     *         "non_authoritative_summary": "Non-authoritative explanation derived from deterministic truth.",
+                     *         "generated_at": "2026-04-03T14:30:00Z",
+                     *         "caveats": [
+                     *           "Explanation text cannot override deterministic authority values.",
+                     *           "Deterministic truth is sourced from tenant-scoped DB authority tables."
+                     *         ]
+                     *       }
                      *     }
                      */
                     "application/json": {
-                        /**
-                         * @description Natural language explanation of attribution result
-                         * @example Your Facebook ROAS of $3.20 indicates strong performance because you have 90 days of stable conversion data with narrow confidence bounds ($2.95-$3.45).
-                         */
-                        explanation: string;
-                        citations: {
-                            /** @example facebook_roas */
-                            metric: string;
-                            /** @example 3.2 */
-                            value: number;
-                            /**
-                             * @description Database table.column reference
-                             * @example attribution_results.channel_roas
-                             */
-                            source: string;
-                        }[];
-                        /**
-                         * @description Explanation confidence based on data quality
-                         * @enum {string}
-                         */
-                        confidence: "high" | "medium" | "low";
-                        /** Format: date-time */
-                        generated_at: string;
-                        /**
-                         * Format: float
-                         * @description LLM API cost for this explanation
-                         * @example 1.8
-                         */
-                        cost_cents?: number;
+                        authoritative_metric: {
+                            /** @enum {string} */
+                            entity_type: "attribution_score" | "channel_performance" | "reconciliation_discrepancy";
+                            /** Format: uuid */
+                            entity_id: string;
+                            /** Format: uuid */
+                            tenant_id: string;
+                            metric_key: string;
+                            /** Format: double */
+                            metric_value: number;
+                            metric_value_cents: number;
+                            /** @enum {string} */
+                            currency: "USD";
+                            channel_code: string;
+                            model_type: string;
+                            model_version: string;
+                            /** Format: double */
+                            confidence_score: number;
+                            /** @enum {string} */
+                            verification_state: "verified" | "unverified";
+                            /** Format: date-time */
+                            last_updated: string;
+                            data_freshness_seconds: number;
+                            deterministic_truth_sources: string[];
+                            revenue_context: {
+                                cache_key: string;
+                                /** Format: double */
+                                total_revenue: number;
+                                total_revenue_cents: number;
+                                /** Format: date-time */
+                                data_as_of: string;
+                            };
+                        };
+                        non_authoritative_explanation: {
+                            /** @enum {string} */
+                            explanation_class: "deterministic_placeholder";
+                            non_authoritative_summary: string;
+                            /** Format: date-time */
+                            generated_at: string;
+                            caveats: string[];
+                        };
                     };
                 };
             };
@@ -2464,6 +2557,70 @@ export interface operations {
                     };
                 };
             };
+            /** @description Bad Request - validation failed */
+            409: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
             /** @description Internal server error */
             500: {
                 headers: {
@@ -2528,7 +2685,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Explanation surface mounted but not operational in B1.7-P0 */
+            /** @description Deterministic authority dependencies unavailable */
             503: {
                 headers: {
                     "X-Correlation-ID"?: string;
@@ -2541,14 +2698,14 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "type": "https://api.skeldir.com/problems/explanation-surface-not-ready",
-                     *       "title": "Explanation Surface Not Ready",
+                     *       "type": "https://api.skeldir.com/problems/deterministic-authority-unavailable",
+                     *       "title": "Deterministic Authority Unavailable",
                      *       "status": 503,
-                     *       "detail": "The canonical explanation endpoint is mounted but deterministic explanation serving is not operational in B1.7-P0.",
+                     *       "detail": "Deterministic authority dependencies are unavailable for this tenant.",
                      *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
                      *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
                      *       "timestamp": "2026-04-03T14:30:00Z",
-                     *       "code": "EXPLAIN_SURFACE_NOT_READY"
+                     *       "code": "DETERMINISTIC_AUTHORITY_UNAVAILABLE"
                      *     }
                      */
                     "application/problem+json": {

@@ -1,4 +1,4 @@
-"""B1.7-P0 explanation surface lock enforcer tests."""
+"""B1.7-P1 explanation authority lock enforcer tests."""
 
 from __future__ import annotations
 
@@ -72,19 +72,19 @@ def _runtime_openapi() -> dict:
     return app.openapi()
 
 
-def test_b17_p0_enforcer_passes_repo_baseline() -> None:
+def test_b17_p1_enforcer_passes_repo_baseline() -> None:
     result = _run_enforcer()
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     assert "result=PASS" in result.stdout
 
 
-def test_b17_p0_enforcer_negative_control_synthetic_regression() -> None:
+def test_b17_p1_enforcer_negative_control_synthetic_regression() -> None:
     result = _run_enforcer("--simulate-regression")
     assert result.returncode != 0
     assert "synthetic_regression" in (result.stdout + result.stderr)
 
 
-def test_b17_p0_enforcer_negative_control_fails_when_canonical_route_absent_from_runtime(
+def test_b17_p1_enforcer_negative_control_fails_when_canonical_route_absent_from_runtime(
     tmp_path: Path,
 ) -> None:
     routes = _runtime_routes()
@@ -98,7 +98,7 @@ def test_b17_p0_enforcer_negative_control_fails_when_canonical_route_absent_from
     assert "canonical_route_not_mounted_runtime" in (result.stdout + result.stderr)
 
 
-def test_b17_p0_enforcer_negative_control_fails_when_canonical_route_absent_from_runtime_openapi(
+def test_b17_p1_enforcer_negative_control_fails_when_canonical_route_absent_from_runtime_openapi(
     tmp_path: Path,
 ) -> None:
     runtime_doc = _runtime_openapi()
@@ -108,10 +108,14 @@ def test_b17_p0_enforcer_negative_control_fails_when_canonical_route_absent_from
 
     result = _run_enforcer("--runtime-openapi-file", str(mutated_runtime_openapi))
     assert result.returncode != 0
-    assert "canonical_route_missing_from_runtime_openapi" in (result.stdout + result.stderr)
+    combined = result.stdout + result.stderr
+    assert (
+        "canonical_route_missing_from_runtime_openapi" in combined
+        or "canonical_runtime_openapi_operation_id_mismatch" in combined
+    )
 
 
-def test_b17_p0_enforcer_negative_control_detects_noncanonical_authority_regression(
+def test_b17_p1_enforcer_negative_control_detects_noncanonical_authority_regression(
     tmp_path: Path,
 ) -> None:
     source_file = _repo_root() / "api-contracts" / "openapi" / "v1" / "llm-explanations.yaml"
@@ -126,20 +130,20 @@ def test_b17_p0_enforcer_negative_control_detects_noncanonical_authority_regress
     assert "noncanonical_source_missing_invalid_authority_status" in (result.stdout + result.stderr)
 
 
-def test_b17_p0_enforcer_negative_control_detects_endpoint_semantics_drift(tmp_path: Path) -> None:
+def test_b17_p1_enforcer_negative_control_detects_p1_lock_drift(tmp_path: Path) -> None:
     source_file = _repo_root() / "api-contracts" / "openapi" / "v1" / "attribution.yaml"
     payload = yaml.safe_load(source_file.read_text(encoding="utf-8")) or {}
     op = payload["paths"]["/api/attribution/explain/{entity_type}/{entity_id}"]["get"]
-    op["x-skeldir-b17-p0"]["performance_semantics"]["overall_endpoint_p95_ms"] = 900
+    op["x-skeldir-b17-p1"]["implementation_status"] = "mounted_not_operational"
     mutated_source = tmp_path / "attribution.regression.yaml"
     mutated_source.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
     result = _run_enforcer("--attribution-source-file", str(mutated_source))
     assert result.returncode != 0
-    assert "b17_lock_performance_p95_mismatch" in (result.stdout + result.stderr)
+    assert "source_implementation_status_mismatch" in (result.stdout + result.stderr)
 
 
-def test_b17_p0_canonical_route_returns_contract_defined_non_operational_mode() -> None:
+def test_b17_p1_canonical_route_contract_testing_mode_fails_closed_without_db_session() -> None:
     tenant_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
     fake_context = AuthContext(
         tenant_id=tenant_id,
@@ -164,9 +168,9 @@ def test_b17_p0_canonical_route_returns_contract_defined_non_operational_mode() 
             )
         assert response.status_code == 503, response.text
         assert response.headers.get("content-type", "").startswith("application/problem+json")
-        assert response.headers.get("Retry-After") == "60"
+        assert response.headers.get("Retry-After") == "30"
         body = response.json()
-        assert body["code"] == "EXPLAIN_SURFACE_NOT_READY"
+        assert body["code"] == "DETERMINISTIC_AUTHORITY_UNAVAILABLE"
         assert body["status"] == 503
     finally:
         app.dependency_overrides.clear()

@@ -98,12 +98,12 @@ def _load_governed_skip_allowlist() -> set[str]:
         .get("/api/attribution/explain/{entity_type}/{entity_id}", {})
         .get("get", {})
     )
-    b17_lock = operation.get("x-skeldir-b17-p0", {})
+    b17_lock = operation.get("x-skeldir-b17-p1") or operation.get("x-skeldir-b17-p0", {})
     authority_surface = b17_lock.get("authority_surface", {}) if isinstance(b17_lock, dict) else {}
     bundles = authority_surface.get("governed_runtime_skip_bundles", [])
     if not isinstance(bundles, list) or not all(isinstance(item, str) for item in bundles):
         raise ValueError(
-            "attribution.yaml x-skeldir-b17-p0.authority_surface must define governed_runtime_skip_bundles"
+            "attribution.yaml x-skeldir-b17-p1.authority_surface must define governed_runtime_skip_bundles"
         )
     return set(bundles)
 
