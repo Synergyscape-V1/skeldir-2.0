@@ -67,7 +67,7 @@
     {
       "name": "B1.7 Explanation Runtime Adjudication",
       "activation_phase": "B1.7-P5",
-      "source_contract": "contracts-internal/governance/b17_p0_explanation_surface_lock.main.json"
+      "source_contract": "api-contracts/openapi/v1/attribution.yaml#/paths/~1api~1attribution~1explain~1{entity_type}~1{entity_id}/get/x-skeldir-b17-p0"
     }
   ]
 }

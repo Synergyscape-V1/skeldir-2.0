@@ -183,13 +183,16 @@ paths:
     get:
       summary: Get natural language explanation for attribution entities
       description: |
-        Fast RAG endpoint for interactive explanations. Centaur architecture:
-        retrieves deterministic attribution data, synthesizes via LLM.
-        Target latency: <500ms p95.
+        Canonical B1.7 explanation authority surface.
+        In B1.7-P0 this route is mounted but intentionally non-operational for
+        deterministic explanation serving, and returns RFC7807 Problem Details.
+        This preserves authority-surface convergence without fabricating financial payloads.
       operationId: explainAttributionEntity
       tags:
         - Attribution
         - LLM Explanation
+      security:
+        - accessBearerAuth: ["viewer"]
       parameters:
         - name: entity_type
           in: path
@@ -243,9 +246,86 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '500':
           $ref: './_common/base.yaml#/components/responses/ServerError'
+        '503':
+          description: Explanation surface mounted but not operational in B1.7-P0
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+            Cache-Control:
+              schema:
+                type: string
+              description: Cache policy for non-operational responses
+          content:
+            application/problem+json:
+              schema:
+                $ref: './_common/base.yaml#/components/schemas/ProblemDetails'
+              example:
+                type: https://api.skeldir.com/problems/explanation-surface-not-ready
+                title: Explanation Surface Not Ready
+                status: 503
+                detail: The canonical explanation endpoint is mounted but deterministic explanation serving is not operational in B1.7-P0.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000
+                correlation_id: 550e8400-e29b-41d4-a716-446655440000
+                timestamp: '2026-04-03T14:30:00Z'
+                code: EXPLAIN_SURFACE_NOT_READY
       x-latency-requirement: 500ms
       x-cost-budget: 0.02
       x-complexity-score: 5
+      x-skeldir-b17-p0:
+        implementation_status: mounted_not_operational
+        authority_surface:
+          canonical_public_route_family: attribution
+          canonical_route:
+            method: GET
+            path: /api/attribution/explain/{entity_type}/{entity_id}
+            operation_id: explainAttributionEntity
+            bundle: attribution.bundled.yaml
+          noncanonical_route:
+            method: GET
+            path: /api/v1/explain/{entity_type}/{entity_id}
+            operation_id: getEntityExplanation
+            bundle: llm-explanations.bundled.yaml
+            authority_status: invalid_noncanonical_blueprint
+          governed_runtime_skip_bundles:
+            - llm-explanations.bundled.yaml
+        runtime_contract_mode:
+          type: problem_details
+          status_code: 503
+          code: EXPLAIN_SURFACE_NOT_READY
+          mounted_route_required: true
+          runtime_openapi_presence_required: true
+        authority_model:
+          deterministic_truth_domain: attribution_authority
+          required_truth_sources:
+            - attribution_allocations
+            - revenue_cache_entries
+          required_response_separation:
+            authoritative_metric_payload_required: true
+            non_authoritative_explanation_payload_required: true
+        cache_substrate:
+          active_substrate: postgres.llm_semantic_cache
+          external_cache_dependency_allowed: false
+          external_cache_dependency_exception_ticket: null
+        performance_semantics:
+          overall_endpoint_p95_ms: 500
+          minimum_cache_hit_rate: 0.61
+          require_warm_path_diagnostics: true
+          require_cold_path_diagnostics: true
+          warm_path_only_pass_forbidden: true
+        future_merge_blocking_gate_category:
+          name: B1.7 Explanation Runtime Adjudication
+          activation_phase: B1.7-P5
+          required_proof_dimensions:
+            - mounted_route_contract_parity
+            - deterministic_authority_binding
+            - cache_coherence_and_replay_safety
+            - endpoint_latency_semantics
 
   /api/attribution/platform-connections:
     post:

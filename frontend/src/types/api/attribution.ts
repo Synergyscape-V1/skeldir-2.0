@@ -55,9 +55,10 @@ export interface paths {
         };
         /**
          * Get natural language explanation for attribution entities
-         * @description Fast RAG endpoint for interactive explanations. Centaur architecture:
-         *     retrieves deterministic attribution data, synthesizes via LLM.
-         *     Target latency: <500ms p95.
+         * @description Canonical B1.7 explanation authority surface.
+         *     In B1.7-P0 this route is mounted but intentionally non-operational for
+         *     deterministic explanation serving, and returns RFC7807 Problem Details.
+         *     This preserves authority-surface convergence without fabricating financial payloads.
          */
         get: operations["explainAttributionEntity"];
         put?: never;
@@ -2470,6 +2471,86 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Explanation surface mounted but not operational in B1.7-P0 */
+            503: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    /** @description Seconds to wait before retrying */
+                    "Retry-After"?: number;
+                    /** @description Cache policy for non-operational responses */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://api.skeldir.com/problems/explanation-surface-not-ready",
+                     *       "title": "Explanation Surface Not Ready",
+                     *       "status": 503,
+                     *       "detail": "The canonical explanation endpoint is mounted but deterministic explanation serving is not operational in B1.7-P0.",
+                     *       "instance": "urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000",
+                     *       "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                     *       "timestamp": "2026-04-03T14:30:00Z",
+                     *       "code": "EXPLAIN_SURFACE_NOT_READY"
+                     *     }
+                     */
                     "application/problem+json": {
                         /**
                          * Format: uri

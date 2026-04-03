@@ -27,9 +27,7 @@ out_of_scope_paths:
 # Contract-only allowlist: Operations defined in contracts but intentionally not yet implemented
 # Format: "METHOD /path/to/endpoint"
 # Use this sparingly - it's for upcoming endpoints only, not a permanent bypass
-contract_only_allowlist:
-  # Example: "POST /api/attribution/v1/query/advanced"  # Planned for v1.1
-  - "GET /api/attribution/explain/{entity_type}/{entity_id}"
+contract_only_allowlist: []
 
 # Mapping: In-scope prefixes to their corresponding bundled OpenAPI specifications
 # Used to determine which contract file governs each route
