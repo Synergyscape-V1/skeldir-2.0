@@ -508,6 +508,7 @@ paths:
                         type: integer
                       currency:
                         type: string
+                        pattern: ^[A-Z]{3}$
                         enum:
                           - USD
                       channel_code:
@@ -518,6 +519,7 @@ paths:
                         type: string
                       confidence_score:
                         type: number
+                        format: double
                         minimum: 0
                         maximum: 1
                       verification_state:
