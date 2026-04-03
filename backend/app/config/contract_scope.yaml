@@ -29,7 +29,7 @@ out_of_scope_paths:
 # Use this sparingly - it's for upcoming endpoints only, not a permanent bypass
 contract_only_allowlist:
   # Example: "POST /api/attribution/v1/query/advanced"  # Planned for v1.1
-  []
+  - "GET /api/attribution/explain/{entity_type}/{entity_id}"
 
 # Mapping: In-scope prefixes to their corresponding bundled OpenAPI specifications
 # Used to determine which contract file governs each route

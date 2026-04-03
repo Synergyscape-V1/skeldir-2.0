@@ -104,9 +104,9 @@ llm_explanation:
   requirements:
     - requirement_id: LLM-001
       operation_id: explainAttributionEntity
-      status: implemented
+      status: deferred
       canonical_event: null
-      description: LLM-powered natural language explanation for attribution entities
+      description: Deferred authoritative explanation scope for attribution entities
 
 llm_investigations:
   requirements:

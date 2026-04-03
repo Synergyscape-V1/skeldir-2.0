@@ -70,7 +70,7 @@ def load_scope_config() -> dict:
         return yaml.safe_load(f)
 
 
-def load_skip_allowlist() -> set[str]:
+def _load_explicit_skip_allowlist() -> set[str]:
     """Load explicit bundle skip allowlist for runtime conformance tests."""
     allowlist_path = Path(__file__).parent / "semantics_skip_allowlist.yaml"
     with open(allowlist_path, "r") as f:
@@ -79,6 +79,36 @@ def load_skip_allowlist() -> set[str]:
     if not isinstance(bundles, dict):
         raise ValueError("semantics_skip_allowlist.yaml must define a 'bundles' mapping")
     return set(bundles.keys())
+
+
+def _load_governed_skip_allowlist() -> set[str]:
+    """Load machine-governed deferred bundles from B1.7-P0 contract."""
+    governance_path = (
+        Path(__file__).parent.parent.parent
+        / "contracts-internal"
+        / "governance"
+        / "b17_p0_explanation_surface_lock.main.json"
+    )
+    if not governance_path.exists():
+        raise ValueError(f"Missing governance contract: {governance_path}")
+    payload = json.loads(governance_path.read_text(encoding="utf-8"))
+    bundles = payload.get("governed_runtime_skip_bundles", [])
+    if not isinstance(bundles, list) or not all(isinstance(item, str) for item in bundles):
+        raise ValueError("b17_p0_explanation_surface_lock.main.json must define governed_runtime_skip_bundles")
+    return set(bundles)
+
+
+def load_skip_allowlist() -> set[str]:
+    """Load runtime skip allowlist from explicit and machine-governed sources."""
+    explicit = _load_explicit_skip_allowlist()
+    governed = _load_governed_skip_allowlist()
+    overlap = explicit.intersection(governed)
+    if overlap:
+        raise ValueError(
+            "Bundles must not be duplicated between explicit and machine-governed skip allowlists: "
+            + ", ".join(sorted(overlap))
+        )
+    return explicit.union(governed)
 
 
 def get_bundled_specs() -> List[Path]:
