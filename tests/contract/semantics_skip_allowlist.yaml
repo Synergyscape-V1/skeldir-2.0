@@ -1,5 +1,4 @@
 bundles:
-  llm-explanations.bundled.yaml: "Intentionally deferred runtime conformance coverage"
   webhooks.paypal.bundled.yaml: "Intentionally deferred runtime conformance coverage"
   webhooks.shopify.bundled.yaml: "Intentionally deferred runtime conformance coverage"
   webhooks.stripe.bundled.yaml: "Intentionally deferred runtime conformance coverage"
