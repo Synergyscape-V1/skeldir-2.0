@@ -69,7 +69,9 @@ def _manifest_requirements_for_operation(
 
 def _load_runtime_routes(repo_root: Path) -> set[str]:
     os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
-    os.environ.setdefault("MIGRATION_DATABASE_URL", os.environ["DATABASE_URL"])
+    os.environ.setdefault(
+        "MIGRATION_DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
+    )
     os.environ.setdefault("TESTING", "1")
     os.environ.setdefault("CONTRACT_TESTING", "1")
 
