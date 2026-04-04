@@ -246,6 +246,13 @@ paths:
                   deterministic_truth_sources:
                     - attribution_allocations
                     - revenue_cache_entries
+                  truth_snapshot:
+                    version: f85f37fe583e1ee414e56275417f5719053d73de69ca87b2cb46f58f7d04067b
+                    watermark: 2939480152084631165
+                    as_of: '2026-04-03T14:30:00Z'
+                    deterministic_truth_sources:
+                      - attribution_allocations
+                      - revenue_cache_entries
                   revenue_context:
                     cache_key: realtime_revenue:shared:v1
                     total_revenue: 125430.5
@@ -258,6 +265,16 @@ paths:
                   degraded: false
                   degraded_reason: null
                   generated_at: '2026-04-03T14:30:00Z'
+                  truth_snapshot:
+                    version: f85f37fe583e1ee414e56275417f5719053d73de69ca87b2cb46f58f7d04067b
+                    watermark: 2939480152084631165
+                    as_of: '2026-04-03T14:30:00Z'
+                    deterministic_truth_sources:
+                      - attribution_allocations
+                      - revenue_cache_entries
+                  cache_replay_state: cache_hit_truth_match
+                  provider_reentry_blocked: false
+                  explanation_contract_version: b1.7-p3
                   caveats:
                     - Explanation text cannot override deterministic authority values.
                     - Deterministic truth is sourced from tenant-scoped DB authority tables.
@@ -357,6 +374,20 @@ paths:
         output_envelope:
           schema_key: attribution_explanation_fastpath_v1
           summary_max_length: 320
+      x-skeldir-b17-p3:
+        implementation_status: deterministic_watermark_cache_identity_replay_rejection
+        cache_replay_topology:
+          authoritative_watermark_lookup_required_before_cache_replay: true
+          route_entry_cache_before_authority_lookup_forbidden: true
+          determinant_complete_identity_required: true
+          prompt_hash_only_identity_forbidden: true
+        stale_replay_policy:
+          stale_replay_rejection_required: true
+          provider_reentry_on_stale_forbidden: true
+          classification_required: true
+        citation_coherence:
+          structured_truth_snapshot_required: true
+          text_embedding_only_forbidden: true
 
   /api/attribution/platform-connections:
     post:
@@ -1340,6 +1371,28 @@ components:
           type: string
           format: date-time
 
+    AttributionTruthSnapshot:
+      type: object
+      required:
+        - version
+        - watermark
+        - as_of
+        - deterministic_truth_sources
+      properties:
+        version:
+          type: string
+          minLength: 32
+        watermark:
+          type: integer
+          minimum: 1
+        as_of:
+          type: string
+          format: date-time
+        deterministic_truth_sources:
+          type: array
+          items:
+            type: string
+
     AttributionAuthoritativeMetric:
       type: object
       required:
@@ -1358,6 +1411,7 @@ components:
         - last_updated
         - data_freshness_seconds
         - deterministic_truth_sources
+        - truth_snapshot
         - revenue_context
       properties:
         entity_type:
@@ -1407,6 +1461,8 @@ components:
           type: array
           items:
             type: string
+        truth_snapshot:
+          $ref: '#/components/schemas/AttributionTruthSnapshot'
         revenue_context:
           $ref: '#/components/schemas/AttributionExplanationRevenueContext'
 
@@ -1418,6 +1474,10 @@ components:
         - non_authoritative_summary
         - degraded
         - generated_at
+        - truth_snapshot
+        - cache_replay_state
+        - provider_reentry_blocked
+        - explanation_contract_version
         - caveats
       properties:
         explanation_class:
@@ -1425,7 +1485,7 @@ components:
           enum: [provider_fastpath_validated, provider_fastpath_degraded]
         synthesis_state:
           type: string
-          enum: [validated, validation_rejected, timeout, provider_failed, blocked]
+          enum: [validated, validation_rejected, timeout, provider_failed, blocked, stale_replay_rejected]
         non_authoritative_summary:
           type: string
           minLength: 1
@@ -1440,6 +1500,20 @@ components:
         generated_at:
           type: string
           format: date-time
+        truth_snapshot:
+          $ref: '#/components/schemas/AttributionTruthSnapshot'
+        cache_replay_state:
+          type: string
+          enum:
+            - cache_hit_truth_match
+            - cold_miss_provider_allowed
+            - stale_replay_rejected_provider_blocked
+            - stale_replay_bypassed_provider_allowed
+        provider_reentry_blocked:
+          type: boolean
+        explanation_contract_version:
+          type: string
+          enum: [b1.7-p3]
         caveats:
           type: array
           items:

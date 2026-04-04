@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 from typing import Any, Literal
 from uuid import UUID
@@ -52,6 +53,9 @@ class AttributionExplanationAuthorityRecord:
     revenue_data_as_of: datetime
     last_updated: datetime
     data_freshness_seconds: int
+    truth_snapshot_version: str
+    truth_snapshot_watermark: int
+    truth_snapshot_as_of: datetime
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -101,11 +105,27 @@ def _metric_key_for_entity_type(entity_type: AuthorityEntityType) -> str:
 
 
 def _metric_cents_for_entity_type(
-    *, entity_type: AuthorityEntityType, allocated_revenue_cents: int, revenue_total_cents: int
+    *,
+    entity_type: AuthorityEntityType,
+    allocated_revenue_cents: int,
+    revenue_total_cents: int,
 ) -> int:
     if entity_type == "reconciliation_discrepancy":
         return revenue_total_cents - allocated_revenue_cents
     return allocated_revenue_cents
+
+
+def _canonical_json(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _truth_snapshot_version(seed: dict[str, Any]) -> str:
+    return hashlib.sha256(_canonical_json(seed).encode("utf-8")).hexdigest()
+
+
+def _truth_snapshot_watermark(version: str) -> int:
+    bounded = int(version[:16], 16) & ((1 << 63) - 1)
+    return max(1, bounded)
 
 
 async def fetch_attribution_explanation_authority(
@@ -134,11 +154,15 @@ async def fetch_attribution_explanation_authority(
         """
     )
     allocation_row = (
-        await db_session.execute(
-            allocation_query,
-            {"tenant_id": str(tenant_id), "entity_id": str(entity_id)},
+        (
+            await db_session.execute(
+                allocation_query,
+                {"tenant_id": str(tenant_id), "entity_id": str(entity_id)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
 
     if allocation_row is None:
         raise AttributionExplanationAuthorityNotFound(
@@ -156,11 +180,15 @@ async def fetch_attribution_explanation_authority(
         """
     )
     revenue_row = (
-        await db_session.execute(
-            revenue_cache_query,
-            {"tenant_id": str(tenant_id), "cache_key": cache_key},
+        (
+            await db_session.execute(
+                revenue_cache_query,
+                {"tenant_id": str(tenant_id), "cache_key": cache_key},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
 
     if revenue_row is None:
         raise AttributionExplanationAuthorityUnavailable(
@@ -177,25 +205,49 @@ async def fetch_attribution_explanation_authority(
         allocated_revenue_cents=int(allocation_row["allocated_revenue_cents"]),
         revenue_total_cents=revenue_total_cents,
     )
+    metric_key = _metric_key_for_entity_type(entity_type)
     last_updated = max(allocation_updated_at, revenue_data_as_of)
-    freshness_seconds = max(0, int((datetime.now(timezone.utc) - last_updated).total_seconds()))
+    freshness_seconds = max(
+        0, int((datetime.now(timezone.utc) - last_updated).total_seconds())
+    )
+    truth_seed = {
+        "tenant_id": str(tenant_id),
+        "entity_type": entity_type,
+        "entity_id": str(entity_id),
+        "metric_key": metric_key,
+        "metric_value_cents": int(metric_cents),
+        "revenue_total_cents": int(revenue_total_cents),
+        "channel_code": str(allocation_row["channel_code"]),
+        "model_type": str(allocation_row["model_type"]),
+        "model_version": str(allocation_row["model_version"]),
+        "verified": bool(allocation_row["verified"]),
+        "allocation_updated_at": allocation_updated_at.isoformat(),
+        "revenue_data_as_of": revenue_data_as_of.isoformat(),
+    }
+    truth_snapshot_version = _truth_snapshot_version(truth_seed)
+    truth_snapshot_watermark = _truth_snapshot_watermark(truth_snapshot_version)
 
     return AttributionExplanationAuthorityRecord(
         entity_type=entity_type,
         entity_id=entity_id,
         tenant_id=tenant_id,
-        metric_key=_metric_key_for_entity_type(entity_type),
+        metric_key=metric_key,
         metric_value_cents=metric_cents,
         metric_value_usd=metric_cents / 100.0,
         channel_code=str(allocation_row["channel_code"]),
         model_type=str(allocation_row["model_type"]),
         model_version=str(allocation_row["model_version"]),
         confidence_score=float(allocation_row["confidence_score"]),
-        verification_state="verified" if bool(allocation_row["verified"]) else "unverified",
+        verification_state=(
+            "verified" if bool(allocation_row["verified"]) else "unverified"
+        ),
         revenue_cache_key=cache_key,
         revenue_total_cents=revenue_total_cents,
         revenue_total_usd=revenue_total_cents / 100.0,
         revenue_data_as_of=revenue_data_as_of,
         last_updated=last_updated,
         data_freshness_seconds=freshness_seconds,
+        truth_snapshot_version=truth_snapshot_version,
+        truth_snapshot_watermark=truth_snapshot_watermark,
+        truth_snapshot_as_of=last_updated,
     )

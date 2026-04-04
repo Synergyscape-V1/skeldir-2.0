@@ -57,7 +57,7 @@ paths:
         - name: If-None-Match
           in: header
           required: false
-          schema: &ref_70
+          schema: &ref_72
             type: string
           description: ETag from previous response for cache validation
       responses:
@@ -82,14 +82,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_56
+                required: &ref_58
                   - total_revenue
                   - event_count
                   - last_updated
                   - data_freshness_seconds
                   - verified
                   - tenant_id
-                properties: &ref_57
+                properties: &ref_59
                   total_revenue:
                     type: number
                     format: double
@@ -241,7 +241,7 @@ paths:
                 properties: *ref_1
         '429':
           description: Too Many Requests - rate limit exceeded
-          headers: &ref_68
+          headers: &ref_70
             X-Correlation-ID:
               schema:
                 type: string
@@ -250,7 +250,7 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: &ref_69
+          content: &ref_71
             application/problem+json:
               schema:
                 type: object
@@ -259,12 +259,12 @@ paths:
                 properties: *ref_1
         '500':
           description: Internal server error
-          headers: &ref_8
+          headers: &ref_10
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_9
+          content: &ref_11
             application/problem+json:
               schema:
                 type: object
@@ -327,12 +327,12 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: &ref_58
+                      required: &ref_60
                         - channel_name
                         - revenue
                         - conversion_count
                         - confidence_score
-                      properties: &ref_59
+                      properties: &ref_61
                         channel_name:
                           type: string
                           enum:
@@ -463,13 +463,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_66
+                required: &ref_68
                   - authoritative_metric
                   - non_authoritative_explanation
-                properties: &ref_67
+                properties: &ref_69
                   authoritative_metric:
                     type: object
-                    required: &ref_62
+                    required: &ref_64
                       - entity_type
                       - entity_id
                       - tenant_id
@@ -485,8 +485,9 @@ paths:
                       - last_updated
                       - data_freshness_seconds
                       - deterministic_truth_sources
+                      - truth_snapshot
                       - revenue_context
-                    properties: &ref_63
+                    properties: &ref_65
                       entity_type:
                         type: string
                         enum:
@@ -537,14 +538,35 @@ paths:
                         type: array
                         items:
                           type: string
+                      truth_snapshot:
+                        type: object
+                        required: &ref_8
+                          - version
+                          - watermark
+                          - as_of
+                          - deterministic_truth_sources
+                        properties: &ref_9
+                          version:
+                            type: string
+                            minLength: 32
+                          watermark:
+                            type: integer
+                            minimum: 1
+                          as_of:
+                            type: string
+                            format: date-time
+                          deterministic_truth_sources:
+                            type: array
+                            items:
+                              type: string
                       revenue_context:
                         type: object
-                        required: &ref_60
+                        required: &ref_62
                           - cache_key
                           - total_revenue
                           - total_revenue_cents
                           - data_as_of
-                        properties: &ref_61
+                        properties: &ref_63
                           cache_key:
                             type: string
                           total_revenue:
@@ -559,14 +581,18 @@ paths:
                             format: date-time
                   non_authoritative_explanation:
                     type: object
-                    required: &ref_64
+                    required: &ref_66
                       - explanation_class
                       - synthesis_state
                       - non_authoritative_summary
                       - degraded
                       - generated_at
+                      - truth_snapshot
+                      - cache_replay_state
+                      - provider_reentry_blocked
+                      - explanation_contract_version
                       - caveats
-                    properties: &ref_65
+                    properties: &ref_67
                       explanation_class:
                         type: string
                         enum:
@@ -580,6 +606,7 @@ paths:
                           - timeout
                           - provider_failed
                           - blocked
+                          - stale_replay_rejected
                       non_authoritative_summary:
                         type: string
                         minLength: 1
@@ -594,6 +621,23 @@ paths:
                       generated_at:
                         type: string
                         format: date-time
+                      truth_snapshot:
+                        type: object
+                        required: *ref_8
+                        properties: *ref_9
+                      cache_replay_state:
+                        type: string
+                        enum:
+                          - cache_hit_truth_match
+                          - cold_miss_provider_allowed
+                          - stale_replay_rejected_provider_blocked
+                          - stale_replay_bypassed_provider_allowed
+                      provider_reentry_blocked:
+                        type: boolean
+                      explanation_contract_version:
+                        type: string
+                        enum:
+                          - b1.7-p3
                       caveats:
                         type: array
                         items:
@@ -617,6 +661,13 @@ paths:
                   deterministic_truth_sources:
                     - attribution_allocations
                     - revenue_cache_entries
+                  truth_snapshot:
+                    version: f85f37fe583e1ee414e56275417f5719053d73de69ca87b2cb46f58f7d04067b
+                    watermark: 2939480152084631000
+                    as_of: '2026-04-03T14:30:00Z'
+                    deterministic_truth_sources:
+                      - attribution_allocations
+                      - revenue_cache_entries
                   revenue_context:
                     cache_key: realtime_revenue:shared:v1
                     total_revenue: 125430.5
@@ -629,6 +680,16 @@ paths:
                   degraded: false
                   degraded_reason: null
                   generated_at: '2026-04-03T14:30:00Z'
+                  truth_snapshot:
+                    version: f85f37fe583e1ee414e56275417f5719053d73de69ca87b2cb46f58f7d04067b
+                    watermark: 2939480152084631000
+                    as_of: '2026-04-03T14:30:00Z'
+                    deterministic_truth_sources:
+                      - attribution_allocations
+                      - revenue_cache_entries
+                  cache_replay_state: cache_hit_truth_match
+                  provider_reentry_blocked: false
+                  explanation_contract_version: b1.7-p3
                   caveats:
                     - Explanation text cannot override deterministic authority values.
                     - Deterministic truth is sourced from tenant-scoped DB authority tables.
@@ -642,12 +703,12 @@ paths:
           content: *ref_7
         '404':
           description: Resource not found
-          headers: &ref_16
+          headers: &ref_18
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_17
+          content: &ref_19
             application/problem+json:
               schema:
                 type: object
@@ -656,12 +717,12 @@ paths:
                 properties: *ref_1
         '409':
           description: Bad Request - validation failed
-          headers: &ref_12
+          headers: &ref_14
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
+          content: &ref_15
             application/problem+json:
               schema:
                 type: object
@@ -670,8 +731,8 @@ paths:
                 properties: *ref_1
         '500':
           description: Internal server error
-          headers: *ref_8
-          content: *ref_9
+          headers: *ref_10
+          content: *ref_11
         '503':
           description: Deterministic authority dependencies unavailable
           headers:
@@ -761,6 +822,20 @@ paths:
         output_envelope:
           schema_key: attribution_explanation_fastpath_v1
           summary_max_length: 320
+      x-skeldir-b17-p3:
+        implementation_status: deterministic_watermark_cache_identity_replay_rejection
+        cache_replay_topology:
+          authoritative_watermark_lookup_required_before_cache_replay: true
+          route_entry_cache_before_authority_lookup_forbidden: true
+          determinant_complete_identity_required: true
+          prompt_hash_only_identity_forbidden: true
+        stale_replay_policy:
+          stale_replay_rejection_required: true
+          provider_reentry_on_stale_forbidden: true
+          classification_required: true
+        citation_coherence:
+          structured_truth_snapshot_required: true
+          text_embedding_only_forbidden: true
   /api/attribution/platform-connections:
     post:
       summary: Create or update a platform connection
@@ -790,14 +865,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_34
+              required: &ref_36
                 - platform
                 - platform_account_id
-              properties: &ref_35
+              properties: &ref_37
                 platform:
                   type: string
                   description: Supported platform identifier
-                  enum: &ref_10
+                  enum: &ref_12
                     - google_ads
                     - meta_ads
                     - tiktok_ads
@@ -812,7 +887,7 @@ paths:
                 status:
                   type: string
                   description: Connection lifecycle state
-                  enum: &ref_11
+                  enum: &ref_13
                     - pending
                     - active
                     - disabled
@@ -832,7 +907,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_14
+                required: &ref_16
                   - id
                   - tenant_id
                   - platform
@@ -840,7 +915,7 @@ paths:
                   - status
                   - created_at
                   - updated_at
-                properties: &ref_15
+                properties: &ref_17
                   id:
                     type: string
                     format: uuid
@@ -850,13 +925,13 @@ paths:
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_10
+                    enum: *ref_12
                   platform_account_id:
                     type: string
                   status:
                     type: string
                     description: Connection lifecycle state
-                    enum: *ref_11
+                    enum: *ref_13
                   created_at:
                     type: string
                     format: date-time
@@ -873,8 +948,8 @@ paths:
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_12
-          content: *ref_13
+          headers: *ref_14
+          content: *ref_15
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
@@ -885,8 +960,8 @@ paths:
           content: *ref_7
         '500':
           description: Internal server error
-          headers: *ref_8
-          content: *ref_9
+          headers: *ref_10
+          content: *ref_11
   /api/attribution/platform-connections/{platform}:
     get:
       summary: Get platform connection status
@@ -915,7 +990,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum: *ref_10
+            enum: *ref_12
           description: Platform identifier
         - name: platform_account_id
           in: query
@@ -935,8 +1010,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: *ref_14
-                properties: *ref_15
+                required: *ref_16
+                properties: *ref_17
               example:
                 id: 11111111-1111-1111-1111-111111111111
                 tenant_id: 00000000-0000-0000-0000-000000000000
@@ -955,12 +1030,12 @@ paths:
           content: *ref_7
         '404':
           description: Resource not found
-          headers: *ref_16
-          content: *ref_17
+          headers: *ref_18
+          content: *ref_19
         '500':
           description: Internal server error
-          headers: *ref_8
-          content: *ref_9
+          headers: *ref_10
+          content: *ref_11
   /api/attribution/platform-credentials:
     post:
       summary: Store or update platform credentials
@@ -990,15 +1065,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_36
+              required: &ref_38
                 - platform
                 - platform_account_id
                 - access_token
-              properties: &ref_37
+              properties: &ref_39
                 platform:
                   type: string
                   description: Supported platform identifier
-                  enum: *ref_10
+                  enum: *ref_12
                 platform_account_id:
                   type: string
                 access_token:
@@ -1031,26 +1106,26 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_39
+                required: &ref_41
                   - tenant_id
                   - platform
                   - platform_account_id
                   - status
                   - updated_at
-                properties: &ref_40
+                properties: &ref_42
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_10
+                    enum: *ref_12
                   platform_account_id:
                     type: string
                   status:
                     type: string
                     description: Credential storage status
-                    enum: &ref_38
+                    enum: &ref_40
                       - stored
                       - expired
                       - missing
@@ -1070,8 +1145,8 @@ paths:
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_12
-          content: *ref_13
+          headers: *ref_14
+          content: *ref_15
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
@@ -1082,12 +1157,12 @@ paths:
           content: *ref_7
         '404':
           description: Resource not found
-          headers: *ref_16
-          content: *ref_17
+          headers: *ref_18
+          content: *ref_19
         '500':
           description: Internal server error
-          headers: *ref_8
-          content: *ref_9
+          headers: *ref_10
+          content: *ref_11
   /api/attribution/platform-oauth/{platform}/authorize:
     post:
       summary: Initiate provider OAuth authorization
@@ -1121,7 +1196,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum: *ref_10
+            enum: *ref_12
           description: Provider platform identifier
       requestBody:
         required: true
@@ -1129,10 +1204,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_41
+              required: &ref_43
                 - platform_account_id
                 - redirect_uri
-              properties: &ref_42
+              properties: &ref_44
                 platform_account_id:
                   type: string
                   description: Tenant-local provider account identifier
@@ -1157,7 +1232,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_43
+                required: &ref_45
                   - tenant_id
                   - platform
                   - lifecycle_state
@@ -1166,18 +1241,18 @@ paths:
                   - state_expires_at
                   - data_freshness_seconds
                   - last_updated
-                properties: &ref_44
+                properties: &ref_46
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_10
+                    enum: *ref_12
                   lifecycle_state:
                     type: string
                     description: Tenant-scoped provider OAuth lifecycle state
-                    enum: &ref_19
+                    enum: &ref_21
                       - not_connected
                       - authorization_pending
                       - connected
@@ -1211,8 +1286,8 @@ paths:
                 last_updated: '2026-03-09T17:45:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_12
-          content: *ref_13
+          headers: *ref_14
+          content: *ref_15
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
@@ -1223,15 +1298,15 @@ paths:
           content: *ref_7
         '404':
           description: Provider connection does not exist for the tenant
-          headers: &ref_20
+          headers: &ref_22
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_21
+          content: &ref_23
             application/problem+json:
               schema:
-                allOf: &ref_18
+                allOf: &ref_20
                   - type: object
                     description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                     required: *ref_0
@@ -1243,7 +1318,7 @@ paths:
                       code:
                         type: string
                         description: Non-leaky provider OAuth lifecycle failure categories
-                        enum: &ref_33
+                        enum: &ref_35
                           - provider_not_connected
                           - provider_expired
                           - provider_revoked
@@ -1261,15 +1336,15 @@ paths:
                 code: provider_not_connected
         '409':
           description: Provider connection was revoked and is no longer active
-          headers: &ref_29
+          headers: &ref_31
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_30
+          content: &ref_32
             application/problem+json:
               schema:
-                allOf: *ref_18
+                allOf: *ref_20
               example:
                 type: https://api.skeldir.com/problems/provider-revoked
                 title: Provider Connection Revoked
@@ -1281,30 +1356,6 @@ paths:
                 code: provider_revoked
         '429':
           description: Provider lifecycle operation is rate limited
-          headers: &ref_22
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-            Retry-After:
-              schema:
-                type: integer
-              description: Seconds to wait before retrying provider lifecycle operation
-          content: &ref_23
-            application/problem+json:
-              schema:
-                allOf: *ref_18
-              example:
-                type: https://api.skeldir.com/problems/provider-rate-limited
-                title: Provider Rate Limited
-                status: 429
-                detail: Provider rate limit exceeded for lifecycle operation.
-                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004
-                correlation_id: 550e8400-e29b-41d4-a716-446655440004
-                timestamp: '2026-03-09T17:45:00Z'
-                code: provider_rate_limited
-        '503':
-          description: Provider lifecycle operation failed due to upstream transport unavailability
           headers: &ref_24
             X-Correlation-ID:
               schema:
@@ -1317,7 +1368,31 @@ paths:
           content: &ref_25
             application/problem+json:
               schema:
-                allOf: *ref_18
+                allOf: *ref_20
+              example:
+                type: https://api.skeldir.com/problems/provider-rate-limited
+                title: Provider Rate Limited
+                status: 429
+                detail: Provider rate limit exceeded for lifecycle operation.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004
+                correlation_id: 550e8400-e29b-41d4-a716-446655440004
+                timestamp: '2026-03-09T17:45:00Z'
+                code: provider_rate_limited
+        '503':
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: &ref_26
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying provider lifecycle operation
+          content: &ref_27
+            application/problem+json:
+              schema:
+                allOf: *ref_20
               example:
                 type: https://api.skeldir.com/problems/provider-transport-failure
                 title: Provider Transport Failure
@@ -1360,7 +1435,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum: *ref_10
+            enum: *ref_12
           description: Provider platform identifier
         - name: code
           in: query
@@ -1398,7 +1473,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_45
+                required: &ref_47
                   - tenant_id
                   - platform
                   - platform_account_id
@@ -1406,24 +1481,24 @@ paths:
                   - refresh_state
                   - data_freshness_seconds
                   - last_updated
-                properties: &ref_46
+                properties: &ref_48
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_10
+                    enum: *ref_12
                   platform_account_id:
                     type: string
                   lifecycle_state:
                     type: string
                     description: Tenant-scoped provider OAuth lifecycle state
-                    enum: *ref_19
+                    enum: *ref_21
                   refresh_state:
                     type: string
                     description: Most recent provider OAuth refresh result state
-                    enum: &ref_26
+                    enum: &ref_28
                       - not_attempted
                       - fresh
                       - due
@@ -1446,23 +1521,23 @@ paths:
                 last_updated: '2026-03-09T17:46:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_12
-          content: *ref_13
+          headers: *ref_14
+          content: *ref_15
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
           content: *ref_5
         '403':
           description: Provider connection exists but lacks required scope grants
-          headers: &ref_27
+          headers: &ref_29
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_28
+          content: &ref_30
             application/problem+json:
               schema:
-                allOf: *ref_18
+                allOf: *ref_20
               example:
                 type: https://api.skeldir.com/problems/provider-scope-insufficient
                 title: Provider Scope Insufficient
@@ -1474,19 +1549,19 @@ paths:
                 code: provider_scope_insufficient
         '404':
           description: Provider connection does not exist for the tenant
-          headers: *ref_20
-          content: *ref_21
+          headers: *ref_22
+          content: *ref_23
         '409':
           description: Provider credential lifecycle is expired and requires re-authorization
-          headers: &ref_31
+          headers: &ref_33
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_32
+          content: &ref_34
             application/problem+json:
               schema:
-                allOf: *ref_18
+                allOf: *ref_20
               example:
                 type: https://api.skeldir.com/problems/provider-expired
                 title: Provider Authorization Expired
@@ -1498,12 +1573,12 @@ paths:
                 code: provider_expired
         '429':
           description: Provider lifecycle operation is rate limited
-          headers: *ref_22
-          content: *ref_23
-        '503':
-          description: Provider lifecycle operation failed due to upstream transport unavailability
           headers: *ref_24
           content: *ref_25
+        '503':
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_26
+          content: *ref_27
   /api/attribution/platform-oauth/{platform}/status:
     get:
       summary: Read provider OAuth connection status
@@ -1537,7 +1612,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum: *ref_10
+            enum: *ref_12
           description: Provider platform identifier
         - name: platform_account_id
           in: query
@@ -1557,7 +1632,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_47
+                required: &ref_49
                   - tenant_id
                   - platform
                   - platform_account_id
@@ -1565,24 +1640,24 @@ paths:
                   - refresh_state
                   - data_freshness_seconds
                   - last_updated
-                properties: &ref_48
+                properties: &ref_50
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_10
+                    enum: *ref_12
                   platform_account_id:
                     type: string
                   lifecycle_state:
                     type: string
                     description: Tenant-scoped provider OAuth lifecycle state
-                    enum: *ref_19
+                    enum: *ref_21
                   refresh_state:
                     type: string
                     description: Most recent provider OAuth refresh result state
-                    enum: *ref_26
+                    enum: *ref_28
                   expires_at:
                     type: string
                     format: date-time
@@ -1612,24 +1687,24 @@ paths:
           content: *ref_5
         '403':
           description: Provider connection exists but lacks required scope grants
-          headers: *ref_27
-          content: *ref_28
-        '404':
-          description: Provider connection does not exist for the tenant
-          headers: *ref_20
-          content: *ref_21
-        '409':
-          description: Provider connection was revoked and is no longer active
           headers: *ref_29
           content: *ref_30
-        '429':
-          description: Provider lifecycle operation is rate limited
+        '404':
+          description: Provider connection does not exist for the tenant
           headers: *ref_22
           content: *ref_23
-        '503':
-          description: Provider lifecycle operation failed due to upstream transport unavailability
+        '409':
+          description: Provider connection was revoked and is no longer active
+          headers: *ref_31
+          content: *ref_32
+        '429':
+          description: Provider lifecycle operation is rate limited
           headers: *ref_24
           content: *ref_25
+        '503':
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_26
+          content: *ref_27
   /api/attribution/platform-oauth/{platform}/disconnect:
     post:
       summary: Disconnect and revoke provider OAuth connection
@@ -1662,7 +1737,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum: *ref_10
+            enum: *ref_12
           description: Provider platform identifier
       requestBody:
         required: true
@@ -1670,12 +1745,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_50
+              required: &ref_52
                 - reason
-              properties: &ref_51
+              properties: &ref_53
                 reason:
                   type: string
-                  enum: &ref_49
+                  enum: &ref_51
                     - user_initiated
                     - provider_revoked
                     - security_event
@@ -1692,25 +1767,25 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_52
+                required: &ref_54
                   - tenant_id
                   - platform
                   - lifecycle_state
                   - disconnected_at
                   - data_freshness_seconds
                   - last_updated
-                properties: &ref_53
+                properties: &ref_55
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_10
+                    enum: *ref_12
                   lifecycle_state:
                     type: string
                     description: Tenant-scoped provider OAuth lifecycle state
-                    enum: *ref_19
+                    enum: *ref_21
                   disconnected_at:
                     type: string
                     format: date-time
@@ -1729,8 +1804,8 @@ paths:
                 last_updated: '2026-03-09T17:47:00Z'
         '400':
           description: Bad Request - validation failed
-          headers: *ref_12
-          content: *ref_13
+          headers: *ref_14
+          content: *ref_15
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_4
@@ -1741,20 +1816,20 @@ paths:
           content: *ref_7
         '404':
           description: Provider connection does not exist for the tenant
-          headers: *ref_20
-          content: *ref_21
-        '409':
-          description: Provider credential lifecycle is expired and requires re-authorization
-          headers: *ref_31
-          content: *ref_32
-        '429':
-          description: Provider lifecycle operation is rate limited
           headers: *ref_22
           content: *ref_23
-        '503':
-          description: Provider lifecycle operation failed due to upstream transport unavailability
+        '409':
+          description: Provider credential lifecycle is expired and requires re-authorization
+          headers: *ref_33
+          content: *ref_34
+        '429':
+          description: Provider lifecycle operation is rate limited
           headers: *ref_24
           content: *ref_25
+        '503':
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_26
+          content: *ref_27
   /api/attribution/platform-oauth/{platform}/refresh-state:
     get:
       summary: Read provider OAuth refresh result state
@@ -1787,7 +1862,7 @@ paths:
           schema:
             type: string
             description: Supported platform identifier
-            enum: *ref_10
+            enum: *ref_12
           description: Provider platform identifier
       responses:
         '200':
@@ -1801,7 +1876,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_54
+                required: &ref_56
                   - tenant_id
                   - platform
                   - lifecycle_state
@@ -1809,22 +1884,22 @@ paths:
                   - next_refresh_due_at
                   - data_freshness_seconds
                   - last_updated
-                properties: &ref_55
+                properties: &ref_57
                   tenant_id:
                     type: string
                     format: uuid
                   platform:
                     type: string
                     description: Supported platform identifier
-                    enum: *ref_10
+                    enum: *ref_12
                   lifecycle_state:
                     type: string
                     description: Tenant-scoped provider OAuth lifecycle state
-                    enum: *ref_19
+                    enum: *ref_21
                   refresh_state:
                     type: string
                     description: Most recent provider OAuth refresh result state
-                    enum: *ref_26
+                    enum: *ref_28
                   next_refresh_due_at:
                     type: string
                     format: date-time
@@ -1841,7 +1916,7 @@ paths:
                     anyOf:
                       - type: string
                         description: Non-leaky provider OAuth lifecycle failure categories
-                        enum: *ref_33
+                        enum: *ref_35
                       - type: 'null'
                   data_freshness_seconds:
                     type: integer
@@ -1866,123 +1941,127 @@ paths:
           content: *ref_5
         '403':
           description: Provider connection exists but lacks required scope grants
-          headers: *ref_27
-          content: *ref_28
-        '404':
-          description: Provider connection does not exist for the tenant
-          headers: *ref_20
-          content: *ref_21
-        '409':
-          description: Provider connection was revoked and is no longer active
           headers: *ref_29
           content: *ref_30
-        '429':
-          description: Provider lifecycle operation is rate limited
+        '404':
+          description: Provider connection does not exist for the tenant
           headers: *ref_22
           content: *ref_23
-        '503':
-          description: Provider lifecycle operation failed due to upstream transport unavailability
+        '409':
+          description: Provider connection was revoked and is no longer active
+          headers: *ref_31
+          content: *ref_32
+        '429':
+          description: Provider lifecycle operation is rate limited
           headers: *ref_24
           content: *ref_25
+        '503':
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_26
+          content: *ref_27
 components:
   schemas:
     Platform:
       type: string
       description: Supported platform identifier
-      enum: *ref_10
+      enum: *ref_12
     PlatformConnectionStatus:
       type: string
       description: Connection lifecycle state
-      enum: *ref_11
+      enum: *ref_13
     PlatformConnectionUpsertRequest:
-      type: object
-      required: *ref_34
-      properties: *ref_35
-    PlatformConnectionResponse:
-      type: object
-      required: *ref_14
-      properties: *ref_15
-    PlatformCredentialUpsertRequest:
       type: object
       required: *ref_36
       properties: *ref_37
+    PlatformConnectionResponse:
+      type: object
+      required: *ref_16
+      properties: *ref_17
+    PlatformCredentialUpsertRequest:
+      type: object
+      required: *ref_38
+      properties: *ref_39
     PlatformCredentialStatus:
       type: string
       description: Credential storage status
-      enum: *ref_38
+      enum: *ref_40
     PlatformCredentialStatusResponse:
-      type: object
-      required: *ref_39
-      properties: *ref_40
-    ProviderOAuthLifecycleState:
-      type: string
-      description: Tenant-scoped provider OAuth lifecycle state
-      enum: *ref_19
-    ProviderRefreshResultState:
-      type: string
-      description: Most recent provider OAuth refresh result state
-      enum: *ref_26
-    ProviderOAuthAuthorizeRequest:
       type: object
       required: *ref_41
       properties: *ref_42
-    ProviderOAuthAuthorizeResponse:
+    ProviderOAuthLifecycleState:
+      type: string
+      description: Tenant-scoped provider OAuth lifecycle state
+      enum: *ref_21
+    ProviderRefreshResultState:
+      type: string
+      description: Most recent provider OAuth refresh result state
+      enum: *ref_28
+    ProviderOAuthAuthorizeRequest:
       type: object
       required: *ref_43
       properties: *ref_44
-    ProviderOAuthCallbackResponse:
+    ProviderOAuthAuthorizeResponse:
       type: object
       required: *ref_45
       properties: *ref_46
-    ProviderOAuthStatusResponse:
+    ProviderOAuthCallbackResponse:
       type: object
       required: *ref_47
       properties: *ref_48
+    ProviderOAuthStatusResponse:
+      type: object
+      required: *ref_49
+      properties: *ref_50
     ProviderOAuthDisconnectReason:
       type: string
-      enum: *ref_49
+      enum: *ref_51
     ProviderOAuthDisconnectRequest:
-      type: object
-      required: *ref_50
-      properties: *ref_51
-    ProviderOAuthDisconnectResponse:
       type: object
       required: *ref_52
       properties: *ref_53
-    ProviderLifecycleErrorCode:
-      type: string
-      description: Non-leaky provider OAuth lifecycle failure categories
-      enum: *ref_33
-    ProviderOAuthRefreshStateResponse:
+    ProviderOAuthDisconnectResponse:
       type: object
       required: *ref_54
       properties: *ref_55
-    ProviderLifecycleProblemDetails:
-      allOf: *ref_18
-    RealtimeRevenueCounter:
+    ProviderLifecycleErrorCode:
+      type: string
+      description: Non-leaky provider OAuth lifecycle failure categories
+      enum: *ref_35
+    ProviderOAuthRefreshStateResponse:
       type: object
       required: *ref_56
       properties: *ref_57
-    ChannelAttribution:
+    ProviderLifecycleProblemDetails:
+      allOf: *ref_20
+    RealtimeRevenueCounter:
       type: object
       required: *ref_58
       properties: *ref_59
-    AttributionExplanationRevenueContext:
+    ChannelAttribution:
       type: object
       required: *ref_60
       properties: *ref_61
-    AttributionAuthoritativeMetric:
+    AttributionExplanationRevenueContext:
       type: object
       required: *ref_62
       properties: *ref_63
-    AttributionNonAuthoritativeExplanation:
+    AttributionTruthSnapshot:
+      type: object
+      required: *ref_8
+      properties: *ref_9
+    AttributionAuthoritativeMetric:
       type: object
       required: *ref_64
       properties: *ref_65
-    AttributionExplanationResponse:
+    AttributionNonAuthoritativeExplanation:
       type: object
       required: *ref_66
       properties: *ref_67
+    AttributionExplanationResponse:
+      type: object
+      required: *ref_68
+      properties: *ref_69
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -1991,28 +2070,28 @@ components:
   responses:
     ProviderNotConnectedError:
       description: Provider connection does not exist for the tenant
-      headers: *ref_20
-      content: *ref_21
-    ProviderExpiredError:
-      description: Provider credential lifecycle is expired and requires re-authorization
-      headers: *ref_31
-      content: *ref_32
-    ProviderRevokedError:
-      description: Provider connection was revoked and is no longer active
-      headers: *ref_29
-      content: *ref_30
-    ProviderScopeInsufficientError:
-      description: Provider connection exists but lacks required scope grants
-      headers: *ref_27
-      content: *ref_28
-    ProviderRateLimitedError:
-      description: Provider lifecycle operation is rate limited
       headers: *ref_22
       content: *ref_23
-    ProviderTransportFailureError:
-      description: Provider lifecycle operation failed due to upstream transport unavailability
+    ProviderExpiredError:
+      description: Provider credential lifecycle is expired and requires re-authorization
+      headers: *ref_33
+      content: *ref_34
+    ProviderRevokedError:
+      description: Provider connection was revoked and is no longer active
+      headers: *ref_31
+      content: *ref_32
+    ProviderScopeInsufficientError:
+      description: Provider connection exists but lacks required scope grants
+      headers: *ref_29
+      content: *ref_30
+    ProviderRateLimitedError:
+      description: Provider lifecycle operation is rate limited
       headers: *ref_24
       content: *ref_25
+    ProviderTransportFailureError:
+      description: Provider lifecycle operation failed due to upstream transport unavailability
+      headers: *ref_26
+      content: *ref_27
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
       headers: *ref_4
@@ -2023,20 +2102,20 @@ components:
       content: *ref_7
     RateLimitError:
       description: Too Many Requests - rate limit exceeded
-      headers: *ref_68
-      content: *ref_69
+      headers: *ref_70
+      content: *ref_71
     ServerError:
       description: Internal server error
-      headers: *ref_8
-      content: *ref_9
+      headers: *ref_10
+      content: *ref_11
     NotFoundError:
       description: Resource not found
-      headers: *ref_16
-      content: *ref_17
+      headers: *ref_18
+      content: *ref_19
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_12
-      content: *ref_13
+      headers: *ref_14
+      content: *ref_15
   securitySchemes:
     accessBearerAuth:
       type: oauth2
@@ -2065,5 +2144,5 @@ components:
       name: If-None-Match
       in: header
       required: false
-      schema: *ref_70
+      schema: *ref_72
       description: ETag from previous response for cache validation
