@@ -627,6 +627,13 @@ export interface components {
             /** Format: date-time */
             data_as_of: string;
         };
+        AttributionTruthSnapshot: {
+            version: string;
+            watermark: number;
+            /** Format: date-time */
+            as_of: string;
+            deterministic_truth_sources: string[];
+        };
         AttributionAuthoritativeMetric: {
             /** @enum {string} */
             entity_type: "attribution_score" | "channel_performance" | "reconciliation_discrepancy";
@@ -651,6 +658,13 @@ export interface components {
             last_updated: string;
             data_freshness_seconds: number;
             deterministic_truth_sources: string[];
+            truth_snapshot: {
+                version: string;
+                watermark: number;
+                /** Format: date-time */
+                as_of: string;
+                deterministic_truth_sources: string[];
+            };
             revenue_context: {
                 cache_key: string;
                 /** Format: double */
@@ -664,12 +678,24 @@ export interface components {
             /** @enum {string} */
             explanation_class: "provider_fastpath_validated" | "provider_fastpath_degraded";
             /** @enum {string} */
-            synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked";
+            synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked" | "stale_replay_rejected";
             non_authoritative_summary: string;
             degraded: boolean;
             degraded_reason?: string | null;
             /** Format: date-time */
             generated_at: string;
+            truth_snapshot: {
+                version: string;
+                watermark: number;
+                /** Format: date-time */
+                as_of: string;
+                deterministic_truth_sources: string[];
+            };
+            /** @enum {string} */
+            cache_replay_state: "cache_hit_truth_match" | "cold_miss_provider_allowed" | "stale_replay_rejected_provider_blocked" | "stale_replay_bypassed_provider_allowed";
+            provider_reentry_blocked: boolean;
+            /** @enum {string} */
+            explanation_contract_version: "b1.7-p3";
             caveats: string[];
         };
         AttributionExplanationResponse: {
@@ -697,6 +723,13 @@ export interface components {
                 last_updated: string;
                 data_freshness_seconds: number;
                 deterministic_truth_sources: string[];
+                truth_snapshot: {
+                    version: string;
+                    watermark: number;
+                    /** Format: date-time */
+                    as_of: string;
+                    deterministic_truth_sources: string[];
+                };
                 revenue_context: {
                     cache_key: string;
                     /** Format: double */
@@ -710,12 +743,24 @@ export interface components {
                 /** @enum {string} */
                 explanation_class: "provider_fastpath_validated" | "provider_fastpath_degraded";
                 /** @enum {string} */
-                synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked";
+                synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked" | "stale_replay_rejected";
                 non_authoritative_summary: string;
                 degraded: boolean;
                 degraded_reason?: string | null;
                 /** Format: date-time */
                 generated_at: string;
+                truth_snapshot: {
+                    version: string;
+                    watermark: number;
+                    /** Format: date-time */
+                    as_of: string;
+                    deterministic_truth_sources: string[];
+                };
+                /** @enum {string} */
+                cache_replay_state: "cache_hit_truth_match" | "cold_miss_provider_allowed" | "stale_replay_rejected_provider_blocked" | "stale_replay_bypassed_provider_allowed";
+                provider_reentry_blocked: boolean;
+                /** @enum {string} */
+                explanation_contract_version: "b1.7-p3";
                 caveats: string[];
             };
         };
@@ -2309,6 +2354,15 @@ export interface operations {
                      *           "attribution_allocations",
                      *           "revenue_cache_entries"
                      *         ],
+                     *         "truth_snapshot": {
+                     *           "version": "f85f37fe583e1ee414e56275417f5719053d73de69ca87b2cb46f58f7d04067b",
+                     *           "watermark": 2939480152084631000,
+                     *           "as_of": "2026-04-03T14:30:00Z",
+                     *           "deterministic_truth_sources": [
+                     *             "attribution_allocations",
+                     *             "revenue_cache_entries"
+                     *           ]
+                     *         },
                      *         "revenue_context": {
                      *           "cache_key": "realtime_revenue:shared:v1",
                      *           "total_revenue": 125430.5,
@@ -2323,6 +2377,18 @@ export interface operations {
                      *         "degraded": false,
                      *         "degraded_reason": null,
                      *         "generated_at": "2026-04-03T14:30:00Z",
+                     *         "truth_snapshot": {
+                     *           "version": "f85f37fe583e1ee414e56275417f5719053d73de69ca87b2cb46f58f7d04067b",
+                     *           "watermark": 2939480152084631000,
+                     *           "as_of": "2026-04-03T14:30:00Z",
+                     *           "deterministic_truth_sources": [
+                     *             "attribution_allocations",
+                     *             "revenue_cache_entries"
+                     *           ]
+                     *         },
+                     *         "cache_replay_state": "cache_hit_truth_match",
+                     *         "provider_reentry_blocked": false,
+                     *         "explanation_contract_version": "b1.7-p3",
                      *         "caveats": [
                      *           "Explanation text cannot override deterministic authority values.",
                      *           "Deterministic truth is sourced from tenant-scoped DB authority tables."
@@ -2355,6 +2421,13 @@ export interface operations {
                             last_updated: string;
                             data_freshness_seconds: number;
                             deterministic_truth_sources: string[];
+                            truth_snapshot: {
+                                version: string;
+                                watermark: number;
+                                /** Format: date-time */
+                                as_of: string;
+                                deterministic_truth_sources: string[];
+                            };
                             revenue_context: {
                                 cache_key: string;
                                 /** Format: double */
@@ -2368,12 +2441,24 @@ export interface operations {
                             /** @enum {string} */
                             explanation_class: "provider_fastpath_validated" | "provider_fastpath_degraded";
                             /** @enum {string} */
-                            synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked";
+                            synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked" | "stale_replay_rejected";
                             non_authoritative_summary: string;
                             degraded: boolean;
                             degraded_reason?: string | null;
                             /** Format: date-time */
                             generated_at: string;
+                            truth_snapshot: {
+                                version: string;
+                                watermark: number;
+                                /** Format: date-time */
+                                as_of: string;
+                                deterministic_truth_sources: string[];
+                            };
+                            /** @enum {string} */
+                            cache_replay_state: "cache_hit_truth_match" | "cold_miss_provider_allowed" | "stale_replay_rejected_provider_blocked" | "stale_replay_bypassed_provider_allowed";
+                            provider_reentry_blocked: boolean;
+                            /** @enum {string} */
+                            explanation_contract_version: "b1.7-p3";
                             caveats: string[];
                         };
                     };

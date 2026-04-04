@@ -19,7 +19,7 @@ class RealtimeRevenueCounter(BaseModel):
     """
     Number of revenue events tracked
     """
-    last_updated: Annotated[datetime, Field(example='2025-11-26T14:32:00Z')]
+    last_updated: Annotated[datetime, Field(example="2025-11-26T14:32:00Z")]
     """
     ISO 8601 timestamp of last data update
     """
@@ -31,7 +31,7 @@ class RealtimeRevenueCounter(BaseModel):
     """
     Whether revenue is verified through payment reconciliation
     """
-    tenant_id: Annotated[str, Field(example='00000000-0000-0000-0000-000000000000')]
+    tenant_id: Annotated[str, Field(example="00000000-0000-0000-0000-000000000000")]
     """
     Tenant identifier associated with the revenue data
     """
@@ -42,7 +42,7 @@ class RealtimeRevenueCounter(BaseModel):
     Statistical confidence score (0-1) for attribution accuracy
     """
     upgrade_notice: Annotated[
-        Optional[str], Field(example='Upgrade to Pro for historical analytics')
+        Optional[str], Field(example="Upgrade to Pro for historical analytics")
     ] = None
     """
     Optional message about upgrading for more features
@@ -54,14 +54,14 @@ class ChannelName(Enum):
     Marketing channel name
     """
 
-    Meta = 'Meta'
-    Google = 'Google'
-    TikTok = 'TikTok'
-    LinkedIn = 'LinkedIn'
-    Organic = 'Organic'
-    Direct = 'Direct'
-    Email = 'Email'
-    Referral = 'Referral'
+    Meta = "Meta"
+    Google = "Google"
+    TikTok = "TikTok"
+    LinkedIn = "LinkedIn"
+    Organic = "Organic"
+    Direct = "Direct"
+    Email = "Email"
+    Referral = "Referral"
 
 
 class ChannelAttribution(BaseModel):
@@ -96,14 +96,14 @@ class Platform(Enum):
     Supported platform identifier
     """
 
-    google_ads = 'google_ads'
-    meta_ads = 'meta_ads'
-    tiktok_ads = 'tiktok_ads'
-    linkedin_ads = 'linkedin_ads'
-    stripe = 'stripe'
-    paypal = 'paypal'
-    shopify = 'shopify'
-    woocommerce = 'woocommerce'
+    google_ads = "google_ads"
+    meta_ads = "meta_ads"
+    tiktok_ads = "tiktok_ads"
+    linkedin_ads = "linkedin_ads"
+    stripe = "stripe"
+    paypal = "paypal"
+    shopify = "shopify"
+    woocommerce = "woocommerce"
 
 
 class PlatformConnectionStatus(Enum):
@@ -111,21 +111,24 @@ class PlatformConnectionStatus(Enum):
     Connection lifecycle state
     """
 
-    pending = 'pending'
-    active = 'active'
-    disabled = 'disabled'
+    pending = "pending"
+    active = "active"
+    disabled = "disabled"
 
 
 class PlatformConnectionUpsertRequest(BaseModel):
     platform: Platform
-    platform_account_id: Annotated[str, Field(description='Platform account identifier (e.g., Google Ads customer ID)')]
+    platform_account_id: Annotated[
+        str,
+        Field(description="Platform account identifier (e.g., Google Ads customer ID)"),
+    ]
     status: Optional[PlatformConnectionStatus] = None
     metadata: Optional[dict] = None
 
 
 class PlatformConnectionResponse(BaseModel):
-    id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     platform: Platform
     platform_account_id: str
     status: PlatformConnectionStatus
@@ -136,7 +139,9 @@ class PlatformConnectionResponse(BaseModel):
 class PlatformCredentialUpsertRequest(BaseModel):
     platform: Platform
     platform_account_id: str
-    access_token: Annotated[str, Field(description='Access token (never returned once stored)')]
+    access_token: Annotated[
+        str, Field(description="Access token (never returned once stored)")
+    ]
     refresh_token: Optional[str] = None
     expires_at: Optional[datetime] = None
     scope: Optional[str] = None
@@ -148,13 +153,13 @@ class PlatformCredentialStatus(Enum):
     Credential storage status
     """
 
-    stored = 'stored'
-    expired = 'expired'
-    missing = 'missing'
+    stored = "stored"
+    expired = "expired"
+    missing = "missing"
 
 
 class PlatformCredentialStatusResponse(BaseModel):
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     platform: Platform
     platform_account_id: str
     status: PlatformCredentialStatus
@@ -163,21 +168,21 @@ class PlatformCredentialStatusResponse(BaseModel):
 
 
 class ProviderOAuthLifecycleState(Enum):
-    not_connected = 'not_connected'
-    authorization_pending = 'authorization_pending'
-    connected = 'connected'
-    expired = 'expired'
-    revoked = 'revoked'
-    reconnect_required = 'reconnect_required'
+    not_connected = "not_connected"
+    authorization_pending = "authorization_pending"
+    connected = "connected"
+    expired = "expired"
+    revoked = "revoked"
+    reconnect_required = "reconnect_required"
 
 
 class ProviderRefreshResultState(Enum):
-    not_attempted = 'not_attempted'
-    fresh = 'fresh'
-    due = 'due'
-    in_progress = 'in_progress'
-    succeeded = 'succeeded'
-    failed = 'failed'
+    not_attempted = "not_attempted"
+    fresh = "fresh"
+    due = "due"
+    in_progress = "in_progress"
+    succeeded = "succeeded"
+    failed = "failed"
 
 
 class ProviderOAuthAuthorizeRequest(BaseModel):
@@ -187,7 +192,7 @@ class ProviderOAuthAuthorizeRequest(BaseModel):
 
 
 class ProviderOAuthAuthorizeResponse(BaseModel):
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     platform: Platform
     lifecycle_state: ProviderOAuthLifecycleState
     authorization_url: str
@@ -198,7 +203,7 @@ class ProviderOAuthAuthorizeResponse(BaseModel):
 
 
 class ProviderOAuthCallbackResponse(BaseModel):
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     platform: Platform
     platform_account_id: str
     lifecycle_state: ProviderOAuthLifecycleState
@@ -208,7 +213,7 @@ class ProviderOAuthCallbackResponse(BaseModel):
 
 
 class ProviderOAuthStatusResponse(BaseModel):
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     platform: Platform
     platform_account_id: str
     lifecycle_state: ProviderOAuthLifecycleState
@@ -220,10 +225,10 @@ class ProviderOAuthStatusResponse(BaseModel):
 
 
 class ProviderOAuthDisconnectReason(Enum):
-    user_initiated = 'user_initiated'
-    provider_revoked = 'provider_revoked'
-    security_event = 'security_event'
-    tenant_offboarding = 'tenant_offboarding'
+    user_initiated = "user_initiated"
+    provider_revoked = "provider_revoked"
+    security_event = "security_event"
+    tenant_offboarding = "tenant_offboarding"
 
 
 class ProviderOAuthDisconnectRequest(BaseModel):
@@ -231,7 +236,7 @@ class ProviderOAuthDisconnectRequest(BaseModel):
 
 
 class ProviderOAuthDisconnectResponse(BaseModel):
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     platform: Platform
     lifecycle_state: ProviderOAuthLifecycleState
     disconnected_at: datetime
@@ -240,16 +245,16 @@ class ProviderOAuthDisconnectResponse(BaseModel):
 
 
 class ProviderLifecycleErrorCode(Enum):
-    provider_not_connected = 'provider_not_connected'
-    provider_expired = 'provider_expired'
-    provider_revoked = 'provider_revoked'
-    provider_scope_insufficient = 'provider_scope_insufficient'
-    provider_rate_limited = 'provider_rate_limited'
-    provider_transport_failure = 'provider_transport_failure'
+    provider_not_connected = "provider_not_connected"
+    provider_expired = "provider_expired"
+    provider_revoked = "provider_revoked"
+    provider_scope_insufficient = "provider_scope_insufficient"
+    provider_rate_limited = "provider_rate_limited"
+    provider_transport_failure = "provider_transport_failure"
 
 
 class ProviderOAuthRefreshStateResponse(BaseModel):
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     platform: Platform
     lifecycle_state: ProviderOAuthLifecycleState
     refresh_state: ProviderRefreshResultState
@@ -268,36 +273,62 @@ class AttributionExplanationRevenueContext(BaseModel):
     data_as_of: datetime
 
 
+class AttributionTruthSnapshot(BaseModel):
+    version: str
+    watermark: Annotated[int, Field(ge=1)]
+    as_of: datetime
+    deterministic_truth_sources: list[str]
+
+
 class AttributionAuthoritativeMetric(BaseModel):
     entity_type: Literal[
-        'attribution_score',
-        'channel_performance',
-        'reconciliation_discrepancy',
+        "attribution_score",
+        "channel_performance",
+        "reconciliation_discrepancy",
     ]
-    entity_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
-    tenant_id: Annotated[str, Field(pattern=r'^[0-9a-fA-F-]{36}$')]
+    entity_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     metric_key: str
     metric_value: float
     metric_value_cents: int
-    currency: Literal['USD']
+    currency: Literal["USD"]
     channel_code: str
     model_type: str
     model_version: str
     confidence_score: Annotated[float, Field(ge=0.0, le=1.0)]
-    verification_state: Literal['verified', 'unverified']
+    verification_state: Literal["verified", "unverified"]
     last_updated: datetime
     data_freshness_seconds: Annotated[int, Field(ge=0)]
     deterministic_truth_sources: list[str]
+    truth_snapshot: AttributionTruthSnapshot
     revenue_context: AttributionExplanationRevenueContext
 
 
 class AttributionNonAuthoritativeExplanation(BaseModel):
-    explanation_class: Literal['provider_fastpath_validated', 'provider_fastpath_degraded']
-    synthesis_state: Literal['validated', 'validation_rejected', 'timeout', 'provider_failed', 'blocked']
+    explanation_class: Literal[
+        "provider_fastpath_validated", "provider_fastpath_degraded"
+    ]
+    synthesis_state: Literal[
+        "validated",
+        "validation_rejected",
+        "timeout",
+        "provider_failed",
+        "blocked",
+        "stale_replay_rejected",
+    ]
     non_authoritative_summary: Annotated[str, Field(min_length=1, max_length=320)]
     degraded: bool
     degraded_reason: Optional[Annotated[str, Field(min_length=1, max_length=64)]] = None
     generated_at: datetime
+    truth_snapshot: AttributionTruthSnapshot
+    cache_replay_state: Literal[
+        "cache_hit_truth_match",
+        "cold_miss_provider_allowed",
+        "stale_replay_rejected_provider_blocked",
+        "stale_replay_bypassed_provider_allowed",
+    ]
+    provider_reentry_blocked: bool
+    explanation_contract_version: Literal["b1.7-p3"]
     caveats: list[str]
 
 
@@ -309,4 +340,5 @@ class AttributionExplanationResponse(BaseModel):
 # Alias for CI compatibility (must be a class definition to match workflow grep pattern)
 class RealtimeRevenueResponse(RealtimeRevenueCounter):
     """Alias for RealtimeRevenueCounter to match CI expectations."""
+
     pass

@@ -14,7 +14,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import select, text
@@ -51,6 +51,7 @@ from app.services.llm_validation_failures import (
 NUMERIC_REJECTION_CACHE_STATE = "numeric_authority_rejected"
 NUMERIC_REJECTION_CACHE_SUPPRESS_SECONDS = 900
 REQUEST_LOCAL_MAX_ATTEMPTS = 3
+B17_EXPLANATION_ENDPOINT = "app.api.attribution.explanation_fastpath"
 
 
 def _month_start_utc(occurred_at: datetime) -> date:
@@ -130,9 +131,14 @@ def _cache_key(
     endpoint: str,
     model_name: str,
 ) -> str:
-    seed = dict(prompt)
+    cache_identity = prompt.get("cache_identity")
+    if isinstance(cache_identity, Mapping):
+        seed: dict[str, Any] = {"cache_identity": dict(cache_identity)}
+    else:
+        seed = dict(prompt)
     seed.pop("cache_watermark", None)
     seed.pop("cache_enabled", None)
+    seed.pop("reject_provider_reentry_on_stale", None)
     return hashlib.sha256(
         f"{endpoint}|{model_name}|{_json(seed)}".encode("utf-8")
     ).hexdigest()
@@ -148,6 +154,19 @@ def _watermark(prompt: Mapping[str, Any]) -> int:
         return int(raw or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _truth_snapshot_from_prompt(prompt: Mapping[str, Any]) -> dict[str, Any]:
+    raw = prompt.get("truth_snapshot")
+    if not isinstance(raw, Mapping):
+        return {}
+    return dict(raw)
+
+
+def _stale_replay_rejection_enabled(endpoint: str, prompt: Mapping[str, Any]) -> bool:
+    if endpoint == B17_EXPLANATION_ENDPOINT:
+        return True
+    return bool(prompt.get("reject_provider_reentry_on_stale", False))
 
 
 def _parse_iso8601_utc(value: str | None) -> datetime | None:
@@ -196,6 +215,13 @@ class ProviderBoundaryResult:
     validation_code: str | None = None
     validation_stage: str | None = None
     validated_output: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CacheReplayProbeResult:
+    state: Literal["miss", "hit", "stale_mismatch"]
+    row: LLMSemanticCache | None = None
+    row_watermark: int | None = None
 
 
 class SkeldirLLMProvider:
@@ -367,6 +393,10 @@ class SkeldirLLMProvider:
         )
         prompt_fingerprint = _prompt_fingerprint(prompt)
         watermark = _watermark(prompt)
+        truth_snapshot = _truth_snapshot_from_prompt(prompt)
+        stale_replay_rejection_enabled = _stale_replay_rejection_enabled(
+            endpoint, prompt
+        )
         reservation = max(0, int(model.max_cost_cents))
 
         api_call_id, created_at, claimed = await self._claim(
@@ -496,14 +526,83 @@ class SkeldirLLMProvider:
             )
 
         cache_enabled = bool(prompt.get("cache_enabled", True))
+        cache_replay_state = "cold_miss_provider_allowed"
         cache_validation_failed = False
         validation_failure_sink_attempted = False
         validation_failure_sink_degraded_reason: str | None = None
         if cache_enabled:
-            hit = await self._cache_hit(
+            cache_probe = await self._cache_probe(
                 session, model.tenant_id, model.user_id, endpoint, key, watermark
             )
-            if hit is not None:
+            if cache_probe.state == "stale_mismatch":
+                if stale_replay_rejection_enabled:
+                    await self._release(
+                        session,
+                        model.tenant_id,
+                        model.user_id,
+                        endpoint,
+                        request_id,
+                        month,
+                        reservation,
+                    )
+                    stale_metadata: dict[str, Any] = {
+                        "boundary_id": self.boundary_id,
+                        "cache_replay_state": "stale_replay_rejected_provider_blocked",
+                        "cache_current_watermark": int(watermark),
+                        "cache_row_watermark": int(cache_probe.row_watermark or 0),
+                        "provider_reentry_blocked": True,
+                        "stale_replay_reason": "authoritative_watermark_mismatch",
+                    }
+                    if truth_snapshot:
+                        stale_metadata["truth_snapshot"] = dict(truth_snapshot)
+                    await self._finalize_blocked(
+                        session,
+                        api_call_id,
+                        "stale_replay_rejected",
+                        response_metadata=stale_metadata,
+                    )
+                    await self._write_call_audit(
+                        session=session,
+                        tenant_id=model.tenant_id,
+                        user_id=model.user_id,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        requested_model=requested_model,
+                        resolved_model=requested_model,
+                        estimated_cost_cents=0,
+                        decision="BLOCK",
+                        reason="stale_replay_rejected",
+                        input_tokens=0,
+                        output_tokens=0,
+                        prompt_fingerprint=prompt_fingerprint,
+                    )
+                    await session.commit()
+                    return ProviderBoundaryResult(
+                        provider="cache",
+                        model=requested_model,
+                        output_text="",
+                        reasoning_trace={},
+                        usage={
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "cost_cents": 0,
+                            "latency_ms": 0,
+                        },
+                        status="blocked",
+                        was_cached=False,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                        api_call_id=api_call_id,
+                        block_reason="stale_replay_rejected",
+                        failure_reason="stale_replay_rejected",
+                        response_metadata=stale_metadata,
+                        validation_code="stale_replay_rejected",
+                        validation_stage="cache",
+                    )
+                cache_replay_state = "stale_replay_bypassed_provider_allowed"
+            if cache_probe.state == "hit" and cache_probe.row is not None:
+                hit = cache_probe.row
+                cache_replay_state = "cache_hit_truth_match"
                 if self._is_active_numeric_rejection_marker(
                     row=hit,
                     now=now,
@@ -529,8 +628,15 @@ class SkeldirLLMProvider:
                     cached_metadata["boundary_id"] = self.boundary_id
                     cached_metadata["validation_code"] = "numeric_mismatch"
                     cached_metadata["validation_stage"] = "cache"
+                    cached_metadata["cache_replay_state"] = cache_replay_state
+                    cached_metadata["provider_reentry_blocked"] = False
+                    if truth_snapshot:
+                        cached_metadata["truth_snapshot"] = dict(truth_snapshot)
                     await self._finalize_failed(
-                        session, api_call_id, "validation_numeric_mismatch"
+                        session,
+                        api_call_id,
+                        "validation_numeric_mismatch",
+                        response_metadata=cached_metadata,
                     )
                     await self._write_call_audit(
                         session=session,
@@ -601,6 +707,10 @@ class SkeldirLLMProvider:
                     cached_metadata["validation_context_fingerprint"] = (
                         validation_context_fingerprint
                     )
+                    cached_metadata["cache_replay_state"] = cache_replay_state
+                    cached_metadata["provider_reentry_blocked"] = False
+                    if truth_snapshot:
+                        cached_metadata["truth_snapshot"] = dict(truth_snapshot)
                     await self._finalize_success(
                         session=session,
                         api_call_id=api_call_id,
@@ -692,6 +802,7 @@ class SkeldirLLMProvider:
                         validation_context_fingerprint=validation_context_fingerprint,
                         validation_error=cache_validation.error_detail
                         or "cache_numeric_mismatch",
+                        truth_snapshot=truth_snapshot,
                     )
                     await self._mark_cache_hit(session, hit)
                     await self._release(
@@ -722,6 +833,10 @@ class SkeldirLLMProvider:
                     cached_metadata["validation_context_fingerprint"] = (
                         validation_context_fingerprint
                     )
+                    cached_metadata["cache_replay_state"] = cache_replay_state
+                    cached_metadata["provider_reentry_blocked"] = False
+                    if truth_snapshot:
+                        cached_metadata["truth_snapshot"] = dict(truth_snapshot)
                     cached_metadata.update(
                         self._validation_failure_sink_metadata(
                             attempted=validation_failure_sink_attempted,
@@ -952,6 +1067,7 @@ class SkeldirLLMProvider:
                             if last_validation is not None
                             else "numeric_mismatch"
                         ),
+                        truth_snapshot=truth_snapshot,
                     )
                 await self._ensure_rls_context(session, model.tenant_id, model.user_id)
                 settled = min(max(0, int(total_usage["cost_cents"])), reservation)
@@ -1005,7 +1121,11 @@ class SkeldirLLMProvider:
                         if validation_reason == "validation_numeric_mismatch"
                         else None
                     ),
+                    "cache_replay_state": cache_replay_state,
+                    "provider_reentry_blocked": False,
                 }
+                if truth_snapshot:
+                    failed_metadata["truth_snapshot"] = dict(truth_snapshot)
                 failed_metadata.update(
                     self._validation_failure_sink_metadata(
                         attempted=validation_failure_sink_attempted,
@@ -1102,6 +1222,10 @@ class SkeldirLLMProvider:
                 correction_payload if correction_payload is not None else None
             )
             metadata["cache_invalidated"] = cache_validation_failed
+            metadata["cache_replay_state"] = cache_replay_state
+            metadata["provider_reentry_blocked"] = False
+            if truth_snapshot:
+                metadata["truth_snapshot"] = dict(truth_snapshot)
             metadata.update(
                 self._validation_failure_sink_metadata(
                     attempted=validation_failure_sink_attempted,
@@ -1178,6 +1302,12 @@ class SkeldirLLMProvider:
         except TimeoutError:
             failed_at = await self._db_now(session)
             failure_reason = "provider_timeout"
+            timeout_metadata: dict[str, Any] = {
+                "cache_replay_state": cache_replay_state,
+                "provider_reentry_blocked": False,
+            }
+            if truth_snapshot:
+                timeout_metadata["truth_snapshot"] = dict(truth_snapshot)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._release(
                 session,
@@ -1195,7 +1325,12 @@ class SkeldirLLMProvider:
                 failed_at=failed_at,
                 failure_reason=failure_reason,
             )
-            await self._finalize_failed(session, api_call_id, failure_reason)
+            await self._finalize_failed(
+                session,
+                api_call_id,
+                failure_reason,
+                response_metadata=timeout_metadata,
+            )
             await self._write_call_audit(
                 session=session,
                 tenant_id=model.tenant_id,
@@ -1229,10 +1364,17 @@ class SkeldirLLMProvider:
                 correlation_id=correlation_id,
                 api_call_id=api_call_id,
                 failure_reason=failure_reason,
+                response_metadata=timeout_metadata,
             )
         except Exception as exc:
             failed_at = await self._db_now(session)
             failure_reason = f"provider_error:{type(exc).__name__}"
+            error_metadata: dict[str, Any] = {
+                "cache_replay_state": cache_replay_state,
+                "provider_reentry_blocked": False,
+            }
+            if truth_snapshot:
+                error_metadata["truth_snapshot"] = dict(truth_snapshot)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
             await self._release(
                 session,
@@ -1250,7 +1392,12 @@ class SkeldirLLMProvider:
                 failed_at=failed_at,
                 failure_reason=failure_reason,
             )
-            await self._finalize_failed(session, api_call_id, failure_reason)
+            await self._finalize_failed(
+                session,
+                api_call_id,
+                failure_reason,
+                response_metadata=error_metadata,
+            )
             await self._write_call_audit(
                 session=session,
                 tenant_id=model.tenant_id,
@@ -1284,6 +1431,7 @@ class SkeldirLLMProvider:
                 correlation_id=correlation_id,
                 api_call_id=api_call_id,
                 failure_reason=failure_reason,
+                response_metadata=error_metadata,
             )
 
     async def _write_call_audit(
@@ -1499,6 +1647,7 @@ class SkeldirLLMProvider:
         model_name: str,
         validation_context_fingerprint: str,
         validation_error: str,
+        truth_snapshot: Mapping[str, Any] | None = None,
     ) -> None:
         now = await self._db_now(session)
         reject_until = now + timedelta(seconds=NUMERIC_REJECTION_CACHE_SUPPRESS_SECONDS)
@@ -1511,6 +1660,8 @@ class SkeldirLLMProvider:
             "cache_numeric_reject_reason": str(validation_error or "numeric_mismatch"),
             "validation_context_fingerprint": validation_context_fingerprint,
         }
+        if isinstance(truth_snapshot, Mapping) and truth_snapshot:
+            metadata["truth_snapshot"] = dict(truth_snapshot)
         stmt = (
             insert(LLMSemanticCache)
             .values(
@@ -2030,7 +2181,7 @@ class SkeldirLLMProvider:
             row.state = "closed"
         row.updated_at = now
 
-    async def _cache_hit(
+    async def _cache_probe(
         self,
         session: AsyncSession,
         tenant_id: UUID,
@@ -2038,7 +2189,7 @@ class SkeldirLLMProvider:
         endpoint: str,
         key: str,
         watermark: int,
-    ) -> LLMSemanticCache | None:
+    ) -> CacheReplayProbeResult:
         row = (
             (
                 await session.execute(
@@ -2053,9 +2204,16 @@ class SkeldirLLMProvider:
             .scalars()
             .first()
         )
-        if row is None or int(row.watermark) != int(watermark):
-            return None
-        return row
+        if row is None:
+            return CacheReplayProbeResult(state="miss")
+        row_watermark = int(row.watermark)
+        if row_watermark != int(watermark):
+            return CacheReplayProbeResult(
+                state="stale_mismatch",
+                row=row,
+                row_watermark=row_watermark,
+            )
+        return CacheReplayProbeResult(state="hit", row=row, row_watermark=row_watermark)
 
     async def _cache_write(
         self,
@@ -2336,7 +2494,11 @@ class SkeldirLLMProvider:
         row.failure_reason = None
 
     async def _finalize_blocked(
-        self, session: AsyncSession, api_call_id: UUID, reason: str
+        self,
+        session: AsyncSession,
+        api_call_id: UUID,
+        reason: str,
+        response_metadata: Mapping[str, Any] | None = None,
     ) -> None:
         row = await session.get(LLMApiCall, api_call_id)
         if row is None:
@@ -2346,7 +2508,9 @@ class SkeldirLLMProvider:
         row.failure_reason = None
         row.provider_attempted = False
         row.breaker_state = "open" if reason == "breaker_open" else "closed"
-        row.response_metadata_ref = {"output_text": ""}
+        metadata = dict(response_metadata or {})
+        metadata.setdefault("output_text", "")
+        row.response_metadata_ref = metadata
         row.reasoning_trace_ref = {}
         row.distillation_eligible = False
 

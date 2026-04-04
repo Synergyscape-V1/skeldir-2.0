@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Mapping
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
@@ -23,7 +23,10 @@ from app.llm.provider_boundary import (
     ProviderBoundaryResult,
     get_llm_provider_boundary,
 )
-from app.schemas.attribution import AttributionExplanationResponse, RealtimeRevenueResponse
+from app.schemas.attribution import (
+    AttributionExplanationResponse,
+    RealtimeRevenueResponse,
+)
 from app.schemas.llm_payloads import LLMTaskPayload
 from app.security.auth import AuthContext, get_auth_context
 from app.services.attribution_explanation_authority import (
@@ -47,6 +50,18 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_BOUNDARY = get_llm_provider_boundary()
 _B17_EXPLANATION_ENDPOINT = "app.api.attribution.explanation_fastpath"
+_B17_EXPLANATION_CONTRACT_VERSION = "b1.7-p3"
+
+
+def _truth_snapshot_payload(
+    authority: AttributionExplanationAuthorityRecord,
+) -> dict[str, Any]:
+    return {
+        "version": authority.truth_snapshot_version,
+        "watermark": int(authority.truth_snapshot_watermark),
+        "as_of": authority.truth_snapshot_as_of.isoformat().replace("+00:00", "Z"),
+        "deterministic_truth_sources": list(DETERMINISTIC_TRUTH_SOURCES),
+    }
 
 
 def _authoritative_metric_payload(
@@ -68,6 +83,7 @@ def _authoritative_metric_payload(
         "last_updated": authority.last_updated,
         "data_freshness_seconds": authority.data_freshness_seconds,
         "deterministic_truth_sources": list(DETERMINISTIC_TRUTH_SOURCES),
+        "truth_snapshot": _truth_snapshot_payload(authority),
         "revenue_context": {
             "cache_key": authority.revenue_cache_key,
             "total_revenue": authority.revenue_total_usd,
@@ -82,7 +98,10 @@ def _b17_explanation_prompt(
     authority: AttributionExplanationAuthorityRecord,
     entity_type: str,
     entity_id: UUID,
+    user_id: UUID,
+    model_tier_profile: str,
 ) -> dict[str, Any]:
+    truth_snapshot = _truth_snapshot_payload(authority)
     return {
         "messages": [
             {
@@ -106,7 +125,26 @@ def _b17_explanation_prompt(
             },
         ],
         "cache_enabled": True,
-        "cache_watermark": int(authority.metric_value_cents),
+        "cache_watermark": int(authority.truth_snapshot_watermark),
+        "cache_identity": {
+            "metric_identity": {
+                "entity_type": entity_type,
+                "entity_id": str(entity_id),
+                "metric_key": authority.metric_key,
+            },
+            "filter_window": {
+                "filter_profile": "entity_scope_default",
+                "time_range": "latest_truth_snapshot",
+            },
+            "tenant_user_scope": {
+                "tenant_id": str(authority.tenant_id),
+                "user_id": str(user_id),
+            },
+            "explanation_contract_version": _B17_EXPLANATION_CONTRACT_VERSION,
+            "model_tier_profile": model_tier_profile,
+        },
+        "truth_snapshot": truth_snapshot,
+        "reject_provider_reentry_on_stale": True,
         # Stub-provider deterministic fallback for local/CI paths where external LLM is disabled.
         "simulated_output_text": (
             f"{authority.metric_key} shows metric_value_cents {authority.metric_value_cents} "
@@ -123,6 +161,7 @@ def _b17_validation_context(
     request_id: str,
 ) -> dict[str, Any]:
     revenue_context = authority_metric.get("revenue_context", {})
+    truth_snapshot = authority_metric.get("truth_snapshot", {})
     return {
         "contract_version": "b1.6-p3",
         "feature_surface": "attribution_explanation",
@@ -132,6 +171,8 @@ def _b17_validation_context(
         "deterministic_truth": {
             "metric_value_cents": authority_metric.get("metric_value_cents"),
             "revenue_total_cents": revenue_context.get("total_revenue_cents"),
+            "truth_snapshot_watermark": truth_snapshot.get("watermark"),
+            "truth_snapshot_version": truth_snapshot.get("version"),
         },
         "numeric_claim_bindings": [
             {
@@ -158,13 +199,24 @@ def _degraded_synthesis_state(
     failure_reason = str(result.failure_reason or "")
     validation_code = str(result.validation_code or "")
     block_reason = str(result.block_reason or "")
+    if (
+        failure_reason == "stale_replay_rejected"
+        or block_reason == "stale_replay_rejected"
+    ):
+        return "stale_replay_rejected", "stale_replay_rejected"
     if failure_reason == "provider_timeout":
         return "timeout", "provider_timeout"
     if result.status == "blocked":
         return "blocked", block_reason or "provider_blocked"
-    if failure_reason == "validation_numeric_mismatch" or validation_code == "numeric_mismatch":
+    if (
+        failure_reason == "validation_numeric_mismatch"
+        or validation_code == "numeric_mismatch"
+    ):
         return "validation_rejected", "numeric_mismatch"
-    if failure_reason.startswith("validation_") or validation_code in {"schema_failed", "normalization_failed"}:
+    if failure_reason.startswith("validation_") or validation_code in {
+        "schema_failed",
+        "normalization_failed",
+    }:
         return "validation_rejected", failure_reason or validation_code
     return "provider_failed", failure_reason or validation_code or "provider_failed"
 
@@ -173,6 +225,9 @@ def _validated_explanation_payload(
     *,
     summary: str,
     generated_at: datetime,
+    truth_snapshot: dict[str, Any],
+    cache_replay_state: str,
+    provider_reentry_blocked: bool,
 ) -> dict[str, Any]:
     return {
         "explanation_class": "provider_fastpath_validated",
@@ -181,6 +236,10 @@ def _validated_explanation_payload(
         "degraded": False,
         "degraded_reason": None,
         "generated_at": generated_at,
+        "truth_snapshot": truth_snapshot,
+        "cache_replay_state": cache_replay_state,
+        "provider_reentry_blocked": provider_reentry_blocked,
+        "explanation_contract_version": _B17_EXPLANATION_CONTRACT_VERSION,
         "caveats": [
             "Explanation text is non-authoritative and cannot override deterministic metrics.",
             "Numeric authority remains deterministic and tenant-scoped.",
@@ -193,6 +252,9 @@ def _degraded_explanation_payload(
     generated_at: datetime,
     synthesis_state: str,
     degraded_reason: str,
+    truth_snapshot: dict[str, Any],
+    cache_replay_state: str,
+    provider_reentry_blocked: bool,
 ) -> dict[str, Any]:
     return {
         "explanation_class": "provider_fastpath_degraded",
@@ -203,6 +265,10 @@ def _degraded_explanation_payload(
         "degraded": True,
         "degraded_reason": degraded_reason,
         "generated_at": generated_at,
+        "truth_snapshot": truth_snapshot,
+        "cache_replay_state": cache_replay_state,
+        "provider_reentry_blocked": provider_reentry_blocked,
+        "explanation_contract_version": _B17_EXPLANATION_CONTRACT_VERSION,
         "caveats": [
             "Explanation text is non-authoritative and cannot override deterministic metrics.",
             "Deterministic authority remains the only source of financial truth.",
@@ -313,6 +379,24 @@ async def get_realtime_revenue(
                 "summary_max_length": 320,
             },
         },
+        "x-skeldir-b17-p3": {
+            "implementation_status": "deterministic_watermark_cache_identity_replay_rejection",
+            "cache_replay_topology": {
+                "authoritative_watermark_lookup_required_before_cache_replay": True,
+                "route_entry_cache_before_authority_lookup_forbidden": True,
+                "determinant_complete_identity_required": True,
+                "prompt_hash_only_identity_forbidden": True,
+            },
+            "stale_replay_policy": {
+                "stale_replay_rejection_required": True,
+                "provider_reentry_on_stale_forbidden": True,
+                "classification_required": True,
+            },
+            "citation_coherence": {
+                "structured_truth_snapshot_required": True,
+                "text_embedding_only_forbidden": True,
+            },
+        },
     },
 )
 async def explain_attribution_entity(
@@ -401,6 +485,8 @@ async def explain_attribution_entity(
                 authority=authority,
                 entity_type=entity_type,
                 entity_id=entity_id,
+                user_id=auth_context.user_id,
+                model_tier_profile=settings.LLM_B17_EXPLANATION_FAST_TIER,
             ),
             max_cost_cents=max(0, int(settings.LLM_B17_EXPLANATION_MAX_COST_CENTS)),
         )
@@ -435,16 +521,46 @@ async def explain_attribution_entity(
         and llm_result.status == "success"
         and str(llm_result.validation_code or "success") == "success"
     ):
+        metadata = (
+            dict(llm_result.response_metadata)
+            if isinstance(llm_result.response_metadata, Mapping)
+            else {}
+        )
+        cache_replay_state = str(
+            metadata.get("cache_replay_state") or "cache_hit_truth_match"
+        )
+        provider_reentry_blocked = bool(metadata.get("provider_reentry_blocked", False))
         non_authoritative_explanation = _validated_explanation_payload(
             summary=str(llm_result.output_text),
             generated_at=explanation_generated_at,
+            truth_snapshot=dict(authoritative_metric.get("truth_snapshot", {})),
+            cache_replay_state=cache_replay_state,
+            provider_reentry_blocked=provider_reentry_blocked,
         )
     else:
+        metadata = (
+            dict(llm_result.response_metadata)
+            if llm_result is not None
+            and isinstance(llm_result.response_metadata, Mapping)
+            else {}
+        )
+        cache_replay_state = str(
+            metadata.get("cache_replay_state") or "cold_miss_provider_allowed"
+        )
+        provider_reentry_blocked = bool(
+            metadata.get(
+                "provider_reentry_blocked",
+                cache_replay_state == "stale_replay_rejected_provider_blocked",
+            )
+        )
         synthesis_state, degraded_reason = _degraded_synthesis_state(llm_result)
         non_authoritative_explanation = _degraded_explanation_payload(
             generated_at=explanation_generated_at,
             synthesis_state=synthesis_state,
             degraded_reason=degraded_reason,
+            truth_snapshot=dict(authoritative_metric.get("truth_snapshot", {})),
+            cache_replay_state=cache_replay_state,
+            provider_reentry_blocked=provider_reentry_blocked,
         )
 
     logger.info(
@@ -462,7 +578,15 @@ async def explain_attribution_entity(
                 llm_result.validation_code if llm_result is not None else None
             ),
             "sidecar_failure_reason": (
-                llm_result.failure_reason if llm_result is not None else "provider_exception"
+                llm_result.failure_reason
+                if llm_result is not None
+                else "provider_exception"
+            ),
+            "sidecar_cache_replay_state": non_authoritative_explanation.get(
+                "cache_replay_state"
+            ),
+            "sidecar_provider_reentry_blocked": non_authoritative_explanation.get(
+                "provider_reentry_blocked"
             ),
         },
     )

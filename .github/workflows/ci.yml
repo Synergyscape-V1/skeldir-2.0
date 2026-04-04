@@ -110,7 +110,7 @@ jobs:
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q
 
   b17-p1-explanation-authority-proofs:
-    name: B1.7 P1 Explanation Authority Proofs
+    name: B1.7 P1-P3 Explanation Authority + Cache Correctness Proofs
     runs-on: ubuntu-latest
     needs: [checkout, validate-contracts]
     services:
@@ -144,16 +144,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install B1.7-P1 proof dependencies
+      - name: Install B1.7-P1-P3 proof dependencies
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           alembic upgrade head
 
-      - name: Run B1.7-P1/P2 mounted runtime proofs
+      - name: Run B1.7-P1/P2/P3 mounted runtime and seam proofs
         run: |
           pytest backend/tests/test_b17_p1_explanation_authority_runtime.py -q
           pytest backend/tests/test_b17_p2_explanation_fastpath_runtime.py -q
+          pytest backend/tests/test_b17_p3_cache_correctness_runtime.py -q
           pytest tests/contract/test_route_fidelity.py::test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged -q
 
   b14-p0-privacy-authority-lock:
