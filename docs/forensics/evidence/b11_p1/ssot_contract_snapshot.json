@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 55,
+  "keys_total": 58,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
@@ -602,6 +602,57 @@
       ],
       "key": "INGESTION_FOLLOWUP_TASKS_ENABLED",
       "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-explanation-fast-tier",
+      "call_sites": [
+        "backend/app/api/attribution.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_EXPLANATION_FAST_TIER",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-explanation-max-cost-cents",
+      "call_sites": [
+        "backend/app/api/attribution.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_EXPLANATION_MAX_COST_CENTS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-explanation-timeout-ms",
+      "call_sites": [
+        "backend/app/api/attribution.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_EXPLANATION_TIMEOUT_MS",
+      "owner": "ai-platform",
       "rotation_criticality": "none"
     },
     {
