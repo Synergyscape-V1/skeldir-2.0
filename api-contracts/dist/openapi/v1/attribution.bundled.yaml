@@ -561,18 +561,36 @@ paths:
                     type: object
                     required: &ref_64
                       - explanation_class
+                      - synthesis_state
                       - non_authoritative_summary
+                      - degraded
                       - generated_at
                       - caveats
                     properties: &ref_65
                       explanation_class:
                         type: string
                         enum:
-                          - deterministic_placeholder
+                          - provider_fastpath_validated
+                          - provider_fastpath_degraded
+                      synthesis_state:
+                        type: string
+                        enum:
+                          - validated
+                          - validation_rejected
+                          - timeout
+                          - provider_failed
+                          - blocked
                       non_authoritative_summary:
                         type: string
                         minLength: 1
-                        maxLength: 2000
+                        maxLength: 320
+                      degraded:
+                        type: boolean
+                      degraded_reason:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                        nullable: true
                       generated_at:
                         type: string
                         format: date-time
@@ -605,8 +623,11 @@ paths:
                     total_revenue_cents: 12543050
                     data_as_of: '2026-04-03T14:29:48Z'
                 non_authoritative_explanation:
-                  explanation_class: deterministic_placeholder
-                  non_authoritative_summary: Non-authoritative explanation derived from deterministic truth.
+                  explanation_class: provider_fastpath_validated
+                  synthesis_state: validated
+                  non_authoritative_summary: channel_performance_revenue shows metric_value_cents 45275 against revenue_total_cents 12543050; use as non-authoritative context only.
+                  degraded: false
+                  degraded_reason: null
                   generated_at: '2026-04-03T14:30:00Z'
                   caveats:
                     - Explanation text cannot override deterministic authority values.
@@ -729,6 +750,17 @@ paths:
             - deterministic_authority_binding
             - cache_coherence_and_replay_safety
             - endpoint_latency_semantics
+      x-skeldir-b17-p2:
+        implementation_status: mounted_fastpath_sidecar_validation_bound
+        fast_tier_profile:
+          provider_neutral: true
+          config_key: LLM_B17_EXPLANATION_FAST_TIER
+        fast_timeout_profile:
+          config_key: LLM_B17_EXPLANATION_TIMEOUT_MS
+          fail_open_forbidden: true
+        output_envelope:
+          schema_key: attribution_explanation_fastpath_v1
+          summary_max_length: 320
   /api/attribution/platform-connections:
     post:
       summary: Create or update a platform connection

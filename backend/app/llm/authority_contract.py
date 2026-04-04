@@ -25,7 +25,7 @@ class ValidationContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     contract_version: Literal["b1.6-p1", "b1.6-p3"] = AUTHORITY_CONTRACT_VERSION
-    feature_surface: Literal["investigation", "budget"]
+    feature_surface: Literal["investigation", "budget", "attribution_explanation"]
     request_id: str
     correlation_id: str
     deterministic_truth: dict[str, Any] = Field(default_factory=dict)

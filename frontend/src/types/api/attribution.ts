@@ -662,8 +662,12 @@ export interface components {
         };
         AttributionNonAuthoritativeExplanation: {
             /** @enum {string} */
-            explanation_class: "deterministic_placeholder";
+            explanation_class: "provider_fastpath_validated" | "provider_fastpath_degraded";
+            /** @enum {string} */
+            synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked";
             non_authoritative_summary: string;
+            degraded: boolean;
+            degraded_reason?: string | null;
             /** Format: date-time */
             generated_at: string;
             caveats: string[];
@@ -704,8 +708,12 @@ export interface components {
             };
             non_authoritative_explanation: {
                 /** @enum {string} */
-                explanation_class: "deterministic_placeholder";
+                explanation_class: "provider_fastpath_validated" | "provider_fastpath_degraded";
+                /** @enum {string} */
+                synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked";
                 non_authoritative_summary: string;
+                degraded: boolean;
+                degraded_reason?: string | null;
                 /** Format: date-time */
                 generated_at: string;
                 caveats: string[];
@@ -2309,8 +2317,11 @@ export interface operations {
                      *         }
                      *       },
                      *       "non_authoritative_explanation": {
-                     *         "explanation_class": "deterministic_placeholder",
-                     *         "non_authoritative_summary": "Non-authoritative explanation derived from deterministic truth.",
+                     *         "explanation_class": "provider_fastpath_validated",
+                     *         "synthesis_state": "validated",
+                     *         "non_authoritative_summary": "channel_performance_revenue shows metric_value_cents 45275 against revenue_total_cents 12543050; use as non-authoritative context only.",
+                     *         "degraded": false,
+                     *         "degraded_reason": null,
                      *         "generated_at": "2026-04-03T14:30:00Z",
                      *         "caveats": [
                      *           "Explanation text cannot override deterministic authority values.",
@@ -2355,8 +2366,12 @@ export interface operations {
                         };
                         non_authoritative_explanation: {
                             /** @enum {string} */
-                            explanation_class: "deterministic_placeholder";
+                            explanation_class: "provider_fastpath_validated" | "provider_fastpath_degraded";
+                            /** @enum {string} */
+                            synthesis_state: "validated" | "validation_rejected" | "timeout" | "provider_failed" | "blocked";
                             non_authoritative_summary: string;
+                            degraded: boolean;
+                            degraded_reason?: string | null;
                             /** Format: date-time */
                             generated_at: string;
                             caveats: string[];

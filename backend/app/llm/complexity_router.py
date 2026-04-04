@@ -171,6 +171,7 @@ def route_request(
     feature: str,
     context: Mapping[str, Any] | None,
     policy_path: str,
+    forced_tier: str | None = None,
 ) -> RoutingDecision:
     policy = _load_policy(policy_path)
     policy_id = str(policy.get("policy_id", "")).strip()
@@ -183,15 +184,21 @@ def route_request(
     score = complexity_score(prompt=prompt, feature=feature, context=context)
     bucket_value = bucket(score)
 
-    base_tier = _resolve_tier_for_bucket(bucket_value, policy)
-    budget_state = (context or {}).get("budget_state", {})
-    if not isinstance(budget_state, Mapping):
-        budget_state = {}
-    resolved_tier, reason = _apply_budget_pressure_downgrade(
-        tier=base_tier,
-        policy=policy,
-        budget_state=budget_state,
-    )
+    if forced_tier is not None:
+        resolved_tier = str(forced_tier).strip()
+        if not resolved_tier:
+            raise ValueError("forced_tier must be non-empty when provided")
+        reason = f"tier_override:{resolved_tier}"
+    else:
+        base_tier = _resolve_tier_for_bucket(bucket_value, policy)
+        budget_state = (context or {}).get("budget_state", {})
+        if not isinstance(budget_state, Mapping):
+            budget_state = {}
+        resolved_tier, reason = _apply_budget_pressure_downgrade(
+            tier=base_tier,
+            policy=policy,
+            budget_state=budget_state,
+        )
 
     tiers = policy.get("tiers")
     if not isinstance(tiers, Mapping) or resolved_tier not in tiers:

@@ -216,8 +216,14 @@ def test_operation_id_consistency():
 
 
 def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
-    """B1.7-P1 hard gate: canonical explanation route and separated contract must exist in runtime."""
-    attribution_source = Path(__file__).parent.parent.parent / "api-contracts" / "openapi" / "v1" / "attribution.yaml"
+    """B1.7-P1/P2 hard gate: canonical explanation route and fast-path lock must exist in runtime."""
+    attribution_source = (
+        Path(__file__).parent.parent.parent
+        / "api-contracts"
+        / "openapi"
+        / "v1"
+        / "attribution.yaml"
+    )
     with open(attribution_source, "r", encoding="utf-8") as handle:
         source_doc = yaml.safe_load(handle) or {}
 
@@ -227,6 +233,25 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
 
     b17_lock = source_operation.get("x-skeldir-b17-p1", {})
     assert b17_lock.get("implementation_status") == "mounted_operational_authority_read"
+    b17_p2_lock = source_operation.get("x-skeldir-b17-p2", {})
+    assert (
+        b17_p2_lock.get("implementation_status")
+        == "mounted_fastpath_sidecar_validation_bound"
+    )
+    assert b17_p2_lock.get("fast_tier_profile", {}).get("provider_neutral") is True
+    assert (
+        b17_p2_lock.get("fast_tier_profile", {}).get("config_key")
+        == "LLM_B17_EXPLANATION_FAST_TIER"
+    )
+    assert (
+        b17_p2_lock.get("fast_timeout_profile", {}).get("config_key")
+        == "LLM_B17_EXPLANATION_TIMEOUT_MS"
+    )
+    assert (
+        b17_p2_lock.get("output_envelope", {}).get("schema_key")
+        == "attribution_explanation_fastpath_v1"
+    )
+    assert b17_p2_lock.get("output_envelope", {}).get("summary_max_length") == 320
 
     routes = extract_fastapi_routes()
     route_keys = {f"{item['method']} {item['path']}" for item in routes}
@@ -253,6 +278,37 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
 
     runtime_lock = runtime_operation.get("x-skeldir-b17-p1", {})
     assert runtime_lock.get("implementation_status") == "mounted_operational_authority_read"
+    runtime_p2_lock = runtime_operation.get("x-skeldir-b17-p2", {})
+    assert (
+        runtime_p2_lock.get("implementation_status")
+        == "mounted_fastpath_sidecar_validation_bound"
+    )
+    assert runtime_p2_lock.get("fast_tier_profile", {}).get("provider_neutral") is True
+    assert (
+        runtime_p2_lock.get("fast_tier_profile", {}).get("config_key")
+        == "LLM_B17_EXPLANATION_FAST_TIER"
+    )
+    assert (
+        runtime_p2_lock.get("fast_timeout_profile", {}).get("config_key")
+        == "LLM_B17_EXPLANATION_TIMEOUT_MS"
+    )
+    assert (
+        runtime_p2_lock.get("output_envelope", {}).get("schema_key")
+        == "attribution_explanation_fastpath_v1"
+    )
+    assert runtime_p2_lock.get("output_envelope", {}).get("summary_max_length") == 320
+
+    explanation_schema = (
+        runtime_openapi.get("components", {})
+        .get("schemas", {})
+        .get("AttributionNonAuthoritativeExplanation", {})
+    )
+    assert (
+        explanation_schema.get("properties", {})
+        .get("non_authoritative_summary", {})
+        .get("maxLength")
+        == 320
+    )
 
 
 if __name__ == "__main__":

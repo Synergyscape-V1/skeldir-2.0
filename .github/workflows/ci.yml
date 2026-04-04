@@ -150,9 +150,11 @@ jobs:
           pip install -r backend/requirements-dev.txt
           alembic upgrade head
 
-      - name: Run B1.7-P1 mounted runtime proofs
+      - name: Run B1.7-P1/P2 mounted runtime proofs
         run: |
           pytest backend/tests/test_b17_p1_explanation_authority_runtime.py -q
+          pytest backend/tests/test_b17_p2_explanation_fastpath_runtime.py -q
+          pytest tests/contract/test_route_fidelity.py::test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged -q
 
   b14-p0-privacy-authority-lock:
     name: B1.4 P0 Privacy Authority Lock

@@ -292,8 +292,11 @@ class AttributionAuthoritativeMetric(BaseModel):
 
 
 class AttributionNonAuthoritativeExplanation(BaseModel):
-    explanation_class: Literal['deterministic_placeholder']
-    non_authoritative_summary: Annotated[str, Field(min_length=1, max_length=2000)]
+    explanation_class: Literal['provider_fastpath_validated', 'provider_fastpath_degraded']
+    synthesis_state: Literal['validated', 'validation_rejected', 'timeout', 'provider_failed', 'blocked']
+    non_authoritative_summary: Annotated[str, Field(min_length=1, max_length=320)]
+    degraded: bool
+    degraded_reason: Optional[Annotated[str, Field(min_length=1, max_length=64)]] = None
     generated_at: datetime
     caveats: list[str]
 
