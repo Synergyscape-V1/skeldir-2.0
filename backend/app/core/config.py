@@ -157,6 +157,18 @@ class Settings(BaseSettings):
         10000,
         description="Hard timeout around provider invocation at choke point.",
     )
+    LLM_B17_EXPLANATION_FAST_TIER: str = Field(
+        "cheap",
+        description="Provider-neutral tier/profile forced for canonical B1.7 explanation fast-path requests.",
+    )
+    LLM_B17_EXPLANATION_TIMEOUT_MS: int = Field(
+        1200,
+        description="Fail-fast timeout (ms) for canonical B1.7 explanation sidecar synthesis.",
+    )
+    LLM_B17_EXPLANATION_MAX_COST_CENTS: int = Field(
+        2,
+        description="Maximum per-request explanation sidecar reservation budget in cents for B1.7 fast-path.",
+    )
     LLM_BREAKER_FAILURE_THRESHOLD: int = Field(
         3,
         description="Consecutive failures required to open the provider breaker.",
@@ -373,6 +385,14 @@ class Settings(BaseSettings):
             raise ValueError("LLM_COMPLEXITY_POLICY_PATH cannot be empty")
         return cleaned
 
+    @field_validator("LLM_B17_EXPLANATION_FAST_TIER")
+    @classmethod
+    def validate_llm_b17_fast_tier(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("LLM_B17_EXPLANATION_FAST_TIER cannot be empty")
+        return cleaned
+
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, value: str) -> str:
@@ -392,6 +412,8 @@ class Settings(BaseSettings):
         "LLM_MONTHLY_CAP_CENTS",
         "LLM_HOURLY_SHUTOFF_CENTS",
         "LLM_PROVIDER_TIMEOUT_MS",
+        "LLM_B17_EXPLANATION_TIMEOUT_MS",
+        "LLM_B17_EXPLANATION_MAX_COST_CENTS",
         "LLM_BREAKER_FAILURE_THRESHOLD",
         "LLM_BREAKER_OPEN_SECONDS",
     )

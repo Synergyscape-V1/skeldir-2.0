@@ -43,6 +43,10 @@ class ExplanationOutputSchema(_StrictOutputModel):
     explanation: str = Field(min_length=1, max_length=8000)
 
 
+class AttributionFastExplanationOutputSchema(_StrictOutputModel):
+    explanation: str = Field(min_length=1, max_length=320)
+
+
 class InvestigationOutputSchema(_StrictOutputModel):
     summary: str = Field(min_length=1, max_length=8000)
 
@@ -116,6 +120,13 @@ EXPLANATION_VALIDATION_SPEC = ProviderOutputValidationSpec(
     text_field="explanation",
 )
 
+ATTRIBUTION_FAST_EXPLANATION_VALIDATION_SPEC = ProviderOutputValidationSpec(
+    surface="attribution_explanation_fastpath",
+    schema_key="attribution_explanation_fastpath_v1",
+    schema_model=AttributionFastExplanationOutputSchema,
+    text_field="explanation",
+)
+
 INVESTIGATION_VALIDATION_SPEC = ProviderOutputValidationSpec(
     surface="investigation",
     schema_key="investigation_v1",
@@ -133,6 +144,7 @@ BUDGET_VALIDATION_SPEC = ProviderOutputValidationSpec(
 VALIDATION_SPECS_BY_ENDPOINT: dict[str, ProviderOutputValidationSpec] = {
     "app.tasks.llm.route": ROUTE_VALIDATION_SPEC,
     "app.tasks.llm.explanation": EXPLANATION_VALIDATION_SPEC,
+    "app.api.attribution.explanation_fastpath": ATTRIBUTION_FAST_EXPLANATION_VALIDATION_SPEC,
     "app.tasks.llm.investigation": INVESTIGATION_VALIDATION_SPEC,
     "app.tasks.llm.budget_optimization": BUDGET_VALIDATION_SPEC,
 }

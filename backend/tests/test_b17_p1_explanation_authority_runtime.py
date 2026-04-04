@@ -1,25 +1,14 @@
-"""B1.7-P1 mounted runtime proofs for canonical explanation authority reads."""
+"""B1.7 mounted runtime proofs for canonical explanation authority reads."""
 
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
-
-from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
-
-os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
-os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
-os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")
-os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
-os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
-os.environ.setdefault("CONTRACT_TESTING", "0")
-os.environ.setdefault("TESTING", "1")
 
 from app.db.session import AsyncSessionLocal, set_tenant_guc_async
 from app.main import app
@@ -193,7 +182,18 @@ async def test_b17_p1_route_returns_db_equal_authority_and_separated_explanation
         "attribution_allocations",
         "revenue_cache_entries",
     ]
-    assert explanation["explanation_class"] == "deterministic_placeholder"
+    assert explanation["explanation_class"] in {
+        "provider_fastpath_validated",
+        "provider_fastpath_degraded",
+    }
+    assert explanation["synthesis_state"] in {
+        "validated",
+        "validation_rejected",
+        "timeout",
+        "provider_failed",
+        "blocked",
+    }
+    assert isinstance(explanation["degraded"], bool)
     assert isinstance(explanation["non_authoritative_summary"], str)
     assert explanation["non_authoritative_summary"]
 

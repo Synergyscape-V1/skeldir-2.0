@@ -336,6 +336,8 @@ class SkeldirLLMProvider:
         force_failure: bool = False,
         validation_spec: ProviderOutputValidationSpec | None = None,
         validation_context: Mapping[str, Any] | None = None,
+        routing_tier_override: str | None = None,
+        timeout_ms_override: int | None = None,
     ) -> ProviderBoundaryResult:
         await self._ensure_rls_context(session, model.tenant_id, model.user_id)
 
@@ -352,6 +354,7 @@ class SkeldirLLMProvider:
             feature=endpoint,
             context={"budget_state": budget_state},
             policy_path=settings.LLM_COMPLEXITY_POLICY_PATH,
+            forced_tier=routing_tier_override,
         )
         requested_model = f"{routing.chosen_provider}:{routing.chosen_model}"
         validation_context_fingerprint = _validation_context_fingerprint(
@@ -800,7 +803,12 @@ class SkeldirLLMProvider:
         # no transaction is held open while waiting on provider latency.
         await session.commit()
 
-        timeout_s = max(0.001, int(settings.LLM_PROVIDER_TIMEOUT_MS) / 1000.0)
+        effective_timeout_ms = (
+            int(timeout_ms_override)
+            if timeout_ms_override is not None
+            else int(settings.LLM_PROVIDER_TIMEOUT_MS)
+        )
+        timeout_s = max(0.001, effective_timeout_ms / 1000.0)
         max_validation_attempts = self._request_local_attempt_budget(validation_spec)
         total_usage = {
             "input_tokens": 0,
