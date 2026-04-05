@@ -23,15 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.api import attribution as attribution_api
-from app.db.session import AsyncSessionLocal, set_tenant_guc_async
-from app.main import app
-from app.security.auth import mint_internal_jwt
 from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
-from backend.tests.builders.core_builders import build_attribution_allocation
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
-
 
 os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
 os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
@@ -40,6 +32,14 @@ os.environ.setdefault("AUTH_JWT_ISSUER", "https://issuer.skeldir.test")
 os.environ.setdefault("AUTH_JWT_AUDIENCE", "skeldir-api")
 os.environ.setdefault("TESTING", "1")
 os.environ.setdefault("CONTRACT_TESTING", "0")
+
+from app.api import attribution as attribution_api
+from app.db.session import AsyncSessionLocal, set_tenant_guc_async
+from app.main import app
+from app.security.auth import mint_internal_jwt
+from backend.tests.builders.core_builders import build_attribution_allocation
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 
 CANONICAL_ENTITY_TYPES = ("channel_performance", "attribution_score")
 
