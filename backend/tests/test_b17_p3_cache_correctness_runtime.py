@@ -296,6 +296,16 @@ async def test_b17_p3_stale_replay_is_rejected_without_provider_reentry(
     monkeypatch: pytest.MonkeyPatch,
     test_tenant: UUID,
 ) -> None:
+    async def _no_prewarm_targets(**_kwargs):
+        return 0
+
+    monkeypatch.setattr(
+        attribution_api,
+        "_execute_b17_prewarm_targets",
+        _no_prewarm_targets,
+        raising=True,
+    )
+
     allocation = await build_attribution_allocation(tenant_id=test_tenant)
     allocation_id = allocation["id"]
     request_user_id = uuid4()
@@ -341,6 +351,7 @@ async def test_b17_p3_stale_replay_is_rejected_without_provider_reentry(
         amount_cents=45001,
     )
 
+    provider_calls_before_stale = provider_calls["count"]
     corr_stale = uuid4()
     stale_status, stale_body = await _call_explain(
         tenant_id=test_tenant,
@@ -358,8 +369,10 @@ async def test_b17_p3_stale_replay_is_rejected_without_provider_reentry(
         stale_body["authoritative_metric"]["truth_snapshot"]
         == explanation["truth_snapshot"]
     )
+    assert explanation["prewarm_state"]["trigger_reason"] == "stale_replay_path_suppressed"
+    assert explanation["prewarm_state"]["triggered"] is False
 
-    assert provider_calls["count"] == 0
+    assert provider_calls["count"] == provider_calls_before_stale
     stale_call = await _fetch_api_call(
         tenant_id=test_tenant,
         request_id=str(corr_stale),

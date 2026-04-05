@@ -164,6 +164,12 @@ def _truth_snapshot_from_prompt(prompt: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _stale_replay_rejection_enabled(endpoint: str, prompt: Mapping[str, Any]) -> bool:
+    prewarm_context = prompt.get("prewarm_context")
+    if (
+        isinstance(prewarm_context, Mapping)
+        and bool(prewarm_context.get("allow_stale_refresh", False))
+    ):
+        return False
     if endpoint == B17_EXPLANATION_ENDPOINT:
         return True
     return bool(prompt.get("reject_provider_reentry_on_stale", False))
@@ -370,6 +376,27 @@ class SkeldirLLMProvider:
         request_id = str(model.request_id or model.correlation_id or "")
         correlation_id = str(model.correlation_id or request_id or "")
         prompt = dict(model.prompt or {})
+        prewarm_context = (
+            dict(prompt.get("prewarm_context"))
+            if isinstance(prompt.get("prewarm_context"), Mapping)
+            else {}
+        )
+
+        def _inject_prewarm_metadata(payload: dict[str, Any]) -> None:
+            if not prewarm_context:
+                return
+            payload["prewarm_assisted"] = True
+            for key in (
+                "prewarm_origin",
+                "prewarm_strategy",
+                "prewarm_trigger_event",
+                "prewarm_trigger_identity",
+                "prewarm_truth_watermark",
+                "prewarm_target_entity_type",
+            ):
+                if key in prewarm_context:
+                    payload[key] = prewarm_context[key]
+
         budget_state = await self._current_budget_state(
             session=session,
             tenant_id=model.tenant_id,
@@ -553,6 +580,7 @@ class SkeldirLLMProvider:
                         "provider_reentry_blocked": True,
                         "stale_replay_reason": "authoritative_watermark_mismatch",
                     }
+                    _inject_prewarm_metadata(stale_metadata)
                     if truth_snapshot:
                         stale_metadata["truth_snapshot"] = dict(truth_snapshot)
                     await self._finalize_blocked(
@@ -630,6 +658,7 @@ class SkeldirLLMProvider:
                     cached_metadata["validation_stage"] = "cache"
                     cached_metadata["cache_replay_state"] = cache_replay_state
                     cached_metadata["provider_reentry_blocked"] = False
+                    _inject_prewarm_metadata(cached_metadata)
                     if truth_snapshot:
                         cached_metadata["truth_snapshot"] = dict(truth_snapshot)
                     await self._finalize_failed(
@@ -709,6 +738,7 @@ class SkeldirLLMProvider:
                     )
                     cached_metadata["cache_replay_state"] = cache_replay_state
                     cached_metadata["provider_reentry_blocked"] = False
+                    _inject_prewarm_metadata(cached_metadata)
                     if truth_snapshot:
                         cached_metadata["truth_snapshot"] = dict(truth_snapshot)
                     await self._finalize_success(
@@ -1124,6 +1154,7 @@ class SkeldirLLMProvider:
                     "cache_replay_state": cache_replay_state,
                     "provider_reentry_blocked": False,
                 }
+                _inject_prewarm_metadata(failed_metadata)
                 if truth_snapshot:
                     failed_metadata["truth_snapshot"] = dict(truth_snapshot)
                 failed_metadata.update(
@@ -1224,6 +1255,7 @@ class SkeldirLLMProvider:
             metadata["cache_invalidated"] = cache_validation_failed
             metadata["cache_replay_state"] = cache_replay_state
             metadata["provider_reentry_blocked"] = False
+            _inject_prewarm_metadata(metadata)
             if truth_snapshot:
                 metadata["truth_snapshot"] = dict(truth_snapshot)
             metadata.update(
@@ -1306,6 +1338,7 @@ class SkeldirLLMProvider:
                 "cache_replay_state": cache_replay_state,
                 "provider_reentry_blocked": False,
             }
+            _inject_prewarm_metadata(timeout_metadata)
             if truth_snapshot:
                 timeout_metadata["truth_snapshot"] = dict(truth_snapshot)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)
@@ -1373,6 +1406,7 @@ class SkeldirLLMProvider:
                 "cache_replay_state": cache_replay_state,
                 "provider_reentry_blocked": False,
             }
+            _inject_prewarm_metadata(error_metadata)
             if truth_snapshot:
                 error_metadata["truth_snapshot"] = dict(truth_snapshot)
             await self._ensure_rls_context(session, model.tenant_id, model.user_id)

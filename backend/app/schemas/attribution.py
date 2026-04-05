@@ -304,6 +304,36 @@ class AttributionAuthoritativeMetric(BaseModel):
     revenue_context: AttributionExplanationRevenueContext
 
 
+class AttributionPrewarmState(BaseModel):
+    strategy: Literal["prewarm_required_event_driven_bounded"]
+    trigger_event: Literal["deterministic_truth_change_event"]
+    eligible: bool
+    triggered: bool
+    trigger_reason: Literal[
+        "triggered",
+        "prewarm_disabled",
+        "entity_type_ineligible",
+        "already_prewarmed_for_watermark",
+        "minimum_interval_not_elapsed",
+        "tenant_hourly_cap_reached",
+        "no_targets_after_caps",
+        "stale_replay_path_suppressed",
+    ]
+    target_entity_types: list[
+        Literal[
+            "attribution_score",
+            "channel_performance",
+            "reconciliation_discrepancy",
+        ]
+    ]
+    target_count: Annotated[int, Field(ge=0)]
+    max_permutations_per_trigger: Annotated[int, Field(ge=0)]
+    min_trigger_interval_seconds: Annotated[int, Field(ge=0)]
+    max_calls_per_tenant_per_hour: Annotated[int, Field(ge=0)]
+    call_budget_cents: Annotated[int, Field(ge=0)]
+    assisted_cache_hit: bool
+
+
 class AttributionNonAuthoritativeExplanation(BaseModel):
     explanation_class: Literal[
         "provider_fastpath_validated", "provider_fastpath_degraded"
@@ -328,7 +358,15 @@ class AttributionNonAuthoritativeExplanation(BaseModel):
         "stale_replay_bypassed_provider_allowed",
     ]
     provider_reentry_blocked: bool
-    explanation_contract_version: Literal["b1.7-p3"]
+    execution_path_state: Literal[
+        "warm_cache_hit",
+        "cold_path_generated",
+        "stale_rejected_provider_blocked",
+        "prewarm_assisted_cache_hit",
+    ]
+    cold_path_strategy: Literal["prewarm_required_event_driven_bounded"]
+    prewarm_state: AttributionPrewarmState
+    explanation_contract_version: Literal["b1.7-p4"]
     caveats: list[str]
 
 

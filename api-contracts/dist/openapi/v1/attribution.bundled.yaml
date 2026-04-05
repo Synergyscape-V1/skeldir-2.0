@@ -57,7 +57,7 @@ paths:
         - name: If-None-Match
           in: header
           required: false
-          schema: &ref_72
+          schema: &ref_74
             type: string
           description: ETag from previous response for cache validation
       responses:
@@ -241,7 +241,7 @@ paths:
                 properties: *ref_1
         '429':
           description: Too Many Requests - rate limit exceeded
-          headers: &ref_70
+          headers: &ref_72
             X-Correlation-ID:
               schema:
                 type: string
@@ -250,7 +250,7 @@ paths:
               schema:
                 type: integer
               description: Seconds to wait before retrying
-          content: &ref_71
+          content: &ref_73
             application/problem+json:
               schema:
                 type: object
@@ -463,10 +463,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_68
+                required: &ref_70
                   - authoritative_metric
                   - non_authoritative_explanation
-                properties: &ref_69
+                properties: &ref_71
                   authoritative_metric:
                     type: object
                     required: &ref_64
@@ -581,7 +581,7 @@ paths:
                             format: date-time
                   non_authoritative_explanation:
                     type: object
-                    required: &ref_66
+                    required: &ref_68
                       - explanation_class
                       - synthesis_state
                       - non_authoritative_summary
@@ -590,9 +590,12 @@ paths:
                       - truth_snapshot
                       - cache_replay_state
                       - provider_reentry_blocked
+                      - execution_path_state
+                      - cold_path_strategy
+                      - prewarm_state
                       - explanation_contract_version
                       - caveats
-                    properties: &ref_67
+                    properties: &ref_69
                       explanation_class:
                         type: string
                         enum:
@@ -634,10 +637,85 @@ paths:
                           - stale_replay_bypassed_provider_allowed
                       provider_reentry_blocked:
                         type: boolean
+                      execution_path_state:
+                        type: string
+                        enum:
+                          - warm_cache_hit
+                          - cold_path_generated
+                          - stale_rejected_provider_blocked
+                          - prewarm_assisted_cache_hit
+                      cold_path_strategy:
+                        type: string
+                        enum:
+                          - prewarm_required_event_driven_bounded
+                      prewarm_state:
+                        type: object
+                        required: &ref_66
+                          - strategy
+                          - trigger_event
+                          - eligible
+                          - triggered
+                          - trigger_reason
+                          - target_entity_types
+                          - target_count
+                          - max_permutations_per_trigger
+                          - min_trigger_interval_seconds
+                          - max_calls_per_tenant_per_hour
+                          - call_budget_cents
+                          - assisted_cache_hit
+                        properties: &ref_67
+                          strategy:
+                            type: string
+                            enum:
+                              - prewarm_required_event_driven_bounded
+                          trigger_event:
+                            type: string
+                            enum:
+                              - deterministic_truth_change_event
+                          eligible:
+                            type: boolean
+                          triggered:
+                            type: boolean
+                          trigger_reason:
+                            type: string
+                            enum:
+                              - triggered
+                              - prewarm_disabled
+                              - entity_type_ineligible
+                              - already_prewarmed_for_watermark
+                              - minimum_interval_not_elapsed
+                              - tenant_hourly_cap_reached
+                              - no_targets_after_caps
+                              - stale_replay_path_suppressed
+                          target_entity_types:
+                            type: array
+                            items:
+                              type: string
+                              enum:
+                                - attribution_score
+                                - channel_performance
+                                - reconciliation_discrepancy
+                          target_count:
+                            type: integer
+                            minimum: 0
+                          max_permutations_per_trigger:
+                            type: integer
+                            minimum: 0
+                          min_trigger_interval_seconds:
+                            type: integer
+                            minimum: 0
+                          max_calls_per_tenant_per_hour:
+                            type: integer
+                            minimum: 0
+                          call_budget_cents:
+                            type: integer
+                            minimum: 0
+                          assisted_cache_hit:
+                            type: boolean
                       explanation_contract_version:
                         type: string
                         enum:
-                          - b1.7-p3
+                          - b1.7-p4
                       caveats:
                         type: array
                         items:
@@ -689,7 +767,24 @@ paths:
                       - revenue_cache_entries
                   cache_replay_state: cache_hit_truth_match
                   provider_reentry_blocked: false
-                  explanation_contract_version: b1.7-p3
+                  execution_path_state: warm_cache_hit
+                  cold_path_strategy: prewarm_required_event_driven_bounded
+                  prewarm_state:
+                    strategy: prewarm_required_event_driven_bounded
+                    trigger_event: deterministic_truth_change_event
+                    eligible: true
+                    triggered: false
+                    trigger_reason: already_prewarmed_for_watermark
+                    target_entity_types:
+                      - attribution_score
+                      - channel_performance
+                    target_count: 2
+                    max_permutations_per_trigger: 2
+                    min_trigger_interval_seconds: 120
+                    max_calls_per_tenant_per_hour: 24
+                    call_budget_cents: 1
+                    assisted_cache_hit: false
+                  explanation_contract_version: b1.7-p4
                   caveats:
                     - Explanation text cannot override deterministic authority values.
                     - Deterministic truth is sourced from tenant-scoped DB authority tables.
@@ -836,6 +931,32 @@ paths:
         citation_coherence:
           structured_truth_snapshot_required: true
           text_embedding_only_forbidden: true
+      x-skeldir-b17-p4:
+        implementation_status: cold_path_strategy_closed_with_bounded_event_prewarm
+        cold_path_strategy:
+          decision: prewarm_required
+          selection_basis: cold_path_provider_latency_exceeds_endpoint_target_without_bounded_deterministic_prewarm
+          representative_mixed_workload_required: true
+          warm_path_only_proof_forbidden: true
+          ordinary_pr_ci_live_vendor_load_forbidden: true
+        execution_metadata:
+          schema_required_fields:
+            - execution_path_state
+            - cold_path_strategy
+            - prewarm_state
+          path_classes:
+            - warm_cache_hit
+            - cold_path_generated
+            - stale_rejected_provider_blocked
+            - prewarm_assisted_cache_hit
+        prewarm_policy:
+          trigger_mode: deterministic_truth_change_event
+          default_cron_forbidden: true
+          eligibility_policy: bounded_companion_entity_types
+          max_permutations_per_trigger_config_key: LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER
+          min_trigger_interval_seconds_config_key: LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS
+          max_calls_per_tenant_per_hour_config_key: LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR
+          call_budget_cents_config_key: LLM_B17_PREWARM_CALL_BUDGET_CENTS
   /api/attribution/platform-connections:
     post:
       summary: Create or update a platform connection
@@ -2054,14 +2175,18 @@ components:
       type: object
       required: *ref_64
       properties: *ref_65
-    AttributionNonAuthoritativeExplanation:
+    AttributionPrewarmState:
       type: object
       required: *ref_66
       properties: *ref_67
-    AttributionExplanationResponse:
+    AttributionNonAuthoritativeExplanation:
       type: object
       required: *ref_68
       properties: *ref_69
+    AttributionExplanationResponse:
+      type: object
+      required: *ref_70
+      properties: *ref_71
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -2102,8 +2227,8 @@ components:
       content: *ref_7
     RateLimitError:
       description: Too Many Requests - rate limit exceeded
-      headers: *ref_70
-      content: *ref_71
+      headers: *ref_72
+      content: *ref_73
     ServerError:
       description: Internal server error
       headers: *ref_10
@@ -2144,5 +2269,5 @@ components:
       name: If-None-Match
       in: header
       required: false
-      schema: *ref_72
+      schema: *ref_74
       description: ETag from previous response for cache validation

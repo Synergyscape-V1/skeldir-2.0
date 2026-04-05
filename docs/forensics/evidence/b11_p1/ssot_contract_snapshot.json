@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 58,
+  "keys_total": 66,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
@@ -652,6 +652,147 @@
         "local"
       ],
       "key": "LLM_B17_EXPLANATION_TIMEOUT_MS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-call-budget-cents",
+      "call_sites": [
+        "backend/app/api/attribution.py",
+        "backend/app/services/b17_p4_prewarm_policy.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_CALL_BUDGET_CENTS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-eligible-entity-types",
+      "call_sites": [
+        "backend/app/services/b17_p4_prewarm_policy.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-enabled",
+      "call_sites": [
+        "backend/app/api/attribution.py",
+        "backend/app/services/b17_p4_prewarm_policy.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_ENABLED",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-max-calls-per-tenant-per-hour",
+      "call_sites": [
+        "backend/app/api/attribution.py",
+        "backend/app/services/b17_p4_prewarm_policy.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-max-permutations-per-trigger",
+      "call_sites": [
+        "backend/app/api/attribution.py",
+        "backend/app/services/b17_p4_prewarm_policy.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-min-trigger-interval-seconds",
+      "call_sites": [
+        "backend/app/api/attribution.py",
+        "backend/app/services/b17_p4_prewarm_policy.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-run-sync",
+      "call_sites": [
+        "backend/app/api/attribution.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_RUN_SYNC",
+      "owner": "ai-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/llm/b17-prewarm-timeout-ms",
+      "call_sites": [
+        "backend/app/api/attribution.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "LLM_B17_PREWARM_TIMEOUT_MS",
       "owner": "ai-platform",
       "rotation_criticality": "none"
     },

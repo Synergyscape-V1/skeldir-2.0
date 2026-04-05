@@ -294,6 +294,30 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
     assert stale_policy.get("provider_reentry_on_stale_forbidden") is True
     citation_coherence = b17_p3_lock.get("citation_coherence", {})
     assert citation_coherence.get("structured_truth_snapshot_required") is True
+    b17_p4_lock = source_operation.get("x-skeldir-b17-p4", {})
+    assert (
+        b17_p4_lock.get("implementation_status")
+        == "cold_path_strategy_closed_with_bounded_event_prewarm"
+    )
+    strategy = b17_p4_lock.get("cold_path_strategy", {})
+    assert strategy.get("decision") == "prewarm_required"
+    assert strategy.get("warm_path_only_proof_forbidden") is True
+    assert strategy.get("ordinary_pr_ci_live_vendor_load_forbidden") is True
+    execution_metadata = b17_p4_lock.get("execution_metadata", {})
+    assert set(execution_metadata.get("schema_required_fields", [])) >= {
+        "execution_path_state",
+        "cold_path_strategy",
+        "prewarm_state",
+    }
+    assert set(execution_metadata.get("path_classes", [])) >= {
+        "warm_cache_hit",
+        "cold_path_generated",
+        "stale_rejected_provider_blocked",
+        "prewarm_assisted_cache_hit",
+    }
+    prewarm_policy = b17_p4_lock.get("prewarm_policy", {})
+    assert prewarm_policy.get("trigger_mode") == "deterministic_truth_change_event"
+    assert prewarm_policy.get("default_cron_forbidden") is True
 
     routes = extract_fastapi_routes()
     route_keys = {f"{item['method']} {item['path']}" for item in routes}
@@ -350,6 +374,20 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
     runtime_stale_policy = runtime_p3_lock.get("stale_replay_policy", {})
     assert runtime_stale_policy.get("stale_replay_rejection_required") is True
     assert runtime_stale_policy.get("provider_reentry_on_stale_forbidden") is True
+    runtime_p4_lock = runtime_operation.get("x-skeldir-b17-p4", {})
+    assert (
+        runtime_p4_lock.get("implementation_status")
+        == "cold_path_strategy_closed_with_bounded_event_prewarm"
+    )
+    runtime_strategy = runtime_p4_lock.get("cold_path_strategy", {})
+    assert runtime_strategy.get("decision") == "prewarm_required"
+    assert runtime_strategy.get("warm_path_only_proof_forbidden") is True
+    runtime_execution_metadata = runtime_p4_lock.get("execution_metadata", {})
+    assert set(runtime_execution_metadata.get("schema_required_fields", [])) >= {
+        "execution_path_state",
+        "cold_path_strategy",
+        "prewarm_state",
+    }
 
     explanation_schema = (
         runtime_openapi.get("components", {})
@@ -372,6 +410,40 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
         explanation_schema.get("properties", {}).get("truth_snapshot", {}).get("$ref")
         == "#/components/schemas/AttributionTruthSnapshot"
     )
+    assert (
+        explanation_schema.get("properties", {})
+        .get("execution_path_state", {})
+        .get("type")
+        == "string"
+    )
+    cold_path_strategy_schema = (
+        explanation_schema.get("properties", {}).get("cold_path_strategy", {})
+    )
+    assert cold_path_strategy_schema.get("enum") == [
+        "prewarm_required_event_driven_bounded"
+    ] or cold_path_strategy_schema.get("const") == "prewarm_required_event_driven_bounded"
+    assert (
+        explanation_schema.get("properties", {}).get("prewarm_state", {}).get("$ref")
+        == "#/components/schemas/AttributionPrewarmState"
+    )
+    assert set(explanation_schema.get("required", [])) >= {
+        "execution_path_state",
+        "cold_path_strategy",
+        "prewarm_state",
+    }
+    prewarm_schema = (
+        runtime_openapi.get("components", {})
+        .get("schemas", {})
+        .get("AttributionPrewarmState", {})
+    )
+    assert set(
+        prewarm_schema.get("properties", {}).get("trigger_reason", {}).get("enum", [])
+    ) >= {
+        "triggered",
+        "already_prewarmed_for_watermark",
+        "tenant_hourly_cap_reached",
+        "stale_replay_path_suppressed",
+    }
     authoritative_schema = (
         runtime_openapi.get("components", {})
         .get("schemas", {})

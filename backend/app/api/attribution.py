@@ -7,10 +7,11 @@ api-contracts/dist/openapi/v1/attribution.bundled.yaml.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import logging
 from typing import Annotated, Any, Literal, Mapping
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.problem_details import problem_details_response
 from app.core.config import settings
 from app.db.deps import get_db_session
+from app.db.session import get_session
 from app.llm.output_validation import ATTRIBUTION_FAST_EXPLANATION_VALIDATION_SPEC
 from app.llm.provider_boundary import (
     ProviderBoundaryResult,
@@ -36,6 +38,12 @@ from app.services.attribution_explanation_authority import (
     AttributionExplanationAuthorityUnavailable,
     fetch_attribution_explanation_authority,
 )
+from app.services.b17_p4_prewarm_policy import (
+    B17_P4_COLD_PATH_STRATEGY,
+    B17_P4_PREWARM_ORIGIN,
+    B17PrewarmPlan,
+    plan_b17_p4_event_driven_prewarm,
+)
 from app.services.realtime_revenue_cache import (
     RealtimeRevenueUnavailable,
     get_realtime_revenue_snapshot,
@@ -50,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_BOUNDARY = get_llm_provider_boundary()
 _B17_EXPLANATION_ENDPOINT = "app.api.attribution.explanation_fastpath"
-_B17_EXPLANATION_CONTRACT_VERSION = "b1.7-p3"
+_B17_EXPLANATION_CONTRACT_VERSION = "b1.7-p4"
 
 
 def _truth_snapshot_payload(
@@ -100,9 +108,10 @@ def _b17_explanation_prompt(
     entity_id: UUID,
     user_id: UUID,
     model_tier_profile: str,
+    prewarm_context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     truth_snapshot = _truth_snapshot_payload(authority)
-    return {
+    payload = {
         "messages": [
             {
                 "role": "system",
@@ -152,6 +161,9 @@ def _b17_explanation_prompt(
             f"use as non-authoritative context only."
         ),
     }
+    if prewarm_context:
+        payload["prewarm_context"] = dict(prewarm_context)
+    return payload
 
 
 def _b17_validation_context(
@@ -188,6 +200,166 @@ def _b17_validation_context(
         ],
         "numeric_tolerance_ratio": 0.0,
     }
+
+
+def _b17_execution_path_state(
+    *,
+    cache_replay_state: str,
+    synthesis_state: str,
+    prewarm_assisted: bool,
+) -> str:
+    if (
+        synthesis_state == "stale_replay_rejected"
+        or cache_replay_state == "stale_replay_rejected_provider_blocked"
+    ):
+        return "stale_rejected_provider_blocked"
+    if cache_replay_state == "cache_hit_truth_match":
+        return "prewarm_assisted_cache_hit" if prewarm_assisted else "warm_cache_hit"
+    return "cold_path_generated"
+
+
+def _b17_prewarm_state_payload(
+    *,
+    plan: B17PrewarmPlan | None,
+    triggered: bool,
+    assisted_cache_hit: bool,
+    trigger_reason_override: str | None = None,
+) -> dict[str, Any]:
+    if plan is None:
+        return {
+            "strategy": B17_P4_COLD_PATH_STRATEGY,
+            "trigger_event": "deterministic_truth_change_event",
+            "eligible": False,
+            "triggered": False,
+            "trigger_reason": "prewarm_disabled",
+            "target_entity_types": [],
+            "target_count": 0,
+            "max_permutations_per_trigger": 0,
+            "min_trigger_interval_seconds": 0,
+            "max_calls_per_tenant_per_hour": 0,
+            "call_budget_cents": 0,
+            "assisted_cache_hit": assisted_cache_hit,
+        }
+    return {
+        "strategy": plan.strategy,
+        "trigger_event": plan.trigger_event,
+        "eligible": plan.eligible,
+        "triggered": triggered,
+        "trigger_reason": trigger_reason_override or plan.reason,
+        "target_entity_types": list(plan.target_entity_types),
+        "target_count": plan.target_count,
+        "max_permutations_per_trigger": plan.max_permutations_per_trigger,
+        "min_trigger_interval_seconds": plan.min_trigger_interval_seconds,
+        "max_calls_per_tenant_per_hour": plan.max_calls_per_tenant_per_hour,
+        "call_budget_cents": plan.call_budget_cents,
+        "assisted_cache_hit": assisted_cache_hit,
+    }
+
+
+def _b17_prewarm_prompt_context(
+    *,
+    plan: B17PrewarmPlan,
+    target_entity_type: str,
+) -> dict[str, Any]:
+    return {
+        "prewarm_origin": B17_P4_PREWARM_ORIGIN,
+        "prewarm_strategy": plan.strategy,
+        "prewarm_trigger_event": plan.trigger_event,
+        "prewarm_trigger_identity": plan.trigger_identity,
+        "prewarm_truth_watermark": int(plan.truth_watermark),
+        "prewarm_target_entity_type": target_entity_type,
+        "allow_stale_refresh": True,
+    }
+
+
+def _b17_prewarm_targets_for_dispatch(
+    *,
+    plan: B17PrewarmPlan,
+    request_entity_type: str,
+) -> tuple[str, ...]:
+    return tuple(
+        entity_type
+        for entity_type in plan.target_entity_types
+        if entity_type != request_entity_type
+    )
+
+
+async def _execute_b17_prewarm_targets(
+    *,
+    plan: B17PrewarmPlan,
+    tenant_id: UUID,
+    user_id: UUID,
+    entity_id: UUID,
+    correlation_id: str,
+    request_entity_type: str,
+) -> int:
+    dispatched = 0
+    targets = _b17_prewarm_targets_for_dispatch(
+        plan=plan,
+        request_entity_type=request_entity_type,
+    )
+    if not targets:
+        return 0
+
+    async with get_session(tenant_id=tenant_id, user_id=user_id) as session:
+        for target_entity_type in targets:
+            try:
+                authority = await fetch_attribution_explanation_authority(
+                    db_session=session,
+                    tenant_id=tenant_id,
+                    entity_type=target_entity_type,  # type: ignore[arg-type]
+                    entity_id=entity_id,
+                )
+            except (
+                AttributionExplanationAuthorityNotFound,
+                AttributionExplanationAuthorityUnavailable,
+            ):
+                continue
+            llm_payload = LLMTaskPayload(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                correlation_id=correlation_id,
+                request_id=f"{uuid4()}",
+                prompt=_b17_explanation_prompt(
+                    authority=authority,
+                    entity_type=target_entity_type,
+                    entity_id=entity_id,
+                    user_id=user_id,
+                    model_tier_profile=settings.LLM_B17_EXPLANATION_FAST_TIER,
+                    prewarm_context=_b17_prewarm_prompt_context(
+                        plan=plan,
+                        target_entity_type=target_entity_type,
+                    ),
+                ),
+                max_cost_cents=max(0, int(settings.LLM_B17_PREWARM_CALL_BUDGET_CENTS)),
+            )
+            try:
+                await _PROVIDER_BOUNDARY.complete(
+                    model=llm_payload,
+                    session=session,
+                    endpoint=_B17_EXPLANATION_ENDPOINT,
+                    validation_spec=ATTRIBUTION_FAST_EXPLANATION_VALIDATION_SPEC,
+                    validation_context=_b17_validation_context(
+                        authority_metric=_authoritative_metric_payload(authority),
+                        correlation_id=correlation_id,
+                        request_id=llm_payload.request_id or correlation_id,
+                    ),
+                    routing_tier_override=settings.LLM_B17_EXPLANATION_FAST_TIER,
+                    timeout_ms_override=settings.LLM_B17_PREWARM_TIMEOUT_MS,
+                )
+                dispatched += 1
+            except Exception:
+                logger.exception(
+                    "b17_p4_prewarm_target_failed",
+                    extra={
+                        "tenant_id": str(tenant_id),
+                        "correlation_id": correlation_id,
+                        "event_type": "attribution.explanation.prewarm_target_failed",
+                        "target_entity_type": target_entity_type,
+                        "target_entity_id": str(entity_id),
+                    },
+                )
+    return dispatched
 
 
 def _degraded_synthesis_state(
@@ -228,6 +400,8 @@ def _validated_explanation_payload(
     truth_snapshot: dict[str, Any],
     cache_replay_state: str,
     provider_reentry_blocked: bool,
+    execution_path_state: str,
+    prewarm_state: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "explanation_class": "provider_fastpath_validated",
@@ -239,6 +413,9 @@ def _validated_explanation_payload(
         "truth_snapshot": truth_snapshot,
         "cache_replay_state": cache_replay_state,
         "provider_reentry_blocked": provider_reentry_blocked,
+        "execution_path_state": execution_path_state,
+        "cold_path_strategy": B17_P4_COLD_PATH_STRATEGY,
+        "prewarm_state": prewarm_state,
         "explanation_contract_version": _B17_EXPLANATION_CONTRACT_VERSION,
         "caveats": [
             "Explanation text is non-authoritative and cannot override deterministic metrics.",
@@ -255,6 +432,8 @@ def _degraded_explanation_payload(
     truth_snapshot: dict[str, Any],
     cache_replay_state: str,
     provider_reentry_blocked: bool,
+    execution_path_state: str,
+    prewarm_state: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "explanation_class": "provider_fastpath_degraded",
@@ -268,6 +447,9 @@ def _degraded_explanation_payload(
         "truth_snapshot": truth_snapshot,
         "cache_replay_state": cache_replay_state,
         "provider_reentry_blocked": provider_reentry_blocked,
+        "execution_path_state": execution_path_state,
+        "cold_path_strategy": B17_P4_COLD_PATH_STRATEGY,
+        "prewarm_state": prewarm_state,
         "explanation_contract_version": _B17_EXPLANATION_CONTRACT_VERSION,
         "caveats": [
             "Explanation text is non-authoritative and cannot override deterministic metrics.",
@@ -397,6 +579,47 @@ async def get_realtime_revenue(
                 "text_embedding_only_forbidden": True,
             },
         },
+        "x-skeldir-b17-p4": {
+            "implementation_status": "cold_path_strategy_closed_with_bounded_event_prewarm",
+            "cold_path_strategy": {
+                "decision": "prewarm_required",
+                "selection_basis": (
+                    "cold_path_provider_latency_exceeds_endpoint_target_without "
+                    "bounded deterministic prewarm"
+                ),
+                "representative_mixed_workload_required": True,
+                "warm_path_only_proof_forbidden": True,
+                "ordinary_pr_ci_live_vendor_load_forbidden": True,
+            },
+            "execution_metadata": {
+                "schema_required_fields": [
+                    "execution_path_state",
+                    "cold_path_strategy",
+                    "prewarm_state",
+                ],
+                "path_classes": [
+                    "warm_cache_hit",
+                    "cold_path_generated",
+                    "stale_rejected_provider_blocked",
+                    "prewarm_assisted_cache_hit",
+                ],
+            },
+            "prewarm_policy": {
+                "trigger_mode": "deterministic_truth_change_event",
+                "default_cron_forbidden": True,
+                "eligibility_policy": "bounded_companion_entity_types",
+                "max_permutations_per_trigger_config_key": (
+                    "LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER"
+                ),
+                "min_trigger_interval_seconds_config_key": (
+                    "LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS"
+                ),
+                "max_calls_per_tenant_per_hour_config_key": (
+                    "LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR"
+                ),
+                "call_budget_cents_config_key": "LLM_B17_PREWARM_CALL_BUDGET_CENTS",
+            },
+        },
     },
 )
 async def explain_attribution_entity(
@@ -516,44 +739,120 @@ async def explain_attribution_entity(
         )
         llm_result = None
 
-    if (
+    result_success = (
         llm_result is not None
         and llm_result.status == "success"
         and str(llm_result.validation_code or "success") == "success"
-    ):
-        metadata = (
-            dict(llm_result.response_metadata)
-            if isinstance(llm_result.response_metadata, Mapping)
-            else {}
+    )
+
+    metadata = (
+        dict(llm_result.response_metadata)
+        if llm_result is not None and isinstance(llm_result.response_metadata, Mapping)
+        else {}
+    )
+    cache_replay_state = str(
+        metadata.get("cache_replay_state")
+        or ("cache_hit_truth_match" if result_success else "cold_miss_provider_allowed")
+    )
+    provider_reentry_blocked = bool(
+        metadata.get(
+            "provider_reentry_blocked",
+            cache_replay_state == "stale_replay_rejected_provider_blocked",
         )
-        cache_replay_state = str(
-            metadata.get("cache_replay_state") or "cache_hit_truth_match"
+    )
+    prewarm_assisted = bool(
+        metadata.get("prewarm_assisted")
+        or metadata.get("prewarm_origin") == B17_P4_PREWARM_ORIGIN
+    )
+    synthesis_state, degraded_reason = (
+        ("validated", "")
+        if result_success
+        else _degraded_synthesis_state(llm_result)
+    )
+    execution_path_state = _b17_execution_path_state(
+        cache_replay_state=cache_replay_state,
+        synthesis_state=synthesis_state,
+        prewarm_assisted=prewarm_assisted,
+    )
+
+    prewarm_plan = await plan_b17_p4_event_driven_prewarm(
+        db_session=db_session,
+        tenant_id=tenant_id,
+        user_id=auth_context.user_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        truth_watermark=authority.truth_snapshot_watermark,
+        endpoint=_B17_EXPLANATION_ENDPOINT,
+    )
+    prewarm_trigger_reason_override: str | None = None
+    prewarm_should_trigger = (
+        prewarm_plan.should_trigger
+        and execution_path_state != "stale_rejected_provider_blocked"
+    )
+    if prewarm_plan.should_trigger and not prewarm_should_trigger:
+        prewarm_trigger_reason_override = "stale_replay_path_suppressed"
+    prewarm_triggered = False
+    if prewarm_should_trigger:
+        if settings.LLM_B17_PREWARM_RUN_SYNC:
+            prewarm_triggered = (
+                await _execute_b17_prewarm_targets(
+                    plan=prewarm_plan,
+                    tenant_id=tenant_id,
+                    user_id=auth_context.user_id,
+                    entity_id=entity_id,
+                    correlation_id=correlation_id,
+                    request_entity_type=entity_type,
+                )
+                > 0
+            )
+        else:
+            prewarm_triggered = True
+            asyncio.create_task(
+                _execute_b17_prewarm_targets(
+                    plan=prewarm_plan,
+                    tenant_id=tenant_id,
+                    user_id=auth_context.user_id,
+                    entity_id=entity_id,
+                    correlation_id=correlation_id,
+                    request_entity_type=entity_type,
+                )
+            )
+    if prewarm_plan.eligible:
+        logger.info(
+            "attribution_explanation_prewarm_decision",
+            extra={
+                "tenant_id": str(tenant_id),
+                "correlation_id": correlation_id,
+                "event_type": "attribution.explanation.prewarm_decision",
+                "entity_type": entity_type,
+                "entity_id": str(entity_id),
+                "prewarm_reason": prewarm_trigger_reason_override or prewarm_plan.reason,
+                "prewarm_should_trigger": prewarm_should_trigger,
+                "prewarm_triggered": prewarm_triggered,
+                "prewarm_target_count": prewarm_plan.target_count,
+                "prewarm_targets": list(prewarm_plan.target_entity_types),
+                "prewarm_truth_watermark": int(prewarm_plan.truth_watermark),
+            },
         )
-        provider_reentry_blocked = bool(metadata.get("provider_reentry_blocked", False))
+
+    prewarm_state = _b17_prewarm_state_payload(
+        plan=prewarm_plan,
+        triggered=prewarm_triggered,
+        assisted_cache_hit=prewarm_assisted,
+        trigger_reason_override=prewarm_trigger_reason_override,
+    )
+
+    if result_success:
         non_authoritative_explanation = _validated_explanation_payload(
             summary=str(llm_result.output_text),
             generated_at=explanation_generated_at,
             truth_snapshot=dict(authoritative_metric.get("truth_snapshot", {})),
             cache_replay_state=cache_replay_state,
             provider_reentry_blocked=provider_reentry_blocked,
+            execution_path_state=execution_path_state,
+            prewarm_state=prewarm_state,
         )
     else:
-        metadata = (
-            dict(llm_result.response_metadata)
-            if llm_result is not None
-            and isinstance(llm_result.response_metadata, Mapping)
-            else {}
-        )
-        cache_replay_state = str(
-            metadata.get("cache_replay_state") or "cold_miss_provider_allowed"
-        )
-        provider_reentry_blocked = bool(
-            metadata.get(
-                "provider_reentry_blocked",
-                cache_replay_state == "stale_replay_rejected_provider_blocked",
-            )
-        )
-        synthesis_state, degraded_reason = _degraded_synthesis_state(llm_result)
         non_authoritative_explanation = _degraded_explanation_payload(
             generated_at=explanation_generated_at,
             synthesis_state=synthesis_state,
@@ -561,6 +860,8 @@ async def explain_attribution_entity(
             truth_snapshot=dict(authoritative_metric.get("truth_snapshot", {})),
             cache_replay_state=cache_replay_state,
             provider_reentry_blocked=provider_reentry_blocked,
+            execution_path_state=execution_path_state,
+            prewarm_state=prewarm_state,
         )
 
     logger.info(
@@ -585,8 +886,21 @@ async def explain_attribution_entity(
             "sidecar_cache_replay_state": non_authoritative_explanation.get(
                 "cache_replay_state"
             ),
+            "sidecar_execution_path_state": non_authoritative_explanation.get(
+                "execution_path_state"
+            ),
             "sidecar_provider_reentry_blocked": non_authoritative_explanation.get(
                 "provider_reentry_blocked"
+            ),
+            "sidecar_prewarm_assisted_cache_hit": (
+                non_authoritative_explanation.get("prewarm_state", {}).get(
+                    "assisted_cache_hit"
+                )
+            ),
+            "sidecar_prewarm_triggered": (
+                non_authoritative_explanation.get("prewarm_state", {}).get(
+                    "triggered"
+                )
             ),
         },
     )
