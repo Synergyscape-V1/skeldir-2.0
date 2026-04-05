@@ -674,6 +674,23 @@ export interface components {
                 data_as_of: string;
             };
         };
+        AttributionPrewarmState: {
+            /** @enum {string} */
+            strategy: "prewarm_required_event_driven_bounded";
+            /** @enum {string} */
+            trigger_event: "deterministic_truth_change_event";
+            eligible: boolean;
+            triggered: boolean;
+            /** @enum {string} */
+            trigger_reason: "triggered" | "prewarm_disabled" | "entity_type_ineligible" | "already_prewarmed_for_watermark" | "minimum_interval_not_elapsed" | "tenant_hourly_cap_reached" | "no_targets_after_caps" | "stale_replay_path_suppressed";
+            target_entity_types: ("attribution_score" | "channel_performance" | "reconciliation_discrepancy")[];
+            target_count: number;
+            max_permutations_per_trigger: number;
+            min_trigger_interval_seconds: number;
+            max_calls_per_tenant_per_hour: number;
+            call_budget_cents: number;
+            assisted_cache_hit: boolean;
+        };
         AttributionNonAuthoritativeExplanation: {
             /** @enum {string} */
             explanation_class: "provider_fastpath_validated" | "provider_fastpath_degraded";
@@ -695,7 +712,28 @@ export interface components {
             cache_replay_state: "cache_hit_truth_match" | "cold_miss_provider_allowed" | "stale_replay_rejected_provider_blocked" | "stale_replay_bypassed_provider_allowed";
             provider_reentry_blocked: boolean;
             /** @enum {string} */
-            explanation_contract_version: "b1.7-p3";
+            execution_path_state: "warm_cache_hit" | "cold_path_generated" | "stale_rejected_provider_blocked" | "prewarm_assisted_cache_hit";
+            /** @enum {string} */
+            cold_path_strategy: "prewarm_required_event_driven_bounded";
+            prewarm_state: {
+                /** @enum {string} */
+                strategy: "prewarm_required_event_driven_bounded";
+                /** @enum {string} */
+                trigger_event: "deterministic_truth_change_event";
+                eligible: boolean;
+                triggered: boolean;
+                /** @enum {string} */
+                trigger_reason: "triggered" | "prewarm_disabled" | "entity_type_ineligible" | "already_prewarmed_for_watermark" | "minimum_interval_not_elapsed" | "tenant_hourly_cap_reached" | "no_targets_after_caps" | "stale_replay_path_suppressed";
+                target_entity_types: ("attribution_score" | "channel_performance" | "reconciliation_discrepancy")[];
+                target_count: number;
+                max_permutations_per_trigger: number;
+                min_trigger_interval_seconds: number;
+                max_calls_per_tenant_per_hour: number;
+                call_budget_cents: number;
+                assisted_cache_hit: boolean;
+            };
+            /** @enum {string} */
+            explanation_contract_version: "b1.7-p4";
             caveats: string[];
         };
         AttributionExplanationResponse: {
@@ -760,7 +798,28 @@ export interface components {
                 cache_replay_state: "cache_hit_truth_match" | "cold_miss_provider_allowed" | "stale_replay_rejected_provider_blocked" | "stale_replay_bypassed_provider_allowed";
                 provider_reentry_blocked: boolean;
                 /** @enum {string} */
-                explanation_contract_version: "b1.7-p3";
+                execution_path_state: "warm_cache_hit" | "cold_path_generated" | "stale_rejected_provider_blocked" | "prewarm_assisted_cache_hit";
+                /** @enum {string} */
+                cold_path_strategy: "prewarm_required_event_driven_bounded";
+                prewarm_state: {
+                    /** @enum {string} */
+                    strategy: "prewarm_required_event_driven_bounded";
+                    /** @enum {string} */
+                    trigger_event: "deterministic_truth_change_event";
+                    eligible: boolean;
+                    triggered: boolean;
+                    /** @enum {string} */
+                    trigger_reason: "triggered" | "prewarm_disabled" | "entity_type_ineligible" | "already_prewarmed_for_watermark" | "minimum_interval_not_elapsed" | "tenant_hourly_cap_reached" | "no_targets_after_caps" | "stale_replay_path_suppressed";
+                    target_entity_types: ("attribution_score" | "channel_performance" | "reconciliation_discrepancy")[];
+                    target_count: number;
+                    max_permutations_per_trigger: number;
+                    min_trigger_interval_seconds: number;
+                    max_calls_per_tenant_per_hour: number;
+                    call_budget_cents: number;
+                    assisted_cache_hit: boolean;
+                };
+                /** @enum {string} */
+                explanation_contract_version: "b1.7-p4";
                 caveats: string[];
             };
         };
@@ -2388,7 +2447,26 @@ export interface operations {
                      *         },
                      *         "cache_replay_state": "cache_hit_truth_match",
                      *         "provider_reentry_blocked": false,
-                     *         "explanation_contract_version": "b1.7-p3",
+                     *         "execution_path_state": "warm_cache_hit",
+                     *         "cold_path_strategy": "prewarm_required_event_driven_bounded",
+                     *         "prewarm_state": {
+                     *           "strategy": "prewarm_required_event_driven_bounded",
+                     *           "trigger_event": "deterministic_truth_change_event",
+                     *           "eligible": true,
+                     *           "triggered": false,
+                     *           "trigger_reason": "already_prewarmed_for_watermark",
+                     *           "target_entity_types": [
+                     *             "attribution_score",
+                     *             "channel_performance"
+                     *           ],
+                     *           "target_count": 2,
+                     *           "max_permutations_per_trigger": 2,
+                     *           "min_trigger_interval_seconds": 120,
+                     *           "max_calls_per_tenant_per_hour": 24,
+                     *           "call_budget_cents": 1,
+                     *           "assisted_cache_hit": false
+                     *         },
+                     *         "explanation_contract_version": "b1.7-p4",
                      *         "caveats": [
                      *           "Explanation text cannot override deterministic authority values.",
                      *           "Deterministic truth is sourced from tenant-scoped DB authority tables."
@@ -2458,7 +2536,28 @@ export interface operations {
                             cache_replay_state: "cache_hit_truth_match" | "cold_miss_provider_allowed" | "stale_replay_rejected_provider_blocked" | "stale_replay_bypassed_provider_allowed";
                             provider_reentry_blocked: boolean;
                             /** @enum {string} */
-                            explanation_contract_version: "b1.7-p3";
+                            execution_path_state: "warm_cache_hit" | "cold_path_generated" | "stale_rejected_provider_blocked" | "prewarm_assisted_cache_hit";
+                            /** @enum {string} */
+                            cold_path_strategy: "prewarm_required_event_driven_bounded";
+                            prewarm_state: {
+                                /** @enum {string} */
+                                strategy: "prewarm_required_event_driven_bounded";
+                                /** @enum {string} */
+                                trigger_event: "deterministic_truth_change_event";
+                                eligible: boolean;
+                                triggered: boolean;
+                                /** @enum {string} */
+                                trigger_reason: "triggered" | "prewarm_disabled" | "entity_type_ineligible" | "already_prewarmed_for_watermark" | "minimum_interval_not_elapsed" | "tenant_hourly_cap_reached" | "no_targets_after_caps" | "stale_replay_path_suppressed";
+                                target_entity_types: ("attribution_score" | "channel_performance" | "reconciliation_discrepancy")[];
+                                target_count: number;
+                                max_permutations_per_trigger: number;
+                                min_trigger_interval_seconds: number;
+                                max_calls_per_tenant_per_hour: number;
+                                call_budget_cents: number;
+                                assisted_cache_hit: boolean;
+                            };
+                            /** @enum {string} */
+                            explanation_contract_version: "b1.7-p4";
                             caveats: string[];
                         };
                     };

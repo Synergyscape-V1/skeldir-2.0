@@ -169,6 +169,53 @@ class Settings(BaseSettings):
         2,
         description="Maximum per-request explanation sidecar reservation budget in cents for B1.7 fast-path.",
     )
+    LLM_B17_PREWARM_ENABLED: bool = Field(
+        True,
+        description=(
+            "Enable bounded B1.7 event-driven prewarm for explanation cache refresh "
+            "after deterministic truth changes."
+        ),
+    )
+    LLM_B17_PREWARM_RUN_SYNC: bool = Field(
+        False,
+        description=(
+            "Execute B1.7 prewarm inline within request lifecycle when true; "
+            "intended for deterministic test harnesses."
+        ),
+    )
+    LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES: str = Field(
+        "attribution_score,channel_performance",
+        description=(
+            "Comma-separated entity types eligible for B1.7 event-driven prewarm."
+        ),
+    )
+    LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER: int = Field(
+        2,
+        description=(
+            "Maximum cache-identity permutations scheduled per deterministic truth-change trigger."
+        ),
+    )
+    LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS: int = Field(
+        120,
+        description=(
+            "Minimum interval between event-driven prewarm triggers for the same "
+            "tenant/user/entity identity."
+        ),
+    )
+    LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR: int = Field(
+        24,
+        description=(
+            "Hourly hard cap on event-driven B1.7 prewarm provider calls per tenant."
+        ),
+    )
+    LLM_B17_PREWARM_CALL_BUDGET_CENTS: int = Field(
+        1,
+        description="Per-call reservation cap in cents for B1.7 prewarm activity.",
+    )
+    LLM_B17_PREWARM_TIMEOUT_MS: int = Field(
+        900,
+        description="Timeout in milliseconds for B1.7 prewarm provider calls.",
+    )
     LLM_BREAKER_FAILURE_THRESHOLD: int = Field(
         3,
         description="Consecutive failures required to open the provider breaker.",
@@ -393,6 +440,14 @@ class Settings(BaseSettings):
             raise ValueError("LLM_B17_EXPLANATION_FAST_TIER cannot be empty")
         return cleaned
 
+    @field_validator("LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES")
+    @classmethod
+    def validate_llm_b17_prewarm_entity_types(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES cannot be empty")
+        return cleaned
+
     @field_validator("ENVIRONMENT")
     @classmethod
     def validate_environment(cls, value: str) -> str:
@@ -414,6 +469,11 @@ class Settings(BaseSettings):
         "LLM_PROVIDER_TIMEOUT_MS",
         "LLM_B17_EXPLANATION_TIMEOUT_MS",
         "LLM_B17_EXPLANATION_MAX_COST_CENTS",
+        "LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER",
+        "LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS",
+        "LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR",
+        "LLM_B17_PREWARM_CALL_BUDGET_CENTS",
+        "LLM_B17_PREWARM_TIMEOUT_MS",
         "LLM_BREAKER_FAILURE_THRESHOLD",
         "LLM_BREAKER_OPEN_SECONDS",
     )
