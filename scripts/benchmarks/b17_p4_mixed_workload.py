@@ -356,11 +356,6 @@ def main(argv: list[str]) -> int:
         _write_output(summary, output_path)
         return 0
 
-    if not os.getenv("DATABASE_URL"):
-        raise RuntimeError("DATABASE_URL is required for benchmark measurement")
-    if not os.getenv("MIGRATION_DATABASE_URL"):
-        raise RuntimeError("MIGRATION_DATABASE_URL is required for benchmark measurement")
-
     summary = asyncio.run(
         _run_measurement(
             requests=args.requests,
