@@ -4,16 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * 1"
-  push:
-    branches: [main]
-    paths:
-      - "backend/app/api/attribution.py"
-      - "backend/app/llm/provider_boundary.py"
-      - "backend/app/services/b17_p4_prewarm_policy.py"
-      - "backend/tests/test_b17_p4_strategy_closure_runtime.py"
-      - "scripts/benchmarks/b17_p4_mixed_workload.py"
-      - "api-contracts/openapi/v1/attribution.yaml"
-      - ".github/workflows/b17-p4-mixed-workload-benchmark.yml"
 
 jobs:
   b17-p4-mixed-workload-benchmark:
