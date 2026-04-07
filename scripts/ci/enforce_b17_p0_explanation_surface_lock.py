@@ -413,24 +413,20 @@ def run_enforcement(
             violations.append("noncanonical_route_present_in_runtime_openapi")
 
     required_checks = _read_json(required_checks_contract_file)
+    required_contexts = required_checks.get("required_contexts", [])
+    required_context_name = "B1.7 Explanation Runtime Adjudication"
+    if not isinstance(required_contexts, list):
+        violations.append("required_checks_required_contexts_invalid")
+        required_contexts = []
+    if required_context_name not in required_contexts:
+        violations.append("required_checks_missing_b17_required_context")
+
     declarations = required_checks.get("future_required_context_declarations", [])
-    expected_source_contract = (
-        "api-contracts/openapi/v1/attribution.yaml#/paths/"
-        "~1api~1attribution~1explain~1{entity_type}~1{entity_id}/get/x-skeldir-b17-p1"
-    )
-    matched_declaration = None
     if isinstance(declarations, list):
         for declaration in declarations:
-            if isinstance(declaration, dict) and declaration.get("name") == "B1.7 Explanation Runtime Adjudication":
-                matched_declaration = declaration
+            if isinstance(declaration, dict) and declaration.get("name") == required_context_name:
+                violations.append("required_checks_b17_context_must_not_remain_future_declared")
                 break
-    if matched_declaration is None:
-        violations.append("required_checks_missing_b17_future_context_declaration")
-    else:
-        if matched_declaration.get("activation_phase") != "B1.7-P5":
-            violations.append("required_checks_b17_future_context_phase_mismatch")
-        if matched_declaration.get("source_contract") != expected_source_contract:
-            violations.append("required_checks_b17_future_context_source_contract_mismatch")
 
     workflow_text = ci_workflow_file.read_text(encoding="utf-8", errors="ignore")
     if "enforce_b17_p0_explanation_surface_lock.py" not in workflow_text:

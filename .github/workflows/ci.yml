@@ -113,12 +113,20 @@ jobs:
         run: |
           pytest backend/tests/test_b17_p4_strategy_closure_enforcer.py -q
 
+      - name: Enforce B1.7-P5 merge-blocking adjudication lock
+        run: |
+          python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
+
+      - name: Run B1.7-P5 negative controls
+        run: |
+          pytest backend/tests/test_b17_p5_merge_blocking_adjudication_enforcer.py -q
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q
 
-  b17-p1-explanation-authority-proofs:
-    name: B1.7 P1-P4 Explanation Authority + Strategy Closure Proofs
+  b17-explanation-runtime-adjudication:
+    name: B1.7 Explanation Runtime Adjudication
     runs-on: ubuntu-latest
     needs: [checkout, validate-contracts]
     services:
@@ -152,19 +160,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install B1.7-P1-P4 proof dependencies
+      - name: Install B1.7-P1-P5 proof dependencies
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           alembic upgrade head
 
-      - name: Run B1.7-P1/P2/P3/P4 mounted runtime and seam proofs
+      - name: Run B1.7-P1/P2/P3/P4/P5 mounted runtime and parity proofs
         run: |
           pytest backend/tests/test_b17_p1_explanation_authority_runtime.py -q
           pytest backend/tests/test_b17_p2_explanation_fastpath_runtime.py -q
           pytest backend/tests/test_b17_p3_cache_correctness_runtime.py -q
           pytest backend/tests/test_b17_p4_strategy_closure_runtime.py -q
+          pytest backend/tests/test_b17_p5_anti_chat_surface_runtime.py -q
           pytest tests/contract/test_route_fidelity.py::test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged -q
+          pytest tests/contract/test_route_fidelity.py::test_contract_to_route_mapping -q
 
       - name: B1.7-P4 benchmark harness integrity (non-live)
         run: |

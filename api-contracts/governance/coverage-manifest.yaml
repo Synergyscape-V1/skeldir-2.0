@@ -107,6 +107,9 @@ llm_explanation:
       status: implemented
       canonical_event: null
       description: Canonical explanation route mounted with deterministic DB authority read and separated explanation payload in B1.7-P1
+      proof_contexts:
+        - B1.7 Explanation Runtime Adjudication
+        - Contract Semantic Drift Gate
 
 llm_investigations:
   requirements:
