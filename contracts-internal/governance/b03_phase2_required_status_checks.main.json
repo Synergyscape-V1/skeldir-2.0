@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.2.0",
+  "contract_version": "1.3.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -45,7 +45,8 @@
     "B1.4 P4 Retention + Deterministic Deletion Proofs",
     "B1.4 P5 Export Log Artifact No-Leak",
     "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
-    "B1.4 P7 E2E Privacy System Proofs"
+    "B1.4 P7 E2E Privacy System Proofs",
+    "B1.7 Explanation Runtime Adjudication"
   ],
   "hardware_enforcement": {
     "status": "enforced",
@@ -63,11 +64,5 @@
     "required_for_p7_closure": true,
     "rationale": "B1.4-P7 enforces live branch-protection hardware required contexts for the full terminal privacy proof plane."
   },
-  "future_required_context_declarations": [
-    {
-      "name": "B1.7 Explanation Runtime Adjudication",
-      "activation_phase": "B1.7-P5",
-      "source_contract": "api-contracts/openapi/v1/attribution.yaml#/paths/~1api~1attribution~1explain~1{entity_type}~1{entity_id}/get/x-skeldir-b17-p1"
-    }
-  ]
+  "future_required_context_declarations": []
 }

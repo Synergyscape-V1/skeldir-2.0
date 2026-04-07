@@ -186,16 +186,31 @@ def test_contract_to_route_mapping():
         if key not in route_keys and key not in contract_only_allowlist:
             unimplemented_operations.append(op)
 
-    # In Phase B0.1, many operations are expected to be unimplemented
-    # This test documents the gap rather than failing
-    if unimplemented_operations:
+    canonical_b17_operation = [
+        op
+        for op in unimplemented_operations
+        if op.get("operation_id") == "explainAttributionEntity"
+        and op.get("method") == "GET"
+        and op.get("path") == "/api/attribution/explain/{entity_type}/{entity_id}"
+    ]
+    assert not canonical_b17_operation, (
+        "B1.7 explanation route fidelity drift is merge-blocking: "
+        "GET /api/attribution/explain/{entity_type}/{entity_id} must remain mounted and contract-mapped."
+    )
+
+    # In Phase B0.1, many operations are still expected to be unimplemented.
+    # B1.7 explanation route drift is explicitly fail-closed above.
+    remaining_unimplemented = [
+        op for op in unimplemented_operations if op not in canonical_b17_operation
+    ]
+    if remaining_unimplemented:
         print(
-            f"\nNOTE: {len(unimplemented_operations)} contract operations not yet implemented (expected in B0.1):"
+            f"\nNOTE: {len(remaining_unimplemented)} contract operations not yet implemented (expected in B0.1):"
         )
-        for op in unimplemented_operations[:5]:  # Show first 5
+        for op in remaining_unimplemented[:5]:  # Show first 5
             print(f"  - {op['method']} {op['path']} ({op['operation_id']})")
-        if len(unimplemented_operations) > 5:
-            print(f"  ... and {len(unimplemented_operations) - 5} more")
+        if len(remaining_unimplemented) > 5:
+            print(f"  ... and {len(remaining_unimplemented) - 5} more")
 
 
 def test_operation_id_consistency():
