@@ -335,6 +335,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--prewarm-run-sync", type=_parse_bool, default=False)
     parser.add_argument("--output")
     parser.add_argument("--assert-cold-insufficient", action="store_true")
+    parser.add_argument("--assert-overall-p95-lt-ms", type=float)
+    parser.add_argument("--assert-cache-hit-rate-gt", type=float)
+    parser.add_argument("--assert-warm-cold-diagnostics-present", action="store_true")
     args = parser.parse_args(argv[1:])
 
     output_path = Path(args.output).resolve() if args.output else None
@@ -366,12 +369,37 @@ def main(argv: list[str]) -> int:
             prewarm_run_sync=bool(args.prewarm_run_sync),
         )
     )
+
+    execution_counts = summary.get("execution_path_counts", {})
+    total_samples = int(sum(int(v) for v in execution_counts.values()))
+    warm_hits = int(execution_counts.get("warm_cache_hit", 0)) + int(
+        execution_counts.get("prewarm_assisted_cache_hit", 0)
+    )
+    cache_hit_rate = (warm_hits / total_samples) if total_samples > 0 else 0.0
+    summary["cache_hit_rate"] = {
+        "hits": warm_hits,
+        "total": total_samples,
+        "ratio": round(cache_hit_rate, 4),
+        "pct": round(cache_hit_rate * 100.0, 2),
+    }
     _write_output(summary, output_path)
 
     if args.assert_cold_insufficient and not bool(
         summary["cold_path_sufficiency"]["cold_p95_exceeds_target"]
     ):
         return 1
+    if args.assert_overall_p95_lt_ms is not None:
+        overall_p95 = float(summary["latency_ms"]["overall_p95"])
+        if overall_p95 >= float(args.assert_overall_p95_lt_ms):
+            return 1
+    if args.assert_cache_hit_rate_gt is not None:
+        if cache_hit_rate <= float(args.assert_cache_hit_rate_gt):
+            return 1
+    if args.assert_warm_cold_diagnostics_present:
+        warm_p95 = summary["latency_ms"].get("warm_p95")
+        cold_p95 = summary["latency_ms"].get("cold_p95")
+        if warm_p95 is None or cold_p95 is None:
+            return 1
     return 0
 
 

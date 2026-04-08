@@ -121,6 +121,15 @@ jobs:
         run: |
           pytest backend/tests/test_b17_p5_merge_blocking_adjudication_enforcer.py -q
 
+      - name: Enforce B1.7-P6 adjudication plane lock
+        run: |
+          python scripts/ci/enforce_b17_p6_adjudication_plane.py
+
+      - name: Run B1.7-P6 adjudication plane negative controls
+        run: |
+          pytest backend/tests/test_b17_p6_adjudication_plane_enforcer.py -q
+          pytest backend/tests/test_b17_p6_benchmark_adjudication_enforcer.py -q
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q
@@ -160,21 +169,30 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install B1.7-P1-P5 proof dependencies
+      - name: Install B1.7-P1-P6 proof dependencies
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           alembic upgrade head
 
-      - name: Run B1.7-P1/P2/P3/P4/P5 mounted runtime and parity proofs
+      - name: Run B1.7-P1/P2/P3/P4/P5/P6 mounted runtime and parity proofs
         run: |
           pytest backend/tests/test_b17_p1_explanation_authority_runtime.py -q
           pytest backend/tests/test_b17_p2_explanation_fastpath_runtime.py -q
           pytest backend/tests/test_b17_p3_cache_correctness_runtime.py -q
           pytest backend/tests/test_b17_p4_strategy_closure_runtime.py -q
           pytest backend/tests/test_b17_p5_anti_chat_surface_runtime.py -q
+          pytest backend/tests/test_b17_p6_end_to_end_runtime.py -q
           pytest tests/contract/test_route_fidelity.py::test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged -q
           pytest tests/contract/test_route_fidelity.py::test_contract_to_route_mapping -q
+
+      - name: Enforce B1.7-P6 adjudication plane lock
+        run: |
+          python scripts/ci/enforce_b17_p6_adjudication_plane.py
+
+      - name: Run B1.7-P6 adjudication plane negative controls
+        run: |
+          pytest backend/tests/test_b17_p6_adjudication_plane_enforcer.py -q
 
       - name: B1.7-P4 benchmark harness integrity (non-live)
         run: |
