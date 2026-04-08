@@ -294,23 +294,31 @@ async def _run_measurement(
             cold_pairs = cold_request_count // 2
             cold_phase_one: list[tuple[UUID, str, UUID]] = []
             cold_phase_two: list[tuple[UUID, str, UUID]] = []
+            cold_interleaved: list[tuple[UUID, str, UUID]] = []
             for _ in range(cold_pairs):
                 cold_user = uuid4()
                 cold_allocation_id = allocation_ids[len(cold_phase_one) % len(allocation_ids)]
                 cold_phase_one.append((cold_allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user))
                 cold_phase_two.append((cold_allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user))
+                cold_interleaved.append((cold_allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user))
+                cold_interleaved.append((cold_allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user))
             odd_tail: list[tuple[UUID, str, UUID]] = []
             if cold_request_count % 2:
                 odd_tail.append((allocation_ids[0], CANONICAL_ENTITY_TYPES[0], uuid4()))
 
-            warm_split_idx = warm_request_count // 2
-            workload = (
-                warm_workload[:warm_split_idx]
-                + cold_phase_one
-                + warm_workload[warm_split_idx:]
-                + cold_phase_two
-                + odd_tail
-            )
+            if prewarm_run_sync:
+                # For sync prewarm, keep companion requests adjacent so efficacy
+                # is measured against the same trigger watermark.
+                workload = warm_workload + cold_interleaved + odd_tail
+            else:
+                warm_split_idx = warm_request_count // 2
+                workload = (
+                    warm_workload[:warm_split_idx]
+                    + cold_phase_one
+                    + warm_workload[warm_split_idx:]
+                    + cold_phase_two
+                    + odd_tail
+                )
 
             semaphore = asyncio.Semaphore(concurrency)
             samples: list[RequestSample] = []
