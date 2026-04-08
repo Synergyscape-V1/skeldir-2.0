@@ -1,4 +1,7 @@
-"""B1.7-P6 benchmark adjudication enforcer tests."""
+"""B1.7-P6 benchmark adjudication enforcer tests.
+
+Includes regression guards for benchmark-lane fail-closed thresholds.
+"""
 
 from __future__ import annotations
 
