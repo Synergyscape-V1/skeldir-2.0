@@ -83,7 +83,7 @@ jobs:
             --concurrency 2 \
             --provider-delay-ms 120 \
             --prewarm-enabled true \
-            --prewarm-run-sync false \
+            --prewarm-run-sync true \
             --allocation-pool-size 12 \
             --warm-key-space-size 16 \
             --output artifacts/b17_p4_benchmark/prewarm_enabled.json
