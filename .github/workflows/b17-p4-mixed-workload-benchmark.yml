@@ -1,6 +1,8 @@
 name: B1.7-P4 Mixed Workload Benchmark
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * 1"
@@ -103,6 +105,14 @@ jobs:
           if prewarm_assisted <= 0:
               raise SystemExit("prewarm scenario produced no prewarm_assisted_cache_hit observations")
           PY
+
+      - name: Enforce B1.7-P6 benchmark adjudication gates
+        run: |
+          python scripts/ci/enforce_b17_p6_benchmark_adjudication.py \
+            --baseline-file artifacts/b17_p4_benchmark/baseline_no_prewarm.json \
+            --prewarm-file artifacts/b17_p4_benchmark/prewarm_enabled.json \
+            --overall-p95-max-ms 500 \
+            --cache-hit-ratio-min 0.60
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4

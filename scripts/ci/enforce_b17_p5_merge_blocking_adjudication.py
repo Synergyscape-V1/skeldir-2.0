@@ -23,6 +23,8 @@ REQUIRED_COMMAND_TOKENS = (
     "test_b17_p3_cache_correctness_runtime.py",
     "test_b17_p4_strategy_closure_runtime.py",
     "test_b17_p5_anti_chat_surface_runtime.py",
+    "enforce_b17_p6_adjudication_plane.py",
+    "test_b17_p6_adjudication_plane_enforcer.py",
     "test_route_fidelity.py::test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged",
     "test_route_fidelity.py::test_contract_to_route_mapping",
 )

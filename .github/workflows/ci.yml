@@ -121,6 +121,15 @@ jobs:
         run: |
           pytest backend/tests/test_b17_p5_merge_blocking_adjudication_enforcer.py -q
 
+      - name: Enforce B1.7-P6 adjudication plane lock
+        run: |
+          python scripts/ci/enforce_b17_p6_adjudication_plane.py
+
+      - name: Run B1.7-P6 adjudication plane negative controls
+        run: |
+          pytest backend/tests/test_b17_p6_adjudication_plane_enforcer.py -q
+          pytest backend/tests/test_b17_p6_benchmark_adjudication_enforcer.py -q
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q
@@ -160,25 +169,79 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install B1.7-P1-P5 proof dependencies
+      - name: Install B1.7-P1-P6 proof dependencies
         run: |
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
           alembic upgrade head
 
-      - name: Run B1.7-P1/P2/P3/P4/P5 mounted runtime and parity proofs
+      - name: Run B1.7-P1/P2/P3/P4/P5/P6 mounted runtime and parity proofs
         run: |
           pytest backend/tests/test_b17_p1_explanation_authority_runtime.py -q
           pytest backend/tests/test_b17_p2_explanation_fastpath_runtime.py -q
           pytest backend/tests/test_b17_p3_cache_correctness_runtime.py -q
           pytest backend/tests/test_b17_p4_strategy_closure_runtime.py -q
           pytest backend/tests/test_b17_p5_anti_chat_surface_runtime.py -q
+          pytest backend/tests/test_b17_p6_end_to_end_runtime.py -q
           pytest tests/contract/test_route_fidelity.py::test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged -q
           pytest tests/contract/test_route_fidelity.py::test_contract_to_route_mapping -q
+
+      - name: Enforce B1.7-P6 adjudication plane lock
+        run: |
+          python scripts/ci/enforce_b17_p6_adjudication_plane.py
+
+      - name: Run B1.7-P6 adjudication plane negative controls
+        run: |
+          pytest backend/tests/test_b17_p6_adjudication_plane_enforcer.py -q
 
       - name: B1.7-P4 benchmark harness integrity (non-live)
         run: |
           python scripts/benchmarks/b17_p4_mixed_workload.py --mode integrity --output artifacts/b17_p4_harness_integrity.json
+
+      - name: B1.7-P6 baseline benchmark (prewarm disabled)
+        run: |
+          python scripts/benchmarks/b17_p4_mixed_workload.py \
+            --mode measure \
+            --requests 120 \
+            --warm-ratio 0.65 \
+            --concurrency 8 \
+            --provider-delay-ms 650 \
+            --prewarm-enabled false \
+            --prewarm-run-sync false \
+            --assert-cold-insufficient \
+            --assert-warm-cold-diagnostics-present \
+            --output artifacts/b17_p4_benchmark/baseline_no_prewarm.json
+
+      - name: B1.7-P6 prewarm benchmark (enabled)
+        run: |
+          python scripts/benchmarks/b17_p4_mixed_workload.py \
+            --mode measure \
+            --requests 120 \
+            --warm-ratio 0.65 \
+            --concurrency 8 \
+            --provider-delay-ms 650 \
+            --prewarm-enabled true \
+            --prewarm-run-sync true \
+            --assert-overall-p95-lt-ms 500 \
+            --assert-cache-hit-rate-gt 0.60 \
+            --assert-warm-cold-diagnostics-present \
+            --output artifacts/b17_p4_benchmark/prewarm_enabled.json
+
+      - name: Enforce B1.7-P6 benchmark adjudication
+        run: |
+          python scripts/ci/enforce_b17_p6_benchmark_adjudication.py \
+            --baseline-file artifacts/b17_p4_benchmark/baseline_no_prewarm.json \
+            --prewarm-file artifacts/b17_p4_benchmark/prewarm_enabled.json \
+            --overall-p95-max-ms 500 \
+            --cache-hit-ratio-min 0.60
+
+      - name: Upload B1.7 benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b17-runtime-adjudication-benchmark-artifacts
+          path: artifacts/b17_p4_benchmark
+          if-no-files-found: error
 
   b14-p0-privacy-authority-lock:
     name: B1.4 P0 Privacy Authority Lock
