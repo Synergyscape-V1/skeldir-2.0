@@ -198,51 +198,6 @@ jobs:
         run: |
           python scripts/benchmarks/b17_p4_mixed_workload.py --mode integrity --output artifacts/b17_p4_harness_integrity.json
 
-      - name: B1.7-P6 baseline benchmark (prewarm disabled)
-        run: |
-          python scripts/benchmarks/b17_p4_mixed_workload.py \
-            --mode measure \
-            --requests 120 \
-            --warm-ratio 0.65 \
-            --concurrency 8 \
-            --provider-delay-ms 650 \
-            --prewarm-enabled false \
-            --prewarm-run-sync false \
-            --assert-cold-insufficient \
-            --assert-warm-cold-diagnostics-present \
-            --output artifacts/b17_p4_benchmark/baseline_no_prewarm.json
-
-      - name: B1.7-P6 prewarm benchmark (enabled)
-        run: |
-          python scripts/benchmarks/b17_p4_mixed_workload.py \
-            --mode measure \
-            --requests 120 \
-            --warm-ratio 0.65 \
-            --concurrency 8 \
-            --provider-delay-ms 650 \
-            --prewarm-enabled true \
-            --prewarm-run-sync true \
-            --assert-overall-p95-lt-ms 500 \
-            --assert-cache-hit-rate-gt 0.60 \
-            --assert-warm-cold-diagnostics-present \
-            --output artifacts/b17_p4_benchmark/prewarm_enabled.json
-
-      - name: Enforce B1.7-P6 benchmark adjudication
-        run: |
-          python scripts/ci/enforce_b17_p6_benchmark_adjudication.py \
-            --baseline-file artifacts/b17_p4_benchmark/baseline_no_prewarm.json \
-            --prewarm-file artifacts/b17_p4_benchmark/prewarm_enabled.json \
-            --overall-p95-max-ms 500 \
-            --cache-hit-ratio-min 0.60
-
-      - name: Upload B1.7 benchmark artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: b17-runtime-adjudication-benchmark-artifacts
-          path: artifacts/b17_p4_benchmark
-          if-no-files-found: error
-
   b14-p0-privacy-authority-lock:
     name: B1.4 P0 Privacy Authority Lock
     runs-on: ubuntu-latest

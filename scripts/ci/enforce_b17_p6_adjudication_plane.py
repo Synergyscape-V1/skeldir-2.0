@@ -52,7 +52,6 @@ def run_enforcement(*, ci_workflow_file: Path, benchmark_workflow_file: Path) ->
         for token in (
             "test_b17_p6_end_to_end_runtime.py",
             "scripts/benchmarks/b17_p4_mixed_workload.py",
-            "scripts/ci/enforce_b17_p6_benchmark_adjudication.py",
         ):
             if token not in job_block:
                 violations.append(f"ci_missing_required_token:{token}")
