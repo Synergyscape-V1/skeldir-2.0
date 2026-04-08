@@ -36,6 +36,7 @@ os.environ.setdefault("CONTRACT_TESTING", "0")
 from app.api import attribution as attribution_api
 from app.db.session import AsyncSessionLocal, set_tenant_guc_async
 from app.main import app
+from app.security import auth as auth_module
 from app.security.auth import mint_internal_jwt
 from backend.tests.builders.core_builders import build_attribution_allocation
 from httpx import ASGITransport, AsyncClient
@@ -197,6 +198,7 @@ async def _run_measurement(
     await _seed_revenue_cache_entry(tenant_id=tenant_id, total_revenue_cents=7_500_000)
 
     original_provider_call = attribution_api._PROVIDER_BOUNDARY._provider_call
+    original_assert_access_token_active = auth_module.assert_access_token_active
     original_prewarm_enabled = attribution_api.settings.LLM_B17_PREWARM_ENABLED
     original_prewarm_run_sync = attribution_api.settings.LLM_B17_PREWARM_RUN_SYNC
     original_prewarm_targets = attribution_api.settings.LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES
@@ -221,7 +223,11 @@ async def _run_measurement(
             "usage": {"input_tokens": 8, "output_tokens": 8, "cost_cents": 1},
         }
 
+    async def _allow_active_token(_token_claims):
+        return None
+
     attribution_api._PROVIDER_BOUNDARY._provider_call = _delayed_provider
+    auth_module.assert_access_token_active = _allow_active_token
     attribution_api.settings.LLM_B17_PREWARM_ENABLED = prewarm_enabled
     attribution_api.settings.LLM_B17_PREWARM_RUN_SYNC = prewarm_run_sync
     attribution_api.settings.LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES = (
@@ -270,6 +276,7 @@ async def _run_measurement(
 
     finally:
         attribution_api._PROVIDER_BOUNDARY._provider_call = original_provider_call
+        auth_module.assert_access_token_active = original_assert_access_token_active
         attribution_api.settings.LLM_B17_PREWARM_ENABLED = original_prewarm_enabled
         attribution_api.settings.LLM_B17_PREWARM_RUN_SYNC = original_prewarm_run_sync
         attribution_api.settings.LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES = original_prewarm_targets
