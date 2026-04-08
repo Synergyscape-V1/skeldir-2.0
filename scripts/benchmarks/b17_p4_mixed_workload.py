@@ -206,20 +206,16 @@ async def _run_measurement(
 
     async def _delayed_provider(*, requested_model, prompt, reservation):
         await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
-        truth_snapshot = (
-            dict(prompt.get("truth_snapshot"))
-            if isinstance(prompt.get("truth_snapshot"), dict)
-            else {}
+        simulated = prompt.get("simulated_output_text")
+        output_text = (
+            str(simulated)
+            if isinstance(simulated, str) and simulated.strip()
+            else "metric_value_cents 0 revenue_total_cents 0"
         )
-        metric_value_cents = int(truth_snapshot.get("metric_value_cents", 0))
-        revenue_total_cents = int(truth_snapshot.get("revenue_total_cents", 0))
         return {
             "provider": "stub",
             "model": requested_model,
-            "output_text": (
-                f"metric_value_cents {metric_value_cents} "
-                f"revenue_total_cents {revenue_total_cents}"
-            ),
+            "output_text": output_text,
             "reasoning_trace": {"trace_type": "b17-p4-mixed-workload-benchmark"},
             "response_metadata": {"source": "b17-p4-mixed-workload-benchmark"},
             "usage": {"input_tokens": 8, "output_tokens": 8, "cost_cents": 1},
@@ -249,8 +245,13 @@ async def _run_measurement(
         workload: list[tuple[str, UUID]] = []
         for idx in range(warm_request_count):
             workload.append((CANONICAL_ENTITY_TYPES[idx % len(CANONICAL_ENTITY_TYPES)], warm_user))
-        for idx in range(cold_request_count):
-            workload.append((CANONICAL_ENTITY_TYPES[idx % len(CANONICAL_ENTITY_TYPES)], uuid4()))
+        cold_pairs = cold_request_count // 2
+        for _ in range(cold_pairs):
+            cold_user = uuid4()
+            workload.append((CANONICAL_ENTITY_TYPES[0], cold_user))
+            workload.append((CANONICAL_ENTITY_TYPES[1], cold_user))
+        if cold_request_count % 2:
+            workload.append((CANONICAL_ENTITY_TYPES[0], uuid4()))
 
         semaphore = asyncio.Semaphore(concurrency)
         samples: list[RequestSample] = []
