@@ -29,6 +29,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      PYTHONUNBUFFERED: "1"
       TESTING: "1"
       CONTRACT_TESTING: "0"
     steps:
