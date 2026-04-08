@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -43,6 +44,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 CANONICAL_ENTITY_TYPES = ("channel_performance", "attribution_score")
+NOISY_BENCHMARK_LOGGERS = (
+    "httpx",
+    "httpcore",
+    "app.api.attribution",
+)
 
 
 @dataclass(frozen=True)
@@ -204,6 +210,7 @@ async def _run_measurement(
     original_prewarm_max_per_trigger = (
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER
     )
+    original_log_levels: dict[str, int] = {}
 
     async def _delayed_provider(*, requested_model, prompt, reservation):
         await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
@@ -233,6 +240,10 @@ async def _run_measurement(
         "channel_performance,attribution_score"
     )
     attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = 2
+    for logger_name in NOISY_BENCHMARK_LOGGERS:
+        logger = logging.getLogger(logger_name)
+        original_log_levels[logger_name] = logger.level
+        logger.setLevel(logging.WARNING)
 
     try:
         transport = ASGITransport(app=app)
@@ -286,6 +297,8 @@ async def _run_measurement(
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = (
             original_prewarm_max_per_trigger
         )
+        for logger_name, logger_level in original_log_levels.items():
+            logging.getLogger(logger_name).setLevel(logger_level)
 
     state_counts: dict[str, int] = {}
     for sample in samples:
