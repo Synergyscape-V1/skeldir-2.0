@@ -260,25 +260,25 @@ async def _run_measurement(
         logger.setLevel(logging.WARNING)
 
     try:
+        warm_request_count = int(round(requests * warm_ratio))
+        cold_request_count = max(0, requests - warm_request_count)
+        warm_key_count = max(1, min(warm_key_space_size, warm_request_count))
+        warm_keys: list[tuple[UUID, UUID]] = []
+        for idx in range(warm_key_count):
+            warm_keys.append((allocation_ids[idx % len(allocation_ids)], uuid4()))
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://bench") as client:
-            warm_seed_user = uuid4()
-            for entity_type in CANONICAL_ENTITY_TYPES:
-                await _call_explain(
-                    client=client,
-                    tenant_id=tenant_id,
-                    allocation_id=allocation_ids[0],
-                    entity_type=entity_type,
-                    user_id=warm_seed_user,
-                )
-
-            warm_request_count = int(round(requests * warm_ratio))
-            cold_request_count = max(0, requests - warm_request_count)
-
-            warm_key_count = max(1, min(warm_key_space_size, warm_request_count))
-            warm_keys: list[tuple[UUID, UUID]] = []
-            for idx in range(warm_key_count):
-                warm_keys.append((allocation_ids[idx % len(allocation_ids)], uuid4()))
+            # Prime the intended warm keyspace so warm-phase requests are true cache hits.
+            for allocation_id, warm_user in warm_keys:
+                for entity_type in CANONICAL_ENTITY_TYPES:
+                    await _call_explain(
+                        client=client,
+                        tenant_id=tenant_id,
+                        allocation_id=allocation_id,
+                        entity_type=entity_type,
+                        user_id=warm_user,
+                    )
 
             warm_workload: list[tuple[UUID, str, UUID]] = []
             for idx in range(warm_request_count):
