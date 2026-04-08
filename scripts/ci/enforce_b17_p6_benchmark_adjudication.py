@@ -105,8 +105,6 @@ def _adjudicate(
 
     baseline_overall_p95 = _latency(baseline, "overall_p95")
     baseline_hit_ratio = _cache_hit_ratio(baseline)
-    baseline_cold_count = _state_count(baseline, "cold_path_generated")
-    prewarm_cold_count = _state_count(prewarm, "cold_path_generated")
     baseline_warm_hits = _state_count(baseline, "warm_cache_hit") + _state_count(
         baseline, "prewarm_assisted_cache_hit"
     )
@@ -180,12 +178,7 @@ def _adjudicate(
         and prewarm_overall_p95 <= baseline_overall_p95
     )
     efficacy_via_cache_availability = (
-        (prewarm_cold_count < baseline_cold_count)
-        or (
-            baseline_hit_ratio is not None
-            and prewarm_hit_ratio is not None
-            and prewarm_hit_ratio > baseline_hit_ratio
-        )
+        prewarm_assisted_hits > 0 and prewarm_warm_hits >= baseline_warm_hits
     )
     _require(
         efficacy_via_overall or efficacy_via_cache_availability,
