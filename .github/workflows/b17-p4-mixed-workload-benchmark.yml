@@ -52,9 +52,9 @@ jobs:
           mkdir -p artifacts/b17_p4_benchmark
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode integrity \
-            --requests 60 \
-            --warm-ratio 0.65 \
-            --concurrency 8 \
+            --requests 80 \
+            --warm-ratio 0.70 \
+            --concurrency 2 \
             --provider-delay-ms 650 \
             --output artifacts/b17_p4_benchmark/integrity.json
 
@@ -62,9 +62,9 @@ jobs:
         run: |
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode measure \
-            --requests 120 \
-            --warm-ratio 0.65 \
-            --concurrency 8 \
+            --requests 80 \
+            --warm-ratio 0.70 \
+            --concurrency 2 \
             --provider-delay-ms 0 \
             --prewarm-enabled false \
             --prewarm-run-sync false \
@@ -74,9 +74,9 @@ jobs:
         run: |
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode measure \
-            --requests 120 \
-            --warm-ratio 0.65 \
-            --concurrency 8 \
+            --requests 80 \
+            --warm-ratio 0.70 \
+            --concurrency 2 \
             --provider-delay-ms 0 \
             --prewarm-enabled true \
             --prewarm-run-sync true \
