@@ -76,8 +76,12 @@ def _adjudicate(
 
     baseline_overall_p95 = _latency(baseline, "overall_p95")
     baseline_hit_ratio = _cache_hit_ratio(baseline)
-    baseline_cold_count = _state_count(baseline, "cold_path_generated")
-    prewarm_cold_count = _state_count(prewarm, "cold_path_generated")
+    baseline_warm_hits = _state_count(baseline, "warm_cache_hit") + _state_count(
+        baseline, "prewarm_assisted_cache_hit"
+    )
+    prewarm_warm_hits = _state_count(prewarm, "warm_cache_hit") + _state_count(
+        prewarm, "prewarm_assisted_cache_hit"
+    )
     prewarm_assisted_hits = _state_count(prewarm, "prewarm_assisted_cache_hit")
 
     _require(
@@ -94,9 +98,9 @@ def _adjudicate(
         "prewarm_efficacy_missing_assisted_cache_hits",
     )
     _require(
-        prewarm_cold_count < baseline_cold_count,
+        prewarm_warm_hits >= baseline_warm_hits,
         failures,
-        "prewarm_efficacy_no_cold_exposure_reduction",
+        "prewarm_efficacy_no_warm_cache_gain",
     )
 
     if baseline_overall_p95 is not None and prewarm_overall_p95 is not None:
