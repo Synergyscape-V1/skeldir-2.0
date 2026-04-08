@@ -146,22 +146,21 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 async def _call_explain(
     *,
+    client: AsyncClient,
     tenant_id: UUID,
     allocation_id: UUID,
     entity_type: str,
     user_id: UUID,
 ) -> RequestSample:
     token = _token_for(tenant_id=tenant_id, user_id=user_id)
-    transport = ASGITransport(app=app)
     start = perf_counter()
-    async with AsyncClient(transport=transport, base_url="http://bench") as client:
-        response = await client.get(
-            f"/api/attribution/explain/{entity_type}/{allocation_id}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "X-Correlation-ID": str(uuid4()),
-            },
-        )
+    response = await client.get(
+        f"/api/attribution/explain/{entity_type}/{allocation_id}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Correlation-ID": str(uuid4()),
+        },
+    )
     latency_ms = (perf_counter() - start) * 1000.0
     if response.status_code != 200:
         raise RuntimeError(
@@ -236,43 +235,47 @@ async def _run_measurement(
     attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = 2
 
     try:
-        warm_user = uuid4()
-        for entity_type in CANONICAL_ENTITY_TYPES:
-            await _call_explain(
-                tenant_id=tenant_id,
-                allocation_id=allocation_id,
-                entity_type=entity_type,
-                user_id=warm_user,
-            )
-
-        warm_request_count = int(round(requests * warm_ratio))
-        cold_request_count = max(0, requests - warm_request_count)
-
-        workload: list[tuple[str, UUID]] = []
-        for idx in range(warm_request_count):
-            workload.append((CANONICAL_ENTITY_TYPES[idx % len(CANONICAL_ENTITY_TYPES)], warm_user))
-        cold_pairs = cold_request_count // 2
-        for _ in range(cold_pairs):
-            cold_user = uuid4()
-            workload.append((CANONICAL_ENTITY_TYPES[0], cold_user))
-            workload.append((CANONICAL_ENTITY_TYPES[1], cold_user))
-        if cold_request_count % 2:
-            workload.append((CANONICAL_ENTITY_TYPES[0], uuid4()))
-
-        semaphore = asyncio.Semaphore(concurrency)
-        samples: list[RequestSample] = []
-
-        async def _run_one(entity_type: str, user_id: UUID) -> None:
-            async with semaphore:
-                sample = await _call_explain(
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://bench") as client:
+            warm_user = uuid4()
+            for entity_type in CANONICAL_ENTITY_TYPES:
+                await _call_explain(
+                    client=client,
                     tenant_id=tenant_id,
                     allocation_id=allocation_id,
                     entity_type=entity_type,
-                    user_id=user_id,
+                    user_id=warm_user,
                 )
-                samples.append(sample)
 
-        await asyncio.gather(*(_run_one(entity_type, user_id) for entity_type, user_id in workload))
+            warm_request_count = int(round(requests * warm_ratio))
+            cold_request_count = max(0, requests - warm_request_count)
+
+            workload: list[tuple[str, UUID]] = []
+            for idx in range(warm_request_count):
+                workload.append((CANONICAL_ENTITY_TYPES[idx % len(CANONICAL_ENTITY_TYPES)], warm_user))
+            cold_pairs = cold_request_count // 2
+            for _ in range(cold_pairs):
+                cold_user = uuid4()
+                workload.append((CANONICAL_ENTITY_TYPES[0], cold_user))
+                workload.append((CANONICAL_ENTITY_TYPES[1], cold_user))
+            if cold_request_count % 2:
+                workload.append((CANONICAL_ENTITY_TYPES[0], uuid4()))
+
+            semaphore = asyncio.Semaphore(concurrency)
+            samples: list[RequestSample] = []
+
+            async def _run_one(entity_type: str, user_id: UUID) -> None:
+                async with semaphore:
+                    sample = await _call_explain(
+                        client=client,
+                        tenant_id=tenant_id,
+                        allocation_id=allocation_id,
+                        entity_type=entity_type,
+                        user_id=user_id,
+                    )
+                    samples.append(sample)
+
+            await asyncio.gather(*(_run_one(entity_type, user_id) for entity_type, user_id in workload))
 
     finally:
         attribution_api._PROVIDER_BOUNDARY._provider_call = original_provider_call
