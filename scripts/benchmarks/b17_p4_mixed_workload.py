@@ -56,6 +56,9 @@ class RequestSample:
     latency_ms: float
     execution_path_state: str
     cache_replay_state: str
+    allocation_id: str
+    user_id: str
+    entity_type: str
 
 
 def _parse_bool(value: str) -> bool:
@@ -178,6 +181,9 @@ async def _call_explain(
         latency_ms=latency_ms,
         execution_path_state=str(explanation["execution_path_state"]),
         cache_replay_state=str(explanation["cache_replay_state"]),
+        allocation_id=str(allocation_id),
+        user_id=str(user_id),
+        entity_type=str(entity_type),
     )
 
 
@@ -189,6 +195,8 @@ async def _run_measurement(
     provider_delay_ms: int,
     prewarm_enabled: bool,
     prewarm_run_sync: bool,
+    allocation_pool_size: int,
+    warm_key_space_size: int,
 ) -> dict[str, Any]:
     if requests <= 0:
         raise ValueError("requests must be > 0")
@@ -196,10 +204,16 @@ async def _run_measurement(
         raise ValueError("warm_ratio must be in [0, 1]")
     if concurrency <= 0:
         raise ValueError("concurrency must be > 0")
+    if allocation_pool_size <= 0:
+        raise ValueError("allocation_pool_size must be > 0")
+    if warm_key_space_size <= 0:
+        raise ValueError("warm_key_space_size must be > 0")
 
     allocation = await build_attribution_allocation()
     tenant_id = allocation["tenant_id"]
-    allocation_id = allocation["id"]
+    allocation_ids: list[UUID] = [allocation["id"]]
+    for _ in range(max(0, allocation_pool_size - 1)):
+        allocation_ids.append((await build_attribution_allocation(tenant_id=tenant_id))["id"])
     await _seed_revenue_cache_entry(tenant_id=tenant_id, total_revenue_cents=7_500_000)
 
     original_provider_call = attribution_api._PROVIDER_BOUNDARY._provider_call
@@ -248,34 +262,60 @@ async def _run_measurement(
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://bench") as client:
-            warm_user = uuid4()
+            warm_seed_user = uuid4()
             for entity_type in CANONICAL_ENTITY_TYPES:
                 await _call_explain(
                     client=client,
                     tenant_id=tenant_id,
-                    allocation_id=allocation_id,
+                    allocation_id=allocation_ids[0],
                     entity_type=entity_type,
-                    user_id=warm_user,
+                    user_id=warm_seed_user,
                 )
 
             warm_request_count = int(round(requests * warm_ratio))
             cold_request_count = max(0, requests - warm_request_count)
 
-            workload: list[tuple[str, UUID]] = []
+            warm_key_count = max(1, min(warm_key_space_size, warm_request_count))
+            warm_keys: list[tuple[UUID, UUID]] = []
+            for idx in range(warm_key_count):
+                warm_keys.append((allocation_ids[idx % len(allocation_ids)], uuid4()))
+
+            warm_workload: list[tuple[UUID, str, UUID]] = []
             for idx in range(warm_request_count):
-                workload.append((CANONICAL_ENTITY_TYPES[idx % len(CANONICAL_ENTITY_TYPES)], warm_user))
+                allocation_id, warm_user = warm_keys[idx % len(warm_keys)]
+                warm_workload.append(
+                    (
+                        allocation_id,
+                        CANONICAL_ENTITY_TYPES[idx % len(CANONICAL_ENTITY_TYPES)],
+                        warm_user,
+                    )
+                )
+
             cold_pairs = cold_request_count // 2
+            cold_phase_one: list[tuple[UUID, str, UUID]] = []
+            cold_phase_two: list[tuple[UUID, str, UUID]] = []
             for _ in range(cold_pairs):
                 cold_user = uuid4()
-                workload.append((CANONICAL_ENTITY_TYPES[0], cold_user))
-                workload.append((CANONICAL_ENTITY_TYPES[1], cold_user))
+                cold_allocation_id = allocation_ids[len(cold_phase_one) % len(allocation_ids)]
+                cold_phase_one.append((cold_allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user))
+                cold_phase_two.append((cold_allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user))
+            odd_tail: list[tuple[UUID, str, UUID]] = []
             if cold_request_count % 2:
-                workload.append((CANONICAL_ENTITY_TYPES[0], uuid4()))
+                odd_tail.append((allocation_ids[0], CANONICAL_ENTITY_TYPES[0], uuid4()))
+
+            warm_split_idx = warm_request_count // 2
+            workload = (
+                warm_workload[:warm_split_idx]
+                + cold_phase_one
+                + warm_workload[warm_split_idx:]
+                + cold_phase_two
+                + odd_tail
+            )
 
             semaphore = asyncio.Semaphore(concurrency)
             samples: list[RequestSample] = []
 
-            async def _run_one(entity_type: str, user_id: UUID) -> None:
+            async def _run_one(allocation_id: UUID, entity_type: str, user_id: UUID) -> None:
                 async with semaphore:
                     sample = await _call_explain(
                         client=client,
@@ -286,7 +326,12 @@ async def _run_measurement(
                     )
                     samples.append(sample)
 
-            await asyncio.gather(*(_run_one(entity_type, user_id) for entity_type, user_id in workload))
+            await asyncio.gather(
+                *(
+                    _run_one(allocation_id, entity_type, user_id)
+                    for allocation_id, entity_type, user_id in workload
+                )
+            )
 
     finally:
         attribution_api._PROVIDER_BOUNDARY._provider_call = original_provider_call
@@ -316,6 +361,12 @@ async def _run_measurement(
         for sample in samples
         if sample.execution_path_state == "cold_path_generated"
     ]
+    determinant_counts: dict[tuple[str, str, str], int] = {}
+    for sample in samples:
+        determinant = (sample.allocation_id, sample.user_id, sample.entity_type)
+        determinant_counts[determinant] = determinant_counts.get(determinant, 0) + 1
+    distinct_allocations = {sample.allocation_id for sample in samples}
+    distinct_users = {sample.user_id for sample in samples}
 
     summary = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -335,6 +386,20 @@ async def _run_measurement(
         "cold_path_sufficiency": {
             "endpoint_target_p95_ms": 500,
             "cold_p95_exceeds_target": _percentile(cold_latencies, 0.95) > 500.0,
+        },
+        "workload_profile": {
+            "allocation_pool_size": allocation_pool_size,
+            "warm_key_space_size": warm_key_space_size,
+            "cold_pair_count": cold_pairs,
+            "distinct_allocation_count": len(distinct_allocations),
+            "distinct_user_count": len(distinct_users),
+            "distinct_entity_type_count": len({sample.entity_type for sample in samples}),
+            "distinct_cache_determinant_count": len(determinant_counts),
+            "max_requests_per_determinant": max(determinant_counts.values()) if determinant_counts else 0,
+            "duplicate_request_ratio": round(
+                1.0 - (len(determinant_counts) / float(len(samples))) if samples else 0.0,
+                4,
+            ),
         },
     }
     return summary
@@ -357,6 +422,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--provider-delay-ms", type=int, default=650)
     parser.add_argument("--prewarm-enabled", type=_parse_bool, default=False)
     parser.add_argument("--prewarm-run-sync", type=_parse_bool, default=False)
+    parser.add_argument("--allocation-pool-size", type=int, default=12)
+    parser.add_argument("--warm-key-space-size", type=int, default=16)
     parser.add_argument("--output")
     parser.add_argument("--assert-cold-insufficient", action="store_true")
     parser.add_argument("--assert-overall-p95-lt-ms", type=float)
@@ -375,6 +442,8 @@ def main(argv: list[str]) -> int:
                 "warm_ratio_in_range": 0.0 <= args.warm_ratio <= 1.0,
                 "concurrency_positive": args.concurrency > 0,
                 "provider_delay_nonnegative": args.provider_delay_ms >= 0,
+                "allocation_pool_positive": args.allocation_pool_size > 0,
+                "warm_key_space_positive": args.warm_key_space_size > 0,
             },
         }
         if not all(bool(v) for v in summary["checks"].values()):
@@ -391,6 +460,8 @@ def main(argv: list[str]) -> int:
             provider_delay_ms=args.provider_delay_ms,
             prewarm_enabled=bool(args.prewarm_enabled),
             prewarm_run_sync=bool(args.prewarm_run_sync),
+            allocation_pool_size=args.allocation_pool_size,
+            warm_key_space_size=args.warm_key_space_size,
         )
     )
 

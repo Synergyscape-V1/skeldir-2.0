@@ -56,6 +56,8 @@ jobs:
             --warm-ratio 0.70 \
             --concurrency 2 \
             --provider-delay-ms 650 \
+            --allocation-pool-size 12 \
+            --warm-key-space-size 16 \
             --output artifacts/b17_p4_benchmark/integrity.json
 
       - name: Baseline mixed-workload (prewarm disabled)
@@ -65,9 +67,11 @@ jobs:
             --requests 80 \
             --warm-ratio 0.70 \
             --concurrency 2 \
-            --provider-delay-ms 0 \
+            --provider-delay-ms 120 \
             --prewarm-enabled false \
             --prewarm-run-sync false \
+            --allocation-pool-size 12 \
+            --warm-key-space-size 16 \
             --output artifacts/b17_p4_benchmark/baseline_no_prewarm.json
 
       - name: Mixed-workload with bounded event-driven prewarm
@@ -77,9 +81,11 @@ jobs:
             --requests 80 \
             --warm-ratio 0.70 \
             --concurrency 2 \
-            --provider-delay-ms 0 \
+            --provider-delay-ms 120 \
             --prewarm-enabled true \
-            --prewarm-run-sync true \
+            --prewarm-run-sync false \
+            --allocation-pool-size 12 \
+            --warm-key-space-size 16 \
             --output artifacts/b17_p4_benchmark/prewarm_enabled.json
 
       - name: Enforce B1.7-P6 benchmark adjudication gates
@@ -88,7 +94,11 @@ jobs:
             --baseline-file artifacts/b17_p4_benchmark/baseline_no_prewarm.json \
             --prewarm-file artifacts/b17_p4_benchmark/prewarm_enabled.json \
             --overall-p95-max-ms 500 \
-            --cache-hit-ratio-min 0.60
+            --cache-hit-ratio-min 0.60 \
+            --provider-delay-min-ms 50 \
+            --min-distinct-allocations 8 \
+            --min-distinct-determinants 40 \
+            --min-distinct-users 20
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
