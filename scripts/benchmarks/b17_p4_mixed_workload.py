@@ -435,8 +435,11 @@ async def _run_measurement(
                             uuid4(),
                         )
                     )
+                # Trigger with attribution_score so async trigger-phase cold cost
+                # mirrors baseline cold composition more closely while prewarming
+                # channel_performance companions for measured reuse.
                 phase_trigger_workload = [
-                    (allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user)
+                    (allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user)
                     for allocation_id, cold_user in trigger_pairs
                 ]
                 companion_requests = max(
@@ -446,7 +449,7 @@ async def _run_measurement(
                 for idx in range(companion_requests):
                     allocation_id, cold_user = trigger_pairs[idx % len(trigger_pairs)]
                     phase_remaining_cold.append(
-                        (allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user)
+                        (allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user)
                     )
                 phase_remaining_workload = warm_workload + phase_remaining_cold
 
