@@ -312,13 +312,12 @@ async def _run_measurement(
                 workload = warm_workload + cold_interleaved + odd_tail
             else:
                 warm_split_idx = warm_request_count // 2
-                workload = (
+                phase_one_workload = (
                     warm_workload[:warm_split_idx]
                     + cold_phase_one
                     + warm_workload[warm_split_idx:]
-                    + cold_phase_two
-                    + odd_tail
                 )
+                phase_two_workload = cold_phase_two + odd_tail
 
             semaphore = asyncio.Semaphore(concurrency)
             samples: list[RequestSample] = []
@@ -334,12 +333,21 @@ async def _run_measurement(
                     )
                     samples.append(sample)
 
-            await asyncio.gather(
-                *(
-                    _run_one(allocation_id, entity_type, user_id)
-                    for allocation_id, entity_type, user_id in workload
+            async def _run_batch(workload_batch: list[tuple[UUID, str, UUID]]) -> None:
+                await asyncio.gather(
+                    *(
+                        _run_one(allocation_id, entity_type, user_id)
+                        for allocation_id, entity_type, user_id in workload_batch
+                    )
                 )
-            )
+
+            if prewarm_run_sync:
+                await _run_batch(workload)
+            else:
+                await _run_batch(phase_one_workload)
+                # Allow async prewarm side-effects to settle before phase-two keys are issued.
+                await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
+                await _run_batch(phase_two_workload)
 
     finally:
         attribution_api._PROVIDER_BOUNDARY._provider_call = original_provider_call
@@ -407,6 +415,11 @@ async def _run_measurement(
             "allocation_pool_size": allocation_pool_size,
             "warm_key_space_size": warm_key_space_size,
             "cold_pair_count": cold_pairs,
+            "phase_strategy": (
+                "sync_adjacent_pairs"
+                if prewarm_run_sync
+                else "two_phase_with_settle_window"
+            ),
             "distinct_allocation_count": len(distinct_allocations),
             "distinct_user_count": len(distinct_users),
             "distinct_entity_type_count": len({sample.entity_type for sample in samples}),
