@@ -61,10 +61,27 @@ def _float_field(summary: dict[str, Any], key: str, *, section: str = "workload_
 
 def _load_latency_model(path: Path) -> dict[str, Any]:
     payload = _load_json(path)
-    required_keys = ("provider_delay_ms", "minimum_provider_delay_ms")
+    required_keys = (
+        "provider_delay_ms",
+        "minimum_provider_delay_ms",
+        "calibration_procedure",
+        "calibration_evidence",
+    )
     missing = [key for key in required_keys if key not in payload]
     if missing:
         raise ValueError(f"latency_model_missing_required_keys:{','.join(missing)}")
+    procedure = payload.get("calibration_procedure")
+    evidence = payload.get("calibration_evidence")
+    if not isinstance(procedure, dict):
+        raise ValueError("latency_model_missing_empirical_calibration_procedure")
+    if not isinstance(evidence, dict):
+        raise ValueError("latency_model_missing_empirical_calibration_evidence")
+    command = procedure.get("command")
+    artifact_refs = evidence.get("artifact_refs")
+    if not isinstance(command, str) or not command.strip():
+        raise ValueError("latency_model_calibration_procedure_command_missing")
+    if not isinstance(artifact_refs, list) or not artifact_refs:
+        raise ValueError("latency_model_calibration_evidence_artifact_refs_missing")
     return payload
 
 
@@ -77,6 +94,8 @@ def _adjudicate(
     provider_delay_min_ms: float,
     latency_model_provider_delay_ms: int,
     latency_model_min_provider_delay_ms: int,
+    min_total_requests: int,
+    min_cold_path_samples: int,
     min_distinct_allocations: int,
     min_distinct_determinants: int,
     min_distinct_users: int,
@@ -170,12 +189,20 @@ def _adjudicate(
     _require(baseline_hit_ratio is not None, failures, "baseline_missing_cache_hit_ratio")
 
     for payload, label in ((baseline, "baseline"), (prewarm, "prewarm")):
+        total_requests = _int_field(payload, "requests", section="")
         distinct_allocations = _int_field(payload, "distinct_allocation_count")
         distinct_determinants = _int_field(payload, "distinct_cache_determinant_count")
         distinct_users = _int_field(payload, "distinct_user_count")
         max_per_determinant = _int_field(payload, "max_requests_per_determinant")
         duplicate_ratio = _float_field(payload, "duplicate_request_ratio")
         unique_ratio = _float_field(payload, "unique_determinant_ratio")
+        configured_cold_requests = _int_field(payload, "configured_cold_request_count")
+        cold_path_samples = (
+            configured_cold_requests
+            if configured_cold_requests is not None
+            else _state_count(payload, "cold_path_generated")
+        )
+        _require(total_requests is not None, failures, f"{label}_missing_total_requests")
         _require(
             distinct_allocations is not None,
             failures,
@@ -201,6 +228,20 @@ def _adjudicate(
             unique_ratio is not None,
             failures,
             f"{label}_missing_unique_determinant_ratio",
+        )
+        if total_requests is not None:
+            _require(
+                total_requests >= min_total_requests,
+                failures,
+                f"{label}_total_requests_below_min:{total_requests}<{min_total_requests}",
+            )
+        _require(
+            cold_path_samples >= min_cold_path_samples,
+            failures,
+            (
+                f"{label}_configured_cold_request_count_below_min:"
+                f"{cold_path_samples}<{min_cold_path_samples}"
+            ),
         )
         if distinct_allocations is not None:
             _require(
@@ -300,12 +341,14 @@ def main(argv: list[str]) -> int:
         "--latency-model-file",
         default="contracts-internal/governance/b17_p6_benchmark_latency_model.main.json",
     )
-    parser.add_argument("--min-distinct-allocations", type=int, default=8)
-    parser.add_argument("--min-distinct-determinants", type=int, default=40)
-    parser.add_argument("--min-distinct-users", type=int, default=20)
+    parser.add_argument("--min-total-requests", type=int, default=100)
+    parser.add_argument("--min-cold-path-samples", type=int, default=30)
+    parser.add_argument("--min-distinct-allocations", type=int, default=10)
+    parser.add_argument("--min-distinct-determinants", type=int, default=50)
+    parser.add_argument("--min-distinct-users", type=int, default=25)
     parser.add_argument("--max-requests-per-determinant", type=int, default=4)
-    parser.add_argument("--max-duplicate-request-ratio", type=float, default=0.55)
-    parser.add_argument("--min-unique-determinant-ratio", type=float, default=0.45)
+    parser.add_argument("--max-duplicate-request-ratio", type=float, default=0.50)
+    parser.add_argument("--min-unique-determinant-ratio", type=float, default=0.50)
     args = parser.parse_args(argv[1:])
 
     baseline_path = Path(args.baseline_file).resolve()
@@ -339,6 +382,8 @@ def main(argv: list[str]) -> int:
         provider_delay_min_ms=float(args.provider_delay_min_ms),
         latency_model_provider_delay_ms=int(latency_model["provider_delay_ms"]),
         latency_model_min_provider_delay_ms=int(latency_model["minimum_provider_delay_ms"]),
+        min_total_requests=int(args.min_total_requests),
+        min_cold_path_samples=int(args.min_cold_path_samples),
         min_distinct_allocations=int(args.min_distinct_allocations),
         min_distinct_determinants=int(args.min_distinct_determinants),
         min_distinct_users=int(args.min_distinct_users),

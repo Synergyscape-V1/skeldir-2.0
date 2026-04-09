@@ -40,6 +40,8 @@ def _write_payload(
     cold_count: int,
     prewarm_assisted: int,
     provider_delay_ms: int = 120,
+    total_requests: int = 100,
+    configured_cold_request_count: int = 30,
     distinct_allocations: int = 12,
     distinct_determinants: int = 60,
     distinct_users: int = 30,
@@ -49,6 +51,7 @@ def _write_payload(
 ) -> None:
     payload = {
         "prewarm_enabled": prewarm_enabled,
+        "requests": total_requests,
         "provider_delay_ms": provider_delay_ms,
         "latency_ms": {
             "overall_p95": overall_p95,
@@ -62,6 +65,7 @@ def _write_payload(
             "warm_cache_hit": 75,
         },
         "workload_profile": {
+            "configured_cold_request_count": configured_cold_request_count,
             "distinct_allocation_count": distinct_allocations,
             "distinct_cache_determinant_count": distinct_determinants,
             "distinct_user_count": distinct_users,
@@ -79,6 +83,19 @@ def _write_latency_model(
     payload = {
         "provider_delay_ms": provider_delay_ms,
         "minimum_provider_delay_ms": minimum_provider_delay_ms,
+        "calibration_procedure": {
+            "method": "cold_path_sampling",
+            "command": (
+                "python scripts/benchmarks/b17_p4_mixed_workload.py --mode measure "
+                "--requests 100 --warm-ratio 0.70 --provider-delay-ms 120"
+            ),
+        },
+        "calibration_evidence": {
+            "artifact_refs": [
+                "artifacts/b17_p4_benchmark/baseline_no_prewarm.json",
+                "artifacts/b17_p4_benchmark/prewarm_enabled.json",
+            ]
+        },
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -301,3 +318,51 @@ def test_b17_p6_benchmark_adjudication_enforcer_fails_on_workload_anti_cheat_reg
     assert "baseline_max_requests_per_determinant_above_max" in combined
     assert "baseline_duplicate_request_ratio_above_max" in combined
     assert "baseline_unique_determinant_ratio_below_min" in combined
+
+
+def test_b17_p6_benchmark_adjudication_enforcer_fails_on_volumetric_floor_regression(
+    tmp_path: Path,
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.json"
+    _write_latency_model(latency_model)
+    _write_payload(
+        baseline,
+        prewarm_enabled=False,
+        overall_p95=480.0,
+        warm_p95=120.0,
+        cold_p95=690.0,
+        hit_ratio=0.62,
+        cold_count=30,
+        prewarm_assisted=0,
+        total_requests=80,
+        configured_cold_request_count=24,
+    )
+    _write_payload(
+        prewarm,
+        prewarm_enabled=True,
+        overall_p95=460.0,
+        warm_p95=110.0,
+        cold_p95=510.0,
+        hit_ratio=0.72,
+        cold_count=12,
+        prewarm_assisted=12,
+        total_requests=80,
+        configured_cold_request_count=24,
+    )
+
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "baseline_total_requests_below_min" in combined
+    assert "prewarm_total_requests_below_min" in combined
+    assert "baseline_configured_cold_request_count_below_min" in combined
+    assert "prewarm_configured_cold_request_count_below_min" in combined

@@ -328,7 +328,9 @@ async def _run_measurement(
 
     attribution_api._PROVIDER_BOUNDARY._provider_call = _delayed_provider
     auth_module.assert_access_token_active = _allow_active_token
-    attribution_api.settings.LLM_B17_PREWARM_ENABLED = prewarm_enabled
+    # Keep warm-key priming prewarm-neutral so benchmark efficacy reflects
+    # measured workload behavior rather than setup traffic budget consumption.
+    attribution_api.settings.LLM_B17_PREWARM_ENABLED = False
     attribution_api.settings.LLM_B17_PREWARM_RUN_SYNC = prewarm_run_sync
     attribution_api.settings.LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES = (
         "channel_performance,attribution_score"
@@ -367,6 +369,8 @@ async def _run_measurement(
                         entity_type=entity_type,
                         user_id=warm_user,
                     )
+
+            attribution_api.settings.LLM_B17_PREWARM_ENABLED = prewarm_enabled
 
             warm_workload: list[tuple[UUID, str, UUID]] = []
             for idx in range(warm_request_count):
@@ -507,6 +511,8 @@ async def _run_measurement(
         "workload_profile": {
             "allocation_pool_size": allocation_pool_size,
             "warm_key_space_size": warm_key_space_size,
+            "configured_warm_request_count": warm_request_count,
+            "configured_cold_request_count": cold_request_count,
             "cold_pair_count": cold_pairs,
             "phase_strategy": (
                 "sync_adjacent_pairs"

@@ -54,40 +54,40 @@ jobs:
           mkdir -p artifacts/b17_p4_benchmark
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode integrity \
-            --requests 80 \
+            --requests 100 \
             --warm-ratio 0.70 \
             --concurrency 2 \
             --provider-delay-ms 650 \
             --allocation-pool-size 12 \
-            --warm-key-space-size 16 \
+            --warm-key-space-size 20 \
             --output artifacts/b17_p4_benchmark/integrity.json
 
       - name: Baseline mixed-workload (prewarm disabled)
         run: |
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode measure \
-            --requests 80 \
+            --requests 100 \
             --warm-ratio 0.70 \
             --concurrency 2 \
             --provider-delay-ms 120 \
             --prewarm-enabled false \
             --prewarm-run-sync false \
             --allocation-pool-size 12 \
-            --warm-key-space-size 16 \
+            --warm-key-space-size 20 \
             --output artifacts/b17_p4_benchmark/baseline_no_prewarm.json
 
       - name: Mixed-workload with bounded event-driven prewarm
         run: |
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode measure \
-            --requests 80 \
+            --requests 100 \
             --warm-ratio 0.70 \
             --concurrency 2 \
             --provider-delay-ms 120 \
             --prewarm-enabled true \
             --prewarm-run-sync false \
             --allocation-pool-size 12 \
-            --warm-key-space-size 16 \
+            --warm-key-space-size 20 \
             --output artifacts/b17_p4_benchmark/prewarm_enabled.json
 
       - name: Enforce B1.7-P6 benchmark adjudication gates
@@ -99,12 +99,14 @@ jobs:
             --cache-hit-ratio-min 0.60 \
             --provider-delay-min-ms 50 \
             --latency-model-file contracts-internal/governance/b17_p6_benchmark_latency_model.main.json \
-            --min-distinct-allocations 8 \
-            --min-distinct-determinants 40 \
-            --min-distinct-users 20 \
+            --min-total-requests 100 \
+            --min-cold-path-samples 30 \
+            --min-distinct-allocations 10 \
+            --min-distinct-determinants 50 \
+            --min-distinct-users 25 \
             --max-requests-per-determinant 4 \
-            --max-duplicate-request-ratio 0.55 \
-            --min-unique-determinant-ratio 0.45
+            --max-duplicate-request-ratio 0.50 \
+            --min-unique-determinant-ratio 0.50
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
