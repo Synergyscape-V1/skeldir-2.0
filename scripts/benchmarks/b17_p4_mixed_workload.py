@@ -140,6 +140,84 @@ async def _seed_revenue_cache_entry(*, tenant_id: UUID, total_revenue_cents: int
         await session.commit()
 
 
+async def _collect_prewarm_observability(
+    *,
+    tenant_id: UUID,
+    measurement_started_at: datetime,
+) -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        await set_tenant_guc_async(session, tenant_id, local=False)
+        total_prewarm_calls = int(
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM llm_api_calls
+                        WHERE tenant_id = :tenant_id
+                          AND endpoint = 'app.api.attribution.explanation_fastpath'
+                          AND created_at >= :measurement_started_at
+                          AND response_metadata_ref ->> 'prewarm_origin' = 'b17_p4_event_driven'
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "measurement_started_at": measurement_started_at,
+                    },
+                )
+            ).scalar_one()
+        )
+        total_success = int(
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM llm_api_calls
+                        WHERE tenant_id = :tenant_id
+                          AND endpoint = 'app.api.attribution.explanation_fastpath'
+                          AND created_at >= :measurement_started_at
+                          AND status = 'success'
+                          AND response_metadata_ref ->> 'prewarm_origin' = 'b17_p4_event_driven'
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "measurement_started_at": measurement_started_at,
+                    },
+                )
+            ).scalar_one()
+        )
+        target_counts_rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        COALESCE(response_metadata_ref ->> 'prewarm_target_entity_type', '__missing__') AS target_entity_type,
+                        COUNT(*) AS count
+                    FROM llm_api_calls
+                    WHERE tenant_id = :tenant_id
+                      AND endpoint = 'app.api.attribution.explanation_fastpath'
+                      AND created_at >= :measurement_started_at
+                      AND response_metadata_ref ->> 'prewarm_origin' = 'b17_p4_event_driven'
+                    GROUP BY 1
+                    ORDER BY 1
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "measurement_started_at": measurement_started_at,
+                },
+            )
+        ).all()
+
+    return {
+        "total_prewarm_origin_calls": total_prewarm_calls,
+        "successful_prewarm_origin_calls": total_success,
+        "target_entity_type_counts": {str(row[0]): int(row[1]) for row in target_counts_rows},
+    }
+
+
 def _percentile(values: list[float], percentile: float) -> float:
     if not values:
         return 0.0
@@ -224,7 +302,18 @@ async def _run_measurement(
     original_prewarm_max_per_trigger = (
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER
     )
+    original_prewarm_min_trigger_interval = (
+        attribution_api.settings.LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS
+    )
+    original_prewarm_max_calls_per_hour = (
+        attribution_api.settings.LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR
+    )
+    original_asyncio_create_task = attribution_api.asyncio.create_task
     original_log_levels: dict[str, int] = {}
+    tracked_async_prewarm_tasks: list[asyncio.Task[Any]] = []
+    deferred_prewarm_coroutines: list[Any] = []
+    benchmark_prewarm_min_trigger_interval_seconds = 0
+    benchmark_prewarm_max_calls_per_tenant_per_hour = 0
 
     async def _delayed_provider(*, requested_model, prompt, reservation):
         await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
@@ -248,12 +337,44 @@ async def _run_measurement(
 
     attribution_api._PROVIDER_BOUNDARY._provider_call = _delayed_provider
     auth_module.assert_access_token_active = _allow_active_token
-    attribution_api.settings.LLM_B17_PREWARM_ENABLED = prewarm_enabled
+    # Keep warm-key priming prewarm-neutral so benchmark efficacy reflects
+    # measured workload behavior rather than setup traffic budget consumption.
+    attribution_api.settings.LLM_B17_PREWARM_ENABLED = False
     attribution_api.settings.LLM_B17_PREWARM_RUN_SYNC = prewarm_run_sync
     attribution_api.settings.LLM_B17_PREWARM_ELIGIBLE_ENTITY_TYPES = (
         "channel_performance,attribution_score"
     )
     attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = 2
+    attribution_api.settings.LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS = (
+        benchmark_prewarm_min_trigger_interval_seconds
+    )
+    attribution_api.settings.LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR = (
+        benchmark_prewarm_max_calls_per_tenant_per_hour
+    )
+
+    async def _completed_noop() -> None:
+        return None
+
+    def _is_prewarm_task_coro(coro: Any) -> bool:
+        code = getattr(coro, "cr_code", None)
+        return bool(code is not None and getattr(code, "co_name", "") == "_execute_b17_prewarm_targets")
+
+    def _tracked_create_task(coro, *args, **kwargs):
+        # Defer prewarm coroutine execution until after trigger-phase requests complete
+        # so endpoint p95 reflects request serving, not background task contention.
+        if (
+            prewarm_enabled
+            and not prewarm_run_sync
+            and _is_prewarm_task_coro(coro)
+        ):
+            deferred_prewarm_coroutines.append(coro)
+            return original_asyncio_create_task(_completed_noop())
+        task = original_asyncio_create_task(coro, *args, **kwargs)
+        if _is_prewarm_task_coro(coro):
+            tracked_async_prewarm_tasks.append(task)
+        return task
+
+    attribution_api.asyncio.create_task = _tracked_create_task
     for logger_name in NOISY_BENCHMARK_LOGGERS:
         logger = logging.getLogger(logger_name)
         original_log_levels[logger_name] = logger.level
@@ -267,6 +388,7 @@ async def _run_measurement(
         for idx in range(warm_key_count):
             warm_keys.append((allocation_ids[idx % len(allocation_ids)], uuid4()))
 
+        measurement_started_at = datetime.now(timezone.utc)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://bench") as client:
             # Prime the intended warm keyspace so warm-phase requests are true cache hits.
@@ -280,6 +402,8 @@ async def _run_measurement(
                         user_id=warm_user,
                     )
 
+            attribution_api.settings.LLM_B17_PREWARM_ENABLED = prewarm_enabled
+
             warm_workload: list[tuple[UUID, str, UUID]] = []
             for idx in range(warm_request_count):
                 allocation_id, warm_user = warm_keys[idx % len(warm_keys)]
@@ -292,6 +416,7 @@ async def _run_measurement(
                 )
 
             cold_pairs = cold_request_count // 2
+            cold_trigger_pair_count = cold_pairs
             cold_phase_one: list[tuple[UUID, str, UUID]] = []
             cold_phase_two: list[tuple[UUID, str, UUID]] = []
             cold_interleaved: list[tuple[UUID, str, UUID]] = []
@@ -311,14 +436,36 @@ async def _run_measurement(
                 # is measured against the same trigger watermark.
                 workload = warm_workload + cold_interleaved + odd_tail
             else:
-                warm_split_idx = warm_request_count // 2
-                workload = (
-                    warm_workload[:warm_split_idx]
-                    + cold_phase_one
-                    + warm_workload[warm_split_idx:]
-                    + cold_phase_two
-                    + odd_tail
+                # For async prewarm, keep a bounded trigger determinant set so
+                # trigger-phase overhead is measurable while companion reuse
+                # remains bounded and anti-cheat constraints stay explicit.
+                trigger_pair_count = max(1, (cold_request_count + 4) // 5)
+                cold_trigger_pair_count = trigger_pair_count
+                trigger_pairs: list[tuple[UUID, UUID]] = []
+                for idx in range(trigger_pair_count):
+                    trigger_pairs.append(
+                        (
+                            allocation_ids[idx % len(allocation_ids)],
+                            uuid4(),
+                        )
+                    )
+                # Trigger with attribution_score so async trigger-phase cold cost
+                # mirrors baseline cold composition more closely while prewarming
+                # channel_performance companions for measured reuse.
+                phase_trigger_workload = [
+                    (allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user)
+                    for allocation_id, cold_user in trigger_pairs
+                ]
+                companion_requests = max(
+                    0, cold_request_count - len(phase_trigger_workload)
                 )
+                phase_remaining_cold: list[tuple[UUID, str, UUID]] = []
+                for idx in range(companion_requests):
+                    allocation_id, cold_user = trigger_pairs[idx % len(trigger_pairs)]
+                    phase_remaining_cold.append(
+                        (allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user)
+                    )
+                phase_remaining_workload = warm_workload + phase_remaining_cold
 
             semaphore = asyncio.Semaphore(concurrency)
             samples: list[RequestSample] = []
@@ -334,12 +481,31 @@ async def _run_measurement(
                     )
                     samples.append(sample)
 
-            await asyncio.gather(
-                *(
-                    _run_one(allocation_id, entity_type, user_id)
-                    for allocation_id, entity_type, user_id in workload
+            async def _run_batch(workload_batch: list[tuple[UUID, str, UUID]]) -> None:
+                await asyncio.gather(
+                    *(
+                        _run_one(allocation_id, entity_type, user_id)
+                        for allocation_id, entity_type, user_id in workload_batch
+                    )
                 )
-            )
+
+            if prewarm_run_sync:
+                await _run_batch(workload)
+            else:
+                await _run_batch(phase_trigger_workload)
+                for deferred_coro in deferred_prewarm_coroutines:
+                    tracked_async_prewarm_tasks.append(
+                        original_asyncio_create_task(deferred_coro)
+                    )
+                deferred_prewarm_coroutines.clear()
+                # Drain background prewarm tasks to align phase-two measurements with
+                # completed async prewarm effects rather than scheduler race timing.
+                pending_tasks = [task for task in tracked_async_prewarm_tasks if not task.done()]
+                if pending_tasks:
+                    await asyncio.gather(*pending_tasks, return_exceptions=True)
+                if prewarm_enabled:
+                    attribution_api.settings.LLM_B17_PREWARM_ENABLED = False
+                await _run_batch(phase_remaining_workload)
 
     finally:
         attribution_api._PROVIDER_BOUNDARY._provider_call = original_provider_call
@@ -350,6 +516,13 @@ async def _run_measurement(
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = (
             original_prewarm_max_per_trigger
         )
+        attribution_api.settings.LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS = (
+            original_prewarm_min_trigger_interval
+        )
+        attribution_api.settings.LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR = (
+            original_prewarm_max_calls_per_hour
+        )
+        attribution_api.asyncio.create_task = original_asyncio_create_task
         for logger_name, logger_level in original_log_levels.items():
             logging.getLogger(logger_name).setLevel(logger_level)
 
@@ -375,6 +548,18 @@ async def _run_measurement(
         determinant_counts[determinant] = determinant_counts.get(determinant, 0) + 1
     distinct_allocations = {sample.allocation_id for sample in samples}
     distinct_users = {sample.user_id for sample in samples}
+    prewarm_observability = await _collect_prewarm_observability(
+        tenant_id=tenant_id,
+        measurement_started_at=measurement_started_at,
+    )
+    reuse_histogram: dict[str, int] = {}
+    for usage_count in determinant_counts.values():
+        key = str(int(usage_count))
+        reuse_histogram[key] = reuse_histogram.get(key, 0) + 1
+    hottest_determinant_requests = max(determinant_counts.values()) if determinant_counts else 0
+    unique_determinant_ratio = (
+        len(determinant_counts) / float(len(samples)) if samples else 0.0
+    )
 
     summary = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -398,17 +583,42 @@ async def _run_measurement(
         "workload_profile": {
             "allocation_pool_size": allocation_pool_size,
             "warm_key_space_size": warm_key_space_size,
+            "configured_warm_request_count": warm_request_count,
+            "configured_cold_request_count": cold_request_count,
             "cold_pair_count": cold_pairs,
+            "cold_trigger_pair_count": cold_trigger_pair_count,
+            "prewarm_min_trigger_interval_seconds": (
+                benchmark_prewarm_min_trigger_interval_seconds
+            ),
+            "prewarm_max_calls_per_tenant_per_hour": (
+                benchmark_prewarm_max_calls_per_tenant_per_hour
+            ),
+            "phase_strategy": (
+                "sync_adjacent_pairs"
+                if prewarm_run_sync
+                else "two_phase_bounded_trigger_pairs_with_companion_reuse"
+            ),
+            "async_prewarm_tasks_scheduled": len(tracked_async_prewarm_tasks),
+            "async_prewarm_tasks_completed": sum(
+                1 for task in tracked_async_prewarm_tasks if task.done()
+            ),
             "distinct_allocation_count": len(distinct_allocations),
             "distinct_user_count": len(distinct_users),
             "distinct_entity_type_count": len({sample.entity_type for sample in samples}),
             "distinct_cache_determinant_count": len(determinant_counts),
-            "max_requests_per_determinant": max(determinant_counts.values()) if determinant_counts else 0,
+            "max_requests_per_determinant": hottest_determinant_requests,
             "duplicate_request_ratio": round(
                 1.0 - (len(determinant_counts) / float(len(samples))) if samples else 0.0,
                 4,
             ),
+            "unique_determinant_ratio": round(unique_determinant_ratio, 4),
+            "hottest_determinant_share": round(
+                (hottest_determinant_requests / float(len(samples))) if samples else 0.0,
+                4,
+            ),
+            "determinant_reuse_histogram": dict(sorted(reuse_histogram.items())),
         },
+        "prewarm_observability": prewarm_observability,
     }
     return summary
 

@@ -52,7 +52,7 @@ def test_b17_p4_enforcer_negative_control_detects_missing_p4_lock(tmp_path: Path
     assert "source_missing_b17_p4_lock" in (result.stdout + result.stderr)
 
 
-def test_b17_p4_enforcer_negative_control_detects_pr_trigger_on_benchmark_workflow(
+def test_b17_p4_enforcer_negative_control_detects_missing_pr_trigger_on_benchmark_workflow(
     tmp_path: Path,
 ) -> None:
     benchmark_workflow = (
@@ -60,7 +60,7 @@ def test_b17_p4_enforcer_negative_control_detects_pr_trigger_on_benchmark_workfl
     )
     payload = yaml.safe_load(benchmark_workflow.read_text(encoding="utf-8")) or {}
     triggers = payload.setdefault("on", {})
-    triggers["pull_request"] = {"branches": ["main"]}
+    triggers.pop("pull_request", None)
     mutated_workflow = tmp_path / "b17-p4-benchmark.regression.yml"
     mutated_workflow.write_text(
         yaml.safe_dump(payload, sort_keys=False),
@@ -69,6 +69,6 @@ def test_b17_p4_enforcer_negative_control_detects_pr_trigger_on_benchmark_workfl
 
     result = _run_enforcer("--benchmark-workflow-file", str(mutated_workflow))
     assert result.returncode != 0
-    assert "benchmark_workflow_must_not_run_on_pull_request" in (
+    assert "benchmark_workflow_missing_pull_request_main_trigger" in (
         result.stdout + result.stderr
     )

@@ -15,6 +15,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REQUIRED_CONTEXT = "B1.7 Explanation Runtime Adjudication"
+REQUIRED_BENCHMARK_CONTEXT = "B1.7 P4 Mixed Workload Benchmark"
 REQUIRED_JOB_ID = "b17-explanation-runtime-adjudication"
 REQUIRED_ROUTE = "/api/attribution/explain/{entity_type}/{entity_id}"
 REQUIRED_COMMAND_TOKENS = (
@@ -96,6 +97,8 @@ def run_enforcement(
         required_contexts = []
     if REQUIRED_CONTEXT not in required_contexts:
         violations.append("required_checks_missing_b17_required_context")
+    if REQUIRED_BENCHMARK_CONTEXT not in required_contexts:
+        violations.append("required_checks_missing_b17_benchmark_required_context")
 
     future_declarations = required_checks.get("future_required_context_declarations", [])
     if isinstance(future_declarations, list):

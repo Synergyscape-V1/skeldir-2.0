@@ -40,12 +40,18 @@ def _write_payload(
     cold_count: int,
     prewarm_assisted: int,
     provider_delay_ms: int = 120,
+    total_requests: int = 100,
+    configured_cold_request_count: int = 30,
     distinct_allocations: int = 12,
     distinct_determinants: int = 60,
     distinct_users: int = 30,
+    max_requests_per_determinant: int = 4,
+    duplicate_request_ratio: float = 0.5,
+    unique_determinant_ratio: float = 0.5,
 ) -> None:
     payload = {
         "prewarm_enabled": prewarm_enabled,
+        "requests": total_requests,
         "provider_delay_ms": provider_delay_ms,
         "latency_ms": {
             "overall_p95": overall_p95,
@@ -59,9 +65,36 @@ def _write_payload(
             "warm_cache_hit": 75,
         },
         "workload_profile": {
+            "configured_cold_request_count": configured_cold_request_count,
             "distinct_allocation_count": distinct_allocations,
             "distinct_cache_determinant_count": distinct_determinants,
             "distinct_user_count": distinct_users,
+            "max_requests_per_determinant": max_requests_per_determinant,
+            "duplicate_request_ratio": duplicate_request_ratio,
+            "unique_determinant_ratio": unique_determinant_ratio,
+        },
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _write_latency_model(
+    path: Path, *, provider_delay_ms: int = 120, minimum_provider_delay_ms: int = 50
+) -> None:
+    payload = {
+        "provider_delay_ms": provider_delay_ms,
+        "minimum_provider_delay_ms": minimum_provider_delay_ms,
+        "calibration_procedure": {
+            "method": "cold_path_sampling",
+            "command": (
+                "python scripts/benchmarks/b17_p4_mixed_workload.py --mode measure "
+                "--requests 100 --warm-ratio 0.70 --provider-delay-ms 120"
+            ),
+        },
+        "calibration_evidence": {
+            "artifact_refs": [
+                "artifacts/b17_p4_benchmark/baseline_no_prewarm.json",
+                "artifacts/b17_p4_benchmark/prewarm_enabled.json",
+            ]
         },
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -70,6 +103,8 @@ def _write_payload(
 def test_b17_p6_benchmark_adjudication_enforcer_passes_with_valid_payloads(tmp_path: Path) -> None:
     baseline = tmp_path / "baseline.json"
     prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.json"
+    _write_latency_model(latency_model)
     _write_payload(
         baseline,
         prewarm_enabled=False,
@@ -83,7 +118,7 @@ def test_b17_p6_benchmark_adjudication_enforcer_passes_with_valid_payloads(tmp_p
     _write_payload(
         prewarm,
         prewarm_enabled=True,
-        overall_p95=495.0,
+        overall_p95=470.0,
         warm_p95=115.0,
         cold_p95=500.0,
         hit_ratio=0.72,
@@ -91,7 +126,14 @@ def test_b17_p6_benchmark_adjudication_enforcer_passes_with_valid_payloads(tmp_p
         prewarm_assisted=18,
     )
 
-    result = _run_enforcer("--baseline-file", str(baseline), "--prewarm-file", str(prewarm))
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     assert "result=PASS" in result.stdout
 
@@ -99,6 +141,8 @@ def test_b17_p6_benchmark_adjudication_enforcer_passes_with_valid_payloads(tmp_p
 def test_b17_p6_benchmark_adjudication_enforcer_fails_on_slo_regression(tmp_path: Path) -> None:
     baseline = tmp_path / "baseline.json"
     prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.json"
+    _write_latency_model(latency_model, provider_delay_ms=120, minimum_provider_delay_ms=50)
     _write_payload(
         baseline,
         prewarm_enabled=False,
@@ -124,10 +168,201 @@ def test_b17_p6_benchmark_adjudication_enforcer_fails_on_slo_regression(tmp_path
         distinct_users=5,
     )
 
-    result = _run_enforcer("--baseline-file", str(baseline), "--prewarm-file", str(prewarm))
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "overall_p95_not_below_target" in combined
     assert "cache_hit_ratio_not_above_target" in combined
     assert "prewarm_provider_delay_below_min" in combined
-    assert "prewarm_efficacy_missing_latency_or_cache_availability_gain" in combined
+    assert "prewarm_efficacy_no_comparative_overall_p95_improvement" in combined
+    assert "prewarm_efficacy_no_comparative_cache_hit_improvement" in combined
+
+
+def test_b17_p6_benchmark_adjudication_enforcer_fails_when_prewarm_does_not_improve_comparatively(
+    tmp_path: Path,
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.json"
+    _write_latency_model(latency_model)
+    _write_payload(
+        baseline,
+        prewarm_enabled=False,
+        overall_p95=335.63,
+        warm_p95=184.84,
+        cold_p95=368.89,
+        hit_ratio=0.70,
+        cold_count=24,
+        prewarm_assisted=0,
+    )
+    _write_payload(
+        prewarm,
+        prewarm_enabled=True,
+        overall_p95=398.53,
+        warm_p95=244.15,
+        cold_p95=400.83,
+        hit_ratio=0.70,
+        cold_count=24,
+        prewarm_assisted=16,
+    )
+
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "prewarm_efficacy_no_comparative_overall_p95_improvement" in combined
+    assert "prewarm_efficacy_no_comparative_cache_hit_improvement" in combined
+
+
+def test_b17_p6_benchmark_adjudication_enforcer_fails_on_latency_model_mismatch(
+    tmp_path: Path,
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.json"
+    _write_latency_model(latency_model, provider_delay_ms=120, minimum_provider_delay_ms=50)
+    _write_payload(
+        baseline,
+        prewarm_enabled=False,
+        overall_p95=480.0,
+        warm_p95=120.0,
+        cold_p95=700.0,
+        hit_ratio=0.61,
+        cold_count=30,
+        prewarm_assisted=0,
+        provider_delay_ms=100,
+    )
+    _write_payload(
+        prewarm,
+        prewarm_enabled=True,
+        overall_p95=460.0,
+        warm_p95=110.0,
+        cold_p95=520.0,
+        hit_ratio=0.70,
+        cold_count=20,
+        prewarm_assisted=10,
+        provider_delay_ms=100,
+    )
+
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "baseline_provider_delay_not_authoritative" in combined
+    assert "prewarm_provider_delay_not_authoritative" in combined
+
+
+def test_b17_p6_benchmark_adjudication_enforcer_fails_on_workload_anti_cheat_regression(
+    tmp_path: Path,
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.json"
+    _write_latency_model(latency_model)
+    _write_payload(
+        baseline,
+        prewarm_enabled=False,
+        overall_p95=480.0,
+        warm_p95=120.0,
+        cold_p95=690.0,
+        hit_ratio=0.62,
+        cold_count=30,
+        prewarm_assisted=0,
+        max_requests_per_determinant=5,
+        duplicate_request_ratio=0.70,
+        unique_determinant_ratio=0.30,
+    )
+    _write_payload(
+        prewarm,
+        prewarm_enabled=True,
+        overall_p95=460.0,
+        warm_p95=110.0,
+        cold_p95=510.0,
+        hit_ratio=0.70,
+        cold_count=20,
+        prewarm_assisted=12,
+        max_requests_per_determinant=5,
+        duplicate_request_ratio=0.70,
+        unique_determinant_ratio=0.30,
+    )
+
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "baseline_max_requests_per_determinant_above_max" in combined
+    assert "baseline_duplicate_request_ratio_above_max" in combined
+    assert "baseline_unique_determinant_ratio_below_min" in combined
+
+
+def test_b17_p6_benchmark_adjudication_enforcer_fails_on_volumetric_floor_regression(
+    tmp_path: Path,
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.json"
+    _write_latency_model(latency_model)
+    _write_payload(
+        baseline,
+        prewarm_enabled=False,
+        overall_p95=480.0,
+        warm_p95=120.0,
+        cold_p95=690.0,
+        hit_ratio=0.62,
+        cold_count=30,
+        prewarm_assisted=0,
+        total_requests=80,
+        configured_cold_request_count=24,
+    )
+    _write_payload(
+        prewarm,
+        prewarm_enabled=True,
+        overall_p95=460.0,
+        warm_p95=110.0,
+        cold_p95=510.0,
+        hit_ratio=0.72,
+        cold_count=12,
+        prewarm_assisted=12,
+        total_requests=80,
+        configured_cold_request_count=24,
+    )
+
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "baseline_total_requests_below_min" in combined
+    assert "prewarm_total_requests_below_min" in combined
+    assert "baseline_configured_cold_request_count_below_min" in combined
+    assert "prewarm_configured_cold_request_count_below_min" in combined
