@@ -56,7 +56,7 @@ jobs:
             --mode integrity \
             --requests 100 \
             --warm-ratio 0.50 \
-            --concurrency 2 \
+            --concurrency 4 \
             --provider-delay-ms 650 \
             --allocation-pool-size 12 \
             --warm-key-space-size 20 \
@@ -68,7 +68,7 @@ jobs:
             --mode measure \
             --requests 100 \
             --warm-ratio 0.50 \
-            --concurrency 2 \
+            --concurrency 4 \
             --provider-delay-ms 120 \
             --prewarm-enabled false \
             --prewarm-run-sync false \
@@ -82,7 +82,7 @@ jobs:
             --mode measure \
             --requests 100 \
             --warm-ratio 0.50 \
-            --concurrency 2 \
+            --concurrency 4 \
             --provider-delay-ms 120 \
             --prewarm-enabled true \
             --prewarm-run-sync false \
