@@ -59,7 +59,7 @@ jobs:
             --concurrency 2 \
             --provider-delay-ms 650 \
             --allocation-pool-size 12 \
-            --warm-key-space-size 40 \
+            --warm-key-space-size 90 \
             --output artifacts/b17_p4_benchmark/integrity.json
 
       - name: Baseline mixed-workload (prewarm disabled)
@@ -73,7 +73,7 @@ jobs:
             --prewarm-enabled false \
             --prewarm-run-sync false \
             --allocation-pool-size 12 \
-            --warm-key-space-size 40 \
+            --warm-key-space-size 90 \
             --output artifacts/b17_p4_benchmark/baseline_no_prewarm.json
 
       - name: Mixed-workload with bounded event-driven prewarm
@@ -87,7 +87,7 @@ jobs:
             --prewarm-enabled true \
             --prewarm-run-sync false \
             --allocation-pool-size 12 \
-            --warm-key-space-size 40 \
+            --warm-key-space-size 90 \
             --output artifacts/b17_p4_benchmark/prewarm_enabled.json
 
       - name: Enforce B1.7-P6 benchmark adjudication gates

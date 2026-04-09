@@ -8,7 +8,7 @@
   "calibration_basis": "deterministic provider-stub latency model calibrated from measured mixed-workload cold-path signal to prevent zero-latency benchmark gaming",
   "calibration_procedure": {
     "method": "b17_p4_mixed_workload_cold_path_sampling",
-    "command": "python scripts/benchmarks/b17_p4_mixed_workload.py --mode measure --requests 150 --warm-ratio 0.80 --concurrency 2 --provider-delay-ms 120 --prewarm-enabled false --prewarm-run-sync false --allocation-pool-size 12 --warm-key-space-size 40 --output artifacts/b17_p4_benchmark/baseline_no_prewarm.json",
+    "command": "python scripts/benchmarks/b17_p4_mixed_workload.py --mode measure --requests 150 --warm-ratio 0.80 --concurrency 2 --provider-delay-ms 120 --prewarm-enabled false --prewarm-run-sync false --allocation-pool-size 12 --warm-key-space-size 90 --output artifacts/b17_p4_benchmark/baseline_no_prewarm.json",
     "acceptance_criteria": {
       "cold_path_samples_min": 30,
       "cold_path_p95_ms_min_signal": 300
