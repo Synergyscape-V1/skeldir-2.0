@@ -302,10 +302,18 @@ async def _run_measurement(
     original_prewarm_max_per_trigger = (
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER
     )
+    original_prewarm_min_trigger_interval = (
+        attribution_api.settings.LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS
+    )
+    original_prewarm_max_calls_per_hour = (
+        attribution_api.settings.LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR
+    )
     original_asyncio_create_task = attribution_api.asyncio.create_task
     original_log_levels: dict[str, int] = {}
     tracked_async_prewarm_tasks: list[asyncio.Task[Any]] = []
     deferred_prewarm_coroutines: list[Any] = []
+    benchmark_prewarm_min_trigger_interval_seconds = 0
+    benchmark_prewarm_max_calls_per_tenant_per_hour = 0
 
     async def _delayed_provider(*, requested_model, prompt, reservation):
         await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
@@ -337,6 +345,12 @@ async def _run_measurement(
         "channel_performance,attribution_score"
     )
     attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = 2
+    attribution_api.settings.LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS = (
+        benchmark_prewarm_min_trigger_interval_seconds
+    )
+    attribution_api.settings.LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR = (
+        benchmark_prewarm_max_calls_per_tenant_per_hour
+    )
 
     async def _completed_noop() -> None:
         return None
@@ -502,6 +516,12 @@ async def _run_measurement(
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = (
             original_prewarm_max_per_trigger
         )
+        attribution_api.settings.LLM_B17_PREWARM_MIN_TRIGGER_INTERVAL_SECONDS = (
+            original_prewarm_min_trigger_interval
+        )
+        attribution_api.settings.LLM_B17_PREWARM_MAX_CALLS_PER_TENANT_PER_HOUR = (
+            original_prewarm_max_calls_per_hour
+        )
         attribution_api.asyncio.create_task = original_asyncio_create_task
         for logger_name, logger_level in original_log_levels.items():
             logging.getLogger(logger_name).setLevel(logger_level)
@@ -567,6 +587,12 @@ async def _run_measurement(
             "configured_cold_request_count": cold_request_count,
             "cold_pair_count": cold_pairs,
             "cold_trigger_pair_count": cold_trigger_pair_count,
+            "prewarm_min_trigger_interval_seconds": (
+                benchmark_prewarm_min_trigger_interval_seconds
+            ),
+            "prewarm_max_calls_per_tenant_per_hour": (
+                benchmark_prewarm_max_calls_per_tenant_per_hour
+            ),
             "phase_strategy": (
                 "sync_adjacent_pairs"
                 if prewarm_run_sync
