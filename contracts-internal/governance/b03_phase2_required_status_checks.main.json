@@ -46,7 +46,8 @@
     "B1.4 P5 Export Log Artifact No-Leak",
     "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
     "B1.4 P7 E2E Privacy System Proofs",
-    "B1.7 Explanation Runtime Adjudication"
+    "B1.7 Explanation Runtime Adjudication",
+    "B1.7 P4 Mixed Workload Benchmark"
   ],
   "hardware_enforcement": {
     "status": "enforced",

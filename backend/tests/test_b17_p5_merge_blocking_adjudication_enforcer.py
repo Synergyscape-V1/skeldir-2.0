@@ -61,6 +61,31 @@ def test_b17_p5_enforcer_negative_control_missing_required_context(tmp_path: Pat
     assert "required_checks_missing_b17_required_context" in (result.stdout + result.stderr)
 
 
+def test_b17_p5_enforcer_negative_control_missing_required_benchmark_context(
+    tmp_path: Path,
+) -> None:
+    source = (
+        _repo_root()
+        / "contracts-internal"
+        / "governance"
+        / "b03_phase2_required_status_checks.main.json"
+    )
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["required_contexts"] = [
+        value
+        for value in payload.get("required_contexts", [])
+        if value != "B1.7 P4 Mixed Workload Benchmark"
+    ]
+    mutated = tmp_path / "required_checks.benchmark.regression.json"
+    mutated.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    result = _run_enforcer("--required-checks-contract-file", str(mutated))
+    assert result.returncode != 0
+    assert "required_checks_missing_b17_benchmark_required_context" in (
+        result.stdout + result.stderr
+    )
+
+
 def test_b17_p5_enforcer_negative_control_detects_future_decl_only(tmp_path: Path) -> None:
     source = (
         _repo_root()

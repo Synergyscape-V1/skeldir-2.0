@@ -96,9 +96,13 @@ jobs:
             --overall-p95-max-ms 500 \
             --cache-hit-ratio-min 0.60 \
             --provider-delay-min-ms 50 \
+            --latency-model-file contracts-internal/governance/b17_p6_benchmark_latency_model.main.json \
             --min-distinct-allocations 8 \
             --min-distinct-determinants 40 \
-            --min-distinct-users 20
+            --min-distinct-users 20 \
+            --max-requests-per-determinant 4 \
+            --max-duplicate-request-ratio 0.55 \
+            --min-unique-determinant-ratio 0.45
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4

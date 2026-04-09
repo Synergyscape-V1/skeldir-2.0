@@ -375,6 +375,14 @@ async def _run_measurement(
         determinant_counts[determinant] = determinant_counts.get(determinant, 0) + 1
     distinct_allocations = {sample.allocation_id for sample in samples}
     distinct_users = {sample.user_id for sample in samples}
+    reuse_histogram: dict[str, int] = {}
+    for usage_count in determinant_counts.values():
+        key = str(int(usage_count))
+        reuse_histogram[key] = reuse_histogram.get(key, 0) + 1
+    hottest_determinant_requests = max(determinant_counts.values()) if determinant_counts else 0
+    unique_determinant_ratio = (
+        len(determinant_counts) / float(len(samples)) if samples else 0.0
+    )
 
     summary = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -403,11 +411,17 @@ async def _run_measurement(
             "distinct_user_count": len(distinct_users),
             "distinct_entity_type_count": len({sample.entity_type for sample in samples}),
             "distinct_cache_determinant_count": len(determinant_counts),
-            "max_requests_per_determinant": max(determinant_counts.values()) if determinant_counts else 0,
+            "max_requests_per_determinant": hottest_determinant_requests,
             "duplicate_request_ratio": round(
                 1.0 - (len(determinant_counts) / float(len(samples))) if samples else 0.0,
                 4,
             ),
+            "unique_determinant_ratio": round(unique_determinant_ratio, 4),
+            "hottest_determinant_share": round(
+                (hottest_determinant_requests / float(len(samples))) if samples else 0.0,
+                4,
+            ),
+            "determinant_reuse_histogram": dict(sorted(reuse_histogram.items())),
         },
     }
     return summary

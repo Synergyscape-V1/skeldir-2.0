@@ -1,0 +1,11 @@
+{
+  "contract_id": "b17.p6.benchmark_latency_model.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "provider_delay_ms": 120,
+  "minimum_provider_delay_ms": 50,
+  "calibration_basis": "deterministic provider-stub latency model calibrated to preserve cold-path signal and prevent zero-latency benchmark gaming",
+  "authority_note": "P6 benchmark adjudication requires baseline and prewarm runs to use this exact provider_delay_ms value.",
+  "owner": "b1.7-p6"
+}
