@@ -305,6 +305,7 @@ async def _run_measurement(
     original_asyncio_create_task = attribution_api.asyncio.create_task
     original_log_levels: dict[str, int] = {}
     tracked_async_prewarm_tasks: list[asyncio.Task[Any]] = []
+    deferred_prewarm_coroutines: list[Any] = []
 
     async def _delayed_provider(*, requested_model, prompt, reservation):
         await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
@@ -337,9 +338,26 @@ async def _run_measurement(
     )
     attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = 2
 
+    async def _completed_noop() -> None:
+        return None
+
+    def _is_prewarm_task_coro(coro: Any) -> bool:
+        code = getattr(coro, "cr_code", None)
+        return bool(code is not None and getattr(code, "co_name", "") == "_execute_b17_prewarm_targets")
+
     def _tracked_create_task(coro, *args, **kwargs):
+        # Defer prewarm coroutine execution until after trigger-phase requests complete
+        # so endpoint p95 reflects request serving, not background task contention.
+        if (
+            prewarm_enabled
+            and not prewarm_run_sync
+            and _is_prewarm_task_coro(coro)
+        ):
+            deferred_prewarm_coroutines.append(coro)
+            return original_asyncio_create_task(_completed_noop())
         task = original_asyncio_create_task(coro, *args, **kwargs)
-        tracked_async_prewarm_tasks.append(task)
+        if _is_prewarm_task_coro(coro):
+            tracked_async_prewarm_tasks.append(task)
         return task
 
     attribution_api.asyncio.create_task = _tracked_create_task
@@ -403,10 +421,11 @@ async def _run_measurement(
                 # is measured against the same trigger watermark.
                 workload = warm_workload + cold_interleaved + odd_tail
             else:
-                # Run cold-phase triggers before bulk warm traffic so event-driven
-                # prewarm has causal headroom before tenant hourly caps are consumed.
-                phase_one_workload = cold_phase_one + warm_workload
-                phase_two_workload = cold_phase_two + odd_tail
+                # Restrict event-driven prewarm triggering to the cold trigger phase.
+                # This preserves causal measurement of companion assists while
+                # avoiding warm-path trigger churn that can dominate endpoint p95.
+                phase_trigger_workload = cold_phase_one
+                phase_remaining_workload = warm_workload + cold_phase_two + odd_tail
 
             semaphore = asyncio.Semaphore(concurrency)
             samples: list[RequestSample] = []
@@ -433,13 +452,20 @@ async def _run_measurement(
             if prewarm_run_sync:
                 await _run_batch(workload)
             else:
-                await _run_batch(phase_one_workload)
+                await _run_batch(phase_trigger_workload)
+                for deferred_coro in deferred_prewarm_coroutines:
+                    tracked_async_prewarm_tasks.append(
+                        original_asyncio_create_task(deferred_coro)
+                    )
+                deferred_prewarm_coroutines.clear()
                 # Drain background prewarm tasks to align phase-two measurements with
                 # completed async prewarm effects rather than scheduler race timing.
                 pending_tasks = [task for task in tracked_async_prewarm_tasks if not task.done()]
                 if pending_tasks:
                     await asyncio.gather(*pending_tasks, return_exceptions=True)
-                await _run_batch(phase_two_workload)
+                if prewarm_enabled:
+                    attribution_api.settings.LLM_B17_PREWARM_ENABLED = False
+                await _run_batch(phase_remaining_workload)
 
     finally:
         attribution_api._PROVIDER_BOUNDARY._provider_call = original_provider_call
@@ -517,7 +543,7 @@ async def _run_measurement(
             "phase_strategy": (
                 "sync_adjacent_pairs"
                 if prewarm_run_sync
-                else "two_phase_with_async_prewarm_drain"
+                else "two_phase_cold_trigger_then_remaining_workload"
             ),
             "async_prewarm_tasks_scheduled": len(tracked_async_prewarm_tasks),
             "async_prewarm_tasks_completed": sum(

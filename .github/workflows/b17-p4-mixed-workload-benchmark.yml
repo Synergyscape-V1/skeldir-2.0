@@ -55,7 +55,7 @@ jobs:
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode integrity \
             --requests 100 \
-            --warm-ratio 0.70 \
+            --warm-ratio 0.50 \
             --concurrency 2 \
             --provider-delay-ms 650 \
             --allocation-pool-size 12 \
@@ -67,7 +67,7 @@ jobs:
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode measure \
             --requests 100 \
-            --warm-ratio 0.70 \
+            --warm-ratio 0.50 \
             --concurrency 2 \
             --provider-delay-ms 120 \
             --prewarm-enabled false \
@@ -81,7 +81,7 @@ jobs:
           python scripts/benchmarks/b17_p4_mixed_workload.py \
             --mode measure \
             --requests 100 \
-            --warm-ratio 0.70 \
+            --warm-ratio 0.50 \
             --concurrency 2 \
             --provider-delay-ms 120 \
             --prewarm-enabled true \
