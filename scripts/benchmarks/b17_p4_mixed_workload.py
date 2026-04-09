@@ -140,6 +140,84 @@ async def _seed_revenue_cache_entry(*, tenant_id: UUID, total_revenue_cents: int
         await session.commit()
 
 
+async def _collect_prewarm_observability(
+    *,
+    tenant_id: UUID,
+    measurement_started_at: datetime,
+) -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        await set_tenant_guc_async(session, tenant_id, local=False)
+        total_prewarm_calls = int(
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM llm_api_calls
+                        WHERE tenant_id = :tenant_id
+                          AND endpoint = 'app.api.attribution.explanation_fastpath'
+                          AND created_at >= :measurement_started_at
+                          AND response_metadata_ref ->> 'prewarm_origin' = 'b17_p4_event_driven'
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "measurement_started_at": measurement_started_at,
+                    },
+                )
+            ).scalar_one()
+        )
+        total_success = int(
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM llm_api_calls
+                        WHERE tenant_id = :tenant_id
+                          AND endpoint = 'app.api.attribution.explanation_fastpath'
+                          AND created_at >= :measurement_started_at
+                          AND status = 'success'
+                          AND response_metadata_ref ->> 'prewarm_origin' = 'b17_p4_event_driven'
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "measurement_started_at": measurement_started_at,
+                    },
+                )
+            ).scalar_one()
+        )
+        target_counts_rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        COALESCE(response_metadata_ref ->> 'prewarm_target_entity_type', '__missing__') AS target_entity_type,
+                        COUNT(*) AS count
+                    FROM llm_api_calls
+                    WHERE tenant_id = :tenant_id
+                      AND endpoint = 'app.api.attribution.explanation_fastpath'
+                      AND created_at >= :measurement_started_at
+                      AND response_metadata_ref ->> 'prewarm_origin' = 'b17_p4_event_driven'
+                    GROUP BY 1
+                    ORDER BY 1
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "measurement_started_at": measurement_started_at,
+                },
+            )
+        ).all()
+
+    return {
+        "total_prewarm_origin_calls": total_prewarm_calls,
+        "successful_prewarm_origin_calls": total_success,
+        "target_entity_type_counts": {str(row[0]): int(row[1]) for row in target_counts_rows},
+    }
+
+
 def _percentile(values: list[float], percentile: float) -> float:
     if not values:
         return 0.0
@@ -276,6 +354,7 @@ async def _run_measurement(
         for idx in range(warm_key_count):
             warm_keys.append((allocation_ids[idx % len(allocation_ids)], uuid4()))
 
+        measurement_started_at = datetime.now(timezone.utc)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://bench") as client:
             # Prime the intended warm keyspace so warm-phase requests are true cache hits.
@@ -393,6 +472,10 @@ async def _run_measurement(
         determinant_counts[determinant] = determinant_counts.get(determinant, 0) + 1
     distinct_allocations = {sample.allocation_id for sample in samples}
     distinct_users = {sample.user_id for sample in samples}
+    prewarm_observability = await _collect_prewarm_observability(
+        tenant_id=tenant_id,
+        measurement_started_at=measurement_started_at,
+    )
     reuse_histogram: dict[str, int] = {}
     for usage_count in determinant_counts.values():
         key = str(int(usage_count))
@@ -450,6 +533,7 @@ async def _run_measurement(
             ),
             "determinant_reuse_histogram": dict(sorted(reuse_histogram.items())),
         },
+        "prewarm_observability": prewarm_observability,
     }
     return summary
 
