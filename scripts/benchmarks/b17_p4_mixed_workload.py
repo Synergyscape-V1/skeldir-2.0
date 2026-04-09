@@ -224,7 +224,9 @@ async def _run_measurement(
     original_prewarm_max_per_trigger = (
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER
     )
+    original_asyncio_create_task = attribution_api.asyncio.create_task
     original_log_levels: dict[str, int] = {}
+    tracked_async_prewarm_tasks: list[asyncio.Task[Any]] = []
 
     async def _delayed_provider(*, requested_model, prompt, reservation):
         await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
@@ -254,6 +256,13 @@ async def _run_measurement(
         "channel_performance,attribution_score"
     )
     attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = 2
+
+    def _tracked_create_task(coro, *args, **kwargs):
+        task = original_asyncio_create_task(coro, *args, **kwargs)
+        tracked_async_prewarm_tasks.append(task)
+        return task
+
+    attribution_api.asyncio.create_task = _tracked_create_task
     for logger_name in NOISY_BENCHMARK_LOGGERS:
         logger = logging.getLogger(logger_name)
         original_log_levels[logger_name] = logger.level
@@ -342,8 +351,11 @@ async def _run_measurement(
                 await _run_batch(workload)
             else:
                 await _run_batch(phase_one_workload)
-                # Allow async prewarm side-effects to settle before phase-two keys are issued.
-                await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
+                # Drain background prewarm tasks to align phase-two measurements with
+                # completed async prewarm effects rather than scheduler race timing.
+                pending_tasks = [task for task in tracked_async_prewarm_tasks if not task.done()]
+                if pending_tasks:
+                    await asyncio.gather(*pending_tasks, return_exceptions=True)
                 await _run_batch(phase_two_workload)
 
     finally:
@@ -355,6 +367,7 @@ async def _run_measurement(
         attribution_api.settings.LLM_B17_PREWARM_MAX_PERMUTATIONS_PER_TRIGGER = (
             original_prewarm_max_per_trigger
         )
+        attribution_api.asyncio.create_task = original_asyncio_create_task
         for logger_name, logger_level in original_log_levels.items():
             logging.getLogger(logger_name).setLevel(logger_level)
 
@@ -415,7 +428,11 @@ async def _run_measurement(
             "phase_strategy": (
                 "sync_adjacent_pairs"
                 if prewarm_run_sync
-                else "two_phase_with_settle_window"
+                else "two_phase_with_async_prewarm_drain"
+            ),
+            "async_prewarm_tasks_scheduled": len(tracked_async_prewarm_tasks),
+            "async_prewarm_tasks_completed": sum(
+                1 for task in tracked_async_prewarm_tasks if task.done()
             ),
             "distinct_allocation_count": len(distinct_allocations),
             "distinct_user_count": len(distinct_users),
