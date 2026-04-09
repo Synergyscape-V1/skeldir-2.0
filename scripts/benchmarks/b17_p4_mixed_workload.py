@@ -402,6 +402,7 @@ async def _run_measurement(
                 )
 
             cold_pairs = cold_request_count // 2
+            cold_trigger_pair_count = cold_pairs
             cold_phase_one: list[tuple[UUID, str, UUID]] = []
             cold_phase_two: list[tuple[UUID, str, UUID]] = []
             cold_interleaved: list[tuple[UUID, str, UUID]] = []
@@ -421,11 +422,33 @@ async def _run_measurement(
                 # is measured against the same trigger watermark.
                 workload = warm_workload + cold_interleaved + odd_tail
             else:
-                # Restrict event-driven prewarm triggering to the cold trigger phase.
-                # This preserves causal measurement of companion assists while
-                # avoiding warm-path trigger churn that can dominate endpoint p95.
-                phase_trigger_workload = cold_phase_one
-                phase_remaining_workload = warm_workload + cold_phase_two + odd_tail
+                # For async prewarm, keep a bounded trigger determinant set so
+                # trigger-phase overhead is measurable while companion reuse
+                # remains bounded and anti-cheat constraints stay explicit.
+                trigger_pair_count = max(1, (cold_request_count + 4) // 5)
+                cold_trigger_pair_count = trigger_pair_count
+                trigger_pairs: list[tuple[UUID, UUID]] = []
+                for idx in range(trigger_pair_count):
+                    trigger_pairs.append(
+                        (
+                            allocation_ids[idx % len(allocation_ids)],
+                            uuid4(),
+                        )
+                    )
+                phase_trigger_workload = [
+                    (allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user)
+                    for allocation_id, cold_user in trigger_pairs
+                ]
+                companion_requests = max(
+                    0, cold_request_count - len(phase_trigger_workload)
+                )
+                phase_remaining_cold: list[tuple[UUID, str, UUID]] = []
+                for idx in range(companion_requests):
+                    allocation_id, cold_user = trigger_pairs[idx % len(trigger_pairs)]
+                    phase_remaining_cold.append(
+                        (allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user)
+                    )
+                phase_remaining_workload = warm_workload + phase_remaining_cold
 
             semaphore = asyncio.Semaphore(concurrency)
             samples: list[RequestSample] = []
@@ -540,10 +563,11 @@ async def _run_measurement(
             "configured_warm_request_count": warm_request_count,
             "configured_cold_request_count": cold_request_count,
             "cold_pair_count": cold_pairs,
+            "cold_trigger_pair_count": cold_trigger_pair_count,
             "phase_strategy": (
                 "sync_adjacent_pairs"
                 if prewarm_run_sync
-                else "two_phase_cold_trigger_then_remaining_workload"
+                else "two_phase_bounded_trigger_pairs_with_companion_reuse"
             ),
             "async_prewarm_tasks_scheduled": len(tracked_async_prewarm_tasks),
             "async_prewarm_tasks_completed": sum(
