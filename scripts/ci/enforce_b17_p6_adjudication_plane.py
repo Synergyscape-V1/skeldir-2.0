@@ -83,8 +83,10 @@ def run_enforcement(
         violations.append("benchmark_missing_schedule_trigger")
     if "workflow_dispatch" not in triggers:
         violations.append("benchmark_missing_workflow_dispatch_trigger")
-    if "pull_request" in triggers:
-        violations.append("benchmark_must_not_run_on_pull_request")
+    pull_request = triggers.get("pull_request", {}) if isinstance(triggers, dict) else {}
+    pr_branches = pull_request.get("branches", []) if isinstance(pull_request, dict) else []
+    if "main" not in pr_branches:
+        violations.append("benchmark_missing_pull_request_main_trigger")
 
     benchmark_text = benchmark_workflow_file.read_text(encoding="utf-8", errors="replace")
     for token in (

@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -67,6 +69,21 @@ def test_b17_p6_plane_enforcer_detects_missing_main_push_benchmark_trigger(
     result = _run_enforcer("--benchmark-workflow-file", str(mutated))
     assert result.returncode != 0
     assert "benchmark_missing_push_main_trigger" in (result.stdout + result.stderr)
+
+
+def test_b17_p6_plane_enforcer_detects_missing_main_pr_benchmark_trigger(
+    tmp_path: Path,
+) -> None:
+    source = _repo_root() / ".github" / "workflows" / "b17-p4-mixed-workload-benchmark.yml"
+    payload = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    triggers = payload.setdefault("on", {})
+    triggers.pop("pull_request", None)
+    mutated = tmp_path / "benchmark.pr.regression.yml"
+    mutated.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    result = _run_enforcer("--benchmark-workflow-file", str(mutated))
+    assert result.returncode != 0
+    assert "benchmark_missing_pull_request_main_trigger" in (result.stdout + result.stderr)
 
 
 def test_b17_p6_plane_enforcer_detects_missing_required_benchmark_context(tmp_path: Path) -> None:

@@ -142,8 +142,10 @@ def run_enforcement(
         violations.append("benchmark_workflow_missing_workflow_dispatch_trigger")
     if "schedule" not in triggers:
         violations.append("benchmark_workflow_missing_schedule_trigger")
-    if "pull_request" in triggers:
-        violations.append("benchmark_workflow_must_not_run_on_pull_request")
+    pull_request = _as_dict(triggers.get("pull_request"))
+    branches = set(_as_list(pull_request.get("branches")))
+    if "main" not in branches:
+        violations.append("benchmark_workflow_missing_pull_request_main_trigger")
     benchmark_text = benchmark_workflow_file.read_text(encoding="utf-8", errors="replace")
     if "scripts/benchmarks/b17_p4_mixed_workload.py" not in benchmark_text:
         violations.append("benchmark_workflow_missing_mixed_workload_harness")
