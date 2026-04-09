@@ -311,12 +311,9 @@ async def _run_measurement(
                 # is measured against the same trigger watermark.
                 workload = warm_workload + cold_interleaved + odd_tail
             else:
-                warm_split_idx = warm_request_count // 2
-                phase_one_workload = (
-                    warm_workload[:warm_split_idx]
-                    + cold_phase_one
-                    + warm_workload[warm_split_idx:]
-                )
+                # Run cold-phase triggers before bulk warm traffic so event-driven
+                # prewarm has causal headroom before tenant hourly caps are consumed.
+                phase_one_workload = cold_phase_one + warm_workload
                 phase_two_workload = cold_phase_two + odd_tail
 
             semaphore = asyncio.Semaphore(concurrency)
