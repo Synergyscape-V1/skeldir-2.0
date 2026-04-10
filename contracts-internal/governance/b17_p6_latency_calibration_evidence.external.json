@@ -1,0 +1,29 @@
+{
+  "contract_id": "b17.p6.latency_calibration_evidence.external",
+  "contract_version": "1.1.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "evidence_origin": "external_to_b17_p4_benchmark",
+  "captured_sources": [
+    {
+      "source_id": "value_trace_provider_handshake_v03",
+      "source_path": "docs/forensics/evidence/value_traces/value_03_provider_handshake.md",
+      "observed_latency_ms": 120,
+      "source_type": "preexisting_trace"
+    },
+    {
+      "source_id": "mock_latency_report_b02_health_probe",
+      "source_path": "backend/validation/evidence/mocks/latency_report.json",
+      "observed_p95_ms": 216.34,
+      "requests": 100,
+      "source_type": "preexisting_operational_probe"
+    }
+  ],
+  "selection_rule": {
+    "rule_id": "b17_p6_provider_delay_ms_v1",
+    "description": "Choose a nonzero deterministic provider delay anchored to preexisting independent evidence; selected value must be <= observed independent p95 (216.34ms) and >= configured minimum.",
+    "selected_provider_delay_ms": 150,
+    "minimum_provider_delay_ms": 50
+  },
+  "owner": "b1.7-p6"
+}
