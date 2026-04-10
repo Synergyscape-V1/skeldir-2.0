@@ -110,12 +110,12 @@ def test_b17_p6_plane_enforcer_detects_missing_required_benchmark_context(tmp_pa
 def test_b17_p6_plane_enforcer_detects_missing_volumetric_gate_tokens(tmp_path: Path) -> None:
     source = _repo_root() / ".github" / "workflows" / "b17-p4-mixed-workload-benchmark.yml"
     text = source.read_text(encoding="utf-8")
-    mutated_text = text.replace("--min-cold-path-samples 30 \\\n", "")
+    mutated_text = text.replace("--min-baseline-cold-path-samples 20 \\\n", "")
     mutated = tmp_path / "benchmark.volumetric.regression.yml"
     mutated.write_text(mutated_text, encoding="utf-8")
 
     result = _run_enforcer("--benchmark-workflow-file", str(mutated))
     assert result.returncode != 0
-    assert "benchmark_missing_required_token:--min-cold-path-samples" in (
+    assert "benchmark_missing_required_token:--min-baseline-cold-path-samples" in (
         result.stdout + result.stderr
     )

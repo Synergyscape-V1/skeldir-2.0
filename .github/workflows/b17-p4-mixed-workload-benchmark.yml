@@ -69,7 +69,7 @@ jobs:
             --requests 150 \
             --warm-ratio 0.80 \
             --concurrency 2 \
-            --provider-delay-ms 120 \
+            --provider-delay-ms 150 \
             --prewarm-enabled false \
             --prewarm-run-sync false \
             --allocation-pool-size 12 \
@@ -83,7 +83,7 @@ jobs:
             --requests 150 \
             --warm-ratio 0.80 \
             --concurrency 2 \
-            --provider-delay-ms 120 \
+            --provider-delay-ms 150 \
             --prewarm-enabled true \
             --prewarm-run-sync false \
             --allocation-pool-size 12 \
@@ -99,8 +99,9 @@ jobs:
             --cache-hit-ratio-min 0.60 \
             --provider-delay-min-ms 50 \
             --latency-model-file contracts-internal/governance/b17_p6_benchmark_latency_model.main.json \
-            --min-total-requests 100 \
-            --min-cold-path-samples 30 \
+            --min-total-requests 150 \
+            --min-baseline-cold-path-samples 20 \
+            --min-prewarm-cold-path-samples 1 \
             --min-distinct-allocations 10 \
             --min-distinct-determinants 50 \
             --min-distinct-users 25 \

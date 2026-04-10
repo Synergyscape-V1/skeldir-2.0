@@ -99,7 +99,8 @@ def run_enforcement(
         "--max-duplicate-request-ratio",
         "--min-unique-determinant-ratio",
         "--min-total-requests",
-        "--min-cold-path-samples",
+        "--min-baseline-cold-path-samples",
+        "--min-prewarm-cold-path-samples",
         "Upload benchmark artifacts",
     ):
         if token not in benchmark_text:

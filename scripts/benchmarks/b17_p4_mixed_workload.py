@@ -311,9 +311,12 @@ async def _run_measurement(
     original_asyncio_create_task = attribution_api.asyncio.create_task
     original_log_levels: dict[str, int] = {}
     tracked_async_prewarm_tasks: list[asyncio.Task[Any]] = []
-    deferred_prewarm_coroutines: list[Any] = []
-    benchmark_prewarm_min_trigger_interval_seconds = 0
-    benchmark_prewarm_max_calls_per_tenant_per_hour = 0
+    benchmark_prewarm_min_trigger_interval_seconds = max(
+        0, int(original_prewarm_min_trigger_interval)
+    )
+    benchmark_prewarm_max_calls_per_tenant_per_hour = max(
+        0, int(original_prewarm_max_calls_per_hour)
+    )
 
     async def _delayed_provider(*, requested_model, prompt, reservation):
         await asyncio.sleep(max(0, provider_delay_ms) / 1000.0)
@@ -352,23 +355,11 @@ async def _run_measurement(
         benchmark_prewarm_max_calls_per_tenant_per_hour
     )
 
-    async def _completed_noop() -> None:
-        return None
-
     def _is_prewarm_task_coro(coro: Any) -> bool:
         code = getattr(coro, "cr_code", None)
         return bool(code is not None and getattr(code, "co_name", "") == "_execute_b17_prewarm_targets")
 
     def _tracked_create_task(coro, *args, **kwargs):
-        # Defer prewarm coroutine execution until after trigger-phase requests complete
-        # so endpoint p95 reflects request serving, not background task contention.
-        if (
-            prewarm_enabled
-            and not prewarm_run_sync
-            and _is_prewarm_task_coro(coro)
-        ):
-            deferred_prewarm_coroutines.append(coro)
-            return original_asyncio_create_task(_completed_noop())
         task = original_asyncio_create_task(coro, *args, **kwargs)
         if _is_prewarm_task_coro(coro):
             tracked_async_prewarm_tasks.append(task)
@@ -431,10 +422,11 @@ async def _run_measurement(
             if cold_request_count % 2:
                 odd_tail.append((allocation_ids[0], CANONICAL_ENTITY_TYPES[0], uuid4()))
 
-            if prewarm_run_sync:
+            if prewarm_run_sync or not prewarm_enabled:
                 # For sync prewarm, keep companion requests adjacent so efficacy
                 # is measured against the same trigger watermark.
                 workload = warm_workload + cold_interleaved + odd_tail
+                phase_strategy = "single_phase_interleaved_pairs"
             else:
                 # For async prewarm, keep a bounded trigger determinant set so
                 # trigger-phase overhead is measurable while companion reuse
@@ -452,12 +444,12 @@ async def _run_measurement(
                 # Trigger with attribution_score so async trigger-phase cold cost
                 # mirrors baseline cold composition more closely while prewarming
                 # channel_performance companions for measured reuse.
-                phase_trigger_workload = [
+                cold_trigger_workload = [
                     (allocation_id, CANONICAL_ENTITY_TYPES[1], cold_user)
                     for allocation_id, cold_user in trigger_pairs
                 ]
                 companion_requests = max(
-                    0, cold_request_count - len(phase_trigger_workload)
+                    0, cold_request_count - len(cold_trigger_workload)
                 )
                 phase_remaining_cold: list[tuple[UUID, str, UUID]] = []
                 for idx in range(companion_requests):
@@ -465,7 +457,9 @@ async def _run_measurement(
                     phase_remaining_cold.append(
                         (allocation_id, CANONICAL_ENTITY_TYPES[0], cold_user)
                     )
+                phase_trigger_workload = cold_trigger_workload
                 phase_remaining_workload = warm_workload + phase_remaining_cold
+                phase_strategy = "two_phase_trigger_then_companion_no_drain"
 
             semaphore = asyncio.Semaphore(concurrency)
             samples: list[RequestSample] = []
@@ -489,22 +483,12 @@ async def _run_measurement(
                     )
                 )
 
-            if prewarm_run_sync:
+            if prewarm_run_sync or not prewarm_enabled:
                 await _run_batch(workload)
             else:
+                # Keep asynchronous trigger and companion phases ordered, but do not
+                # artificially defer or drain background prewarm tasks in between.
                 await _run_batch(phase_trigger_workload)
-                for deferred_coro in deferred_prewarm_coroutines:
-                    tracked_async_prewarm_tasks.append(
-                        original_asyncio_create_task(deferred_coro)
-                    )
-                deferred_prewarm_coroutines.clear()
-                # Drain background prewarm tasks to align phase-two measurements with
-                # completed async prewarm effects rather than scheduler race timing.
-                pending_tasks = [task for task in tracked_async_prewarm_tasks if not task.done()]
-                if pending_tasks:
-                    await asyncio.gather(*pending_tasks, return_exceptions=True)
-                if prewarm_enabled:
-                    attribution_api.settings.LLM_B17_PREWARM_ENABLED = False
                 await _run_batch(phase_remaining_workload)
 
     finally:
@@ -593,10 +577,10 @@ async def _run_measurement(
             "prewarm_max_calls_per_tenant_per_hour": (
                 benchmark_prewarm_max_calls_per_tenant_per_hour
             ),
-            "phase_strategy": (
-                "sync_adjacent_pairs"
-                if prewarm_run_sync
-                else "two_phase_bounded_trigger_pairs_with_companion_reuse"
+            "phase_strategy": phase_strategy,
+            "prewarm_throttle_controls_enabled": bool(
+                benchmark_prewarm_min_trigger_interval_seconds > 0
+                or benchmark_prewarm_max_calls_per_tenant_per_hour > 0
             ),
             "async_prewarm_tasks_scheduled": len(tracked_async_prewarm_tasks),
             "async_prewarm_tasks_completed": sum(

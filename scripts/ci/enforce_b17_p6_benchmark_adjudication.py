@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -76,12 +78,38 @@ def _load_latency_model(path: Path) -> dict[str, Any]:
         raise ValueError("latency_model_missing_empirical_calibration_procedure")
     if not isinstance(evidence, dict):
         raise ValueError("latency_model_missing_empirical_calibration_evidence")
+    method = procedure.get("method")
     command = procedure.get("command")
+    evidence_origin = evidence.get("evidence_origin")
     artifact_refs = evidence.get("artifact_refs")
-    if not isinstance(command, str) or not command.strip():
-        raise ValueError("latency_model_calibration_procedure_command_missing")
+    if not isinstance(method, str) or not method.strip():
+        raise ValueError("latency_model_calibration_procedure_method_missing")
+    if command is not None and (not isinstance(command, str) or not command.strip()):
+        raise ValueError("latency_model_calibration_procedure_command_invalid")
+    if not isinstance(evidence_origin, str) or not evidence_origin.strip():
+        raise ValueError("latency_model_calibration_evidence_origin_missing")
+    if evidence_origin != "external_to_b17_p4_benchmark":
+        raise ValueError("latency_model_calibration_evidence_origin_not_external")
     if not isinstance(artifact_refs, list) or not artifact_refs:
         raise ValueError("latency_model_calibration_evidence_artifact_refs_missing")
+    disallowed_tokens = (
+        "scripts/benchmarks/b17_p4_mixed_workload.py",
+        "artifacts/b17_p4_benchmark/",
+        "artifacts\\b17_p4_benchmark\\",
+    )
+    if isinstance(command, str):
+        for token in disallowed_tokens:
+            if token in command:
+                raise ValueError("latency_model_calibration_procedure_circular_reference")
+    for ref in artifact_refs:
+        if not isinstance(ref, str) or not ref.strip():
+            raise ValueError("latency_model_calibration_evidence_artifact_ref_invalid")
+        for token in disallowed_tokens:
+            if token in ref:
+                raise ValueError("latency_model_calibration_evidence_circular_reference")
+        artifact_path = (REPO_ROOT / ref).resolve()
+        if not artifact_path.exists():
+            raise ValueError(f"latency_model_calibration_evidence_artifact_missing:{ref}")
     return payload
 
 
@@ -95,7 +123,8 @@ def _adjudicate(
     latency_model_provider_delay_ms: int,
     latency_model_min_provider_delay_ms: int,
     min_total_requests: int,
-    min_cold_path_samples: int,
+    min_baseline_cold_path_samples: int,
+    min_prewarm_cold_path_samples: int,
     min_distinct_allocations: int,
     min_distinct_determinants: int,
     min_distinct_users: int,
@@ -196,13 +225,18 @@ def _adjudicate(
         max_per_determinant = _int_field(payload, "max_requests_per_determinant")
         duplicate_ratio = _float_field(payload, "duplicate_request_ratio")
         unique_ratio = _float_field(payload, "unique_determinant_ratio")
-        configured_cold_requests = _int_field(payload, "configured_cold_request_count")
-        cold_path_samples = (
-            configured_cold_requests
-            if configured_cold_requests is not None
-            else _state_count(payload, "cold_path_generated")
+        execution_path_counts = payload.get("execution_path_counts", {})
+        cold_path_samples = _state_count(payload, "cold_path_generated")
+        min_cold_path_samples = (
+            min_baseline_cold_path_samples if label == "baseline" else min_prewarm_cold_path_samples
         )
         _require(total_requests is not None, failures, f"{label}_missing_total_requests")
+        _require(
+            isinstance(execution_path_counts, dict)
+            and "cold_path_generated" in execution_path_counts,
+            failures,
+            f"{label}_missing_observed_cold_path_generated",
+        )
         _require(
             distinct_allocations is not None,
             failures,
@@ -239,7 +273,7 @@ def _adjudicate(
             cold_path_samples >= min_cold_path_samples,
             failures,
             (
-                f"{label}_configured_cold_request_count_below_min:"
+                f"{label}_observed_cold_path_generated_below_min:"
                 f"{cold_path_samples}<{min_cold_path_samples}"
             ),
         )
@@ -341,8 +375,9 @@ def main(argv: list[str]) -> int:
         "--latency-model-file",
         default="contracts-internal/governance/b17_p6_benchmark_latency_model.main.json",
     )
-    parser.add_argument("--min-total-requests", type=int, default=100)
-    parser.add_argument("--min-cold-path-samples", type=int, default=30)
+    parser.add_argument("--min-total-requests", type=int, default=150)
+    parser.add_argument("--min-baseline-cold-path-samples", type=int, default=20)
+    parser.add_argument("--min-prewarm-cold-path-samples", type=int, default=1)
     parser.add_argument("--min-distinct-allocations", type=int, default=10)
     parser.add_argument("--min-distinct-determinants", type=int, default=50)
     parser.add_argument("--min-distinct-users", type=int, default=25)
@@ -383,7 +418,8 @@ def main(argv: list[str]) -> int:
         latency_model_provider_delay_ms=int(latency_model["provider_delay_ms"]),
         latency_model_min_provider_delay_ms=int(latency_model["minimum_provider_delay_ms"]),
         min_total_requests=int(args.min_total_requests),
-        min_cold_path_samples=int(args.min_cold_path_samples),
+        min_baseline_cold_path_samples=int(args.min_baseline_cold_path_samples),
+        min_prewarm_cold_path_samples=int(args.min_prewarm_cold_path_samples),
         min_distinct_allocations=int(args.min_distinct_allocations),
         min_distinct_determinants=int(args.min_distinct_determinants),
         min_distinct_users=int(args.min_distinct_users),

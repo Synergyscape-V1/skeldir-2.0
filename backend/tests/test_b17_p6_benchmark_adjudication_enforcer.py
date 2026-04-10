@@ -40,7 +40,7 @@ def _write_payload(
     cold_count: int,
     prewarm_assisted: int,
     provider_delay_ms: int = 120,
-    total_requests: int = 100,
+    total_requests: int = 150,
     configured_cold_request_count: int = 30,
     distinct_allocations: int = 12,
     distinct_determinants: int = 60,
@@ -84,16 +84,13 @@ def _write_latency_model(
         "provider_delay_ms": provider_delay_ms,
         "minimum_provider_delay_ms": minimum_provider_delay_ms,
         "calibration_procedure": {
-            "method": "cold_path_sampling",
-            "command": (
-                "python scripts/benchmarks/b17_p4_mixed_workload.py --mode measure "
-                "--requests 100 --warm-ratio 0.70 --provider-delay-ms 120"
-            ),
+            "method": "independent_latency_evidence_binding",
+            "command": "psql \"$RUNTIME_DATABASE_URL\" -f docs/ops/llm_p4/sql/04_provider_cost_latency_distribution.sql",
         },
         "calibration_evidence": {
+            "evidence_origin": "external_to_b17_p4_benchmark",
             "artifact_refs": [
-                "artifacts/b17_p4_benchmark/baseline_no_prewarm.json",
-                "artifacts/b17_p4_benchmark/prewarm_enabled.json",
+                "contracts-internal/governance/b17_p6_latency_calibration_evidence.external.json",
             ]
         },
     }
@@ -334,7 +331,7 @@ def test_b17_p6_benchmark_adjudication_enforcer_fails_on_volumetric_floor_regres
         warm_p95=120.0,
         cold_p95=690.0,
         hit_ratio=0.62,
-        cold_count=30,
+        cold_count=10,
         prewarm_assisted=0,
         total_requests=80,
         configured_cold_request_count=24,
@@ -346,7 +343,7 @@ def test_b17_p6_benchmark_adjudication_enforcer_fails_on_volumetric_floor_regres
         warm_p95=110.0,
         cold_p95=510.0,
         hit_ratio=0.72,
-        cold_count=12,
+        cold_count=0,
         prewarm_assisted=12,
         total_requests=80,
         configured_cold_request_count=24,
@@ -364,5 +361,65 @@ def test_b17_p6_benchmark_adjudication_enforcer_fails_on_volumetric_floor_regres
     combined = result.stdout + result.stderr
     assert "baseline_total_requests_below_min" in combined
     assert "prewarm_total_requests_below_min" in combined
-    assert "baseline_configured_cold_request_count_below_min" in combined
-    assert "prewarm_configured_cold_request_count_below_min" in combined
+    assert "baseline_observed_cold_path_generated_below_min" in combined
+    assert "prewarm_observed_cold_path_generated_below_min" in combined
+
+
+def test_b17_p6_benchmark_adjudication_enforcer_fails_on_circular_latency_calibration_reference(
+    tmp_path: Path,
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    prewarm = tmp_path / "prewarm.json"
+    latency_model = tmp_path / "latency_model.circular.json"
+    _write_payload(
+        baseline,
+        prewarm_enabled=False,
+        overall_p95=480.0,
+        warm_p95=120.0,
+        cold_p95=690.0,
+        hit_ratio=0.62,
+        cold_count=30,
+        prewarm_assisted=0,
+    )
+    _write_payload(
+        prewarm,
+        prewarm_enabled=True,
+        overall_p95=460.0,
+        warm_p95=110.0,
+        cold_p95=510.0,
+        hit_ratio=0.72,
+        cold_count=10,
+        prewarm_assisted=12,
+    )
+    latency_model.write_text(
+        json.dumps(
+            {
+                "provider_delay_ms": 120,
+                "minimum_provider_delay_ms": 50,
+                "calibration_procedure": {
+                    "method": "independent_latency_evidence_binding",
+                    "command": "python scripts/benchmarks/b17_p4_mixed_workload.py --mode measure",
+                },
+                "calibration_evidence": {
+                    "evidence_origin": "external_to_b17_p4_benchmark",
+                    "artifact_refs": [
+                        "contracts-internal/governance/b17_p6_latency_calibration_evidence.external.json",
+                    ],
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_enforcer(
+        "--baseline-file",
+        str(baseline),
+        "--prewarm-file",
+        str(prewarm),
+        "--latency-model-file",
+        str(latency_model),
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "latency_model_calibration_procedure_circular_reference" in combined
