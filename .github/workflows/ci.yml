@@ -101,6 +101,14 @@ jobs:
         run: |
           python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
 
+      - name: Enforce B2.1-P0 authority convergence lock
+        run: |
+          python scripts/ci/enforce_b21_p0_authority_convergence.py
+
+      - name: Run B2.1-P0 authority convergence negative controls
+        run: |
+          pytest backend/tests/test_b21_p0_authority_convergence_enforcer.py -q
+
       - name: Run B1.7-P1 negative controls
         run: |
           pytest backend/tests/test_b17_p0_explanation_surface_lock_enforcer.py -q
@@ -184,6 +192,7 @@ jobs:
           pytest backend/tests/test_b17_p5_anti_chat_surface_runtime.py -q
           pytest backend/tests/test_b17_p6_end_to_end_runtime.py -q
           pytest tests/contract/test_route_fidelity.py::test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged -q
+          pytest tests/contract/test_route_fidelity.py::test_b21_channels_route_mounted_and_runtime_openapi_converged -q
           pytest tests/contract/test_route_fidelity.py::test_contract_to_route_mapping -q
 
       - name: Enforce B1.7-P6 adjudication plane lock
@@ -4575,11 +4584,15 @@ jobs:
             sleep 2
           done
 
+      - name: Bundle canonical OpenAPI artifacts
+        run: |
+          bash scripts/contracts/bundle.sh
+
       - name: Start mock servers
         run: |
           # Native mock servers using Prism (Architecture Guide compliant)
-          ./node_modules/.bin/prism mock contracts/attribution/v1/attribution.yaml --host 127.0.0.1 --port 4011 &
-          ./node_modules/.bin/prism mock contracts/health/v1/health.yaml --host 127.0.0.1 --port 4014 &
+          ./node_modules/.bin/prism mock api-contracts/dist/openapi/v1/attribution.bundled.yaml --host 127.0.0.1 --port 4011 &
+          ./node_modules/.bin/prism mock api-contracts/dist/openapi/v1/health.bundled.yaml --host 127.0.0.1 --port 4014 &
 
       - name: Wait for mock servers
         run: |

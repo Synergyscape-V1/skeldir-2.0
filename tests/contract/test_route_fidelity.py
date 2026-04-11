@@ -198,10 +198,23 @@ def test_contract_to_route_mapping():
         "GET /api/attribution/explain/{entity_type}/{entity_id} must remain mounted and contract-mapped."
     )
 
+    attribution_unimplemented = [
+        op for op in unimplemented_operations if str(op.get("path", "")).startswith("/api/attribution")
+    ]
+    assert not attribution_unimplemented, (
+        "Canonical attribution operations declared in contract but unmounted at runtime are merge-blocking:\n"
+        + "\n".join(
+            f"  - {op['method']} {op['path']} ({op.get('operation_id', 'N/A')})"
+            for op in attribution_unimplemented
+        )
+    )
+
     # In Phase B0.1, many operations are still expected to be unimplemented.
     # B1.7 explanation route drift is explicitly fail-closed above.
     remaining_unimplemented = [
-        op for op in unimplemented_operations if op not in canonical_b17_operation
+        op
+        for op in unimplemented_operations
+        if op not in canonical_b17_operation and op not in attribution_unimplemented
     ]
     if remaining_unimplemented:
         print(
@@ -468,6 +481,81 @@ def test_b17_canonical_explain_route_mounted_and_runtime_openapi_converged():
         authoritative_schema.get("properties", {}).get("truth_snapshot", {}).get("$ref")
         == "#/components/schemas/AttributionTruthSnapshot"
     )
+
+
+def test_b21_channels_route_mounted_and_runtime_openapi_converged():
+    """B2.1-P0 hard gate: canonical channels route must be mounted and contract-aligned."""
+    attribution_source = (
+        Path(__file__).parent.parent.parent
+        / "api-contracts"
+        / "openapi"
+        / "v1"
+        / "attribution.yaml"
+    )
+    with open(attribution_source, "r", encoding="utf-8") as handle:
+        source_doc = yaml.safe_load(handle) or {}
+
+    canonical_path = "/api/attribution/channels"
+    source_operation = source_doc.get("paths", {}).get(canonical_path, {}).get("get", {})
+    assert source_operation.get("operationId") == "getChannelAttribution"
+    b21_lock = source_operation.get("x-skeldir-b21-p0", {})
+    assert b21_lock.get("implementation_status") == "mounted_deterministic_channels_surface"
+
+    routes = extract_fastapi_routes()
+    route_keys = {f"{item['method']} {item['path']}" for item in routes}
+    assert "GET /api/attribution/channels" in route_keys
+
+    from app.main import app
+
+    runtime_openapi = app.openapi()
+    runtime_paths = runtime_openapi.get("paths", {})
+    assert canonical_path in runtime_paths
+    runtime_operation = runtime_paths[canonical_path]["get"]
+    assert runtime_operation.get("operationId") == "getChannelAttribution"
+
+    responses = runtime_operation.get("responses", {})
+    assert "200" in responses
+    assert "304" in responses
+    schema_ref = (
+        responses["200"]
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema", {})
+        .get("$ref")
+    )
+    assert schema_ref == "#/components/schemas/ChannelAttributionResponse"
+
+    response_schema = (
+        runtime_openapi.get("components", {})
+        .get("schemas", {})
+        .get("ChannelAttributionResponse", {})
+    )
+    assert set(response_schema.get("required", [])) >= {
+        "channels",
+        "total_revenue",
+        "tenant_id",
+        "last_updated",
+        "data_freshness_seconds",
+        "date_range",
+    }
+
+    channel_schema = (
+        runtime_openapi.get("components", {})
+        .get("schemas", {})
+        .get("ChannelAttribution", {})
+    )
+    channel_name_schema = channel_schema.get("properties", {}).get("channel_name", {})
+    if "$ref" in channel_name_schema:
+        ref_name = channel_name_schema["$ref"].split("/")[-1]
+        enum_values = (
+            runtime_openapi.get("components", {})
+            .get("schemas", {})
+            .get(ref_name, {})
+            .get("enum", [])
+        )
+    else:
+        enum_values = channel_name_schema.get("enum", [])
+    assert "Unknown" in enum_values
 
 
 if __name__ == "__main__":

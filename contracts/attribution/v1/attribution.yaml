@@ -3,6 +3,10 @@ info:
   title: Skeldir Attribution API
   version: 1.0.0
   description: Attribution and revenue verification endpoints for Skeldir Attribution Intelligence platform
+  x-skeldir-authority:
+    status: non_authoritative_legacy_reference
+    canonical_source: api-contracts/openapi/v1/attribution.yaml
+    generation_and_ci_authority_forbidden: true
 servers:
   - url: https://api.skeldir.com
     description: Production server
