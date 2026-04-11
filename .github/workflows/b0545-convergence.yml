@@ -157,6 +157,12 @@ jobs:
             fi
             sleep 2
           done
+          for i in $(seq 1 30); do
+            if grep -q "pulse_matviews_global" "${EVIDENCE_DIR}/beat.log"; then
+              break
+            fi
+            sleep 2
+          done
           grep -n "Sending due task" "${EVIDENCE_DIR}/beat.log" | tail -n 5 > "${EVIDENCE_DIR}/beat_due_task.txt" || true
           grep -n "pulse_matviews_global" "${EVIDENCE_DIR}/beat.log" | tail -n 10 > "${EVIDENCE_DIR}/beat_pulse_task.txt" || true
 
