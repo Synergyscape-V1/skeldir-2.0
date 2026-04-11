@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Annotated, Literal, Optional
 
@@ -62,6 +62,7 @@ class ChannelName(Enum):
     Direct = "Direct"
     Email = "Email"
     Referral = "Referral"
+    Unknown = "Unknown"
 
 
 class ChannelAttribution(BaseModel):
@@ -89,6 +90,20 @@ class ChannelAttribution(BaseModel):
     """
     Return on Ad Spend (revenue/spend)
     """
+
+
+class ChannelAttributionDateRange(BaseModel):
+    start: date
+    end: date
+
+
+class ChannelAttributionResponse(BaseModel):
+    channels: list[ChannelAttribution]
+    total_revenue: Annotated[float, Field(ge=0)]
+    tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
+    last_updated: datetime
+    data_freshness_seconds: Annotated[int, Field(ge=0)]
+    date_range: ChannelAttributionDateRange
 
 
 class Platform(Enum):

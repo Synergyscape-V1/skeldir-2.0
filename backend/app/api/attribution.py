@@ -8,12 +8,15 @@ api-contracts/dist/openapi/v1/attribution.bundled.yaml.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+import json
 import logging
+from hashlib import sha256
 from typing import Annotated, Any, Literal, Mapping
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, Request, Response, Security, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, Security, status
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.problem_details import problem_details_response
@@ -27,6 +30,9 @@ from app.llm.provider_boundary import (
 )
 from app.schemas.attribution import (
     AttributionExplanationResponse,
+    ChannelAttribution,
+    ChannelAttributionResponse,
+    ChannelName,
     RealtimeRevenueResponse,
 )
 from app.schemas.llm_payloads import LLMTaskPayload
@@ -59,6 +65,24 @@ logger = logging.getLogger(__name__)
 _PROVIDER_BOUNDARY = get_llm_provider_boundary()
 _B17_EXPLANATION_ENDPOINT = "app.api.attribution.explanation_fastpath"
 _B17_EXPLANATION_CONTRACT_VERSION = "b1.7-p4"
+_CHANNEL_LOOKBACK_DAYS_DEFAULT = 30
+_CHANNEL_CODE_TO_NAME: dict[str, ChannelName] = {
+    "facebook_brand": ChannelName.Meta,
+    "facebook_paid": ChannelName.Meta,
+    "meta_ads": ChannelName.Meta,
+    "google_search_paid": ChannelName.Google,
+    "google_display_paid": ChannelName.Google,
+    "google_ads": ChannelName.Google,
+    "tiktok_paid": ChannelName.TikTok,
+    "tiktok_ads": ChannelName.TikTok,
+    "linkedin_paid": ChannelName.LinkedIn,
+    "linkedin_ads": ChannelName.LinkedIn,
+    "organic": ChannelName.Organic,
+    "direct": ChannelName.Direct,
+    "email": ChannelName.Email,
+    "referral": ChannelName.Referral,
+    "unknown": ChannelName.Unknown,
+}
 
 
 def _truth_snapshot_payload(
@@ -70,6 +94,30 @@ def _truth_snapshot_payload(
         "as_of": authority.truth_snapshot_as_of.isoformat().replace("+00:00", "Z"),
         "deterministic_truth_sources": list(DETERMINISTIC_TRUTH_SOURCES),
     }
+
+
+def _resolve_channels_date_range(
+    *,
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[date, date]:
+    today = datetime.now(timezone.utc).date()
+    end = end_date or today
+    start = start_date or (end - timedelta(days=_CHANNEL_LOOKBACK_DAYS_DEFAULT - 1))
+    if start > end:
+        start, end = end, start
+    return start, end
+
+
+def _map_channel_code_to_name(channel_code: str) -> ChannelName:
+    normalized = str(channel_code).strip().lower()
+    return _CHANNEL_CODE_TO_NAME.get(normalized, ChannelName.Unknown)
+
+
+def _channels_etag(payload: ChannelAttributionResponse) -> str:
+    body = payload.model_dump(mode="json")
+    digest = sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return f'W/"{digest}"'
 
 
 def _authoritative_metric_payload(
@@ -506,6 +554,7 @@ async def get_realtime_revenue(
         return Response(
             status_code=status.HTTP_304_NOT_MODIFIED,
             headers={
+                "X-Correlation-ID": str(x_correlation_id),
                 "ETag": etag,
                 "Cache-Control": "max-age=30",
             },
@@ -514,6 +563,128 @@ async def get_realtime_revenue(
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "max-age=30"
     return response_data
+
+
+@router.get(
+    "/channels",
+    response_model=ChannelAttributionResponse,
+    status_code=200,
+    responses={
+        304: {
+            "description": "Not Modified - ETag matches, use cached data",
+            "headers": {
+                "X-Correlation-ID": {
+                    "schema": {"type": "string", "format": "uuid"},
+                },
+                "ETag": {
+                    "schema": {"type": "string"},
+                },
+            },
+        }
+    },
+    operation_id="getChannelAttribution",
+    summary="Get Channel Attribution Data",
+    description=(
+        "Returns deterministic channel attribution from persisted allocation rows "
+        "for the requested reporting window."
+    ),
+)
+async def get_channel_attribution(
+    request: Request,
+    response: Response,
+    x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
+    auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
+    db_session: Annotated[AsyncSession, Depends(get_db_session)],
+    start_date: Annotated[date | None, Query()] = None,
+    end_date: Annotated[date | None, Query()] = None,
+    if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
+):
+    tenant_id = auth_context.tenant_id
+    resolved_start, resolved_end = _resolve_channels_date_range(
+        start_date=start_date,
+        end_date=end_date,
+    )
+    window_start = datetime.combine(resolved_start, datetime.min.time(), tzinfo=timezone.utc)
+    window_end = datetime.combine(
+        resolved_end + timedelta(days=1),
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    )
+
+    result = await db_session.execute(
+        text(
+            """
+            SELECT
+                aa.channel_code,
+                COALESCE(SUM(aa.allocated_revenue_cents), 0)::bigint AS revenue_cents,
+                COUNT(DISTINCT aa.event_id)::bigint AS conversion_count,
+                COALESCE(AVG(aa.confidence_score), 0)::numeric AS confidence_score,
+                MAX(COALESCE(aa.updated_at, aa.created_at)) AS channel_last_updated
+            FROM attribution_allocations aa
+            JOIN attribution_events e
+              ON e.id = aa.event_id
+             AND e.tenant_id = aa.tenant_id
+            WHERE aa.tenant_id = :tenant_id
+              AND e.occurred_at >= :window_start
+              AND e.occurred_at < :window_end
+            GROUP BY aa.channel_code
+            ORDER BY revenue_cents DESC, aa.channel_code ASC
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "window_start": window_start,
+            "window_end": window_end,
+        },
+    )
+
+    channels: list[ChannelAttribution] = []
+    last_updated_candidates: list[datetime] = []
+    for row in result.fetchall():
+        confidence = float(row.confidence_score or 0.0)
+        confidence = max(0.0, min(1.0, confidence))
+        channels.append(
+            ChannelAttribution(
+                channel_name=_map_channel_code_to_name(str(row.channel_code)),
+                revenue=round(int(row.revenue_cents) / 100.0, 2),
+                conversion_count=int(row.conversion_count),
+                confidence_score=confidence,
+                spend=None,
+                roas=None,
+            )
+        )
+        channel_last_updated = row.channel_last_updated
+        if isinstance(channel_last_updated, datetime):
+            last_updated_candidates.append(channel_last_updated.astimezone(timezone.utc))
+
+    now_utc = datetime.now(timezone.utc)
+    last_updated = max(last_updated_candidates) if last_updated_candidates else now_utc
+    total_revenue = round(sum(channel.revenue for channel in channels), 2)
+    data_freshness_seconds = max(0, int((now_utc - last_updated).total_seconds()))
+
+    response_payload = ChannelAttributionResponse(
+        channels=channels,
+        total_revenue=total_revenue,
+        tenant_id=str(tenant_id),
+        last_updated=last_updated,
+        data_freshness_seconds=data_freshness_seconds,
+        date_range={"start": resolved_start, "end": resolved_end},
+    )
+    etag = _channels_etag(response_payload)
+    if if_none_match and if_none_match.strip() == etag:
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            headers={
+                "X-Correlation-ID": str(x_correlation_id),
+                "ETag": etag,
+                "Cache-Control": "max-age=30",
+            },
+        )
+
+    response.headers["X-Correlation-ID"] = str(x_correlation_id)
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = "max-age=30"
+    return response_payload
 
 
 @router.get(

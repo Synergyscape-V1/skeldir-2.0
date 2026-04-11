@@ -595,7 +595,7 @@ export interface components {
              * @description Marketing channel name
              * @enum {string}
              */
-            channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral";
+            channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral" | "Unknown";
             /**
              * Format: double
              * @description Attributed revenue for this channel
@@ -618,6 +618,56 @@ export interface components {
              * @description Return on Ad Spend (revenue/spend)
              */
             roas?: number;
+        };
+        ChannelAttributionDateRange: {
+            /** Format: date */
+            start: string;
+            /** Format: date */
+            end: string;
+        };
+        ChannelAttributionResponse: {
+            channels: {
+                /**
+                 * @description Marketing channel name
+                 * @enum {string}
+                 */
+                channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral" | "Unknown";
+                /**
+                 * Format: double
+                 * @description Attributed revenue for this channel
+                 */
+                revenue: number;
+                /** @description Number of conversions attributed to this channel */
+                conversion_count: number;
+                /**
+                 * Format: double
+                 * @description Statistical confidence in attribution accuracy
+                 */
+                confidence_score: number;
+                /**
+                 * Format: float
+                 * @description Marketing spend on this channel
+                 */
+                spend?: number;
+                /**
+                 * Format: float
+                 * @description Return on Ad Spend (revenue/spend)
+                 */
+                roas?: number;
+            }[];
+            /** Format: double */
+            total_revenue: number;
+            /** Format: uuid */
+            tenant_id: string;
+            /** Format: date-time */
+            last_updated: string;
+            data_freshness_seconds: number;
+            date_range: {
+                /** Format: date */
+                start: string;
+                /** Format: date */
+                end: string;
+            };
         };
         AttributionExplanationRevenueContext: {
             cache_key: string;
@@ -2153,6 +2203,8 @@ export interface operations {
                 "X-Correlation-ID": string;
                 /** @description Bearer token for authentication (format - Bearer <token>) */
                 Authorization: string;
+                /** @description ETag from previous response for cache validation */
+                "If-None-Match"?: string;
             };
             path?: never;
             cookie?: never;
@@ -2163,6 +2215,13 @@ export interface operations {
             200: {
                 headers: {
                     "X-Correlation-ID"?: string;
+                    /** @description Entity tag for cache validation */
+                    ETag?: string;
+                    /**
+                     * @description Cache control directives
+                     * @example max-age=30
+                     */
+                    "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -2173,20 +2232,19 @@ export interface operations {
                      *           "channel_name": "Meta",
                      *           "revenue": 45250.75,
                      *           "conversion_count": 185,
-                     *           "confidence_score": 0.92,
-                     *           "spend": 18000,
-                     *           "roas": 2.51
+                     *           "confidence_score": 0.92
                      *         },
                      *         {
                      *           "channel_name": "Google",
                      *           "revenue": 37840.1,
                      *           "conversion_count": 142,
-                     *           "confidence_score": 0.89,
-                     *           "spend": 15000,
-                     *           "roas": 2.52
+                     *           "confidence_score": 0.89
                      *         }
                      *       ],
                      *       "total_revenue": 83090.85,
+                     *       "tenant_id": "00000000-0000-0000-0000-000000000000",
+                     *       "last_updated": "2026-04-11T16:00:00Z",
+                     *       "data_freshness_seconds": 7,
                      *       "date_range": {
                      *         "start": "2025-11-01",
                      *         "end": "2025-11-15"
@@ -2199,7 +2257,7 @@ export interface operations {
                              * @description Marketing channel name
                              * @enum {string}
                              */
-                            channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral";
+                            channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral" | "Unknown";
                             /**
                              * Format: double
                              * @description Attributed revenue for this channel
@@ -2225,14 +2283,28 @@ export interface operations {
                         }[];
                         /** Format: double */
                         total_revenue: number;
+                        /** Format: uuid */
+                        tenant_id: string;
+                        /** Format: date-time */
+                        last_updated: string;
+                        data_freshness_seconds: number;
                         date_range: {
                             /** Format: date */
-                            start?: string;
+                            start: string;
                             /** Format: date */
-                            end?: string;
+                            end: string;
                         };
                     };
                 };
+            };
+            /** @description Not Modified - ETag matches, use cached data */
+            304: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized - invalid or missing authentication */
             401: {

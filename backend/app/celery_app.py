@@ -89,6 +89,68 @@ def _sync_sqlalchemy_url(raw_url: str) -> str:
     return "".join(dsn_parts)
 
 
+def _coerce_broker_transport_url(raw_url: str) -> str:
+    """
+    Normalize broker URL to Kombu SQLAlchemy transport format.
+
+    Accepts accidental db+/plain-postgres forms and coerces to sqla+postgresql://
+    so runtime proof paths cannot fail with "No such transport: db".
+    """
+    cleaned = (raw_url or "").strip()
+    if not cleaned:
+        raise RuntimeError("CELERY_BROKER_URL is empty")
+    if cleaned.startswith("sqla+postgresql://"):
+        return cleaned
+    if cleaned.startswith("db+postgresql://"):
+        logger.warning(
+            "celery_broker_url_normalized_from_db_transport",
+            extra={"event_type": "celery.config.normalize", "transport": "db_to_sqla"},
+        )
+        return f"sqla+{cleaned.removeprefix('db+')}"
+    if cleaned.startswith("postgresql://"):
+        return f"sqla+{cleaned}"
+    if cleaned.startswith("postgresql+psycopg2://"):
+        return f"sqla+{cleaned.removeprefix('postgresql+psycopg2://')}".replace(
+            "sqla+", "sqla+postgresql://", 1
+        )
+    if os.getenv("TESTING") == "1" and cleaned.startswith("memory://"):
+        return cleaned
+    raise RuntimeError(
+        "CELERY_BROKER_URL must use sqla+postgresql:// (or postgresql:// for auto-coercion)"
+    )
+
+
+def _coerce_result_backend_url(raw_url: str) -> str:
+    """
+    Normalize result backend URL to Celery DB backend format.
+
+    Accepts accidental sqla+/plain-postgres forms and coerces to db+postgresql://
+    so worker bootstrap remains deterministic.
+    """
+    cleaned = (raw_url or "").strip()
+    if not cleaned:
+        raise RuntimeError("CELERY_RESULT_BACKEND is empty")
+    if cleaned.startswith("db+postgresql://"):
+        return cleaned
+    if cleaned.startswith("sqla+postgresql://"):
+        logger.warning(
+            "celery_result_backend_normalized_from_sqla_transport",
+            extra={"event_type": "celery.config.normalize", "transport": "sqla_to_db"},
+        )
+        return f"db+{cleaned.removeprefix('sqla+')}"
+    if cleaned.startswith("postgresql://"):
+        return f"db+{cleaned}"
+    if cleaned.startswith("postgresql+psycopg2://"):
+        return f"db+{cleaned.removeprefix('postgresql+psycopg2://')}".replace(
+            "db+", "db+postgresql://", 1
+        )
+    if os.getenv("TESTING") == "1" and cleaned.startswith("cache+memory://"):
+        return cleaned
+    raise RuntimeError(
+        "CELERY_RESULT_BACKEND must use db+postgresql:// (or postgresql:// for auto-coercion)"
+    )
+
+
 def _build_broker_url() -> str:
     """
     Build broker URL using SQLAlchemy transport over Postgres (sqla+postgresql://...).
@@ -97,9 +159,9 @@ def _build_broker_url() -> str:
     _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
     broker_secret = get_secret("CELERY_BROKER_URL")
     if broker_secret:
-        return broker_secret
+        return _coerce_broker_transport_url(broker_secret)
     base = _sync_sqlalchemy_url(get_database_url())
-    return f"sqla+{base}"
+    return _coerce_broker_transport_url(f"sqla+{base}")
 
 
 def _build_result_backend() -> str:
@@ -110,9 +172,9 @@ def _build_result_backend() -> str:
     _get_settings()  # B0.5.3.3 Gate C: Lazy settings access
     result_secret = get_secret("CELERY_RESULT_BACKEND")
     if result_secret:
-        return result_secret
+        return _coerce_result_backend_url(result_secret)
     base = _sync_sqlalchemy_url(get_database_url())
-    return f"db+{base}"
+    return _coerce_result_backend_url(f"db+{base}")
 
 
 # B0.5.3.3 Gate C: Create Celery app but defer configuration until first use
@@ -147,6 +209,11 @@ def _ensure_celery_configured():
     assert_runtime_secret_contract("worker")
 
     broker_url = _build_broker_url()
+    result_backend = _build_result_backend()
+    # Celery reads CELERY_* env vars with high precedence; normalize them to
+    # canonical transport schemes so a raw db+/sqla+ mismatch cannot leak through.
+    os.environ["CELERY_BROKER_URL"] = broker_url
+    os.environ["CELERY_RESULT_BACKEND"] = result_backend
     broker_transport_options: dict[str, object] = {
         "pool_recycle": 300,
         "pool_size": settings.CELERY_BROKER_ENGINE_POOL_SIZE,
@@ -171,7 +238,7 @@ def _ensure_celery_configured():
 
     celery_app.conf.update(
         broker_url=broker_url,
-        result_backend=_build_result_backend(),
+        result_backend=result_backend,
         task_serializer="json",
         result_serializer="json",
         accept_content=["json"],

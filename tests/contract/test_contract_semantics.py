@@ -134,7 +134,11 @@ semantics_skip_allowlist = load_skip_allowlist()
 operation_skip_prefixes = (
     "/api/attribution/platform-connections",
     "/api/attribution/platform-credentials",
+)
+CRITICAL_ATTRIBUTION_PATHS = (
+    "/api/attribution/revenue/realtime",
     "/api/attribution/channels",
+    "/api/attribution/explain/{entity_type}/{entity_id}",
 )
 P8_FORBIDDEN_SUBSTRINGS = (
     "unknown kid",
@@ -294,6 +298,13 @@ def test_contract_semantic_conformance(spec_path: Path):
                 )
             pytest.skip(f"No operations without security requirements in {spec_path.name}")
         pytest.fail(f"No in-scope operations executed for {spec_path.name}")
+
+
+def test_contract_semantics_skip_prefixes_do_not_mask_core_attribution_surface():
+    for path in CRITICAL_ATTRIBUTION_PATHS:
+        assert not any(path.startswith(prefix) for prefix in operation_skip_prefixes), (
+            f"core attribution operation is masked by semantics skip prefix: {path}"
+        )
 
 
 def test_auth_login_happy_path():

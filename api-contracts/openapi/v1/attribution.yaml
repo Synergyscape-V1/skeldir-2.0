@@ -108,6 +108,7 @@ paths:
       parameters:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
+        - $ref: './_common/base.yaml#/components/parameters/IfNoneMatch'
         - name: start_date
           in: query
           required: false
@@ -130,54 +131,56 @@ paths:
               schema:
                 type: string
                 format: uuid
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for cache validation
+            Cache-Control:
+              schema:
+                type: string
+              description: Cache control directives
+              example: max-age=30
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - channels
-                  - total_revenue
-                  - date_range
-                properties:
-                  channels:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ChannelAttribution'
-                  total_revenue:
-                    type: number
-                    format: double
-                    minimum: 0
-                  date_range:
-                    type: object
-                    properties:
-                      start:
-                        type: string
-                        format: date
-                      end:
-                        type: string
-                        format: date
+                $ref: '#/components/schemas/ChannelAttributionResponse'
               example:
                 channels:
                   - channel_name: Meta
                     revenue: 45250.75
                     conversion_count: 185
                     confidence_score: 0.92
-                    spend: 18000.00
-                    roas: 2.51
                   - channel_name: Google
                     revenue: 37840.10
                     conversion_count: 142
                     confidence_score: 0.89
-                    spend: 15000.00
-                    roas: 2.52
                 total_revenue: 83090.85
+                tenant_id: 00000000-0000-0000-0000-000000000000
+                last_updated: '2026-04-11T16:00:00Z'
+                data_freshness_seconds: 7
                 date_range:
                   start: '2025-11-01'
                   end: '2025-11-15'
+        '304':
+          description: Not Modified - ETag matches, use cached data
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            ETag:
+              schema:
+                type: string
         '401':
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+      x-skeldir-b21-p0:
+        implementation_status: mounted_deterministic_channels_surface
+        authority_requirements:
+          runtime_mount_required: true
+          generated_types_must_match_runtime_surface: true
+          contract_deletion_as_drift_workaround_forbidden: true
 
   /api/attribution/explain/{entity_type}/{entity_id}:
     get:
@@ -1368,7 +1371,7 @@ components:
       properties:
         channel_name:
           type: string
-          enum: [Meta, Google, TikTok, LinkedIn, Organic, Direct, Email, Referral]
+          enum: [Meta, Google, TikTok, LinkedIn, Organic, Direct, Email, Referral, Unknown]
           description: Marketing channel name
         revenue:
           type: number
@@ -1392,6 +1395,49 @@ components:
           type: number
           format: float
           description: Return on Ad Spend (revenue/spend)
+
+    ChannelAttributionDateRange:
+      type: object
+      required:
+        - start
+        - end
+      properties:
+        start:
+          type: string
+          format: date
+        end:
+          type: string
+          format: date
+
+    ChannelAttributionResponse:
+      type: object
+      required:
+        - channels
+        - total_revenue
+        - tenant_id
+        - last_updated
+        - data_freshness_seconds
+        - date_range
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelAttribution'
+        total_revenue:
+          type: number
+          format: double
+          minimum: 0
+        tenant_id:
+          type: string
+          format: uuid
+        last_updated:
+          type: string
+          format: date-time
+        data_freshness_seconds:
+          type: integer
+          minimum: 0
+        date_range:
+          $ref: '#/components/schemas/ChannelAttributionDateRange'
 
     AttributionExplanationRevenueContext:
       type: object

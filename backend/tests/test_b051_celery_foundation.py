@@ -27,6 +27,8 @@ os.environ.setdefault("CELERY_RESULT_BACKEND", f"db+{DEFAULT_SYNC_DSN}")
 # B0.5.6.1: CELERY_METRICS_PORT/ADDR removed - worker HTTP server eradicated
 
 from app.celery_app import (
+    _coerce_broker_transport_url,
+    _coerce_result_backend_url,
     celery_app,
     _build_broker_url,
     _build_result_backend,
@@ -220,6 +222,27 @@ def test_celery_config_uses_postgres_sqla():
     assert backend.startswith("db+postgresql"), backend
     assert "redis" not in broker and "redis" not in backend
     assert "amqp" not in broker and "amqp" not in backend
+
+
+def test_celery_broker_normalizes_db_scheme_to_sqla():
+    normalized = _coerce_broker_transport_url(
+        "db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation"
+    )
+    assert normalized.startswith("sqla+postgresql://")
+
+
+def test_celery_result_backend_normalizes_sqla_scheme_to_db():
+    normalized = _coerce_result_backend_url(
+        "sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation"
+    )
+    assert normalized.startswith("db+postgresql://")
+
+
+def test_celery_transport_rejects_non_postgres_urls():
+    with pytest.raises(RuntimeError):
+        _coerce_broker_transport_url("amqp://guest:guest@localhost:5672//")
+    with pytest.raises(RuntimeError):
+        _coerce_result_backend_url("rpc://")
 
 
 @pytest.mark.asyncio
