@@ -210,10 +210,6 @@ def _ensure_celery_configured():
 
     broker_url = _build_broker_url()
     result_backend = _build_result_backend()
-    # Celery reads CELERY_* env vars with high precedence; normalize them to
-    # canonical transport schemes so a raw db+/sqla+ mismatch cannot leak through.
-    os.environ["CELERY_BROKER_URL"] = broker_url
-    os.environ["CELERY_RESULT_BACKEND"] = result_backend
     broker_transport_options: dict[str, object] = {
         "pool_recycle": 300,
         "pool_size": settings.CELERY_BROKER_ENGINE_POOL_SIZE,
@@ -238,6 +234,8 @@ def _ensure_celery_configured():
 
     celery_app.conf.update(
         broker_url=broker_url,
+        broker_read_url=broker_url,
+        broker_write_url=broker_url,
         result_backend=result_backend,
         task_serializer="json",
         result_serializer="json",
