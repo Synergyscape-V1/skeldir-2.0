@@ -31,7 +31,7 @@ Contract B Guarantees:
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from sqlalchemy import text
 
@@ -50,6 +50,59 @@ def _parse_timestamp(iso_string: str) -> datetime:
     else:
         dt = dt.astimezone(timezone.utc)
     return dt
+
+
+async def _upsert_session_authority(
+    conn,
+    *,
+    tenant_id,
+    session_id,
+    issued_at: datetime,
+    expires_at: datetime,
+) -> None:
+    await conn.execute(
+        text(
+            """
+            INSERT INTO session_authority (
+                id,
+                tenant_id,
+                session_id,
+                issued_at,
+                expires_at,
+                last_seen_at,
+                invalidated_at,
+                invalidation_reason,
+                issued_by
+            ) VALUES (
+                :id,
+                :tenant_id,
+                :session_id,
+                :issued_at,
+                :expires_at,
+                :last_seen_at,
+                NULL,
+                NULL,
+                'b0533_contract_test'
+            )
+            ON CONFLICT (tenant_id, session_id)
+            DO UPDATE SET
+                issued_at = EXCLUDED.issued_at,
+                expires_at = EXCLUDED.expires_at,
+                last_seen_at = EXCLUDED.last_seen_at,
+                invalidated_at = NULL,
+                invalidation_reason = NULL,
+                issued_by = EXCLUDED.issued_by
+            """
+        ),
+        {
+            "id": str(uuid4()),
+            "tenant_id": str(tenant_id),
+            "session_id": str(session_id),
+            "issued_at": issued_at,
+            "expires_at": expires_at,
+            "last_seen_at": min(expires_at, issued_at + timedelta(hours=1)),
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -170,6 +223,21 @@ class TestRevenueInputContract:
                     "channel": channel,
                     "tenant_id": test_tenant_id,
                 }
+            )
+
+            await _upsert_session_authority(
+                conn,
+                tenant_id=test_tenant_id,
+                session_id=session_id_1,
+                issued_at=datetime(2025, 5, 1, 9, 0, tzinfo=timezone.utc),
+                expires_at=datetime(2025, 5, 1, 11, 0, tzinfo=timezone.utc),
+            )
+            await _upsert_session_authority(
+                conn,
+                tenant_id=test_tenant_id,
+                session_id=session_id_2,
+                issued_at=datetime(2025, 5, 1, 14, 0, tzinfo=timezone.utc),
+                expires_at=datetime(2025, 5, 1, 16, 0, tzinfo=timezone.utc),
             )
 
         # Run recompute_window (Contract B: reads events, writes allocations, ignores ledger)
@@ -336,6 +404,21 @@ class TestRevenueInputContract:
                     "channel": channel,
                     "tenant_id": test_tenant_id,
                 }
+            )
+
+            await _upsert_session_authority(
+                conn,
+                tenant_id=test_tenant_id,
+                session_id=session_id_1,
+                issued_at=datetime(2025, 6, 1, 9, 0, tzinfo=timezone.utc),
+                expires_at=datetime(2025, 6, 1, 11, 0, tzinfo=timezone.utc),
+            )
+            await _upsert_session_authority(
+                conn,
+                tenant_id=test_tenant_id,
+                session_id=session_id_2,
+                issued_at=datetime(2025, 6, 1, 14, 0, tzinfo=timezone.utc),
+                expires_at=datetime(2025, 6, 1, 16, 0, tzinfo=timezone.utc),
             )
 
         # BASELINE: Run recompute_window with empty ledger
