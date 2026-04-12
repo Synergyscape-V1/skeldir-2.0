@@ -16,6 +16,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FORBIDDEN_LEGACY_REFERENCE = "contracts/attribution/v1/attribution.yaml"
 CANONICAL_SOURCE = "api-contracts/openapi/v1/attribution.yaml"
 CANONICAL_BUNDLE = "api-contracts/dist/openapi/v1/attribution.bundled.yaml"
+CI_WORKFLOW = ".github/workflows/ci.yml"
+RUNTIME_PROOF = "backend/tests/integration/test_b21_p0_runtime_authority_closeout.py"
 SELF_ALLOWLIST_PATHS = {
     "scripts/ci/enforce_b21_p0_authority_convergence.py",
 }
@@ -64,7 +66,12 @@ def _iter_text_files(root: Path) -> list[Path]:
     return sorted(set(files))
 
 
-def run_enforcement(*, repo_root: Path) -> tuple[int, list[str]]:
+def run_enforcement(
+    *,
+    repo_root: Path,
+    workflow_file: Path,
+    runtime_proof_file: Path,
+) -> tuple[int, list[str]]:
     violations: list[str] = []
 
     canonical_source_path = repo_root / CANONICAL_SOURCE
@@ -83,6 +90,8 @@ def run_enforcement(*, repo_root: Path) -> tuple[int, list[str]]:
         entrypoints_path,
         typegen_script_path,
         package_json_path,
+        workflow_file,
+        runtime_proof_file,
     )
     for required_path in required:
         if not required_path.exists():
@@ -129,6 +138,35 @@ def run_enforcement(*, repo_root: Path) -> tuple[int, list[str]]:
     if FORBIDDEN_LEGACY_REFERENCE in contracts_validate:
         violations.append("package_contracts_validate_references_legacy_root")
 
+    workflow_text = _read_text(workflow_file)
+    required_workflow_tokens = (
+        "Run B2.1-P0 closeout runtime authority proofs",
+        "pytest backend/tests/integration/test_b21_p0_runtime_authority_closeout.py -q",
+        "DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b21_p0",
+        "MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p0",
+        "ENFORCE_RUNTIME_IDENTITY_PARITY: \"1\"",
+        "EXPECTED_RUNTIME_DB_USER: app_user",
+        "REVOKE ALL ON TABLE public.alembic_version FROM app_user",
+    )
+    for token in required_workflow_tokens:
+        if token not in workflow_text:
+            violations.append(f"workflow_missing_b21_closeout_token:{token}")
+
+    runtime_proof_text = _read_text(runtime_proof_file)
+    required_runtime_proof_tokens = (
+        "test_b21_p0_migration_authority_is_privileged_and_runtime_fails_closed",
+        "test_b21_p0_channels_route_is_tenant_safe_with_cross_tenant_negative_control",
+        "test_b21_p0_worker_substrate_path_is_tenant_safe_with_cross_tenant_negative_control",
+        "permission denied for table alembic_version",
+        "/api/attribution/channels",
+        "AUTHORITY_ENVELOPE_HEADER",
+        "current_setting('app.current_tenant_id', true)",
+        "session_authority",
+    )
+    for token in required_runtime_proof_tokens:
+        if token not in runtime_proof_text:
+            violations.append(f"runtime_proof_missing_b21_closeout_token:{token}")
+
     scan_roots = (
         repo_root / ".github" / "workflows",
         repo_root / "scripts",
@@ -159,6 +197,8 @@ def main(argv: list[str]) -> int:
         description="Enforce B2.1-P0 attribution authority convergence."
     )
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
+    parser.add_argument("--workflow-file", default=CI_WORKFLOW)
+    parser.add_argument("--runtime-proof-file", default=RUNTIME_PROOF)
     parser.add_argument("--simulate-regression", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -170,7 +210,12 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
-    status, violations = run_enforcement(repo_root=_resolve(REPO_ROOT, args.repo_root))
+    repo_root = _resolve(REPO_ROOT, args.repo_root)
+    status, violations = run_enforcement(
+        repo_root=repo_root,
+        workflow_file=_resolve(repo_root, args.workflow_file),
+        runtime_proof_file=_resolve(repo_root, args.runtime_proof_file),
+    )
     lines = ["b21_p0_authority_convergence_enforcer"]
     if status != 0:
         lines.append("result=FAIL")

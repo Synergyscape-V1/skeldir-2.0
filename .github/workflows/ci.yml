@@ -142,6 +142,82 @@ jobs:
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q
 
+  b21-p0-runtime-authority-closeout:
+    name: B2.1-P0 Runtime Authority Closeout
+    runs-on: ubuntu-latest
+    needs: [checkout]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b21_p0
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p0
+      EXPECTED_RUNTIME_DB_USER: app_user
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CONTRACT_TESTING: "0"
+      CI: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.1-P0 runtime closeout database roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
+          psql -h localhost -U postgres -c "CREATE USER migration_owner WITH PASSWORD 'migration_owner';"
+          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
+          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END \$\$;"
+          psql -h localhost -U postgres -c "CREATE DATABASE skeldir_b21_p0 OWNER migration_owner;"
+          psql -h localhost -U postgres -d skeldir_b21_p0 -c "GRANT ALL ON SCHEMA public TO migration_owner;"
+          psql -h localhost -U postgres -d skeldir_b21_p0 -c "GRANT ALL ON SCHEMA public TO app_user;"
+          psql -h localhost -U postgres -d skeldir_b21_p0 -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
+          psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
+          psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
+          psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
+
+      - name: Apply migrations using formal migration authority
+        env:
+          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p0
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p0
+        run: |
+          alembic upgrade head
+
+      - name: Enforce migration metadata least privilege boundary
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d skeldir_b21_p0 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
+
+      - name: Run B2.1-P0 closeout runtime authority proofs
+        run: |
+          pytest backend/tests/integration/test_b21_p0_runtime_authority_closeout.py -q
+
   b17-explanation-runtime-adjudication:
     name: B1.7 Explanation Runtime Adjudication
     runs-on: ubuntu-latest

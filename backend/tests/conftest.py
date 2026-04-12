@@ -108,6 +108,12 @@ def _dsn_username(dsn: str) -> str:
     return urlparse(dsn).username or ""
 
 
+def _to_sync_postgres_dsn(dsn: str) -> str:
+    if dsn.startswith("postgresql+asyncpg://"):
+        return dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+    return dsn
+
+
 @pytest.fixture(autouse=True)
 def _assert_runtime_identity_parity(request: pytest.FixtureRequest) -> None:
     """Global invariant: runtime proof tests in CI must execute as runtime DB identity."""
@@ -134,8 +140,8 @@ def _assert_runtime_identity_parity(request: pytest.FixtureRequest) -> None:
     if runtime_dsn == migration_dsn:
         raise RuntimeError("DATABASE_URL and MIGRATION_DATABASE_URL must not be identical in CI runtime proofs.")
 
-    runtime_engine = create_engine(runtime_dsn)
-    migration_engine = create_engine(migration_dsn)
+    runtime_engine = create_engine(_to_sync_postgres_dsn(runtime_dsn))
+    migration_engine = create_engine(_to_sync_postgres_dsn(migration_dsn))
     with runtime_engine.connect() as runtime_conn:
         runtime_current_user = runtime_conn.execute(text("SELECT current_user")).scalar_one()
     with migration_engine.connect() as migration_conn:
