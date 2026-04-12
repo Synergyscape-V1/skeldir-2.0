@@ -101,7 +101,8 @@ def _ensure_role_membership(cursor, *, role_name: str, member_name: str) -> None
 
 
 def _prepare_authority_surface(config: AuthorityConfig) -> None:
-    with psycopg2.connect(config.admin_dsn) as admin_conn:
+    admin_conn = psycopg2.connect(config.admin_dsn)
+    try:
         admin_conn.autocommit = True
         with admin_conn.cursor() as cursor:
             _create_or_alter_login_role(
@@ -143,12 +144,15 @@ def _prepare_authority_surface(config: AuthorityConfig) -> None:
                 role_name=config.app_ro_role,
                 member_name=config.runtime_user,
             )
+    finally:
+        admin_conn.close()
 
     db_admin_dsn = (
         f"postgresql://{config.migration_user}:{config.migration_password}"
         f"@{_host_port_fragment(config.admin_dsn)}/{config.database_name}"
     )
-    with psycopg2.connect(db_admin_dsn) as db_conn:
+    db_conn = psycopg2.connect(db_admin_dsn)
+    try:
         db_conn.autocommit = True
         with db_conn.cursor() as cursor:
             cursor.execute(
@@ -170,6 +174,8 @@ def _prepare_authority_surface(config: AuthorityConfig) -> None:
                     sql.Identifier(config.runtime_user),
                 )
             )
+    finally:
+        db_conn.close()
 
 
 def _host_port_fragment(admin_dsn: str) -> str:
