@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 
+from app.db.dsn import to_sync_postgres_dsn
 from app.celery_app import celery_app
 from app.main import app
 from app.security.auth import AuthContext, get_auth_context
@@ -38,17 +39,11 @@ def _runtime_async_url() -> str:
 
 
 def _runtime_sync_url() -> str:
-    raw = _runtime_async_url()
-    if raw.startswith("postgresql+asyncpg://"):
-        return raw.replace("postgresql+asyncpg://", "postgresql://", 1)
-    return raw
+    return to_sync_postgres_dsn(_runtime_async_url())
 
 
 def _migration_sync_url() -> str:
-    raw = _require_env("MIGRATION_DATABASE_URL")
-    if raw.startswith("postgresql+asyncpg://"):
-        return raw.replace("postgresql+asyncpg://", "postgresql://", 1)
-    return raw
+    return to_sync_postgres_dsn(_require_env("MIGRATION_DATABASE_URL"))
 
 
 def _seed_tenant(conn, tenant_id: UUID, label: str) -> None:
@@ -528,6 +523,8 @@ async def test_b21_p0_channels_route_is_tenant_safe_with_cross_tenant_negative_c
             ).mappings().one()
             assert bool(role_row["rolsuper"]) is False
             assert bool(role_row["rolbypassrls"]) is False
+            row_security_mode = str(conn.execute(text("SHOW row_security")).scalar_one()).lower()
+            assert row_security_mode == "on"
 
             policy_count = conn.execute(
                 text(
@@ -544,6 +541,48 @@ async def test_b21_p0_channels_route_is_tenant_safe_with_cross_tenant_negative_c
                 )
             ).scalar_one()
             assert int(policy_count) >= 2
+
+            rls_flags = conn.execute(
+                text(
+                    """
+                    SELECT relname, relrowsecurity
+                    FROM pg_class
+                    WHERE relname IN ('attribution_events', 'attribution_allocations')
+                    ORDER BY relname ASC
+                    """
+                )
+            ).mappings().all()
+            assert len(rls_flags) == 2
+            assert all(bool(row["relrowsecurity"]) for row in rls_flags)
+
+            conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            tenant_a_alloc_count = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM public.attribution_allocations
+                    WHERE tenant_id = :tenant_id
+                      AND event_id = :event_id
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "event_id": str(event_a)},
+            ).scalar_one()
+            tenant_a_event_count = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM public.attribution_events
+                    WHERE tenant_id = :tenant_id
+                      AND id = :event_id
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "event_id": str(event_a)},
+            ).scalar_one()
+            assert int(tenant_a_alloc_count) >= 1
+            assert int(tenant_a_event_count) >= 1
 
             conn.execute(
                 text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
@@ -662,6 +701,78 @@ def test_b21_p0_worker_substrate_path_is_tenant_safe_with_cross_tenant_negative_
     runtime_engine = create_engine(_runtime_sync_url())
     try:
         with runtime_engine.begin() as conn:
+            row_security_mode = str(conn.execute(text("SHOW row_security")).scalar_one()).lower()
+            assert row_security_mode == "on"
+            rls_flags = conn.execute(
+                text(
+                    """
+                    SELECT relname, relrowsecurity
+                    FROM pg_class
+                    WHERE relname IN (
+                        'session_authority',
+                        'attribution_events',
+                        'attribution_allocations',
+                        'ephemeral_order_resolution',
+                        'ephemeral_click_resolution'
+                    )
+                    ORDER BY relname ASC
+                    """
+                )
+            ).mappings().all()
+            assert len(rls_flags) == 5
+            assert all(bool(row["relrowsecurity"]) for row in rls_flags)
+
+            conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_a)},
+            )
+            tenant_a_session_authority = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM public.session_authority
+                    WHERE tenant_id = :tenant_id
+                      AND session_id = :session_id
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "session_id": str(session_a)},
+            ).scalar_one()
+            tenant_a_allocations = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM public.attribution_allocations
+                    WHERE tenant_id = :tenant_id
+                      AND event_id = :event_id
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "event_id": str(event_a)},
+            ).scalar_one()
+            tenant_a_ephemeral_order = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM public.ephemeral_order_resolution
+                    WHERE tenant_id = :tenant_id
+                    """
+                ),
+                {"tenant_id": str(tenant_a)},
+            ).scalar_one()
+            tenant_a_ephemeral_click = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM public.ephemeral_click_resolution
+                    WHERE tenant_id = :tenant_id
+                    """
+                ),
+                {"tenant_id": str(tenant_a)},
+            ).scalar_one()
+            assert int(tenant_a_session_authority) >= 1
+            assert int(tenant_a_allocations) >= 1
+            assert int(tenant_a_ephemeral_order) >= 1
+            assert int(tenant_a_ephemeral_click) >= 1
+
             conn.execute(
                 text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
                 {"tenant_id": str(tenant_b)},

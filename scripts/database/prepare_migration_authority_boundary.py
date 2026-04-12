@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""Prepare a least-privilege runtime/migration authority database boundary."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+
+import psycopg2
+from psycopg2 import sql
+
+
+@dataclass(frozen=True)
+class AuthorityConfig:
+    admin_dsn: str
+    database_name: str
+    runtime_user: str
+    runtime_password: str
+    migration_user: str
+    migration_password: str
+    app_rw_role: str
+    app_ro_role: str
+
+
+def _parse_args() -> AuthorityConfig:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Create/normalize runtime and migration principals for schema authority separation."
+        )
+    )
+    parser.add_argument("--admin-dsn", required=True, help="Superuser/admin PostgreSQL DSN.")
+    parser.add_argument("--database-name", required=True, help="Target database name.")
+    parser.add_argument("--runtime-user", default="app_user")
+    parser.add_argument("--runtime-password", default="app_user")
+    parser.add_argument("--migration-user", default="migration_owner")
+    parser.add_argument("--migration-password", default="migration_owner")
+    parser.add_argument("--app-rw-role", default="app_rw")
+    parser.add_argument("--app-ro-role", default="app_ro")
+    args = parser.parse_args()
+    return AuthorityConfig(
+        admin_dsn=args.admin_dsn,
+        database_name=args.database_name,
+        runtime_user=args.runtime_user,
+        runtime_password=args.runtime_password,
+        migration_user=args.migration_user,
+        migration_password=args.migration_password,
+        app_rw_role=args.app_rw_role,
+        app_ro_role=args.app_ro_role,
+    )
+
+
+def _role_exists(cursor, role_name: str) -> bool:
+    cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name,))
+    return cursor.fetchone() is not None
+
+
+def _database_exists(cursor, database_name: str) -> bool:
+    cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (database_name,))
+    return cursor.fetchone() is not None
+
+
+def _create_or_alter_login_role(cursor, role_name: str, password: str) -> None:
+    if _role_exists(cursor, role_name):
+        cursor.execute(
+            sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(role_name)),
+            (password,),
+        )
+        return
+    cursor.execute(
+        sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(role_name)),
+        (password,),
+    )
+
+
+def _create_nologin_role_if_missing(cursor, role_name: str) -> None:
+    if _role_exists(cursor, role_name):
+        return
+    cursor.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role_name)))
+
+
+def _ensure_role_membership(cursor, *, role_name: str, member_name: str) -> None:
+    cursor.execute(
+        """
+        SELECT 1
+        FROM pg_auth_members m
+        JOIN pg_roles role_ref ON role_ref.oid = m.roleid
+        JOIN pg_roles member_ref ON member_ref.oid = m.member
+        WHERE role_ref.rolname = %s
+          AND member_ref.rolname = %s
+        """,
+        (role_name, member_name),
+    )
+    if cursor.fetchone() is not None:
+        return
+    cursor.execute(
+        sql.SQL("GRANT {} TO {}").format(
+            sql.Identifier(role_name),
+            sql.Identifier(member_name),
+        )
+    )
+
+
+def _prepare_authority_surface(config: AuthorityConfig) -> None:
+    with psycopg2.connect(config.admin_dsn) as admin_conn:
+        admin_conn.autocommit = True
+        with admin_conn.cursor() as cursor:
+            _create_or_alter_login_role(
+                cursor, config.runtime_user, config.runtime_password
+            )
+            _create_or_alter_login_role(
+                cursor, config.migration_user, config.migration_password
+            )
+            _create_nologin_role_if_missing(cursor, config.app_rw_role)
+            _create_nologin_role_if_missing(cursor, config.app_ro_role)
+
+            if not _database_exists(cursor, config.database_name):
+                cursor.execute(
+                    sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                        sql.Identifier(config.database_name),
+                        sql.Identifier(config.migration_user),
+                    )
+                )
+            else:
+                cursor.execute(
+                    sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                        sql.Identifier(config.database_name),
+                        sql.Identifier(config.migration_user),
+                    )
+                )
+
+            _ensure_role_membership(
+                cursor,
+                role_name=config.runtime_user,
+                member_name=config.migration_user,
+            )
+            _ensure_role_membership(
+                cursor,
+                role_name=config.app_rw_role,
+                member_name=config.runtime_user,
+            )
+            _ensure_role_membership(
+                cursor,
+                role_name=config.app_ro_role,
+                member_name=config.runtime_user,
+            )
+
+    db_admin_dsn = (
+        f"postgresql://{config.migration_user}:{config.migration_password}"
+        f"@{_host_port_fragment(config.admin_dsn)}/{config.database_name}"
+    )
+    with psycopg2.connect(db_admin_dsn) as db_conn:
+        db_conn.autocommit = True
+        with db_conn.cursor() as cursor:
+            cursor.execute(
+                sql.SQL("GRANT ALL ON SCHEMA public TO {}").format(
+                    sql.Identifier(config.migration_user)
+                )
+            )
+            cursor.execute(
+                sql.SQL("GRANT ALL ON SCHEMA public TO {}").format(
+                    sql.Identifier(config.runtime_user)
+                )
+            )
+            cursor.execute(
+                sql.SQL(
+                    "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA public "
+                    "GRANT SELECT, INSERT ON TABLES TO {}"
+                ).format(
+                    sql.Identifier(config.migration_user),
+                    sql.Identifier(config.runtime_user),
+                )
+            )
+
+
+def _host_port_fragment(admin_dsn: str) -> str:
+    # admin_dsn is expected to be a standard postgresql:// URL for CI/local bootstrap.
+    # Split once at @ and / to preserve explicit host:port.
+    if "@" not in admin_dsn:
+        return "127.0.0.1:5432"
+    host_part = admin_dsn.split("@", 1)[1]
+    if "/" in host_part:
+        return host_part.split("/", 1)[0]
+    return host_part
+
+
+def main() -> int:
+    config = _parse_args()
+    if config.runtime_user == config.migration_user:
+        raise RuntimeError("runtime_user and migration_user must be distinct principals")
+    _prepare_authority_surface(config)
+    print("migration_authority_boundary_prepared")
+    print(f"database={config.database_name}")
+    print(f"runtime_user={config.runtime_user}")
+    print(f"migration_user={config.migration_user}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

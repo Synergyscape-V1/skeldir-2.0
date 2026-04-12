@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 
+from app.db.dsn import to_sync_postgres_dsn
 from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
 
 os.environ["TESTING"] = "1"
@@ -108,12 +109,6 @@ def _dsn_username(dsn: str) -> str:
     return urlparse(dsn).username or ""
 
 
-def _to_sync_postgres_dsn(dsn: str) -> str:
-    if dsn.startswith("postgresql+asyncpg://"):
-        return dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
-    return dsn
-
-
 @pytest.fixture(autouse=True)
 def _assert_runtime_identity_parity(request: pytest.FixtureRequest) -> None:
     """Global invariant: runtime proof tests in CI must execute as runtime DB identity."""
@@ -140,8 +135,8 @@ def _assert_runtime_identity_parity(request: pytest.FixtureRequest) -> None:
     if runtime_dsn == migration_dsn:
         raise RuntimeError("DATABASE_URL and MIGRATION_DATABASE_URL must not be identical in CI runtime proofs.")
 
-    runtime_engine = create_engine(_to_sync_postgres_dsn(runtime_dsn))
-    migration_engine = create_engine(_to_sync_postgres_dsn(migration_dsn))
+    runtime_engine = create_engine(to_sync_postgres_dsn(runtime_dsn))
+    migration_engine = create_engine(to_sync_postgres_dsn(migration_dsn))
     with runtime_engine.connect() as runtime_conn:
         runtime_current_user = runtime_conn.execute(text("SELECT current_user")).scalar_one()
     with migration_engine.connect() as migration_conn:

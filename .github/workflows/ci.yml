@@ -185,21 +185,17 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P0 runtime closeout database roles
-        env:
-          PGPASSWORD: postgres
+      - name: Prepare B2.1-P0 runtime closeout authority boundary
         run: |
-          psql -h localhost -U postgres -c "CREATE USER app_user WITH PASSWORD 'app_user';"
-          psql -h localhost -U postgres -c "CREATE USER migration_owner WITH PASSWORD 'migration_owner';"
-          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; END \$\$;"
-          psql -h localhost -U postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN CREATE ROLE app_ro NOLOGIN; END IF; END \$\$;"
-          psql -h localhost -U postgres -c "CREATE DATABASE skeldir_b21_p0 OWNER migration_owner;"
-          psql -h localhost -U postgres -d skeldir_b21_p0 -c "GRANT ALL ON SCHEMA public TO migration_owner;"
-          psql -h localhost -U postgres -d skeldir_b21_p0 -c "GRANT ALL ON SCHEMA public TO app_user;"
-          psql -h localhost -U postgres -d skeldir_b21_p0 -c "ALTER DEFAULT PRIVILEGES FOR ROLE migration_owner IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO app_user;"
-          psql -h localhost -U postgres -c "GRANT app_user TO migration_owner;"
-          psql -h localhost -U postgres -c "GRANT app_rw TO app_user;"
-          psql -h localhost -U postgres -c "GRANT app_ro TO app_user;"
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name "skeldir_b21_p0" \
+            --runtime-user "app_user" \
+            --runtime-password "app_user" \
+            --migration-user "migration_owner" \
+            --migration-password "migration_owner" \
+            --app-rw-role "app_rw" \
+            --app-ro-role "app_ro"
 
       - name: Apply migrations using formal migration authority
         env:
