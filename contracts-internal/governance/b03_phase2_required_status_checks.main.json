@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.3.0",
+  "contract_version": "1.4.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -47,6 +47,7 @@
     "B1.4 P6 Merge-Blocking Privacy Proof Plane Binding",
     "B1.4 P7 E2E Privacy System Proofs",
     "B2.1-P0 Runtime Authority Closeout",
+    "B2.1-P1 Semantic Replay Lock",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark"
   ],
