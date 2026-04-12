@@ -335,7 +335,10 @@ def _fetch_recompute_job(
                 WHERE tenant_id = :tenant_id
                   AND window_start = :window_start
                   AND window_end = :window_end
-                  AND model_version = '1.0.0'
+                  AND (
+                    model_version = '1.0.0'
+                    OR model_version LIKE '1.0.0::%'
+                  )
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """
