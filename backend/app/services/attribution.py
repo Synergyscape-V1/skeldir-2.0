@@ -45,6 +45,7 @@ def schedule_recompute_window(
     session_id: UUID | str | None = None,
     correlation_id: Optional[str] = None,
     model_version: str = "1.0.0",
+    lookback_days: int | None = None,
     fail: bool = False,
 ) -> AsyncResult:
     """
@@ -74,6 +75,7 @@ def schedule_recompute_window(
             "session_id": str(session_scope) if session_scope else None,
             "correlation_id": str(correlation_uuid),
             "model_version": model_version,
+            "lookback_days": lookback_days,
             "fail": fail,
         },
         correlation_id=str(correlation_uuid),

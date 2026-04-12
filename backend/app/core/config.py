@@ -229,6 +229,12 @@ class Settings(BaseSettings):
     IDEMPOTENCY_CACHE_TTL: int = Field(
         86400, description="Idempotency cache TTL in seconds (24 hours)"
     )
+    ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS: int = Field(
+        30,
+        description=(
+            "Authoritative default lookback horizon in days for deterministic attribution replay/input selection."
+        ),
+    )
     INGESTION_FOLLOWUP_TASKS_ENABLED: bool = Field(
         False,
         description="Enable synchronous scheduling of downstream ingestion follow-up tasks from webhook requests.",
@@ -463,6 +469,15 @@ class Settings(BaseSettings):
             raise ValueError("IDEMPOTENCY_CACHE_TTL must be greater than zero")
         return value
 
+    @field_validator("ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS")
+    @classmethod
+    def validate_attribution_default_lookback_days(cls, value: int) -> int:
+        if value < 1 or value > 365:
+            raise ValueError(
+                "ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS must be between 1 and 365"
+            )
+        return value
+
     @field_validator(
         "LLM_MONTHLY_CAP_CENTS",
         "LLM_HOURLY_SHUTOFF_CENTS",
@@ -476,6 +491,7 @@ class Settings(BaseSettings):
         "LLM_B17_PREWARM_TIMEOUT_MS",
         "LLM_BREAKER_FAILURE_THRESHOLD",
         "LLM_BREAKER_OPEN_SECONDS",
+        "ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS",
     )
     @classmethod
     def validate_llm_runtime_limits(cls, value: int, info) -> int:

@@ -119,14 +119,14 @@ class TestWindowIdempotency:
                         WHERE tenant_id = :tenant_id
                           AND window_start = :window_start
                           AND window_end = :window_end
-                          AND model_version = :model_version
+                          AND model_version LIKE :model_version_prefix
                         """
                     ),
                     {
                         "tenant_id": test_tenant_id,
                         "window_start": _parse_timestamp(window_start),
                         "window_end": _parse_timestamp(window_end),
-                        "model_version": model_version,
+                        "model_version_prefix": f"{model_version}::%",
                     },
                 )
                 row_first = result_first.fetchone()
@@ -158,14 +158,14 @@ class TestWindowIdempotency:
                         WHERE tenant_id = :tenant_id
                           AND window_start = :window_start
                           AND window_end = :window_end
-                          AND model_version = :model_version
+                          AND model_version LIKE :model_version_prefix
                         """
                     ),
                     {
                         "tenant_id": test_tenant_id,
                         "window_start": _parse_timestamp(window_start),
                         "window_end": _parse_timestamp(window_end),
-                        "model_version": model_version,
+                        "model_version_prefix": f"{model_version}::%",
                     },
                 )
                 row_second = result_second.fetchone()
@@ -178,14 +178,14 @@ class TestWindowIdempotency:
                         WHERE tenant_id = :tenant_id
                           AND window_start = :window_start
                           AND window_end = :window_end
-                          AND model_version = :model_version
+                          AND model_version LIKE :model_version_prefix
                         """
                     ),
                     {
                         "tenant_id": test_tenant_id,
                         "window_start": _parse_timestamp(window_start),
                         "window_end": _parse_timestamp(window_end),
-                        "model_version": model_version,
+                        "model_version_prefix": f"{model_version}::%",
                     },
                 )
                 job_count = count_result.scalar()
@@ -454,14 +454,14 @@ class TestWindowIdempotency:
                         WHERE tenant_id = :tenant_id
                           AND window_start = :window_start
                           AND window_end = :window_end
-                          AND model_version = :model_version
+                          AND model_version LIKE :model_version_prefix
                         """
                     ),
                     {
                         "tenant_id": test_tenant_id,
                         "window_start": _parse_timestamp(window_start),
                         "window_end": _parse_timestamp(window_end),
-                        "model_version": model_version,
+                        "model_version_prefix": f"{model_version}::%",
                     },
                 )
                 job_row = result.fetchone()
@@ -557,8 +557,12 @@ class TestWindowIdempotency:
             model_v1, run_count_v1 = rows[0]
             model_v2, run_count_v2 = rows[1]
 
-            assert model_v1 == "1.0.0", f"First row must be model_version=1.0.0, got {model_v1}"
-            assert model_v2 == "2.0.0", f"Second row must be model_version=2.0.0, got {model_v2}"
+            assert str(model_v1).startswith(
+                "1.0.0::"
+            ), f"First row must preserve base model_version=1.0.0, got {model_v1}"
+            assert str(model_v2).startswith(
+                "2.0.0::"
+            ), f"Second row must preserve base model_version=2.0.0, got {model_v2}"
             assert run_count_v1 == 1, f"Model 1.0.0 must have run_count=1, got {run_count_v1}"
             assert run_count_v2 == 1, f"Model 2.0.0 must have run_count=1, got {run_count_v2}"
         finally:
