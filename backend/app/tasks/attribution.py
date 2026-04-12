@@ -229,7 +229,8 @@ async def _resolve_replay_session_scopes(
         )
         if eligible_scope is None:
             raise ValueError(
-                "session locality violation: requested session scope is outside replay authority window"
+                "session locality violation: requested session scope is stale or invalidated "
+                "(outside replay authority window)"
             )
         return [session_scope]
 
@@ -259,6 +260,29 @@ async def _resolve_replay_session_scopes(
         },
     )
     return [UUID(str(value)) for value in result.scalars().all()]
+
+
+async def _resolve_active_session_scopes(
+    *,
+    conn,
+    tenant_id: UUID,
+    replay_window_start: datetime,
+    replay_window_end: datetime,
+    session_scope: UUID | None,
+) -> list[UUID]:
+    """
+    Compatibility shim for B1.4-P3 structural enforcers.
+
+    The implementation delegates to replay-window semantics so historical replay
+    is anchored to persisted session facts, not wall-clock activeness.
+    """
+    return await _resolve_replay_session_scopes(
+        conn=conn,
+        tenant_id=tenant_id,
+        replay_window_start=replay_window_start,
+        replay_window_end=replay_window_end,
+        session_scope=session_scope,
+    )
 
 
 async def _upsert_job_identity(
