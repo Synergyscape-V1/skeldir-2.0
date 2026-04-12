@@ -72,6 +72,13 @@ def _seed_tenant(conn, tenant_id: UUID, label: str) -> None:
     )
 
 
+def _set_tenant_guc(conn, tenant_id: UUID) -> None:
+    conn.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+
+
 def _ensure_channel_taxonomy_code(conn, code: str) -> None:
     conn.execute(
         text(
@@ -92,6 +99,7 @@ def _insert_session_authority(
     session_id: UUID,
     issued_at: datetime,
 ) -> None:
+    _set_tenant_guc(conn, tenant_id)
     conn.execute(
         text(
             """
@@ -145,6 +153,7 @@ def _insert_event(
     channel: str,
     revenue_cents: int,
 ) -> None:
+    _set_tenant_guc(conn, tenant_id)
     # RAW_SQL_ALLOWLIST: deterministic tenant-scoped attribution event seed for runtime closeout proofs.
     conn.execute(
         text(
@@ -218,6 +227,7 @@ def _insert_allocation(
     channel_code: str,
     revenue_cents: int,
 ) -> None:
+    _set_tenant_guc(conn, tenant_id)
     conn.execute(
         text(
             """
@@ -262,6 +272,7 @@ def _insert_allocation(
 
 
 def _insert_ephemeral_resolution_rows(conn, *, tenant_id: UUID, session_id: UUID) -> None:
+    _set_tenant_guc(conn, tenant_id)
     now_utc = datetime.now(timezone.utc)
     conn.execute(
         text(
