@@ -10,9 +10,11 @@ table and deterministic baseline allocation proof harness.
 
 import logging
 import os
+import json
+from hashlib import sha256
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import BaseModel, Field
@@ -196,6 +198,32 @@ def _canonical_global_idempotency_hash(raw_payload: Any) -> str | None:
         return None
     token = str(value).strip().lower()
     return token or None
+
+
+def _digest_canonical_payload_stream(payloads: Iterable[dict[str, Any]]) -> str:
+    """
+    Compute canonical payload digest without materializing the full payload list.
+
+    Uses the same canonical JSON shape as digest_canonical_payloads(list[dict]),
+    but streams per-row encoding to avoid very large intermediate allocations.
+    """
+    digest = sha256()
+    digest.update(b"[")
+    first = True
+    for payload in payloads:
+        if not first:
+            digest.update(b",")
+        first = False
+        digest.update(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        )
+    digest.update(b"]")
+    return digest.hexdigest()
 
 
 async def _resolve_replay_session_scopes(
@@ -714,18 +742,8 @@ async def _compute_allocations_deterministic_baseline(
         if session_scope_count == 0:
             session_scope_count = len({row[3] for row in events})
 
-        input_rows: list[AttributionInputRow] = []
-        for (
-            event_id,
-            revenue_cents,
-            occurred_at,
-            event_session_id,
-            event_type,
-            channel_code,
-            idempotency_key,
-            raw_payload,
-        ) in events:
-            input_rows.append(
+        input_identity_digest = _digest_canonical_payload_stream(
+            (
                 AttributionInputRow(
                     tenant_id=tenant_id,
                     event_id=event_id,
@@ -734,19 +752,29 @@ async def _compute_allocations_deterministic_baseline(
                     occurred_at=occurred_at,
                     event_type=str(event_type),
                     channel_code=str(channel_code),
-                    revenue_cents=int(revenue_cents),
+                    revenue_cents=int(_revenue_cents),
                     global_idempotency_hash=_canonical_global_idempotency_hash(raw_payload),
-                )
+                ).canonical_identity()
+                for (
+                    event_id,
+                    _revenue_cents,
+                    occurred_at,
+                    event_session_id,
+                    event_type,
+                    channel_code,
+                    idempotency_key,
+                    raw_payload,
+                ) in events
             )
-        input_identity_digest = digest_canonical_payloads(
-            [row.canonical_identity() for row in input_rows]
         )
         replay_identity_digest = replay_identity.digest()
 
         event_count = len(events)
         allocation_count = 0
         batches_written = 0
-        output_rows: list[AttributionOutputRow] = []
+        output_digest = sha256()
+        output_digest.update(b"[")
+        output_digest_first = True
 
         for offset in range(0, len(events), batch_events):
             batch = events[offset : offset + batch_events]
@@ -792,21 +820,30 @@ async def _compute_allocations_deterministic_baseline(
                     batch_rows["created_ats"].append(fixed_ts)
                     batch_rows["updated_ats"].append(fixed_ts)
                     allocation_count += 1
-                    output_rows.append(
-                        AttributionOutputRow(
-                            allocation_id=allocation_id,
-                            tenant_id=tenant_id,
-                            event_id=event_id,
-                            channel_code=channel_code,
-                            allocation_ratio=str(allocation_ratio),
-                            model_version=model_version,
-                            model_type=model_type,
-                            confidence_score=str(confidence_score),
-                            verified=False,
-                            allocated_revenue_cents=int(allocated_revenue_cents),
-                            created_at=fixed_ts,
-                            updated_at=fixed_ts,
-                        )
+                    output_payload = AttributionOutputRow(
+                        allocation_id=allocation_id,
+                        tenant_id=tenant_id,
+                        event_id=event_id,
+                        channel_code=channel_code,
+                        allocation_ratio=str(allocation_ratio),
+                        model_version=model_version,
+                        model_type=model_type,
+                        confidence_score=str(confidence_score),
+                        verified=False,
+                        allocated_revenue_cents=int(allocated_revenue_cents),
+                        created_at=fixed_ts,
+                        updated_at=fixed_ts,
+                    ).canonical_identity()
+                    if not output_digest_first:
+                        output_digest.update(b",")
+                    output_digest_first = False
+                    output_digest.update(
+                        json.dumps(
+                            output_payload,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=True,
+                        ).encode("utf-8")
                     )
 
             await _upsert_allocations_bulk(rows=batch_rows)
@@ -828,9 +865,8 @@ async def _compute_allocations_deterministic_baseline(
                     )
                     raise RuntimeError("R5 retry injection: transient failure")
 
-        output_identity_digest = digest_canonical_payloads(
-            [row.canonical_identity() for row in output_rows]
-        )
+        output_digest.update(b"]")
+        output_identity_digest = output_digest.hexdigest()
         logger.info(
             "attribution_baseline_allocations_computed",
             extra={
