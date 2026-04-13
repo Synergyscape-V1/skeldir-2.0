@@ -164,6 +164,7 @@ async def _seed_event(
 ) -> None:
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
+        # RAW_SQL_ALLOWLIST: deterministic runtime seed for B2.1-P1 semantic replay proofs.
         await conn.execute(
             text(
                 """
