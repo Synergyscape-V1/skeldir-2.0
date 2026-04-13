@@ -45,7 +45,7 @@ jobs:
       R5_SCALE_N_SMALL: "10000"
       R5_SCALE_N_LARGE: "100000"
       # Keep batches bounded so non-vacuous 100k runs do not stall on one giant upsert.
-      ATTRIBUTION_BASELINE_BATCH_EVENTS: "10000"
+      ATTRIBUTION_BASELINE_BATCH_EVENTS: "1000"
 
     steps:
       - name: Checkout
