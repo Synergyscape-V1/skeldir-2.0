@@ -723,7 +723,7 @@ def test_b057_p5_full_chain_webhook_to_matview():
         (artifact_dir / "metrics_api_before.txt").write_text(metrics_api_before, encoding="utf-8")
         (artifact_dir / "metrics_worker_before.txt").write_text(metrics_worker_before, encoding="utf-8")
 
-        event_ts = datetime(2026, 1, 25, 12, 34, 56, tzinfo=timezone.utc)
+        event_ts = datetime.now(timezone.utc).replace(microsecond=0)
         window_start, window_end = _compute_window(event_ts)
         payload = {
             "id": 424242,
