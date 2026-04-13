@@ -923,6 +923,7 @@ CREATE TABLE public.attribution_recompute_jobs (
     status text DEFAULT 'pending'::text NOT NULL,
     run_count integer DEFAULT 0 NOT NULL,
     last_correlation_id uuid,
+    replay_event_created_ceiling timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     started_at timestamp with time zone,

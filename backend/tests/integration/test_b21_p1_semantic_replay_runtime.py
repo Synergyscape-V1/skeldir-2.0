@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -161,7 +162,9 @@ async def _seed_event(
     idempotency_key: str,
     channel: str,
     revenue_cents: int,
+    created_at: datetime | None = None,
 ) -> None:
+    event_created_at = created_at or occurred_at
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
         # RAW_SQL_ALLOWLIST: deterministic runtime seed for B2.1-P1 semantic replay proofs.
@@ -234,8 +237,8 @@ async def _seed_event(
                 "conversion_value_cents": int(revenue_cents),
                 "event_timestamp": occurred_at,
                 "processed_at": occurred_at + timedelta(minutes=1),
-                "created_at": occurred_at,
-                "updated_at": occurred_at,
+                "created_at": event_created_at,
+                "updated_at": event_created_at,
             },
         )
 
@@ -480,3 +483,111 @@ async def test_b21_p1_runtime_default_30_day_lookback_and_replay_identity_partit
         )
         job_rows = rows.fetchall()
     assert len(job_rows) == 3
+
+
+@pytest.mark.asyncio
+async def test_b21_p1_runtime_replay_identity_freezes_late_arriving_historical_events():
+    await _ensure_runtime_tables()
+    await _ensure_channel_codes(["direct", "email", "google_search_paid"])
+
+    tenant_id = uuid4()
+    session_id = uuid4()
+    anchor_now = datetime.now(timezone.utc).replace(microsecond=0)
+    window_start = anchor_now - timedelta(minutes=30)
+    window_end = anchor_now + timedelta(minutes=30)
+    base_event_at = anchor_now - timedelta(minutes=5)
+    late_event_at = anchor_now - timedelta(minutes=3)
+
+    async with engine.begin() as conn:
+        await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+
+    await _seed_session_authority(
+        tenant_id=tenant_id,
+        session_id=session_id,
+        issued_at=anchor_now - timedelta(minutes=10),
+        expires_at=anchor_now + timedelta(hours=23),
+    )
+    await _seed_event(
+        tenant_id=tenant_id,
+        event_id=uuid4(),
+        session_id=session_id,
+        occurred_at=base_event_at,
+        event_type="purchase",
+        idempotency_key=f"b21p1-freeze-base-{uuid4()}",
+        channel="direct",
+        revenue_cents=1500,
+    )
+
+    frozen_v1 = _apply_recompute(
+        tenant_id=tenant_id,
+        window_start=_iso(window_start),
+        window_end=_iso(window_end),
+        session_id=session_id,
+        model_version="freeze-v1",
+    )
+    assert frozen_v1["status"] == "succeeded"
+    assert int(frozen_v1["event_count"]) == 1
+
+    replay_ceiling = datetime.fromisoformat(
+        str(frozen_v1["replay_event_created_ceiling"]).replace("Z", "+00:00")
+    )
+    late_created_at = replay_ceiling + timedelta(seconds=2)
+    await _seed_event(
+        tenant_id=tenant_id,
+        event_id=uuid4(),
+        session_id=session_id,
+        occurred_at=late_event_at,
+        event_type="purchase",
+        idempotency_key=f"b21p1-freeze-late-{uuid4()}",
+        channel="direct",
+        revenue_cents=2400,
+        created_at=late_created_at,
+    )
+
+    frozen_v1_repeat = _apply_recompute(
+        tenant_id=tenant_id,
+        window_start=_iso(window_start),
+        window_end=_iso(window_end),
+        session_id=session_id,
+        model_version="freeze-v1",
+    )
+    assert frozen_v1_repeat["status"] == "succeeded"
+    assert int(frozen_v1_repeat["event_count"]) == 1
+    assert frozen_v1_repeat["input_identity_digest"] == frozen_v1["input_identity_digest"]
+    assert frozen_v1_repeat["replay_identity_digest"] == frozen_v1["replay_identity_digest"]
+    assert (
+        frozen_v1_repeat["replay_event_created_ceiling"]
+        == frozen_v1["replay_event_created_ceiling"]
+    )
+
+    await asyncio.sleep(2.1)
+    unfrozen_new_request = _apply_recompute(
+        tenant_id=tenant_id,
+        window_start=_iso(window_start),
+        window_end=_iso(window_end),
+        session_id=session_id,
+        model_version="freeze-v2",
+    )
+    assert unfrozen_new_request["status"] == "succeeded"
+    assert int(unfrozen_new_request["event_count"]) == 2
+
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        frozen_job = await conn.execute(
+            text(
+                """
+                SELECT run_count, replay_event_created_ceiling
+                FROM attribution_recompute_jobs
+                WHERE tenant_id = :tenant_id
+                  AND model_version LIKE 'freeze-v1::taxonomy=b2.1-p1-v1%'
+                """
+            ),
+            {"tenant_id": str(tenant_id)},
+        )
+        frozen_row = frozen_job.fetchone()
+    assert frozen_row is not None
+    assert int(frozen_row[0]) == 2
+    expected_ceiling = datetime.fromisoformat(
+        str(frozen_v1["replay_event_created_ceiling"]).replace("Z", "+00:00")
+    )
+    assert frozen_row[1].astimezone(timezone.utc) == expected_ceiling.astimezone(timezone.utc)
