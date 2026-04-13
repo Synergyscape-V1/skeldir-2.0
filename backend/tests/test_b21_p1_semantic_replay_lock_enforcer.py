@@ -74,6 +74,34 @@ def test_b21_p1_semantic_replay_lock_enforcer_negative_control_wall_clock_regres
     assert "task_missing_token:sa.issued_at < :replay_window_end" in combined
 
 
+def test_b21_p1_semantic_replay_lock_enforcer_negative_control_missing_replay_freeze_token(
+    tmp_path: Path,
+) -> None:
+    task_regression = tmp_path / "attribution.replay_freeze.regression.py"
+    task_regression.write_text(
+        TASK_FILE.read_text(encoding="utf-8").replace(
+            "e.created_at <= :replay_event_created_ceiling",
+            "e.occurred_at < :replay_window_end",
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--task-file",
+            str(task_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert "task_missing_token:e.created_at <= :replay_event_created_ceiling" in combined
+
+
 def test_b21_p1_semantic_replay_lock_enforcer_negative_control_missing_required_context(
     tmp_path: Path,
 ) -> None:

@@ -10,9 +10,11 @@ table and deterministic baseline allocation proof harness.
 
 import logging
 import os
+import json
+from hashlib import sha256
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import BaseModel, Field
@@ -198,14 +200,47 @@ def _canonical_global_idempotency_hash(raw_payload: Any) -> str | None:
     return token or None
 
 
+def _digest_canonical_payload_stream(payloads: Iterable[dict[str, Any]]) -> str:
+    """
+    Compute canonical payload digest without materializing the full payload list.
+
+    Uses the same canonical JSON shape as digest_canonical_payloads(list[dict]),
+    but streams per-row encoding to avoid very large intermediate allocations.
+    """
+    digest = sha256()
+    digest.update(b"[")
+    first = True
+    for payload in payloads:
+        if not first:
+            digest.update(b",")
+        first = False
+        digest.update(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        )
+    digest.update(b"]")
+    return digest.hexdigest()
+
+
 async def _resolve_replay_session_scopes(
     *,
     conn,
     tenant_id: UUID,
     replay_window_start: datetime,
     replay_window_end: datetime,
+    replay_event_created_ceiling: datetime | None,
     session_scope: UUID | None,
 ) -> list[UUID]:
+    effective_replay_event_created_ceiling = (
+        replay_event_created_ceiling.astimezone(timezone.utc)
+        if replay_event_created_ceiling is not None
+        else datetime.max.replace(tzinfo=timezone.utc)
+    )
+
     if session_scope is not None:
         eligible_scope = await conn.scalar(
             text(
@@ -245,6 +280,7 @@ async def _resolve_replay_session_scopes(
             WHERE e.tenant_id = :tenant_id
               AND e.occurred_at >= :replay_window_start
               AND e.occurred_at < :replay_window_end
+              AND e.created_at <= :replay_event_created_ceiling
               AND lower(trim(e.event_type)) = ANY(:conversion_event_types)
               AND sa.invalidated_at IS NULL
               AND sa.issued_at < :replay_window_end
@@ -256,6 +292,7 @@ async def _resolve_replay_session_scopes(
             "tenant_id": tenant_id,
             "replay_window_start": replay_window_start,
             "replay_window_end": replay_window_end,
+            "replay_event_created_ceiling": effective_replay_event_created_ceiling,
             "conversion_event_types": list(CONVERSION_EVENT_TYPES),
         },
     )
@@ -268,7 +305,8 @@ async def _resolve_active_session_scopes(
     tenant_id: UUID,
     replay_window_start: datetime,
     replay_window_end: datetime,
-    session_scope: UUID | None,
+    replay_event_created_ceiling: datetime | None = None,
+    session_scope: UUID | None = None,
 ) -> list[UUID]:
     """
     Compatibility shim for B1.4-P3 structural enforcers.
@@ -281,6 +319,7 @@ async def _resolve_active_session_scopes(
         tenant_id=tenant_id,
         replay_window_start=replay_window_start,
         replay_window_end=replay_window_end,
+        replay_event_created_ceiling=replay_event_created_ceiling,
         session_scope=session_scope,
     )
 
@@ -291,7 +330,8 @@ async def _upsert_job_identity(
     window_end: datetime,
     model_version: str,
     correlation_id: str,
-) -> tuple[UUID, int, str]:
+    replay_event_created_ceiling: datetime,
+) -> tuple[UUID, int, str, datetime]:
     """
     Upsert job identity row in attribution_recompute_jobs table.
 
@@ -315,10 +355,12 @@ async def _upsert_job_identity(
             text("""
                 INSERT INTO attribution_recompute_jobs (
                     id, tenant_id, window_start, window_end, model_version,
-                    status, run_count, last_correlation_id, created_at, updated_at
+                    status, run_count, last_correlation_id, replay_event_created_ceiling,
+                    created_at, updated_at
                 ) VALUES (
                     :job_id, :tenant_id, :window_start, :window_end, :model_version,
-                    'running', 1, :correlation_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    'running', 1, :correlation_id, :replay_event_created_ceiling,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (tenant_id, window_start, window_end, model_version)
                 DO UPDATE SET
@@ -327,7 +369,7 @@ async def _upsert_job_identity(
                     last_correlation_id = EXCLUDED.last_correlation_id,
                     updated_at = CURRENT_TIMESTAMP,
                     started_at = CURRENT_TIMESTAMP
-                RETURNING id, run_count, NULL as previous_status
+                RETURNING id, run_count, NULL as previous_status, replay_event_created_ceiling
             """),
             {
                 "job_id": uuid4(),
@@ -336,6 +378,7 @@ async def _upsert_job_identity(
                 "window_end": window_end,
                 "model_version": model_version,
                 "correlation_id": uuid4() if correlation_id is None else UUID(correlation_id),
+                "replay_event_created_ceiling": replay_event_created_ceiling,
             }
         )
         row = result.fetchone()
@@ -346,6 +389,7 @@ async def _upsert_job_identity(
         job_id = row[0]
         run_count = row[1]
         previous_status = row[2] if row[2] else "new"
+        effective_replay_event_created_ceiling = row[3].astimezone(timezone.utc)
 
         logger.info(
             "attribution_job_identity_upserted",
@@ -358,10 +402,13 @@ async def _upsert_job_identity(
                 "run_count": run_count,
                 "previous_status": previous_status,
                 "correlation_id": correlation_id,
+                "replay_event_created_ceiling": (
+                    effective_replay_event_created_ceiling.isoformat()
+                ),
             }
         )
 
-        return (job_id, run_count, previous_status)
+        return (job_id, run_count, previous_status, effective_replay_event_created_ceiling)
 
 
 async def _mark_job_status(
@@ -466,6 +513,7 @@ async def _compute_allocations_deterministic_baseline(
             replay_window_start=replay_window_start,
             replay_window_end=replay_window_end,
             replay_anchor_at=window_end,
+            replay_event_created_ceiling=datetime.now(timezone.utc),
             session_scope_identity=session_scope_identity(_normalize_session_scope(session_id)),
         )
 
@@ -573,6 +621,7 @@ async def _compute_allocations_deterministic_baseline(
                 tenant_id=tenant_id,
                 replay_window_start=replay_identity.replay_window_start,
                 replay_window_end=replay_identity.replay_window_end,
+                replay_event_created_ceiling=replay_identity.replay_event_created_ceiling,
                 session_scope=session_scope,
             )
             session_scope_count = len(session_scopes)
@@ -583,6 +632,7 @@ async def _compute_allocations_deterministic_baseline(
                 tenant_id=tenant_id,
                 replay_window_start=replay_identity.replay_window_start,
                 replay_window_end=replay_identity.replay_window_end,
+                replay_event_created_ceiling=replay_identity.replay_event_created_ceiling,
                 session_scope=None,
             )
             active_session_scopes = set(active_scopes)
@@ -606,6 +656,7 @@ async def _compute_allocations_deterministic_baseline(
                       AND e.session_id = :session_id
                       AND e.occurred_at >= :replay_window_start
                       AND e.occurred_at < :replay_window_end
+                      AND e.created_at <= :replay_event_created_ceiling
                       AND lower(trim(e.event_type)) = ANY(:conversion_event_types)
                     ORDER BY e.occurred_at ASC, e.id ASC
                     """
@@ -615,6 +666,7 @@ async def _compute_allocations_deterministic_baseline(
                     "session_id": session_scope,
                     "replay_window_start": replay_identity.replay_window_start,
                     "replay_window_end": replay_identity.replay_window_end,
+                    "replay_event_created_ceiling": replay_identity.replay_event_created_ceiling,
                     "conversion_event_types": list(CONVERSION_EVENT_TYPES),
                 },
             )
@@ -635,6 +687,7 @@ async def _compute_allocations_deterministic_baseline(
                     WHERE e.tenant_id = :tenant_id
                       AND e.occurred_at >= :replay_window_start
                       AND e.occurred_at < :replay_window_end
+                      AND e.created_at <= :replay_event_created_ceiling
                       AND lower(trim(e.event_type)) = ANY(:conversion_event_types)
                     ORDER BY e.occurred_at ASC, e.id ASC
                     """
@@ -643,6 +696,7 @@ async def _compute_allocations_deterministic_baseline(
                     "tenant_id": tenant_id,
                     "replay_window_start": replay_identity.replay_window_start,
                     "replay_window_end": replay_identity.replay_window_end,
+                    "replay_event_created_ceiling": replay_identity.replay_event_created_ceiling,
                     "conversion_event_types": list(CONVERSION_EVENT_TYPES),
                 },
             )
@@ -665,6 +719,9 @@ async def _compute_allocations_deterministic_baseline(
                     "window_end": window_end.isoformat(),
                     "replay_window_start": replay_identity.replay_window_start.isoformat(),
                     "replay_window_end": replay_identity.replay_window_end.isoformat(),
+                    "replay_event_created_ceiling": (
+                        replay_identity.replay_event_created_ceiling.isoformat()
+                    ),
                     "lookback_days": replay_identity.lookback_days,
                     "model_version": model_version,
                 },
@@ -679,23 +736,14 @@ async def _compute_allocations_deterministic_baseline(
                 "output_identity_digest": empty_digest,
                 "replay_identity_digest": replay_identity_digest,
                 "job_model_version": replay_identity.job_model_version(),
+                "replay_event_created_ceiling": replay_identity.replay_event_created_ceiling.isoformat(),
             }
 
         if session_scope_count == 0:
             session_scope_count = len({row[3] for row in events})
 
-        input_rows: list[AttributionInputRow] = []
-        for (
-            event_id,
-            revenue_cents,
-            occurred_at,
-            event_session_id,
-            event_type,
-            channel_code,
-            idempotency_key,
-            raw_payload,
-        ) in events:
-            input_rows.append(
+        input_identity_digest = _digest_canonical_payload_stream(
+            (
                 AttributionInputRow(
                     tenant_id=tenant_id,
                     event_id=event_id,
@@ -704,19 +752,29 @@ async def _compute_allocations_deterministic_baseline(
                     occurred_at=occurred_at,
                     event_type=str(event_type),
                     channel_code=str(channel_code),
-                    revenue_cents=int(revenue_cents),
+                    revenue_cents=int(_revenue_cents),
                     global_idempotency_hash=_canonical_global_idempotency_hash(raw_payload),
-                )
+                ).canonical_identity()
+                for (
+                    event_id,
+                    _revenue_cents,
+                    occurred_at,
+                    event_session_id,
+                    event_type,
+                    channel_code,
+                    idempotency_key,
+                    raw_payload,
+                ) in events
             )
-        input_identity_digest = digest_canonical_payloads(
-            [row.canonical_identity() for row in input_rows]
         )
         replay_identity_digest = replay_identity.digest()
 
         event_count = len(events)
         allocation_count = 0
         batches_written = 0
-        output_rows: list[AttributionOutputRow] = []
+        output_digest = sha256()
+        output_digest.update(b"[")
+        output_digest_first = True
 
         for offset in range(0, len(events), batch_events):
             batch = events[offset : offset + batch_events]
@@ -762,21 +820,30 @@ async def _compute_allocations_deterministic_baseline(
                     batch_rows["created_ats"].append(fixed_ts)
                     batch_rows["updated_ats"].append(fixed_ts)
                     allocation_count += 1
-                    output_rows.append(
-                        AttributionOutputRow(
-                            allocation_id=allocation_id,
-                            tenant_id=tenant_id,
-                            event_id=event_id,
-                            channel_code=channel_code,
-                            allocation_ratio=str(allocation_ratio),
-                            model_version=model_version,
-                            model_type=model_type,
-                            confidence_score=str(confidence_score),
-                            verified=False,
-                            allocated_revenue_cents=int(allocated_revenue_cents),
-                            created_at=fixed_ts,
-                            updated_at=fixed_ts,
-                        )
+                    output_payload = AttributionOutputRow(
+                        allocation_id=allocation_id,
+                        tenant_id=tenant_id,
+                        event_id=event_id,
+                        channel_code=channel_code,
+                        allocation_ratio=str(allocation_ratio),
+                        model_version=model_version,
+                        model_type=model_type,
+                        confidence_score=str(confidence_score),
+                        verified=False,
+                        allocated_revenue_cents=int(allocated_revenue_cents),
+                        created_at=fixed_ts,
+                        updated_at=fixed_ts,
+                    ).canonical_identity()
+                    if not output_digest_first:
+                        output_digest.update(b",")
+                    output_digest_first = False
+                    output_digest.update(
+                        json.dumps(
+                            output_payload,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=True,
+                        ).encode("utf-8")
                     )
 
             await _upsert_allocations_bulk(rows=batch_rows)
@@ -798,9 +865,8 @@ async def _compute_allocations_deterministic_baseline(
                     )
                     raise RuntimeError("R5 retry injection: transient failure")
 
-        output_identity_digest = digest_canonical_payloads(
-            [row.canonical_identity() for row in output_rows]
-        )
+        output_digest.update(b"]")
+        output_identity_digest = output_digest.hexdigest()
         logger.info(
             "attribution_baseline_allocations_computed",
             extra={
@@ -809,6 +875,9 @@ async def _compute_allocations_deterministic_baseline(
                 "window_end": window_end.isoformat(),
                 "replay_window_start": replay_identity.replay_window_start.isoformat(),
                 "replay_window_end": replay_identity.replay_window_end.isoformat(),
+                "replay_event_created_ceiling": (
+                    replay_identity.replay_event_created_ceiling.isoformat()
+                ),
                 "lookback_days": replay_identity.lookback_days,
                 "model_version": model_version,
                 "job_model_version": replay_identity.job_model_version(),
@@ -829,6 +898,7 @@ async def _compute_allocations_deterministic_baseline(
             "output_identity_digest": output_identity_digest,
             "replay_identity_digest": replay_identity_digest,
             "job_model_version": replay_identity.job_model_version(),
+            "replay_event_created_ceiling": replay_identity.replay_event_created_ceiling.isoformat(),
         }
 
 
@@ -941,19 +1011,21 @@ def recompute_window(
         replay_window_start=replay_window_start,
         replay_window_end=replay_window_end,
         replay_anchor_at=window_end_dt,
+        replay_event_created_ceiling=window_end_dt,
         session_scope_identity=session_scope_identity(session_scope),
     )
     job_model_version = replay_identity.job_model_version()
 
     # B0.5.3.2: Upsert job identity (idempotency gate)
     try:
-        job_id, run_count, previous_status = _run_async(
+        job_id, run_count, previous_status, replay_event_created_ceiling = _run_async(
             _upsert_job_identity,
             tenant_id=model.tenant_id,
             window_start=window_start_dt,
             window_end=window_end_dt,
             model_version=job_model_version,
             correlation_id=correlation,
+            replay_event_created_ceiling=datetime.now(timezone.utc),
         )
     except Exception as exc:
         logger.error(
@@ -968,6 +1040,20 @@ def recompute_window(
             },
         )
         raise
+
+    replay_identity = DeterministicReplayIdentity(
+        tenant_id=model.tenant_id,
+        model_version=model_version,
+        taxonomy_version=ATTRIBUTION_SEMANTICS_VERSION,
+        lookback_days=resolved_lookback_days,
+        window_start=window_start_dt,
+        window_end=window_end_dt,
+        replay_window_start=replay_window_start,
+        replay_window_end=replay_window_end,
+        replay_anchor_at=window_end_dt,
+        replay_event_created_ceiling=replay_event_created_ceiling,
+        session_scope_identity=session_scope_identity(session_scope),
+    )
 
     logger.info(
         "attribution_recompute_window_started",
@@ -984,6 +1070,7 @@ def recompute_window(
                 "lookback_days": resolved_lookback_days,
                 "replay_window_start": replay_window_start.isoformat(),
                 "replay_window_end": replay_window_end.isoformat(),
+                "replay_event_created_ceiling": replay_event_created_ceiling.isoformat(),
                 "taxonomy_version": ATTRIBUTION_SEMANTICS_VERSION,
                 "run_count": run_count,
                 "previous_status": previous_status,
@@ -1025,6 +1112,7 @@ def recompute_window(
                 "lookback_days": resolved_lookback_days,
                 "replay_window_start": replay_window_start.isoformat(),
                 "replay_window_end": replay_window_end.isoformat(),
+                "replay_event_created_ceiling": replay_event_created_ceiling.isoformat(),
                 "run_count": run_count,
                 "event_count": result["event_count"],
                 "allocation_count": result["allocation_count"],
@@ -1047,6 +1135,7 @@ def recompute_window(
             "lookback_days": resolved_lookback_days,
             "replay_window_start": replay_window_start.isoformat(),
             "replay_window_end": replay_window_end.isoformat(),
+            "replay_event_created_ceiling": replay_event_created_ceiling.isoformat(),
             "event_count": result["event_count"],
             "allocation_count": result["allocation_count"],
             "session_scope_count": result.get("session_scope_count", 0),
@@ -1083,6 +1172,7 @@ def recompute_window(
                 "lookback_days": resolved_lookback_days,
                 "replay_window_start": replay_window_start.isoformat(),
                 "replay_window_end": replay_window_end.isoformat(),
+                "replay_event_created_ceiling": replay_event_created_ceiling.isoformat(),
             },
         )
         raise

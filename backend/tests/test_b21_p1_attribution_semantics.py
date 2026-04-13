@@ -54,6 +54,7 @@ def test_b21_p1_job_model_version_encodes_replay_identity_dimensions() -> None:
         replay_window_start=datetime(2025, 1, 1, tzinfo=timezone.utc),
         replay_window_end=datetime(2025, 1, 2, tzinfo=timezone.utc),
         replay_anchor_at=datetime(2025, 1, 2, tzinfo=timezone.utc),
+        replay_event_created_ceiling=datetime(2025, 1, 2, tzinfo=timezone.utc),
         session_scope_identity=session_scope_identity(None),
     )
     token = replay.job_model_version()

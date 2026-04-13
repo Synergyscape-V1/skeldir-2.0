@@ -423,6 +423,14 @@ MANAGED_SETTINGS_CONTRACT: dict[str, ManagedSettingContract] = {
         owner="backend-platform",
         call_sites=("backend/app/core/config.py",),
     ),
+    "ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS": _contract(
+        key="ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS",
+        classification="config",
+        aws_path_template="/skeldir/{env}/config/attribution/deterministic-default-lookback-days",
+        rotation_criticality="none",
+        owner="backend-platform",
+        call_sites=("backend/app/core/config.py", "backend/app/tasks/attribution.py"),
+    ),
     "INGESTION_FOLLOWUP_TASKS_ENABLED": _contract(
         key="INGESTION_FOLLOWUP_TASKS_ENABLED",
         classification="config",

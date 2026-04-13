@@ -6,8 +6,26 @@
     "dev",
     "local"
   ],
-  "keys_total": 66,
+  "keys_total": 67,
   "records": [
+    {
+      "aws_path_template": "/skeldir/{env}/config/attribution/deterministic-default-lookback-days",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/tasks/attribution.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
     {
       "aws_path_template": "/skeldir/{env}/config/auth/jwt-algorithm",
       "call_sites": [

@@ -172,6 +172,7 @@ class DeterministicReplayIdentity:
     replay_window_start: datetime
     replay_window_end: datetime
     replay_anchor_at: datetime
+    replay_event_created_ceiling: datetime
     session_scope_identity: str
 
     def as_payload(self) -> dict[str, Any]:
@@ -185,6 +186,9 @@ class DeterministicReplayIdentity:
             "replay_window_start": self.replay_window_start.astimezone(timezone.utc).isoformat(),
             "replay_window_end": self.replay_window_end.astimezone(timezone.utc).isoformat(),
             "replay_anchor_at": self.replay_anchor_at.astimezone(timezone.utc).isoformat(),
+            "replay_event_created_ceiling": (
+                self.replay_event_created_ceiling.astimezone(timezone.utc).isoformat()
+            ),
             "session_scope_identity": str(self.session_scope_identity),
         }
 

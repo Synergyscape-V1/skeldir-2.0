@@ -75,6 +75,7 @@ def run_enforcement(
         "class AttributionInputRow",
         "class AttributionOutputRow",
         "class DeterministicReplayIdentity",
+        "replay_event_created_ceiling",
     )
     for token in required_semantics_tokens:
         if token not in semantics_text:
@@ -87,7 +88,9 @@ def run_enforcement(
         "lower(trim(e.event_type)) = ANY(:conversion_event_types)",
         "sa.issued_at < :replay_window_end",
         "sa.expires_at > :replay_window_start",
+        "e.created_at <= :replay_event_created_ceiling",
         "replay_identity = DeterministicReplayIdentity(",
+        "replay_event_created_ceiling=datetime.now(timezone.utc)",
         "job_model_version = replay_identity.job_model_version()",
         "model_version=job_model_version",
     )
@@ -106,8 +109,10 @@ def run_enforcement(
         "test_b21_p1_runtime_conversion_taxonomy_excludes_touchpoint_rows",
         "test_b21_p1_runtime_historical_replay_uses_persisted_session_facts_not_wall_clock",
         "test_b21_p1_runtime_default_30_day_lookback_and_replay_identity_partitioning",
+        "test_b21_p1_runtime_replay_identity_freezes_late_arriving_historical_events",
         "lookback_days=90",
         "job_model_version",
+        "replay_event_created_ceiling",
     )
     for token in required_runtime_tokens:
         if token not in runtime_text:
