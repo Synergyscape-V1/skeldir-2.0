@@ -201,9 +201,10 @@ def _iter_event_records(
     window_start: datetime,
     occurred_at_step_us: int,
 ) -> Iterable[tuple[Any, ...]]:
+    shared_session_id = _uuid_det("r5", candidate_sha, scenario, "session_id")
     for i in range(n):
         event_id = _uuid_det("r5", candidate_sha, scenario, "event_id", str(i))
-        session_id = _uuid_det("r5", candidate_sha, scenario, "session_id", str(i))
+        session_id = shared_session_id
         correlation_id = _uuid_det("r5", candidate_sha, scenario, "correlation_id", str(i))
         idempotency_key = f"r5:{candidate_sha}:{scenario}:{i}"
         occurred_at = window_start + timedelta(microseconds=i * occurred_at_step_us)
