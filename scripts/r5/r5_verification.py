@@ -278,6 +278,33 @@ async def _seed_events(
             "retry_count",
         ],
     )
+    # Canonical schema trigger binds session_authority using wall-clock NOW() at insert
+    # time. R5 seeds historical occurred_at windows, so we must realign authority
+    # facts to event time to keep replay-session filtering non-vacuous.
+    await conn.execute(
+        """
+        WITH per_session AS (
+            SELECT
+                tenant_id,
+                session_id,
+                MIN(occurred_at) AS issued_at,
+                MAX(occurred_at) AS last_seen_at
+            FROM attribution_events
+            WHERE tenant_id = $1
+            GROUP BY tenant_id, session_id
+        )
+        UPDATE session_authority sa
+        SET issued_at = ps.issued_at,
+            expires_at = ps.issued_at + INTERVAL '24 hours',
+            last_seen_at = ps.last_seen_at,
+            updated_at = NOW(),
+            issued_by = 'r5_seed_backfill'
+        FROM per_session ps
+        WHERE sa.tenant_id = ps.tenant_id
+          AND sa.session_id = ps.session_id
+        """,
+        str(tenant_id),
+    )
     t1 = time.perf_counter()
     return {"seeded_events": n, "seed_wall_s": round(t1 - t0, 6)}
 
