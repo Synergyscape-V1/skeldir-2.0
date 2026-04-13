@@ -50,4 +50,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("attribution_recompute_jobs", "replay_event_created_ceiling")
+    op.drop_column(  # CI:DESTRUCTIVE_OK - rollback path for B2.1-P1 replay freeze boundary migration.
+        "attribution_recompute_jobs", "replay_event_created_ceiling"
+    )

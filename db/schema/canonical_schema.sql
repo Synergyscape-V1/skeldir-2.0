@@ -923,11 +923,11 @@ CREATE TABLE public.attribution_recompute_jobs (
     status text DEFAULT 'pending'::text NOT NULL,
     run_count integer DEFAULT 0 NOT NULL,
     last_correlation_id uuid,
-    replay_event_created_ceiling timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     started_at timestamp with time zone,
     finished_at timestamp with time zone,
+    replay_event_created_ceiling timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_attribution_recompute_jobs_run_count_positive CHECK ((run_count >= 0)),
     CONSTRAINT ck_attribution_recompute_jobs_status_valid CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'succeeded'::text, 'failed'::text]))),
     CONSTRAINT ck_attribution_recompute_jobs_window_bounds_valid CHECK ((window_end > window_start))

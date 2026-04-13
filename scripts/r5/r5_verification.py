@@ -360,6 +360,32 @@ async def _count_allocations(
     )
 
 
+async def _count_recompute_jobs(
+    conn: asyncpg.Connection,
+    *,
+    tenant_id: UUID,
+    model_version: str,
+    window_start: datetime,
+    window_end: datetime,
+) -> int:
+    return int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM attribution_recompute_jobs
+            WHERE tenant_id = $1
+              AND model_version = $2
+              AND window_start = $3
+              AND window_end = $4
+            """,
+            str(tenant_id),
+            model_version,
+            window_start,
+            window_end,
+        )
+    )
+
+
 async def _cleanup_allocations(
     conn: asyncpg.Connection,
     *,
@@ -376,8 +402,35 @@ async def _cleanup_allocations(
         window_start=window_start,
         window_end=window_end,
     )
+    jobs_before = await _count_recompute_jobs(
+        conn,
+        tenant_id=tenant_id,
+        model_version=model_version,
+        window_start=window_start,
+        window_end=window_end,
+    )
     await conn.execute("TRUNCATE TABLE attribution_allocations CASCADE")
+    await conn.execute(
+        """
+        DELETE FROM attribution_recompute_jobs
+        WHERE tenant_id = $1
+          AND model_version = $2
+          AND window_start = $3
+          AND window_end = $4
+        """,
+        str(tenant_id),
+        model_version,
+        window_start,
+        window_end,
+    )
     remaining = await _count_allocations(
+        conn,
+        tenant_id=tenant_id,
+        model_version=model_version,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    jobs_remaining = await _count_recompute_jobs(
         conn,
         tenant_id=tenant_id,
         model_version=model_version,
@@ -388,13 +441,16 @@ async def _cleanup_allocations(
         " ".join(
             [
                 f"R5_CLEANUP_PHASE={phase}",
-                "R5_CLEANUP_MODE=truncate_allocations_cascade",
+                "R5_CLEANUP_MODE=truncate_allocations_cascade+delete_recompute_jobs",
                 f"R5_ALLOCATIONS_BEFORE={before}",
                 f"R5_ALLOCATIONS_REMAINING={remaining}",
+                f"R5_RECOMPUTE_JOBS_BEFORE={jobs_before}",
+                f"R5_RECOMPUTE_JOBS_REMAINING={jobs_remaining}",
             ]
         )
     )
     _require(remaining == 0, f"R5 cleanup failed for {phase}: remaining allocations {remaining}")
+    _require(jobs_remaining == 0, f"R5 cleanup failed for {phase}: remaining recompute jobs {jobs_remaining}")
 
 
 async def _fetch_allocations_snapshot(
