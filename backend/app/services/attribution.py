@@ -14,6 +14,7 @@ from celery.result import AsyncResult
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import enqueue_tenant_task
 from app.tasks.attribution import _normalize_timestamp, recompute_window
+from app.attribution.strategy_kernel import DETERMINISTIC_BASELINE_MODEL
 
 WindowBoundary = Union[str, datetime]
 
@@ -45,6 +46,7 @@ def schedule_recompute_window(
     session_id: UUID | str | None = None,
     correlation_id: Optional[str] = None,
     model_version: str = "1.0.0",
+    model_type: str = DETERMINISTIC_BASELINE_MODEL,
     lookback_days: int | None = None,
     fail: bool = False,
 ) -> AsyncResult:
@@ -75,6 +77,7 @@ def schedule_recompute_window(
             "session_id": str(session_scope) if session_scope else None,
             "correlation_id": str(correlation_uuid),
             "model_version": model_version,
+            "model_type": model_type,
             "lookback_days": lookback_days,
             "fail": fail,
         },

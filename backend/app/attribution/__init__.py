@@ -14,6 +14,17 @@ from app.attribution.semantics import (
     normalize_lookback_days,
     session_scope_identity,
 )
+from app.attribution.strategy_kernel import (
+    DETERMINISTIC_BASELINE_MODEL,
+    FIRST_TOUCH_MODEL,
+    LAST_TOUCH_MODEL,
+    LINEAR_MODEL,
+    STRATEGY_MODEL_TYPES,
+    SUPPORTED_DETERMINISTIC_MODEL_TYPES,
+    TIME_DECAY_MODEL,
+    build_channel_allocations_for_conversion,
+    canonical_model_type,
+)
 
 __all__ = [
     "ATTRIBUTION_SEMANTICS_VERSION",
@@ -28,4 +39,13 @@ __all__ = [
     "digest_canonical_payloads",
     "normalize_lookback_days",
     "session_scope_identity",
+    "DETERMINISTIC_BASELINE_MODEL",
+    "FIRST_TOUCH_MODEL",
+    "LAST_TOUCH_MODEL",
+    "LINEAR_MODEL",
+    "TIME_DECAY_MODEL",
+    "SUPPORTED_DETERMINISTIC_MODEL_TYPES",
+    "STRATEGY_MODEL_TYPES",
+    "canonical_model_type",
+    "build_channel_allocations_for_conversion",
 ]
