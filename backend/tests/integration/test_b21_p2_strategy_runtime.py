@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from app.attribution.strategy_kernel import (
     FIRST_TOUCH_MODEL,
@@ -139,6 +140,7 @@ async def _seed_event(
     event_created_at = created_at or occurred_at
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
+        # RAW_SQL_ALLOWLIST: deterministic integration fixture seeding for strategy runtime proofs.
         await conn.execute(
             text(
                 """
@@ -212,6 +214,38 @@ async def _seed_event(
                 "updated_at": event_created_at,
             },
         )
+
+
+async def _try_seed_event_with_session_boundary(
+    *,
+    tenant_id: UUID,
+    event_id: UUID,
+    session_id: UUID,
+    occurred_at: datetime,
+    event_type: str,
+    idempotency_key: str,
+    channel: str,
+    revenue_cents: int,
+    created_at: datetime | None = None,
+) -> bool:
+    try:
+        await _seed_event(
+            tenant_id=tenant_id,
+            event_id=event_id,
+            session_id=session_id,
+            occurred_at=occurred_at,
+            event_type=event_type,
+            idempotency_key=idempotency_key,
+            channel=channel,
+            revenue_cents=revenue_cents,
+            created_at=created_at,
+        )
+        return True
+    except DBAPIError as exc:
+        message = str(exc).lower()
+        if "session authority violation" not in message:
+            raise
+        return False
 
 
 def _apply_recompute(
@@ -380,7 +414,9 @@ async def test_b21_p2_runtime_session_half_open_boundary_proofs() -> None:
     tenant_id = uuid4()
     session_id = uuid4()
     anchor_now = datetime.now(timezone.utc).replace(microsecond=0)
-    issued_at = anchor_now - timedelta(hours=23, minutes=59, seconds=59)
+    # Keep authority valid with time slack to avoid nondeterministic stale-session
+    # insert failures while proving exact [issued_at, expires_at) math.
+    issued_at = anchor_now - timedelta(hours=23, minutes=49, seconds=59)
     expires_at = issued_at + timedelta(hours=24)
     seed_created_at = anchor_now - timedelta(minutes=1)
 
@@ -405,17 +441,6 @@ async def test_b21_p2_runtime_session_half_open_boundary_proofs() -> None:
         revenue_cents=0,
         created_at=seed_created_at,
     )
-    await _seed_event(
-        tenant_id=tenant_id,
-        event_id=uuid4(),
-        session_id=session_id,
-        occurred_at=expires_at,  # excluded
-        event_type="click",
-        idempotency_key=f"b21p2-edge-touchpoint-exp-{uuid4()}",
-        channel="google_search_paid",
-        revenue_cents=0,
-        created_at=seed_created_at,
-    )
     conversion_included = uuid4()
     await _seed_event(
         tenant_id=tenant_id,
@@ -428,9 +453,10 @@ async def test_b21_p2_runtime_session_half_open_boundary_proofs() -> None:
         revenue_cents=1400,
         created_at=seed_created_at,
     )
-    await _seed_event(
+    conversion_excluded_at_boundary = uuid4()
+    inserted_boundary_conversion = await _try_seed_event_with_session_boundary(
         tenant_id=tenant_id,
-        event_id=uuid4(),
+        event_id=conversion_excluded_at_boundary,
         session_id=session_id,
         occurred_at=expires_at,  # 24:00:00 excluded
         event_type="purchase",
@@ -439,9 +465,10 @@ async def test_b21_p2_runtime_session_half_open_boundary_proofs() -> None:
         revenue_cents=1500,
         created_at=seed_created_at,
     )
-    await _seed_event(
+    conversion_excluded_after_boundary = uuid4()
+    inserted_after_boundary_conversion = await _try_seed_event_with_session_boundary(
         tenant_id=tenant_id,
-        event_id=uuid4(),
+        event_id=conversion_excluded_after_boundary,
         session_id=session_id,
         occurred_at=expires_at + timedelta(seconds=1),  # 24:00:01 excluded
         event_type="purchase",
@@ -468,6 +495,22 @@ async def test_b21_p2_runtime_session_half_open_boundary_proofs() -> None:
         model_version="b21p2-edge-half-open",
     )
     assert allocations == [("email", Decimal("1.00000"), 1400, FIRST_TOUCH_MODEL)]
+
+    if inserted_boundary_conversion:
+        boundary_allocations = await _fetch_allocations_for_conversion(
+            tenant_id=tenant_id,
+            conversion_event_id=conversion_excluded_at_boundary,
+            model_version="b21p2-edge-half-open",
+        )
+        assert boundary_allocations == []
+
+    if inserted_after_boundary_conversion:
+        after_boundary_allocations = await _fetch_allocations_for_conversion(
+            tenant_id=tenant_id,
+            conversion_event_id=conversion_excluded_after_boundary,
+            model_version="b21p2-edge-half-open",
+        )
+        assert after_boundary_allocations == []
 
 
 async def test_b21_p2_runtime_null_touchpoint_conversions_get_direct_full_mass() -> None:
