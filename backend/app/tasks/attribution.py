@@ -11,6 +11,7 @@ table and deterministic baseline allocation proof harness.
 import logging
 import os
 import json
+from dataclasses import dataclass
 from hashlib import sha256
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -23,13 +24,22 @@ from sqlalchemy import text
 from app.attribution.semantics import (
     ATTRIBUTION_SEMANTICS_VERSION,
     CONVERSION_EVENT_TYPES,
+    TOUCHPOINT_EVENT_TYPES,
     AttributionInputRow,
     AttributionOutputRow,
     DeterministicReplayIdentity,
+    classify_event_type,
     compute_effective_replay_window,
     digest_canonical_payloads,
     normalize_lookback_days,
     session_scope_identity,
+)
+from app.attribution.strategy_kernel import (
+    DETERMINISTIC_BASELINE_MODEL,
+    STRATEGY_MODEL_TYPES,
+    EligibleTouchpoint,
+    build_channel_allocations_for_conversion,
+    canonical_model_type,
 )
 from app.celery_app import celery_app
 from app.core.config import settings
@@ -62,6 +72,24 @@ ALLOWED_BOUNDED_TELEMETRY_KEYS = frozenset(
 FORBIDDEN_TELEMETRY_KEYS = banned_identifier_key_set()
 
 
+@dataclass(frozen=True)
+class _SemanticEvent:
+    event_id: UUID
+    revenue_cents: int
+    occurred_at: datetime
+    session_id: UUID
+    event_type: str
+    channel_code: str
+    idempotency_key: str
+    raw_payload: Any
+
+
+@dataclass(frozen=True)
+class _ConversionContext:
+    conversion_event: _SemanticEvent
+    eligible_touchpoints: list[EligibleTouchpoint]
+
+
 def _run_async(coro_factory, *args, **kwargs):
     """
     Execute async coroutines on the dedicated worker event loop.
@@ -81,6 +109,10 @@ class AttributionTaskPayload(BaseModel):
     window_end: Optional[str] = Field(None, description="Attribution window end timestamp")
     session_id: Optional[str] = Field(None, description="Optional session-local attribution scope")
     lookback_days: Optional[int] = Field(None, description="Deterministic attribution lookback days")
+    model_type: Optional[str] = Field(
+        DETERMINISTIC_BASELINE_MODEL,
+        description="Deterministic strategy selector (baseline/first/last/linear/time_decay)",
+    )
 
 
 def _prepare_context(model: AttributionTaskPayload) -> str:
@@ -224,6 +256,110 @@ def _digest_canonical_payload_stream(payloads: Iterable[dict[str, Any]]) -> str:
         )
     digest.update(b"]")
     return digest.hexdigest()
+
+
+def _normalize_model_type(model_type: Optional[str]) -> str:
+    return canonical_model_type(model_type)
+
+
+async def _load_semantic_events_for_replay(
+    *,
+    conn,
+    tenant_id: UUID,
+    replay_identity: DeterministicReplayIdentity,
+    session_scope: UUID | None,
+) -> list[_SemanticEvent]:
+    # If the caller requests a concrete session scope, fail closed when authority
+    # state cannot support replay for that scope.
+    if session_scope is not None:
+        await _resolve_replay_session_scopes(
+            conn=conn,
+            tenant_id=tenant_id,
+            replay_window_start=replay_identity.replay_window_start,
+            replay_window_end=replay_identity.replay_window_end,
+            replay_event_created_ceiling=replay_identity.replay_event_created_ceiling,
+            session_scope=session_scope,
+        )
+
+    event_types = sorted(CONVERSION_EVENT_TYPES.union(TOUCHPOINT_EVENT_TYPES))
+    params: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "replay_window_start": replay_identity.replay_window_start,
+        "replay_window_end": replay_identity.replay_window_end,
+        "replay_event_created_ceiling": replay_identity.replay_event_created_ceiling,
+        "event_types": event_types,
+    }
+    session_scope_predicate = ""
+    if session_scope is not None:
+        session_scope_predicate = "AND e.session_id = :session_id"
+        params["session_id"] = session_scope
+
+    query = text(
+        f"""
+        SELECT
+            e.id,
+            e.revenue_cents,
+            e.occurred_at,
+            e.session_id,
+            e.event_type,
+            e.channel,
+            e.idempotency_key,
+            e.raw_payload
+        FROM attribution_events e
+        JOIN session_authority sa
+          ON sa.tenant_id = e.tenant_id
+         AND sa.session_id = e.session_id
+        WHERE e.tenant_id = :tenant_id
+          {session_scope_predicate}
+          AND e.occurred_at >= :replay_window_start
+          AND e.occurred_at < :replay_window_end
+          AND e.created_at <= :replay_event_created_ceiling
+          AND lower(trim(e.event_type)) = ANY(:event_types)
+          AND sa.invalidated_at IS NULL
+          AND e.occurred_at >= sa.issued_at
+          AND e.occurred_at < sa.expires_at
+        ORDER BY e.occurred_at ASC, e.id ASC
+        """
+    )
+
+    result = await conn.execute(query, params)
+    return [
+        _SemanticEvent(
+            event_id=UUID(str(row[0])),
+            revenue_cents=int(row[1]),
+            occurred_at=row[2].astimezone(timezone.utc),
+            session_id=UUID(str(row[3])),
+            event_type=str(row[4]),
+            channel_code=str(row[5]).strip().lower(),
+            idempotency_key=str(row[6]),
+            raw_payload=row[7],
+        )
+        for row in result.fetchall()
+    ]
+
+
+def _derive_conversion_contexts(semantic_events: list[_SemanticEvent]) -> list[_ConversionContext]:
+    touchpoints_by_session: dict[UUID, list[EligibleTouchpoint]] = {}
+    conversions: list[_ConversionContext] = []
+    for event in semantic_events:
+        event_kind = classify_event_type(event.event_type)
+        if event_kind.value == "touchpoint":
+            touchpoints_by_session.setdefault(event.session_id, []).append(
+                EligibleTouchpoint(
+                    id=event.event_id,
+                    occurred_at=event.occurred_at,
+                    channel_code=event.channel_code,
+                )
+            )
+            continue
+        if event_kind.value == "conversion":
+            conversions.append(
+                _ConversionContext(
+                    conversion_event=event,
+                    eligible_touchpoints=list(touchpoints_by_session.get(event.session_id, [])),
+                )
+            )
+    return conversions
 
 
 async def _resolve_replay_session_scopes(
@@ -902,6 +1038,302 @@ async def _compute_allocations_deterministic_baseline(
         }
 
 
+async def _compute_allocations_strategy_kernel(
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    model_version: str,
+    model_type: str,
+    replay_identity: DeterministicReplayIdentity,
+    session_id: Optional[str],
+) -> dict[str, Any]:
+    canonical_model_type = _normalize_model_type(model_type)
+    if canonical_model_type not in STRATEGY_MODEL_TYPES:
+        raise ValueError(
+            f"Strategy kernel requires model_type in {sorted(STRATEGY_MODEL_TYPES)}; "
+            f"got {canonical_model_type}"
+        )
+
+    batch_conversions = int(os.getenv("ATTRIBUTION_STRATEGY_BATCH_EVENTS", "2000"))
+    if batch_conversions < 1:
+        raise ValueError("ATTRIBUTION_STRATEGY_BATCH_EVENTS must be >= 1")
+
+    fixed_ts = window_end
+    session_scope = _normalize_session_scope(session_id)
+
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+
+        semantic_events = await _load_semantic_events_for_replay(
+            conn=conn,
+            tenant_id=tenant_id,
+            replay_identity=replay_identity,
+            session_scope=session_scope,
+        )
+        conversion_contexts = _derive_conversion_contexts(semantic_events)
+
+        if session_scope is None:
+            session_scope_count = len(
+                {
+                    context.conversion_event.session_id
+                    for context in conversion_contexts
+                }
+            )
+        else:
+            session_scope_count = 1
+
+        input_identity_digest = _digest_canonical_payload_stream(
+            (
+                AttributionInputRow(
+                    tenant_id=tenant_id,
+                    event_id=event.event_id,
+                    idempotency_key=event.idempotency_key,
+                    session_id=event.session_id,
+                    occurred_at=event.occurred_at,
+                    event_type=event.event_type,
+                    channel_code=event.channel_code,
+                    revenue_cents=event.revenue_cents,
+                    global_idempotency_hash=_canonical_global_idempotency_hash(event.raw_payload),
+                ).canonical_identity()
+                for event in semantic_events
+            )
+        )
+        replay_identity_digest = replay_identity.digest()
+
+        if not conversion_contexts:
+            logger.info(
+                "attribution_strategy_no_eligible_conversions",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "model_type": canonical_model_type,
+                    "window_start": window_start.isoformat(),
+                    "window_end": window_end.isoformat(),
+                    "replay_window_start": replay_identity.replay_window_start.isoformat(),
+                    "replay_window_end": replay_identity.replay_window_end.isoformat(),
+                },
+            )
+            empty_digest = digest_canonical_payloads([])
+            return {
+                "event_count": 0,
+                "allocation_count": 0,
+                "session_scope_count": session_scope_count,
+                "input_identity_digest": input_identity_digest,
+                "output_identity_digest": empty_digest,
+                "replay_identity_digest": replay_identity_digest,
+                "job_model_version": replay_identity.job_model_version(),
+                "replay_event_created_ceiling": replay_identity.replay_event_created_ceiling.isoformat(),
+            }
+
+        async def _upsert_allocations_bulk(*, rows: dict[str, list]) -> None:
+            if not rows["ids"]:
+                return
+
+            await conn.execute(
+                text(
+                    """
+                    WITH rows AS (
+                        SELECT *
+                        FROM unnest(
+                            CAST(:ids AS uuid[]),
+                            CAST(:tenant_ids AS uuid[]),
+                            CAST(:event_ids AS uuid[]),
+                            CAST(:channel_codes AS text[]),
+                            CAST(:allocation_ratios AS numeric[]),
+                            CAST(:model_versions AS text[]),
+                            CAST(:model_types AS text[]),
+                            CAST(:confidence_scores AS numeric[]),
+                            CAST(:verifieds AS bool[]),
+                            CAST(:allocated_revenue_cents AS int[]),
+                            CAST(:created_ats AS timestamptz[]),
+                            CAST(:updated_ats AS timestamptz[])
+                        ) AS t(
+                            id,
+                            tenant_id,
+                            event_id,
+                            channel_code,
+                            allocation_ratio,
+                            model_version,
+                            model_type,
+                            confidence_score,
+                            verified,
+                            allocated_revenue_cents,
+                            created_at,
+                            updated_at
+                        )
+                    )
+                    INSERT INTO attribution_allocations (
+                        id,
+                        tenant_id,
+                        event_id,
+                        channel_code,
+                        allocation_ratio,
+                        model_version,
+                        model_type,
+                        confidence_score,
+                        verified,
+                        allocated_revenue_cents,
+                        created_at,
+                        updated_at
+                    )
+                    SELECT
+                        id,
+                        tenant_id,
+                        event_id,
+                        channel_code,
+                        allocation_ratio,
+                        model_version,
+                        model_type,
+                        confidence_score,
+                        verified,
+                        allocated_revenue_cents,
+                        created_at,
+                        updated_at
+                    FROM rows
+                    ORDER BY id ASC
+                    ON CONFLICT (id)
+                    DO UPDATE SET
+                        allocation_ratio = EXCLUDED.allocation_ratio,
+                        model_type = EXCLUDED.model_type,
+                        confidence_score = EXCLUDED.confidence_score,
+                        verified = EXCLUDED.verified,
+                        allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
+                        updated_at = EXCLUDED.updated_at
+                    WHERE
+                        attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
+                        OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
+                        OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
+                        OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
+                        OR attribution_allocations.allocated_revenue_cents IS DISTINCT FROM EXCLUDED.allocated_revenue_cents;
+                    """
+                ),
+                rows,
+            )
+
+        event_count = len(conversion_contexts)
+        allocation_count = 0
+        null_touchpoint_conversions = 0
+        output_digest = sha256()
+        output_digest.update(b"[")
+        output_digest_first = True
+
+        for offset in range(0, len(conversion_contexts), batch_conversions):
+            batch = conversion_contexts[offset : offset + batch_conversions]
+            batch_rows: dict[str, list] = {
+                "ids": [],
+                "tenant_ids": [],
+                "event_ids": [],
+                "channel_codes": [],
+                "allocation_ratios": [],
+                "model_versions": [],
+                "model_types": [],
+                "confidence_scores": [],
+                "verifieds": [],
+                "allocated_revenue_cents": [],
+                "created_ats": [],
+                "updated_ats": [],
+            }
+
+            for conversion in batch:
+                channel_allocations, used_null_touchpoint_fallback = (
+                    build_channel_allocations_for_conversion(
+                        model_type=canonical_model_type,
+                        touchpoints=conversion.eligible_touchpoints,
+                        conversion_occurred_at=conversion.conversion_event.occurred_at,
+                        revenue_cents=int(conversion.conversion_event.revenue_cents),
+                    )
+                )
+                if used_null_touchpoint_fallback:
+                    null_touchpoint_conversions += 1
+
+                for channel_allocation in channel_allocations:
+                    confidence_score = channel_allocation.allocation_ratio.quantize(
+                        Decimal("0.001"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                    allocation_id = _deterministic_allocation_id(
+                        tenant_id=tenant_id,
+                        event_id=conversion.conversion_event.event_id,
+                        model_version=model_version,
+                        channel_code=channel_allocation.channel_code,
+                    )
+                    batch_rows["ids"].append(allocation_id)
+                    batch_rows["tenant_ids"].append(tenant_id)
+                    batch_rows["event_ids"].append(conversion.conversion_event.event_id)
+                    batch_rows["channel_codes"].append(channel_allocation.channel_code)
+                    batch_rows["allocation_ratios"].append(str(channel_allocation.allocation_ratio))
+                    batch_rows["model_versions"].append(model_version)
+                    batch_rows["model_types"].append(canonical_model_type)
+                    batch_rows["confidence_scores"].append(str(confidence_score))
+                    batch_rows["verifieds"].append(False)
+                    batch_rows["allocated_revenue_cents"].append(
+                        int(channel_allocation.allocated_revenue_cents)
+                    )
+                    batch_rows["created_ats"].append(fixed_ts)
+                    batch_rows["updated_ats"].append(fixed_ts)
+                    allocation_count += 1
+
+                    output_payload = AttributionOutputRow(
+                        allocation_id=allocation_id,
+                        tenant_id=tenant_id,
+                        event_id=conversion.conversion_event.event_id,
+                        channel_code=channel_allocation.channel_code,
+                        allocation_ratio=str(channel_allocation.allocation_ratio),
+                        model_version=model_version,
+                        model_type=canonical_model_type,
+                        confidence_score=str(confidence_score),
+                        verified=False,
+                        allocated_revenue_cents=int(channel_allocation.allocated_revenue_cents),
+                        created_at=fixed_ts,
+                        updated_at=fixed_ts,
+                    ).canonical_identity()
+                    if not output_digest_first:
+                        output_digest.update(b",")
+                    output_digest_first = False
+                    output_digest.update(
+                        json.dumps(
+                            output_payload,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=True,
+                        ).encode("utf-8")
+                    )
+
+            await _upsert_allocations_bulk(rows=batch_rows)
+
+        output_digest.update(b"]")
+        output_identity_digest = output_digest.hexdigest()
+        logger.info(
+            "attribution_strategy_allocations_computed",
+            extra={
+                "tenant_id": str(tenant_id),
+                "model_type": canonical_model_type,
+                "window_start": window_start.isoformat(),
+                "window_end": window_end.isoformat(),
+                "replay_window_start": replay_identity.replay_window_start.isoformat(),
+                "replay_window_end": replay_identity.replay_window_end.isoformat(),
+                "event_count": event_count,
+                "allocation_count": allocation_count,
+                "null_touchpoint_conversions": null_touchpoint_conversions,
+                "session_scope_count": session_scope_count,
+                "input_identity_digest": input_identity_digest,
+                "output_identity_digest": output_identity_digest,
+                "replay_identity_digest": replay_identity_digest,
+            },
+        )
+        return {
+            "event_count": event_count,
+            "allocation_count": allocation_count,
+            "session_scope_count": session_scope_count,
+            "null_touchpoint_conversions": null_touchpoint_conversions,
+            "input_identity_digest": input_identity_digest,
+            "output_identity_digest": output_identity_digest,
+            "replay_identity_digest": replay_identity_digest,
+            "job_model_version": replay_identity.job_model_version(),
+            "replay_event_created_ceiling": replay_identity.replay_event_created_ceiling.isoformat(),
+        }
+
+
 @celery_app.task(
     bind=True,
     base=TenantTask,
@@ -917,6 +1349,7 @@ def recompute_window(
     session_id: Optional[str] = None,
     correlation_id: Optional[str] = None,
     model_version: str = "1.0.0",
+    model_type: str = DETERMINISTIC_BASELINE_MODEL,
     lookback_days: Optional[int] = None,
     fail: bool = False,
 ):
@@ -936,6 +1369,7 @@ def recompute_window(
         session_id: Optional session scope for locality-enforced recompute
         correlation_id: Request correlation for observability
         model_version: Attribution model version (default: 1.0.0)
+        model_type: Deterministic strategy selector
         lookback_days: Optional deterministic lookback horizon in days
         fail: If True, deliberately raise an error for DLQ testing
 
@@ -953,8 +1387,10 @@ def recompute_window(
         window_end=window_end,
         session_id=session_id,
         lookback_days=lookback_days,
+        model_type=model_type,
     )
     correlation = _prepare_context(model)
+    canonical_model_type = _normalize_model_type(model.model_type)
 
     # B0.5.3.1: Deliberate failure path for DLQ testing
     if fail:
@@ -1015,6 +1451,8 @@ def recompute_window(
         session_scope_identity=session_scope_identity(session_scope),
     )
     job_model_version = replay_identity.job_model_version()
+    if canonical_model_type != DETERMINISTIC_BASELINE_MODEL:
+        job_model_version = f"{job_model_version}::model_type={canonical_model_type}"
 
     # B0.5.3.2: Upsert job identity (idempotency gate)
     try:
@@ -1037,6 +1475,7 @@ def recompute_window(
                 "window_start": window_start,
                 "window_end": window_end,
                 "model_version": model_version,
+                "model_type": canonical_model_type,
             },
         )
         raise
@@ -1066,6 +1505,7 @@ def recompute_window(
                 "window_end": window_end,
                 "session_id": str(session_scope) if session_scope else None,
                 "model_version": model_version,
+                "model_type": canonical_model_type,
                 "job_model_version": job_model_version,
                 "lookback_days": resolved_lookback_days,
                 "replay_window_start": replay_window_start.isoformat(),
@@ -1077,17 +1517,29 @@ def recompute_window(
             },
     )
 
-    # B0.5.3.2: Compute allocations (deterministic baseline proof harness)
+    # Compute deterministic allocations (legacy baseline + B2.1-P2 strategies).
     try:
-        result = _run_async(
-            _compute_allocations_deterministic_baseline,
-            tenant_id=model.tenant_id,
-            window_start=window_start_dt,
-            window_end=window_end_dt,
-            model_version=model_version,
-            replay_identity=replay_identity,
-            session_id=str(session_scope) if session_scope else None,
-        )
+        if canonical_model_type == DETERMINISTIC_BASELINE_MODEL:
+            result = _run_async(
+                _compute_allocations_deterministic_baseline,
+                tenant_id=model.tenant_id,
+                window_start=window_start_dt,
+                window_end=window_end_dt,
+                model_version=model_version,
+                replay_identity=replay_identity,
+                session_id=str(session_scope) if session_scope else None,
+            )
+        else:
+            result = _run_async(
+                _compute_allocations_strategy_kernel,
+                tenant_id=model.tenant_id,
+                window_start=window_start_dt,
+                window_end=window_end_dt,
+                model_version=model_version,
+                model_type=canonical_model_type,
+                replay_identity=replay_identity,
+                session_id=str(session_scope) if session_scope else None,
+            )
 
         # Mark job as succeeded
         _run_async(
@@ -1108,6 +1560,7 @@ def recompute_window(
                 "window_end": window_end,
                 "session_id": str(session_scope) if session_scope else None,
                 "model_version": model_version,
+                "model_type": canonical_model_type,
                 "job_model_version": job_model_version,
                 "lookback_days": resolved_lookback_days,
                 "replay_window_start": replay_window_start.isoformat(),
@@ -1117,6 +1570,7 @@ def recompute_window(
                 "event_count": result["event_count"],
                 "allocation_count": result["allocation_count"],
                 "session_scope_count": result.get("session_scope_count", 0),
+                "null_touchpoint_conversions": result.get("null_touchpoint_conversions", 0),
                 "input_identity_digest": result.get("input_identity_digest"),
                 "output_identity_digest": result.get("output_identity_digest"),
                 "replay_identity_digest": result.get("replay_identity_digest"),
@@ -1131,6 +1585,7 @@ def recompute_window(
             "window_end": window_end,
             "session_id": str(session_scope) if session_scope else None,
             "model_version": model_version,
+            "model_type": canonical_model_type,
             "job_model_version": job_model_version,
             "lookback_days": resolved_lookback_days,
             "replay_window_start": replay_window_start.isoformat(),
@@ -1139,6 +1594,7 @@ def recompute_window(
             "event_count": result["event_count"],
             "allocation_count": result["allocation_count"],
             "session_scope_count": result.get("session_scope_count", 0),
+            "null_touchpoint_conversions": result.get("null_touchpoint_conversions", 0),
             "input_identity_digest": result.get("input_identity_digest"),
             "output_identity_digest": result.get("output_identity_digest"),
             "replay_identity_digest": result.get("replay_identity_digest"),
@@ -1168,6 +1624,7 @@ def recompute_window(
                 "window_end": window_end,
                 "session_id": str(session_scope) if session_scope else None,
                 "model_version": model_version,
+                "model_type": canonical_model_type,
                 "job_model_version": job_model_version,
                 "lookback_days": resolved_lookback_days,
                 "replay_window_start": replay_window_start.isoformat(),

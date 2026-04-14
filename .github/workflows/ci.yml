@@ -117,6 +117,14 @@ jobs:
         run: |
           pytest backend/tests/test_b21_p1_semantic_replay_lock_enforcer.py -q
 
+      - name: Enforce B2.1-P2 strategy kernel lock
+        run: |
+          python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
+
+      - name: Run B2.1-P2 strategy kernel lock negative controls
+        run: |
+          pytest backend/tests/test_b21_p2_strategy_kernel_lock_enforcer.py -q
+
       - name: Run B1.7-P1 negative controls
         run: |
           pytest backend/tests/test_b17_p0_explanation_surface_lock_enforcer.py -q
@@ -294,6 +302,11 @@ jobs:
       - name: Run B2.1-P1 runtime semantic replay proofs
         run: |
           pytest backend/tests/integration/test_b21_p1_semantic_replay_runtime.py -q
+
+      - name: Run B2.1-P2 strategy runtime proofs
+        run: |
+          pytest backend/tests/test_b21_p2_strategy_kernel.py -q
+          pytest backend/tests/integration/test_b21_p2_strategy_runtime.py -q
 
   b17-explanation-runtime-adjudication:
     name: B1.7 Explanation Runtime Adjudication
