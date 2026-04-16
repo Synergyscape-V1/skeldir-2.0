@@ -206,6 +206,7 @@ async def _seed_projection_fixture(
         for index, (channel_code, revenue_cents, allocation_ratio, confidence_score) in enumerate(rows):
             event_id = uuid4()
             idempotency_key = f"b21-p3-{tenant_id.hex[:8]}-{index}-{event_id.hex[:12]}"
+            # RAW_SQL_ALLOWLIST: deterministic integration fixture seed for P3 runtime path validation.
             await conn.execute(
                 text(
                     """
@@ -277,6 +278,7 @@ async def _seed_projection_fixture(
                     "updated_at": occurred_at,
                 },
             )
+            # RAW_SQL_ALLOWLIST: deterministic integration fixture seed for persisted allocation projection checks.
             await conn.execute(
                 text(
                     """
