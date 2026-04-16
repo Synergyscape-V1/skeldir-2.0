@@ -41,9 +41,25 @@ paths:
         - accessBearerAuth:
             - viewer
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
-        - $ref: '#/components/parameters/IfNoneMatch'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: &ref_2
+            type: string
+            format: uuid
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: &ref_3
+            type: string
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: &ref_4
+            type: string
+          description: ETag from previous response for cache validation
       responses:
         '200':
           description: Revenue counter data returned successfully
@@ -65,7 +81,57 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RealtimeRevenueCounter'
+                type: object
+                required: &ref_59
+                  - total_revenue
+                  - event_count
+                  - last_updated
+                  - data_freshness_seconds
+                  - verified
+                  - tenant_id
+                properties: &ref_60
+                  total_revenue:
+                    type: number
+                    format: double
+                    minimum: 0
+                    description: Total verified revenue amount in USD
+                    example: 125430.5
+                  event_count:
+                    type: integer
+                    description: Number of revenue events tracked
+                    minimum: 0
+                    example: 1247
+                  last_updated:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp of last data update
+                    example: '2025-11-26T14:32:00Z'
+                  data_freshness_seconds:
+                    type: integer
+                    description: Seconds since data was last refreshed
+                    minimum: 0
+                    example: 5
+                  verified:
+                    type: boolean
+                    description: Whether revenue is verified through payment reconciliation
+                    example: true
+                  tenant_id:
+                    type: string
+                    format: uuid
+                    description: Tenant identifier associated with the response
+                    example: 00000000-0000-0000-0000-000000000000
+                  confidence_score:
+                    type: number
+                    format: double
+                    minimum: 0
+                    maximum: 1
+                    description: Statistical confidence score (0-1) for attribution accuracy
+                    example: 0.94
+                  upgrade_notice:
+                    type: string
+                    nullable: true
+                    description: Optional message about upgrading for more features
+                    example: Upgrade to Pro for historical analytics
               example:
                 total_revenue: 125430.5
                 event_count: 1247
@@ -86,13 +152,125 @@ paths:
               schema:
                 type: string
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: &ref_5
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Request correlation ID for distributed tracing
+          content: &ref_6
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: &ref_0
+                  - type
+                  - title
+                  - status
+                  - detail
+                  - instance
+                  - correlation_id
+                  - timestamp
+                  - code
+                properties: &ref_1
+                  type:
+                    type: string
+                    format: uri
+                    description: URI reference identifying the problem type
+                    example: https://api.skeldir.com/problems/authentication-failed
+                  title:
+                    type: string
+                    description: Short, human-readable summary of the problem
+                    example: Authentication Failed
+                  status:
+                    type: integer
+                    description: HTTP status code
+                    example: 401
+                  detail:
+                    type: string
+                    description: Human-readable explanation specific to this occurrence
+                    example: The provided JWT token has expired. Please refresh your authentication token.
+                  instance:
+                    type: string
+                    format: uri
+                    description: URI reference identifying this specific occurrence
+                    example: https://api.skeldir.com/api/attribution/revenue/realtime
+                  correlation_id:
+                    type: string
+                    format: uuid
+                    description: Request correlation ID for distributed tracing
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp when the error occurred
+                    example: '2025-11-11T14:32:00Z'
+                  code:
+                    type: string
+                    description: Stable, non-sensitive error code for programmatic handling
+                    example: AUTH_UNAUTHORIZED
+                  errors:
+                    type: array
+                    description: Optional array of specific validation errors
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          example: email
+                        message:
+                          type: string
+                          example: Invalid email format
+                        code:
+                          type: string
+                          example: INVALID_FORMAT
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: &ref_7
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_8
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '429':
-          $ref: '#/components/responses/RateLimitError'
+          description: Too Many Requests - rate limit exceeded
+          headers: &ref_77
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content: &ref_78
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: &ref_15
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_16
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
   /api/attribution/channels:
     get:
       summary: Get Channel Attribution Data
@@ -104,23 +282,40 @@ paths:
         - accessBearerAuth:
             - viewer
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
-        - $ref: '#/components/parameters/IfNoneMatch'
-        - name: start_date
-          in: query
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: If-None-Match
+          in: header
           required: false
+          schema: *ref_4
+          description: ETag from previous response for cache validation
+        - name: model_type
+          in: query
+          required: true
           schema:
             type: string
-            format: date
-          description: Start date for attribution window
-        - name: end_date
+            enum:
+              - deterministic_baseline
+              - first_touch
+              - last_touch
+              - linear
+              - time_decay
+          description: Deterministic projection model selector
+        - name: recompute_job_id
           in: query
-          required: false
+          required: true
           schema:
             type: string
-            format: date
-          description: End date for attribution window
+            format: uuid
+          description: Authoritative deterministic projection identity
       responses:
         '200':
           description: Channel attribution data
@@ -141,24 +336,151 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChannelAttributionResponse'
+                type: object
+                required: &ref_65
+                  - projection
+                  - channels
+                  - total_revenue
+                  - total_revenue_cents
+                  - tenant_id
+                  - last_updated
+                  - data_freshness_seconds
+                properties: &ref_66
+                  projection:
+                    type: object
+                    required: &ref_63
+                      - recompute_job_id
+                      - model_type
+                      - model_version
+                      - window_start
+                      - window_end
+                    properties: &ref_64
+                      recompute_job_id:
+                        type: string
+                        format: uuid
+                      model_type:
+                        type: string
+                        enum:
+                          - deterministic_baseline
+                          - first_touch
+                          - last_touch
+                          - linear
+                          - time_decay
+                      model_version:
+                        type: string
+                      window_start:
+                        type: string
+                        format: date-time
+                      window_end:
+                        type: string
+                        format: date-time
+                  channels:
+                    type: array
+                    items:
+                      type: object
+                      required: &ref_61
+                        - channel_name
+                        - channel_code
+                        - revenue
+                        - revenue_cents
+                        - conversion_count
+                        - allocation_ratio
+                        - attribution_weight
+                        - confidence_score
+                      properties: &ref_62
+                        channel_name:
+                          type: string
+                          enum:
+                            - Meta
+                            - Google
+                            - TikTok
+                            - LinkedIn
+                            - Organic
+                            - Direct
+                            - Email
+                            - Referral
+                            - Unknown
+                          description: Marketing channel name
+                        channel_code:
+                          type: string
+                          description: Canonical persisted channel code
+                        revenue:
+                          type: number
+                          format: double
+                          minimum: 0
+                          description: Attributed revenue for this channel
+                        revenue_cents:
+                          type: integer
+                          minimum: 0
+                          description: Attributed revenue in cents
+                        conversion_count:
+                          type: integer
+                          description: Number of conversions attributed to this channel
+                        allocation_ratio:
+                          type: string
+                          pattern: ^(0|1)\.\d{5}$
+                          description: Exact decimal-string allocation ratio (scale=5)
+                        attribution_weight:
+                          type: string
+                          pattern: ^(0|1)\.\d{5}$
+                          description: Exact decimal-string channel share of total attributed revenue (scale=5)
+                        confidence_score:
+                          type: string
+                          pattern: ^(0|1)\.\d{3}$
+                          description: Exact decimal-string confidence score (scale=3)
+                        spend:
+                          type: number
+                          format: float
+                          description: Marketing spend on this channel
+                        roas:
+                          type: number
+                          format: float
+                          description: Return on Ad Spend (revenue/spend)
+                  total_revenue:
+                    type: number
+                    format: double
+                    minimum: 0
+                  total_revenue_cents:
+                    type: integer
+                    minimum: 0
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  last_updated:
+                    type: string
+                    format: date-time
+                  data_freshness_seconds:
+                    type: integer
+                    minimum: 0
               example:
+                projection:
+                  recompute_job_id: 11111111-1111-1111-1111-111111111111
+                  model_type: linear
+                  model_version: 1.0.0
+                  window_start: '2026-04-01T00:00:00Z'
+                  window_end: '2026-04-15T00:00:00Z'
                 channels:
                   - channel_name: Meta
+                    channel_code: meta_ads
                     revenue: 45250.75
+                    revenue_cents: 4525075
                     conversion_count: 185
-                    confidence_score: 0.92
+                    allocation_ratio: '0.54459'
+                    attribution_weight: '0.54459'
+                    confidence_score: '0.920'
                   - channel_name: Google
+                    channel_code: google_ads
                     revenue: 37840.1
+                    revenue_cents: 3784010
                     conversion_count: 142
-                    confidence_score: 0.89
+                    allocation_ratio: '0.45541'
+                    attribution_weight: '0.45541'
+                    confidence_score: '0.890'
                 total_revenue: 83090.85
+                total_revenue_cents: 8309085
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 last_updated: '2026-04-11T16:00:00Z'
                 data_freshness_seconds: 7
-                date_range:
-                  start: '2025-11-01'
-                  end: '2025-11-15'
         '304':
           description: Not Modified - ETag matches, use cached data
           headers:
@@ -170,15 +492,63 @@ paths:
               schema:
                 type: string
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
+        '404':
+          description: Resource not found
+          headers: &ref_11
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_12
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '409':
+          description: Bad Request - validation failed
+          headers: &ref_13
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_14
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
       x-skeldir-b21-p0:
         implementation_status: mounted_deterministic_channels_surface
         authority_requirements:
           runtime_mount_required: true
           generated_types_must_match_runtime_surface: true
           contract_deletion_as_drift_workaround_forbidden: true
+      x-skeldir-b21-p3:
+        implementation_status: mounted_persisted_projection_authority_surface
+        projection_identity:
+          required_query_parameters:
+            - model_type
+            - recompute_job_id
+          tenant_only_projection_forbidden: true
+          cross_model_aggregation_forbidden: true
+          synchronous_recompute_on_read_forbidden: true
+        bounded_read_physics:
+          max_window_days: 31
+          fail_closed_on_unbounded_shape: true
+        precision_transport:
+          allocation_ratio: decimal_string_scale_5
+          attribution_weight: decimal_string_scale_5
+          confidence_score: decimal_string_scale_3
   /api/attribution/explain/{entity_type}/{entity_id}:
     get:
       summary: Get natural language explanation for attribution entities
@@ -213,8 +583,16 @@ paths:
             type: string
             format: uuid
           description: Unique identifier for the entity
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
       responses:
         '200':
           description: Deterministic authority metric plus non-authoritative explanation
@@ -227,7 +605,264 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AttributionExplanationResponse'
+                type: object
+                required: &ref_75
+                  - authoritative_metric
+                  - non_authoritative_explanation
+                properties: &ref_76
+                  authoritative_metric:
+                    type: object
+                    required: &ref_69
+                      - entity_type
+                      - entity_id
+                      - tenant_id
+                      - metric_key
+                      - metric_value
+                      - metric_value_cents
+                      - currency
+                      - channel_code
+                      - model_type
+                      - model_version
+                      - confidence_score
+                      - verification_state
+                      - last_updated
+                      - data_freshness_seconds
+                      - deterministic_truth_sources
+                      - truth_snapshot
+                      - revenue_context
+                    properties: &ref_70
+                      entity_type:
+                        type: string
+                        enum:
+                          - attribution_score
+                          - channel_performance
+                          - reconciliation_discrepancy
+                      entity_id:
+                        type: string
+                        format: uuid
+                      tenant_id:
+                        type: string
+                        format: uuid
+                      metric_key:
+                        type: string
+                      metric_value:
+                        type: number
+                        format: double
+                      metric_value_cents:
+                        type: integer
+                      currency:
+                        type: string
+                        pattern: ^[A-Z]{3}$
+                        enum:
+                          - USD
+                      channel_code:
+                        type: string
+                      model_type:
+                        type: string
+                      model_version:
+                        type: string
+                      confidence_score:
+                        type: number
+                        format: double
+                        minimum: 0
+                        maximum: 1
+                      verification_state:
+                        type: string
+                        enum:
+                          - verified
+                          - unverified
+                      last_updated:
+                        type: string
+                        format: date-time
+                      data_freshness_seconds:
+                        type: integer
+                        minimum: 0
+                      deterministic_truth_sources:
+                        type: array
+                        items:
+                          type: string
+                      truth_snapshot:
+                        type: object
+                        required: &ref_9
+                          - version
+                          - watermark
+                          - as_of
+                          - deterministic_truth_sources
+                        properties: &ref_10
+                          version:
+                            type: string
+                            minLength: 32
+                          watermark:
+                            type: integer
+                            minimum: 1
+                          as_of:
+                            type: string
+                            format: date-time
+                          deterministic_truth_sources:
+                            type: array
+                            items:
+                              type: string
+                      revenue_context:
+                        type: object
+                        required: &ref_67
+                          - cache_key
+                          - total_revenue
+                          - total_revenue_cents
+                          - data_as_of
+                        properties: &ref_68
+                          cache_key:
+                            type: string
+                          total_revenue:
+                            type: number
+                            format: double
+                            minimum: 0
+                          total_revenue_cents:
+                            type: integer
+                            minimum: 0
+                          data_as_of:
+                            type: string
+                            format: date-time
+                  non_authoritative_explanation:
+                    type: object
+                    required: &ref_73
+                      - explanation_class
+                      - synthesis_state
+                      - non_authoritative_summary
+                      - degraded
+                      - generated_at
+                      - truth_snapshot
+                      - cache_replay_state
+                      - provider_reentry_blocked
+                      - execution_path_state
+                      - cold_path_strategy
+                      - prewarm_state
+                      - explanation_contract_version
+                      - caveats
+                    properties: &ref_74
+                      explanation_class:
+                        type: string
+                        enum:
+                          - provider_fastpath_validated
+                          - provider_fastpath_degraded
+                      synthesis_state:
+                        type: string
+                        enum:
+                          - validated
+                          - validation_rejected
+                          - timeout
+                          - provider_failed
+                          - blocked
+                          - stale_replay_rejected
+                      non_authoritative_summary:
+                        type: string
+                        minLength: 1
+                        maxLength: 320
+                      degraded:
+                        type: boolean
+                      degraded_reason:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                        nullable: true
+                      generated_at:
+                        type: string
+                        format: date-time
+                      truth_snapshot:
+                        type: object
+                        required: *ref_9
+                        properties: *ref_10
+                      cache_replay_state:
+                        type: string
+                        enum:
+                          - cache_hit_truth_match
+                          - cold_miss_provider_allowed
+                          - stale_replay_rejected_provider_blocked
+                          - stale_replay_bypassed_provider_allowed
+                      provider_reentry_blocked:
+                        type: boolean
+                      execution_path_state:
+                        type: string
+                        enum:
+                          - warm_cache_hit
+                          - cold_path_generated
+                          - stale_rejected_provider_blocked
+                          - prewarm_assisted_cache_hit
+                      cold_path_strategy:
+                        type: string
+                        enum:
+                          - prewarm_required_event_driven_bounded
+                      prewarm_state:
+                        type: object
+                        required: &ref_71
+                          - strategy
+                          - trigger_event
+                          - eligible
+                          - triggered
+                          - trigger_reason
+                          - target_entity_types
+                          - target_count
+                          - max_permutations_per_trigger
+                          - min_trigger_interval_seconds
+                          - max_calls_per_tenant_per_hour
+                          - call_budget_cents
+                          - assisted_cache_hit
+                        properties: &ref_72
+                          strategy:
+                            type: string
+                            enum:
+                              - prewarm_required_event_driven_bounded
+                          trigger_event:
+                            type: string
+                            enum:
+                              - deterministic_truth_change_event
+                          eligible:
+                            type: boolean
+                          triggered:
+                            type: boolean
+                          trigger_reason:
+                            type: string
+                            enum:
+                              - triggered
+                              - prewarm_disabled
+                              - entity_type_ineligible
+                              - already_prewarmed_for_watermark
+                              - minimum_interval_not_elapsed
+                              - tenant_hourly_cap_reached
+                              - no_targets_after_caps
+                              - stale_replay_path_suppressed
+                          target_entity_types:
+                            type: array
+                            items:
+                              type: string
+                              enum:
+                                - attribution_score
+                                - channel_performance
+                                - reconciliation_discrepancy
+                          target_count:
+                            type: integer
+                            minimum: 0
+                          max_permutations_per_trigger:
+                            type: integer
+                            minimum: 0
+                          min_trigger_interval_seconds:
+                            type: integer
+                            minimum: 0
+                          max_calls_per_tenant_per_hour:
+                            type: integer
+                            minimum: 0
+                          call_budget_cents:
+                            type: integer
+                            minimum: 0
+                          assisted_cache_hit:
+                            type: boolean
+                      explanation_contract_version:
+                        type: string
+                        enum:
+                          - b1.7-p4
+                      caveats:
+                        type: array
+                        items:
+                          type: string
               example:
                 authoritative_metric:
                   entity_type: channel_performance
@@ -297,15 +932,25 @@ paths:
                     - Explanation text cannot override deterministic authority values.
                     - Deterministic truth is sourced from tenant-scoped DB authority tables.
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '409':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_13
+          content: *ref_14
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: *ref_15
+          content: *ref_16
         '503':
           description: Deterministic authority dependencies unavailable
           headers:
@@ -324,7 +969,10 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
               example:
                 type: https://api.skeldir.com/problems/deterministic-authority-unavailable
                 title: Deterministic Authority Unavailable
@@ -445,14 +1093,52 @@ paths:
         - accessBearerAuth:
             - manager
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PlatformConnectionUpsertRequest'
+              type: object
+              required: &ref_37
+                - platform
+                - platform_account_id
+              properties: &ref_38
+                platform:
+                  type: string
+                  description: Supported platform identifier
+                  enum: &ref_17
+                    - google_ads
+                    - meta_ads
+                    - tiktok_ads
+                    - linkedin_ads
+                    - stripe
+                    - paypal
+                    - shopify
+                    - woocommerce
+                platform_account_id:
+                  type: string
+                  description: Platform account identifier (e.g., Google Ads customer ID)
+                status:
+                  type: string
+                  description: Connection lifecycle state
+                  enum: &ref_18
+                    - pending
+                    - active
+                    - disabled
+                metadata:
+                  type: object
+                  additionalProperties: true
+                  description: Optional non-PII metadata for the connection
       responses:
         '200':
           description: Platform connection stored
@@ -464,7 +1150,38 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlatformConnectionResponse'
+                type: object
+                required: &ref_19
+                  - id
+                  - tenant_id
+                  - platform
+                  - platform_account_id
+                  - status
+                  - created_at
+                  - updated_at
+                properties: &ref_20
+                  id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  platform:
+                    type: string
+                    description: Supported platform identifier
+                    enum: *ref_17
+                  platform_account_id:
+                    type: string
+                  status:
+                    type: string
+                    description: Connection lifecycle state
+                    enum: *ref_18
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
               example:
                 id: 11111111-1111-1111-1111-111111111111
                 tenant_id: 00000000-0000-0000-0000-000000000000
@@ -474,13 +1191,21 @@ paths:
                 created_at: '2026-01-28T12:00:00Z'
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_13
+          content: *ref_14
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: *ref_15
+          content: *ref_16
   /api/attribution/platform-connections/{platform}:
     get:
       summary: Get platform connection status
@@ -493,13 +1218,23 @@ paths:
         - accessBearerAuth:
             - viewer
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
         - name: platform
           in: path
           required: true
           schema:
-            $ref: '#/components/schemas/Platform'
+            type: string
+            description: Supported platform identifier
+            enum: *ref_17
           description: Platform identifier
         - name: platform_account_id
           in: query
@@ -518,7 +1253,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlatformConnectionResponse'
+                type: object
+                required: *ref_19
+                properties: *ref_20
               example:
                 id: 11111111-1111-1111-1111-111111111111
                 tenant_id: 00000000-0000-0000-0000-000000000000
@@ -528,13 +1265,21 @@ paths:
                 created_at: '2026-01-28T12:00:00Z'
                 updated_at: '2026-01-28T12:05:00Z'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: *ref_15
+          content: *ref_16
   /api/attribution/platform-credentials:
     post:
       summary: Store or update platform credentials
@@ -548,14 +1293,51 @@ paths:
         - accessBearerAuth:
             - manager
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PlatformCredentialUpsertRequest'
+              type: object
+              required: &ref_39
+                - platform
+                - platform_account_id
+                - access_token
+              properties: &ref_40
+                platform:
+                  type: string
+                  description: Supported platform identifier
+                  enum: *ref_17
+                platform_account_id:
+                  type: string
+                access_token:
+                  type: string
+                  description: Access token (never returned once stored)
+                refresh_token:
+                  type: string
+                  nullable: true
+                expires_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                scope:
+                  type: string
+                  nullable: true
+                token_type:
+                  type: string
+                  nullable: true
+                  enum:
+                    - Bearer
       responses:
         '200':
           description: Platform credentials stored
@@ -567,7 +1349,37 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlatformCredentialStatusResponse'
+                type: object
+                required: &ref_42
+                  - tenant_id
+                  - platform
+                  - platform_account_id
+                  - status
+                  - updated_at
+                properties: &ref_43
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  platform:
+                    type: string
+                    description: Supported platform identifier
+                    enum: *ref_17
+                  platform_account_id:
+                    type: string
+                  status:
+                    type: string
+                    description: Credential storage status
+                    enum: &ref_41
+                      - stored
+                      - expired
+                      - missing
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  updated_at:
+                    type: string
+                    format: date-time
               example:
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: google_ads
@@ -576,15 +1388,25 @@ paths:
                 expires_at: '2026-02-28T12:00:00Z'
                 updated_at: '2026-01-28T12:05:00Z'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_13
+          content: *ref_14
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '404':
-          $ref: '#/components/responses/NotFoundError'
+          description: Resource not found
+          headers: *ref_11
+          content: *ref_12
         '500':
-          $ref: '#/components/responses/ServerError'
+          description: Internal server error
+          headers: *ref_15
+          content: *ref_16
   /api/attribution/platform-oauth/{platform}/authorize:
     post:
       summary: Initiate provider OAuth authorization
@@ -602,20 +1424,46 @@ paths:
         - refreshBearerAuth
         - tenantKeyAuth
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
         - name: platform
           in: path
           required: true
           schema:
-            $ref: '#/components/schemas/Platform'
+            type: string
+            description: Supported platform identifier
+            enum: *ref_17
           description: Provider platform identifier
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProviderOAuthAuthorizeRequest'
+              type: object
+              required: &ref_44
+                - platform_account_id
+                - redirect_uri
+              properties: &ref_45
+                platform_account_id:
+                  type: string
+                  description: Tenant-local provider account identifier
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: Callback URL registered for the provider OAuth client
+                requested_scopes:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional requested provider scopes
       responses:
         '202':
           description: Provider authorization URL generated
@@ -627,7 +1475,50 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProviderOAuthAuthorizeResponse'
+                type: object
+                required: &ref_46
+                  - tenant_id
+                  - platform
+                  - lifecycle_state
+                  - authorization_url
+                  - state_reference
+                  - state_expires_at
+                  - data_freshness_seconds
+                  - last_updated
+                properties: &ref_47
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  platform:
+                    type: string
+                    description: Supported platform identifier
+                    enum: *ref_17
+                  lifecycle_state:
+                    type: string
+                    description: Tenant-scoped provider OAuth lifecycle state
+                    enum: &ref_22
+                      - not_connected
+                      - authorization_pending
+                      - connected
+                      - expired
+                      - revoked
+                      - reconnect_required
+                  authorization_url:
+                    type: string
+                    format: uri
+                    description: Provider authorization URL for redirect initiation
+                  state_reference:
+                    type: string
+                    description: Opaque reference for callback state validation
+                  state_expires_at:
+                    type: string
+                    format: date-time
+                  data_freshness_seconds:
+                    type: integer
+                    minimum: 0
+                  last_updated:
+                    type: string
+                    format: date-time
               example:
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: stripe
@@ -638,19 +1529,123 @@ paths:
                 data_freshness_seconds: 0
                 last_updated: '2026-03-09T17:45:00Z'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_13
+          content: *ref_14
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '404':
-          $ref: '#/components/responses/ProviderNotConnectedError'
+          description: Provider connection does not exist for the tenant
+          headers: &ref_23
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_24
+            application/problem+json:
+              schema:
+                allOf: &ref_21
+                  - type: object
+                    description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                    required: *ref_0
+                    properties: *ref_1
+                  - type: object
+                    required:
+                      - code
+                    properties:
+                      code:
+                        type: string
+                        description: Non-leaky provider OAuth lifecycle failure categories
+                        enum: &ref_36
+                          - provider_not_connected
+                          - provider_expired
+                          - provider_revoked
+                          - provider_scope_insufficient
+                          - provider_rate_limited
+                          - provider_transport_failure
+              example:
+                type: https://api.skeldir.com/problems/provider-not-connected
+                title: Provider Not Connected
+                status: 404
+                detail: Provider connection is not available for this tenant.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000
+                correlation_id: 550e8400-e29b-41d4-a716-446655440000
+                timestamp: '2026-03-09T17:45:00Z'
+                code: provider_not_connected
         '409':
-          $ref: '#/components/responses/ProviderRevokedError'
+          description: Provider connection was revoked and is no longer active
+          headers: &ref_32
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_33
+            application/problem+json:
+              schema:
+                allOf: *ref_21
+              example:
+                type: https://api.skeldir.com/problems/provider-revoked
+                title: Provider Connection Revoked
+                status: 409
+                detail: Provider connection has been revoked and requires reconnect.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440002
+                correlation_id: 550e8400-e29b-41d4-a716-446655440002
+                timestamp: '2026-03-09T17:45:00Z'
+                code: provider_revoked
         '429':
-          $ref: '#/components/responses/ProviderRateLimitedError'
+          description: Provider lifecycle operation is rate limited
+          headers: &ref_25
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying provider lifecycle operation
+          content: &ref_26
+            application/problem+json:
+              schema:
+                allOf: *ref_21
+              example:
+                type: https://api.skeldir.com/problems/provider-rate-limited
+                title: Provider Rate Limited
+                status: 429
+                detail: Provider rate limit exceeded for lifecycle operation.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004
+                correlation_id: 550e8400-e29b-41d4-a716-446655440004
+                timestamp: '2026-03-09T17:45:00Z'
+                code: provider_rate_limited
         '503':
-          $ref: '#/components/responses/ProviderTransportFailureError'
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: &ref_27
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying provider lifecycle operation
+          content: &ref_28
+            application/problem+json:
+              schema:
+                allOf: *ref_21
+              example:
+                type: https://api.skeldir.com/problems/provider-transport-failure
+                title: Provider Transport Failure
+                status: 503
+                detail: Provider lifecycle operation is temporarily unavailable.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005
+                correlation_id: 550e8400-e29b-41d4-a716-446655440005
+                timestamp: '2026-03-09T17:45:00Z'
+                code: provider_transport_failure
   /api/attribution/platform-oauth/{platform}/callback:
     get:
       summary: Complete provider OAuth callback
@@ -668,13 +1663,23 @@ paths:
         - refreshBearerAuth
         - tenantKeyAuth
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
         - name: platform
           in: path
           required: true
           schema:
-            $ref: '#/components/schemas/Platform'
+            type: string
+            description: Supported platform identifier
+            enum: *ref_17
           description: Provider platform identifier
         - name: code
           in: query
@@ -711,7 +1716,45 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProviderOAuthCallbackResponse'
+                type: object
+                required: &ref_48
+                  - tenant_id
+                  - platform
+                  - platform_account_id
+                  - lifecycle_state
+                  - refresh_state
+                  - data_freshness_seconds
+                  - last_updated
+                properties: &ref_49
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  platform:
+                    type: string
+                    description: Supported platform identifier
+                    enum: *ref_17
+                  platform_account_id:
+                    type: string
+                  lifecycle_state:
+                    type: string
+                    description: Tenant-scoped provider OAuth lifecycle state
+                    enum: *ref_22
+                  refresh_state:
+                    type: string
+                    description: Most recent provider OAuth refresh result state
+                    enum: &ref_29
+                      - not_attempted
+                      - fresh
+                      - due
+                      - in_progress
+                      - succeeded
+                      - failed
+                  data_freshness_seconds:
+                    type: integer
+                    minimum: 0
+                  last_updated:
+                    type: string
+                    format: date-time
               example:
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: stripe
@@ -721,19 +1764,65 @@ paths:
                 data_freshness_seconds: 1
                 last_updated: '2026-03-09T17:46:00Z'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_13
+          content: *ref_14
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ProviderScopeInsufficientError'
+          description: Provider connection exists but lacks required scope grants
+          headers: &ref_30
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_31
+            application/problem+json:
+              schema:
+                allOf: *ref_21
+              example:
+                type: https://api.skeldir.com/problems/provider-scope-insufficient
+                title: Provider Scope Insufficient
+                status: 403
+                detail: Provider connection lacks required scopes for this lifecycle action.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440003
+                correlation_id: 550e8400-e29b-41d4-a716-446655440003
+                timestamp: '2026-03-09T17:45:00Z'
+                code: provider_scope_insufficient
         '404':
-          $ref: '#/components/responses/ProviderNotConnectedError'
+          description: Provider connection does not exist for the tenant
+          headers: *ref_23
+          content: *ref_24
         '409':
-          $ref: '#/components/responses/ProviderExpiredError'
+          description: Provider credential lifecycle is expired and requires re-authorization
+          headers: &ref_34
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content: &ref_35
+            application/problem+json:
+              schema:
+                allOf: *ref_21
+              example:
+                type: https://api.skeldir.com/problems/provider-expired
+                title: Provider Authorization Expired
+                status: 409
+                detail: Provider authorization is expired and must be renewed.
+                instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440001
+                correlation_id: 550e8400-e29b-41d4-a716-446655440001
+                timestamp: '2026-03-09T17:45:00Z'
+                code: provider_expired
         '429':
-          $ref: '#/components/responses/ProviderRateLimitedError'
+          description: Provider lifecycle operation is rate limited
+          headers: *ref_25
+          content: *ref_26
         '503':
-          $ref: '#/components/responses/ProviderTransportFailureError'
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_27
+          content: *ref_28
   /api/attribution/platform-oauth/{platform}/status:
     get:
       summary: Read provider OAuth connection status
@@ -751,13 +1840,23 @@ paths:
         - refreshBearerAuth
         - tenantKeyAuth
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
         - name: platform
           in: path
           required: true
           schema:
-            $ref: '#/components/schemas/Platform'
+            type: string
+            description: Supported platform identifier
+            enum: *ref_17
           description: Provider platform identifier
         - name: platform_account_id
           in: query
@@ -776,7 +1875,46 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProviderOAuthStatusResponse'
+                type: object
+                required: &ref_50
+                  - tenant_id
+                  - platform
+                  - platform_account_id
+                  - lifecycle_state
+                  - refresh_state
+                  - data_freshness_seconds
+                  - last_updated
+                properties: &ref_51
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  platform:
+                    type: string
+                    description: Supported platform identifier
+                    enum: *ref_17
+                  platform_account_id:
+                    type: string
+                  lifecycle_state:
+                    type: string
+                    description: Tenant-scoped provider OAuth lifecycle state
+                    enum: *ref_22
+                  refresh_state:
+                    type: string
+                    description: Most recent provider OAuth refresh result state
+                    enum: *ref_29
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  scope:
+                    type: string
+                    nullable: true
+                  data_freshness_seconds:
+                    type: integer
+                    minimum: 0
+                  last_updated:
+                    type: string
+                    format: date-time
               example:
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: stripe
@@ -788,17 +1926,29 @@ paths:
                 data_freshness_seconds: 3
                 last_updated: '2026-03-09T17:46:00Z'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ProviderScopeInsufficientError'
+          description: Provider connection exists but lacks required scope grants
+          headers: *ref_30
+          content: *ref_31
         '404':
-          $ref: '#/components/responses/ProviderNotConnectedError'
+          description: Provider connection does not exist for the tenant
+          headers: *ref_23
+          content: *ref_24
         '409':
-          $ref: '#/components/responses/ProviderRevokedError'
+          description: Provider connection was revoked and is no longer active
+          headers: *ref_32
+          content: *ref_33
         '429':
-          $ref: '#/components/responses/ProviderRateLimitedError'
+          description: Provider lifecycle operation is rate limited
+          headers: *ref_25
+          content: *ref_26
         '503':
-          $ref: '#/components/responses/ProviderTransportFailureError'
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_27
+          content: *ref_28
   /api/attribution/platform-oauth/{platform}/disconnect:
     post:
       summary: Disconnect and revoke provider OAuth connection
@@ -815,20 +1965,40 @@ paths:
         - refreshBearerAuth
         - tenantKeyAuth
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
         - name: platform
           in: path
           required: true
           schema:
-            $ref: '#/components/schemas/Platform'
+            type: string
+            description: Supported platform identifier
+            enum: *ref_17
           description: Provider platform identifier
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProviderOAuthDisconnectRequest'
+              type: object
+              required: &ref_53
+                - reason
+              properties: &ref_54
+                reason:
+                  type: string
+                  enum: &ref_52
+                    - user_initiated
+                    - provider_revoked
+                    - security_event
+                    - tenant_offboarding
       responses:
         '200':
           description: Provider OAuth connection revoked
@@ -840,7 +2010,35 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProviderOAuthDisconnectResponse'
+                type: object
+                required: &ref_55
+                  - tenant_id
+                  - platform
+                  - lifecycle_state
+                  - disconnected_at
+                  - data_freshness_seconds
+                  - last_updated
+                properties: &ref_56
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  platform:
+                    type: string
+                    description: Supported platform identifier
+                    enum: *ref_17
+                  lifecycle_state:
+                    type: string
+                    description: Tenant-scoped provider OAuth lifecycle state
+                    enum: *ref_22
+                  disconnected_at:
+                    type: string
+                    format: date-time
+                  data_freshness_seconds:
+                    type: integer
+                    minimum: 0
+                  last_updated:
+                    type: string
+                    format: date-time
               example:
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: stripe
@@ -849,19 +2047,33 @@ paths:
                 data_freshness_seconds: 0
                 last_updated: '2026-03-09T17:47:00Z'
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Bad Request - validation failed
+          headers: *ref_13
+          content: *ref_14
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_7
+          content: *ref_8
         '404':
-          $ref: '#/components/responses/ProviderNotConnectedError'
+          description: Provider connection does not exist for the tenant
+          headers: *ref_23
+          content: *ref_24
         '409':
-          $ref: '#/components/responses/ProviderExpiredError'
+          description: Provider credential lifecycle is expired and requires re-authorization
+          headers: *ref_34
+          content: *ref_35
         '429':
-          $ref: '#/components/responses/ProviderRateLimitedError'
+          description: Provider lifecycle operation is rate limited
+          headers: *ref_25
+          content: *ref_26
         '503':
-          $ref: '#/components/responses/ProviderTransportFailureError'
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_27
+          content: *ref_28
   /api/attribution/platform-oauth/{platform}/refresh-state:
     get:
       summary: Read provider OAuth refresh result state
@@ -878,13 +2090,23 @@ paths:
         - refreshBearerAuth
         - tenantKeyAuth
       parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/Authorization'
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
         - name: platform
           in: path
           required: true
           schema:
-            $ref: '#/components/schemas/Platform'
+            type: string
+            description: Supported platform identifier
+            enum: *ref_17
           description: Provider platform identifier
       responses:
         '200':
@@ -897,7 +2119,55 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProviderOAuthRefreshStateResponse'
+                type: object
+                required: &ref_57
+                  - tenant_id
+                  - platform
+                  - lifecycle_state
+                  - refresh_state
+                  - next_refresh_due_at
+                  - data_freshness_seconds
+                  - last_updated
+                properties: &ref_58
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  platform:
+                    type: string
+                    description: Supported platform identifier
+                    enum: *ref_17
+                  lifecycle_state:
+                    type: string
+                    description: Tenant-scoped provider OAuth lifecycle state
+                    enum: *ref_22
+                  refresh_state:
+                    type: string
+                    description: Most recent provider OAuth refresh result state
+                    enum: *ref_29
+                  next_refresh_due_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  last_refresh_attempt_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  last_refresh_success_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  last_error_code:
+                    anyOf:
+                      - type: string
+                        description: Non-leaky provider OAuth lifecycle failure categories
+                        enum: *ref_36
+                      - type: 'null'
+                  data_freshness_seconds:
+                    type: integer
+                    minimum: 0
+                  last_updated:
+                    type: string
+                    format: date-time
               example:
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 platform: stripe
@@ -910,1049 +2180,198 @@ paths:
                 data_freshness_seconds: 15
                 last_updated: '2026-03-09T17:46:00Z'
         '401':
-          $ref: '#/components/responses/UnauthorizedError'
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_5
+          content: *ref_6
         '403':
-          $ref: '#/components/responses/ProviderScopeInsufficientError'
+          description: Provider connection exists but lacks required scope grants
+          headers: *ref_30
+          content: *ref_31
         '404':
-          $ref: '#/components/responses/ProviderNotConnectedError'
+          description: Provider connection does not exist for the tenant
+          headers: *ref_23
+          content: *ref_24
         '409':
-          $ref: '#/components/responses/ProviderRevokedError'
+          description: Provider connection was revoked and is no longer active
+          headers: *ref_32
+          content: *ref_33
         '429':
-          $ref: '#/components/responses/ProviderRateLimitedError'
+          description: Provider lifecycle operation is rate limited
+          headers: *ref_25
+          content: *ref_26
         '503':
-          $ref: '#/components/responses/ProviderTransportFailureError'
+          description: Provider lifecycle operation failed due to upstream transport unavailability
+          headers: *ref_27
+          content: *ref_28
 components:
   schemas:
     Platform:
       type: string
       description: Supported platform identifier
-      enum:
-        - google_ads
-        - meta_ads
-        - tiktok_ads
-        - linkedin_ads
-        - stripe
-        - paypal
-        - shopify
-        - woocommerce
+      enum: *ref_17
     PlatformConnectionStatus:
       type: string
       description: Connection lifecycle state
-      enum:
-        - pending
-        - active
-        - disabled
+      enum: *ref_18
     PlatformConnectionUpsertRequest:
       type: object
-      required:
-        - platform
-        - platform_account_id
-      properties:
-        platform:
-          $ref: '#/components/schemas/Platform'
-        platform_account_id:
-          type: string
-          description: Platform account identifier (e.g., Google Ads customer ID)
-        status:
-          $ref: '#/components/schemas/PlatformConnectionStatus'
-        metadata:
-          type: object
-          additionalProperties: true
-          description: Optional non-PII metadata for the connection
+      required: *ref_37
+      properties: *ref_38
     PlatformConnectionResponse:
       type: object
-      required:
-        - id
-        - tenant_id
-        - platform
-        - platform_account_id
-        - status
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        platform:
-          $ref: '#/components/schemas/Platform'
-        platform_account_id:
-          type: string
-        status:
-          $ref: '#/components/schemas/PlatformConnectionStatus'
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+      required: *ref_19
+      properties: *ref_20
     PlatformCredentialUpsertRequest:
       type: object
-      required:
-        - platform
-        - platform_account_id
-        - access_token
-      properties:
-        platform:
-          $ref: '#/components/schemas/Platform'
-        platform_account_id:
-          type: string
-        access_token:
-          type: string
-          description: Access token (never returned once stored)
-        refresh_token:
-          type: string
-          nullable: true
-        expires_at:
-          type: string
-          format: date-time
-          nullable: true
-        scope:
-          type: string
-          nullable: true
-        token_type:
-          type: string
-          nullable: true
-          enum:
-            - Bearer
+      required: *ref_39
+      properties: *ref_40
     PlatformCredentialStatus:
       type: string
       description: Credential storage status
-      enum:
-        - stored
-        - expired
-        - missing
+      enum: *ref_41
     PlatformCredentialStatusResponse:
       type: object
-      required:
-        - tenant_id
-        - platform
-        - platform_account_id
-        - status
-        - updated_at
-      properties:
-        tenant_id:
-          type: string
-          format: uuid
-        platform:
-          $ref: '#/components/schemas/Platform'
-        platform_account_id:
-          type: string
-        status:
-          $ref: '#/components/schemas/PlatformCredentialStatus'
-        expires_at:
-          type: string
-          format: date-time
-          nullable: true
-        updated_at:
-          type: string
-          format: date-time
+      required: *ref_42
+      properties: *ref_43
     ProviderOAuthLifecycleState:
       type: string
       description: Tenant-scoped provider OAuth lifecycle state
-      enum:
-        - not_connected
-        - authorization_pending
-        - connected
-        - expired
-        - revoked
-        - reconnect_required
+      enum: *ref_22
     ProviderRefreshResultState:
       type: string
       description: Most recent provider OAuth refresh result state
-      enum:
-        - not_attempted
-        - fresh
-        - due
-        - in_progress
-        - succeeded
-        - failed
+      enum: *ref_29
     ProviderOAuthAuthorizeRequest:
       type: object
-      required:
-        - platform_account_id
-        - redirect_uri
-      properties:
-        platform_account_id:
-          type: string
-          description: Tenant-local provider account identifier
-        redirect_uri:
-          type: string
-          format: uri
-          description: Callback URL registered for the provider OAuth client
-        requested_scopes:
-          type: array
-          items:
-            type: string
-          description: Optional requested provider scopes
+      required: *ref_44
+      properties: *ref_45
     ProviderOAuthAuthorizeResponse:
       type: object
-      required:
-        - tenant_id
-        - platform
-        - lifecycle_state
-        - authorization_url
-        - state_reference
-        - state_expires_at
-        - data_freshness_seconds
-        - last_updated
-      properties:
-        tenant_id:
-          type: string
-          format: uuid
-        platform:
-          $ref: '#/components/schemas/Platform'
-        lifecycle_state:
-          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
-        authorization_url:
-          type: string
-          format: uri
-          description: Provider authorization URL for redirect initiation
-        state_reference:
-          type: string
-          description: Opaque reference for callback state validation
-        state_expires_at:
-          type: string
-          format: date-time
-        data_freshness_seconds:
-          type: integer
-          minimum: 0
-        last_updated:
-          type: string
-          format: date-time
+      required: *ref_46
+      properties: *ref_47
     ProviderOAuthCallbackResponse:
       type: object
-      required:
-        - tenant_id
-        - platform
-        - platform_account_id
-        - lifecycle_state
-        - refresh_state
-        - data_freshness_seconds
-        - last_updated
-      properties:
-        tenant_id:
-          type: string
-          format: uuid
-        platform:
-          $ref: '#/components/schemas/Platform'
-        platform_account_id:
-          type: string
-        lifecycle_state:
-          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
-        refresh_state:
-          $ref: '#/components/schemas/ProviderRefreshResultState'
-        data_freshness_seconds:
-          type: integer
-          minimum: 0
-        last_updated:
-          type: string
-          format: date-time
+      required: *ref_48
+      properties: *ref_49
     ProviderOAuthStatusResponse:
       type: object
-      required:
-        - tenant_id
-        - platform
-        - platform_account_id
-        - lifecycle_state
-        - refresh_state
-        - data_freshness_seconds
-        - last_updated
-      properties:
-        tenant_id:
-          type: string
-          format: uuid
-        platform:
-          $ref: '#/components/schemas/Platform'
-        platform_account_id:
-          type: string
-        lifecycle_state:
-          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
-        refresh_state:
-          $ref: '#/components/schemas/ProviderRefreshResultState'
-        expires_at:
-          type: string
-          format: date-time
-          nullable: true
-        scope:
-          type: string
-          nullable: true
-        data_freshness_seconds:
-          type: integer
-          minimum: 0
-        last_updated:
-          type: string
-          format: date-time
+      required: *ref_50
+      properties: *ref_51
     ProviderOAuthDisconnectReason:
       type: string
-      enum:
-        - user_initiated
-        - provider_revoked
-        - security_event
-        - tenant_offboarding
+      enum: *ref_52
     ProviderOAuthDisconnectRequest:
       type: object
-      required:
-        - reason
-      properties:
-        reason:
-          $ref: '#/components/schemas/ProviderOAuthDisconnectReason'
+      required: *ref_53
+      properties: *ref_54
     ProviderOAuthDisconnectResponse:
       type: object
-      required:
-        - tenant_id
-        - platform
-        - lifecycle_state
-        - disconnected_at
-        - data_freshness_seconds
-        - last_updated
-      properties:
-        tenant_id:
-          type: string
-          format: uuid
-        platform:
-          $ref: '#/components/schemas/Platform'
-        lifecycle_state:
-          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
-        disconnected_at:
-          type: string
-          format: date-time
-        data_freshness_seconds:
-          type: integer
-          minimum: 0
-        last_updated:
-          type: string
-          format: date-time
+      required: *ref_55
+      properties: *ref_56
     ProviderLifecycleErrorCode:
       type: string
       description: Non-leaky provider OAuth lifecycle failure categories
-      enum:
-        - provider_not_connected
-        - provider_expired
-        - provider_revoked
-        - provider_scope_insufficient
-        - provider_rate_limited
-        - provider_transport_failure
+      enum: *ref_36
     ProviderOAuthRefreshStateResponse:
       type: object
-      required:
-        - tenant_id
-        - platform
-        - lifecycle_state
-        - refresh_state
-        - next_refresh_due_at
-        - data_freshness_seconds
-        - last_updated
-      properties:
-        tenant_id:
-          type: string
-          format: uuid
-        platform:
-          $ref: '#/components/schemas/Platform'
-        lifecycle_state:
-          $ref: '#/components/schemas/ProviderOAuthLifecycleState'
-        refresh_state:
-          $ref: '#/components/schemas/ProviderRefreshResultState'
-        next_refresh_due_at:
-          type: string
-          format: date-time
-          nullable: true
-        last_refresh_attempt_at:
-          type: string
-          format: date-time
-          nullable: true
-        last_refresh_success_at:
-          type: string
-          format: date-time
-          nullable: true
-        last_error_code:
-          anyOf:
-            - $ref: '#/components/schemas/ProviderLifecycleErrorCode'
-            - type: 'null'
-        data_freshness_seconds:
-          type: integer
-          minimum: 0
-        last_updated:
-          type: string
-          format: date-time
+      required: *ref_57
+      properties: *ref_58
     ProviderLifecycleProblemDetails:
-      allOf:
-        - $ref: '#/components/schemas/ProblemDetails'
-        - type: object
-          required:
-            - code
-          properties:
-            code:
-              $ref: '#/components/schemas/ProviderLifecycleErrorCode'
+      allOf: *ref_21
     RealtimeRevenueCounter:
       type: object
-      required:
-        - total_revenue
-        - event_count
-        - last_updated
-        - data_freshness_seconds
-        - verified
-        - tenant_id
-      properties:
-        total_revenue:
-          type: number
-          format: double
-          minimum: 0
-          description: Total verified revenue amount in USD
-          example: 125430.5
-        event_count:
-          type: integer
-          description: Number of revenue events tracked
-          minimum: 0
-          example: 1247
-        last_updated:
-          type: string
-          format: date-time
-          description: ISO 8601 timestamp of last data update
-          example: '2025-11-26T14:32:00Z'
-        data_freshness_seconds:
-          type: integer
-          description: Seconds since data was last refreshed
-          minimum: 0
-          example: 5
-        verified:
-          type: boolean
-          description: Whether revenue is verified through payment reconciliation
-          example: true
-        tenant_id:
-          type: string
-          format: uuid
-          description: Tenant identifier associated with the response
-          example: 00000000-0000-0000-0000-000000000000
-        confidence_score:
-          type: number
-          format: double
-          minimum: 0
-          maximum: 1
-          description: Statistical confidence score (0-1) for attribution accuracy
-          example: 0.94
-        upgrade_notice:
-          type: string
-          nullable: true
-          description: Optional message about upgrading for more features
-          example: Upgrade to Pro for historical analytics
+      required: *ref_59
+      properties: *ref_60
     ChannelAttribution:
       type: object
-      required:
-        - channel_name
-        - revenue
-        - conversion_count
-        - confidence_score
-      properties:
-        channel_name:
-          type: string
-          enum:
-            - Meta
-            - Google
-            - TikTok
-            - LinkedIn
-            - Organic
-            - Direct
-            - Email
-            - Referral
-            - Unknown
-          description: Marketing channel name
-        revenue:
-          type: number
-          format: double
-          minimum: 0
-          description: Attributed revenue for this channel
-        conversion_count:
-          type: integer
-          description: Number of conversions attributed to this channel
-        confidence_score:
-          type: number
-          format: double
-          minimum: 0
-          maximum: 1
-          description: Statistical confidence in attribution accuracy
-        spend:
-          type: number
-          format: float
-          description: Marketing spend on this channel
-        roas:
-          type: number
-          format: float
-          description: Return on Ad Spend (revenue/spend)
-    ChannelAttributionDateRange:
+      required: *ref_61
+      properties: *ref_62
+    ChannelProjectionIdentity:
       type: object
-      required:
-        - start
-        - end
-      properties:
-        start:
-          type: string
-          format: date
-        end:
-          type: string
-          format: date
+      required: *ref_63
+      properties: *ref_64
     ChannelAttributionResponse:
       type: object
-      required:
-        - channels
-        - total_revenue
-        - tenant_id
-        - last_updated
-        - data_freshness_seconds
-        - date_range
-      properties:
-        channels:
-          type: array
-          items:
-            $ref: '#/components/schemas/ChannelAttribution'
-        total_revenue:
-          type: number
-          format: double
-          minimum: 0
-        tenant_id:
-          type: string
-          format: uuid
-        last_updated:
-          type: string
-          format: date-time
-        data_freshness_seconds:
-          type: integer
-          minimum: 0
-        date_range:
-          $ref: '#/components/schemas/ChannelAttributionDateRange'
+      required: *ref_65
+      properties: *ref_66
     AttributionExplanationRevenueContext:
       type: object
-      required:
-        - cache_key
-        - total_revenue
-        - total_revenue_cents
-        - data_as_of
-      properties:
-        cache_key:
-          type: string
-        total_revenue:
-          type: number
-          format: double
-          minimum: 0
-        total_revenue_cents:
-          type: integer
-          minimum: 0
-        data_as_of:
-          type: string
-          format: date-time
+      required: *ref_67
+      properties: *ref_68
     AttributionTruthSnapshot:
       type: object
-      required:
-        - version
-        - watermark
-        - as_of
-        - deterministic_truth_sources
-      properties:
-        version:
-          type: string
-          minLength: 32
-        watermark:
-          type: integer
-          minimum: 1
-        as_of:
-          type: string
-          format: date-time
-        deterministic_truth_sources:
-          type: array
-          items:
-            type: string
+      required: *ref_9
+      properties: *ref_10
     AttributionAuthoritativeMetric:
       type: object
-      required:
-        - entity_type
-        - entity_id
-        - tenant_id
-        - metric_key
-        - metric_value
-        - metric_value_cents
-        - currency
-        - channel_code
-        - model_type
-        - model_version
-        - confidence_score
-        - verification_state
-        - last_updated
-        - data_freshness_seconds
-        - deterministic_truth_sources
-        - truth_snapshot
-        - revenue_context
-      properties:
-        entity_type:
-          type: string
-          enum:
-            - attribution_score
-            - channel_performance
-            - reconciliation_discrepancy
-        entity_id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        metric_key:
-          type: string
-        metric_value:
-          type: number
-          format: double
-        metric_value_cents:
-          type: integer
-        currency:
-          type: string
-          pattern: ^[A-Z]{3}$
-          enum:
-            - USD
-        channel_code:
-          type: string
-        model_type:
-          type: string
-        model_version:
-          type: string
-        confidence_score:
-          type: number
-          format: double
-          minimum: 0
-          maximum: 1
-        verification_state:
-          type: string
-          enum:
-            - verified
-            - unverified
-        last_updated:
-          type: string
-          format: date-time
-        data_freshness_seconds:
-          type: integer
-          minimum: 0
-        deterministic_truth_sources:
-          type: array
-          items:
-            type: string
-        truth_snapshot:
-          $ref: '#/components/schemas/AttributionTruthSnapshot'
-        revenue_context:
-          $ref: '#/components/schemas/AttributionExplanationRevenueContext'
+      required: *ref_69
+      properties: *ref_70
     AttributionPrewarmState:
       type: object
-      required:
-        - strategy
-        - trigger_event
-        - eligible
-        - triggered
-        - trigger_reason
-        - target_entity_types
-        - target_count
-        - max_permutations_per_trigger
-        - min_trigger_interval_seconds
-        - max_calls_per_tenant_per_hour
-        - call_budget_cents
-        - assisted_cache_hit
-      properties:
-        strategy:
-          type: string
-          enum:
-            - prewarm_required_event_driven_bounded
-        trigger_event:
-          type: string
-          enum:
-            - deterministic_truth_change_event
-        eligible:
-          type: boolean
-        triggered:
-          type: boolean
-        trigger_reason:
-          type: string
-          enum:
-            - triggered
-            - prewarm_disabled
-            - entity_type_ineligible
-            - already_prewarmed_for_watermark
-            - minimum_interval_not_elapsed
-            - tenant_hourly_cap_reached
-            - no_targets_after_caps
-            - stale_replay_path_suppressed
-        target_entity_types:
-          type: array
-          items:
-            type: string
-            enum:
-              - attribution_score
-              - channel_performance
-              - reconciliation_discrepancy
-        target_count:
-          type: integer
-          minimum: 0
-        max_permutations_per_trigger:
-          type: integer
-          minimum: 0
-        min_trigger_interval_seconds:
-          type: integer
-          minimum: 0
-        max_calls_per_tenant_per_hour:
-          type: integer
-          minimum: 0
-        call_budget_cents:
-          type: integer
-          minimum: 0
-        assisted_cache_hit:
-          type: boolean
+      required: *ref_71
+      properties: *ref_72
     AttributionNonAuthoritativeExplanation:
       type: object
-      required:
-        - explanation_class
-        - synthesis_state
-        - non_authoritative_summary
-        - degraded
-        - generated_at
-        - truth_snapshot
-        - cache_replay_state
-        - provider_reentry_blocked
-        - execution_path_state
-        - cold_path_strategy
-        - prewarm_state
-        - explanation_contract_version
-        - caveats
-      properties:
-        explanation_class:
-          type: string
-          enum:
-            - provider_fastpath_validated
-            - provider_fastpath_degraded
-        synthesis_state:
-          type: string
-          enum:
-            - validated
-            - validation_rejected
-            - timeout
-            - provider_failed
-            - blocked
-            - stale_replay_rejected
-        non_authoritative_summary:
-          type: string
-          minLength: 1
-          maxLength: 320
-        degraded:
-          type: boolean
-        degraded_reason:
-          type: string
-          minLength: 1
-          maxLength: 64
-          nullable: true
-        generated_at:
-          type: string
-          format: date-time
-        truth_snapshot:
-          $ref: '#/components/schemas/AttributionTruthSnapshot'
-        cache_replay_state:
-          type: string
-          enum:
-            - cache_hit_truth_match
-            - cold_miss_provider_allowed
-            - stale_replay_rejected_provider_blocked
-            - stale_replay_bypassed_provider_allowed
-        provider_reentry_blocked:
-          type: boolean
-        execution_path_state:
-          type: string
-          enum:
-            - warm_cache_hit
-            - cold_path_generated
-            - stale_rejected_provider_blocked
-            - prewarm_assisted_cache_hit
-        cold_path_strategy:
-          type: string
-          enum:
-            - prewarm_required_event_driven_bounded
-        prewarm_state:
-          $ref: '#/components/schemas/AttributionPrewarmState'
-        explanation_contract_version:
-          type: string
-          enum:
-            - b1.7-p4
-        caveats:
-          type: array
-          items:
-            type: string
+      required: *ref_73
+      properties: *ref_74
     AttributionExplanationResponse:
       type: object
-      required:
-        - authoritative_metric
-        - non_authoritative_explanation
-      properties:
-        authoritative_metric:
-          $ref: '#/components/schemas/AttributionAuthoritativeMetric'
-        non_authoritative_explanation:
-          $ref: '#/components/schemas/AttributionNonAuthoritativeExplanation'
+      required: *ref_75
+      properties: *ref_76
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-      required:
-        - type
-        - title
-        - status
-        - detail
-        - instance
-        - correlation_id
-        - timestamp
-        - code
-      properties:
-        type:
-          type: string
-          format: uri
-          description: URI reference identifying the problem type
-          example: https://api.skeldir.com/problems/authentication-failed
-        title:
-          type: string
-          description: Short, human-readable summary of the problem
-          example: Authentication Failed
-        status:
-          type: integer
-          description: HTTP status code
-          example: 401
-        detail:
-          type: string
-          description: Human-readable explanation specific to this occurrence
-          example: The provided JWT token has expired. Please refresh your authentication token.
-        instance:
-          type: string
-          format: uri
-          description: URI reference identifying this specific occurrence
-          example: https://api.skeldir.com/api/attribution/revenue/realtime
-        correlation_id:
-          type: string
-          format: uuid
-          description: Request correlation ID for distributed tracing
-          example: 550e8400-e29b-41d4-a716-446655440000
-        timestamp:
-          type: string
-          format: date-time
-          description: ISO 8601 timestamp when the error occurred
-          example: '2025-11-11T14:32:00Z'
-        code:
-          type: string
-          description: Stable, non-sensitive error code for programmatic handling
-          example: AUTH_UNAUTHORIZED
-        errors:
-          type: array
-          description: Optional array of specific validation errors
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-                example: email
-              message:
-                type: string
-                example: Invalid email format
-              code:
-                type: string
-                example: INVALID_FORMAT
+      required: *ref_0
+      properties: *ref_1
   responses:
     ProviderNotConnectedError:
       description: Provider connection does not exist for the tenant
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
-          example:
-            type: https://api.skeldir.com/problems/provider-not-connected
-            title: Provider Not Connected
-            status: 404
-            detail: Provider connection is not available for this tenant.
-            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440000
-            correlation_id: 550e8400-e29b-41d4-a716-446655440000
-            timestamp: '2026-03-09T17:45:00Z'
-            code: provider_not_connected
+      headers: *ref_23
+      content: *ref_24
     ProviderExpiredError:
       description: Provider credential lifecycle is expired and requires re-authorization
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
-          example:
-            type: https://api.skeldir.com/problems/provider-expired
-            title: Provider Authorization Expired
-            status: 409
-            detail: Provider authorization is expired and must be renewed.
-            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440001
-            correlation_id: 550e8400-e29b-41d4-a716-446655440001
-            timestamp: '2026-03-09T17:45:00Z'
-            code: provider_expired
+      headers: *ref_34
+      content: *ref_35
     ProviderRevokedError:
       description: Provider connection was revoked and is no longer active
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
-          example:
-            type: https://api.skeldir.com/problems/provider-revoked
-            title: Provider Connection Revoked
-            status: 409
-            detail: Provider connection has been revoked and requires reconnect.
-            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440002
-            correlation_id: 550e8400-e29b-41d4-a716-446655440002
-            timestamp: '2026-03-09T17:45:00Z'
-            code: provider_revoked
+      headers: *ref_32
+      content: *ref_33
     ProviderScopeInsufficientError:
       description: Provider connection exists but lacks required scope grants
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
-          example:
-            type: https://api.skeldir.com/problems/provider-scope-insufficient
-            title: Provider Scope Insufficient
-            status: 403
-            detail: Provider connection lacks required scopes for this lifecycle action.
-            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440003
-            correlation_id: 550e8400-e29b-41d4-a716-446655440003
-            timestamp: '2026-03-09T17:45:00Z'
-            code: provider_scope_insufficient
+      headers: *ref_30
+      content: *ref_31
     ProviderRateLimitedError:
       description: Provider lifecycle operation is rate limited
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-        Retry-After:
-          schema:
-            type: integer
-          description: Seconds to wait before retrying provider lifecycle operation
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
-          example:
-            type: https://api.skeldir.com/problems/provider-rate-limited
-            title: Provider Rate Limited
-            status: 429
-            detail: Provider rate limit exceeded for lifecycle operation.
-            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440004
-            correlation_id: 550e8400-e29b-41d4-a716-446655440004
-            timestamp: '2026-03-09T17:45:00Z'
-            code: provider_rate_limited
+      headers: *ref_25
+      content: *ref_26
     ProviderTransportFailureError:
       description: Provider lifecycle operation failed due to upstream transport unavailability
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-        Retry-After:
-          schema:
-            type: integer
-          description: Seconds to wait before retrying provider lifecycle operation
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProviderLifecycleProblemDetails'
-          example:
-            type: https://api.skeldir.com/problems/provider-transport-failure
-            title: Provider Transport Failure
-            status: 503
-            detail: Provider lifecycle operation is temporarily unavailable.
-            instance: urn:skeldir:error:550e8400-e29b-41d4-a716-446655440005
-            correlation_id: 550e8400-e29b-41d4-a716-446655440005
-            timestamp: '2026-03-09T17:45:00Z'
-            code: provider_transport_failure
+      headers: *ref_27
+      content: *ref_28
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-          description: Request correlation ID for distributed tracing
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_5
+      content: *ref_6
     ForbiddenError:
       description: Forbidden - authenticated but insufficient permissions
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_7
+      content: *ref_8
     RateLimitError:
       description: Too Many Requests - rate limit exceeded
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-        Retry-After:
-          schema:
-            type: integer
-          description: Seconds to wait before retrying
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_77
+      content: *ref_78
     ServerError:
       description: Internal server error
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_15
+      content: *ref_16
     NotFoundError:
       description: Resource not found
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_11
+      content: *ref_12
     ValidationError:
       description: Bad Request - validation failed
-      headers:
-        X-Correlation-ID:
-          schema:
-            type: string
-            format: uuid
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetails'
+      headers: *ref_13
+      content: *ref_14
   securitySchemes:
     accessBearerAuth:
       type: oauth2
@@ -1969,21 +2388,17 @@ components:
       name: X-Correlation-ID
       in: header
       required: true
-      schema:
-        type: string
-        format: uuid
+      schema: *ref_2
       description: Unique request correlation ID for distributed tracing
     Authorization:
       name: Authorization
       in: header
       required: true
-      schema:
-        type: string
+      schema: *ref_3
       description: Bearer token for authentication (format - Bearer <token>)
     IfNoneMatch:
       name: If-None-Match
       in: header
       required: false
-      schema:
-        type: string
+      schema: *ref_4
       description: ETag from previous response for cache validation

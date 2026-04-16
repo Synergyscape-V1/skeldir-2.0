@@ -598,6 +598,7 @@ async def _compute_allocations_deterministic_baseline(
     tenant_id: UUID,
     window_start: datetime,
     window_end: datetime,
+    recompute_job_id: UUID,
     model_version: str = "1.0.0",
     replay_identity: DeterministicReplayIdentity | None = None,
     session_id: Optional[str] = None,
@@ -678,6 +679,7 @@ async def _compute_allocations_deterministic_baseline(
                             CAST(:ids AS uuid[]),
                             CAST(:tenant_ids AS uuid[]),
                             CAST(:event_ids AS uuid[]),
+                            CAST(:recompute_job_ids AS uuid[]),
                             CAST(:channel_codes AS text[]),
                             CAST(:allocation_ratios AS numeric[]),
                             CAST(:model_versions AS text[]),
@@ -691,6 +693,7 @@ async def _compute_allocations_deterministic_baseline(
                             id,
                             tenant_id,
                             event_id,
+                            recompute_job_id,
                             channel_code,
                             allocation_ratio,
                             model_version,
@@ -706,6 +709,7 @@ async def _compute_allocations_deterministic_baseline(
                         id,
                         tenant_id,
                         event_id,
+                        recompute_job_id,
                         channel_code,
                         allocation_ratio,
                         model_version,
@@ -720,6 +724,7 @@ async def _compute_allocations_deterministic_baseline(
                         id,
                         tenant_id,
                         event_id,
+                        recompute_job_id,
                         channel_code,
                         allocation_ratio,
                         model_version,
@@ -733,6 +738,7 @@ async def _compute_allocations_deterministic_baseline(
                     ORDER BY id ASC
                     ON CONFLICT (id)
                     DO UPDATE SET
+                        recompute_job_id = EXCLUDED.recompute_job_id,
                         allocation_ratio = EXCLUDED.allocation_ratio,
                         model_type = EXCLUDED.model_type,
                         confidence_score = EXCLUDED.confidence_score,
@@ -740,7 +746,8 @@ async def _compute_allocations_deterministic_baseline(
                         allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
                         updated_at = EXCLUDED.updated_at
                     WHERE
-                        attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
+                        attribution_allocations.recompute_job_id IS DISTINCT FROM EXCLUDED.recompute_job_id
+                        OR attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
                         OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
                         OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
                         OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
@@ -919,6 +926,7 @@ async def _compute_allocations_deterministic_baseline(
                 "ids": [],
                 "tenant_ids": [],
                 "event_ids": [],
+                "recompute_job_ids": [],
                 "channel_codes": [],
                 "allocation_ratios": [],
                 "model_versions": [],
@@ -946,6 +954,7 @@ async def _compute_allocations_deterministic_baseline(
                     )
                     batch_rows["tenant_ids"].append(tenant_id)
                     batch_rows["event_ids"].append(event_id)
+                    batch_rows["recompute_job_ids"].append(recompute_job_id)
                     batch_rows["channel_codes"].append(channel_code)
                     batch_rows["allocation_ratios"].append(str(allocation_ratio))
                     batch_rows["model_versions"].append(model_version)
@@ -1043,6 +1052,7 @@ async def _compute_allocations_strategy_kernel(
     tenant_id: UUID,
     window_start: datetime,
     window_end: datetime,
+    recompute_job_id: UUID,
     model_version: str,
     model_type: str,
     replay_identity: DeterministicReplayIdentity,
@@ -1138,6 +1148,7 @@ async def _compute_allocations_strategy_kernel(
                             CAST(:ids AS uuid[]),
                             CAST(:tenant_ids AS uuid[]),
                             CAST(:event_ids AS uuid[]),
+                            CAST(:recompute_job_ids AS uuid[]),
                             CAST(:channel_codes AS text[]),
                             CAST(:allocation_ratios AS numeric[]),
                             CAST(:model_versions AS text[]),
@@ -1151,6 +1162,7 @@ async def _compute_allocations_strategy_kernel(
                             id,
                             tenant_id,
                             event_id,
+                            recompute_job_id,
                             channel_code,
                             allocation_ratio,
                             model_version,
@@ -1166,6 +1178,7 @@ async def _compute_allocations_strategy_kernel(
                         id,
                         tenant_id,
                         event_id,
+                        recompute_job_id,
                         channel_code,
                         allocation_ratio,
                         model_version,
@@ -1180,6 +1193,7 @@ async def _compute_allocations_strategy_kernel(
                         id,
                         tenant_id,
                         event_id,
+                        recompute_job_id,
                         channel_code,
                         allocation_ratio,
                         model_version,
@@ -1193,6 +1207,7 @@ async def _compute_allocations_strategy_kernel(
                     ORDER BY id ASC
                     ON CONFLICT (id)
                     DO UPDATE SET
+                        recompute_job_id = EXCLUDED.recompute_job_id,
                         allocation_ratio = EXCLUDED.allocation_ratio,
                         model_type = EXCLUDED.model_type,
                         confidence_score = EXCLUDED.confidence_score,
@@ -1200,7 +1215,8 @@ async def _compute_allocations_strategy_kernel(
                         allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
                         updated_at = EXCLUDED.updated_at
                     WHERE
-                        attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
+                        attribution_allocations.recompute_job_id IS DISTINCT FROM EXCLUDED.recompute_job_id
+                        OR attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
                         OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
                         OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
                         OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
@@ -1223,6 +1239,7 @@ async def _compute_allocations_strategy_kernel(
                 "ids": [],
                 "tenant_ids": [],
                 "event_ids": [],
+                "recompute_job_ids": [],
                 "channel_codes": [],
                 "allocation_ratios": [],
                 "model_versions": [],
@@ -1260,6 +1277,7 @@ async def _compute_allocations_strategy_kernel(
                     batch_rows["ids"].append(allocation_id)
                     batch_rows["tenant_ids"].append(tenant_id)
                     batch_rows["event_ids"].append(conversion.conversion_event.event_id)
+                    batch_rows["recompute_job_ids"].append(recompute_job_id)
                     batch_rows["channel_codes"].append(channel_allocation.channel_code)
                     batch_rows["allocation_ratios"].append(str(channel_allocation.allocation_ratio))
                     batch_rows["model_versions"].append(model_version)
@@ -1525,6 +1543,7 @@ def recompute_window(
                 tenant_id=model.tenant_id,
                 window_start=window_start_dt,
                 window_end=window_end_dt,
+                recompute_job_id=job_id,
                 model_version=model_version,
                 replay_identity=replay_identity,
                 session_id=str(session_scope) if session_scope else None,
@@ -1535,6 +1554,7 @@ def recompute_window(
                 tenant_id=model.tenant_id,
                 window_start=window_start_dt,
                 window_end=window_end_dt,
+                recompute_job_id=job_id,
                 model_version=model_version,
                 model_type=canonical_model_type,
                 replay_identity=replay_identity,

@@ -854,6 +854,7 @@ CREATE TABLE public.attribution_allocations (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     channel_code text CONSTRAINT attribution_allocations_channel_not_null NOT NULL,
     allocated_revenue_cents integer DEFAULT 0 NOT NULL,
+    recompute_job_id uuid,
     model_metadata jsonb,
     correlation_id uuid,
     allocation_ratio numeric(6,5) DEFAULT 0.0 NOT NULL,
@@ -3004,6 +3005,13 @@ CREATE INDEX idx_allocations_channel_performance ON public.attribution_allocatio
 
 
 --
+-- Name: idx_allocations_tenant_projection_channel; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_allocations_tenant_projection_channel ON public.attribution_allocations USING btree (tenant_id, recompute_job_id, model_type, channel_code);
+
+
+--
 -- Name: idx_attribution_allocations_channel; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3989,6 +3997,14 @@ CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.re
 
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: attribution_allocations attribution_allocations_recompute_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribution_allocations
+    ADD CONSTRAINT attribution_allocations_recompute_job_id_fkey FOREIGN KEY (recompute_job_id) REFERENCES public.attribution_recompute_jobs(id) ON DELETE CASCADE;
 
 
 --
