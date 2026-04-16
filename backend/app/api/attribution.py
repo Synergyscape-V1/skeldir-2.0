@@ -8,7 +8,8 @@ api-contracts/dist/openapi/v1/attribution.bundled.yaml.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 import json
 import logging
 from hashlib import sha256
@@ -20,6 +21,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.problem_details import problem_details_response
+from app.attribution.strategy_kernel import (
+    DETERMINISTIC_BASELINE_MODEL,
+    canonical_model_type,
+)
 from app.core.config import settings
 from app.db.deps import get_db_session
 from app.db.session import get_session
@@ -65,7 +70,9 @@ logger = logging.getLogger(__name__)
 _PROVIDER_BOUNDARY = get_llm_provider_boundary()
 _B17_EXPLANATION_ENDPOINT = "app.api.attribution.explanation_fastpath"
 _B17_EXPLANATION_CONTRACT_VERSION = "b1.7-p4"
-_CHANNEL_LOOKBACK_DAYS_DEFAULT = 30
+_CHANNEL_MAX_WINDOW_DAYS = 31
+_RATIO_QUANTUM = Decimal("0.00001")
+_CONFIDENCE_QUANTUM = Decimal("0.001")
 _CHANNEL_CODE_TO_NAME: dict[str, ChannelName] = {
     "facebook_brand": ChannelName.Meta,
     "facebook_paid": ChannelName.Meta,
@@ -96,17 +103,16 @@ def _truth_snapshot_payload(
     }
 
 
-def _resolve_channels_date_range(
-    *,
-    start_date: date | None,
-    end_date: date | None,
-) -> tuple[date, date]:
-    today = datetime.now(timezone.utc).date()
-    end = end_date or today
-    start = start_date or (end - timedelta(days=_CHANNEL_LOOKBACK_DAYS_DEFAULT - 1))
-    if start > end:
-        start, end = end, start
-    return start, end
+def _projection_model_type(model_version: str) -> str:
+    marker = "::model_type="
+    if marker not in model_version:
+        return DETERMINISTIC_BASELINE_MODEL
+    _, raw_model_type = model_version.rsplit(marker, 1)
+    return canonical_model_type(raw_model_type)
+
+
+def _format_decimal(value: Decimal, quantum: Decimal) -> str:
+    return format(value.quantize(quantum, rounding=ROUND_HALF_UP), "f")
 
 
 def _map_channel_code_to_name(channel_code: str) -> ChannelName:
@@ -580,14 +586,37 @@ async def get_realtime_revenue(
                     "schema": {"type": "string"},
                 },
             },
-        }
+        },
+        404: {"description": "Projection not found for tenant"},
+        409: {"description": "Projection identity mismatch or projection not succeeded"},
+        422: {"description": "Projection window exceeds maximum supported range"},
     },
     operation_id="getChannelAttribution",
     summary="Get Channel Attribution Data",
     description=(
         "Returns deterministic channel attribution from persisted allocation rows "
-        "for the requested reporting window."
+        "for one authoritative projection identity."
     ),
+    openapi_extra={
+        "x-skeldir-b21-p3": {
+            "implementation_status": "mounted_persisted_projection_authority_surface",
+            "projection_identity": {
+                "required_query_parameters": ["model_type", "recompute_job_id"],
+                "cross_model_aggregation_forbidden": True,
+                "tenant_only_projection_forbidden": True,
+                "synchronous_recompute_on_read_forbidden": True,
+            },
+            "bounded_read_physics": {
+                "max_window_days": _CHANNEL_MAX_WINDOW_DAYS,
+                "fail_closed_on_unbounded_shape": True,
+            },
+            "precision_transport": {
+                "allocation_ratio": "decimal_string_scale_5",
+                "attribution_weight": "decimal_string_scale_5",
+                "confidence_score": "decimal_string_scale_3",
+            },
+        }
+    },
 )
 async def get_channel_attribution(
     request: Request,
@@ -595,21 +624,140 @@ async def get_channel_attribution(
     x_correlation_id: Annotated[UUID, Header(alias="X-Correlation-ID")],
     auth_context: Annotated[AuthContext, Security(get_auth_context, scopes=["viewer"])],
     db_session: Annotated[AsyncSession, Depends(get_db_session)],
-    start_date: Annotated[date | None, Query()] = None,
-    end_date: Annotated[date | None, Query()] = None,
+    model_type: Annotated[
+        Literal[
+            "deterministic_baseline",
+            "first_touch",
+            "last_touch",
+            "linear",
+            "time_decay",
+        ],
+        Query(description="Deterministic model projection selector"),
+    ],
+    recompute_job_id: Annotated[
+        UUID,
+        Query(description="Deterministic recompute projection identity"),
+    ],
     if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
 ):
     tenant_id = auth_context.tenant_id
-    resolved_start, resolved_end = _resolve_channels_date_range(
-        start_date=start_date,
-        end_date=end_date,
-    )
-    window_start = datetime.combine(resolved_start, datetime.min.time(), tzinfo=timezone.utc)
-    window_end = datetime.combine(
-        resolved_end + timedelta(days=1),
-        datetime.min.time(),
-        tzinfo=timezone.utc,
-    )
+    canonical_model = canonical_model_type(model_type)
+    projection_row = (
+        await db_session.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    window_start,
+                    window_end,
+                    model_version,
+                    status,
+                    COALESCE(updated_at, created_at) AS projection_last_updated
+                FROM attribution_recompute_jobs
+                WHERE tenant_id = :tenant_id
+                  AND id = :recompute_job_id
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "recompute_job_id": str(recompute_job_id),
+            },
+        )
+    ).mappings().first()
+    if projection_row is None:
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_404_NOT_FOUND,
+            title="Projection Not Found",
+            detail=(
+                "No deterministic recompute projection exists for the specified "
+                "tenant/model identity."
+            ),
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/attribution-projection-not-found",
+            code="ATTRIBUTION_PROJECTION_NOT_FOUND",
+        )
+
+    projection_status = str(projection_row["status"] or "").strip().lower()
+    if projection_status != "succeeded":
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            title="Projection Not Succeeded",
+            detail=(
+                "Deterministic projection exists but is not in succeeded status; "
+                "read is fail-closed."
+            ),
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/attribution-projection-status-conflict",
+            code="ATTRIBUTION_PROJECTION_STATUS_CONFLICT",
+        )
+
+    try:
+        projection_model_type = _projection_model_type(str(projection_row["model_version"]))
+    except ValueError as exc:
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            title="Projection Identity Conflict",
+            detail=str(exc),
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/attribution-projection-identity-conflict",
+            code="ATTRIBUTION_PROJECTION_IDENTITY_CONFLICT",
+        )
+    if projection_model_type != canonical_model:
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            title="Projection Identity Conflict",
+            detail=(
+                f"Requested model_type={canonical_model} does not match persisted "
+                f"projection model_type={projection_model_type}."
+            ),
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/attribution-projection-identity-conflict",
+            code="ATTRIBUTION_PROJECTION_IDENTITY_CONFLICT",
+        )
+
+    window_start = projection_row["window_start"]
+    window_end = projection_row["window_end"]
+    if not isinstance(window_start, datetime) or not isinstance(window_end, datetime):
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            title="Projection Window Invalid",
+            detail="Persisted recompute projection window is invalid.",
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/attribution-projection-window-invalid",
+            code="ATTRIBUTION_PROJECTION_WINDOW_INVALID",
+        )
+    window_start = window_start.astimezone(timezone.utc)
+    window_end = window_end.astimezone(timezone.utc)
+    if window_end <= window_start:
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            title="Projection Window Invalid",
+            detail="Persisted recompute projection window bounds are invalid.",
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/attribution-projection-window-invalid",
+            code="ATTRIBUTION_PROJECTION_WINDOW_INVALID",
+        )
+
+    if window_end - window_start > timedelta(days=_CHANNEL_MAX_WINDOW_DAYS):
+        return problem_details_response(
+            request,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            title="Projection Window Too Large",
+            detail=(
+                f"Requested projection window exceeds {_CHANNEL_MAX_WINDOW_DAYS} days; "
+                "read is fail-closed."
+            ),
+            correlation_id=x_correlation_id,
+            type_url="https://api.skeldir.com/problems/attribution-window-out-of-range",
+            code="ATTRIBUTION_WINDOW_OUT_OF_RANGE",
+        )
 
     result = await db_session.execute(
         text(
@@ -625,6 +773,8 @@ async def get_channel_attribution(
               ON e.id = aa.event_id
              AND e.tenant_id = aa.tenant_id
             WHERE aa.tenant_id = :tenant_id
+              AND aa.recompute_job_id = :recompute_job_id
+              AND aa.model_type = :model_type
               AND e.occurred_at >= :window_start
               AND e.occurred_at < :window_end
             GROUP BY aa.channel_code
@@ -633,6 +783,8 @@ async def get_channel_attribution(
         ),
         {
             "tenant_id": str(tenant_id),
+            "recompute_job_id": str(recompute_job_id),
+            "model_type": canonical_model,
             "window_start": window_start,
             "window_end": window_end,
         },
@@ -640,15 +792,27 @@ async def get_channel_attribution(
 
     channels: list[ChannelAttribution] = []
     last_updated_candidates: list[datetime] = []
-    for row in result.fetchall():
-        confidence = float(row.confidence_score or 0.0)
-        confidence = max(0.0, min(1.0, confidence))
+    rows = result.fetchall()
+    total_revenue_cents = sum(int(row.revenue_cents) for row in rows)
+    for row in rows:
+        revenue_cents = int(row.revenue_cents)
+        confidence = Decimal(str(row.confidence_score or "0"))
+        if total_revenue_cents > 0:
+            ratio = Decimal(revenue_cents) / Decimal(total_revenue_cents)
+        else:
+            ratio = Decimal("0")
+        ratio_str = _format_decimal(ratio, _RATIO_QUANTUM)
+        confidence_str = _format_decimal(confidence, _CONFIDENCE_QUANTUM)
         channels.append(
             ChannelAttribution(
                 channel_name=_map_channel_code_to_name(str(row.channel_code)),
-                revenue=round(int(row.revenue_cents) / 100.0, 2),
+                channel_code=str(row.channel_code),
+                revenue=round(revenue_cents / 100.0, 2),
+                revenue_cents=revenue_cents,
                 conversion_count=int(row.conversion_count),
-                confidence_score=confidence,
+                allocation_ratio=ratio_str,
+                attribution_weight=ratio_str,
+                confidence_score=confidence_str,
                 spend=None,
                 roas=None,
             )
@@ -656,19 +820,29 @@ async def get_channel_attribution(
         channel_last_updated = row.channel_last_updated
         if isinstance(channel_last_updated, datetime):
             last_updated_candidates.append(channel_last_updated.astimezone(timezone.utc))
+    projection_last_updated = projection_row["projection_last_updated"]
+    if isinstance(projection_last_updated, datetime):
+        last_updated_candidates.append(projection_last_updated.astimezone(timezone.utc))
 
     now_utc = datetime.now(timezone.utc)
     last_updated = max(last_updated_candidates) if last_updated_candidates else now_utc
-    total_revenue = round(sum(channel.revenue for channel in channels), 2)
+    total_revenue = round(total_revenue_cents / 100.0, 2)
     data_freshness_seconds = max(0, int((now_utc - last_updated).total_seconds()))
 
     response_payload = ChannelAttributionResponse(
+        projection={
+            "recompute_job_id": str(recompute_job_id),
+            "model_type": canonical_model,
+            "model_version": str(projection_row["model_version"]),
+            "window_start": window_start,
+            "window_end": window_end,
+        },
         channels=channels,
         total_revenue=total_revenue,
+        total_revenue_cents=total_revenue_cents,
         tenant_id=str(tenant_id),
         last_updated=last_updated,
         data_freshness_seconds=data_freshness_seconds,
-        date_range={"start": resolved_start, "end": resolved_end},
     )
     etag = _channels_etag(response_payload)
     if if_none_match and if_none_match.strip() == etag:

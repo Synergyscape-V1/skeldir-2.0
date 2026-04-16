@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal, Optional
 
@@ -70,17 +70,33 @@ class ChannelAttribution(BaseModel):
     """
     Marketing channel name
     """
+    channel_code: str
+    """
+    Canonical persisted channel code
+    """
     revenue: float
     """
     Attributed revenue for this channel
+    """
+    revenue_cents: Annotated[int, Field(ge=0)]
+    """
+    Attributed revenue in cents for precision-safe downstream use
     """
     conversion_count: int
     """
     Number of conversions attributed to this channel
     """
-    confidence_score: Annotated[float, Field(ge=0.0, le=1.0)]
+    allocation_ratio: Annotated[str, Field(pattern=r"^(0|1)\.\d{5}$")]
     """
-    Statistical confidence in attribution accuracy
+    Exact decimal-string allocation ratio (scale=5)
+    """
+    attribution_weight: Annotated[str, Field(pattern=r"^(0|1)\.\d{5}$")]
+    """
+    Exact decimal-string channel share of total attributed revenue (scale=5)
+    """
+    confidence_score: Annotated[str, Field(pattern=r"^(0|1)\.\d{3}$")]
+    """
+    Exact decimal-string confidence score (scale=3)
     """
     spend: Optional[float] = None
     """
@@ -92,18 +108,28 @@ class ChannelAttribution(BaseModel):
     """
 
 
-class ChannelAttributionDateRange(BaseModel):
-    start: date
-    end: date
+class ChannelProjectionIdentity(BaseModel):
+    recompute_job_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
+    model_type: Literal[
+        "deterministic_baseline",
+        "first_touch",
+        "last_touch",
+        "linear",
+        "time_decay",
+    ]
+    model_version: str
+    window_start: datetime
+    window_end: datetime
 
 
 class ChannelAttributionResponse(BaseModel):
+    projection: ChannelProjectionIdentity
     channels: list[ChannelAttribution]
     total_revenue: Annotated[float, Field(ge=0)]
+    total_revenue_cents: Annotated[int, Field(ge=0)]
     tenant_id: Annotated[str, Field(pattern=r"^[0-9a-fA-F-]{36}$")]
     last_updated: datetime
     data_freshness_seconds: Annotated[int, Field(ge=0)]
-    date_range: ChannelAttributionDateRange
 
 
 class Platform(Enum):

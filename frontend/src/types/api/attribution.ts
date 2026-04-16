@@ -596,18 +596,23 @@ export interface components {
              * @enum {string}
              */
             channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral" | "Unknown";
+            /** @description Canonical persisted channel code */
+            channel_code: string;
             /**
              * Format: double
              * @description Attributed revenue for this channel
              */
             revenue: number;
+            /** @description Attributed revenue in cents */
+            revenue_cents: number;
             /** @description Number of conversions attributed to this channel */
             conversion_count: number;
-            /**
-             * Format: double
-             * @description Statistical confidence in attribution accuracy
-             */
-            confidence_score: number;
+            /** @description Exact decimal-string allocation ratio (scale=5) */
+            allocation_ratio: string;
+            /** @description Exact decimal-string channel share of total attributed revenue (scale=5) */
+            attribution_weight: string;
+            /** @description Exact decimal-string confidence score (scale=3) */
+            confidence_score: string;
             /**
              * Format: float
              * @description Marketing spend on this channel
@@ -619,31 +624,52 @@ export interface components {
              */
             roas?: number;
         };
-        ChannelAttributionDateRange: {
-            /** Format: date */
-            start: string;
-            /** Format: date */
-            end: string;
+        ChannelProjectionIdentity: {
+            /** Format: uuid */
+            recompute_job_id: string;
+            /** @enum {string} */
+            model_type: "deterministic_baseline" | "first_touch" | "last_touch" | "linear" | "time_decay";
+            model_version: string;
+            /** Format: date-time */
+            window_start: string;
+            /** Format: date-time */
+            window_end: string;
         };
         ChannelAttributionResponse: {
+            projection: {
+                /** Format: uuid */
+                recompute_job_id: string;
+                /** @enum {string} */
+                model_type: "deterministic_baseline" | "first_touch" | "last_touch" | "linear" | "time_decay";
+                model_version: string;
+                /** Format: date-time */
+                window_start: string;
+                /** Format: date-time */
+                window_end: string;
+            };
             channels: {
                 /**
                  * @description Marketing channel name
                  * @enum {string}
                  */
                 channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral" | "Unknown";
+                /** @description Canonical persisted channel code */
+                channel_code: string;
                 /**
                  * Format: double
                  * @description Attributed revenue for this channel
                  */
                 revenue: number;
+                /** @description Attributed revenue in cents */
+                revenue_cents: number;
                 /** @description Number of conversions attributed to this channel */
                 conversion_count: number;
-                /**
-                 * Format: double
-                 * @description Statistical confidence in attribution accuracy
-                 */
-                confidence_score: number;
+                /** @description Exact decimal-string allocation ratio (scale=5) */
+                allocation_ratio: string;
+                /** @description Exact decimal-string channel share of total attributed revenue (scale=5) */
+                attribution_weight: string;
+                /** @description Exact decimal-string confidence score (scale=3) */
+                confidence_score: string;
                 /**
                  * Format: float
                  * @description Marketing spend on this channel
@@ -657,17 +683,12 @@ export interface components {
             }[];
             /** Format: double */
             total_revenue: number;
+            total_revenue_cents: number;
             /** Format: uuid */
             tenant_id: string;
             /** Format: date-time */
             last_updated: string;
             data_freshness_seconds: number;
-            date_range: {
-                /** Format: date */
-                start: string;
-                /** Format: date */
-                end: string;
-            };
         };
         AttributionExplanationRevenueContext: {
             cache_key: string;
@@ -2192,11 +2213,11 @@ export interface operations {
     };
     getChannelAttribution: {
         parameters: {
-            query?: {
-                /** @description Start date for attribution window */
-                start_date?: string;
-                /** @description End date for attribution window */
-                end_date?: string;
+            query: {
+                /** @description Deterministic projection model selector */
+                model_type: "deterministic_baseline" | "first_touch" | "last_touch" | "linear" | "time_decay";
+                /** @description Authoritative deterministic projection identity */
+                recompute_job_id: string;
             };
             header: {
                 /** @description Unique request correlation ID for distributed tracing */
@@ -2227,49 +2248,77 @@ export interface operations {
                 content: {
                     /**
                      * @example {
+                     *       "projection": {
+                     *         "recompute_job_id": "11111111-1111-1111-1111-111111111111",
+                     *         "model_type": "linear",
+                     *         "model_version": "1.0.0",
+                     *         "window_start": "2026-04-01T00:00:00Z",
+                     *         "window_end": "2026-04-15T00:00:00Z"
+                     *       },
                      *       "channels": [
                      *         {
                      *           "channel_name": "Meta",
+                     *           "channel_code": "meta_ads",
                      *           "revenue": 45250.75,
+                     *           "revenue_cents": 4525075,
                      *           "conversion_count": 185,
-                     *           "confidence_score": 0.92
+                     *           "allocation_ratio": "0.54459",
+                     *           "attribution_weight": "0.54459",
+                     *           "confidence_score": "0.920"
                      *         },
                      *         {
                      *           "channel_name": "Google",
+                     *           "channel_code": "google_ads",
                      *           "revenue": 37840.1,
+                     *           "revenue_cents": 3784010,
                      *           "conversion_count": 142,
-                     *           "confidence_score": 0.89
+                     *           "allocation_ratio": "0.45541",
+                     *           "attribution_weight": "0.45541",
+                     *           "confidence_score": "0.890"
                      *         }
                      *       ],
                      *       "total_revenue": 83090.85,
+                     *       "total_revenue_cents": 8309085,
                      *       "tenant_id": "00000000-0000-0000-0000-000000000000",
                      *       "last_updated": "2026-04-11T16:00:00Z",
-                     *       "data_freshness_seconds": 7,
-                     *       "date_range": {
-                     *         "start": "2025-11-01",
-                     *         "end": "2025-11-15"
-                     *       }
+                     *       "data_freshness_seconds": 7
                      *     }
                      */
                     "application/json": {
+                        projection: {
+                            /** Format: uuid */
+                            recompute_job_id: string;
+                            /** @enum {string} */
+                            model_type: "deterministic_baseline" | "first_touch" | "last_touch" | "linear" | "time_decay";
+                            model_version: string;
+                            /** Format: date-time */
+                            window_start: string;
+                            /** Format: date-time */
+                            window_end: string;
+                        };
                         channels: {
                             /**
                              * @description Marketing channel name
                              * @enum {string}
                              */
                             channel_name: "Meta" | "Google" | "TikTok" | "LinkedIn" | "Organic" | "Direct" | "Email" | "Referral" | "Unknown";
+                            /** @description Canonical persisted channel code */
+                            channel_code: string;
                             /**
                              * Format: double
                              * @description Attributed revenue for this channel
                              */
                             revenue: number;
+                            /** @description Attributed revenue in cents */
+                            revenue_cents: number;
                             /** @description Number of conversions attributed to this channel */
                             conversion_count: number;
-                            /**
-                             * Format: double
-                             * @description Statistical confidence in attribution accuracy
-                             */
-                            confidence_score: number;
+                            /** @description Exact decimal-string allocation ratio (scale=5) */
+                            allocation_ratio: string;
+                            /** @description Exact decimal-string channel share of total attributed revenue (scale=5) */
+                            attribution_weight: string;
+                            /** @description Exact decimal-string confidence score (scale=3) */
+                            confidence_score: string;
                             /**
                              * Format: float
                              * @description Marketing spend on this channel
@@ -2283,17 +2332,12 @@ export interface operations {
                         }[];
                         /** Format: double */
                         total_revenue: number;
+                        total_revenue_cents: number;
                         /** Format: uuid */
                         tenant_id: string;
                         /** Format: date-time */
                         last_updated: string;
                         data_freshness_seconds: number;
-                        date_range: {
-                            /** Format: date */
-                            start: string;
-                            /** Format: date */
-                            end: string;
-                        };
                     };
                 };
             };
@@ -2373,6 +2417,134 @@ export interface operations {
             };
             /** @description Forbidden - authenticated but insufficient permissions */
             403: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    "X-Correlation-ID"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying the problem type
+                         * @example https://api.skeldir.com/problems/authentication-failed
+                         */
+                        type: string;
+                        /**
+                         * @description Short, human-readable summary of the problem
+                         * @example Authentication Failed
+                         */
+                        title: string;
+                        /**
+                         * @description HTTP status code
+                         * @example 401
+                         */
+                        status: number;
+                        /**
+                         * @description Human-readable explanation specific to this occurrence
+                         * @example The provided JWT token has expired. Please refresh your authentication token.
+                         */
+                        detail: string;
+                        /**
+                         * Format: uri
+                         * @description URI reference identifying this specific occurrence
+                         * @example https://api.skeldir.com/api/attribution/revenue/realtime
+                         */
+                        instance: string;
+                        /**
+                         * Format: uuid
+                         * @description Request correlation ID for distributed tracing
+                         * @example 550e8400-e29b-41d4-a716-446655440000
+                         */
+                        correlation_id: string;
+                        /**
+                         * Format: date-time
+                         * @description ISO 8601 timestamp when the error occurred
+                         * @example 2025-11-11T14:32:00Z
+                         */
+                        timestamp: string;
+                        /**
+                         * @description Stable, non-sensitive error code for programmatic handling
+                         * @example AUTH_UNAUTHORIZED
+                         */
+                        code: string;
+                        /** @description Optional array of specific validation errors */
+                        errors?: {
+                            /** @example email */
+                            field?: string;
+                            /** @example Invalid email format */
+                            message?: string;
+                            /** @example INVALID_FORMAT */
+                            code?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Bad Request - validation failed */
+            409: {
                 headers: {
                     "X-Correlation-ID"?: string;
                     [name: string]: unknown;

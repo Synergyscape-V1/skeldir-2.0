@@ -217,10 +217,12 @@ def _insert_allocation(
     conn,
     *,
     allocation_id: UUID,
+    recompute_job_id: UUID,
     tenant_id: UUID,
     event_id: UUID,
     channel_code: str,
     revenue_cents: int,
+    model_type: str = "deterministic_baseline",
 ) -> None:
     _set_tenant_guc(conn, tenant_id)
     conn.execute(
@@ -230,6 +232,7 @@ def _insert_allocation(
                 id,
                 tenant_id,
                 event_id,
+                recompute_job_id,
                 channel_code,
                 allocated_revenue_cents,
                 allocation_ratio,
@@ -243,11 +246,12 @@ def _insert_allocation(
                 :id,
                 :tenant_id,
                 :event_id,
+                :recompute_job_id,
                 :channel_code,
                 :revenue_cents,
                 1.0,
                 'b21-closeout',
-                'deterministic_baseline',
+                :model_type,
                 1.0,
                 true,
                 now(),
@@ -260,8 +264,69 @@ def _insert_allocation(
             "id": str(allocation_id),
             "tenant_id": str(tenant_id),
             "event_id": str(event_id),
+            "recompute_job_id": str(recompute_job_id),
             "channel_code": channel_code,
             "revenue_cents": revenue_cents,
+            "model_type": model_type,
+        },
+    )
+
+
+def _insert_recompute_job(
+    conn,
+    *,
+    job_id: UUID,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    model_version: str = "b21-closeout",
+) -> None:
+    _set_tenant_guc(conn, tenant_id)
+    conn.execute(
+        text(
+            """
+            INSERT INTO public.attribution_recompute_jobs (
+                id,
+                tenant_id,
+                window_start,
+                window_end,
+                model_version,
+                status,
+                run_count,
+                last_correlation_id,
+                replay_event_created_ceiling,
+                created_at,
+                updated_at,
+                started_at,
+                finished_at
+            ) VALUES (
+                :id,
+                :tenant_id,
+                :window_start,
+                :window_end,
+                :model_version,
+                'succeeded',
+                1,
+                :last_correlation_id,
+                :replay_event_created_ceiling,
+                now(),
+                now(),
+                :started_at,
+                :finished_at
+            )
+            ON CONFLICT (id) DO NOTHING
+            """
+        ),
+        {
+            "id": str(job_id),
+            "tenant_id": str(tenant_id),
+            "window_start": window_start,
+            "window_end": window_end,
+            "model_version": model_version,
+            "last_correlation_id": str(uuid4()),
+            "replay_event_created_ceiling": window_end,
+            "started_at": window_start,
+            "finished_at": window_end,
         },
     )
 
@@ -418,7 +483,10 @@ async def test_b21_p0_channels_route_is_tenant_safe_with_cross_tenant_negative_c
     event_b = uuid4()
     allocation_a = uuid4()
     allocation_b = uuid4()
+    recompute_job_a = uuid4()
+    recompute_job_b = uuid4()
     window_start = datetime.now(timezone.utc) - timedelta(hours=2)
+    window_end = window_start + timedelta(hours=3)
     revenue_a = 12345
     revenue_b = 54321
 
@@ -454,9 +522,24 @@ async def test_b21_p0_channels_route_is_tenant_safe_with_cross_tenant_negative_c
                 channel="direct",
                 revenue_cents=revenue_b,
             )
+            _insert_recompute_job(
+                conn,
+                job_id=recompute_job_a,
+                tenant_id=tenant_a,
+                window_start=window_start,
+                window_end=window_end,
+            )
+            _insert_recompute_job(
+                conn,
+                job_id=recompute_job_b,
+                tenant_id=tenant_b,
+                window_start=window_start,
+                window_end=window_end,
+            )
             _insert_allocation(
                 conn,
                 allocation_id=allocation_a,
+                recompute_job_id=recompute_job_a,
                 tenant_id=tenant_a,
                 event_id=event_a,
                 channel_code="direct",
@@ -465,6 +548,7 @@ async def test_b21_p0_channels_route_is_tenant_safe_with_cross_tenant_negative_c
             _insert_allocation(
                 conn,
                 allocation_id=allocation_b,
+                recompute_job_id=recompute_job_b,
                 tenant_id=tenant_b,
                 event_id=event_b,
                 channel_code="direct",
@@ -486,11 +570,19 @@ async def test_b21_p0_channels_route_is_tenant_safe_with_cross_tenant_negative_c
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response_a = await client.get(
                 "/api/attribution/channels",
+                params={
+                    "model_type": "deterministic_baseline",
+                    "recompute_job_id": str(recompute_job_a),
+                },
                 headers={"X-Correlation-ID": str(uuid4())},
             )
             active_context["value"] = _auth_context(tenant_id=tenant_b, user_id=user_b)
             response_b = await client.get(
                 "/api/attribution/channels",
+                params={
+                    "model_type": "deterministic_baseline",
+                    "recompute_job_id": str(recompute_job_b),
+                },
                 headers={"X-Correlation-ID": str(uuid4())},
             )
 

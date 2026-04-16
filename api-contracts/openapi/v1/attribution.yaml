@@ -109,20 +109,25 @@ paths:
         - $ref: './_common/base.yaml#/components/parameters/CorrelationId'
         - $ref: './_common/base.yaml#/components/parameters/Authorization'
         - $ref: './_common/base.yaml#/components/parameters/IfNoneMatch'
-        - name: start_date
+        - name: model_type
           in: query
-          required: false
+          required: true
           schema:
             type: string
-            format: date
-          description: Start date for attribution window
-        - name: end_date
+            enum:
+              - deterministic_baseline
+              - first_touch
+              - last_touch
+              - linear
+              - time_decay
+          description: Deterministic projection model selector
+        - name: recompute_job_id
           in: query
-          required: false
+          required: true
           schema:
             type: string
-            format: date
-          description: End date for attribution window
+            format: uuid
+          description: Authoritative deterministic projection identity
       responses:
         '200':
           description: Channel attribution data
@@ -145,22 +150,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/ChannelAttributionResponse'
               example:
+                projection:
+                  recompute_job_id: 11111111-1111-1111-1111-111111111111
+                  model_type: linear
+                  model_version: 1.0.0
+                  window_start: '2026-04-01T00:00:00Z'
+                  window_end: '2026-04-15T00:00:00Z'
                 channels:
                   - channel_name: Meta
+                    channel_code: meta_ads
                     revenue: 45250.75
+                    revenue_cents: 4525075
                     conversion_count: 185
-                    confidence_score: 0.92
+                    allocation_ratio: '0.54459'
+                    attribution_weight: '0.54459'
+                    confidence_score: '0.920'
                   - channel_name: Google
+                    channel_code: google_ads
                     revenue: 37840.10
+                    revenue_cents: 3784010
                     conversion_count: 142
-                    confidence_score: 0.89
+                    allocation_ratio: '0.45541'
+                    attribution_weight: '0.45541'
+                    confidence_score: '0.890'
                 total_revenue: 83090.85
+                total_revenue_cents: 8309085
                 tenant_id: 00000000-0000-0000-0000-000000000000
                 last_updated: '2026-04-11T16:00:00Z'
                 data_freshness_seconds: 7
-                date_range:
-                  start: '2025-11-01'
-                  end: '2025-11-15'
         '304':
           description: Not Modified - ETag matches, use cached data
           headers:
@@ -175,12 +192,32 @@ paths:
           $ref: './_common/base.yaml#/components/responses/UnauthorizedError'
         '403':
           $ref: './_common/base.yaml#/components/responses/ForbiddenError'
+        '404':
+          $ref: './_common/base.yaml#/components/responses/NotFoundError'
+        '409':
+          $ref: './_common/base.yaml#/components/responses/ValidationError'
       x-skeldir-b21-p0:
         implementation_status: mounted_deterministic_channels_surface
         authority_requirements:
           runtime_mount_required: true
           generated_types_must_match_runtime_surface: true
           contract_deletion_as_drift_workaround_forbidden: true
+      x-skeldir-b21-p3:
+        implementation_status: mounted_persisted_projection_authority_surface
+        projection_identity:
+          required_query_parameters:
+            - model_type
+            - recompute_job_id
+          tenant_only_projection_forbidden: true
+          cross_model_aggregation_forbidden: true
+          synchronous_recompute_on_read_forbidden: true
+        bounded_read_physics:
+          max_window_days: 31
+          fail_closed_on_unbounded_shape: true
+        precision_transport:
+          allocation_ratio: decimal_string_scale_5
+          attribution_weight: decimal_string_scale_5
+          confidence_score: decimal_string_scale_3
 
   /api/attribution/explain/{entity_type}/{entity_id}:
     get:
@@ -1365,28 +1402,45 @@ components:
       type: object
       required:
         - channel_name
+        - channel_code
         - revenue
+        - revenue_cents
         - conversion_count
+        - allocation_ratio
+        - attribution_weight
         - confidence_score
       properties:
         channel_name:
           type: string
           enum: [Meta, Google, TikTok, LinkedIn, Organic, Direct, Email, Referral, Unknown]
           description: Marketing channel name
+        channel_code:
+          type: string
+          description: Canonical persisted channel code
         revenue:
           type: number
           format: double
           minimum: 0
           description: Attributed revenue for this channel
+        revenue_cents:
+          type: integer
+          minimum: 0
+          description: Attributed revenue in cents
         conversion_count:
           type: integer
           description: Number of conversions attributed to this channel
+        allocation_ratio:
+          type: string
+          pattern: '^(0|1)\.\d{5}$'
+          description: Exact decimal-string allocation ratio (scale=5)
+        attribution_weight:
+          type: string
+          pattern: '^(0|1)\.\d{5}$'
+          description: Exact decimal-string channel share of total attributed revenue (scale=5)
         confidence_score:
-          type: number
-          format: double
-          minimum: 0
-          maximum: 1
-          description: Statistical confidence in attribution accuracy
+          type: string
+          pattern: '^(0|1)\.\d{3}$'
+          description: Exact decimal-string confidence score (scale=3)
         spend:
           type: number
           format: float
@@ -1396,29 +1450,48 @@ components:
           format: float
           description: Return on Ad Spend (revenue/spend)
 
-    ChannelAttributionDateRange:
+    ChannelProjectionIdentity:
       type: object
       required:
-        - start
-        - end
+        - recompute_job_id
+        - model_type
+        - model_version
+        - window_start
+        - window_end
       properties:
-        start:
+        recompute_job_id:
           type: string
-          format: date
-        end:
+          format: uuid
+        model_type:
           type: string
-          format: date
+          enum:
+            - deterministic_baseline
+            - first_touch
+            - last_touch
+            - linear
+            - time_decay
+        model_version:
+          type: string
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
 
     ChannelAttributionResponse:
       type: object
       required:
+        - projection
         - channels
         - total_revenue
+        - total_revenue_cents
         - tenant_id
         - last_updated
         - data_freshness_seconds
-        - date_range
       properties:
+        projection:
+          $ref: '#/components/schemas/ChannelProjectionIdentity'
         channels:
           type: array
           items:
@@ -1426,6 +1499,9 @@ components:
         total_revenue:
           type: number
           format: double
+          minimum: 0
+        total_revenue_cents:
+          type: integer
           minimum: 0
         tenant_id:
           type: string
@@ -1436,8 +1512,6 @@ components:
         data_freshness_seconds:
           type: integer
           minimum: 0
-        date_range:
-          $ref: '#/components/schemas/ChannelAttributionDateRange'
 
     AttributionExplanationRevenueContext:
       type: object

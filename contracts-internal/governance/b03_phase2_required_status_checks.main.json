@@ -48,6 +48,7 @@
     "B1.4 P7 E2E Privacy System Proofs",
     "B2.1-P0 Runtime Authority Closeout",
     "B2.1-P1 Semantic Replay Lock",
+    "B2.1-P3 Persistence Authority + Minimal Read Surface",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark"
   ],

@@ -512,6 +512,17 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
     assert canonical_path in runtime_paths
     runtime_operation = runtime_paths[canonical_path]["get"]
     assert runtime_operation.get("operationId") == "getChannelAttribution"
+    query_params = {
+        item.get("name"): item
+        for item in runtime_operation.get("parameters", [])
+        if item.get("in") == "query"
+    }
+    assert "model_type" in query_params
+    assert "recompute_job_id" in query_params
+    assert query_params["model_type"].get("required") is True
+    assert query_params["recompute_job_id"].get("required") is True
+    assert "start_date" not in query_params
+    assert "end_date" not in query_params
 
     responses = runtime_operation.get("responses", {})
     assert "200" in responses
@@ -531,12 +542,25 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
         .get("ChannelAttributionResponse", {})
     )
     assert set(response_schema.get("required", [])) >= {
+        "projection",
         "channels",
         "total_revenue",
+        "total_revenue_cents",
         "tenant_id",
         "last_updated",
         "data_freshness_seconds",
-        "date_range",
+    }
+    projection_schema = (
+        runtime_openapi.get("components", {})
+        .get("schemas", {})
+        .get("ChannelProjectionIdentity", {})
+    )
+    assert set(projection_schema.get("required", [])) >= {
+        "recompute_job_id",
+        "model_type",
+        "model_version",
+        "window_start",
+        "window_end",
     }
 
     channel_schema = (
@@ -556,6 +580,15 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
     else:
         enum_values = channel_name_schema.get("enum", [])
     assert "Unknown" in enum_values
+    allocation_ratio_schema = channel_schema.get("properties", {}).get("allocation_ratio", {})
+    assert allocation_ratio_schema.get("type") == "string"
+    assert allocation_ratio_schema.get("pattern") == "^(0|1)\\.\\d{5}$"
+    attribution_weight_schema = channel_schema.get("properties", {}).get("attribution_weight", {})
+    assert attribution_weight_schema.get("type") == "string"
+    assert attribution_weight_schema.get("pattern") == "^(0|1)\\.\\d{5}$"
+    confidence_schema = channel_schema.get("properties", {}).get("confidence_score", {})
+    assert confidence_schema.get("type") == "string"
+    assert confidence_schema.get("pattern") == "^(0|1)\\.\\d{3}$"
 
 
 if __name__ == "__main__":

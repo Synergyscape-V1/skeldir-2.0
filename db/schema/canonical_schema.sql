@@ -867,6 +867,7 @@ CREATE TABLE public.attribution_allocations (
     verified boolean DEFAULT false NOT NULL,
     verification_source character varying(50),
     verification_timestamp timestamp with time zone,
+    recompute_job_id uuid,
     CONSTRAINT attribution_allocations_allocated_revenue_cents_check CHECK ((allocated_revenue_cents >= 0)),
     CONSTRAINT ck_allocations_confidence_score CHECK (((confidence_score >= (0)::numeric) AND (confidence_score <= (1)::numeric))),
     CONSTRAINT ck_attribution_allocations_allocation_ratio_bounds CHECK (((allocation_ratio >= (0)::numeric) AND (allocation_ratio <= (1)::numeric))),
@@ -3004,6 +3005,13 @@ CREATE INDEX idx_allocations_channel_performance ON public.attribution_allocatio
 
 
 --
+-- Name: idx_allocations_tenant_projection_channel; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_allocations_tenant_projection_channel ON public.attribution_allocations USING btree (tenant_id, recompute_job_id, model_type, channel_code);
+
+
+--
 -- Name: idx_attribution_allocations_channel; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3981,6 +3989,14 @@ CREATE TRIGGER trg_pii_guardrail_revenue_ledger BEFORE INSERT ON public.revenue_
 --
 
 CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.revenue_ledger FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_revenue_state_change();
+
+
+--
+-- Name: attribution_allocations attribution_allocations_recompute_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribution_allocations
+    ADD CONSTRAINT attribution_allocations_recompute_job_id_fkey FOREIGN KEY (recompute_job_id) REFERENCES public.attribution_recompute_jobs(id) ON DELETE CASCADE;
 
 
 --
