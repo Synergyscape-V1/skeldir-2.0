@@ -33,7 +33,10 @@ from sqlalchemy import event as sa_event
 
 # PYTHONPATH=backend
 from app.db.session import engine  # noqa: E402
-from app.tasks.attribution import _compute_allocations_deterministic_baseline  # noqa: E402
+from app.tasks.attribution import (  # noqa: E402
+    _compute_allocations_deterministic_baseline,
+    _upsert_job_identity,
+)
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -103,21 +106,32 @@ def _ru_maxrss_kb() -> int:
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
 
-def _recompute_job_id_for_window(
+async def _ensure_recompute_job_id(
     *,
     tenant_id: UUID,
     window_start: datetime,
     window_end: datetime,
     model_version: str,
 ) -> UUID:
-    return _uuid_det(
-        "r5",
-        "recompute_job",
-        str(tenant_id),
-        window_start.isoformat(),
-        window_end.isoformat(),
-        model_version,
+    correlation_id = str(
+        _uuid_det(
+            "r5",
+            "correlation",
+            str(tenant_id),
+            window_start.isoformat(),
+            window_end.isoformat(),
+            model_version,
+        )
     )
+    job_id, _, _, _ = await _upsert_job_identity(
+        tenant_id=tenant_id,
+        window_start=window_start,
+        window_end=window_end,
+        model_version=model_version,
+        correlation_id=correlation_id,
+        replay_event_created_ceiling=window_end,
+    )
+    return job_id
 
 
 class StatementCounter:
@@ -584,12 +598,14 @@ async def _run_compute_with_count(
     model_version: str,
     recompute_job_id: UUID | None = None,
 ) -> dict[str, Any]:
-    effective_recompute_job_id = recompute_job_id or _recompute_job_id_for_window(
-        tenant_id=tenant_id,
-        window_start=window_start,
-        window_end=window_end,
-        model_version=model_version,
-    )
+    effective_recompute_job_id = recompute_job_id
+    if effective_recompute_job_id is None:
+        effective_recompute_job_id = await _ensure_recompute_job_id(
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            model_version=model_version,
+        )
     counter = StatementCounter()
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
@@ -620,7 +636,7 @@ async def _run_compute_concurrency(
     model_version: str,
     concurrency: int,
 ) -> dict[str, Any]:
-    recompute_job_id = _recompute_job_id_for_window(
+    recompute_job_id = await _ensure_recompute_job_id(
         tenant_id=tenant_id,
         window_start=window_start,
         window_end=window_end,
@@ -905,7 +921,7 @@ async def main() -> int:
         )
         expected_binding = _enforce_binding("retry_injected", binding, expected_binding)
         print("R5_RUN_MODE=retry_injected R5_RETRY_ATTEMPT=1")
-        retry_recompute_job_id = _recompute_job_id_for_window(
+        retry_recompute_job_id = await _ensure_recompute_job_id(
             tenant_id=tenant_det,
             window_start=window_start,
             window_end=window_end,

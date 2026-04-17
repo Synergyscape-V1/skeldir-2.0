@@ -48,7 +48,10 @@ resolve_runtime_database_url = _import_db_secret_access()
 
 # PYTHONPATH=backend
 from app.db.session import engine  # noqa: E402
-from app.tasks.attribution import _compute_allocations_deterministic_baseline  # noqa: E402
+from app.tasks.attribution import (  # noqa: E402
+    _compute_allocations_deterministic_baseline,
+    _upsert_job_identity,
+)
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -83,15 +86,26 @@ def _uuid_det(*parts: str) -> UUID:
     return uuid5(NAMESPACE_URL, ":".join(parts))
 
 
-def _recompute_job_id_for_window(*, tenant_id: UUID, window_start: datetime, window_end: datetime) -> UUID:
-    return _uuid_det(
-        "r5",
-        "recompute_job",
-        str(tenant_id),
-        window_start.isoformat(),
-        window_end.isoformat(),
-        "1.0.0",
+async def _ensure_recompute_job_id(*, tenant_id: UUID, window_start: datetime, window_end: datetime) -> UUID:
+    correlation_id = str(
+        _uuid_det(
+            "r5",
+            "correlation",
+            str(tenant_id),
+            window_start.isoformat(),
+            window_end.isoformat(),
+            "1.0.0",
+        )
     )
+    job_id, _, _, _ = await _upsert_job_identity(
+        tenant_id=tenant_id,
+        window_start=window_start,
+        window_end=window_end,
+        model_version="1.0.0",
+        correlation_id=correlation_id,
+        replay_event_created_ceiling=window_end,
+    )
+    return job_id
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -409,7 +423,7 @@ async def _run_compute_with_count(
     window_start: datetime,
     window_end: datetime,
 ) -> dict[str, Any]:
-    recompute_job_id = _recompute_job_id_for_window(
+    recompute_job_id = await _ensure_recompute_job_id(
         tenant_id=tenant_id,
         window_start=window_start,
         window_end=window_end,
