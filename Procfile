@@ -16,7 +16,8 @@
 # Core Services
 db: postgres -D $PGDATA -k $PGSOCKET -h localhost -p 5432
 web: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-worker: cd backend && celery -A app.tasks worker --loglevel=info
+worker: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=housekeeping,maintenance,llm,attribution
+worker_bayesian: cd backend && celery -A app.celery_app.celery_app worker --loglevel=info --queues=bayesian
 beat: cd backend && celery -A app.celery_app.celery_app beat --loglevel=info
 
 # Mock Servers (Contract-First Development)

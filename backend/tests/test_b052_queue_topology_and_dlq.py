@@ -21,11 +21,14 @@ from sqlalchemy import text
 
 # B0.5.2: Set env BEFORE importing app modules
 # H1 fix: Align credentials with CI provisioning (app_user:app_user)
-DEFAULT_ASYNC_DSN = os.environ.get("TEST_ASYNC_DSN", "postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation")
+DEFAULT_ASYNC_DSN = os.environ.get(
+    "TEST_ASYNC_DSN",
+    "postgresql+asyncpg://app_user:app_user@localhost:5432/skeldir_validation",
+)
 os.environ.setdefault("DATABASE_URL", DEFAULT_ASYNC_DSN)
 
 from app.celery_app import _on_task_failure, celery_app
-from app.core.queues import QUEUE_LLM
+from app.core.queues import QUEUE_ATTRIBUTION, QUEUE_BAYESIAN, QUEUE_LLM
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.housekeeping import ping
 from app.tasks.maintenance import refresh_all_matviews_global_legacy
@@ -43,13 +46,18 @@ class TestQueueTopology:
         """Validate explicit queue declarations exist."""
         queues = celery_app.conf.task_queues
         assert queues is not None, "task_queues must be explicitly defined"
-        assert len(queues) >= 4, "At least 4 queues (housekeeping, maintenance, llm, attribution) must exist"
+        assert (
+            len(queues) >= 5
+        ), "At least 5 queues (housekeeping, maintenance, llm, attribution, bayesian) must exist"
 
         queue_names = {q.name for q in queues}
         assert "housekeeping" in queue_names
         assert "maintenance" in queue_names
         assert QUEUE_LLM in queue_names
-        assert "attribution" in queue_names, "B0.5.3.1: attribution queue must exist"
+        assert (
+            QUEUE_ATTRIBUTION in queue_names
+        ), "deterministic attribution queue must exist"
+        assert QUEUE_BAYESIAN in queue_names, "bayesian queue must exist"
 
     def test_task_routing_rules_defined(self):
         """Validate task routing rules map tasks to queues."""
@@ -61,18 +69,24 @@ class TestQueueTopology:
         assert "app.tasks.maintenance.*" in routes
         assert "app.tasks.matviews.*" in routes
         assert "app.tasks.llm.*" in routes
-        assert "app.tasks.attribution.*" in routes, "B0.5.3.1: attribution routing rule must exist"
+        assert (
+            "app.tasks.attribution.*" in routes
+        ), "deterministic attribution routing rule must exist"
+        assert "app.tasks.bayesian.*" in routes, "bayesian routing rule must exist"
 
         # Verify queue assignments
         assert routes["app.tasks.housekeeping.*"]["queue"] == "housekeeping"
         assert routes["app.tasks.maintenance.*"]["queue"] == "maintenance"
         assert routes["app.tasks.matviews.*"]["queue"] == "maintenance"
         assert routes["app.tasks.llm.*"]["queue"] == QUEUE_LLM
-        assert routes["app.tasks.attribution.*"]["queue"] == "attribution", "B0.5.3.1: attribution tasks must route to attribution queue"
+        assert routes["app.tasks.attribution.*"]["queue"] == QUEUE_ATTRIBUTION
+        assert routes["app.tasks.bayesian.*"]["queue"] == QUEUE_BAYESIAN
 
     def test_llm_task_routes_via_router(self):
         """Validate router resolves LLM tasks to the LLM queue (behavioral proof)."""
-        route = celery_app.amqp.router.route({}, "app.tasks.llm.explanation", args=(), kwargs={})
+        route = celery_app.amqp.router.route(
+            {}, "app.tasks.llm.explanation", args=(), kwargs={}
+        )
         assert route, "Celery router should return a route for LLM tasks"
         queue = route.get("queue")
         queue_name = queue.name if hasattr(queue, "name") else queue
@@ -95,20 +109,28 @@ class TestQueueTopology:
             "app.tasks.llm.explanation",
             "app.tasks.llm.investigation",
             "app.tasks.llm.budget_optimization",
-            "app.tasks.attribution.recompute_window",  # B0.5.3.1: attribution stub
+            "app.tasks.attribution.recompute_window",
         }
 
         for task_name in expected_tasks:
-            assert task_name in registered_tasks, f"Expected task {task_name} not registered"
+            assert (
+                task_name in registered_tasks
+            ), f"Expected task {task_name} not registered"
 
     def test_queue_routing_deterministic(self):
         """Validate tasks route to expected queues deterministically."""
         # Get routing info for sample tasks
         housekeeping_route = celery_app.tasks["app.tasks.housekeeping.ping"].routing_key
-        maintenance_route = celery_app.tasks["app.tasks.maintenance.refresh_all_matviews_global_legacy"].routing_key
-        matviews_route = celery_app.tasks["app.tasks.matviews.refresh_single"].routing_key
+        maintenance_route = celery_app.tasks[
+            "app.tasks.maintenance.refresh_all_matviews_global_legacy"
+        ].routing_key
+        matviews_route = celery_app.tasks[
+            "app.tasks.matviews.refresh_single"
+        ].routing_key
         llm_route = celery_app.tasks["app.tasks.llm.route"].routing_key
-        attribution_route = celery_app.tasks["app.tasks.attribution.recompute_window"].routing_key
+        attribution_route = celery_app.tasks[
+            "app.tasks.attribution.recompute_window"
+        ].routing_key
 
         # Verify routing keys align with queue topology
         # Note: routing_key may be None if not explicitly set on task decorator,
@@ -119,16 +141,26 @@ class TestQueueTopology:
         assert routes["app.tasks.maintenance.*"]["routing_key"] == "maintenance.task"
         assert routes["app.tasks.matviews.*"]["routing_key"] == "maintenance.task"
         assert routes["app.tasks.llm.*"]["routing_key"] == "llm.task"
-        assert routes["app.tasks.attribution.*"]["routing_key"] == "attribution.task", "B0.5.3.1: attribution routing key must be attribution.task"
+        assert routes["app.tasks.attribution.*"]["routing_key"] == "attribution.task"
+        assert routes["app.tasks.bayesian.*"]["routing_key"] == "bayesian.task"
 
     def test_queue_routing_deterministic_under_concurrency(self):
         """Validate routing remains deterministic under concurrent access."""
         cases = [
             ("app.tasks.housekeeping.ping", "housekeeping", "housekeeping.task"),
-            ("app.tasks.maintenance.refresh_all_matviews_global_legacy", "maintenance", "maintenance.task"),
+            (
+                "app.tasks.maintenance.refresh_all_matviews_global_legacy",
+                "maintenance",
+                "maintenance.task",
+            ),
             ("app.tasks.matviews.refresh_single", "maintenance", "maintenance.task"),
             ("app.tasks.llm.explanation", QUEUE_LLM, "llm.task"),
-            ("app.tasks.attribution.recompute_window", "attribution", "attribution.task"),
+            (
+                "app.tasks.attribution.recompute_window",
+                QUEUE_ATTRIBUTION,
+                "attribution.task",
+            ),
+            ("app.tasks.bayesian.run_mcmc_inference", QUEUE_BAYESIAN, "bayesian.task"),
         ]
         tasks = cases * 25
 
@@ -141,10 +173,16 @@ class TestQueueTopology:
         with ThreadPoolExecutor(max_workers=8) as executor:
             results = list(executor.map(lambda item: _route(item[0]), tasks))
 
-        for (task_name, expected_queue, expected_routing_key), result in zip(tasks, results):
+        for (task_name, expected_queue, expected_routing_key), result in zip(
+            tasks, results
+        ):
             queue_name, routing_key = result
-            assert queue_name == expected_queue, f"{task_name} routed to {queue_name}, expected {expected_queue}"
-            assert routing_key == expected_routing_key, f"{task_name} routing_key {routing_key}, expected {expected_routing_key}"
+            assert (
+                queue_name == expected_queue
+            ), f"{task_name} routed to {queue_name}, expected {expected_queue}"
+            assert (
+                routing_key == expected_routing_key
+            ), f"{task_name} routing_key {routing_key}, expected {expected_routing_key}"
 
 
 class TestWorkerDLQ:
@@ -156,25 +194,29 @@ class TestWorkerDLQ:
         async with engine.begin() as conn:
             # Check table existence (B0.5.3.1: canonical name is worker_failed_jobs)
             result = await conn.execute(
-                text("""
+                text(
+                    """
                     SELECT table_name
                     FROM information_schema.tables
                     WHERE table_schema = 'public'
                     AND table_name = 'worker_failed_jobs'
-                """)
+                """
+                )
             )
             tables = [row[0] for row in result.fetchall()]
             assert "worker_failed_jobs" in tables, "worker_failed_jobs table must exist"
 
             # Check key columns exist
             result = await conn.execute(
-                text("""
+                text(
+                    """
                     SELECT column_name, data_type
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
                     AND table_name = 'worker_failed_jobs'
                     ORDER BY column_name
-                """)
+                """
+                )
             )
             columns = {row[0]: row[1] for row in result.fetchall()}
 
@@ -204,13 +246,15 @@ class TestWorkerDLQ:
         """Validate app_user has CRUD privileges on worker_failed_jobs."""
         async with engine.begin() as conn:
             result = await conn.execute(
-                text("""
+                text(
+                    """
                     SELECT privilege_type
                     FROM information_schema.role_table_grants
                     WHERE table_name = 'worker_failed_jobs'
                     AND grantee = 'app_user'
                     ORDER BY privilege_type
-                """)
+                """
+                )
             )
             privileges = {row[0] for row in result.fetchall()}
 
@@ -234,13 +278,15 @@ class TestWorkerDLQ:
             # Query DLQ for captured failure (B0.5.3.1: canonical table is worker_failed_jobs)
             async with engine.begin() as conn:
                 result = await conn.execute(
-                    text("""
+                    text(
+                        """
                         SELECT task_name, exception_class, error_message, status
                         FROM worker_failed_jobs
                         WHERE task_name = 'app.tasks.housekeeping.ping'
                         ORDER BY failed_at DESC
                         LIMIT 1
-                    """)
+                    """
+                    )
                 )
                 row = result.fetchone()
 
@@ -257,11 +303,13 @@ class TestWorkerDLQ:
             # Cleanup: Delete test DLQ entry
             async with engine.begin() as conn:
                 await conn.execute(
-                    text("""
+                    text(
+                        """
                         DELETE FROM worker_failed_jobs
                         WHERE task_name = 'app.tasks.housekeeping.ping'
                         AND exception_class = 'ValueError'
-                    """)
+                    """
+                    )
                 )
 
     @pytest.mark.asyncio
@@ -287,26 +335,36 @@ class TestWorkerDLQ:
             # Query DLQ for captured failure
             async with engine.begin() as conn:
                 await conn.execute(
-                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                    text(
+                        "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+                    ),
                     {"tenant_id": str(test_tenant_id)},
                 )
                 result = await conn.execute(
-                    text("""
+                    text(
+                        """
                         SELECT task_name, queue, exception_class, error_message, status, tenant_id, task_kwargs
                         FROM worker_failed_jobs
                         WHERE task_name = 'app.tasks.attribution.recompute_window'
                         ORDER BY failed_at DESC
                         LIMIT 1
-                    """)
+                    """
+                    )
                 )
                 row = result.fetchone()
 
             # Verify failure captured with B0.5.3.1 requirements
-            assert row is not None, "Failed attribution task should be captured in worker_failed_jobs"
-            assert row[0] == "app.tasks.attribution.recompute_window", "task_name must be attribution.recompute_window"
+            assert (
+                row is not None
+            ), "Failed attribution task should be captured in worker_failed_jobs"
+            assert (
+                row[0] == "app.tasks.attribution.recompute_window"
+            ), "task_name must be attribution.recompute_window"
             # Note: queue may be None in eager mode, but in worker mode should be 'attribution'
             assert row[2] == "ValueError", "exception_class must be ValueError"
-            assert "attribution recompute failure requested" in row[3], "error_message must contain failure reason"
+            assert (
+                "attribution recompute failure requested" in row[3]
+            ), "error_message must contain failure reason"
             assert row[4] == "pending", "status must be pending"
             assert row[5] is not None, "tenant_id must be present"
             assert row[6] is not None, "task_kwargs (payload JSON) must be present"
@@ -322,15 +380,19 @@ class TestWorkerDLQ:
             # Cleanup: Delete test DLQ entry
             async with engine.begin() as conn:
                 await conn.execute(
-                    text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                    text(
+                        "SELECT set_config('app.current_tenant_id', :tenant_id, true)"
+                    ),
                     {"tenant_id": str(test_tenant_id)},
                 )
                 await conn.execute(
-                    text("""
+                    text(
+                        """
                         DELETE FROM worker_failed_jobs
                         WHERE task_name = 'app.tasks.attribution.recompute_window'
                         AND exception_class = 'ValueError'
-                    """)
+                    """
+                    )
                 )
 
     @pytest.mark.asyncio
@@ -338,21 +400,27 @@ class TestWorkerDLQ:
         """Validate RLS policy exists for tenant isolation."""
         async with engine.begin() as conn:
             result = await conn.execute(
-                text("""
+                text(
+                    """
                     SELECT policyname, tablename
                     FROM pg_policies
                     WHERE tablename = 'worker_failed_jobs'
                     AND policyname = 'tenant_isolation_policy'
-                """)
+                """
+                )
             )
             policies = result.fetchall()
 
-            assert len(policies) > 0, "tenant_isolation_policy must exist on worker_failed_jobs"
+            assert (
+                len(policies) > 0
+            ), "tenant_isolation_policy must exist on worker_failed_jobs"
 
     @pytest.mark.asyncio
     async def test_dlq_failure_handler_concurrent(self):
         """Validate DLQ handler is stable under concurrent failures."""
-        assert engine.dialect.name == "postgresql", "DLQ concurrency test must run on Postgres"
+        assert (
+            engine.dialect.name == "postgresql"
+        ), "DLQ concurrency test must run on Postgres"
 
         tenant_id = uuid4()
         correlation_id = uuid4()
@@ -387,7 +455,10 @@ class TestWorkerDLQ:
         loop = asyncio.get_running_loop()
         with ThreadPoolExecutor(max_workers=4) as executor:
             await asyncio.gather(
-                *[loop.run_in_executor(executor, partial(_invoke, task_id)) for task_id in task_ids]
+                *[
+                    loop.run_in_executor(executor, partial(_invoke, task_id))
+                    for task_id in task_ids
+                ]
             )
 
         placeholders = ", ".join(f":task_id_{idx}" for idx in range(len(task_ids)))

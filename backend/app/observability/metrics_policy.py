@@ -98,6 +98,10 @@ ALLOWED_TASK_NAMES: frozenset[str] = frozenset({
     "app.tasks.maintenance.enforce_data_retention",
     # attribution
     "app.tasks.attribution.recompute_window",
+    # bayesian
+    "app.tasks.bayesian.run_mcmc_inference",
+    "app.tasks.bayesian.run_resource_contention",
+    "app.tasks.bayesian.health_probe",
     # r4_failure_semantics
     "app.tasks.r4_failure_semantics.poison_pill",
     "app.tasks.r4_failure_semantics.crash_after_write_pre_ack",

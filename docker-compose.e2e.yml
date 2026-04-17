@@ -113,3 +113,40 @@ services:
         condition: service_healthy
     tmpfs:
       - /tmp/prometheus_multiproc
+
+  worker_bayesian:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: skeldir-worker-bayesian-e2e
+    environment:
+      CI: "true"
+      ENVIRONMENT: ${E2E_WORKER_ENVIRONMENT:-${E2E_ENVIRONMENT:-test}}
+      LOG_LEVEL: INFO
+      DATABASE_URL: ${E2E_DATABASE_URL?missing E2E_DATABASE_URL}
+      DATABASE_POOL_SIZE: ${E2E_WORKER_DATABASE_POOL_SIZE:-${E2E_DATABASE_POOL_SIZE:-20}}
+      DATABASE_MAX_OVERFLOW: ${E2E_WORKER_DATABASE_MAX_OVERFLOW:-${E2E_DATABASE_MAX_OVERFLOW:-0}}
+      DATABASE_FORCE_POOLING: ${E2E_WORKER_DATABASE_FORCE_POOLING:-${E2E_DATABASE_FORCE_POOLING:-0}}
+      CELERY_BROKER_URL: ${E2E_CELERY_BROKER_URL?missing E2E_CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${E2E_CELERY_RESULT_BACKEND?missing E2E_CELERY_RESULT_BACKEND}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-e2e-secret}
+      AUTH_JWT_PUBLIC_KEY_RING: ${AUTH_JWT_PUBLIC_KEY_RING:-e2e-secret}
+      AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-RS256}
+      AUTH_JWT_ISSUER: https://issuer.skeldir.test
+      AUTH_JWT_AUDIENCE: skeldir-api
+      PLATFORM_TOKEN_ENCRYPTION_KEY: e2e-platform-key
+      PLATFORM_TOKEN_KEY_ID: e2e-key
+      STRIPE_BASE_URL: http://mock_platform:8080
+      INGESTION_FOLLOWUP_TASKS_ENABLED: ${INGESTION_FOLLOWUP_TASKS_ENABLED:-false}
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=INFO
+      --pool=solo
+      --concurrency=1
+      --queues=bayesian
+    depends_on:
+      postgres:
+        condition: service_healthy
+    tmpfs:
+      - /tmp/prometheus_multiproc
