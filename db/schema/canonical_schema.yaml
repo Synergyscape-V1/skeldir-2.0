@@ -387,6 +387,10 @@ tables:
       - name: idx_attribution_allocations_tenant_event_model_channel
         columns: [tenant_id, event_id, model_version, channel_code]
         unique: true
+
+      - name: idx_attribution_allocations_tenant_event_projection_channel
+        columns: [tenant_id, event_id, recompute_job_id, channel_code]
+        unique: true
         
       - name: idx_attribution_allocations_tenant_model_version
         columns: [tenant_id, model_version]
