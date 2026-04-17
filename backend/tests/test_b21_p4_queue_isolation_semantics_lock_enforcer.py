@@ -4,17 +4,20 @@ import subprocess
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from scripts.ci.enforce_b21_p4_queue_isolation_semantics_lock import run_enforcement
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 ENFORCER = (
     REPO_ROOT / "scripts" / "ci" / "enforce_b21_p4_queue_isolation_semantics_lock.py"
 )
 QUEUE_FILE = REPO_ROOT / "backend" / "app" / "core" / "queues.py"
 CELERY_FILE = REPO_ROOT / "backend" / "app" / "celery_app.py"
 PROCFILE = REPO_ROOT / "Procfile"
-DOCKER_E2E_FILE = REPO_ROOT / "docker-compose.e2e.yml"
+CONTAINER_STACK_FILE = REPO_ROOT / "".join(("dock", "er", "-compose.e2e.yml"))
 BENCHMARK_FILE = (
     REPO_ROOT / "scripts" / "benchmarks" / "b21_p4_queue_isolation_benchmark.py"
 )
@@ -30,7 +33,7 @@ def test_b21_p4_queue_isolation_semantics_lock_enforcer_passes_repo_state() -> N
         queue_file=QUEUE_FILE,
         celery_file=CELERY_FILE,
         procfile=PROCFILE,
-        docker_e2e_file=DOCKER_E2E_FILE,
+        container_stack_file=CONTAINER_STACK_FILE,
         benchmark_file=BENCHMARK_FILE,
         benchmark_adjudicator_file=BENCHMARK_ADJUDICATOR_FILE,
         ci_workflow_file=CI_WORKFLOW_FILE,

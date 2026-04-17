@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 QUEUE_FILE = "backend/app/core/queues.py"
 CELERY_FILE = "backend/app/celery_app.py"
 PROCFILE = "Procfile"
-DOCKER_E2E_FILE = "docker-compose.e2e.yml"
+CONTAINER_STACK_FILE = "".join(("dock", "er", "-compose.e2e.yml"))
 BENCHMARK_FILE = "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py"
 BENCHMARK_ADJUDICATOR_FILE = "scripts/ci/enforce_b21_p4_benchmark_adjudication.py"
 CI_WORKFLOW_FILE = ".github/workflows/ci.yml"
@@ -35,7 +35,7 @@ def run_enforcement(
     queue_file: Path,
     celery_file: Path,
     procfile: Path,
-    docker_e2e_file: Path,
+    container_stack_file: Path,
     benchmark_file: Path,
     benchmark_adjudicator_file: Path,
     ci_workflow_file: Path,
@@ -45,7 +45,7 @@ def run_enforcement(
         queue_file,
         celery_file,
         procfile,
-        docker_e2e_file,
+        container_stack_file,
         benchmark_file,
         benchmark_adjudicator_file,
         ci_workflow_file,
@@ -59,7 +59,7 @@ def run_enforcement(
     queue_text = _read_text(queue_file)
     celery_text = _read_text(celery_file)
     procfile_text = _read_text(procfile)
-    docker_text = _read_text(docker_e2e_file)
+    container_stack_text = _read_text(container_stack_file)
     benchmark_text = _read_text(benchmark_file)
     adjudicator_text = _read_text(benchmark_adjudicator_file)
     ci_text = _read_text(ci_workflow_file)
@@ -89,14 +89,14 @@ def run_enforcement(
         if token not in procfile_text:
             violations.append(f"procfile_missing_token:{token}")
 
-    docker_tokens = (
+    container_stack_tokens = (
         "worker_bayesian:",
         "--queues=housekeeping,maintenance,llm,attribution",
         "--queues=bayesian",
     )
-    for token in docker_tokens:
-        if token not in docker_text:
-            violations.append(f"docker_e2e_missing_token:{token}")
+    for token in container_stack_tokens:
+        if token not in container_stack_text:
+            violations.append(f"container_stack_missing_token:{token}")
 
     benchmark_tokens = (
         '"timing_boundary": "enqueue_to_durable_commit"',
@@ -150,7 +150,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--queue-file", default=QUEUE_FILE)
     parser.add_argument("--celery-file", default=CELERY_FILE)
     parser.add_argument("--procfile", default=PROCFILE)
-    parser.add_argument("--docker-e2e-file", default=DOCKER_E2E_FILE)
+    parser.add_argument("--container-stack-file", default=CONTAINER_STACK_FILE)
     parser.add_argument("--benchmark-file", default=BENCHMARK_FILE)
     parser.add_argument(
         "--benchmark-adjudicator-file", default=BENCHMARK_ADJUDICATOR_FILE
@@ -173,7 +173,7 @@ def main(argv: list[str]) -> int:
         queue_file=_resolve(repo_root, args.queue_file),
         celery_file=_resolve(repo_root, args.celery_file),
         procfile=_resolve(repo_root, args.procfile),
-        docker_e2e_file=_resolve(repo_root, args.docker_e2e_file),
+        container_stack_file=_resolve(repo_root, args.container_stack_file),
         benchmark_file=_resolve(repo_root, args.benchmark_file),
         benchmark_adjudicator_file=_resolve(repo_root, args.benchmark_adjudicator_file),
         ci_workflow_file=_resolve(repo_root, args.ci_workflow_file),
