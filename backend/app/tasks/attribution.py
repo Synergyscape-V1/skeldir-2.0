@@ -160,12 +160,13 @@ def _deterministic_allocation_id(
     *,
     tenant_id: UUID,
     event_id: UUID,
+    recompute_job_id: UUID,
     model_version: str,
     channel_code: str,
 ) -> UUID:
     return uuid5(
         _ALLOCATION_ID_NAMESPACE,
-        f"{tenant_id}:{event_id}:{model_version}:{channel_code}",
+        f"{tenant_id}:{event_id}:{recompute_job_id}:{model_version}:{channel_code}",
     )
 
 
@@ -738,7 +739,6 @@ async def _compute_allocations_deterministic_baseline(
                     ORDER BY id ASC
                     ON CONFLICT (id)
                     DO UPDATE SET
-                        recompute_job_id = EXCLUDED.recompute_job_id,
                         allocation_ratio = EXCLUDED.allocation_ratio,
                         model_type = EXCLUDED.model_type,
                         confidence_score = EXCLUDED.confidence_score,
@@ -746,12 +746,14 @@ async def _compute_allocations_deterministic_baseline(
                         allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
                         updated_at = EXCLUDED.updated_at
                     WHERE
-                        attribution_allocations.recompute_job_id IS DISTINCT FROM EXCLUDED.recompute_job_id
-                        OR attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
-                        OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
-                        OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
-                        OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
-                        OR attribution_allocations.allocated_revenue_cents IS DISTINCT FROM EXCLUDED.allocated_revenue_cents;
+                        attribution_allocations.recompute_job_id = EXCLUDED.recompute_job_id
+                        AND (
+                            attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
+                            OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
+                            OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
+                            OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
+                            OR attribution_allocations.allocated_revenue_cents IS DISTINCT FROM EXCLUDED.allocated_revenue_cents
+                        );
                     """
                 ),
                 rows,
@@ -946,6 +948,7 @@ async def _compute_allocations_deterministic_baseline(
                     allocation_id = _deterministic_allocation_id(
                         tenant_id=tenant_id,
                         event_id=event_id,
+                        recompute_job_id=recompute_job_id,
                         model_version=model_version,
                         channel_code=channel_code,
                     )
@@ -1207,7 +1210,6 @@ async def _compute_allocations_strategy_kernel(
                     ORDER BY id ASC
                     ON CONFLICT (id)
                     DO UPDATE SET
-                        recompute_job_id = EXCLUDED.recompute_job_id,
                         allocation_ratio = EXCLUDED.allocation_ratio,
                         model_type = EXCLUDED.model_type,
                         confidence_score = EXCLUDED.confidence_score,
@@ -1215,12 +1217,14 @@ async def _compute_allocations_strategy_kernel(
                         allocated_revenue_cents = EXCLUDED.allocated_revenue_cents,
                         updated_at = EXCLUDED.updated_at
                     WHERE
-                        attribution_allocations.recompute_job_id IS DISTINCT FROM EXCLUDED.recompute_job_id
-                        OR attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
-                        OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
-                        OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
-                        OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
-                        OR attribution_allocations.allocated_revenue_cents IS DISTINCT FROM EXCLUDED.allocated_revenue_cents;
+                        attribution_allocations.recompute_job_id = EXCLUDED.recompute_job_id
+                        AND (
+                            attribution_allocations.allocation_ratio IS DISTINCT FROM EXCLUDED.allocation_ratio
+                            OR attribution_allocations.model_type IS DISTINCT FROM EXCLUDED.model_type
+                            OR attribution_allocations.confidence_score IS DISTINCT FROM EXCLUDED.confidence_score
+                            OR attribution_allocations.verified IS DISTINCT FROM EXCLUDED.verified
+                            OR attribution_allocations.allocated_revenue_cents IS DISTINCT FROM EXCLUDED.allocated_revenue_cents
+                        );
                     """
                 ),
                 rows,
@@ -1271,6 +1275,7 @@ async def _compute_allocations_strategy_kernel(
                     allocation_id = _deterministic_allocation_id(
                         tenant_id=tenant_id,
                         event_id=conversion.conversion_event.event_id,
+                        recompute_job_id=recompute_job_id,
                         model_version=model_version,
                         channel_code=channel_allocation.channel_code,
                     )
@@ -1544,7 +1549,7 @@ def recompute_window(
                 window_start=window_start_dt,
                 window_end=window_end_dt,
                 recompute_job_id=job_id,
-                model_version=model_version,
+                model_version=job_model_version,
                 replay_identity=replay_identity,
                 session_id=str(session_scope) if session_scope else None,
             )
@@ -1555,7 +1560,7 @@ def recompute_window(
                 window_start=window_start_dt,
                 window_end=window_end_dt,
                 recompute_job_id=job_id,
-                model_version=model_version,
+                model_version=job_model_version,
                 model_type=canonical_model_type,
                 replay_identity=replay_identity,
                 session_id=str(session_scope) if session_scope else None,

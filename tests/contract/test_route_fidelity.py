@@ -498,6 +498,8 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
     canonical_path = "/api/attribution/channels"
     source_operation = source_doc.get("paths", {}).get(canonical_path, {}).get("get", {})
     assert source_operation.get("operationId") == "getChannelAttribution"
+    source_responses = source_operation.get("responses", {})
+    assert "422" in source_responses
     b21_lock = source_operation.get("x-skeldir-b21-p0", {})
     assert b21_lock.get("implementation_status") == "mounted_deterministic_channels_surface"
 
@@ -527,6 +529,7 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
     responses = runtime_operation.get("responses", {})
     assert "200" in responses
     assert "304" in responses
+    assert "422" in responses
     schema_ref = (
         responses["200"]
         .get("content", {})
@@ -589,6 +592,14 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
     confidence_schema = channel_schema.get("properties", {}).get("confidence_score", {})
     assert confidence_schema.get("type") == "string"
     assert confidence_schema.get("pattern") == "^(0|1)\\.\\d{3}$"
+
+    frontend_types = (
+        Path(__file__).parent.parent.parent / "frontend" / "src" / "types" / "api" / "attribution.ts"
+    ).read_text(encoding="utf-8")
+    assert "getChannelAttribution" in frontend_types
+    assert "responses: {" in frontend_types
+    assert "422:" in frontend_types
+    assert "ATTRIBUTION_WINDOW_OUT_OF_RANGE" in frontend_types
 
 
 if __name__ == "__main__":

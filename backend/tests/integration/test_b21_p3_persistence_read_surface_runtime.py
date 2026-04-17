@@ -14,6 +14,9 @@ from app.core.db import engine
 from app.db.session import set_tenant_guc
 from app.main import app
 from app.security.auth import AuthContext, get_auth_context
+from app.tasks.attribution import recompute_window
+from app.tasks.authority import SystemAuthorityEnvelope
+from app.tasks.enqueue import enqueue_tenant_task
 from tests.conftest import _insert_tenant
 
 
@@ -348,6 +351,110 @@ async def _job_run_count(*, tenant_id: UUID, recompute_job_id: UUID) -> int:
         return int(value or 0)
 
 
+def _enqueue_recompute_window(
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    model_version: str,
+) -> dict:
+    return enqueue_tenant_task(
+        recompute_window,
+        envelope=SystemAuthorityEnvelope(tenant_id=tenant_id),
+        kwargs={
+            "window_start": window_start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "window_end": window_end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "model_version": model_version,
+            "model_type": "deterministic_baseline",
+        },
+    ).get()
+
+
+async def _seed_conversion_event(
+    *,
+    tenant_id: UUID,
+    session_id: UUID,
+    occurred_at: datetime,
+    revenue_cents: int,
+) -> UUID:
+    event_id = uuid4()
+    idempotency_key = f"b21-p3-own-{tenant_id.hex[:8]}-{event_id.hex[:12]}"
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        # RAW_SQL_ALLOWLIST: deterministic integration fixture seed for projection ownership stability proof.
+        await conn.execute(
+            text(
+                """
+                INSERT INTO attribution_events (
+                    id,
+                    tenant_id,
+                    occurred_at,
+                    external_event_id,
+                    correlation_id,
+                    session_id,
+                    revenue_cents,
+                    raw_payload,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    campaign_id,
+                    conversion_value_cents,
+                    currency,
+                    event_timestamp,
+                    processed_at,
+                    processing_status,
+                    retry_count,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    :id,
+                    :tenant_id,
+                    :occurred_at,
+                    :external_event_id,
+                    :correlation_id,
+                    :session_id,
+                    :revenue_cents,
+                    CAST(:raw_payload AS jsonb),
+                    :idempotency_key,
+                    'purchase',
+                    'direct',
+                    'cmp-b21-p3-ownership',
+                    :conversion_value_cents,
+                    'USD',
+                    :event_timestamp,
+                    :processed_at,
+                    'processed',
+                    0,
+                    :created_at,
+                    :updated_at
+                )
+                ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+                """
+            ),
+            {
+                "id": str(event_id),
+                "tenant_id": str(tenant_id),
+                "occurred_at": occurred_at,
+                "external_event_id": f"evt-{event_id.hex[:12]}",
+                "correlation_id": str(uuid4()),
+                "session_id": str(session_id),
+                "revenue_cents": int(revenue_cents),
+                "raw_payload": (
+                    '{"global_idempotency_hash":"'
+                    + f"{event_id.hex:0<64}"[:64]
+                    + '"}'
+                ),
+                "idempotency_key": idempotency_key,
+                "conversion_value_cents": int(revenue_cents),
+                "event_timestamp": occurred_at,
+                "processed_at": occurred_at + timedelta(minutes=1),
+                "created_at": occurred_at,
+                "updated_at": occurred_at,
+            },
+        )
+    return event_id
+
+
 @pytest.mark.asyncio
 async def test_b21_p3_channels_endpoint_reads_projection_without_recompute_and_preserves_decimal_strings() -> None:
     await _ensure_runtime_tables()
@@ -577,3 +684,119 @@ async def test_b21_p3_projection_window_bound_exceeds_limit_fails_closed() -> No
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     body = response.json()
     assert body["code"] == "ATTRIBUTION_WINDOW_OUT_OF_RANGE"
+
+
+@pytest.mark.asyncio
+async def test_b21_p3_sequential_recompute_preserves_projection_row_ownership() -> None:
+    await _ensure_runtime_tables()
+    await _ensure_channel_codes(["direct", "email", "google_search_paid"])
+
+    from app.celery_app import celery_app
+
+    original_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = True
+
+    tenant_id = uuid4()
+    user_id = uuid4()
+    session_id = uuid4()
+    model_version = "1.0.0"
+    authority_now = datetime.now(timezone.utc).replace(microsecond=0)
+    window_end = authority_now
+    window_start_a = window_end - timedelta(hours=2)
+    window_start_b = window_end - timedelta(hours=1)
+    occurred_at = window_end - timedelta(minutes=40)
+
+    try:
+        async with engine.begin() as conn:
+            await _insert_tenant(conn, tenant_id, api_key_hash=f"test_hash_{tenant_id}")
+
+        await _seed_session_authority(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            issued_at=authority_now - timedelta(minutes=5),
+            expires_at=authority_now + timedelta(hours=1),
+        )
+        event_id = await _seed_conversion_event(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            occurred_at=occurred_at,
+            revenue_cents=300,
+        )
+
+        result_a = _enqueue_recompute_window(
+            tenant_id=tenant_id,
+            window_start=window_start_a,
+            window_end=window_end,
+            model_version=model_version,
+        )
+        result_b = _enqueue_recompute_window(
+            tenant_id=tenant_id,
+            window_start=window_start_b,
+            window_end=window_end,
+            model_version=model_version,
+        )
+
+        job_a = UUID(str(result_a["job_id"]))
+        job_b = UUID(str(result_b["job_id"]))
+        assert job_a != job_b
+
+        async with engine.begin() as conn:
+            await set_tenant_guc(conn, tenant_id, local=True)
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT
+                            recompute_job_id::text AS recompute_job_id,
+                            COUNT(*)::bigint AS row_count,
+                            COALESCE(SUM(allocated_revenue_cents), 0)::bigint AS total_cents
+                        FROM attribution_allocations
+                        WHERE tenant_id = :tenant_id
+                          AND event_id = :event_id
+                          AND recompute_job_id IN (:job_a, :job_b)
+                        GROUP BY recompute_job_id
+                        ORDER BY recompute_job_id
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "event_id": str(event_id),
+                        "job_a": str(job_a),
+                        "job_b": str(job_b),
+                    },
+                )
+            ).mappings().all()
+
+        by_job = {row["recompute_job_id"]: row for row in rows}
+        assert str(job_a) in by_job, "projection A rows were stolen or lost after projection B write"
+        assert str(job_b) in by_job
+        assert int(by_job[str(job_a)]["row_count"]) == 3
+        assert int(by_job[str(job_b)]["row_count"]) == 3
+        assert int(by_job[str(job_a)]["total_cents"]) == 300
+        assert int(by_job[str(job_b)]["total_cents"]) == 300
+
+        async def _auth_override() -> AuthContext:
+            return _auth_context(tenant_id=tenant_id, user_id=user_id)
+
+        app.dependency_overrides[get_auth_context] = _auth_override
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                for job_id in (job_a, job_b):
+                    response = await client.get(
+                        "/api/attribution/channels",
+                        params={
+                            "model_type": "deterministic_baseline",
+                            "recompute_job_id": str(job_id),
+                        },
+                        headers={"X-Correlation-ID": str(uuid4())},
+                    )
+                    assert response.status_code == status.HTTP_200_OK, response.text
+                    payload = response.json()
+                    assert payload["projection"]["recompute_job_id"] == str(job_id)
+                    assert payload["total_revenue_cents"] == 300
+                    assert len(payload["channels"]) == 3
+        finally:
+            app.dependency_overrides.pop(get_auth_context, None)
+    finally:
+        celery_app.conf.task_always_eager = original_eager

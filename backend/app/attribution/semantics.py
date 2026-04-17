@@ -200,6 +200,8 @@ class DeterministicReplayIdentity:
             f"taxonomy={self.taxonomy_version};"
             f"lookback_days={self.lookback_days};"
             f"session_scope={self.session_scope_identity};"
+            f"window_start={self.window_start.astimezone(timezone.utc).isoformat()};"
+            f"window_end={self.window_end.astimezone(timezone.utc).isoformat()};"
             f"replay_anchor_at={self.replay_anchor_at.astimezone(timezone.utc).isoformat()}"
         )
         return f"{self.model_version}::{replay_suffix}"
