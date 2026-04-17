@@ -185,6 +185,13 @@ def _assert_runtime_tables(sync_url: str) -> None:
     engine.dispose()
 
 
+def _set_tenant_context(conn: Any, *, tenant_id: UUID) -> None:
+    conn.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+
+
 def _insert_tenant(conn: Any, *, tenant_id: UUID) -> None:
     columns = set(
         conn.execute(
@@ -466,6 +473,7 @@ async def _read_path_probe(
 ) -> dict[str, Any]:
     engine = create_engine(sync_url)
     with engine.begin() as conn:
+        _set_tenant_context(conn, tenant_id=tenant_id)
         before = (
             conn.execute(
                 text(
@@ -523,6 +531,7 @@ async def _read_path_probe(
         app.dependency_overrides.pop(get_auth_context, None)
 
     with engine.begin() as conn:
+        _set_tenant_context(conn, tenant_id=tenant_id)
         after = (
             conn.execute(
                 text(
@@ -711,6 +720,7 @@ def _runtime_benchmark(
         job_id = UUID(str(deterministic_payload["job_id"]))
         runtime_engine = create_engine(sync_url)
         with runtime_engine.begin() as conn:
+            _set_tenant_context(conn, tenant_id=tenant_id)
             job_row = (
                 conn.execute(
                     text(
