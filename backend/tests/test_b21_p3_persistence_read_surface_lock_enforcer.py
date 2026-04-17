@@ -13,7 +13,13 @@ TASK_FILE = REPO_ROOT / "backend" / "app" / "tasks" / "attribution.py"
 API_FILE = REPO_ROOT / "backend" / "app" / "api" / "attribution.py"
 SCHEMA_FILE = REPO_ROOT / "backend" / "app" / "schemas" / "attribution.py"
 CONTRACT_FILE = REPO_ROOT / "api-contracts" / "openapi" / "v1" / "attribution.yaml"
+BUNDLED_CONTRACT_FILE = (
+    REPO_ROOT / "api-contracts" / "dist" / "openapi" / "v1" / "attribution.bundled.yaml"
+)
 FRONTEND_TYPES_FILE = REPO_ROOT / "frontend" / "src" / "types" / "api" / "attribution.ts"
+FRONTEND_TYPEGEN_SCRIPT_FILE = REPO_ROOT / "scripts" / "contracts" / "generate_frontend_types.sh"
+CONTRACT_BUNDLE_SCRIPT_FILE = REPO_ROOT / "scripts" / "contracts" / "bundle.sh"
+CONTRACT_ENTRYPOINTS_FILE = REPO_ROOT / "scripts" / "contracts" / "entrypoints.json"
 RUNTIME_FILE = REPO_ROOT / "backend" / "tests" / "integration" / "test_b21_p3_persistence_read_surface_runtime.py"
 CANONICAL_SCHEMA_FILE = REPO_ROOT / "db" / "schema" / "canonical_schema.sql"
 TRIGGER_ALIGNMENT_MIGRATION_FILE = (
@@ -34,7 +40,11 @@ def test_b21_p3_persistence_read_surface_lock_enforcer_passes_repo_state() -> No
         api_file=API_FILE,
         schema_file=SCHEMA_FILE,
         contract_file=CONTRACT_FILE,
+        bundled_contract_file=BUNDLED_CONTRACT_FILE,
         frontend_types_file=FRONTEND_TYPES_FILE,
+        frontend_typegen_script_file=FRONTEND_TYPEGEN_SCRIPT_FILE,
+        contract_bundle_script_file=CONTRACT_BUNDLE_SCRIPT_FILE,
+        contract_entrypoints_file=CONTRACT_ENTRYPOINTS_FILE,
         runtime_proof_file=RUNTIME_FILE,
         canonical_schema_file=CANONICAL_SCHEMA_FILE,
         trigger_alignment_migration_file=TRIGGER_ALIGNMENT_MIGRATION_FILE,
@@ -141,6 +151,67 @@ def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_
     assert proc.returncode != 0
     combined = f"{proc.stdout}\n{proc.stderr}"
     assert "contract_missing_channels_422_response" in combined
+
+
+def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_bundled_contract_422_response(
+    tmp_path: Path,
+) -> None:
+    bundled_contract_regression = tmp_path / "attribution_bundled_422.regression.yaml"
+    bundled_contract_regression.write_text(
+        BUNDLED_CONTRACT_FILE.read_text(encoding="utf-8").replace(
+            "'422':",
+            "'422_removed':",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--bundled-contract-file",
+            str(bundled_contract_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert "bundled_contract_missing_channels_422_response" in combined
+
+
+def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_typegen_not_sourced_from_bundle(
+    tmp_path: Path,
+) -> None:
+    typegen_script_regression = tmp_path / "generate_frontend_types.regression.sh"
+    typegen_script_regression.write_text(
+        FRONTEND_TYPEGEN_SCRIPT_FILE.read_text(encoding="utf-8").replace(
+            'generate "attribution.bundled.yaml" "attribution.ts"',
+            'generate "attribution.yaml" "attribution.ts"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--frontend-typegen-script-file",
+            str(typegen_script_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert (
+        'frontend_typegen_script_missing_token:generate "attribution.bundled.yaml" "attribution.ts"'
+        in combined
+    )
 
 
 def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_projection_reassignment_on_conflict(
