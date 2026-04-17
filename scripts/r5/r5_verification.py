@@ -29,13 +29,12 @@ from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import asyncpg
-from sqlalchemy import event as sa_event
+from sqlalchemy import event as sa_event, text
 
 # PYTHONPATH=backend
-from app.db.session import engine  # noqa: E402
+from app.db.session import engine, set_tenant_guc  # noqa: E402
 from app.tasks.attribution import (  # noqa: E402
     _compute_allocations_deterministic_baseline,
-    _upsert_job_identity,
 )
 
 
@@ -113,6 +112,14 @@ async def _ensure_recompute_job_id(
     window_end: datetime,
     model_version: str,
 ) -> UUID:
+    job_id = _uuid_det(
+        "r5",
+        "recompute_job",
+        str(tenant_id),
+        window_start.isoformat(),
+        window_end.isoformat(),
+        model_version,
+    )
     correlation_id = str(
         _uuid_det(
             "r5",
@@ -123,14 +130,58 @@ async def _ensure_recompute_job_id(
             model_version,
         )
     )
-    job_id, _, _, _ = await _upsert_job_identity(
-        tenant_id=tenant_id,
-        window_start=window_start,
-        window_end=window_end,
-        model_version=model_version,
-        correlation_id=correlation_id,
-        replay_event_created_ceiling=window_end,
-    )
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        await conn.execute(
+            text(
+                """
+                INSERT INTO attribution_recompute_jobs (
+                    id,
+                    tenant_id,
+                    window_start,
+                    window_end,
+                    model_version,
+                    status,
+                    run_count,
+                    last_correlation_id,
+                    replay_event_created_ceiling,
+                    created_at,
+                    updated_at,
+                    started_at
+                ) VALUES (
+                    :job_id,
+                    :tenant_id,
+                    :window_start,
+                    :window_end,
+                    :model_version,
+                    'running',
+                    1,
+                    :correlation_id,
+                    :replay_event_created_ceiling,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (tenant_id, window_start, window_end, model_version)
+                DO UPDATE SET
+                    status = 'running',
+                    run_count = attribution_recompute_jobs.run_count + 1,
+                    last_correlation_id = EXCLUDED.last_correlation_id,
+                    replay_event_created_ceiling = EXCLUDED.replay_event_created_ceiling,
+                    updated_at = CURRENT_TIMESTAMP,
+                    started_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {
+                "job_id": str(job_id),
+                "tenant_id": str(tenant_id),
+                "window_start": window_start,
+                "window_end": window_end,
+                "model_version": model_version,
+                "correlation_id": correlation_id,
+                "replay_event_created_ceiling": window_end,
+            },
+        )
     return job_id
 
 
