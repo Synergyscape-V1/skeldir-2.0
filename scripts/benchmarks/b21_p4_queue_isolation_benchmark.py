@@ -66,7 +66,7 @@ def _normalize_sync_database_url(value: str) -> str:
 
 
 def _runtime_async_database_url() -> str:
-    value = os.getenv("DATABASE_URL") or get_database_url()
+    value = get_database_url()
     if value.startswith("postgresql://"):
         return value.replace("postgresql://", "postgresql+asyncpg://", 1)
     return value
