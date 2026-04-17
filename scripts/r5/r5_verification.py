@@ -103,6 +103,23 @@ def _ru_maxrss_kb() -> int:
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
 
+def _recompute_job_id_for_window(
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    model_version: str,
+) -> UUID:
+    return _uuid_det(
+        "r5",
+        "recompute_job",
+        str(tenant_id),
+        window_start.isoformat(),
+        window_end.isoformat(),
+        model_version,
+    )
+
+
 class StatementCounter:
     def __init__(self) -> None:
         self.count = 0
@@ -565,7 +582,14 @@ async def _run_compute_with_count(
     window_start: datetime,
     window_end: datetime,
     model_version: str,
+    recompute_job_id: UUID | None = None,
 ) -> dict[str, Any]:
+    effective_recompute_job_id = recompute_job_id or _recompute_job_id_for_window(
+        tenant_id=tenant_id,
+        window_start=window_start,
+        window_end=window_end,
+        model_version=model_version,
+    )
     counter = StatementCounter()
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
@@ -574,6 +598,7 @@ async def _run_compute_with_count(
             tenant_id=tenant_id,
             window_start=window_start,
             window_end=window_end,
+            recompute_job_id=effective_recompute_job_id,
             model_version=model_version,
         )
     finally:
@@ -595,6 +620,12 @@ async def _run_compute_concurrency(
     model_version: str,
     concurrency: int,
 ) -> dict[str, Any]:
+    recompute_job_id = _recompute_job_id_for_window(
+        tenant_id=tenant_id,
+        window_start=window_start,
+        window_end=window_end,
+        model_version=model_version,
+    )
     counter = StatementCounter()
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
@@ -605,6 +636,7 @@ async def _run_compute_concurrency(
                 tenant_id=tenant_id,
                 window_start=window_start,
                 window_end=window_end,
+                recompute_job_id=recompute_job_id,
                 model_version=model_version,
             )
             finished = time.perf_counter()
@@ -873,11 +905,18 @@ async def main() -> int:
         )
         expected_binding = _enforce_binding("retry_injected", binding, expected_binding)
         print("R5_RUN_MODE=retry_injected R5_RETRY_ATTEMPT=1")
+        retry_recompute_job_id = _recompute_job_id_for_window(
+            tenant_id=tenant_det,
+            window_start=window_start,
+            window_end=window_end,
+            model_version=model_version,
+        )
         try:
             await _compute_allocations_deterministic_baseline(
                 tenant_id=tenant_det,
                 window_start=window_start,
                 window_end=window_end,
+                recompute_job_id=retry_recompute_job_id,
                 model_version=model_version,
                 inject_fail_once_key=f"r5:{candidate_sha}:DET_SHARED",
                 inject_fail_after_batches=1,

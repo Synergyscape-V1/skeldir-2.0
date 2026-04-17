@@ -83,6 +83,17 @@ def _uuid_det(*parts: str) -> UUID:
     return uuid5(NAMESPACE_URL, ":".join(parts))
 
 
+def _recompute_job_id_for_window(*, tenant_id: UUID, window_start: datetime, window_end: datetime) -> UUID:
+    return _uuid_det(
+        "r5",
+        "recompute_job",
+        str(tenant_id),
+        window_start.isoformat(),
+        window_end.isoformat(),
+        "1.0.0",
+    )
+
+
 def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -398,12 +409,21 @@ async def _run_compute_with_count(
     window_start: datetime,
     window_end: datetime,
 ) -> dict[str, Any]:
+    recompute_job_id = _recompute_job_id_for_window(
+        tenant_id=tenant_id,
+        window_start=window_start,
+        window_end=window_end,
+    )
     counter = StatementCounter()
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
     try:
         meta = await _compute_allocations_deterministic_baseline(
-            tenant_id=tenant_id, window_start=window_start, window_end=window_end, model_version="1.0.0"
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            recompute_job_id=recompute_job_id,
+            model_version="1.0.0",
         )
     finally:
         t1 = time.perf_counter()
