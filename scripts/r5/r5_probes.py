@@ -28,7 +28,7 @@ from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import asyncpg
-from sqlalchemy import event as sa_event
+from sqlalchemy import event as sa_event, text
 
 
 def _import_db_secret_access():
@@ -47,8 +47,10 @@ def _import_db_secret_access():
 resolve_runtime_database_url = _import_db_secret_access()
 
 # PYTHONPATH=backend
-from app.db.session import engine  # noqa: E402
-from app.tasks.attribution import _compute_allocations_deterministic_baseline  # noqa: E402
+from app.db.session import engine, set_tenant_guc  # noqa: E402
+from app.tasks.attribution import (  # noqa: E402
+    _compute_allocations_deterministic_baseline,
+)
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -81,6 +83,80 @@ def _utc_iso(ts: datetime | None = None) -> str:
 
 def _uuid_det(*parts: str) -> UUID:
     return uuid5(NAMESPACE_URL, ":".join(parts))
+
+
+async def _ensure_recompute_job_id(*, tenant_id: UUID, window_start: datetime, window_end: datetime) -> UUID:
+    job_id = _uuid_det(
+        "r5",
+        "recompute_job",
+        str(tenant_id),
+        window_start.isoformat(),
+        window_end.isoformat(),
+        "1.0.0",
+    )
+    correlation_id = str(
+        _uuid_det(
+            "r5",
+            "correlation",
+            str(tenant_id),
+            window_start.isoformat(),
+            window_end.isoformat(),
+            "1.0.0",
+        )
+    )
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        await conn.execute(
+            text(
+                """
+                INSERT INTO attribution_recompute_jobs (
+                    id,
+                    tenant_id,
+                    window_start,
+                    window_end,
+                    model_version,
+                    status,
+                    run_count,
+                    last_correlation_id,
+                    replay_event_created_ceiling,
+                    created_at,
+                    updated_at,
+                    started_at
+                ) VALUES (
+                    :job_id,
+                    :tenant_id,
+                    :window_start,
+                    :window_end,
+                    :model_version,
+                    'running',
+                    1,
+                    :correlation_id,
+                    :replay_event_created_ceiling,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (tenant_id, window_start, window_end, model_version)
+                DO UPDATE SET
+                    status = 'running',
+                    run_count = attribution_recompute_jobs.run_count + 1,
+                    last_correlation_id = EXCLUDED.last_correlation_id,
+                    replay_event_created_ceiling = EXCLUDED.replay_event_created_ceiling,
+                    updated_at = CURRENT_TIMESTAMP,
+                    started_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {
+                "job_id": str(job_id),
+                "tenant_id": str(tenant_id),
+                "window_start": window_start,
+                "window_end": window_end,
+                "model_version": "1.0.0",
+                "correlation_id": correlation_id,
+                "replay_event_created_ceiling": window_end,
+            },
+        )
+    return job_id
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -398,12 +474,21 @@ async def _run_compute_with_count(
     window_start: datetime,
     window_end: datetime,
 ) -> dict[str, Any]:
+    recompute_job_id = await _ensure_recompute_job_id(
+        tenant_id=tenant_id,
+        window_start=window_start,
+        window_end=window_end,
+    )
     counter = StatementCounter()
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
     try:
         meta = await _compute_allocations_deterministic_baseline(
-            tenant_id=tenant_id, window_start=window_start, window_end=window_end, model_version="1.0.0"
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            recompute_job_id=recompute_job_id,
+            model_version="1.0.0",
         )
     finally:
         t1 = time.perf_counter()

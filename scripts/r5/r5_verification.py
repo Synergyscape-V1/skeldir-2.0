@@ -29,11 +29,13 @@ from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import asyncpg
-from sqlalchemy import event as sa_event
+from sqlalchemy import event as sa_event, text
 
 # PYTHONPATH=backend
-from app.db.session import engine  # noqa: E402
-from app.tasks.attribution import _compute_allocations_deterministic_baseline  # noqa: E402
+from app.db.session import engine, set_tenant_guc  # noqa: E402
+from app.tasks.attribution import (  # noqa: E402
+    _compute_allocations_deterministic_baseline,
+)
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -101,6 +103,86 @@ def _meminfo_total_kb() -> int | None:
 
 def _ru_maxrss_kb() -> int:
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+
+
+async def _ensure_recompute_job_id(
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    model_version: str,
+) -> UUID:
+    job_id = _uuid_det(
+        "r5",
+        "recompute_job",
+        str(tenant_id),
+        window_start.isoformat(),
+        window_end.isoformat(),
+        model_version,
+    )
+    correlation_id = str(
+        _uuid_det(
+            "r5",
+            "correlation",
+            str(tenant_id),
+            window_start.isoformat(),
+            window_end.isoformat(),
+            model_version,
+        )
+    )
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        await conn.execute(
+            text(
+                """
+                INSERT INTO attribution_recompute_jobs (
+                    id,
+                    tenant_id,
+                    window_start,
+                    window_end,
+                    model_version,
+                    status,
+                    run_count,
+                    last_correlation_id,
+                    replay_event_created_ceiling,
+                    created_at,
+                    updated_at,
+                    started_at
+                ) VALUES (
+                    :job_id,
+                    :tenant_id,
+                    :window_start,
+                    :window_end,
+                    :model_version,
+                    'running',
+                    1,
+                    :correlation_id,
+                    :replay_event_created_ceiling,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (tenant_id, window_start, window_end, model_version)
+                DO UPDATE SET
+                    status = 'running',
+                    run_count = attribution_recompute_jobs.run_count + 1,
+                    last_correlation_id = EXCLUDED.last_correlation_id,
+                    replay_event_created_ceiling = EXCLUDED.replay_event_created_ceiling,
+                    updated_at = CURRENT_TIMESTAMP,
+                    started_at = CURRENT_TIMESTAMP
+                """
+            ),
+            {
+                "job_id": str(job_id),
+                "tenant_id": str(tenant_id),
+                "window_start": window_start,
+                "window_end": window_end,
+                "model_version": model_version,
+                "correlation_id": correlation_id,
+                "replay_event_created_ceiling": window_end,
+            },
+        )
+    return job_id
 
 
 class StatementCounter:
@@ -565,7 +647,16 @@ async def _run_compute_with_count(
     window_start: datetime,
     window_end: datetime,
     model_version: str,
+    recompute_job_id: UUID | None = None,
 ) -> dict[str, Any]:
+    effective_recompute_job_id = recompute_job_id
+    if effective_recompute_job_id is None:
+        effective_recompute_job_id = await _ensure_recompute_job_id(
+            tenant_id=tenant_id,
+            window_start=window_start,
+            window_end=window_end,
+            model_version=model_version,
+        )
     counter = StatementCounter()
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
@@ -574,6 +665,7 @@ async def _run_compute_with_count(
             tenant_id=tenant_id,
             window_start=window_start,
             window_end=window_end,
+            recompute_job_id=effective_recompute_job_id,
             model_version=model_version,
         )
     finally:
@@ -595,6 +687,12 @@ async def _run_compute_concurrency(
     model_version: str,
     concurrency: int,
 ) -> dict[str, Any]:
+    recompute_job_id = await _ensure_recompute_job_id(
+        tenant_id=tenant_id,
+        window_start=window_start,
+        window_end=window_end,
+        model_version=model_version,
+    )
     counter = StatementCounter()
     sa_event.listen(engine.sync_engine, "before_cursor_execute", counter.before_cursor_execute)
     t0 = time.perf_counter()
@@ -605,6 +703,7 @@ async def _run_compute_concurrency(
                 tenant_id=tenant_id,
                 window_start=window_start,
                 window_end=window_end,
+                recompute_job_id=recompute_job_id,
                 model_version=model_version,
             )
             finished = time.perf_counter()
@@ -873,11 +972,18 @@ async def main() -> int:
         )
         expected_binding = _enforce_binding("retry_injected", binding, expected_binding)
         print("R5_RUN_MODE=retry_injected R5_RETRY_ATTEMPT=1")
+        retry_recompute_job_id = await _ensure_recompute_job_id(
+            tenant_id=tenant_det,
+            window_start=window_start,
+            window_end=window_end,
+            model_version=model_version,
+        )
         try:
             await _compute_allocations_deterministic_baseline(
                 tenant_id=tenant_det,
                 window_start=window_start,
                 window_end=window_end,
+                recompute_job_id=retry_recompute_job_id,
                 model_version=model_version,
                 inject_fail_once_key=f"r5:{candidate_sha}:DET_SHARED",
                 inject_fail_after_batches=1,
