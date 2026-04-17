@@ -494,12 +494,54 @@ def test_b21_channels_route_mounted_and_runtime_openapi_converged():
     )
     with open(attribution_source, "r", encoding="utf-8") as handle:
         source_doc = yaml.safe_load(handle) or {}
+    attribution_bundle = (
+        Path(__file__).parent.parent.parent
+        / "api-contracts"
+        / "dist"
+        / "openapi"
+        / "v1"
+        / "attribution.bundled.yaml"
+    )
+    with open(attribution_bundle, "r", encoding="utf-8") as handle:
+        bundled_doc = yaml.safe_load(handle) or {}
 
     canonical_path = "/api/attribution/channels"
     source_operation = source_doc.get("paths", {}).get(canonical_path, {}).get("get", {})
     assert source_operation.get("operationId") == "getChannelAttribution"
     source_responses = source_operation.get("responses", {})
     assert "422" in source_responses
+    source_422_example_code = (
+        source_responses.get("422", {})
+        .get("content", {})
+        .get("application/problem+json", {})
+        .get("example", {})
+        .get("code")
+    )
+    assert source_422_example_code == "ATTRIBUTION_WINDOW_OUT_OF_RANGE"
+    bundle_operation = bundled_doc.get("paths", {}).get(canonical_path, {}).get("get", {})
+    assert bundle_operation.get("operationId") == "getChannelAttribution"
+    bundle_query_params = {
+        item.get("name"): item
+        for item in bundle_operation.get("parameters", [])
+        if item.get("in") == "query"
+    }
+    assert "model_type" in bundle_query_params
+    assert "recompute_job_id" in bundle_query_params
+    assert bundle_query_params["model_type"].get("required") is True
+    assert bundle_query_params["recompute_job_id"].get("required") is True
+    assert "start_date" not in bundle_query_params
+    assert "end_date" not in bundle_query_params
+    bundle_responses = bundle_operation.get("responses", {})
+    assert "422" in bundle_responses
+    bundle_422_example_code = (
+        bundle_responses.get("422", {})
+        .get("content", {})
+        .get("application/problem+json", {})
+        .get("example", {})
+        .get("code")
+    )
+    assert bundle_422_example_code == "ATTRIBUTION_WINDOW_OUT_OF_RANGE"
+    assert bundle_422_example_code == source_422_example_code
     b21_lock = source_operation.get("x-skeldir-b21-p0", {})
     assert b21_lock.get("implementation_status") == "mounted_deterministic_channels_surface"
 

@@ -18,7 +18,11 @@ TASK_FILE = "backend/app/tasks/attribution.py"
 API_FILE = "backend/app/api/attribution.py"
 SCHEMA_FILE = "backend/app/schemas/attribution.py"
 CONTRACT_FILE = "api-contracts/openapi/v1/attribution.yaml"
+BUNDLED_CONTRACT_FILE = "api-contracts/dist/openapi/v1/attribution.bundled.yaml"
 FRONTEND_TYPES_FILE = "frontend/src/types/api/attribution.ts"
+FRONTEND_TYPEGEN_SCRIPT_FILE = "scripts/contracts/generate_frontend_types.sh"
+CONTRACT_BUNDLE_SCRIPT_FILE = "scripts/contracts/bundle.sh"
+CONTRACT_ENTRYPOINTS_FILE = "scripts/contracts/entrypoints.json"
 RUNTIME_PROOF_FILE = "backend/tests/integration/test_b21_p3_persistence_read_surface_runtime.py"
 CANONICAL_SCHEMA_FILE = "db/schema/canonical_schema.sql"
 TRIGGER_ALIGNMENT_MIGRATION_FILE = (
@@ -61,7 +65,11 @@ def run_enforcement(
     api_file: Path,
     schema_file: Path,
     contract_file: Path,
+    bundled_contract_file: Path,
     frontend_types_file: Path,
+    frontend_typegen_script_file: Path,
+    contract_bundle_script_file: Path,
+    contract_entrypoints_file: Path,
     runtime_proof_file: Path,
     canonical_schema_file: Path,
     trigger_alignment_migration_file: Path,
@@ -75,7 +83,11 @@ def run_enforcement(
         api_file,
         schema_file,
         contract_file,
+        bundled_contract_file,
         frontend_types_file,
+        frontend_typegen_script_file,
+        contract_bundle_script_file,
+        contract_entrypoints_file,
         runtime_proof_file,
         canonical_schema_file,
         trigger_alignment_migration_file,
@@ -92,8 +104,13 @@ def run_enforcement(
     api_text = _read_text(api_file)
     schema_text = _read_text(schema_file)
     contract_text = _read_text(contract_file)
+    bundled_contract_text = _read_text(bundled_contract_file)
     frontend_types_text = _read_text(frontend_types_file)
+    frontend_typegen_script_text = _read_text(frontend_typegen_script_file)
+    contract_bundle_script_text = _read_text(contract_bundle_script_file)
     contract_doc = _load_openapi(contract_file)
+    bundled_contract_doc = _load_openapi(bundled_contract_file)
+    contract_entrypoints = _read_json(contract_entrypoints_file)
     runtime_text = _read_text(runtime_proof_file)
     canonical_schema_text = _read_text(canonical_schema_file)
     trigger_alignment_migration_text = _read_text(trigger_alignment_migration_file)
@@ -214,6 +231,51 @@ def run_enforcement(
     if "422" not in responses:
         violations.append("contract_missing_channels_422_response")
 
+    bundled_channels_get = (
+        bundled_contract_doc.get("paths", {})
+        .get("/api/attribution/channels", {})
+        .get("get", {})
+    )
+    if not isinstance(bundled_channels_get, dict):
+        violations.append("bundled_contract_missing_channels_get_operation")
+        bundled_channels_get = {}
+
+    bundled_parameters = bundled_channels_get.get("parameters", [])
+    if not isinstance(bundled_parameters, list):
+        violations.append("bundled_contract_channels_parameters_invalid")
+        bundled_parameters = []
+
+    bundled_query_params: dict[str, dict[str, Any]] = {}
+    for item in bundled_parameters:
+        if not isinstance(item, dict):
+            continue
+        if item.get("in") != "query":
+            continue
+        name = item.get("name")
+        if isinstance(name, str):
+            bundled_query_params[name] = item
+
+    for required_query_param in ("model_type", "recompute_job_id"):
+        param = bundled_query_params.get(required_query_param)
+        if not isinstance(param, dict):
+            violations.append(f"bundled_contract_missing_required_query_param:{required_query_param}")
+            continue
+        if param.get("required") is not True:
+            violations.append(f"bundled_contract_query_param_not_required:{required_query_param}")
+
+    for forbidden_query_param in ("start_date", "end_date"):
+        if forbidden_query_param in bundled_query_params:
+            violations.append(f"bundled_contract_forbidden_query_param_present:{forbidden_query_param}")
+
+    bundled_responses = bundled_channels_get.get("responses", {})
+    if not isinstance(bundled_responses, dict):
+        violations.append("bundled_contract_channels_responses_invalid")
+        bundled_responses = {}
+    if "422" not in bundled_responses:
+        violations.append("bundled_contract_missing_channels_422_response")
+    if "ATTRIBUTION_WINDOW_OUT_OF_RANGE" not in bundled_contract_text:
+        violations.append("bundled_contract_missing_window_out_of_range_code")
+
     if not re.search(
         r"getChannelAttribution:\s*\{[\s\S]*?responses:\s*\{[\s\S]*?\b422:\s*\{",
         frontend_types_text,
@@ -221,6 +283,42 @@ def run_enforcement(
         violations.append("frontend_types_missing_channels_422_response")
     if "ATTRIBUTION_WINDOW_OUT_OF_RANGE" not in frontend_types_text:
         violations.append("frontend_types_missing_window_out_of_range_code")
+
+    required_typegen_tokens = (
+        'RELATIVE_BUNDLES_DIR="api-contracts/dist/openapi/v1"',
+        'generate "attribution.bundled.yaml" "attribution.ts"',
+        '"$OPENAPI_TYPESCRIPT_BIN" "$input_path" -o "$output_path"',
+    )
+    for token in required_typegen_tokens:
+        if token not in frontend_typegen_script_text:
+            violations.append(f"frontend_typegen_script_missing_token:{token}")
+
+    required_bundle_script_tokens = (
+        'bundle_one "$REDOCLY_BIN" attribution dist/openapi/v1/attribution.bundled.yaml',
+    )
+    for token in required_bundle_script_tokens:
+        if token not in contract_bundle_script_text:
+            violations.append(f"bundle_script_missing_token:{token}")
+
+    entrypoints = contract_entrypoints.get("entrypoints", [])
+    if not isinstance(entrypoints, list):
+        violations.append("contract_entrypoints_invalid")
+        entrypoints = []
+    attribution_entry = next(
+        (
+            item
+            for item in entrypoints
+            if isinstance(item, dict) and item.get("id") == "attribution"
+        ),
+        None,
+    )
+    if not isinstance(attribution_entry, dict):
+        violations.append("contract_entrypoints_missing_attribution_entry")
+    else:
+        if attribution_entry.get("source") != "api-contracts/openapi/v1/attribution.yaml":
+            violations.append("contract_entrypoints_attribution_source_mismatch")
+        if attribution_entry.get("bundle") != "api-contracts/dist/openapi/v1/attribution.bundled.yaml":
+            violations.append("contract_entrypoints_attribution_bundle_mismatch")
 
     required_runtime_tokens = (
         "test_b21_p3_channels_endpoint_reads_projection_without_recompute_and_preserves_decimal_strings",
@@ -301,7 +399,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--api-file", default=API_FILE)
     parser.add_argument("--schema-file", default=SCHEMA_FILE)
     parser.add_argument("--contract-file", default=CONTRACT_FILE)
+    parser.add_argument("--bundled-contract-file", default=BUNDLED_CONTRACT_FILE)
     parser.add_argument("--frontend-types-file", default=FRONTEND_TYPES_FILE)
+    parser.add_argument("--frontend-typegen-script-file", default=FRONTEND_TYPEGEN_SCRIPT_FILE)
+    parser.add_argument("--contract-bundle-script-file", default=CONTRACT_BUNDLE_SCRIPT_FILE)
+    parser.add_argument("--contract-entrypoints-file", default=CONTRACT_ENTRYPOINTS_FILE)
     parser.add_argument("--runtime-proof-file", default=RUNTIME_PROOF_FILE)
     parser.add_argument("--canonical-schema-file", default=CANONICAL_SCHEMA_FILE)
     parser.add_argument(
@@ -328,7 +430,11 @@ def main(argv: list[str]) -> int:
         api_file=_resolve(repo_root, args.api_file),
         schema_file=_resolve(repo_root, args.schema_file),
         contract_file=_resolve(repo_root, args.contract_file),
+        bundled_contract_file=_resolve(repo_root, args.bundled_contract_file),
         frontend_types_file=_resolve(repo_root, args.frontend_types_file),
+        frontend_typegen_script_file=_resolve(repo_root, args.frontend_typegen_script_file),
+        contract_bundle_script_file=_resolve(repo_root, args.contract_bundle_script_file),
+        contract_entrypoints_file=_resolve(repo_root, args.contract_entrypoints_file),
         runtime_proof_file=_resolve(repo_root, args.runtime_proof_file),
         canonical_schema_file=_resolve(repo_root, args.canonical_schema_file),
         trigger_alignment_migration_file=_resolve(
