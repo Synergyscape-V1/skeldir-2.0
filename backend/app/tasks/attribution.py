@@ -1549,7 +1549,7 @@ def recompute_window(
                 window_start=window_start_dt,
                 window_end=window_end_dt,
                 recompute_job_id=job_id,
-                model_version=job_model_version,
+                model_version=model_version,
                 replay_identity=replay_identity,
                 session_id=str(session_scope) if session_scope else None,
             )
@@ -1560,7 +1560,7 @@ def recompute_window(
                 window_start=window_start_dt,
                 window_end=window_end_dt,
                 recompute_job_id=job_id,
-                model_version=job_model_version,
+                model_version=model_version,
                 model_type=canonical_model_type,
                 replay_identity=replay_identity,
                 session_id=str(session_scope) if session_scope else None,
