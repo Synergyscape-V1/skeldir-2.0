@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, text
 
 from app.celery_app import celery_app
 from app.core.secrets import get_database_url
+from app.core.queues import QUEUE_BAYESIAN
 from app.tasks.bayesian import (
     PRODUCTION_BAYESIAN_SOFT_TIME_LIMIT_S,
     PRODUCTION_BAYESIAN_TIME_LIMIT_S,
@@ -91,7 +92,7 @@ def _start_worker(env: dict[str, str], log_path: Path) -> tuple[subprocess.Popen
         "--concurrency",
         "2",
         "-Q",
-        "attribution,housekeeping",
+        f"{QUEUE_BAYESIAN},housekeeping",
         "-l",
         "INFO",
     ]
@@ -197,7 +198,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
                 "continue_after_soft_timeout": True,
             },
             task_id=run_task_id,
-            queue="attribution",
+            queue=QUEUE_BAYESIAN,
         )
         run_error_class = ""
         run_error_message = ""
@@ -240,7 +241,7 @@ def test_b07_p5_bayesian_timeout_contract_real_worker() -> None:
             "app.tasks.bayesian.health_probe",
             kwargs={"tenant_id": str(uuid4()), "correlation_id": str(uuid4())},
             task_id=health_task_id,
-            queue="attribution",
+            queue=QUEUE_BAYESIAN,
         )
         _wait_for_output(
             worker_lines,

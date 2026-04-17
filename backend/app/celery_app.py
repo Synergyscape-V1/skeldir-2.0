@@ -21,6 +21,7 @@ from sqlalchemy.engine.url import make_url
 
 from app.core.queues import (
     QUEUE_ATTRIBUTION,
+    QUEUE_BAYESIAN,
     QUEUE_HOUSEKEEPING,
     QUEUE_LLM,
     QUEUE_MAINTENANCE,
@@ -276,6 +277,7 @@ def _ensure_celery_configured():
             Queue(QUEUE_MAINTENANCE, routing_key=f'{QUEUE_MAINTENANCE}.#'),
             Queue(QUEUE_LLM, routing_key=f'{QUEUE_LLM}.#'),
             Queue(QUEUE_ATTRIBUTION, routing_key=f'{QUEUE_ATTRIBUTION}.#'),
+            Queue(QUEUE_BAYESIAN, routing_key=f'{QUEUE_BAYESIAN}.#'),
         ],
         task_routes={
             'app.tasks.housekeeping.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
@@ -284,7 +286,7 @@ def _ensure_celery_configured():
             'app.tasks.matviews.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},
             'app.tasks.llm.*': {'queue': QUEUE_LLM, 'routing_key': f'{QUEUE_LLM}.task'},
             'app.tasks.attribution.*': {'queue': QUEUE_ATTRIBUTION, 'routing_key': f'{QUEUE_ATTRIBUTION}.task'},
-            'app.tasks.bayesian.*': {'queue': QUEUE_ATTRIBUTION, 'routing_key': f'{QUEUE_ATTRIBUTION}.task'},
+            'app.tasks.bayesian.*': {'queue': QUEUE_BAYESIAN, 'routing_key': f'{QUEUE_BAYESIAN}.task'},
             'app.tasks.r4_failure_semantics.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
             'app.tasks.r6_resource_governance.*': {'queue': QUEUE_HOUSEKEEPING, 'routing_key': f'{QUEUE_HOUSEKEEPING}.task'},
             'app.tasks.privacy.*': {'queue': QUEUE_MAINTENANCE, 'routing_key': f'{QUEUE_MAINTENANCE}.task'},

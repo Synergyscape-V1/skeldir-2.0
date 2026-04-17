@@ -17,9 +17,12 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from celery.exceptions import SoftTimeLimitExceeded
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine.url import make_url
 
 from app.celery_app import celery_app
 from app.core.config import settings
+from app.core.secrets import get_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,38 @@ def _as_uuid(raw: str | UUID) -> UUID:
     if isinstance(raw, UUID):
         return raw
     return UUID(str(raw))
+
+
+def _runtime_sync_database_url() -> str:
+    raw_url = get_database_url()
+    parsed = make_url(raw_url)
+    query = dict(parsed.query)
+    query.pop("channel_binding", None)
+    parsed = parsed.set(query=query)
+    driver = parsed.drivername
+    if driver.startswith("postgresql+"):
+        driver = "postgresql"
+    parsed = parsed.set(drivername=driver)
+    dsn_parts = [f"{driver}://"]
+    if parsed.username:
+        dsn_parts.append(parsed.username)
+        if parsed.password:
+            dsn_parts.append(":")
+            dsn_parts.append(parsed.password)
+        dsn_parts.append("@")
+    dsn_parts.append(parsed.host or "localhost")
+    if parsed.port:
+        dsn_parts.append(f":{parsed.port}")
+    if parsed.database:
+        dsn_parts.append(f"/{parsed.database}")
+    return "".join(dsn_parts)
+
+
+def _exercise_cpu(*, seed: int, cycles: int) -> int:
+    value = int(seed) & 0xFFFFFFFF
+    for idx in range(max(1, int(cycles))):
+        value = ((value << 5) - value + ((idx * 17) + 13)) & 0xFFFFFFFF
+    return value
 
 
 def _build_fallback_payload(*, task_id: str, tenant_id: UUID, correlation_id: UUID, elapsed_ms: int) -> dict:
@@ -99,7 +134,7 @@ def _emit_fallback_event(*, task_id: str, tenant_id: UUID, correlation_id: UUID,
 @celery_app.task(
     bind=True,
     name="app.tasks.bayesian.run_mcmc_inference",
-    routing_key="attribution.task",
+    routing_key="bayesian.task",
     soft_time_limit=_TASK_SOFT_LIMIT_S,
     time_limit=_TASK_HARD_LIMIT_S,
     acks_late=True,
@@ -190,8 +225,113 @@ def run_mcmc_inference(
 
 @celery_app.task(
     bind=True,
+    name="app.tasks.bayesian.run_resource_contention",
+    routing_key="bayesian.task",
+    soft_time_limit=120,
+    time_limit=150,
+    acks_late=True,
+    max_retries=0,
+)
+def run_resource_contention(
+    self,
+    *,
+    tenant_id: str,
+    correlation_id: str,
+    run_seconds: int = 8,
+    cpu_cycles_per_iteration: int = 40000,
+    db_round_trips_per_iteration: int = 4,
+) -> dict:
+    """
+    Consume CPU and Postgres throughput to emulate Bayesian contention physics.
+    """
+    tenant = _as_uuid(tenant_id)
+    correlation = _as_uuid(correlation_id)
+    task_id = str(self.request.id)
+    duration_s = max(1, int(run_seconds))
+    cpu_cycles = max(1000, int(cpu_cycles_per_iteration))
+    db_round_trips = max(1, int(db_round_trips_per_iteration))
+
+    logger.info(
+        "bayesian_resource_contention_started",
+        extra={
+            "event_type": "bayesian.compute",
+            "tenant_id": str(tenant),
+            "correlation_id": str(correlation),
+            "task_id": task_id,
+            "run_seconds": duration_s,
+            "cpu_cycles_per_iteration": cpu_cycles,
+            "db_round_trips_per_iteration": db_round_trips,
+        },
+    )
+    _append_probe_event(
+        {
+            "event": "bayesian_resource_contention_started",
+            "timestamp": _utc_now(),
+            "task_id": task_id,
+            "tenant_id": str(tenant),
+            "correlation_id": str(correlation),
+            "run_seconds": duration_s,
+            "cpu_cycles_per_iteration": cpu_cycles,
+            "db_round_trips_per_iteration": db_round_trips,
+        }
+    )
+
+    started_at = time.monotonic()
+    iterations = 0
+    db_queries = 0
+    cpu_accumulator = 0
+    runtime_sync_url = _runtime_sync_database_url()
+    db_engine = create_engine(
+        runtime_sync_url,
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+    try:
+        with db_engine.begin() as conn:
+            while (time.monotonic() - started_at) < duration_s:
+                cpu_accumulator = _exercise_cpu(seed=cpu_accumulator, cycles=cpu_cycles)
+                for _ in range(db_round_trips):
+                    conn.execute(
+                        text(
+                            """
+                            SELECT COALESCE(SUM(revenue_cents), 0) AS tenant_revenue_cents
+                            FROM attribution_events
+                            WHERE tenant_id = :tenant_id
+                            """
+                        ),
+                        {"tenant_id": str(tenant)},
+                    ).scalar_one()
+                    db_queries += 1
+                iterations += 1
+    finally:
+        db_engine.dispose()
+
+    elapsed_ms = int((time.monotonic() - started_at) * 1000)
+    payload = {
+        "status": "completed",
+        "task_id": task_id,
+        "tenant_id": str(tenant),
+        "correlation_id": str(correlation),
+        "elapsed_ms": elapsed_ms,
+        "iterations": iterations,
+        "db_queries": db_queries,
+        "cpu_accumulator": cpu_accumulator,
+    }
+    _append_probe_event(
+        {
+            "event": "bayesian_resource_contention_completed",
+            "timestamp": _utc_now(),
+            **payload,
+        }
+    )
+    return payload
+
+
+@celery_app.task(
+    bind=True,
     name="app.tasks.bayesian.health_probe",
-    routing_key="attribution.task",
+    routing_key="bayesian.task",
     soft_time_limit=30,
     time_limit=60,
     acks_late=False,

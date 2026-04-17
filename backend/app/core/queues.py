@@ -10,6 +10,7 @@ QUEUE_HOUSEKEEPING = "housekeeping"
 QUEUE_MAINTENANCE = "maintenance"
 QUEUE_LLM = "llm"
 QUEUE_ATTRIBUTION = "attribution"
+QUEUE_BAYESIAN = "bayesian"
 
 # Frozen set of all allowed queues for metrics policy enforcement
 ALLOWED_QUEUES: frozenset[str] = frozenset({
@@ -17,4 +18,5 @@ ALLOWED_QUEUES: frozenset[str] = frozenset({
     QUEUE_MAINTENANCE,
     QUEUE_LLM,
     QUEUE_ATTRIBUTION,
+    QUEUE_BAYESIAN,
 })
