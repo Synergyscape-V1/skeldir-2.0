@@ -62,3 +62,5 @@ def test_b21_p1_job_model_version_encodes_replay_identity_dimensions() -> None:
     assert "taxonomy=b2.1-p1-v1" in token
     assert "lookback_days=30" in token
     assert "session_scope=__all__" in token
+    assert "window_start=2025-01-01T00:00:00+00:00" in token
+    assert "window_end=2025-01-02T00:00:00+00:00" in token

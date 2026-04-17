@@ -258,6 +258,12 @@ tables:
         nullable: true
         foreign_key: "attribution_events(id) ON DELETE SET NULL"
         invariant: null
+
+      recompute_job_id:
+        type: UUID
+        nullable: true
+        foreign_key: "attribution_recompute_jobs(id) ON DELETE CASCADE"
+        invariant: analytics_important
         
       created_at:
         type: TIMESTAMPTZ
@@ -387,6 +393,17 @@ tables:
       - name: idx_attribution_allocations_tenant_event_model_channel
         columns: [tenant_id, event_id, model_version, channel_code]
         unique: true
+        where: "model_version IS NOT NULL AND recompute_job_id IS NULL"
+
+      - name: idx_attribution_allocations_tenant_event_projection_channel
+        columns: [tenant_id, event_id, recompute_job_id, channel_code]
+        unique: true
+        where: "recompute_job_id IS NOT NULL"
+
+      - name: idx_attribution_allocations_tenant_event_projection
+        columns: [tenant_id, event_id, recompute_job_id]
+        unique: false
+        where: "recompute_job_id IS NOT NULL"
         
       - name: idx_attribution_allocations_tenant_model_version
         columns: [tenant_id, model_version]

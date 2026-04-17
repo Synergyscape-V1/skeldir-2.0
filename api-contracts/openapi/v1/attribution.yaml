@@ -196,6 +196,25 @@ paths:
           $ref: './_common/base.yaml#/components/responses/NotFoundError'
         '409':
           $ref: './_common/base.yaml#/components/responses/ValidationError'
+        '422':
+          description: Projection window exceeds maximum supported range
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/problem+json:
+              schema:
+                $ref: './_common/base.yaml#/components/schemas/ProblemDetails'
+              example:
+                type: https://api.skeldir.com/problems/attribution-window-out-of-range
+                title: Projection Window Too Large
+                status: 422
+                detail: Requested projection window exceeds 31 days; read is fail-closed.
+                correlation_id: 11111111-1111-1111-1111-111111111111
+                timestamp: '2026-04-17T12:00:00Z'
+                code: ATTRIBUTION_WINDOW_OUT_OF_RANGE
       x-skeldir-b21-p0:
         implementation_status: mounted_deterministic_channels_surface
         authority_requirements:

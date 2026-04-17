@@ -18,7 +18,12 @@ TASK_FILE = "backend/app/tasks/attribution.py"
 API_FILE = "backend/app/api/attribution.py"
 SCHEMA_FILE = "backend/app/schemas/attribution.py"
 CONTRACT_FILE = "api-contracts/openapi/v1/attribution.yaml"
+FRONTEND_TYPES_FILE = "frontend/src/types/api/attribution.ts"
 RUNTIME_PROOF_FILE = "backend/tests/integration/test_b21_p3_persistence_read_surface_runtime.py"
+CANONICAL_SCHEMA_FILE = "db/schema/canonical_schema.sql"
+TRIGGER_ALIGNMENT_MIGRATION_FILE = (
+    "alembic/versions/007_skeldir_foundation/202604171330_b21_p3_projection_sum_validation_alignment.py"
+)
 WORKFLOW_FILE = ".github/workflows/ci.yml"
 REQUIRED_CHECKS_FILE = "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
 REQUIRED_CONTEXT = "B2.1-P3 Persistence Authority + Minimal Read Surface"
@@ -56,7 +61,10 @@ def run_enforcement(
     api_file: Path,
     schema_file: Path,
     contract_file: Path,
+    frontend_types_file: Path,
     runtime_proof_file: Path,
+    canonical_schema_file: Path,
+    trigger_alignment_migration_file: Path,
     workflow_file: Path,
     required_checks_file: Path,
 ) -> tuple[int, list[str]]:
@@ -67,7 +75,10 @@ def run_enforcement(
         api_file,
         schema_file,
         contract_file,
+        frontend_types_file,
         runtime_proof_file,
+        canonical_schema_file,
+        trigger_alignment_migration_file,
         workflow_file,
         required_checks_file,
     )
@@ -81,20 +92,31 @@ def run_enforcement(
     api_text = _read_text(api_file)
     schema_text = _read_text(schema_file)
     contract_text = _read_text(contract_file)
+    frontend_types_text = _read_text(frontend_types_file)
     contract_doc = _load_openapi(contract_file)
     runtime_text = _read_text(runtime_proof_file)
+    canonical_schema_text = _read_text(canonical_schema_file)
+    trigger_alignment_migration_text = _read_text(trigger_alignment_migration_file)
     workflow_text = _read_text(workflow_file)
     required_checks = _read_json(required_checks_file)
 
     required_task_tokens = (
         "recompute_job_id: UUID",
         "CAST(:recompute_job_ids AS uuid[])",
-        "recompute_job_id = EXCLUDED.recompute_job_id",
+        "{tenant_id}:{event_id}:{recompute_job_id}:{model_version}:{channel_code}",
+        "attribution_allocations.recompute_job_id = EXCLUDED.recompute_job_id",
         '"recompute_job_ids": []',
     )
     for token in required_task_tokens:
         if token not in task_text:
             violations.append(f"task_missing_token:{token}")
+
+    if re.search(
+        r"ON CONFLICT\s*\(id\)[\s\S]*?DO UPDATE SET[\s\S]*?(?<!\.)\brecompute_job_id\s*=\s*EXCLUDED\.recompute_job_id\b",
+        task_text,
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    ):
+        violations.append("task_forbidden_projection_reassignment:recompute_job_id_updated_on_id_conflict")
 
     required_api_tokens = (
         "required_query_parameters\": [\"model_type\", \"recompute_job_id\"]",
@@ -185,16 +207,70 @@ def run_enforcement(
         if forbidden_query_param in query_params:
             violations.append(f"contract_forbidden_query_param_present:{forbidden_query_param}")
 
+    responses = channels_get.get("responses", {})
+    if not isinstance(responses, dict):
+        violations.append("contract_channels_responses_invalid")
+        responses = {}
+    if "422" not in responses:
+        violations.append("contract_missing_channels_422_response")
+
+    if not re.search(
+        r"getChannelAttribution:\s*\{[\s\S]*?responses:\s*\{[\s\S]*?\b422:\s*\{",
+        frontend_types_text,
+    ):
+        violations.append("frontend_types_missing_channels_422_response")
+    if "ATTRIBUTION_WINDOW_OUT_OF_RANGE" not in frontend_types_text:
+        violations.append("frontend_types_missing_window_out_of_range_code")
+
     required_runtime_tokens = (
         "test_b21_p3_channels_endpoint_reads_projection_without_recompute_and_preserves_decimal_strings",
         "test_b21_p3_cross_tenant_projection_identity_is_fail_closed",
         "test_b21_p3_projection_window_bound_exceeds_limit_fails_closed",
+        "test_b21_p3_sequential_recompute_preserves_projection_row_ownership",
         "missing_shape.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY",
         "after_run_count == before_run_count",
     )
     for token in required_runtime_tokens:
         if token not in runtime_text:
             violations.append(f"runtime_proof_missing_token:{token}")
+
+    required_canonical_schema_tokens = (
+        "SELECT DISTINCT tenant_id, event_id, model_version, recompute_job_id",
+        "(a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)",
+        "a.recompute_job_id IS NULL",
+        "aa.recompute_job_id IS NULL",
+        "idx_attribution_allocations_tenant_event_projection ON public.attribution_allocations",
+    )
+    for token in required_canonical_schema_tokens:
+        if token not in canonical_schema_text:
+            violations.append(f"canonical_schema_missing_token:{token}")
+    canonical_scope_token = "(a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)"
+    canonical_scope_count = canonical_schema_text.count(canonical_scope_token)
+    if canonical_scope_count < 3:
+        violations.append(
+            "canonical_schema_projection_scope_count_lt_3:"
+            f"{canonical_scope_count}"
+        )
+
+    required_trigger_alignment_migration_tokens = (
+        'revision: str = "202604171330"',
+        'down_revision: Union[str, None] = "202604171200"',
+        "SELECT DISTINCT tenant_id, event_id, model_version, recompute_job_id",
+        "(a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)",
+        "a.recompute_job_id IS NULL",
+        "aa.recompute_job_id IS NULL",
+        "idx_attribution_allocations_tenant_event_projection",
+    )
+    for token in required_trigger_alignment_migration_tokens:
+        if token not in trigger_alignment_migration_text:
+            violations.append(f"trigger_alignment_migration_missing_token:{token}")
+    migration_scope_token = "(a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)"
+    migration_scope_count = trigger_alignment_migration_text.count(migration_scope_token)
+    if migration_scope_count < 3:
+        violations.append(
+            "trigger_alignment_migration_projection_scope_count_lt_3:"
+            f"{migration_scope_count}"
+        )
 
     required_workflow_tokens = (
         "Enforce B2.1-P3 persistence read-surface lock",
@@ -225,7 +301,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--api-file", default=API_FILE)
     parser.add_argument("--schema-file", default=SCHEMA_FILE)
     parser.add_argument("--contract-file", default=CONTRACT_FILE)
+    parser.add_argument("--frontend-types-file", default=FRONTEND_TYPES_FILE)
     parser.add_argument("--runtime-proof-file", default=RUNTIME_PROOF_FILE)
+    parser.add_argument("--canonical-schema-file", default=CANONICAL_SCHEMA_FILE)
+    parser.add_argument(
+        "--trigger-alignment-migration-file",
+        default=TRIGGER_ALIGNMENT_MIGRATION_FILE,
+    )
     parser.add_argument("--workflow-file", default=WORKFLOW_FILE)
     parser.add_argument("--required-checks-file", default=REQUIRED_CHECKS_FILE)
     parser.add_argument("--simulate-regression", action="store_true")
@@ -246,7 +328,13 @@ def main(argv: list[str]) -> int:
         api_file=_resolve(repo_root, args.api_file),
         schema_file=_resolve(repo_root, args.schema_file),
         contract_file=_resolve(repo_root, args.contract_file),
+        frontend_types_file=_resolve(repo_root, args.frontend_types_file),
         runtime_proof_file=_resolve(repo_root, args.runtime_proof_file),
+        canonical_schema_file=_resolve(repo_root, args.canonical_schema_file),
+        trigger_alignment_migration_file=_resolve(
+            repo_root,
+            args.trigger_alignment_migration_file,
+        ),
         workflow_file=_resolve(repo_root, args.workflow_file),
         required_checks_file=_resolve(repo_root, args.required_checks_file),
     )

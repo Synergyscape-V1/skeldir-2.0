@@ -13,7 +13,16 @@ TASK_FILE = REPO_ROOT / "backend" / "app" / "tasks" / "attribution.py"
 API_FILE = REPO_ROOT / "backend" / "app" / "api" / "attribution.py"
 SCHEMA_FILE = REPO_ROOT / "backend" / "app" / "schemas" / "attribution.py"
 CONTRACT_FILE = REPO_ROOT / "api-contracts" / "openapi" / "v1" / "attribution.yaml"
+FRONTEND_TYPES_FILE = REPO_ROOT / "frontend" / "src" / "types" / "api" / "attribution.ts"
 RUNTIME_FILE = REPO_ROOT / "backend" / "tests" / "integration" / "test_b21_p3_persistence_read_surface_runtime.py"
+CANONICAL_SCHEMA_FILE = REPO_ROOT / "db" / "schema" / "canonical_schema.sql"
+TRIGGER_ALIGNMENT_MIGRATION_FILE = (
+    REPO_ROOT
+    / "alembic"
+    / "versions"
+    / "007_skeldir_foundation"
+    / "202604171330_b21_p3_projection_sum_validation_alignment.py"
+)
 WORKFLOW_FILE = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 REQUIRED_CHECKS_FILE = REPO_ROOT / "contracts-internal" / "governance" / "b03_phase2_required_status_checks.main.json"
 
@@ -25,7 +34,10 @@ def test_b21_p3_persistence_read_surface_lock_enforcer_passes_repo_state() -> No
         api_file=API_FILE,
         schema_file=SCHEMA_FILE,
         contract_file=CONTRACT_FILE,
+        frontend_types_file=FRONTEND_TYPES_FILE,
         runtime_proof_file=RUNTIME_FILE,
+        canonical_schema_file=CANONICAL_SCHEMA_FILE,
+        trigger_alignment_migration_file=TRIGGER_ALIGNMENT_MIGRATION_FILE,
         workflow_file=WORKFLOW_FILE,
         required_checks_file=REQUIRED_CHECKS_FILE,
     )
@@ -102,6 +114,63 @@ def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_
     assert "contract_missing_required_query_param:model_type" in combined
 
 
+def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_contract_422_response(
+    tmp_path: Path,
+) -> None:
+    contract_regression = tmp_path / "attribution_contract_422.regression.yaml"
+    contract_regression.write_text(
+        CONTRACT_FILE.read_text(encoding="utf-8").replace(
+            "'422':",
+            "'422_removed':",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--contract-file",
+            str(contract_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert "contract_missing_channels_422_response" in combined
+
+
+def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_projection_reassignment_on_conflict(
+    tmp_path: Path,
+) -> None:
+    task_regression = tmp_path / "attribution_task.regression.py"
+    task_regression.write_text(
+        TASK_FILE.read_text(encoding="utf-8").replace(
+            "attribution_allocations.recompute_job_id = EXCLUDED.recompute_job_id",
+            "TRUE",
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--task-file",
+            str(task_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert "task_missing_token:attribution_allocations.recompute_job_id = EXCLUDED.recompute_job_id" in combined
+
+
 def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_workflow_hook(
     tmp_path: Path,
 ) -> None:
@@ -128,3 +197,32 @@ def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_
     assert proc.returncode != 0
     combined = f"{proc.stdout}\n{proc.stderr}"
     assert "workflow_missing_token:Enforce B2.1-P3 persistence read-surface lock" in combined
+
+
+def test_b21_p3_persistence_read_surface_lock_enforcer_negative_control_missing_projection_sum_scope(
+    tmp_path: Path,
+) -> None:
+    schema_regression = tmp_path / "canonical_schema.regression.sql"
+    schema_regression.write_text(
+        CANONICAL_SCHEMA_FILE.read_text(encoding="utf-8").replace(
+            "a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id",
+            "a.recompute_job_id IS NOT NULL",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--canonical-schema-file",
+            str(schema_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert "canonical_schema_projection_scope_count_lt_3:2" in combined

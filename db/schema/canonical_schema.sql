@@ -119,7 +119,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
             mismatch RECORD;
         BEGIN
             WITH affected AS (
-                SELECT DISTINCT tenant_id, event_id, model_version
+                SELECT DISTINCT tenant_id, event_id, model_version, recompute_job_id
                 FROM oldrows
                 WHERE event_id IS NOT NULL
             )
@@ -127,6 +127,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
                 a.tenant_id,
                 a.event_id,
                 a.model_version,
+                a.recompute_job_id,
                 s.allocated_sum AS allocated_sum,
                 e.revenue_cents AS event_revenue_cents,
                 ABS(s.allocated_sum - e.revenue_cents) AS drift_cents
@@ -140,7 +141,14 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
                 FROM attribution_allocations aa
                 WHERE aa.tenant_id = a.tenant_id
                   AND aa.event_id = a.event_id
-                  AND aa.model_version = a.model_version
+                  AND (
+                    (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
+                    OR (
+                        a.recompute_job_id IS NULL
+                        AND aa.recompute_job_id IS NULL
+                        AND aa.model_version = a.model_version
+                    )
+                  )
             ) s
             WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
@@ -169,7 +177,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             mismatch RECORD;
         BEGIN
             WITH affected AS (
-                SELECT DISTINCT tenant_id, event_id, model_version
+                SELECT DISTINCT tenant_id, event_id, model_version, recompute_job_id
                 FROM newrows
                 WHERE event_id IS NOT NULL
             )
@@ -177,6 +185,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
                 a.tenant_id,
                 a.event_id,
                 a.model_version,
+                a.recompute_job_id,
                 s.allocated_sum AS allocated_sum,
                 e.revenue_cents AS event_revenue_cents,
                 ABS(s.allocated_sum - e.revenue_cents) AS drift_cents
@@ -190,7 +199,14 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
                 FROM attribution_allocations aa
                 WHERE aa.tenant_id = a.tenant_id
                   AND aa.event_id = a.event_id
-                  AND aa.model_version = a.model_version
+                  AND (
+                    (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
+                    OR (
+                        a.recompute_job_id IS NULL
+                        AND aa.recompute_job_id IS NULL
+                        AND aa.model_version = a.model_version
+                    )
+                  )
             ) s
             WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
@@ -219,11 +235,11 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
             mismatch RECORD;
         BEGIN
             WITH affected AS (
-                SELECT DISTINCT tenant_id, event_id, model_version
+                SELECT DISTINCT tenant_id, event_id, model_version, recompute_job_id
                 FROM newrows
                 WHERE event_id IS NOT NULL
                 UNION
-                SELECT DISTINCT tenant_id, event_id, model_version
+                SELECT DISTINCT tenant_id, event_id, model_version, recompute_job_id
                 FROM oldrows
                 WHERE event_id IS NOT NULL
             )
@@ -231,6 +247,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
                 a.tenant_id,
                 a.event_id,
                 a.model_version,
+                a.recompute_job_id,
                 s.allocated_sum AS allocated_sum,
                 e.revenue_cents AS event_revenue_cents,
                 ABS(s.allocated_sum - e.revenue_cents) AS drift_cents
@@ -244,7 +261,14 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
                 FROM attribution_allocations aa
                 WHERE aa.tenant_id = a.tenant_id
                   AND aa.event_id = a.event_id
-                  AND aa.model_version = a.model_version
+                  AND (
+                    (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
+                    OR (
+                        a.recompute_job_id IS NULL
+                        AND aa.recompute_job_id IS NULL
+                        AND aa.model_version = a.model_version
+                    )
+                  )
             ) s
             WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
@@ -3043,7 +3067,20 @@ CREATE INDEX idx_attribution_allocations_tenant_event_model ON public.attributio
 -- Name: idx_attribution_allocations_tenant_event_model_channel; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_model_channel ON public.attribution_allocations USING btree (tenant_id, event_id, model_version, channel_code) WHERE (model_version IS NOT NULL);
+CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_model_channel ON public.attribution_allocations USING btree (tenant_id, event_id, model_version, channel_code) WHERE ((model_version IS NOT NULL) AND (recompute_job_id IS NULL));
+
+--
+-- Name: idx_attribution_allocations_tenant_event_projection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attribution_allocations_tenant_event_projection ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id) WHERE (recompute_job_id IS NOT NULL);
+
+
+--
+-- Name: idx_attribution_allocations_tenant_event_projection_channel; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_projection_channel ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id, channel_code) WHERE (recompute_job_id IS NOT NULL);
 
 
 --
