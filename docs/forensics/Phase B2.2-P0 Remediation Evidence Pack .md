@@ -125,10 +125,24 @@ Result:
 
 ## 6. Merge + Main CI Evidence
 
-Pending completion in this same remediation cycle:
-- PR URL: _to be populated after push_
-- Merge commit SHA on `main`: _to be populated after merge_
-- Authoritative `main` CI run URL: _to be populated after merge_
-- Required checks status on merge commit: _to be populated after merge_
+### 6.1 Authority-convergence landing on `main`
+- PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/347`
+- Merge timestamp (UTC): `2026-04-18T22:43:30Z`
+- Merge commit SHA on `main`: `a93ddf8296f6d1a68571cfa8304a4a6e9468a25e`
+- Main CI run URL for this merge commit: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24615568708`
+- Observed result on this first post-merge run: one failing job (`B1.5 P3 Runtime Route Binding and Review Enforcement`) caused by brittle YAML string mutation in a negative-control test after allowlist normalization to `bundles: {}`.
 
-This section will be finalized after protected-branch merge and post-merge green check verification.
+### 6.2 Post-merge CI stabilization (no B2.2 surface change)
+- Follow-up PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/348`
+- Follow-up merge timestamp (UTC): `2026-04-18T23:15:24Z`
+- Follow-up merge commit SHA on `main`: `0a98d2e40a5a01c06f64e463596a21b0d0d5e38d`
+- Follow-up change scope: `backend/tests/test_b15_p3_runtime_route_binding_enforcer.py` only, making skip-allowlist regression injection YAML-structural instead of brittle text append.
+- Authoritative main CI run URL (full-green proof): `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24616087341`
+- CI outcome: `status=completed`, `conclusion=success`.
+- Merge-commit check-run summary (`0a98d2e...`): `106` completed, `0` failures, `0` pending.
+
+### 6.3 Completion Statement
+Protected-branch workflow evidence now includes:
+- initial B2.2-P0 authority convergence merge to `main`,
+- post-merge CI stabilization,
+- at least one full-green `main` CI execution on the landed code path.
