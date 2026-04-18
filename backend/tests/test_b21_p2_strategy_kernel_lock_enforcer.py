@@ -14,6 +14,7 @@ STRATEGY_FILE = REPO_ROOT / "backend" / "app" / "attribution" / "strategy_kernel
 RUNTIME_FILE = REPO_ROOT / "backend" / "tests" / "integration" / "test_b21_p2_strategy_runtime.py"
 UNIT_FILE = REPO_ROOT / "backend" / "tests" / "test_b21_p2_strategy_kernel.py"
 WORKFLOW_FILE = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+REQUIRED_CHECKS_FILE = REPO_ROOT / "contracts-internal" / "governance" / "b03_phase2_required_status_checks.main.json"
 
 
 def test_b21_p2_strategy_kernel_lock_enforcer_passes_repo_state() -> None:
@@ -24,6 +25,7 @@ def test_b21_p2_strategy_kernel_lock_enforcer_passes_repo_state() -> None:
         runtime_proof_file=RUNTIME_FILE,
         unit_proof_file=UNIT_FILE,
         workflow_file=WORKFLOW_FILE,
+        required_checks_file=REQUIRED_CHECKS_FILE,
     )
     assert status == 0, f"unexpected enforcement violations: {violations}"
 
@@ -155,3 +157,31 @@ def test_b21_p2_strategy_kernel_lock_enforcer_negative_control_missing_workflow_
     assert proc.returncode != 0
     combined = f"{proc.stdout}\n{proc.stderr}"
     assert "workflow_missing_token:Enforce B2.1-P2 strategy kernel lock" in combined
+
+
+def test_b21_p2_strategy_kernel_lock_enforcer_negative_control_missing_required_context(
+    tmp_path: Path,
+) -> None:
+    checks_regression = tmp_path / "required_checks.regression.json"
+    checks_regression.write_text(
+        REQUIRED_CHECKS_FILE.read_text(encoding="utf-8").replace(
+            '"B2.1-P2 Strategy Kernel + Session Boundary Proofs",\n',
+            "",
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--required-checks-file",
+            str(checks_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert "required_checks_missing_b21_p2_context" in combined

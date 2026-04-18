@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +18,8 @@ CONTAINER_STACK_FILE = "".join(("dock", "er", "-compose.e2e.yml"))
 BENCHMARK_FILE = "scripts/benchmarks/b21_p4_queue_isolation_benchmark.py"
 BENCHMARK_ADJUDICATOR_FILE = "scripts/ci/enforce_b21_p4_benchmark_adjudication.py"
 CI_WORKFLOW_FILE = ".github/workflows/ci.yml"
+REQUIRED_CHECKS_FILE = "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
+REQUIRED_CONTEXT = "B2.1-P4 Queue Isolation + Performance Semantics Lock"
 
 
 def _resolve(repo_root: Path, value: str) -> Path:
@@ -29,6 +33,13 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    payload = json.loads(_read_text(path))
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON payload must be an object: {path}")
+    return payload
+
+
 def run_enforcement(
     *,
     repo_root: Path,
@@ -39,6 +50,7 @@ def run_enforcement(
     benchmark_file: Path,
     benchmark_adjudicator_file: Path,
     ci_workflow_file: Path,
+    required_checks_file: Path,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
     required_files = (
@@ -49,6 +61,7 @@ def run_enforcement(
         benchmark_file,
         benchmark_adjudicator_file,
         ci_workflow_file,
+        required_checks_file,
     )
     for required in required_files:
         if not required.exists():
@@ -63,6 +76,7 @@ def run_enforcement(
     benchmark_text = _read_text(benchmark_file)
     adjudicator_text = _read_text(benchmark_adjudicator_file)
     ci_text = _read_text(ci_workflow_file)
+    required_checks = _read_json(required_checks_file)
 
     queue_tokens = (
         'QUEUE_BAYESIAN = "bayesian"',
@@ -123,7 +137,7 @@ def run_enforcement(
             violations.append(f"benchmark_adjudicator_missing_token:{token}")
 
     ci_required_tokens = (
-        "needs: [checkout, validate-contracts, b21-p4-queue-isolation-performance-lock]",
+        "needs: [checkout, validate-contracts, b21-p2-strategy-kernel-session-boundary, b21-p4-queue-isolation-performance-lock]",
         "Enforce B2.1-P4 queue isolation and performance semantics lock",
         "Run B2.1-P4 queue isolation negative controls",
         "Run B2.1-P4 benchmark adjudication negative controls",
@@ -138,6 +152,12 @@ def run_enforcement(
     for token in ci_required_tokens:
         if token not in ci_text:
             violations.append(f"ci_workflow_missing_token:{token}")
+
+    required_contexts = required_checks.get("required_contexts", [])
+    if not isinstance(required_contexts, list):
+        violations.append("required_checks_required_contexts_invalid")
+    elif REQUIRED_CONTEXT not in required_contexts:
+        violations.append("required_checks_missing_b21_p4_context")
 
     return (1 if violations else 0), violations
 
@@ -156,6 +176,7 @@ def main(argv: list[str]) -> int:
         "--benchmark-adjudicator-file", default=BENCHMARK_ADJUDICATOR_FILE
     )
     parser.add_argument("--ci-workflow-file", default=CI_WORKFLOW_FILE)
+    parser.add_argument("--required-checks-file", default=REQUIRED_CHECKS_FILE)
     parser.add_argument("--simulate-regression", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -177,6 +198,7 @@ def main(argv: list[str]) -> int:
         benchmark_file=_resolve(repo_root, args.benchmark_file),
         benchmark_adjudicator_file=_resolve(repo_root, args.benchmark_adjudicator_file),
         ci_workflow_file=_resolve(repo_root, args.ci_workflow_file),
+        required_checks_file=_resolve(repo_root, args.required_checks_file),
     )
     lines = ["b21_p4_queue_isolation_semantics_lock_enforcer"]
     if status != 0:
