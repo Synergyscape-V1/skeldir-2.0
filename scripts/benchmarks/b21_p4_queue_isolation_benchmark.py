@@ -682,13 +682,17 @@ def _runtime_benchmark(
         else:
             raise ValueError(f"unsupported contention_mode: {contention_mode}")
 
+        bayes_queue = (
+            QUEUE_BAYESIAN
+            if topology_mode == "isolated"
+            else QUEUE_ATTRIBUTION
+        )
         bayes_async_result = celery_app.send_task(
             bayes_task_name,
             kwargs=bayes_kwargs,
             task_id=bayes_task_id,
-            queue=QUEUE_BAYESIAN,
+            queue=bayes_queue,
         )
-
         time.sleep(0.3)
 
         deterministic_task_id = f"b21-p4-attr-{uuid4().hex[:10]}"
