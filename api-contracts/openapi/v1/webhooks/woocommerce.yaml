@@ -2,155 +2,51 @@ openapi: 3.1.0
 info:
   title: Skeldir WooCommerce Webhooks
   version: 2.0.0
-  description: |
-    WooCommerce webhook schemas for order events.
+  description: 'WooCommerce webhook schemas for order events.
+
     Used for revenue verification and attribution tracking.
+
+    '
   contact:
     name: Skeldir Engineering
     email: engineering@skeldir.com
     url: https://skeldir.com
-
 servers:
-  - url: http://localhost:4016
-    description: Prism Mock Server (WooCommerce Webhooks)
-
+- url: http://localhost:4016
+  description: Prism Mock Server (WooCommerce Webhooks)
 tags:
-  - name: WooCommerce Webhooks
-    description: WooCommerce webhook endpoints for order events
-
+- name: WooCommerce Webhooks
+  description: WooCommerce webhook endpoints for order events
 security:
-  - tenantKeyAuth: []
-
+- tenantKeyAuth: []
 paths:
-  /api/webhooks/woocommerce/order/created:
-    post:
-      summary: WooCommerce order created webhook
-      description: Triggered when a new order is created in WooCommerce
-      operationId: woocommerceOrderCreated
-      tags:
-        - WooCommerce Webhooks
-      parameters:
-        - name: X-WC-Webhook-Signature
-          in: header
-          required: false
-          schema:
-            type: string
-          description: HMAC-SHA256 signature for webhook verification
-        - name: X-WC-Webhook-Topic
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order.created]
-          description: Webhook topic
-        - name: X-WC-Webhook-Resource
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WooCommerceOrder'
-            example:
-              id: 12345
-              order_key: wc_order_abc123
-              number: "1001"
-              status: processing
-              total: "199.99"
-              currency: USD
-              date_created: '2025-11-26T14:30:00Z'
-              meta_data:
-                - id: 1
-                  key: skeldir_session_id
-                  value: sess_abc123
-                - id: 2
-                  key: utm_source
-                  value: google
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-        '500':
-          $ref: '../_common/base.yaml#/components/responses/ServerError'
-
-  /api/webhooks/woocommerce/order/updated:
-    post:
-      summary: WooCommerce order updated webhook
-      description: Triggered when an order is updated in WooCommerce
-      operationId: woocommerceOrderUpdated
-      tags:
-        - WooCommerce Webhooks
-      parameters:
-        - name: X-WC-Webhook-Signature
-          in: header
-          required: false
-          schema:
-            type: string
-        - name: X-WC-Webhook-Topic
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order.updated]
-        - name: X-WC-Webhook-Resource
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WooCommerceOrder'
-            example:
-              id: 12345
-              order_key: wc_order_update_12345
-              date_created: '2025-11-26T14:30:00Z'
-              status: processing
-              total: "199.99"
-              currency: USD
-              meta_data:
-                - id: 1
-                  key: skeldir_session_id
-                  value: sess_update123
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-
   /api/webhooks/woocommerce/order_completed:
     post:
       summary: WooCommerce order completed webhook
       description: Triggered when an order is marked as completed
       operationId: woocommerceOrderCompleted
       tags:
-        - WooCommerce Webhooks
+      - WooCommerce Webhooks
       parameters:
-        - name: X-WC-Webhook-Signature
-          in: header
-          required: false
-          schema:
-            type: string
-        - name: X-WC-Webhook-Topic
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order.completed]
-        - name: X-WC-Webhook-Resource
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order]
+      - name: X-WC-Webhook-Signature
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: X-WC-Webhook-Topic
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - order.completed
+      - name: X-WC-Webhook-Resource
+        in: header
+        required: false
+        schema:
+          type: string
+          enum:
+          - order
       requestBody:
         required: true
         content:
@@ -161,84 +57,30 @@ paths:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
         '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-
-  /api/webhooks/woocommerce/order/refunded:
-    post:
-      summary: WooCommerce order refunded webhook
-      description: Triggered when an order refund is initiated
-      operationId: woocommerceOrderRefunded
-      tags:
-        - WooCommerce Webhooks
-      parameters:
-        - name: X-WC-Webhook-Signature
-          in: header
-          required: false
-          schema:
-            type: string
-        - name: X-WC-Webhook-Topic
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order.refunded]
-        - name: X-WC-Webhook-Resource
-          in: header
-          required: false
-          schema:
-            type: string
-            enum: [order]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WooCommerceOrder'
-            example:
-              id: 12345
-              order_key: wc_order_ref_12345
-              date_created: '2025-11-26T14:30:00Z'
-              status: refunded
-              total: "199.99"
-              currency: USD
-              refunds:
-                - id: 9876
-                  amount: "199.99"
-                  reason: customer_request
-              meta_data:
-                - id: 1
-                  key: skeldir_session_id
-                  value: sess_refund123
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-
+          $ref: ../_common/base.yaml#/components/responses/UnauthorizedError
 components:
   securitySchemes:
     tenantKeyAuth:
-      $ref: '../_common/base.yaml#/components/securitySchemes/tenantKeyAuth'
+      $ref: ../_common/base.yaml#/components/securitySchemes/tenantKeyAuth
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
       content:
         application/json:
           schema:
-            $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+            $ref: ../_common/base.yaml#/components/schemas/SuccessResponse
           example:
             success: true
             correlation_id: 00000000-0000-0000-0000-000000000000
             message: Webhook received
-
   schemas:
     WooCommerceOrder:
       type: object
       required:
-        - id
-        - order_key
-        - total
-        - date_created
+      - id
+      - order_key
+      - total
+      - date_created
       properties:
         id:
           type: integer
@@ -251,7 +93,14 @@ components:
           description: Order number
         status:
           type: string
-          enum: [pending, processing, on-hold, completed, cancelled, refunded, failed]
+          enum:
+          - pending
+          - processing
+          - on-hold
+          - completed
+          - cancelled
+          - refunded
+          - failed
           description: Order status
         total:
           type: string
@@ -264,7 +113,7 @@ components:
           description: Total tax amount
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
+          pattern: ^[A-Z]{3}$
           description: Currency code
           example: USD
         date_created:

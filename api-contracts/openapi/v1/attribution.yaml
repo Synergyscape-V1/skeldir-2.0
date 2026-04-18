@@ -212,6 +212,7 @@ paths:
                 title: Projection Window Too Large
                 status: 422
                 detail: Requested projection window exceeds 31 days; read is fail-closed.
+                instance: https://api.skeldir.com/api/attribution/channels
                 correlation_id: 11111111-1111-1111-1111-111111111111
                 timestamp: '2026-04-17T12:00:00Z'
                 code: ATTRIBUTION_WINDOW_OUT_OF_RANGE

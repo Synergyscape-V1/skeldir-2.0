@@ -190,6 +190,14 @@ jobs:
           pytest backend/tests/test_b17_p6_adjudication_plane_enforcer.py -q
           pytest backend/tests/test_b17_p6_benchmark_adjudication_enforcer.py -q
 
+      - name: Enforce B2.2-P0 webhook declared surface lock
+        run: |
+          python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
+
+      - name: Run B2.2-P0 webhook declared surface negative controls
+        run: |
+          pytest backend/tests/test_b22_p0_webhook_surface_lock_enforcer.py -q
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q

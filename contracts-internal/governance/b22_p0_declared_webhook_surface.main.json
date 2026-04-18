@@ -1,0 +1,50 @@
+{
+  "contract_id": "b22.p0.declared_webhook_surface.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.2-P0",
+  "description": "Canonical declared webhook ingress surface for B2.2-P0 runtime/contract authority convergence.",
+  "operations": [
+    {
+      "method": "POST",
+      "path": "/api/webhooks/shopify/order_create",
+      "provider": "shopify",
+      "source_contract": "api-contracts/openapi/v1/webhooks/shopify.yaml",
+      "bundle": "api-contracts/dist/openapi/v1/webhooks.shopify.bundled.yaml",
+      "generated_type": "frontend/src/types/api/webhooks-shopify.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/stripe/payment_intent_succeeded",
+      "provider": "stripe",
+      "source_contract": "api-contracts/openapi/v1/webhooks/stripe.yaml",
+      "bundle": "api-contracts/dist/openapi/v1/webhooks.stripe.bundled.yaml",
+      "generated_type": "frontend/src/types/api/webhooks-stripe.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/stripe/payment_intent/succeeded",
+      "provider": "stripe",
+      "source_contract": "api-contracts/openapi/v1/webhooks/stripe.yaml",
+      "bundle": "api-contracts/dist/openapi/v1/webhooks.stripe.bundled.yaml",
+      "generated_type": "frontend/src/types/api/webhooks-stripe.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/paypal/sale_completed",
+      "provider": "paypal",
+      "source_contract": "api-contracts/openapi/v1/webhooks/paypal.yaml",
+      "bundle": "api-contracts/dist/openapi/v1/webhooks.paypal.bundled.yaml",
+      "generated_type": "frontend/src/types/api/webhooks-paypal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/api/webhooks/woocommerce/order_completed",
+      "provider": "woocommerce",
+      "source_contract": "api-contracts/openapi/v1/webhooks/woocommerce.yaml",
+      "bundle": "api-contracts/dist/openapi/v1/webhooks.woocommerce.bundled.yaml",
+      "generated_type": "frontend/src/types/api/webhooks-woocommerce.ts"
+    }
+  ]
+}

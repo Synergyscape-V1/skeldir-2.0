@@ -73,16 +73,16 @@ webhooks_shopify:
 webhooks_stripe:
   requirements:
     - requirement_id: STRIPE-001
-      operation_id: stripeChargeSucceeded
+      operation_id: stripePaymentIntentSucceeded
       status: implemented
       canonical_event: purchase_completed
-      description: Stripe charge succeeded webhook
+      description: Stripe payment_intent.succeeded webhook
 
     - requirement_id: STRIPE-002
       operation_id: stripeChargeRefunded
-      status: implemented
+      status: planned
       canonical_event: refund_issued
-      description: Stripe charge refunded webhook
+      description: Stripe charge.refunded webhook (B2.4 scope)
 
 webhooks_woocommerce:
   requirements:
