@@ -153,6 +153,14 @@ jobs:
         run: |
           pytest backend/tests/test_b21_p5_nonvacuous_adjudication_enforcer.py -q
 
+      - name: Enforce B2.1-P6 full-chain closure and downstream-readiness lock
+        run: |
+          python scripts/ci/enforce_b21_p6_full_chain_closure.py
+
+      - name: Run B2.1-P6 closure negative controls
+        run: |
+          pytest backend/tests/test_b21_p6_full_chain_closure_enforcer.py -q
+
       - name: Run B1.7-P1 negative controls
         run: |
           pytest backend/tests/test_b17_p0_explanation_surface_lock_enforcer.py -q
@@ -680,6 +688,130 @@ jobs:
       - name: Run B2.1-P5 adjudication negative controls
         run: |
           pytest backend/tests/test_b21_p5_nonvacuous_adjudication_enforcer.py -q
+
+  b21-p6-full-chain-closure-readiness:
+    name: B2.1-P6 Full End-to-End Closure + Downstream Readiness
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts, b21-p0-runtime-authority-closeout, b21-p1-semantic-replay-lock, b21-p2-strategy-kernel-session-boundary, b21-p3-persistence-read-surface, b21-p4-queue-isolation-performance-lock, b21-p5-non-vacuous-proof-harness]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p6
+      RUNTIME_SYNC_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b21_p6
+      EXPECTED_RUNTIME_DB_USER: app_user
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      ATTRIBUTION_DETERMINISTIC_DEFAULT_LOOKBACK_DAYS: "30"
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CONTRACT_TESTING: "0"
+      CI: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.1-P6 runtime closure boundary
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name "skeldir_b21_p6" \
+            --runtime-user "app_user" \
+            --runtime-password "app_user" \
+            --migration-user "migration_owner" \
+            --migration-password "migration_owner" \
+            --app-rw-role "app_rw" \
+            --app-ro-role "app_ro"
+
+      - name: Apply migrations using formal migration authority
+        env:
+          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p6
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p6
+        run: |
+          alembic upgrade head
+
+      - name: Enforce migration metadata least privilege boundary
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d skeldir_b21_p6 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
+
+      - name: Run B2.1-P6 composed runtime chain proofs
+        run: |
+          pytest backend/tests/integration/test_b21_p6_end_to_end_runtime.py -q
+
+      - name: Run B2.1-P6 isolated queue benchmark (10K under 5s)
+        run: |
+          mkdir -p artifacts/b21_p6_benchmark
+          python scripts/benchmarks/b21_p4_queue_isolation_benchmark.py \
+            --mode measure \
+            --topology-mode isolated \
+            --contention-mode real \
+            --event-count 10000 \
+            --threshold-seconds 5 \
+            --contention-duration-seconds 7 \
+            --output artifacts/b21_p6_benchmark/isolated_real.json
+
+      - name: Run B2.1-P6 co-routed benchmark negative control
+        run: |
+          python scripts/benchmarks/b21_p4_queue_isolation_benchmark.py \
+            --mode measure \
+            --topology-mode corouted_shared_worker \
+            --contention-mode real \
+            --event-count 10000 \
+            --threshold-seconds 5 \
+            --contention-duration-seconds 7 \
+            --output artifacts/b21_p6_benchmark/corouted_real.json
+
+      - name: Enforce B2.1-P6 benchmark adjudication
+        run: |
+          python scripts/ci/enforce_b21_p4_benchmark_adjudication.py \
+            --isolated-file artifacts/b21_p6_benchmark/isolated_real.json \
+            --corouted-file artifacts/b21_p6_benchmark/corouted_real.json \
+            --required-event-count 10000 \
+            --min-contention-db-queries 20 \
+            --min-contention-iterations 2 \
+            --threshold-seconds 5
+
+      - name: Enforce B2.1-P6 full-chain closure and downstream-readiness lock
+        run: |
+          python scripts/ci/enforce_b21_p6_full_chain_closure.py
+
+      - name: Run B2.1-P6 closure negative controls
+        run: |
+          pytest backend/tests/test_b21_p6_full_chain_closure_enforcer.py -q
+
+      - name: Upload B2.1-P6 benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: b21-p6-full-chain-benchmark
+          path: artifacts/b21_p6_benchmark
+          if-no-files-found: error
 
   b17-explanation-runtime-adjudication:
     name: B1.7 Explanation Runtime Adjudication

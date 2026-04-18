@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.5.0",
+  "contract_version": "1.6.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -52,6 +52,7 @@
     "B2.1-P3 Persistence Authority + Minimal Read Surface",
     "B2.1-P4 Queue Isolation + Performance Semantics Lock",
     "B2.1-P5 Non-Vacuous Proof Harness + Merge-Blocking Adjudication",
+    "B2.1-P6 Full End-to-End Closure + Downstream Readiness",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark"
   ],
