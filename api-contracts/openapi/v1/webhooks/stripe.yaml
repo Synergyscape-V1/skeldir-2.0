@@ -2,82 +2,38 @@ openapi: 3.1.0
 info:
   title: Skeldir Stripe Webhooks
   version: 2.0.0
-  description: |
-    Stripe webhook schemas for payment events.
+  description: 'Stripe webhook schemas for payment events.
+
     Used for payment verification and revenue reconciliation.
+
+    '
   contact:
     name: Skeldir Engineering
     email: engineering@skeldir.com
     url: https://skeldir.com
-
 servers:
-  - url: http://localhost:4017
-    description: Prism Mock Server (Stripe Webhooks)
-
+- url: http://localhost:4017
+  description: Prism Mock Server (Stripe Webhooks)
 tags:
-  - name: Stripe Webhooks
-    description: Stripe webhook endpoints for payment events
-
+- name: Stripe Webhooks
+  description: Stripe webhook endpoints for payment events
 security:
-  - tenantKeyAuth: []
-
+- tenantKeyAuth: []
 paths:
-  /api/webhooks/stripe/charge/succeeded:
-    post:
-      summary: Stripe charge succeeded webhook
-      description: Triggered when a charge is successfully completed
-      operationId: stripeChargeSucceeded
-      tags:
-        - Stripe Webhooks
-      parameters:
-        - name: Stripe-Signature
-          in: header
-          required: false
-          schema:
-            type: string
-          description: Stripe webhook signature for verification
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StripeEvent'
-            example:
-              id: evt_1234567890
-              type: charge.succeeded
-              created: 1732631400
-              data:
-                object:
-                  id: ch_1234567890
-                  amount: 19999
-                  currency: usd
-                  status: succeeded
-                  metadata:
-                    skeldir_session_id: sess_abc123
-                    order_id: ord_12345
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '400':
-          $ref: '../_common/base.yaml#/components/responses/ValidationError'
-        '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-        '500':
-          $ref: '../_common/base.yaml#/components/responses/ServerError'
-
   /api/webhooks/stripe/payment_intent_succeeded:
     post:
       summary: Stripe payment intent succeeded webhook (legacy path)
-      description: Triggered when a payment intent is successfully completed (legacy endpoint)
+      description: Triggered when a payment intent is successfully completed (legacy
+        endpoint)
       operationId: stripePaymentIntentSucceededLegacy
       tags:
-        - Stripe Webhooks
+      - Stripe Webhooks
       parameters:
-        - name: Stripe-Signature
-          in: header
-          required: false
-          schema:
-            type: string
+      - name: Stripe-Signature
+        in: header
+        required: false
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -100,25 +56,24 @@ paths:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
         '400':
-          $ref: '../_common/base.yaml#/components/responses/ValidationError'
+          $ref: ../_common/base.yaml#/components/responses/ValidationError
         '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
+          $ref: ../_common/base.yaml#/components/responses/UnauthorizedError
         '500':
-          $ref: '../_common/base.yaml#/components/responses/ServerError'
-
+          $ref: ../_common/base.yaml#/components/responses/ServerError
   /api/webhooks/stripe/payment_intent/succeeded:
     post:
       summary: Stripe payment intent succeeded webhook
       description: Triggered when a payment intent is successfully completed
       operationId: stripePaymentIntentSucceeded
       tags:
-        - Stripe Webhooks
+      - Stripe Webhooks
       parameters:
-        - name: Stripe-Signature
-          in: header
-          required: false
-          schema:
-            type: string
+      - name: Stripe-Signature
+        in: header
+        required: false
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -141,77 +96,34 @@ paths:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
         '400':
-          $ref: '../_common/base.yaml#/components/responses/ValidationError'
+          $ref: ../_common/base.yaml#/components/responses/ValidationError
         '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
+          $ref: ../_common/base.yaml#/components/responses/UnauthorizedError
         '500':
-          $ref: '../_common/base.yaml#/components/responses/ServerError'
-
-  /api/webhooks/stripe/charge/refunded:
-    post:
-      summary: Stripe charge refunded webhook
-      description: Triggered when a charge is refunded
-      operationId: stripeChargeRefunded
-      tags:
-        - Stripe Webhooks
-      parameters:
-        - name: Stripe-Signature
-          in: header
-          required: false
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StripeEvent'
-            example:
-              id: evt_refund_1234567890
-              type: charge.refunded
-              created: 1732631500
-              data:
-                object:
-                  id: ch_1234567890
-                  amount: 19999
-                  currency: usd
-                  status: refunded
-                  metadata:
-                    skeldir_session_id: sess_refund123
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '400':
-          $ref: '../_common/base.yaml#/components/responses/ValidationError'
-        '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-        '500':
-          $ref: '../_common/base.yaml#/components/responses/ServerError'
-
+          $ref: ../_common/base.yaml#/components/responses/ServerError
 components:
   securitySchemes:
     tenantKeyAuth:
-      $ref: '../_common/base.yaml#/components/securitySchemes/tenantKeyAuth'
+      $ref: ../_common/base.yaml#/components/securitySchemes/tenantKeyAuth
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
       content:
         application/json:
           schema:
-            $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+            $ref: ../_common/base.yaml#/components/schemas/SuccessResponse
           example:
             success: true
             correlation_id: 00000000-0000-0000-0000-000000000000
             message: Webhook received
-
   schemas:
     StripeEvent:
       type: object
       required:
-        - id
-        - type
-        - data
-        - created
+      - id
+      - type
+      - data
+      - created
       properties:
         id:
           type: string
@@ -220,10 +132,10 @@ components:
         type:
           type: string
           enum:
-            - charge.succeeded
-            - charge.refunded
-            - payment_intent.succeeded
-            - payment_intent.payment_failed
+          - charge.succeeded
+          - charge.refunded
+          - payment_intent.succeeded
+          - payment_intent.payment_failed
           description: Event type
         created:
           type: integer
@@ -234,18 +146,17 @@ components:
         data:
           type: object
           required:
-            - object
+          - object
           properties:
             object:
               $ref: '#/components/schemas/StripeCharge'
-
     StripeCharge:
       type: object
       required:
-        - id
-        - amount
-        - currency
-        - status
+      - id
+      - amount
+      - currency
+      - status
       properties:
         id:
           type: string
@@ -261,12 +172,16 @@ components:
           example: 0
         currency:
           type: string
-          pattern: '^[a-z]{3}$'
+          pattern: ^[a-z]{3}$
           description: Three-letter currency code
           example: usd
         status:
           type: string
-          enum: [succeeded, pending, failed, refunded]
+          enum:
+          - succeeded
+          - pending
+          - failed
+          - refunded
         paid:
           type: boolean
           description: Whether the charge was paid

@@ -60,7 +60,34 @@ def _contract_runtime_auth_fixture(monkeypatch):
     async def _no_revocation_check(_token_claims):
         return None
 
+    async def _deterministic_tenant_lookup(_api_key: str):
+        return {
+            "tenant_id": uuid.UUID("00000000-0000-0000-0000-000000000000"),
+            "shopify_webhook_secret": "shopify_secret",
+            "stripe_webhook_secret": "stripe_secret",
+            "paypal_webhook_secret": "paypal_secret",
+            "woocommerce_webhook_secret": "woo_secret",
+        }
+
+    def _always_fail_signature(_payload: bytes, _secret: str | None, _header: str | None) -> bool:
+        return False
+
     monkeypatch.setattr("app.security.auth.assert_access_token_active", _no_revocation_check)
+    monkeypatch.setattr(
+        webhooks_api,
+        "get_tenant_with_webhook_secrets",
+        _deterministic_tenant_lookup,
+    )
+    monkeypatch.setattr(
+        webhooks_api,
+        "WEBHOOK_VERIFIERS",
+        {
+            "shopify": ("shopify_webhook_secret", _always_fail_signature),
+            "stripe": ("stripe_webhook_secret", _always_fail_signature),
+            "paypal": ("paypal_webhook_secret", _always_fail_signature),
+            "woocommerce": ("woocommerce_webhook_secret", _always_fail_signature),
+        },
+    )
 
 
 def load_scope_config() -> dict:
@@ -220,11 +247,6 @@ def test_contract_semantic_conformance(spec_path: Path):
             for p in getattr(operation.security, "_parameters", [])
             if isinstance(p, dict)
         }
-        # Webhook contracts use tenant API keys and signature semantics that do not
-        # fit generic Schemathesis auth/header generation. P8 parity is asserted in
-        # dedicated runtime tests below.
-        if "X-Skeldir-Tenant-Key" in security_param_names:
-            continue
         try:
             executed_in_scope += 1
             case = operation.as_strategy().example()

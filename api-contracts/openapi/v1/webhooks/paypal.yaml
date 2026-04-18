@@ -2,25 +2,23 @@ openapi: 3.1.0
 info:
   title: Skeldir PayPal Webhooks
   version: 2.0.0
-  description: |
-    PayPal webhook schemas for payment capture events.
+  description: 'PayPal webhook schemas for payment capture events.
+
     Used for payment verification and revenue reconciliation.
+
+    '
   contact:
     name: Skeldir Engineering
     email: engineering@skeldir.com
     url: https://skeldir.com
-
 servers:
-  - url: http://localhost:4018
-    description: Prism Mock Server (PayPal Webhooks)
-
+- url: http://localhost:4018
+  description: Prism Mock Server (PayPal Webhooks)
 tags:
-  - name: PayPal Webhooks
-    description: PayPal webhook endpoints for payment events
-
+- name: PayPal Webhooks
+  description: PayPal webhook endpoints for payment events
 security:
-  - tenantKeyAuth: []
-
+- tenantKeyAuth: []
 paths:
   /api/webhooks/paypal/sale_completed:
     post:
@@ -28,27 +26,27 @@ paths:
       description: Triggered when a PayPal payment sale is completed
       operationId: paypalSaleCompleted
       tags:
-        - PayPal Webhooks
+      - PayPal Webhooks
       parameters:
-        - name: PAYPAL-TRANSMISSION-ID
-          in: header
-          required: false
-          schema:
-            type: string
-          description: PayPal transmission ID
-        - name: PAYPAL-TRANSMISSION-SIG
-          in: header
-          required: false
-          schema:
-            type: string
-          description: PayPal transmission signature
-        - name: PAYPAL-CERT-URL
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uri
-          description: URL to PayPal certificate for verification
+      - name: PAYPAL-TRANSMISSION-ID
+        in: header
+        required: false
+        schema:
+          type: string
+        description: PayPal transmission ID
+      - name: PAYPAL-TRANSMISSION-SIG
+        in: header
+        required: false
+        schema:
+          type: string
+        description: PayPal transmission signature
+      - name: PAYPAL-CERT-URL
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uri
+        description: URL to PayPal certificate for verification
       requestBody:
         required: true
         content:
@@ -60,128 +58,43 @@ paths:
               event_type: PAYMENT.SALE.COMPLETED
               create_time: '2025-11-26T14:30:00Z'
               resource:
-                id: "1234567890"
+                id: '1234567890'
                 state: completed
                 amount:
-                  total: "199.99"
+                  total: '199.99'
                   currency: USD
                 custom_id: sess_abc123
       responses:
         '200':
           $ref: '#/components/responses/WebhookAccepted'
         '400':
-          $ref: '../_common/base.yaml#/components/responses/ValidationError'
+          $ref: ../_common/base.yaml#/components/responses/ValidationError
         '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
+          $ref: ../_common/base.yaml#/components/responses/UnauthorizedError
         '500':
-          $ref: '../_common/base.yaml#/components/responses/ServerError'
-
-  /api/webhooks/paypal/payment/capture/completed:
-    post:
-      summary: PayPal payment capture completed webhook
-      description: Triggered when a PayPal payment capture is completed
-      operationId: paypalPaymentCaptureCompleted
-      tags:
-        - PayPal Webhooks
-      parameters:
-        - name: PAYPAL-TRANSMISSION-ID
-          in: header
-          required: false
-          schema:
-            type: string
-        - name: PAYPAL-TRANSMISSION-SIG
-          in: header
-          required: false
-          schema:
-            type: string
-        - name: PAYPAL-CERT-URL
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uri
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PayPalEvent'
-            example:
-              id: WH-9876543210
-              event_type: PAYMENT.CAPTURE.COMPLETED
-              create_time: '2025-11-26T15:00:00Z'
-              resource:
-                id: "CAP-1234567890"
-                state: completed
-                amount:
-                  total: "249.99"
-                  currency: USD
-                custom_id: sess_xyz789
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-
-  /api/webhooks/paypal/payment/sale/refunded:
-    post:
-      summary: PayPal sale refunded webhook
-      description: Triggered when a PayPal payment is refunded
-      operationId: paypalSaleRefunded
-      tags:
-        - PayPal Webhooks
-      parameters:
-        - name: PAYPAL-TRANSMISSION-ID
-          in: header
-          required: false
-          schema:
-            type: string
-        - name: PAYPAL-TRANSMISSION-SIG
-          in: header
-          required: false
-          schema:
-            type: string
-        - name: PAYPAL-CERT-URL
-          in: header
-          required: false
-          schema:
-            type: string
-            format: uri
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PayPalEvent'
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '401':
-          $ref: '../_common/base.yaml#/components/responses/UnauthorizedError'
-
+          $ref: ../_common/base.yaml#/components/responses/ServerError
 components:
   securitySchemes:
     tenantKeyAuth:
-      $ref: '../_common/base.yaml#/components/securitySchemes/tenantKeyAuth'
+      $ref: ../_common/base.yaml#/components/securitySchemes/tenantKeyAuth
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
       content:
         application/json:
           schema:
-            $ref: '../_common/base.yaml#/components/schemas/SuccessResponse'
+            $ref: ../_common/base.yaml#/components/schemas/SuccessResponse
           example:
             success: true
             correlation_id: 00000000-0000-0000-0000-000000000000
             message: Webhook received
-
   schemas:
     PayPalEvent:
       type: object
       required:
-        - id
-        - event_type
-        - resource
+      - id
+      - event_type
+      - resource
       properties:
         id:
           type: string
@@ -190,10 +103,10 @@ components:
         event_type:
           type: string
           enum:
-            - PAYMENT.SALE.COMPLETED
-            - PAYMENT.CAPTURE.COMPLETED
-            - PAYMENT.SALE.REFUNDED
-            - PAYMENT.CAPTURE.REFUNDED
+          - PAYMENT.SALE.COMPLETED
+          - PAYMENT.CAPTURE.COMPLETED
+          - PAYMENT.SALE.REFUNDED
+          - PAYMENT.CAPTURE.REFUNDED
           description: Type of PayPal event
         create_time:
           type: string
@@ -207,33 +120,36 @@ components:
           description: Human-readable event summary
         resource:
           $ref: '#/components/schemas/PayPalResource'
-
     PayPalResource:
       type: object
       required:
-        - id
-        - amount
+      - id
+      - amount
       properties:
         id:
           type: string
           description: Resource ID
         state:
           type: string
-          enum: [completed, pending, refunded, partially_refunded]
+          enum:
+          - completed
+          - pending
+          - refunded
+          - partially_refunded
           description: Current state of the resource
         amount:
           type: object
           required:
-            - total
-            - currency
+          - total
+          - currency
           properties:
             total:
               type: string
               description: Total amount as string
-              example: "199.99"
+              example: '199.99'
             currency:
               type: string
-              pattern: '^[A-Z]{3}$'
+              pattern: ^[A-Z]{3}$
               description: Currency code
               example: USD
         custom_id:

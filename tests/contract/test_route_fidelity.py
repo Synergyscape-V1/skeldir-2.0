@@ -209,12 +209,26 @@ def test_contract_to_route_mapping():
         )
     )
 
+    webhook_unimplemented = [
+        op for op in unimplemented_operations if str(op.get("path", "")).startswith("/api/webhooks")
+    ]
+    assert not webhook_unimplemented, (
+        "webhook_contract_drift_is_merge_blocking: "
+        "declared webhook operations must be mounted and runtime-converged:\n"
+        + "\n".join(
+            f"  - {op['method']} {op['path']} ({op.get('operation_id', 'N/A')})"
+            for op in webhook_unimplemented
+        )
+    )
+
     # In Phase B0.1, many operations are still expected to be unimplemented.
     # B1.7 explanation route drift is explicitly fail-closed above.
     remaining_unimplemented = [
         op
         for op in unimplemented_operations
-        if op not in canonical_b17_operation and op not in attribution_unimplemented
+        if op not in canonical_b17_operation
+        and op not in attribution_unimplemented
+        and op not in webhook_unimplemented
     ]
     if remaining_unimplemented:
         print(
