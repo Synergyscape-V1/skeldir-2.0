@@ -216,9 +216,9 @@ provider_coverage_matrix:
     - provider: "Stripe"
       provider_event: "charge.succeeded"
       delivery: "webhook"
-      required: true
+      required: false
       priority: "critical"
-      notes: "Legacy Charges API"
+      notes: "Legacy Charges API (not in declared B2.2-P0 surface)"
       contract_file: "api-contracts/openapi/v1/webhooks/stripe.yaml"
       operation_id: "stripeChargeSucceeded"
     
@@ -234,9 +234,9 @@ provider_coverage_matrix:
     - provider: "Shopify"
       provider_event: "orders/paid"
       delivery: "webhook"
-      required: true
+      required: false
       priority: "critical"
-      notes: "Confirms payment received for order"
+      notes: "Future payment-capture route; excluded from declared B2.2-P0 surface"
       contract_file: "api-contracts/openapi/v1/webhooks/shopify.yaml"
       operation_id: "shopifyOrderPaid"
     
@@ -262,36 +262,36 @@ provider_coverage_matrix:
     - provider: "Stripe"
       provider_event: "charge.refunded"
       delivery: "webhook"
-      required: true
+      required: false
       priority: "critical"
-      notes: "Charge refunded (full or partial)"
+      notes: "B2.4 scope; excluded from declared B2.2-P0 surface"
       contract_file: "api-contracts/openapi/v1/webhooks/stripe.yaml"
       operation_id: "stripeChargeRefunded"
     
     - provider: "Shopify"
       provider_event: "refunds/create"
       delivery: "webhook"
-      required: true
+      required: false
       priority: "critical"
-      notes: "Refund created for order"
+      notes: "B2.4 scope; excluded from declared B2.2-P0 surface"
       contract_file: "api-contracts/openapi/v1/webhooks/shopify.yaml"
       operation_id: "shopifyRefundCreate"
     
     - provider: "PayPal"
       provider_event: "PAYMENT.SALE.REFUNDED"
       delivery: "webhook"
-      required: true
+      required: false
       priority: "critical"
-      notes: "Sale refunded"
+      notes: "B2.4 scope; excluded from declared B2.2-P0 surface"
       contract_file: "api-contracts/openapi/v1/webhooks/paypal.yaml"
       operation_id: "paypalSaleRefunded"
     
     - provider: "WooCommerce"
       provider_event: "order/refunded"
       delivery: "webhook"
-      required: true
+      required: false
       priority: "critical"
-      notes: "Order refunded"
+      notes: "B2.4 scope; excluded from declared B2.2-P0 surface"
       contract_file: "api-contracts/openapi/v1/webhooks/woocommerce.yaml"
       operation_id: "woocommerceOrderRefunded"
   
@@ -308,9 +308,9 @@ provider_coverage_matrix:
     - provider: "WooCommerce"
       provider_event: "order/created"
       delivery: "webhook"
-      required: true
+      required: false
       priority: "high"
-      notes: "Order created (may not be paid yet)"
+      notes: "Excluded from declared B2.2-P0 surface"
       contract_file: "api-contracts/openapi/v1/webhooks/woocommerce.yaml"
       operation_id: "woocommerceOrderCreated"
     
