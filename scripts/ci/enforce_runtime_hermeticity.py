@@ -29,7 +29,7 @@ ALLOWLIST_MODULES = {"urllib.parse"}
 PATH_SCOPED_ALLOWLIST: dict[str, set[str]] = {
     # B2.2-P1: PayPal provider-correct signature verification requires bounded
     # cert retrieval and DNS/public-IP vetting in the webhook verifier path.
-    "backend/app/webhooks/signatures.py": {"httpx", "socket"},
+    "backend/app/webhooks/signatures.py": {"socket", "urllib.request"},
 }
 
 ENTRYPOINTS = [

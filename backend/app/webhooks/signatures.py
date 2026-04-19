@@ -9,6 +9,7 @@ import hmac
 import ipaddress
 import json
 import socket
+import ssl
 import time
 import zlib
 from collections import OrderedDict
@@ -17,8 +18,8 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional
 from urllib.parse import urlparse
+from urllib.request import HTTPSHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-import httpx
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
@@ -30,6 +31,7 @@ PAYPAL_ALLOWED_CERT_HOST_SUFFIXES = ("paypal.com", "paypalobjects.com")
 PAYPAL_ALLOWED_AUTH_ALGOS = {"SHA256WITHRSA"}
 PAYPAL_CERT_FETCH_CONNECT_TIMEOUT_SECONDS = 0.35
 PAYPAL_CERT_FETCH_READ_TIMEOUT_SECONDS = 0.35
+PAYPAL_CERT_FETCH_TIMEOUT_SECONDS = PAYPAL_CERT_FETCH_CONNECT_TIMEOUT_SECONDS + PAYPAL_CERT_FETCH_READ_TIMEOUT_SECONDS
 PAYPAL_CERT_MAX_BYTES = 128 * 1024
 PAYPAL_CERT_CACHE_MAX_ENTRIES = 256
 PAYPAL_CERT_CACHE_TTL_SECONDS = 6 * 60 * 60
@@ -44,8 +46,13 @@ class _PayPalCertCacheEntry:
 
 _PAYPAL_CERT_CACHE: "OrderedDict[str, _PayPalCertCacheEntry]" = OrderedDict()
 _PAYPAL_CERT_CACHE_LOCK = Lock()
-_PAYPAL_CERT_HTTP_CLIENT: httpx.Client | None = None
-_PAYPAL_CERT_HTTP_CLIENT_LOCK = Lock()
+_PAYPAL_CERT_URL_OPENER = None
+_PAYPAL_CERT_URL_OPENER_LOCK = Lock()
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
 
 
 def verify_shopify_signature(raw_body: bytes, secret: Optional[str], header: Optional[str]) -> bool:
@@ -275,37 +282,45 @@ def _resolve_public_ip_tokens(host: str) -> set[str]:
     return tokens
 
 
-def _get_paypal_cert_http_client() -> httpx.Client:
-    global _PAYPAL_CERT_HTTP_CLIENT
-    with _PAYPAL_CERT_HTTP_CLIENT_LOCK:
-        if _PAYPAL_CERT_HTTP_CLIENT is None:
-            _PAYPAL_CERT_HTTP_CLIENT = httpx.Client(
-                timeout=httpx.Timeout(
-                    connect=PAYPAL_CERT_FETCH_CONNECT_TIMEOUT_SECONDS,
-                    read=PAYPAL_CERT_FETCH_READ_TIMEOUT_SECONDS,
-                    write=PAYPAL_CERT_FETCH_READ_TIMEOUT_SECONDS,
-                    pool=PAYPAL_CERT_FETCH_CONNECT_TIMEOUT_SECONDS,
-                ),
-                follow_redirects=False,
-                trust_env=False,
+def _get_paypal_cert_url_opener():
+    global _PAYPAL_CERT_URL_OPENER
+    with _PAYPAL_CERT_URL_OPENER_LOCK:
+        if _PAYPAL_CERT_URL_OPENER is None:
+            _PAYPAL_CERT_URL_OPENER = build_opener(
+                ProxyHandler({}),
+                HTTPSHandler(context=ssl.create_default_context()),
+                _NoRedirectHandler(),
             )
-        return _PAYPAL_CERT_HTTP_CLIENT
+        return _PAYPAL_CERT_URL_OPENER
 
 
 def _fetch_paypal_certificate_pem(cert_url: str, cert_host: str) -> bytes | None:
+    request = Request(cert_url, method="GET")
     try:
-        response = _get_paypal_cert_http_client().get(cert_url, follow_redirects=False)
+        with _get_paypal_cert_url_opener().open(
+            request,
+            timeout=PAYPAL_CERT_FETCH_TIMEOUT_SECONDS,
+        ) as response:
+            status_code = int(response.getcode() or 0)
+            if status_code != 200:
+                return None
+            final_url = urlparse(response.geturl())
+            if final_url.scheme.lower() != "https":
+                return None
+            if (final_url.hostname or "").lower() != cert_host:
+                return None
+            if response.headers.get("location"):
+                return None
+            content_length = response.headers.get("content-length")
+            if content_length is not None:
+                try:
+                    if int(content_length) > PAYPAL_CERT_MAX_BYTES:
+                        return None
+                except ValueError:
+                    return None
+            content = response.read(PAYPAL_CERT_MAX_BYTES + 1)
     except Exception:
         return None
-    if response.status_code != 200:
-        return None
-    if response.url.scheme.lower() != "https":
-        return None
-    if (response.url.host or "").lower() != cert_host:
-        return None
-    if response.headers.get("location"):
-        return None
-    content = response.content
     if not content or len(content) > PAYPAL_CERT_MAX_BYTES:
         return None
     return content
