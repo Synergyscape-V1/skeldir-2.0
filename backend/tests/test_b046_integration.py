@@ -35,6 +35,7 @@ from app.db.session import engine, get_session
 from app.models import AttributionEvent, DeadEvent
 from app.core.secrets import get_database_url
 from tests.helpers.webhook_secret_seed import webhook_secret_insert_params
+from tests.helpers.paypal_signature import build_paypal_auth_headers, install_paypal_cert_fetcher
 
 pytestmark = pytest.mark.asyncio
 
@@ -46,6 +47,11 @@ async def event_loop():
     asyncio.set_event_loop(loop)
     yield loop
     loop.close()
+
+
+@pytest.fixture(autouse=True)
+def _paypal_signature_material(monkeypatch: pytest.MonkeyPatch) -> None:
+    install_paypal_cert_fetcher(monkeypatch)
 
 
 @pytest_asyncio.fixture
@@ -182,23 +188,13 @@ def sign_stripe(body: bytes, secret: str) -> str:
     return f"t={ts},v1={sig}"
 
 
-def paypal_auth_headers(body: bytes, secret: str, *, webhook_id: str = "wh_qg61_paypal") -> dict[str, str]:
-    """Generate PayPal canonical auth envelope headers."""
-    transmission_id = f"tr_{uuid4().hex[:16]}"
-    transmission_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    auth_algo = "HMAC-SHA256"
-    cert_url = "https://api-m.paypal.com/v1/notifications/certs/CERT-123"
-    body_hash = hashlib.sha256(body).hexdigest()
-    canonical = f"{transmission_id}|{transmission_time}|{webhook_id}|{body_hash}".encode()
-    signature = hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
-    return {
-        "PayPal-Transmission-Sig": signature,
-        "PayPal-Transmission-Id": transmission_id,
-        "PayPal-Transmission-Time": transmission_time,
-        "PayPal-Webhook-Id": webhook_id,
-        "PayPal-Auth-Algo": auth_algo,
-        "PayPal-Cert-Url": cert_url,
-    }
+def paypal_auth_headers(body: bytes, secret: str, *, webhook_id: str | None = None) -> dict[str, str]:
+    """Generate PayPal asymmetric auth envelope headers."""
+    authoritative_webhook_id = webhook_id if webhook_id is not None else secret
+    return build_paypal_auth_headers(
+        raw_body=body,
+        webhook_id=authoritative_webhook_id,
+    )
 
 
 def sign_woocommerce(body: bytes, secret: str) -> str:

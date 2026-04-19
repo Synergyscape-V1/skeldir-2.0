@@ -25,14 +25,14 @@ B22_P1_TEST = "backend/tests/test_b22_p1_authenticity_semantics.py"
 B045_TEST = "backend/tests/test_b045_webhooks.py"
 
 EXPECTED_PROVIDERS = {"shopify", "stripe", "paypal", "woocommerce"}
-EXPECTED_PAYPAL_HEADERS = (
+EXPECTED_PAYPAL_REQUIRED_HEADERS = (
     "PayPal-Transmission-Id",
     "PayPal-Transmission-Time",
     "PayPal-Transmission-Sig",
-    "PayPal-Webhook-Id",
     "PayPal-Auth-Algo",
     "PayPal-Cert-Url",
 )
+EXPECTED_PAYPAL_OPTIONAL_HEADERS = ("PayPal-Webhook-Id",)
 
 
 def _resolve(repo_root: Path, raw: str) -> Path:
@@ -84,27 +84,75 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
         return
 
     paypal = providers.get("paypal") or {}
+    if paypal.get("semantic_class") != "rsa_sha256_canonical_message_crc32":
+        violations.append("contract_paypal_semantic_class_mismatch")
+    if paypal.get("timestamp_tolerance_seconds") != 300:
+        violations.append(
+            f"contract_paypal_tolerance_mismatch:{paypal.get('timestamp_tolerance_seconds')}"
+        )
+
     required_headers = paypal.get("required_headers")
     if not isinstance(required_headers, list):
         violations.append("contract_paypal_required_headers_missing")
     else:
         observed = {str(item).strip() for item in required_headers}
-        expected = set(EXPECTED_PAYPAL_HEADERS)
+        expected = set(EXPECTED_PAYPAL_REQUIRED_HEADERS)
         if observed != expected:
             violations.append(
                 "contract_paypal_required_headers_mismatch:" + "|".join(sorted(observed))
             )
 
-    tolerance = paypal.get("timestamp_tolerance_seconds")
-    if tolerance != 300:
-        violations.append(f"contract_paypal_tolerance_mismatch:{tolerance}")
+    optional_headers = paypal.get("optional_headers")
+    if not isinstance(optional_headers, list):
+        violations.append("contract_paypal_optional_headers_missing")
+    else:
+        observed_optional = {str(item).strip() for item in optional_headers}
+        expected_optional = set(EXPECTED_PAYPAL_OPTIONAL_HEADERS)
+        if observed_optional != expected_optional:
+            violations.append(
+                "contract_paypal_optional_headers_mismatch:"
+                + "|".join(sorted(observed_optional))
+            )
+
+    auth_algos = paypal.get("auth_algo_allowlist")
+    if auth_algos != ["SHA256withRSA"]:
+        violations.append("contract_paypal_auth_algo_allowlist_mismatch")
+
+    cert_fetch = paypal.get("cert_fetch")
+    if not isinstance(cert_fetch, dict):
+        violations.append("contract_paypal_cert_fetch_policy_missing")
+    else:
+        expected_flags = {
+            "https_only": True,
+            "allow_redirects": False,
+            "dns_public_ip_only": True,
+            "trust_env_proxy": False,
+            "cache_required": True,
+        }
+        for key, expected in expected_flags.items():
+            if cert_fetch.get(key) != expected:
+                violations.append(f"contract_paypal_cert_fetch_flag_mismatch:{key}")
+        if cert_fetch.get("allowed_ports") != [443]:
+            violations.append("contract_paypal_cert_fetch_allowed_ports_mismatch")
+        if cert_fetch.get("max_bytes") != 131072:
+            violations.append("contract_paypal_cert_fetch_max_bytes_mismatch")
+        if cert_fetch.get("timeout_seconds") != 0.35:
+            violations.append("contract_paypal_cert_fetch_timeout_mismatch")
+
+    tenant_authority = paypal.get("tenant_authority")
+    if not isinstance(tenant_authority, dict):
+        violations.append("contract_paypal_tenant_authority_missing")
+    elif tenant_authority.get("webhook_id_source") != "server_resolved_paypal_webhook_secret":
+        violations.append("contract_paypal_tenant_authority_source_mismatch")
 
     latency_design = contract.get("latency_design")
     if not isinstance(latency_design, dict):
         violations.append("contract_latency_design_missing")
     else:
-        if latency_design.get("hot_path_remote_dependency_allowed") is not False:
-            violations.append("contract_latency_design_allows_remote_hot_path")
+        if latency_design.get("hot_path_remote_dependency_mode") != "bounded_cache_miss_only":
+            violations.append("contract_latency_mode_mismatch")
+        if latency_design.get("verification_class") != "local_asymmetric_with_bounded_cert_cache":
+            violations.append("contract_latency_verification_class_mismatch")
 
 
 def _validate_paypal_contract(path: Path, violations: list[str]) -> None:
@@ -127,14 +175,20 @@ def _validate_paypal_contract(path: Path, violations: list[str]) -> None:
         if name:
             parameter_map[name.upper()] = param
 
-    for header in EXPECTED_PAYPAL_HEADERS:
+    for header in EXPECTED_PAYPAL_REQUIRED_HEADERS:
         key = header.upper()
         if key not in parameter_map:
             violations.append(f"paypal_openapi_missing_header:{header}")
             continue
-        required = parameter_map[key].get("required")
-        if required is not True:
+        if parameter_map[key].get("required") is not True:
             violations.append(f"paypal_openapi_header_not_required:{header}")
+
+    optional_header = "PAYPAL-WEBHOOK-ID"
+    optional_param = parameter_map.get(optional_header)
+    if optional_param is None:
+        violations.append("paypal_openapi_missing_optional_webhook_id_header")
+    elif optional_param.get("required") is not False:
+        violations.append("paypal_openapi_webhook_id_header_must_be_optional")
 
 
 def _validate_signatures_file(path: Path, violations: list[str]) -> None:
@@ -164,7 +218,7 @@ def _validate_signatures_file(path: Path, violations: list[str]) -> None:
         if isinstance(node, ast.Name):
             name_constants.add(node.id)
 
-    required_calls = {"loads", "urlparse", "compare_digest", "sha256"}
+    required_calls = {"b64decode", "crc32", "verify"}
     missing_calls = sorted(required_calls - call_names)
     if missing_calls:
         violations.append("signatures_paypal_missing_calls:" + "|".join(missing_calls))
@@ -173,10 +227,8 @@ def _validate_signatures_file(path: Path, violations: list[str]) -> None:
         "transmission_id",
         "transmission_time",
         "transmission_sig",
-        "webhook_id",
         "auth_algo",
         "cert_url",
-        "HMAC-SHA256",
     }
     missing_literals = sorted(required_literals - string_constants)
     if missing_literals:
@@ -184,16 +236,35 @@ def _validate_signatures_file(path: Path, violations: list[str]) -> None:
             "signatures_paypal_missing_required_literals:" + "|".join(missing_literals)
         )
 
-    if "PAYPAL_AUTH_TOLERANCE_SECONDS" not in name_constants:
-        violations.append("signatures_paypal_missing_tolerance_constant_usage")
-    if "PAYPAL_ALLOWED_CERT_HOST_SUFFIXES" not in name_constants:
-        violations.append("signatures_paypal_missing_allowed_cert_suffix_constant_usage")
+    required_names = {
+        "PAYPAL_AUTH_TOLERANCE_SECONDS",
+        "PAYPAL_ALLOWED_AUTH_ALGOS",
+    }
+    missing_names = sorted(required_names - name_constants)
+    if missing_names:
+        violations.append(
+            "signatures_paypal_missing_required_names:" + "|".join(missing_names)
+        )
 
     paypal_source = _extract_function_source(text, "verify_paypal_signature")
-    if "hmac.new(secret.encode(), raw_body" in paypal_source:
-        violations.append("signatures_paypal_contains_legacy_raw_body_hmac_path")
-    if "compare_digest(computed, header)" in paypal_source:
-        violations.append("signatures_paypal_contains_legacy_header_compare_path")
+    disallowed_tokens = (
+        "hmac.new(",
+        "HMAC-SHA256(secret",
+        "hashlib.sha256(raw_body).hexdigest()",
+    )
+    for token in disallowed_tokens:
+        if token in paypal_source:
+            violations.append(f"signatures_paypal_contains_disallowed_token:{token}")
+
+    required_tokens = (
+        "padding.PKCS1v15()",
+        "hashes.SHA256()",
+        "_resolve_paypal_public_key(",
+        "_validate_paypal_cert_url(",
+    )
+    for token in required_tokens:
+        if token not in paypal_source:
+            violations.append(f"signatures_paypal_missing_required_token:{token}")
 
 
 def _validate_webhooks_file(path: Path, violations: list[str]) -> None:
@@ -202,11 +273,11 @@ def _validate_webhooks_file(path: Path, violations: list[str]) -> None:
         'alias="PayPal-Transmission-Sig"',
         'alias="PayPal-Transmission-Id"',
         'alias="PayPal-Transmission-Time"',
-        'alias="PayPal-Webhook-Id"',
         'alias="PayPal-Auth-Algo"',
         'alias="PayPal-Cert-Url"',
         "_paypal_auth_envelope_header(",
         "provider=\"paypal\"",
+        "paypal_webhook_secret",
     )
     for token in required_tokens:
         if token not in text:
@@ -257,7 +328,9 @@ def _validate_test_surfaces(
     b22_tokens = (
         "test_b22_p1_paypal_valid_envelope_accepts",
         "test_b22_p1_paypal_rejects_legacy_raw_body_signature_path",
+        "test_b22_p1_paypal_rejects_webhook_authority_mismatch",
         "test_b22_p1_paypal_verifier_latency_is_bounded_for_hot_path",
+        "test_b22_p1_cert_fetch_timeout_is_fail_closed_and_bounded",
     )
     for token in b22_tokens:
         if token not in b22_text:
@@ -351,7 +424,7 @@ def main(argv: list[str]) -> int:
     else:
         lines.append("result=PASS")
         lines.append(
-            "enforcement=provider_appropriate_authenticity_tenant_secret_authority_latency_compatibility_lock"
+            "enforcement=provider_correct_paypal_authenticity_tenant_secret_authority_ssrf_boundedness_lock"
         )
     sys.stdout.write("\n".join(lines) + "\n")
     return status

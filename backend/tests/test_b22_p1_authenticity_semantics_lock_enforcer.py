@@ -108,8 +108,8 @@ def test_b22_p1_authenticity_semantics_lock_enforcer_negative_control_signature_
     mutated_signatures = tmp_path / "signatures.regression.py"
     mutated_signatures.write_text(
         SIGNATURES_FILE.read_text(encoding="utf-8").replace(
-            "> PAYPAL_AUTH_TOLERANCE_SECONDS:",
-            "> PAYPAL_AUTH_TOLERANCE_SECONDS_REGRESSED:",
+            "padding.PKCS1v15()",
+            "padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH)",
             1,
         ),
         encoding="utf-8",
@@ -117,7 +117,34 @@ def test_b22_p1_authenticity_semantics_lock_enforcer_negative_control_signature_
 
     proc = _run("--signatures-file", str(mutated_signatures))
     assert proc.returncode != 0
-    assert "signatures_paypal_missing_tolerance_constant_usage" in (
+    assert "signatures_paypal_missing_required_token:padding.PKCS1v15()" in (
+        proc.stdout + proc.stderr
+    )
+
+
+def test_b22_p1_authenticity_semantics_lock_enforcer_negative_control_paypal_webhook_id_header_must_be_optional(
+    tmp_path: Path,
+) -> None:
+    payload = yaml.safe_load(PAYPAL_CONTRACT_FILE.read_text(encoding="utf-8")) or {}
+    parameters = (
+        payload.setdefault("paths", {})
+        .setdefault("/api/webhooks/paypal/sale_completed", {})
+        .setdefault("post", {})
+        .setdefault("parameters", [])
+    )
+    for param in parameters:
+        if (
+            isinstance(param, dict)
+            and str(param.get("name", "")).upper() == "PAYPAL-WEBHOOK-ID"
+        ):
+            param["required"] = True
+            break
+    mutated_contract = tmp_path / "paypal.webhookid.required.regression.yaml"
+    mutated_contract.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    proc = _run("--paypal-contract-file", str(mutated_contract))
+    assert proc.returncode != 0
+    assert "paypal_openapi_webhook_id_header_must_be_optional" in (
         proc.stdout + proc.stderr
     )
 

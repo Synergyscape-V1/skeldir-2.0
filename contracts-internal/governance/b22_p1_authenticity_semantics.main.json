@@ -1,10 +1,10 @@
 {
   "contract_id": "b22.p1.authenticity_semantics.main",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.2-P1",
-  "description": "Canonical B2.2-P1 authenticity semantics lock for webhook providers under tenant secret authority.",
+  "description": "Canonical B2.2-P1 authenticity semantics lock for webhook providers under tenant-secret authority.",
   "providers": {
     "shopify": {
       "signature_header": "X-Shopify-Hmac-Sha256",
@@ -19,21 +19,42 @@
     },
     "paypal": {
       "signature_header": "PayPal-Transmission-Sig",
-      "semantic_class": "hmac_sha256_canonical_envelope",
+      "semantic_class": "rsa_sha256_canonical_message_crc32",
       "requires_timestamp": true,
       "timestamp_tolerance_seconds": 300,
       "required_headers": [
         "PayPal-Transmission-Id",
         "PayPal-Transmission-Time",
         "PayPal-Transmission-Sig",
-        "PayPal-Webhook-Id",
         "PayPal-Auth-Algo",
         "PayPal-Cert-Url"
+      ],
+      "optional_headers": [
+        "PayPal-Webhook-Id"
+      ],
+      "auth_algo_allowlist": [
+        "SHA256withRSA"
       ],
       "allowed_cert_host_suffixes": [
         "paypal.com",
         "paypalobjects.com"
-      ]
+      ],
+      "cert_fetch": {
+        "https_only": true,
+        "allow_redirects": false,
+        "allowed_ports": [
+          443
+        ],
+        "dns_public_ip_only": true,
+        "trust_env_proxy": false,
+        "max_bytes": 131072,
+        "timeout_seconds": 0.35,
+        "cache_required": true,
+        "cache_ttl_seconds": 21600
+      },
+      "tenant_authority": {
+        "webhook_id_source": "server_resolved_paypal_webhook_secret"
+      }
     },
     "woocommerce": {
       "signature_header": "X-WC-Webhook-Signature",
@@ -42,8 +63,9 @@
     }
   },
   "latency_design": {
-    "hot_path_remote_dependency_allowed": false,
-    "verification_class": "local_cpu_bound",
-    "proof_test": "backend/tests/test_b22_p1_authenticity_semantics.py::test_b22_p1_paypal_verifier_latency_is_bounded_for_hot_path"
+    "hot_path_remote_dependency_mode": "bounded_cache_miss_only",
+    "verification_class": "local_asymmetric_with_bounded_cert_cache",
+    "proof_test": "backend/tests/test_b22_p1_authenticity_semantics.py::test_b22_p1_paypal_verifier_latency_is_bounded_for_hot_path",
+    "bounded_fail_closed_test": "backend/tests/test_b22_p1_authenticity_semantics.py::test_b22_p1_cert_fetch_timeout_is_fail_closed_and_bounded"
   }
 }
