@@ -26,6 +26,11 @@ FORBIDDEN_MODULES = {
 }
 
 ALLOWLIST_MODULES = {"urllib.parse"}
+PATH_SCOPED_ALLOWLIST: dict[str, set[str]] = {
+    # B2.2-P1: PayPal provider-correct signature verification requires bounded
+    # cert retrieval and DNS/public-IP vetting in the webhook verifier path.
+    "backend/app/webhooks/signatures.py": {"socket", "urllib.request"},
+}
 
 ENTRYPOINTS = [
     "backend/app/tasks/llm.py",
@@ -200,9 +205,14 @@ def scan_runtime(root: Path, reachable: Set[Path]) -> Tuple[List[str], List[str]
     for path in iter_python_files(root):
         forbidden_hits, allowed_hits, subprocess_hits = parse_file(path)
         rel_path = path.relative_to(repo_root())
+        rel_key = rel_path.as_posix()
+        scoped_allowlist = PATH_SCOPED_ALLOWLIST.get(rel_key, set())
         for lineno, name in allowed_hits:
             allowlist_hits.append(f"{rel_path}:{lineno} allow:{name}")
         for lineno, name in forbidden_hits:
+            if name in scoped_allowlist:
+                allowlist_hits.append(f"{rel_path}:{lineno} allow:{name} (path-scoped)")
+                continue
             severity = "HIGH" if path in reachable else "MEDIUM"
             violations.append(f"{rel_path}:{lineno} {severity} forbidden:{name}")
         for lineno, name in subprocess_hits:

@@ -94,22 +94,20 @@ def _paypal_auth_envelope_header(
     transmission_id: str | None,
     transmission_time: str | None,
     transmission_sig: str | None,
-    webhook_id: str | None,
     auth_algo: str | None,
     cert_url: str | None,
+    webhook_id: str | None,
 ) -> str:
-    return json.dumps(
-        {
-            "transmission_id": transmission_id,
-            "transmission_time": transmission_time,
-            "transmission_sig": transmission_sig,
-            "webhook_id": webhook_id,
-            "auth_algo": auth_algo,
-            "cert_url": cert_url,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    )
+    envelope = {
+        "transmission_id": transmission_id,
+        "transmission_time": transmission_time,
+        "transmission_sig": transmission_sig,
+        "auth_algo": auth_algo,
+        "cert_url": cert_url,
+    }
+    if webhook_id is not None:
+        envelope["webhook_id"] = webhook_id
+    return json.dumps(envelope, separators=(",", ":"), sort_keys=True)
 
 
 def _parse_content_length_header(request: Request) -> int | None:
@@ -169,13 +167,15 @@ async def _authorize_webhook_request(
     api_key: str | None,
 ) -> dict[str, Any]:
     raw_body = await _resolve_raw_body_for_webhook_auth(request)
-    secret_field, verifier = WEBHOOK_VERIFIERS[provider]
+    verification_material_field, verifier = WEBHOOK_VERIFIERS[provider]
     tenant_info = await _resolve_tenant_info_for_webhook_auth(api_key)
-    secret_found = tenant_info is not None and bool(tenant_info.get(secret_field))
-    secret_for_compute = str(tenant_info[secret_field]) if secret_found else WEBHOOK_DUMMY_SECRET
-    signature_valid = verifier(raw_body, secret_for_compute, signature_header)
+    material_found = tenant_info is not None and bool(tenant_info.get(verification_material_field))
+    material_for_compute = (
+        str(tenant_info[verification_material_field]) if material_found else WEBHOOK_DUMMY_SECRET
+    )
+    signature_valid = verifier(raw_body, material_for_compute, signature_header)
 
-    if not (secret_found and signature_valid):
+    if not (material_found and signature_valid):
         raise unauthorized_auth_error()
 
     set_tenant_id(tenant_info["tenant_id"])

@@ -425,8 +425,8 @@ export interface operations {
                 "PAYPAL-TRANSMISSION-SIG": string;
                 /** @description PayPal transmission timestamp (ISO-8601) */
                 "PAYPAL-TRANSMISSION-TIME": string;
-                /** @description PayPal webhook ID associated with this notification */
-                "PAYPAL-WEBHOOK-ID": string;
+                /** @description Optional webhook ID echo header. If present, it must match server-authoritative tenant webhook authority. */
+                "PAYPAL-WEBHOOK-ID"?: string;
                 /** @description PayPal signature algorithm identifier */
                 "PAYPAL-AUTH-ALGO": string;
                 /** @description URL to PayPal certificate for verification */

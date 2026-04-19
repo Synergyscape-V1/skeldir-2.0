@@ -47,10 +47,10 @@ paths:
           description: PayPal transmission timestamp (ISO-8601)
         - name: PAYPAL-WEBHOOK-ID
           in: header
-          required: true
+          required: false
           schema:
             type: string
-          description: PayPal webhook ID associated with this notification
+          description: Optional webhook ID echo header. If present, it must match server-authoritative tenant webhook authority.
         - name: PAYPAL-AUTH-ALGO
           in: header
           required: true

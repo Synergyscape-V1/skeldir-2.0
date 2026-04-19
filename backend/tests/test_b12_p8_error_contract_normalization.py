@@ -18,6 +18,7 @@ import app.middleware.pii_stripping as pii_stripping_middleware
 from app.main import app
 from app.security.auth import unauthorized_auth_error
 from app.testing.jwt_rs256 import TEST_PRIVATE_KEY_PEM, private_ring_payload, public_ring_payload
+from tests.helpers.paypal_signature import build_paypal_auth_headers, install_paypal_cert_fetcher
 
 FORBIDDEN_LEAK_SUBSTRINGS = (
     "unknown kid",
@@ -124,25 +125,15 @@ def _paypal_auth_headers(
     *,
     valid_signature: bool,
     transmission_time: datetime | None = None,
-    webhook_id: str = "wh_b12_p8",
+    webhook_id: str | None = None,
 ) -> dict[str, str]:
-    transmission_id = f"tr_{uuid4().hex[:16]}"
-    transmission_time_token = (
-        transmission_time or datetime.now(timezone.utc)
-    ).isoformat().replace("+00:00", "Z")
-    body_hash = hashlib.sha256(raw_body).hexdigest()
-    canonical = f"{transmission_id}|{transmission_time_token}|{webhook_id}|{body_hash}".encode("utf-8")
-    signature = hmac.new(secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
-    if not valid_signature:
-        signature = "0" * len(signature)
-    return {
-        "PayPal-Transmission-Sig": signature,
-        "PayPal-Transmission-Id": transmission_id,
-        "PayPal-Transmission-Time": transmission_time_token,
-        "PayPal-Webhook-Id": webhook_id,
-        "PayPal-Auth-Algo": "HMAC-SHA256",
-        "PayPal-Cert-Url": "https://api-m.paypal.com/v1/notifications/certs/CERT-123",
-    }
+    authoritative_webhook_id = webhook_id if webhook_id is not None else secret
+    return build_paypal_auth_headers(
+        raw_body=raw_body,
+        webhook_id=authoritative_webhook_id,
+        transmission_time=transmission_time,
+        valid_signature=valid_signature,
+    )
 
 
 def _assert_constant_work_compute_called_once(calls: int) -> None:
@@ -173,6 +164,7 @@ def _disable_revocation_io(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr("app.security.auth.assert_access_token_active", _no_revocation_check)
+    install_paypal_cert_fetcher(monkeypatch)
 
 
 @pytest.mark.asyncio

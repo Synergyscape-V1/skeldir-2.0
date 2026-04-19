@@ -28,6 +28,7 @@ from tests.helpers.webhook_secret_seed import (
     webhook_secret_insert_params,
     webhook_secret_insert_columns,
 )
+from tests.helpers.paypal_signature import build_paypal_auth_headers, install_paypal_cert_fetcher
 
 pytestmark = pytest.mark.asyncio
 
@@ -38,6 +39,11 @@ async def event_loop():
     asyncio.set_event_loop(loop)
     yield loop
     loop.close()
+
+
+@pytest.fixture(autouse=True)
+def _paypal_signature_material(monkeypatch: pytest.MonkeyPatch) -> None:
+    install_paypal_cert_fetcher(monkeypatch)
 
 
 async def create_tenant_with_secrets():
@@ -102,26 +108,15 @@ def paypal_auth_headers(
     *,
     valid_signature: bool = True,
     transmission_time: datetime | None = None,
-    webhook_id: str = "wh_9XSQ36F2VY",
+    webhook_id: str | None = None,
 ) -> dict[str, str]:
-    ts = transmission_time or datetime.now(timezone.utc)
-    transmission_time_token = ts.isoformat().replace("+00:00", "Z")
-    transmission_id = f"tr_{uuid4().hex[:16]}"
-    auth_algo = "HMAC-SHA256"
-    cert_url = "https://api-m.paypal.com/v1/notifications/certs/CERT-123"
-    body_hash = hashlib.sha256(body).hexdigest()
-    canonical = f"{transmission_id}|{transmission_time_token}|{webhook_id}|{body_hash}".encode()
-    signature = hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
-    if not valid_signature:
-        signature = "0" * 64
-    return {
-        "PayPal-Transmission-Sig": signature,
-        "PayPal-Transmission-Id": transmission_id,
-        "PayPal-Transmission-Time": transmission_time_token,
-        "PayPal-Webhook-Id": webhook_id,
-        "PayPal-Auth-Algo": auth_algo,
-        "PayPal-Cert-Url": cert_url,
-    }
+    authoritative_webhook_id = webhook_id if webhook_id is not None else secret
+    return build_paypal_auth_headers(
+        raw_body=body,
+        webhook_id=authoritative_webhook_id,
+        transmission_time=transmission_time,
+        valid_signature=valid_signature,
+    )
 
 
 def sign_woocommerce(body: bytes, secret: str) -> str:
