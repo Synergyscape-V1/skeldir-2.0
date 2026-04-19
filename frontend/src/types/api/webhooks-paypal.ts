@@ -418,13 +418,19 @@ export interface operations {
     paypalSaleCompleted: {
         parameters: {
             query?: never;
-            header?: {
+            header: {
                 /** @description PayPal transmission ID */
-                "PAYPAL-TRANSMISSION-ID"?: string;
+                "PAYPAL-TRANSMISSION-ID": string;
                 /** @description PayPal transmission signature */
-                "PAYPAL-TRANSMISSION-SIG"?: string;
+                "PAYPAL-TRANSMISSION-SIG": string;
+                /** @description PayPal transmission timestamp (ISO-8601) */
+                "PAYPAL-TRANSMISSION-TIME": string;
+                /** @description PayPal webhook ID associated with this notification */
+                "PAYPAL-WEBHOOK-ID": string;
+                /** @description PayPal signature algorithm identifier */
+                "PAYPAL-AUTH-ALGO": string;
                 /** @description URL to PayPal certificate for verification */
-                "PAYPAL-CERT-URL"?: string;
+                "PAYPAL-CERT-URL": string;
             };
             path?: never;
             cookie?: never;

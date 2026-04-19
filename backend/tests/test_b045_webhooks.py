@@ -6,7 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
 import asyncio
@@ -96,8 +96,32 @@ def sign_stripe(body: bytes, secret: str) -> str:
     return f"t={ts},v1={sig}"
 
 
-def sign_paypal(body: bytes, secret: str) -> str:
-    return hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+def paypal_auth_headers(
+    body: bytes,
+    secret: str,
+    *,
+    valid_signature: bool = True,
+    transmission_time: datetime | None = None,
+    webhook_id: str = "wh_9XSQ36F2VY",
+) -> dict[str, str]:
+    ts = transmission_time or datetime.now(timezone.utc)
+    transmission_time_token = ts.isoformat().replace("+00:00", "Z")
+    transmission_id = f"tr_{uuid4().hex[:16]}"
+    auth_algo = "HMAC-SHA256"
+    cert_url = "https://api-m.paypal.com/v1/notifications/certs/CERT-123"
+    body_hash = hashlib.sha256(body).hexdigest()
+    canonical = f"{transmission_id}|{transmission_time_token}|{webhook_id}|{body_hash}".encode()
+    signature = hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
+    if not valid_signature:
+        signature = "0" * 64
+    return {
+        "PayPal-Transmission-Sig": signature,
+        "PayPal-Transmission-Id": transmission_id,
+        "PayPal-Transmission-Time": transmission_time_token,
+        "PayPal-Webhook-Id": webhook_id,
+        "PayPal-Auth-Algo": auth_algo,
+        "PayPal-Cert-Url": cert_url,
+    }
 
 
 def sign_woocommerce(body: bytes, secret: str) -> str:
@@ -165,7 +189,7 @@ async def test_signature_enforced_shopify():
 
 @pytest.mark.asyncio
 async def test_paypal_invalid_signature_returns_401():
-    tenant_id, api_key, _ = await create_tenant_with_secrets()
+    tenant_id, api_key, secrets = await create_tenant_with_secrets()
     body = json.dumps(
         {
             "id": f"txn_{uuid4().hex[:8]}",
@@ -173,6 +197,11 @@ async def test_paypal_invalid_signature_returns_401():
             "create_time": datetime.now(timezone.utc).isoformat(),
         }
     ).encode()
+    auth_headers = paypal_auth_headers(
+        body,
+        secrets["paypal_webhook_secret"],
+        valid_signature=False,
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -180,7 +209,129 @@ async def test_paypal_invalid_signature_returns_401():
             "/api/webhooks/paypal/sale_completed",
             content=body,
             headers={
-                "PayPal-Transmission-Sig": "invalid",
+                **auth_headers,
+                "X-Skeldir-Tenant-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+    assert resp.status_code == 401
+    assert resp.headers.get("content-type", "").startswith("application/problem+json")
+
+    async with get_session(tenant_id) as session:
+        evt_count = await session.scalar(
+            select(func.count()).select_from(AttributionEvent).where(AttributionEvent.tenant_id == tenant_id)
+        )
+        dead_count = await session.scalar(
+            select(func.count()).select_from(DeadEvent).where(DeadEvent.tenant_id == tenant_id)
+        )
+        assert evt_count == 0
+        assert dead_count == 0
+
+
+@pytest.mark.asyncio
+async def test_paypal_missing_required_auth_header_returns_401():
+    tenant_id, api_key, secrets = await create_tenant_with_secrets()
+    body = json.dumps(
+        {
+            "id": f"txn_{uuid4().hex[:8]}",
+            "amount": {"total": "11.00", "currency": "USD"},
+            "create_time": datetime.now(timezone.utc).isoformat(),
+        }
+    ).encode()
+    auth_headers = paypal_auth_headers(body, secrets["paypal_webhook_secret"])
+    auth_headers.pop("PayPal-Transmission-Time")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/webhooks/paypal/sale_completed",
+            content=body,
+            headers={
+                **auth_headers,
+                "X-Skeldir-Tenant-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+    assert resp.status_code == 401
+    assert resp.headers.get("content-type", "").startswith("application/problem+json")
+
+    async with get_session(tenant_id) as session:
+        evt_count = await session.scalar(
+            select(func.count()).select_from(AttributionEvent).where(AttributionEvent.tenant_id == tenant_id)
+        )
+        dead_count = await session.scalar(
+            select(func.count()).select_from(DeadEvent).where(DeadEvent.tenant_id == tenant_id)
+        )
+        assert evt_count == 0
+        assert dead_count == 0
+
+
+@pytest.mark.asyncio
+async def test_paypal_stale_transmission_time_returns_401():
+    tenant_id, api_key, secrets = await create_tenant_with_secrets()
+    body = json.dumps(
+        {
+            "id": f"txn_{uuid4().hex[:8]}",
+            "amount": {"total": "12.00", "currency": "USD"},
+            "create_time": datetime.now(timezone.utc).isoformat(),
+        }
+    ).encode()
+    stale_time = datetime.now(timezone.utc) - timedelta(minutes=10)
+    auth_headers = paypal_auth_headers(
+        body,
+        secrets["paypal_webhook_secret"],
+        transmission_time=stale_time,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/webhooks/paypal/sale_completed",
+            content=body,
+            headers={
+                **auth_headers,
+                "X-Skeldir-Tenant-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+    assert resp.status_code == 401
+    assert resp.headers.get("content-type", "").startswith("application/problem+json")
+
+    async with get_session(tenant_id) as session:
+        evt_count = await session.scalar(
+            select(func.count()).select_from(AttributionEvent).where(AttributionEvent.tenant_id == tenant_id)
+        )
+        dead_count = await session.scalar(
+            select(func.count()).select_from(DeadEvent).where(DeadEvent.tenant_id == tenant_id)
+        )
+        assert evt_count == 0
+        assert dead_count == 0
+
+
+@pytest.mark.asyncio
+async def test_paypal_wrong_webhook_id_returns_401():
+    tenant_id, api_key, secrets = await create_tenant_with_secrets()
+    body = json.dumps(
+        {
+            "id": f"txn_{uuid4().hex[:8]}",
+            "amount": {"total": "13.00", "currency": "USD"},
+            "create_time": datetime.now(timezone.utc).isoformat(),
+        }
+    ).encode()
+    auth_headers = paypal_auth_headers(
+        body,
+        secrets["paypal_webhook_secret"],
+        webhook_id="wh_expected",
+    )
+    auth_headers["PayPal-Webhook-Id"] = "wh_tampered"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/webhooks/paypal/sale_completed",
+            content=body,
+            headers={
+                **auth_headers,
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -285,14 +436,14 @@ async def test_paypal_success():
             "create_time": datetime.now(timezone.utc).isoformat(),
         }
     ).encode()
-    sig = sign_paypal(body, secrets["paypal_webhook_secret"])
+    auth_headers = paypal_auth_headers(body, secrets["paypal_webhook_secret"])
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/api/webhooks/paypal/sale_completed",
             content=body,
             headers={
-                "PayPal-Transmission-Sig": sig,
+                **auth_headers,
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
