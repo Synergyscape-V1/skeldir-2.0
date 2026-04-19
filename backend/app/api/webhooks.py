@@ -84,8 +84,6 @@ WebhookVerifier = Callable[[bytes, Optional[str], Optional[str]], bool]
 WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
     "shopify": ("shopify_webhook_secret", verify_shopify_signature),
     "stripe": ("stripe_webhook_secret", verify_stripe_signature),
-    # Tenant-authoritative material currently sourced from paypal_webhook_secret.
-    # For PayPal this value is interpreted as the expected webhook authority ID.
     "paypal": ("paypal_webhook_secret", verify_paypal_signature),
     "woocommerce": ("woocommerce_webhook_secret", verify_woocommerce_signature),
 }
