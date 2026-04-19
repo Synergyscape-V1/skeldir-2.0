@@ -125,4 +125,10 @@ def install_paypal_cert_fetcher(monkeypatch) -> None:
             return None
         return key_material.certificate_pem
 
+    def _fake_dns_tokens(host: str) -> set[str]:
+        if host == "api-m.paypal.com":
+            return {"203.0.113.10"}
+        return set()
+
     monkeypatch.setattr(signatures_module, "_fetch_paypal_certificate_pem", _fake_fetch)
+    monkeypatch.setattr(signatures_module, "_resolve_public_ip_tokens", _fake_dns_tokens)
