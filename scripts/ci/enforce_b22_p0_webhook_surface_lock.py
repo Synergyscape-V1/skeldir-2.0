@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""B2.2-P0 webhook surface authority convergence enforcer."""
+"""B2.2-P0 webhook public topology and transport alias lock enforcer."""
 
 from __future__ import annotations
 
@@ -21,10 +21,22 @@ DECLARED_SURFACE_CONTRACT = (
 SEMANTICS_SKIP_ALLOWLIST = "tests/contract/semantics_skip_allowlist.yaml"
 CI_WORKFLOW = ".github/workflows/ci.yml"
 ROUTE_FIDELITY_TEST = "tests/contract/test_route_fidelity.py"
+CONTRACT_SCOPE_FILE = "backend/app/config/contract_scope.yaml"
 TYPEGEN_SCRIPT = "scripts/contracts/generate_frontend_types.sh"
 BUNDLE_SCRIPT = "scripts/contracts/bundle.sh"
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
+
+B22_REQUIRED_PUBLIC_PROVIDERS = {"shopify", "woocommerce", "stripe", "paypal"}
+B22_REQUIRED_PUBLIC_SURFACE = {
+    "POST /api/webhooks/shopify/order_create",
+    "POST /api/webhooks/stripe/payment_intent/succeeded",
+    "POST /api/webhooks/paypal/sale_completed",
+    "POST /api/webhooks/woocommerce/order_completed",
+}
+B22_APPROVED_RUNTIME_ALIAS_SURFACE = {
+    "POST /api/webhooks/stripe/payment_intent_succeeded",
+}
 
 
 def _resolve(repo_root: Path, raw: str) -> Path:
@@ -116,15 +128,142 @@ def _compare_set(
     *,
     name: str,
     observed: set[str],
-    declared: set[str],
+    expected: set[str],
     violations: list[str],
 ) -> None:
-    missing = sorted(declared - observed)
-    extra = sorted(observed - declared)
+    missing = sorted(expected - observed)
+    extra = sorted(observed - expected)
     if missing:
-        violations.append(f"{name}_missing_declared:{'|'.join(missing)}")
+        violations.append(f"{name}_missing_expected:{'|'.join(missing)}")
     if extra:
-        violations.append(f"{name}_contains_undeclared:{'|'.join(extra)}")
+        violations.append(f"{name}_contains_unexpected:{'|'.join(extra)}")
+
+
+def _validate_surface_shape(
+    *,
+    contract: dict[str, Any],
+    repo_root: Path,
+    violations: list[str],
+) -> tuple[set[str], set[str], set[Path], set[Path], set[Path]]:
+    required_public_providers = contract.get("required_public_providers")
+    if not isinstance(required_public_providers, list) or not required_public_providers:
+        violations.append("declared_contract_missing_required_public_providers")
+        required_public_providers_set: set[str] = set()
+    else:
+        required_public_providers_set = {str(item).strip() for item in required_public_providers}
+
+    if required_public_providers_set != B22_REQUIRED_PUBLIC_PROVIDERS:
+        violations.append(
+            "declared_required_public_providers_mismatch:"
+            + "|".join(sorted(required_public_providers_set))
+        )
+
+    public_operations_raw = contract.get("public_operations")
+    if not isinstance(public_operations_raw, list) or not public_operations_raw:
+        violations.append("declared_contract_missing_public_operations")
+        return set(), set(), set(), set(), set()
+
+    public_surface: set[str] = set()
+    provider_counts: dict[str, int] = {}
+    source_contract_paths: set[Path] = set()
+    bundle_paths: set[Path] = set()
+    generated_type_paths: set[Path] = set()
+
+    for operation in public_operations_raw:
+        if not isinstance(operation, dict):
+            violations.append("declared_public_operation_not_object")
+            continue
+
+        method = str(operation.get("method", "")).upper().strip()
+        path = str(operation.get("path", "")).strip()
+        provider = str(operation.get("provider", "")).strip().lower()
+
+        if method not in {m.upper() for m in HTTP_METHODS}:
+            violations.append(f"invalid_public_method:{method}")
+            continue
+        if not path.startswith("/api/webhooks/"):
+            violations.append(f"invalid_public_path:{path}")
+            continue
+        if provider not in B22_REQUIRED_PUBLIC_PROVIDERS:
+            violations.append(f"invalid_public_provider:{provider}")
+            continue
+
+        key = f"{method} {path}"
+        public_surface.add(key)
+        provider_counts[provider] = provider_counts.get(provider, 0) + 1
+
+        source_contract_paths.add(_resolve(repo_root, str(operation.get("source_contract", ""))))
+        bundle_paths.add(_resolve(repo_root, str(operation.get("bundle", ""))))
+        generated_type_paths.add(_resolve(repo_root, str(operation.get("generated_type", ""))))
+
+    if len(public_surface) != len(public_operations_raw):
+        violations.append("declared_public_surface_contains_duplicates")
+
+    for provider in sorted(B22_REQUIRED_PUBLIC_PROVIDERS):
+        count = provider_counts.get(provider, 0)
+        if count != 1:
+            violations.append(f"public_provider_operation_count_invalid:{provider}:{count}")
+
+    _compare_set(
+        name="declared_public_surface",
+        observed=public_surface,
+        expected=B22_REQUIRED_PUBLIC_SURFACE,
+        violations=violations,
+    )
+
+    aliases_raw = contract.get("runtime_transport_aliases")
+    if not isinstance(aliases_raw, list):
+        violations.append("declared_contract_runtime_transport_aliases_must_be_list")
+        aliases_raw = []
+
+    runtime_alias_surface: set[str] = set()
+    for alias in aliases_raw:
+        if not isinstance(alias, dict):
+            violations.append("declared_runtime_alias_not_object")
+            continue
+        method = str(alias.get("method", "")).upper().strip()
+        path = str(alias.get("path", "")).strip()
+        provider = str(alias.get("provider", "")).strip().lower()
+        visibility = str(alias.get("visibility", "")).strip()
+        alias_of = str(alias.get("alias_of", "")).strip()
+
+        if method not in {m.upper() for m in HTTP_METHODS}:
+            violations.append(f"invalid_runtime_alias_method:{method}")
+            continue
+        if not path.startswith("/api/webhooks/"):
+            violations.append(f"invalid_runtime_alias_path:{path}")
+            continue
+        if provider not in B22_REQUIRED_PUBLIC_PROVIDERS:
+            violations.append(f"invalid_runtime_alias_provider:{provider}")
+            continue
+        if visibility != "runtime_transport_only":
+            violations.append(f"invalid_runtime_alias_visibility:{visibility}")
+        if alias_of and alias_of not in public_surface:
+            violations.append(f"runtime_alias_target_not_public:{alias_of}")
+
+        runtime_alias_surface.add(f"{method} {path}")
+
+    if len(runtime_alias_surface) != len(aliases_raw):
+        violations.append("declared_runtime_aliases_contain_duplicates")
+
+    _compare_set(
+        name="declared_runtime_alias_surface",
+        observed=runtime_alias_surface,
+        expected=B22_APPROVED_RUNTIME_ALIAS_SURFACE,
+        violations=violations,
+    )
+
+    overlap = sorted(public_surface & runtime_alias_surface)
+    if overlap:
+        violations.append("declared_public_surface_overlaps_runtime_aliases:" + "|".join(overlap))
+
+    return (
+        public_surface,
+        runtime_alias_surface,
+        source_contract_paths,
+        bundle_paths,
+        generated_type_paths,
+    )
 
 
 def run_enforcement(
@@ -134,6 +273,7 @@ def run_enforcement(
     semantics_skip_allowlist: Path,
     ci_workflow: Path,
     route_fidelity_test: Path,
+    contract_scope_file: Path,
     typegen_script: Path,
     bundle_script: Path,
 ) -> tuple[int, list[str]]:
@@ -144,6 +284,7 @@ def run_enforcement(
         semantics_skip_allowlist,
         ci_workflow,
         route_fidelity_test,
+        contract_scope_file,
         typegen_script,
         bundle_script,
     )
@@ -155,36 +296,13 @@ def run_enforcement(
         return 1, violations
 
     contract = _read_json(declared_surface_contract)
-    declared_operations_raw = contract.get("operations")
-    if not isinstance(declared_operations_raw, list) or not declared_operations_raw:
-        violations.append("declared_surface_contract_missing_operations")
-        return 1, violations
-
-    declared_surface: set[str] = set()
-    source_contract_paths: set[Path] = set()
-    bundle_paths: set[Path] = set()
-    generated_type_paths: set[Path] = set()
-
-    for operation in declared_operations_raw:
-        if not isinstance(operation, dict):
-            violations.append("declared_surface_operation_not_object")
-            continue
-        method = str(operation.get("method", "")).upper().strip()
-        path = str(operation.get("path", "")).strip()
-        if method not in {m.upper() for m in HTTP_METHODS}:
-            violations.append(f"invalid_declared_method:{method}")
-            continue
-        if not path.startswith("/api/webhooks/"):
-            violations.append(f"invalid_declared_path:{path}")
-            continue
-
-        declared_surface.add(f"{method} {path}")
-        source_contract_paths.add(_resolve(repo_root, str(operation.get("source_contract", ""))))
-        bundle_paths.add(_resolve(repo_root, str(operation.get("bundle", ""))))
-        generated_type_paths.add(_resolve(repo_root, str(operation.get("generated_type", ""))))
-
-    if len(declared_surface) != len(declared_operations_raw):
-        violations.append("declared_surface_contains_duplicates")
+    (
+        public_surface,
+        runtime_alias_surface,
+        source_contract_paths,
+        bundle_paths,
+        generated_type_paths,
+    ) = _validate_surface_shape(contract=contract, repo_root=repo_root, violations=violations)
 
     for source_path in source_contract_paths:
         if not source_path.exists():
@@ -200,16 +318,17 @@ def run_enforcement(
         return 1, violations
 
     runtime_routes, runtime_openapi = _extract_runtime_webhook_ops(repo_root)
+
     _compare_set(
         name="runtime_routes",
         observed=runtime_routes,
-        declared=declared_surface,
+        expected=(public_surface | runtime_alias_surface),
         violations=violations,
     )
     _compare_set(
         name="runtime_openapi",
         observed=runtime_openapi,
-        declared=declared_surface,
+        expected=public_surface,
         violations=violations,
     )
 
@@ -220,7 +339,7 @@ def run_enforcement(
     _compare_set(
         name="source_contracts",
         observed=source_surface,
-        declared=declared_surface,
+        expected=public_surface,
         violations=violations,
     )
 
@@ -231,7 +350,7 @@ def run_enforcement(
     _compare_set(
         name="bundled_contracts",
         observed=bundle_surface,
-        declared=declared_surface,
+        expected=public_surface,
         violations=violations,
     )
 
@@ -241,9 +360,22 @@ def run_enforcement(
     _compare_set(
         name="generated_types",
         observed=typegen_surface,
-        declared=declared_surface,
+        expected=public_surface,
         violations=violations,
     )
+
+    contract_scope = _read_yaml(contract_scope_file)
+    transport_allowlist = contract_scope.get("runtime_transport_only_allowlist")
+    if not isinstance(transport_allowlist, list):
+        violations.append("contract_scope_missing_runtime_transport_only_allowlist")
+    else:
+        transport_allowlist_set = {str(item).strip() for item in transport_allowlist}
+        _compare_set(
+            name="contract_scope_runtime_transport_only_allowlist",
+            observed=transport_allowlist_set,
+            expected=runtime_alias_surface,
+            violations=violations,
+        )
 
     allowlist_doc = _read_yaml(semantics_skip_allowlist)
     bundles = allowlist_doc.get("bundles") or {}
@@ -269,8 +401,13 @@ def run_enforcement(
             violations.append(f"ci_missing_webhook_surface_lock_token:{token}")
 
     route_fidelity_text = _read_text(route_fidelity_test)
-    if "webhook_contract_drift_is_merge_blocking" not in route_fidelity_text:
-        violations.append("route_fidelity_missing_webhook_drift_guard")
+    required_route_fidelity_tokens = (
+        "webhook_contract_drift_is_merge_blocking",
+        "runtime_transport_only_allowlist",
+    )
+    for token in required_route_fidelity_tokens:
+        if token not in route_fidelity_text:
+            violations.append(f"route_fidelity_missing_webhook_drift_guard_token:{token}")
 
     typegen_text = _read_text(typegen_script)
     required_typegen_tokens = (
@@ -299,7 +436,7 @@ def run_enforcement(
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Enforce B2.2-P0 webhook authority convergence and declared surface lock."
+        description="Enforce B2.2-P0 webhook public topology lock and runtime alias governance."
     )
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
     parser.add_argument(
@@ -308,6 +445,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--semantics-skip-allowlist", default=SEMANTICS_SKIP_ALLOWLIST)
     parser.add_argument("--ci-workflow", default=CI_WORKFLOW)
     parser.add_argument("--route-fidelity-test", default=ROUTE_FIDELITY_TEST)
+    parser.add_argument("--contract-scope-file", default=CONTRACT_SCOPE_FILE)
     parser.add_argument("--typegen-script", default=TYPEGEN_SCRIPT)
     parser.add_argument("--bundle-script", default=BUNDLE_SCRIPT)
     parser.add_argument("--simulate-regression", action="store_true")
@@ -328,6 +466,7 @@ def main(argv: list[str]) -> int:
         semantics_skip_allowlist=_resolve(repo_root, args.semantics_skip_allowlist),
         ci_workflow=_resolve(repo_root, args.ci_workflow),
         route_fidelity_test=_resolve(repo_root, args.route_fidelity_test),
+        contract_scope_file=_resolve(repo_root, args.contract_scope_file),
         typegen_script=_resolve(repo_root, args.typegen_script),
         bundle_script=_resolve(repo_root, args.bundle_script),
     )
@@ -337,7 +476,9 @@ def main(argv: list[str]) -> int:
         lines.extend(violations)
     else:
         lines.append("result=PASS")
-        lines.append("enforcement=declared_runtime_contract_bundle_typegen_webhook_surface_converged")
+        lines.append(
+            "enforcement=public_topology_runtime_alias_contract_bundle_typegen_webhook_surface_converged"
+        )
     sys.stdout.write("\n".join(lines) + "\n")
     return status
 

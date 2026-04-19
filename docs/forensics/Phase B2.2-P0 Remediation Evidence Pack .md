@@ -1,148 +1,146 @@
-# Phase B2.2-P0 Remediation Evidence Pack
+﻿# Phase B2.2-P0 Remediation Evidence Pack (Follow-up Corrective Action)
 
-Date: 2026-04-18  
-Branch at start: `main`  
-Scope: **B2.2-P0 Runtime/Contract Authority Convergence + Declared Surface Lock**
+Date: 2026-04-19
+Branch at start: `main` (`b50a1ef36`)
+Execution branch: `b22-p0-followup-corrective`
+Scope: **Context-Robust Hypothesis-Driven B2.2-P0 Follow up Corrective Action Remediation Directive**
 
-## 1. Initial Findings (Validated)
+## 1. Follow-up Baseline Findings
 
-Authoritative pre-remediation drift (from runtime + contract inventory):
-- Mounted runtime webhook operations: **5**
-- Runtime-generated OpenAPI webhook operations: **5**
-- Source + bundled webhook contract operations: **15**
-- Drift class: **10 declared-but-unmounted webhook operations**
+The previously landed B2.2-P0 state was mechanically converged but architecturally ambiguous for Stripe topology:
 
-Validated blockers at phase start:
-- `H01`/`H03`/`H04`/`H05`: split truth across runtime, source contracts, bundles, and generated types.
-- `H02`: webhook drift tolerated because checks were not fail-closed for webhook exclusivity.
-- `H06`: existing runtime checks proved partial correctness, not full authority-chain identity.
-- `H07`: no webhook-specific declared surface lock artifact and no dedicated enforcer.
+- Runtime mounted webhook routes: **5**.
+- Runtime OpenAPI webhook operations: **5**.
+- Source/bundle/typegen/governance webhook operations: **5**.
+- Two Stripe paths were exposed as public topology everywhere:
+  - `POST /api/webhooks/stripe/payment_intent_succeeded`
+  - `POST /api/webhooks/stripe/payment_intent/succeeded`
+- No schema-control mechanism existed to make one Stripe path runtime-only:
+  - no `include_in_schema=False` on legacy Stripe alias route,
+  - no custom OpenAPI filtering path in `backend/app/main.py`.
+- Existing enforcer proved internal equality only, not architectural correctness of the public topology.
 
-## 2. Remediation Implemented
+## 2. Hypothesis Outcomes (H01-H08)
 
-### 2.1 Canonical Declared Surface (machine-checkable)
-Added canonical governance artifact:
-- `contracts-internal/governance/b22_p0_declared_webhook_surface.main.json`
+- `H01` **CONFIRMED**: governance encoded route-first 5-op equality, not architecture-first public topology.
+- `H02` **CONFIRMED**: Stripe alias/public distinction was not encoded in runtime schema emission.
+- `H03` **CONFIRMED**: source/bundle/typegen surfaces promoted legacy Stripe alias into public SDK topology.
+- `H04` **CONFIRMED**: enforcer validated convergence only; it did not validate correct topology law.
+- `H05` **CONFIRMED (partially)**: negative controls were non-vacuous for drift, but underfit alias-leak topology risk.
+- `H06` **CONFIRMED**: CI was green on wrong invariant (5-op equality).
+- `H07` **REFUTED as unresolved necessity**: no authoritative code-path rationale required both Stripe paths as public SDK surface.
+- `H08` **CONFIRMED**: correct remediation was not route deletion; it was explicit runtime alias + public topology partition.
 
-Declared webhook surface locked to exactly:
+## 3. Architectural Decision Implemented
+
+B2.2-P0 public topology is locked to **4 public operations** (one per provider), while retaining one Stripe runtime transport alias:
+
+Public topology (machine-locked):
 1. `POST /api/webhooks/shopify/order_create`
-2. `POST /api/webhooks/stripe/payment_intent_succeeded`
-3. `POST /api/webhooks/stripe/payment_intent/succeeded`
-4. `POST /api/webhooks/paypal/sale_completed`
-5. `POST /api/webhooks/woocommerce/order_completed`
+2. `POST /api/webhooks/stripe/payment_intent/succeeded`
+3. `POST /api/webhooks/paypal/sale_completed`
+4. `POST /api/webhooks/woocommerce/order_completed`
 
-### 2.2 Source Contract Convergence
-Pruned webhook source contracts to mounted authority only:
-- `api-contracts/openapi/v1/webhooks/shopify.yaml`
+Runtime transport-only alias (machine-locked):
+- `POST /api/webhooks/stripe/payment_intent_succeeded`
+
+This preserves compatibility transport while preventing alias hardening into public OpenAPI/contracts/typegen.
+
+## 4. Remediations Applied
+
+### 4.1 Runtime schema emission control
+- `backend/app/api/webhooks.py`
+  - Added `include_in_schema=False` on legacy Stripe alias route:
+    - `/webhooks/stripe/payment_intent_succeeded`
+
+### 4.2 Canonical source contract topology
 - `api-contracts/openapi/v1/webhooks/stripe.yaml`
-- `api-contracts/openapi/v1/webhooks/paypal.yaml`
-- `api-contracts/openapi/v1/webhooks/woocommerce.yaml`
+  - Removed legacy Stripe alias public operation.
+  - Retained only canonical public path:
+    - `/api/webhooks/stripe/payment_intent/succeeded`
 
-### 2.3 Artifact + Typegen Convergence
-Regenerated bundled contracts and frontend generated types:
-- `api-contracts/dist/openapi/v1/webhooks.*.bundled.yaml`
-- `frontend/src/types/api/webhooks-*.ts`
-- `frontend/src/types/api/index.ts`
+### 4.3 Bundled artifact and typegen convergence
+- Regenerated via canonical scripts:
+  - `api-contracts/dist/openapi/v1/webhooks.stripe.bundled.yaml`
+  - `frontend/src/types/api/webhooks-stripe.ts`
+- Legacy Stripe alias no longer appears in bundled/public type surfaces.
 
-### 2.4 Merge-blocking Proof Harness Hardening
-Added B2.2-P0 enforcer:
+### 4.4 Governance contract hardening
+- `contracts-internal/governance/b22_p0_declared_webhook_surface.main.json`
+  - Upgraded to topology-aware schema:
+    - `required_public_providers`
+    - `public_surface_policy`
+    - `public_operations` (4 operations)
+    - `runtime_transport_aliases` (legacy Stripe alias)
+
+### 4.5 Enforcer invariant correction (correctness, not just equality)
 - `scripts/ci/enforce_b22_p0_webhook_surface_lock.py`
+  - Enforces exact B2.2 public topology set (4 operations).
+  - Enforces approved runtime alias set.
+  - Enforces runtime routes = public + aliases.
+  - Enforces runtime OpenAPI/source/bundle/typegen = public only.
+  - Enforces no public/alias overlap.
+  - Enforces contract-scope alias allowlist alignment.
 
-Added non-vacuous negative controls:
-- `backend/tests/test_b22_p0_webhook_surface_lock_enforcer.py`
-
-Strengthened route fidelity to fail-closed on webhook drift:
+### 4.6 Route fidelity control for runtime-only aliases
+- `backend/app/config/contract_scope.yaml`
+  - Added `runtime_transport_only_allowlist`:
+    - `POST /api/webhooks/stripe/payment_intent_succeeded`
 - `tests/contract/test_route_fidelity.py`
-- New merge-blocking marker: `webhook_contract_drift_is_merge_blocking`
+  - Honors runtime transport-only allowlist in route->contract mapping to avoid false-positive unmapped route failures while preserving fail-closed controls.
 
-Removed webhook semantic skip bypass:
-- `tests/contract/semantics_skip_allowlist.yaml` -> `bundles: {}`
+### 4.7 Negative-control expansion (non-vacuous topology testing)
+- `backend/tests/test_b22_p0_webhook_surface_lock_enforcer.py`
+  - Added/updated controls for:
+    - broadened declared public topology,
+    - alias promoted into public topology,
+    - contract-scope alias allowlist drift,
+    - CI wiring drift,
+    - semantics allowlist webhook bypass,
+    - synthetic forced regression.
 
-Enabled webhook semantic execution under deterministic auth fixture (no DB dependency):
+### 4.8 Test expectation alignment
+- `backend/tests/test_b045_webhooks.py`
+  - OpenAPI checks moved to canonical Stripe public path.
+  - Explicitly asserts legacy alias is absent from runtime OpenAPI.
 - `tests/contract/test_contract_semantics.py`
+  - Runtime parity probe moved to canonical Stripe path.
 
-Wired enforcer into required CI context (`Contract Semantic Drift Gate`):
-- `.github/workflows/ci.yml`
-- Added steps:
-  - `python scripts/ci/enforce_b22_p0_webhook_surface_lock.py`
-  - `pytest backend/tests/test_b22_p0_webhook_surface_lock_enforcer.py -q`
+## 5. Falsifiable Local Validation
 
-## 3. Post-Remediation Authority Convergence
-
-Post-remediation operation identity is exact across all surfaces:
-
-- Runtime mounted routes: **5**
-- Runtime OpenAPI: **5**
-- Source webhook contracts: **5**
-- Bundled webhook artifacts: **5**
-- Generated frontend webhook types: **5**
-
-No declared-unmounted operations remain in canonical B2.2 webhook scope.
-
-## 4. Non-Vacuous Validation Evidence
-
-### 4.1 Enforcer positive proof
+### 5.1 Enforcer pass on corrected invariant
 Command:
 - `python scripts/ci/enforce_b22_p0_webhook_surface_lock.py`
 
-Result:
+Observed result:
 - `result=PASS`
-- `enforcement=declared_runtime_contract_bundle_typegen_webhook_surface_converged`
+- `enforcement=public_topology_runtime_alias_contract_bundle_typegen_webhook_surface_converged`
 
-### 4.2 Enforcer negative controls (fail as designed)
+### 5.2 Enforcer negative controls
 Command:
 - `pytest backend/tests/test_b22_p0_webhook_surface_lock_enforcer.py -q`
 
-Result:
-- `5 passed`
-- Includes synthetic and structural failures:
-  - forced regression path
-  - missing CI wiring
-  - declared surface drift injection
-  - webhook allowlist bypass injection
+Observed result:
+- `7 passed`
 
-### 4.3 Route-fidelity webhook exclusivity proof
+### 5.3 Contract/runtime topology and semantics probes
 Command:
-- `pytest tests/contract/test_route_fidelity.py::test_contract_to_route_mapping -q`
+- `pytest tests/contract/test_route_fidelity.py::test_route_to_contract_mapping tests/contract/test_route_fidelity.py::test_contract_to_route_mapping tests/contract/test_contract_semantics.py::test_p8_runtime_parity_invalid_jwt_vs_invalid_hmac_signature backend/tests/test_b045_webhooks.py::test_openapi_contract_paths_present -q`
 
-Result:
-- `passed`
-- Webhook declared/unmounted drift is now merge-blocking.
+Observed result:
+- `4 passed`
 
-### 4.4 Runtime semantic conformance including webhook bundles
-Command:
-- `pytest tests/contract/test_contract_semantics.py -q`
+## 6. Exit Gate Assessment (Pre-Merge Local)
 
-Result:
-- `21 passed, 1 skipped`
-- Webhook bundles executed and passed without allowlist exemption.
+- **Exit Gate 1 - Public Topology Correctness:** PASS (local proof)
+- **Exit Gate 2 - Emission-Control and Artifact Integrity:** PASS (local proof)
+- **Exit Gate 3 - Correct-Invariant CI Adjudication:** PASS (local proof)
 
-## 5. Exit Gate Status
+## 7. Protected-Branch Completion Evidence
 
-- **EG-P0-1 Runtime/Declared Surface Identity:** PASS
-- **EG-P0-2 Artifact Convergence:** PASS
-- **EG-P0-3 Merge-Blocking Adjudication:** PASS (wired into required `Contract Semantic Drift Gate`)
+This section is finalized when the corrective PR is merged to `main` and one full `main` CI run is green:
 
-## 6. Merge + Main CI Evidence
+- PR URL: `<to be populated after PR creation>`
+- Merge commit on `main`: `<to be populated after merge>`
+- Full green `main` CI run URL: `<to be populated after merge>`
 
-### 6.1 Authority-convergence landing on `main`
-- PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/347`
-- Merge timestamp (UTC): `2026-04-18T22:43:30Z`
-- Merge commit SHA on `main`: `a93ddf8296f6d1a68571cfa8304a4a6e9468a25e`
-- Main CI run URL for this merge commit: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24615568708`
-- Observed result on this first post-merge run: one failing job (`B1.5 P3 Runtime Route Binding and Review Enforcement`) caused by brittle YAML string mutation in a negative-control test after allowlist normalization to `bundles: {}`.
-
-### 6.2 Post-merge CI stabilization (no B2.2 surface change)
-- Follow-up PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/348`
-- Follow-up merge timestamp (UTC): `2026-04-18T23:15:24Z`
-- Follow-up merge commit SHA on `main`: `0a98d2e40a5a01c06f64e463596a21b0d0d5e38d`
-- Follow-up change scope: `backend/tests/test_b15_p3_runtime_route_binding_enforcer.py` only, making skip-allowlist regression injection YAML-structural instead of brittle text append.
-- Authoritative main CI run URL (full-green proof): `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24616087341`
-- CI outcome: `status=completed`, `conclusion=success`.
-- Merge-commit check-run summary (`0a98d2e...`): `106` completed, `0` failures, `0` pending.
-
-### 6.3 Completion Statement
-Protected-branch workflow evidence now includes:
-- initial B2.2-P0 authority convergence merge to `main`,
-- post-merge CI stabilization,
-- at least one full-green `main` CI execution on the landed code path.

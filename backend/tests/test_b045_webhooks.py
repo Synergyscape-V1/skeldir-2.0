@@ -379,18 +379,17 @@ async def test_openapi_contract_paths_present():
     schema = app.openapi()
     paths = schema.get("paths", {})
     assert "/api/webhooks/shopify/order_create" in paths
-    assert "/api/webhooks/stripe/payment_intent_succeeded" in paths
+    assert "/api/webhooks/stripe/payment_intent/succeeded" in paths
+    assert "/api/webhooks/stripe/payment_intent_succeeded" not in paths
     assert "/api/webhooks/paypal/sale_completed" in paths
     assert "/api/webhooks/woocommerce/order_completed" in paths
     # Verify requestBody schemas reference generated models
     shopify_schema_ref = paths["/api/webhooks/shopify/order_create"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
     assert "ShopifyOrderCreateRequest" in shopify_schema_ref
-    stripe_schema_ref = paths["/api/webhooks/stripe/payment_intent_succeeded"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
-    assert "StripePaymentIntentSucceededRequest" in stripe_schema_ref
     # Verify response schemas expose status + identifier fields for 200 and RFC7807 for 401
     for path in [
         "/api/webhooks/shopify/order_create",
-        "/api/webhooks/stripe/payment_intent_succeeded",
+        "/api/webhooks/stripe/payment_intent/succeeded",
         "/api/webhooks/paypal/sale_completed",
         "/api/webhooks/woocommerce/order_completed",
     ]:

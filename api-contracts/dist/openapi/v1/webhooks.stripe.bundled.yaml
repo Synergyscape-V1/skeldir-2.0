@@ -18,11 +18,11 @@ tags:
   - name: Stripe Webhooks
     description: Stripe webhook endpoints for payment events
 paths:
-  /api/webhooks/stripe/payment_intent_succeeded:
+  /api/webhooks/stripe/payment_intent/succeeded:
     post:
-      summary: Stripe payment intent succeeded webhook (legacy path)
-      description: Triggered when a payment intent is successfully completed (legacy endpoint)
-      operationId: stripePaymentIntentSucceededLegacy
+      summary: Stripe payment intent succeeded webhook
+      description: Triggered when a payment intent is successfully completed
+      operationId: stripePaymentIntentSucceeded
       tags:
         - Stripe Webhooks
       parameters:
@@ -37,12 +37,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: &ref_2
+              required: &ref_9
                 - id
                 - type
                 - data
                 - created
-              properties: &ref_3
+              properties: &ref_10
                 id:
                   type: string
                   description: Unique event identifier
@@ -138,7 +138,7 @@ paths:
       responses:
         '200':
           description: Webhook processed successfully
-          content: &ref_4
+          content: &ref_2
             application/json:
               schema:
                 type: object
@@ -159,12 +159,12 @@ paths:
                 message: Webhook received
         '400':
           description: Bad Request - validation failed
-          headers: &ref_5
+          headers: &ref_3
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_6
+          content: &ref_4
             application/problem+json:
               schema:
                 type: object
@@ -232,12 +232,26 @@ paths:
                           example: INVALID_FORMAT
         '401':
           description: Unauthorized - invalid or missing authentication
-          headers: &ref_7
+          headers: &ref_5
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
               description: Request correlation ID for distributed tracing
+          content: &ref_6
+            application/problem+json:
+              schema:
+                type: object
+                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
+                required: *ref_0
+                properties: *ref_1
+        '500':
+          description: Internal server error
+          headers: &ref_7
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
           content: &ref_8
             application/problem+json:
               schema:
@@ -245,69 +259,6 @@ paths:
                 description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
                 required: *ref_0
                 properties: *ref_1
-        '500':
-          description: Internal server error
-          headers: &ref_9
-            X-Correlation-ID:
-              schema:
-                type: string
-                format: uuid
-          content: &ref_10
-            application/problem+json:
-              schema:
-                type: object
-                description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
-                required: *ref_0
-                properties: *ref_1
-  /api/webhooks/stripe/payment_intent/succeeded:
-    post:
-      summary: Stripe payment intent succeeded webhook
-      description: Triggered when a payment intent is successfully completed
-      operationId: stripePaymentIntentSucceeded
-      tags:
-        - Stripe Webhooks
-      parameters:
-        - name: Stripe-Signature
-          in: header
-          required: false
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: *ref_2
-              properties: *ref_3
-            example:
-              id: evt_paymentintent_1234567890
-              type: payment_intent.succeeded
-              created: 1732631500
-              data:
-                object:
-                  id: pi_1234567890
-                  amount: 19999
-                  currency: usd
-                  status: succeeded
-                  metadata:
-                    skeldir_session_id: sess_refund123
-      responses:
-        '200':
-          description: Webhook processed successfully
-          content: *ref_4
-        '400':
-          description: Bad Request - validation failed
-          headers: *ref_5
-          content: *ref_6
-        '401':
-          description: Unauthorized - invalid or missing authentication
-          headers: *ref_7
-          content: *ref_8
-        '500':
-          description: Internal server error
-          headers: *ref_9
-          content: *ref_10
 components:
   securitySchemes:
     tenantKeyAuth:
@@ -318,24 +269,24 @@ components:
   responses:
     WebhookAccepted:
       description: Webhook processed successfully
-      content: *ref_4
+      content: *ref_2
     ValidationError:
       description: Bad Request - validation failed
-      headers: *ref_5
-      content: *ref_6
+      headers: *ref_3
+      content: *ref_4
     UnauthorizedError:
       description: Unauthorized - invalid or missing authentication
-      headers: *ref_7
-      content: *ref_8
+      headers: *ref_5
+      content: *ref_6
     ServerError:
       description: Internal server error
-      headers: *ref_9
-      content: *ref_10
+      headers: *ref_7
+      content: *ref_8
   schemas:
     StripeEvent:
       type: object
-      required: *ref_2
-      properties: *ref_3
+      required: *ref_9
+      properties: *ref_10
     StripeCharge:
       type: object
       required: *ref_11

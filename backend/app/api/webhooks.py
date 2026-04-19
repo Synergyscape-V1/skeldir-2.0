@@ -459,6 +459,7 @@ async def shopify_order_create(
     "/webhooks/stripe/payment_intent_succeeded",
     response_model=WebhookResponse,
     responses={401: UNAUTHORIZED_PROBLEM_RESPONSE},
+    include_in_schema=False,
 )
 async def stripe_payment_intent_succeeded(
     request: Request,

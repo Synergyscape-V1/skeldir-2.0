@@ -29,6 +29,12 @@ out_of_scope_paths:
 # Use this sparingly - it's for upcoming endpoints only, not a permanent bypass
 contract_only_allowlist: []
 
+# Runtime transport-only allowlist: Mounted compatibility routes intentionally excluded
+# from public contracts/OpenAPI schema emission.
+# Format: "METHOD /path/to/endpoint"
+runtime_transport_only_allowlist:
+  - POST /api/webhooks/stripe/payment_intent_succeeded
+
 # Mapping: In-scope prefixes to their corresponding bundled OpenAPI specifications
 # Used to determine which contract file governs each route
 spec_mappings:
