@@ -74,6 +74,15 @@ Scope: **Phase B2.2-P1 - Authenticity Semantics Closure + Tenant Secret Authorit
 - Added real asymmetric PayPal test signing/cert fixture and moved PayPal tests off HMAC shortcut assumptions.
 - Added bounded fail-closed test for cert-fetch failure path.
 
+## 2.7 Mainline CI stabilization required for protected-branch closure
+- File: `backend/tests/test_b0567_integration_truthful_scrape_targets.py`
+- After landing PR #354, `main` CI failed on `Backend Integration (B0567)` due to scrape-timing nondeterminism in
+  `test_t71_task_metrics_delta_on_exporter` (`duration_count` delta occasionally observed before second update was exported).
+- Remediation:
+  - Replaced single immediate post-task scrape with bounded polling (`10s` max, `200ms` interval).
+  - Kept strict assertions (`success>=1`, `failure>=1`, `duration_count>=2`) and fail-closed timeout assertion payload.
+- This stabilized required protected-branch CI behavior on `main` without changing production auth semantics.
+
 ## 3. Falsifiable Validation Performed
 
 ## 3.1 Enforcer / contract locks
@@ -89,6 +98,9 @@ Scope: **Phase B2.2-P1 - Authenticity Semantics Closure + Tenant Secret Authorit
 - `pytest backend/tests/test_b045_webhooks.py -q` -> `12 passed`
 - `pytest backend/tests/test_b046_integration.py -q` -> `8 passed`
 
+## 3.4 Post-merge CI stabilization check
+- `pytest -vv backend/tests/test_b0567_integration_truthful_scrape_targets.py::test_t71_task_metrics_delta_on_exporter` -> `1 passed`
+
 ## 4. Exit Gate Assessment (B2.2-P1)
 
 1. Exit Gate 1 - Provider-correct PayPal authenticity closure: **PASS (local proof)**
@@ -103,16 +115,32 @@ Scope: **Phase B2.2-P1 - Authenticity Semantics Closure + Tenant Secret Authorit
 - Cert retrieval path has explicit SSRF-resistant constraints and bounded runtime behavior.
 - Bounded fail-closed cert-fetch test added and passing.
 
-4. Exit Gate 4 - Correct-invariant CI adjudication + mainline closure: **IN PROGRESS**
+4. Exit Gate 4 - Correct-invariant CI adjudication + mainline closure: **PASS**
 - Correct invariant is encoded in governance + enforcer + tests.
-- Protected-branch merge and authoritative green `main` run evidence recorded below after merge.
+- Provider-correct remediation landed on `main` via protected branch PR #354.
+- A subsequent unrelated `main` CI failure (`B0567` scrape-timing nondeterminism) was remediated and landed via protected branch PR #355.
+- Final `main` merge commit has authoritative all-green run set and zero failed check-runs (evidence below).
 
 ## 5. Protected Branch Delivery Evidence
 
-- PR URL: `TBD`
-- PR head SHA: `TBD`
-- Merge commit on `main`: `TBD`
-- Green `main` CI run URL: `TBD`
-- Required checks status: `TBD`
+1. Provider-correct PayPal remediation landing
+- PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/354`
+- PR head SHA: `a3b295bdb12b879c12ad4f00e2993c8f6f762d02`
+- Merge commit on `main`: `a4e091613a918ef2220e1cff6b6d0916e2a235bf`
+- Merge timestamp: `2026-04-19T19:33:52Z`
 
-This section is finalized only after authoritative protected-branch merge and post-merge green `main` adjudication.
+2. Initial post-merge `main` adjudication for PR #354
+- Failing workflow run (unrelated nondeterministic test): `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24637347717`
+- Failing job: `Backend Integration (B0567)` (`test_t71_task_metrics_delta_on_exporter`)
+
+3. Stabilization landing for green-main closure
+- PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/355`
+- PR head SHA: `e1a3641fe720035ef77c941d907bc816c89afa94`
+- Merge commit on `main`: `11f7b94df075e3c1f7b9cb60e2939f9cb3456d30`
+- Merge timestamp: `2026-04-19T20:52:16Z`
+
+4. Authoritative green `main` evidence on final merged state (`11f7b94`)
+- CI workflow run (green): `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24638867065`
+- `Backend Integration (B0567)` job (green): `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24638867065/job/72039174440`
+- Full commit run-set query shows 20/20 workflows `completed/success` for commit `11f7b94`.
+- Check-runs summary on commit `11f7b94`: `total_check_runs=106`, `failed_count=0`.
