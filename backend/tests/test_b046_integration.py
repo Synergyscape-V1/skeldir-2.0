@@ -182,9 +182,23 @@ def sign_stripe(body: bytes, secret: str) -> str:
     return f"t={ts},v1={sig}"
 
 
-def sign_paypal(body: bytes, secret: str) -> str:
-    """Generate PayPal HMAC-SHA256 hexdigest signature."""
-    return hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+def paypal_auth_headers(body: bytes, secret: str, *, webhook_id: str = "wh_qg61_paypal") -> dict[str, str]:
+    """Generate PayPal canonical auth envelope headers."""
+    transmission_id = f"tr_{uuid4().hex[:16]}"
+    transmission_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    auth_algo = "HMAC-SHA256"
+    cert_url = "https://api-m.paypal.com/v1/notifications/certs/CERT-123"
+    body_hash = hashlib.sha256(body).hexdigest()
+    canonical = f"{transmission_id}|{transmission_time}|{webhook_id}|{body_hash}".encode()
+    signature = hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
+    return {
+        "PayPal-Transmission-Sig": signature,
+        "PayPal-Transmission-Id": transmission_id,
+        "PayPal-Transmission-Time": transmission_time,
+        "PayPal-Webhook-Id": webhook_id,
+        "PayPal-Auth-Algo": auth_algo,
+        "PayPal-Cert-Url": cert_url,
+    }
 
 
 def sign_woocommerce(body: bytes, secret: str) -> str:
@@ -294,7 +308,7 @@ async def test_qg61_paypal_end_to_end(test_tenant_with_secrets):
         "create_time": datetime.now(timezone.utc).isoformat(),
     }).encode()
 
-    signature = sign_paypal(body, tenant_info["secrets"]["paypal"])
+    auth_headers = paypal_auth_headers(body, tenant_info["secrets"]["paypal"])
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -302,7 +316,7 @@ async def test_qg61_paypal_end_to_end(test_tenant_with_secrets):
             "/api/webhooks/paypal/sale_completed",
             content=body,
             headers={
-                "PayPal-Transmission-Sig": signature,
+                **auth_headers,
                 "X-Skeldir-Tenant-Key": tenant_info["api_key"],
                 "Content-Type": "application/json",
             },
@@ -618,14 +632,14 @@ async def test_qg65_performance_baseline_1000_events(test_tenant_with_secrets):
                 "create_time": datetime.now(timezone.utc).isoformat(),
             }).encode()
 
-            signature = sign_paypal(body, tenant_info["secrets"]["paypal"])
+            auth_headers = paypal_auth_headers(body, tenant_info["secrets"]["paypal"])
 
             event_start = time.time()
             resp = await client.post(
                 "/api/webhooks/paypal/sale_completed",
                 content=body,
                 headers={
-                    "PayPal-Transmission-Sig": signature,
+                    **auth_headers,
                     "X-Skeldir-Tenant-Key": tenant_info["api_key"],
                     "Content-Type": "application/json",
                 },

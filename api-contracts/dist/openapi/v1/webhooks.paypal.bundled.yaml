@@ -28,19 +28,38 @@ paths:
       parameters:
         - name: PAYPAL-TRANSMISSION-ID
           in: header
-          required: false
+          required: true
           schema:
             type: string
           description: PayPal transmission ID
         - name: PAYPAL-TRANSMISSION-SIG
           in: header
-          required: false
+          required: true
           schema:
             type: string
           description: PayPal transmission signature
+        - name: PAYPAL-TRANSMISSION-TIME
+          in: header
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: PayPal transmission timestamp (ISO-8601)
+        - name: PAYPAL-WEBHOOK-ID
+          in: header
+          required: true
+          schema:
+            type: string
+          description: PayPal webhook ID associated with this notification
+        - name: PAYPAL-AUTH-ALGO
+          in: header
+          required: true
+          schema:
+            type: string
+          description: PayPal signature algorithm identifier
         - name: PAYPAL-CERT-URL
           in: header
-          required: false
+          required: true
           schema:
             type: string
             format: uri

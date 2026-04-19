@@ -89,6 +89,29 @@ WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
 }
 
 
+def _paypal_auth_envelope_header(
+    *,
+    transmission_id: str | None,
+    transmission_time: str | None,
+    transmission_sig: str | None,
+    webhook_id: str | None,
+    auth_algo: str | None,
+    cert_url: str | None,
+) -> str:
+    return json.dumps(
+        {
+            "transmission_id": transmission_id,
+            "transmission_time": transmission_time,
+            "transmission_sig": transmission_sig,
+            "webhook_id": webhook_id,
+            "auth_algo": auth_algo,
+            "cert_url": cert_url,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def _parse_content_length_header(request: Request) -> int | None:
     raw = request.headers.get("content-length")
     if raw is None:
@@ -188,12 +211,25 @@ async def stripe_webhook_auth(
 async def paypal_webhook_auth(
     request: Request,
     transmission_sig: str | None = Header(None, alias="PayPal-Transmission-Sig"),
+    transmission_id: str | None = Header(None, alias="PayPal-Transmission-Id"),
+    transmission_time: str | None = Header(None, alias="PayPal-Transmission-Time"),
+    webhook_id: str | None = Header(None, alias="PayPal-Webhook-Id"),
+    auth_algo: str | None = Header(None, alias="PayPal-Auth-Algo"),
+    cert_url: str | None = Header(None, alias="PayPal-Cert-Url"),
     api_key: str | None = Security(tenant_key_auth),
 ) -> dict[str, Any]:
+    envelope = _paypal_auth_envelope_header(
+        transmission_id=transmission_id,
+        transmission_time=transmission_time,
+        transmission_sig=transmission_sig,
+        webhook_id=webhook_id,
+        auth_algo=auth_algo,
+        cert_url=cert_url,
+    )
     return await _authorize_webhook_request(
         request=request,
         provider="paypal",
-        signature_header=transmission_sig,
+        signature_header=envelope,
         api_key=api_key,
     )
 

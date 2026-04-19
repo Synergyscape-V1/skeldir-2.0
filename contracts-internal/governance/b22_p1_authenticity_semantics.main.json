@@ -1,0 +1,49 @@
+{
+  "contract_id": "b22.p1.authenticity_semantics.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.2-P1",
+  "description": "Canonical B2.2-P1 authenticity semantics lock for webhook providers under tenant secret authority.",
+  "providers": {
+    "shopify": {
+      "signature_header": "X-Shopify-Hmac-Sha256",
+      "semantic_class": "hmac_sha256_base64_raw_body",
+      "requires_timestamp": false
+    },
+    "stripe": {
+      "signature_header": "Stripe-Signature",
+      "semantic_class": "hmac_sha256_timestamped_payload",
+      "requires_timestamp": true,
+      "timestamp_tolerance_seconds": 300
+    },
+    "paypal": {
+      "signature_header": "PayPal-Transmission-Sig",
+      "semantic_class": "hmac_sha256_canonical_envelope",
+      "requires_timestamp": true,
+      "timestamp_tolerance_seconds": 300,
+      "required_headers": [
+        "PayPal-Transmission-Id",
+        "PayPal-Transmission-Time",
+        "PayPal-Transmission-Sig",
+        "PayPal-Webhook-Id",
+        "PayPal-Auth-Algo",
+        "PayPal-Cert-Url"
+      ],
+      "allowed_cert_host_suffixes": [
+        "paypal.com",
+        "paypalobjects.com"
+      ]
+    },
+    "woocommerce": {
+      "signature_header": "X-WC-Webhook-Signature",
+      "semantic_class": "hmac_sha256_base64_raw_body",
+      "requires_timestamp": false
+    }
+  },
+  "latency_design": {
+    "hot_path_remote_dependency_allowed": false,
+    "verification_class": "local_cpu_bound",
+    "proof_test": "backend/tests/test_b22_p1_authenticity_semantics.py::test_b22_p1_paypal_verifier_latency_is_bounded_for_hot_path"
+  }
+}

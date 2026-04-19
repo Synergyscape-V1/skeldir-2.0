@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import jwt
@@ -115,6 +116,33 @@ def _stripe_signature(raw_body: bytes, secret: str, *, valid: bool) -> str:
 
 def _shopify_signature(raw_body: bytes, secret: str) -> str:
     return base64.b64encode(hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).digest()).decode("utf-8")
+
+
+def _paypal_auth_headers(
+    raw_body: bytes,
+    secret: str,
+    *,
+    valid_signature: bool,
+    transmission_time: datetime | None = None,
+    webhook_id: str = "wh_b12_p8",
+) -> dict[str, str]:
+    transmission_id = f"tr_{uuid4().hex[:16]}"
+    transmission_time_token = (
+        transmission_time or datetime.now(timezone.utc)
+    ).isoformat().replace("+00:00", "Z")
+    body_hash = hashlib.sha256(raw_body).hexdigest()
+    canonical = f"{transmission_id}|{transmission_time_token}|{webhook_id}|{body_hash}".encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+    if not valid_signature:
+        signature = "0" * len(signature)
+    return {
+        "PayPal-Transmission-Sig": signature,
+        "PayPal-Transmission-Id": transmission_id,
+        "PayPal-Transmission-Time": transmission_time_token,
+        "PayPal-Webhook-Id": webhook_id,
+        "PayPal-Auth-Algo": "HMAC-SHA256",
+        "PayPal-Cert-Url": "https://api-m.paypal.com/v1/notifications/certs/CERT-123",
+    }
 
 
 def _assert_constant_work_compute_called_once(calls: int) -> None:
@@ -310,6 +338,72 @@ async def test_eg83_hmac_failure_variants_share_non_leaky_problem_contract(monke
 
 
 @pytest.mark.asyncio
+async def test_eg83_paypal_hmac_failure_variants_share_non_leaky_problem_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _tenant_lookup(api_key: str):
+        if api_key == "known-key":
+            return _tenant_info()
+        raise unauthorized_auth_error()
+
+    monkeypatch.setattr(webhooks_api, "get_tenant_with_webhook_secrets", _tenant_lookup)
+
+    payload = {
+        "id": f"txn_{uuid4().hex[:12]}",
+        "amount": {"total": "15.00", "currency": "USD"},
+        "create_time": datetime.now(timezone.utc).isoformat(),
+    }
+    raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    bad_signature_headers = _paypal_auth_headers(raw_body, "paypal_secret", valid_signature=False)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        missing_required_header = await client.post(
+            "/api/webhooks/paypal/sale_completed",
+            content=raw_body,
+            headers={
+                "content-type": "application/json",
+                "X-Correlation-ID": str(uuid4()),
+                "X-Skeldir-Tenant-Key": "known-key",
+                "PayPal-Transmission-Sig": bad_signature_headers["PayPal-Transmission-Sig"],
+            },
+        )
+        unknown_tenant = await client.post(
+            "/api/webhooks/paypal/sale_completed",
+            content=raw_body,
+            headers={
+                "content-type": "application/json",
+                "X-Correlation-ID": str(uuid4()),
+                "X-Skeldir-Tenant-Key": "unknown-key",
+                **bad_signature_headers,
+            },
+        )
+        stale_timestamp = await client.post(
+            "/api/webhooks/paypal/sale_completed",
+            content=raw_body,
+            headers={
+                "content-type": "application/json",
+                "X-Correlation-ID": str(uuid4()),
+                "X-Skeldir-Tenant-Key": "known-key",
+                **_paypal_auth_headers(
+                    raw_body,
+                    "paypal_secret",
+                    valid_signature=True,
+                    transmission_time=datetime.now(timezone.utc) - timedelta(minutes=10),
+                ),
+            },
+        )
+
+    problems = {
+        "missing_required_header": _assert_problem_response_shape(
+            missing_required_header, expected_status=401
+        ),
+        "unknown_tenant": _assert_problem_response_shape(unknown_tenant, expected_status=401),
+        "stale_timestamp": _assert_problem_response_shape(stale_timestamp, expected_status=401),
+    }
+    assert {p["code"] for p in problems.values()} == {"AUTH_UNAUTHORIZED"}
+    assert {p["detail"] for p in problems.values()} == {"Authentication failed."}
+
+
+@pytest.mark.asyncio
 async def test_eg8cf_constant_work_unknown_key_and_known_bad_signature_both_invoke_compute(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _tenant_lookup(api_key: str):
         if api_key == "known-key":
@@ -372,6 +466,120 @@ async def test_eg8cf_constant_work_unknown_key_and_known_bad_signature_both_invo
     _assert_problem_response_shape(known_key_bad_sig_response, expected_status=401)
     _assert_constant_work_compute_called_once(unknown_calls)
     _assert_constant_work_compute_called_once(known_calls)
+
+
+@pytest.mark.asyncio
+async def test_eg8cf_paypal_constant_work_unknown_key_and_known_bad_signature_both_invoke_compute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _tenant_lookup(api_key: str):
+        if api_key == "known-key":
+            return _tenant_info()
+        raise unauthorized_auth_error()
+
+    monkeypatch.setattr(webhooks_api, "get_tenant_with_webhook_secrets", _tenant_lookup)
+
+    original_secret_field, original_verifier = webhooks_api.WEBHOOK_VERIFIERS["paypal"]
+    call_count = {"value": 0}
+
+    def _spy_verifier(raw_body: bytes, secret: str | None, header: str | None) -> bool:
+        call_count["value"] += 1
+        return original_verifier(raw_body, secret, header)
+
+    webhooks_api.WEBHOOK_VERIFIERS["paypal"] = (original_secret_field, _spy_verifier)
+
+    payload = {
+        "id": f"txn_{uuid4().hex[:12]}",
+        "amount": {"total": "15.00", "currency": "USD"},
+        "create_time": datetime.now(timezone.utc).isoformat(),
+    }
+    raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    bad_signature_headers = _paypal_auth_headers(raw_body, "paypal_secret", valid_signature=False)
+
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            call_count["value"] = 0
+            unknown_key_response = await client.post(
+                "/api/webhooks/paypal/sale_completed",
+                content=raw_body,
+                headers={
+                    "content-type": "application/json",
+                    "X-Correlation-ID": str(uuid4()),
+                    "X-Skeldir-Tenant-Key": "unknown-key",
+                    **bad_signature_headers,
+                },
+            )
+            unknown_calls = call_count["value"]
+
+            call_count["value"] = 0
+            known_key_bad_sig_response = await client.post(
+                "/api/webhooks/paypal/sale_completed",
+                content=raw_body,
+                headers={
+                    "content-type": "application/json",
+                    "X-Correlation-ID": str(uuid4()),
+                    "X-Skeldir-Tenant-Key": "known-key",
+                    **bad_signature_headers,
+                },
+            )
+            known_calls = call_count["value"]
+    finally:
+        webhooks_api.WEBHOOK_VERIFIERS["paypal"] = (original_secret_field, original_verifier)
+
+    _assert_problem_response_shape(unknown_key_response, expected_status=401)
+    _assert_problem_response_shape(known_key_bad_sig_response, expected_status=401)
+    _assert_constant_work_compute_called_once(unknown_calls)
+    _assert_constant_work_compute_called_once(known_calls)
+
+
+@pytest.mark.asyncio
+async def test_eg8route_stripe_alias_and_canonical_auth_failures_are_equivalent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _tenant_lookup(api_key: str):
+        if api_key == "known-key":
+            return _tenant_info()
+        raise unauthorized_auth_error()
+
+    monkeypatch.setattr(webhooks_api, "get_tenant_with_webhook_secrets", _tenant_lookup)
+    payload = {
+        "id": f"pi_{uuid4().hex[:12]}",
+        "amount": 5000,
+        "currency": "usd",
+        "created": 1732631400,
+        "status": "succeeded",
+    }
+    raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    bad_signature = _stripe_signature(raw_body, "stripe_secret", valid=False)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        alias_response = await client.post(
+            "/api/webhooks/stripe/payment_intent_succeeded",
+            content=raw_body,
+            headers={
+                "content-type": "application/json",
+                "X-Correlation-ID": str(uuid4()),
+                "X-Skeldir-Tenant-Key": "known-key",
+                "Stripe-Signature": bad_signature,
+            },
+        )
+        canonical_response = await client.post(
+            "/api/webhooks/stripe/payment_intent/succeeded",
+            content=raw_body,
+            headers={
+                "content-type": "application/json",
+                "X-Correlation-ID": str(uuid4()),
+                "X-Skeldir-Tenant-Key": "known-key",
+                "Stripe-Signature": bad_signature,
+            },
+        )
+
+    alias_problem = _assert_problem_response_shape(alias_response, expected_status=401)
+    canonical_problem = _assert_problem_response_shape(canonical_response, expected_status=401)
+    assert alias_problem["code"] == canonical_problem["code"] == "AUTH_UNAUTHORIZED"
+    assert alias_problem["detail"] == canonical_problem["detail"] == "Authentication failed."
 
 
 @pytest.mark.asyncio
