@@ -138,9 +138,12 @@ Observed result:
 
 ## 7. Protected-Branch Completion Evidence
 
-This section is finalized when the corrective PR is merged to `main` and one full `main` CI run is green:
-
-- PR URL: `<to be populated after PR creation>`
-- Merge commit on `main`: `<to be populated after merge>`
-- Full green `main` CI run URL: `<to be populated after merge>`
+- PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/350`
+- PR head commit (final): `0f00836c92348e128a94e887932bfeabfd6fc8aa`
+- Required-check adjudication proof (PR required contexts): `gh pr checks 350 --required --watch --interval 30` completed successfully.
+- Merge commit on `main`: `d3044897ccd4ef39caccdc0d5ece15bc716778da` (merged 2026-04-19 UTC)
+- Full-green `main` CI run (post-merge): `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24630111289`
+  - Workflow: `CI`
+  - Status: `completed`
+  - Conclusion: `success`
 
