@@ -42,6 +42,16 @@ domain_invariants:
       - contract: "Future attribution endpoints (B2.4+)"
       - pydantic: "Field validator with range check"
       - tests: "Boundary testing at 0, 0.5, 1, and invalid values"
+    exceptions:
+      - platform: "attribution"
+        path_pattern: "^ChannelAttribution\\.confidence_score$"
+        type: string
+        pattern: "^(0|1)\\.\\d{3}$"
+        unset:
+          - format
+          - minimum
+          - maximum
+        rationale: "B2.1/B2.2 attribution channel projection uses deterministic decimal-string precision transport (scale=3)."
   
   credible_interval_lower:
     type: number

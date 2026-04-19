@@ -94,7 +94,11 @@ def find_nested_fields(properties: Dict, parent_path: str) -> List[Tuple[str, Di
     
     return fields
 
-def apply_invariant_exceptions(invariant_def: Dict, contract_name: str) -> Dict:
+def apply_invariant_exceptions(
+    invariant_def: Dict,
+    contract_name: str,
+    field_path: str | None = None,
+) -> Dict:
     """Return invariant definition adjusted for contract-specific exceptions."""
     # Copy base definition excluding exceptions metadata
     effective_def = {
@@ -107,12 +111,23 @@ def apply_invariant_exceptions(invariant_def: Dict, contract_name: str) -> Dict:
     
     for exception in exceptions:
         platform = exception.get('platform')
-        if platform and platform.lower() in contract_name_lower:
-            for key, value in exception.items():
-                if key == 'platform':
-                    continue
-                effective_def[key] = value
-            break
+        if platform and platform.lower() not in contract_name_lower:
+            continue
+
+        path_pattern = exception.get('path_pattern')
+        if path_pattern and field_path:
+            if not re.search(path_pattern, field_path):
+                continue
+        elif path_pattern and not field_path:
+            continue
+
+        for key, value in exception.items():
+            if key in {'platform', 'path_pattern'}:
+                continue
+            effective_def[key] = value
+        for key_to_remove in exception.get('unset', []):
+            effective_def.pop(key_to_remove, None)
+        break
     
     return effective_def
 
@@ -246,7 +261,7 @@ def validate_invariants(repo_root: Path, verbose: bool = False) -> Tuple[bool, L
                     stats['invariant_checks_performed'] += 1
                     
                     effective_invariant = apply_invariant_exceptions(
-                        invariant_def, contract_file.name
+                        invariant_def, contract_file.name, field_path
                     )
                     
                     field_violations = validate_field_against_invariant(
