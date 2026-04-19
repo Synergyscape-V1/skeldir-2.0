@@ -179,14 +179,35 @@ def test_t71_task_metrics_delta_on_exporter(metrics_topology):
     with pytest.raises(Exception):
         fail.get(timeout=60, propagate=True)
 
-    after = _scrape_text(f"{metrics_topology.exporter_url}/metrics")
-    after_success = _get_sample_value(after, metric_name="celery_task_success_total", labels=labels)
-    after_failure = _get_sample_value(after, metric_name="celery_task_failure_total", labels=labels)
-    after_duration_count = _get_sample_value(after, metric_name="celery_task_duration_seconds_count", labels=labels)
+    deadline = time.time() + 10.0
+    last_after_success = before_success
+    last_after_failure = before_failure
+    last_after_duration_count = before_duration_count
 
-    assert after_success - before_success >= 1.0
-    assert after_failure - before_failure >= 1.0
-    assert after_duration_count - before_duration_count >= 2.0
+    while time.time() < deadline:
+        after = _scrape_text(f"{metrics_topology.exporter_url}/metrics")
+        last_after_success = _get_sample_value(after, metric_name="celery_task_success_total", labels=labels)
+        last_after_failure = _get_sample_value(after, metric_name="celery_task_failure_total", labels=labels)
+        last_after_duration_count = _get_sample_value(
+            after,
+            metric_name="celery_task_duration_seconds_count",
+            labels=labels,
+        )
+
+        if (
+            (last_after_success - before_success >= 1.0)
+            and (last_after_failure - before_failure >= 1.0)
+            and (last_after_duration_count - before_duration_count >= 2.0)
+        ):
+            break
+        time.sleep(0.2)
+    else:
+        raise AssertionError(
+            "Timed out waiting for task metric deltas: "
+            f"success_delta={last_after_success - before_success}, "
+            f"failure_delta={last_after_failure - before_failure}, "
+            f"duration_delta={last_after_duration_count - before_duration_count}"
+        )
 
 
 def test_t72_api_queue_gauges_match_broker_truth(metrics_topology):
