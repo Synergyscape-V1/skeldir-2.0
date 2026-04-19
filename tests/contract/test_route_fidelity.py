@@ -122,6 +122,7 @@ def test_route_to_contract_mapping():
     scope = load_contract_scope()
     in_scope_prefixes = scope.get("in_scope_prefixes", [])
     out_of_scope_paths = scope.get("out_of_scope_paths", [])
+    runtime_transport_only_allowlist = set(scope.get("runtime_transport_only_allowlist", []))
 
     routes = extract_fastapi_routes()
 
@@ -152,6 +153,8 @@ def test_route_to_contract_mapping():
         if is_in_scope:
             # Check if contract operation exists
             route_key = f"{route['method']} {route['path']}"
+            if route_key in runtime_transport_only_allowlist:
+                continue
             if route_key not in all_contract_operations:
                 unmapped_routes.append(route)
 

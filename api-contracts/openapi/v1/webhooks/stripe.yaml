@@ -20,47 +20,6 @@ tags:
 security:
 - tenantKeyAuth: []
 paths:
-  /api/webhooks/stripe/payment_intent_succeeded:
-    post:
-      summary: Stripe payment intent succeeded webhook (legacy path)
-      description: Triggered when a payment intent is successfully completed (legacy
-        endpoint)
-      operationId: stripePaymentIntentSucceededLegacy
-      tags:
-      - Stripe Webhooks
-      parameters:
-      - name: Stripe-Signature
-        in: header
-        required: false
-        schema:
-          type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StripeEvent'
-            example:
-              id: evt_paymentintent_1234567890
-              type: payment_intent.succeeded
-              created: 1732631500
-              data:
-                object:
-                  id: pi_1234567890
-                  amount: 19999
-                  currency: usd
-                  status: succeeded
-                  metadata:
-                    skeldir_session_id: sess_refund123
-      responses:
-        '200':
-          $ref: '#/components/responses/WebhookAccepted'
-        '400':
-          $ref: ../_common/base.yaml#/components/responses/ValidationError
-        '401':
-          $ref: ../_common/base.yaml#/components/responses/UnauthorizedError
-        '500':
-          $ref: ../_common/base.yaml#/components/responses/ServerError
   /api/webhooks/stripe/payment_intent/succeeded:
     post:
       summary: Stripe payment intent succeeded webhook

@@ -1,11 +1,18 @@
 {
   "contract_id": "b22.p0.declared_webhook_surface.main",
-  "contract_version": "1.0.0",
+  "contract_version": "2.0.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.2-P0",
-  "description": "Canonical declared webhook ingress surface for B2.2-P0 runtime/contract authority convergence.",
-  "operations": [
+  "description": "Canonical B2.2-P0 webhook topology contract: public surface lock plus runtime transport aliases.",
+  "required_public_providers": [
+    "shopify",
+    "woocommerce",
+    "stripe",
+    "paypal"
+  ],
+  "public_surface_policy": "exactly_one_public_operation_per_provider",
+  "public_operations": [
     {
       "method": "POST",
       "path": "/api/webhooks/shopify/order_create",
@@ -13,14 +20,6 @@
       "source_contract": "api-contracts/openapi/v1/webhooks/shopify.yaml",
       "bundle": "api-contracts/dist/openapi/v1/webhooks.shopify.bundled.yaml",
       "generated_type": "frontend/src/types/api/webhooks-shopify.ts"
-    },
-    {
-      "method": "POST",
-      "path": "/api/webhooks/stripe/payment_intent_succeeded",
-      "provider": "stripe",
-      "source_contract": "api-contracts/openapi/v1/webhooks/stripe.yaml",
-      "bundle": "api-contracts/dist/openapi/v1/webhooks.stripe.bundled.yaml",
-      "generated_type": "frontend/src/types/api/webhooks-stripe.ts"
     },
     {
       "method": "POST",
@@ -45,6 +44,16 @@
       "source_contract": "api-contracts/openapi/v1/webhooks/woocommerce.yaml",
       "bundle": "api-contracts/dist/openapi/v1/webhooks.woocommerce.bundled.yaml",
       "generated_type": "frontend/src/types/api/webhooks-woocommerce.ts"
+    }
+  ],
+  "runtime_transport_aliases": [
+    {
+      "method": "POST",
+      "path": "/api/webhooks/stripe/payment_intent_succeeded",
+      "provider": "stripe",
+      "alias_of": "POST /api/webhooks/stripe/payment_intent/succeeded",
+      "visibility": "runtime_transport_only",
+      "reason": "Legacy compatibility alias remains mounted but is intentionally excluded from public OpenAPI/contracts/typegen."
     }
   ]
 }

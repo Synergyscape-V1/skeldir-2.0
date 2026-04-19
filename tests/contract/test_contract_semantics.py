@@ -508,7 +508,7 @@ def test_p8_runtime_parity_invalid_jwt_vs_invalid_hmac_signature(monkeypatch):
         },
     )
     hmac_resp = client.post(
-        "/api/webhooks/stripe/payment_intent_succeeded",
+        "/api/webhooks/stripe/payment_intent/succeeded",
         json={
             "id": f"pi_{uuid.uuid4().hex[:12]}",
             "amount": 5000,
