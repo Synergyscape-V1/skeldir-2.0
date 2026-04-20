@@ -115,7 +115,7 @@ async def test_b14_p4_runtime_schema_split_writes_raw_payloads_without_mutating_
             await conn.execute(
                 text(
                     """
-                    SELECT payload_json, user_agent, raw_headers, lookup_hash
+                    SELECT payload_json, ip_address, user_agent, raw_headers, lookup_hash
                     FROM raw_event_payloads
                     WHERE tenant_id = :tenant_id
                       AND event_id = :event_id
@@ -134,7 +134,9 @@ async def test_b14_p4_runtime_schema_split_writes_raw_payloads_without_mutating_
     assert isinstance(expirable_payload, dict)
     assert "order_id" not in immutable_payload
     assert expirable_payload.get("order_id") is not None
-    assert payload_row["user_agent"] == "b14-p4-runtime-agent"
+    assert payload_row["ip_address"] is None
+    assert payload_row["user_agent"] is None
+    assert payload_row["raw_headers"] is None
     assert payload_row["lookup_hash"] == hashlib.sha256(
         idempotency_key.encode("utf-8")
     ).hexdigest()

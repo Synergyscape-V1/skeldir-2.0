@@ -50,6 +50,15 @@ _SENSITIVE_REQUEST_HEADER_KEYS = frozenset(
         "proxy-authorization",
     }
 )
+_WEBHOOK_INGRESS_SOURCES = frozenset(
+    {
+        "shopify",
+        "stripe",
+        "paypal",
+        "woocommerce",
+        "webhook",
+    }
+)
 
 
 def _first_non_empty_resolution_token(*values: Any) -> str | None:
@@ -87,6 +96,24 @@ def _first_header_value(
         if value:
             return value
     return None
+
+
+def _raw_event_ingress_metadata_for_persistence(
+    *,
+    source: str,
+    normalized_headers: Mapping[str, str],
+) -> tuple[str | None, str | None, dict[str, str] | None]:
+    """
+    Preserve verification substrate in memory only, not in durable webhook storage.
+    """
+    if source.strip().lower() in _WEBHOOK_INGRESS_SOURCES:
+        return None, None, None
+
+    return (
+        _first_header_value(normalized_headers, ("x-forwarded-for", "x-real-ip")),
+        _first_header_value(normalized_headers, ("user-agent",)),
+        dict(normalized_headers) or None,
+    )
 
 
 def _extract_order_resolution_key(
@@ -271,6 +298,7 @@ class EventIngestionService:
         # 1. Idempotency check - return existing event if duplicate
         existing = await self._check_duplicate(session, tenant_id, idempotency_key)
         if existing:
+            setattr(existing, "_ingestion_duplicate", True)
             await upsert_ephemeral_resolution_links(
                 session=session,
                 tenant_id=tenant_id,
@@ -350,21 +378,21 @@ class EventIngestionService:
                 updated_at=datetime.now(timezone.utc),
             )
             normalized_headers = _normalized_request_headers(request_headers)
+            persisted_ip_address, persisted_user_agent, persisted_raw_headers = (
+                _raw_event_ingress_metadata_for_persistence(
+                    source=source,
+                    normalized_headers=normalized_headers,
+                )
+            )
             raw_event_payload = RawEventPayload(
                 id=uuid4(),
                 tenant_id=tenant_id,
                 event_id=event.id,
                 payload_json=boundary.sanitized_payload,
                 lookup_hash=_lookup_hash_for_selector(idempotency_key),
-                ip_address=_first_header_value(
-                    normalized_headers,
-                    ("x-forwarded-for", "x-real-ip"),
-                ),
-                user_agent=_first_header_value(
-                    normalized_headers,
-                    ("user-agent",),
-                ),
-                raw_headers=normalized_headers or None,
+                ip_address=persisted_ip_address,
+                user_agent=persisted_user_agent,
+                raw_headers=persisted_raw_headers,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
@@ -393,7 +421,7 @@ class EventIngestionService:
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
             events_ingested_total.inc()
             ingestion_duration_seconds.observe(duration)
-
+            setattr(event, "_ingestion_duplicate", False)
             return event
 
         except ValidationError as e:
@@ -438,6 +466,7 @@ class EventIngestionService:
                 session, tenant_id=tenant_id, idempotency_key=idempotency_key
             )
             if existing_after_race:
+                setattr(existing_after_race, "_ingestion_duplicate", True)
                 logger.info(
                     "duplicate_event_detected_race",
                     extra={
@@ -678,6 +707,7 @@ async def ingest_with_transaction(
                 "session_id": str(event.session_id),
                 "channel": event.channel,
                 "idempotency_key": event.idempotency_key,
+                "is_duplicate": bool(getattr(event, "_ingestion_duplicate", False)),
             }
 
         except ValidationError as e:
@@ -707,6 +737,7 @@ async def ingest_with_transaction(
                         "session_id": str(existing.session_id),
                         "channel": existing.channel,
                         "idempotency_key": existing.idempotency_key,
+                        "is_duplicate": True,
                     }
 
             # Database constraint violation (should be rare with validation)

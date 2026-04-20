@@ -191,7 +191,7 @@ async def test_b14_p1_dlq_redaction_preserves_structure(test_tenant):
 
     assert persisted.raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
     assert persisted.raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
-    assert persisted.raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
+    assert "ip_address" not in persisted.raw_payload["vendor_payload"]["customer"]
     assert persisted.raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-1"
     assert persisted.raw_payload["vendor_payload"]["line_items"][0]["qty"] == 2
     assert "dlq-user@test.invalid" not in str(persisted.raw_payload)
@@ -242,7 +242,7 @@ async def test_b14_p1_quarantine_redaction_preserves_structure():
 
         raw_payload = row["raw_payload"]
         assert raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
-        assert raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
+        assert "ip_address" not in raw_payload["vendor_payload"]["customer"]
         assert raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
         assert raw_payload["vendor_payload"]["line_items"][0]["sku"] == "sku-2"
         assert raw_payload["vendor_payload"]["line_items"][0]["qty"] == 1

@@ -144,10 +144,7 @@ async def test_b14_p1_dlq_path_redacts_pii_before_write(test_tenant):
             persisted.raw_payload["vendor_payload"]["customer"]["email"]
             == REDACTION_TOKEN
         )
-        assert (
-            persisted.raw_payload["vendor_payload"]["customer"]["ip_address"]
-            == REDACTION_TOKEN
-        )
+        assert "ip_address" not in persisted.raw_payload["vendor_payload"]["customer"]
         assert (
             persisted.raw_payload["vendor_payload"]["customer"]["first_name"]
             == REDACTION_TOKEN
@@ -202,9 +199,7 @@ async def test_b14_p1_quarantine_path_redacts_pii_before_write():
 
         raw_payload = row["raw_payload"]
         assert raw_payload["vendor_payload"]["customer"]["email"] == REDACTION_TOKEN
-        assert (
-            raw_payload["vendor_payload"]["customer"]["ip_address"] == REDACTION_TOKEN
-        )
+        assert "ip_address" not in raw_payload["vendor_payload"]["customer"]
         assert (
             raw_payload["vendor_payload"]["customer"]["first_name"] == REDACTION_TOKEN
         )
