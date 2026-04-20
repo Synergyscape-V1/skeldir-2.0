@@ -2310,6 +2310,7 @@ CREATE TABLE public.webhook_ingress_identities (
     event_timestamp timestamp with time zone NOT NULL,
     idempotency_key character varying(255) NOT NULL,
     verified_commerce_ingress_state character varying(64) NOT NULL,
+    verified_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ck_webhook_ingress_amount_minor_non_negative CHECK ((verified_amount_minor >= 0)),
@@ -3023,6 +3024,14 @@ ALTER TABLE ONLY public.tenant_memberships
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_tenant_user UNIQUE (tenant_id, user_id);
+
+
+--
+-- Name: webhook_ingress_identities uq_webhook_ingress_identities_event_id; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_ingress_identities
+    ADD CONSTRAINT uq_webhook_ingress_identities_event_id UNIQUE (event_id);
 
 
 --

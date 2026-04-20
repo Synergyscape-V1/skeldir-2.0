@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from app.core.secrets import get_database_url
 from app.db.session import get_session
+import app.ingestion.event_service as event_service
 from app.main import app
 from app.models import WebhookIngressIdentity
 from tests.helpers.paypal_signature import build_paypal_auth_headers, install_paypal_cert_fetcher
@@ -188,7 +189,7 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
         {"id": paypal_txn_id, "amount": {"total": "75.50", "currency": "USD"}, "create_time": now_iso}
     ).encode()
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         responses = [
             await client.post(
@@ -250,7 +251,9 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
         assert row.verified_amount_currency == "USD"
         assert row.verified_amount_scale == 2
         assert row.verified_commerce_ingress_state == "authenticity_verified"
+        assert row.verified_at is not None
         assert row.idempotency_key
+    assert len({row.event_id for row in identities}) == len(identities)
 
 
 @pytest.mark.asyncio
@@ -261,7 +264,7 @@ async def test_b22_p3_verified_state_is_first_class_queryable():
         {"id": order_id, "total_price": "10.00", "currency": "USD", "created_at": datetime.now(timezone.utc).isoformat()}
     ).encode()
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/webhooks/shopify/order_create",
@@ -288,6 +291,46 @@ async def test_b22_p3_verified_state_is_first_class_queryable():
 
     assert len(rows) == 1
     assert rows[0].normalized_commerce_reference_value == str(order_id)
+    assert rows[0].verified_at is not None
+
+
+@pytest.mark.asyncio
+async def test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    tenant_id, api_key, secrets = await create_tenant_with_secrets()
+    order_id = int(uuid4().int % 1_000_000)
+    body = json.dumps(
+        {
+            "id": order_id,
+            "total_price": "10.00",
+            "currency": "USD",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).encode()
+
+    async def _fail_substrate(**_: object) -> None:
+        raise event_service.AuthoritativeIngressInvariantError("forced substrate outage")
+
+    monkeypatch.setattr(
+        event_service,
+        "_assert_webhook_identity_substrate_available",
+        _fail_substrate,
+    )
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/webhooks/shopify/order_create",
+            content=body,
+            headers={
+                "X-Shopify-Hmac-Sha256": sign_shopify(body, secrets["shopify_webhook_secret"]),
+                "X-Skeldir-Tenant-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+
+    assert response.status_code >= 500
 
 
 def test_b22_p3_negative_control_typed_reference_detector_is_non_vacuous():

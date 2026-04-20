@@ -37,8 +37,17 @@ class WebhookIngressIdentity(Base, TenantMixin):
     event_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     verified_commerce_ingress_state: Mapped[str] = mapped_column(String(64), nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
     __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            name="uq_webhook_ingress_identities_event_id",
+        ),
         UniqueConstraint(
             "tenant_id",
             "event_id",

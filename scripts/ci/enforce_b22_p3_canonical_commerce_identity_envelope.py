@@ -38,6 +38,7 @@ EXPECTED_REQUIRED_FIELDS = {
     "event_timestamp",
     "idempotency_key",
     "verified_commerce_ingress_state",
+    "verified_at",
 }
 EXPECTED_KIND_MAP = {
     "shopify": "shopify_order_id",
@@ -91,6 +92,10 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
         violations.append("contract_verified_state_value_mismatch")
     if int(contract.get("required_monetary_scale", -1)) != 2:
         violations.append("contract_required_monetary_scale_mismatch")
+    if contract.get("fixed_money_exponent_authority") != "in_process_map":
+        violations.append("contract_fixed_money_exponent_authority_mismatch")
+    if contract.get("required_ledger_anchor") != "event_id_unique_fk":
+        violations.append("contract_required_ledger_anchor_mismatch")
 
 
 def _validate_model(path: Path, violations: list[str]) -> None:
@@ -105,6 +110,8 @@ def _validate_model(path: Path, violations: list[str]) -> None:
         "verified_amount_currency",
         "verified_amount_scale",
         "verified_commerce_ingress_state",
+        "verified_at",
+        "uq_webhook_ingress_identities_event_id",
     )
     for token in required_tokens:
         if token not in text:
@@ -124,6 +131,8 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
         "\"verified_amount_currency\"",
         "\"verified_amount_scale\"",
         "\"verified_commerce_ingress_state\": \"authenticity_verified\"",
+        "_FIXED_MONEY_EXPONENT_BY_CURRENCY",
+        "_canonical_money_scale(",
     )
     for token in required_tokens:
         if token not in text:
@@ -147,6 +156,8 @@ def _validate_event_service(path: Path, violations: list[str]) -> None:
         "_WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS",
         "WebhookIngressIdentity(",
         "verified_commerce_ingress_state",
+        "_assert_webhook_identity_substrate_available(",
+        "AuthoritativeIngressInvariantError",
     )
     for token in required_tokens:
         if token not in text:
@@ -165,6 +176,8 @@ def _validate_migration(path: Path, violations: list[str]) -> None:
         "verified_amount_currency",
         "verified_amount_scale",
         "verified_commerce_ingress_state",
+        "verified_at timestamptz NOT NULL",
+        "CONSTRAINT uq_webhook_ingress_identities_event_id UNIQUE (event_id)",
         "ENABLE ROW LEVEL SECURITY",
     )
     for token in required_tokens:
@@ -191,6 +204,7 @@ def _validate_test_surfaces(*, p3_test: Path, p3_enforcer_test: Path, violations
         "test_b22_p3_all_supported_providers_persist_canonical_identity_envelope",
         "test_b22_p3_verified_state_is_first_class_queryable",
         "test_b22_p3_negative_control_typed_reference_detector_is_non_vacuous",
+        "test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailable",
     )
     for token in p3_required_tests:
         if token not in p3_text:
