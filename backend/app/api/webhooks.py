@@ -789,7 +789,7 @@ async def stripe_payment_intent_succeeded_v2(
         "session_id": session_hint_for_authority or str(generate_privacy_session_id()),
         "vendor": vendor_for_normalization,
         "utm_source": utm_source_for_normalization,
-        "external_event_id": provider_event_reference,
+        "external_event_id": pi_id,
         "order_id": order_id_for_resolution or pi_id,
         "provider": "stripe",
         "provider_native_event_reference": provider_event_reference,
