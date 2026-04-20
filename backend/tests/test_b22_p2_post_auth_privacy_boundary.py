@@ -58,6 +58,7 @@ async def create_tenant_with_secrets():
         paypal_secret=secrets["paypal_webhook_secret"],
         woocommerce_secret=secrets["woocommerce_webhook_secret"],
     )
+    # RAW_SQL_ALLOWLIST: Test-only tenant bootstrap for webhook signature fixtures.
     await conn.execute(
         """
         INSERT INTO tenants (id, api_key_hash, name, notification_email,
