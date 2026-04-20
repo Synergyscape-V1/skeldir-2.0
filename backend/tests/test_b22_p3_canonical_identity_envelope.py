@@ -189,7 +189,7 @@ async def test_b22_p3_all_supported_providers_persist_canonical_identity_envelop
         {"id": paypal_txn_id, "amount": {"total": "75.50", "currency": "USD"}, "create_time": now_iso}
     ).encode()
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         responses = [
             await client.post(
