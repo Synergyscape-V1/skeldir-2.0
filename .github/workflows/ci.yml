@@ -211,6 +211,18 @@ jobs:
           pytest backend/tests/test_b22_p1_authenticity_semantics.py -q
           pytest backend/tests/test_b12_p8_error_contract_normalization.py::test_eg83_paypal_hmac_failure_variants_share_non_leaky_problem_contract backend/tests/test_b12_p8_error_contract_normalization.py::test_eg8cf_paypal_constant_work_unknown_key_and_known_bad_signature_both_invoke_compute backend/tests/test_b12_p8_error_contract_normalization.py::test_eg8route_stripe_alias_and_canonical_auth_failures_are_equivalent -q
 
+      - name: Enforce B2.2-P2 post-auth privacy boundary lock
+        run: |
+          python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
+
+      - name: Run B2.2-P2 post-auth privacy boundary negative controls
+        run: |
+          pytest backend/tests/test_b22_p2_post_auth_privacy_boundary_enforcer.py -q
+
+      - name: Run B2.2-P2 post-auth privacy boundary runtime proofs
+        run: |
+          pytest backend/tests/test_b22_p2_post_auth_privacy_boundary.py -q
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q

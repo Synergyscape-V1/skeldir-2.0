@@ -148,6 +148,7 @@ _DLQ_FAILURE_SURFACE_FORBIDDEN_KEYS = output_forbidden_key_set(
         "gclid",
         "fbclid",
         "external_event_id",
+        "raw_headers",
     ),
     exclude=(
         "session_id",
@@ -158,8 +159,6 @@ _DLQ_FAILURE_SURFACE_FORBIDDEN_KEYS = output_forbidden_key_set(
         "email_address",
         "customer_email",
         "receipt_email",
-        "ip",
-        "ip_address",
         "first_name",
         "last_name",
         "full_name",

@@ -279,6 +279,12 @@ def _request_headers_for_privacy_boundary(request: Request) -> dict[str, str]:
     return {str(key).lower(): str(value) for key, value in request.headers.items()}
 
 
+def _verified_revenue_state() -> dict[str, str]:
+    return {
+        "verified_revenue_state": "authenticity_verified",
+    }
+
+
 def _identity_payload_from_request(request: Request) -> dict[str, Any] | None:
     raw_body = getattr(request.state, "original_body", None)
     if raw_body is None:
@@ -405,7 +411,11 @@ async def _handle_ingestion(
     identity_payload: dict[str, Any] | None = None,
     request_headers: dict[str, str] | None = None,
 ):
-    event_data = {**event_data, "idempotency_key": idempotency_key}
+    event_data = {
+        **event_data,
+        **_verified_revenue_state(),
+        "idempotency_key": idempotency_key,
+    }
     # Use transactional helper to preserve DLQ commits on validation errors
     result = await ingest_with_transaction(
         tenant_id=tenant_id,
@@ -419,7 +429,7 @@ async def _handle_ingestion(
         correlation_id = get_request_correlation_id() or idempotency_key
         event_timestamp = event_data.get("event_timestamp")
         session_id = result.get("session_id")
-        if event_timestamp and session_id:
+        if event_timestamp and session_id and not bool(result.get("is_duplicate")):
             _schedule_downstream_tasks(
                 tenant_id=tenant_id,
                 event_timestamp=str(event_timestamp),
@@ -726,6 +736,7 @@ async def stripe_payment_intent_succeeded_v2(
         "order_id": order_id_for_resolution or pi_id,
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,
+        **_verified_revenue_state(),
     }
     if utm_medium_for_normalization:
         event_data["utm_medium"] = utm_medium_for_normalization
@@ -745,7 +756,7 @@ async def stripe_payment_intent_succeeded_v2(
         correlation_id = get_request_correlation_id() or idempotency_key
         event_timestamp = event_data.get("event_timestamp")
         session_id = result.get("session_id")
-        if event_timestamp and session_id:
+        if event_timestamp and session_id and not bool(result.get("is_duplicate")):
             _schedule_downstream_tasks(
                 tenant_id=tenant_info["tenant_id"],
                 event_timestamp=str(event_timestamp),

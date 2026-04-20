@@ -1,0 +1,43 @@
+{
+  "contract_id": "b22.p2.post_auth_privacy_boundary.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.2-P2",
+  "description": "Canonical B2.2-P2 write-boundary contract: preserve verification substrate in-memory through auth, then durably persist minimized webhook substrates only.",
+  "disallowed_durable_ingress_identifiers": [
+    "ip_address",
+    "user_agent",
+    "raw_headers"
+  ],
+  "webhook_sources": [
+    "shopify",
+    "stripe",
+    "paypal",
+    "woocommerce"
+  ],
+  "verification_substrate_policy": {
+    "raw_body_for_auth": "required",
+    "signature_headers_for_auth": "required",
+    "auth_precedes_durable_persistence": true
+  },
+  "durable_surfaces": [
+    "attribution_events.raw_payload",
+    "raw_event_payloads.payload_json",
+    "raw_event_payloads.ip_address",
+    "raw_event_payloads.user_agent",
+    "raw_event_payloads.raw_headers",
+    "dead_events.raw_payload",
+    "dead_events_quarantine.raw_payload"
+  ],
+  "required_runtime_proofs": [
+    "backend/tests/test_b22_p2_post_auth_privacy_boundary.py::test_b22_p2_webhook_success_persists_minimized_raw_event_substrate_only",
+    "backend/tests/test_b22_p2_post_auth_privacy_boundary.py::test_b22_p2_webhook_malformed_dlq_path_drops_disallowed_ingress_identifiers",
+    "backend/tests/test_b22_p2_post_auth_privacy_boundary.py::test_b22_p2_duplicate_webhook_does_not_reenqueue_downstream_side_effects"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py",
+    "pytest backend/tests/test_b22_p2_post_auth_privacy_boundary_enforcer.py -q",
+    "pytest backend/tests/test_b22_p2_post_auth_privacy_boundary.py -q"
+  ]
+}
