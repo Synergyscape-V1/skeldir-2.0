@@ -138,6 +138,10 @@ def _validate_ci(path: Path, violations: list[str]) -> None:
         "python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py",
         "pytest backend/tests/test_b22_p2_post_auth_privacy_boundary_enforcer.py -q",
         "pytest backend/tests/test_b22_p2_post_auth_privacy_boundary.py -q",
+        "SKELDIR_B22_P2_REQUIRE_DB_PROOFS: \"1\"",
+        "Prepare B2.2-P2 runtime proof authority boundary",
+        "Run migrations for B2.2-P2 authoritative runtime proofs",
+        "--database-name \"skeldir_b22_p2_ci\"",
     )
     for token in required_tokens:
         if token not in text:

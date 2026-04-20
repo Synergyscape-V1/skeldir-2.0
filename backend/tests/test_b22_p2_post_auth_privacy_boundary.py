@@ -33,6 +33,15 @@ from tests.helpers.webhook_secret_seed import (
     webhook_secret_insert_params,
 )
 
+
+def _require_authoritative_db_proofs() -> bool:
+    return os.getenv("SKELDIR_B22_P2_REQUIRE_DB_PROOFS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
 @pytest_asyncio.fixture(scope="session")
 async def event_loop():
     loop = asyncio.new_event_loop()
@@ -55,6 +64,8 @@ async def create_tenant_with_secrets():
     try:
         conn = await asyncpg.connect(get_database_url())
     except Exception as exc:
+        if _require_authoritative_db_proofs():
+            pytest.fail(f"B2.2-P2 authoritative runtime proof DB is unreachable: {exc}")
         pytest.skip(f"B2.2-P2 runtime proofs require reachable Postgres: {exc}")
     secret_insert = webhook_secret_insert_params(
         shopify_secret=secrets["shopify_webhook_secret"],
