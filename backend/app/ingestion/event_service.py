@@ -15,14 +15,14 @@ import time
 from typing import Any, Dict, Mapping, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ingestion.channel_normalization import normalize_channel
 from app.ingestion.dlq_handler import DLQHandler
 from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
-from app.models import AttributionEvent, DeadEvent, RawEventPayload
+from app.models import AttributionEvent, DeadEvent, RawEventPayload, WebhookIngressIdentity
 from app.observability.context import log_context
 from app.privacy.authority import minimize_event_payload_for_storage
 from app.privacy.ephemeral_resolution import (
@@ -59,6 +59,20 @@ _WEBHOOK_INGRESS_SOURCES = frozenset(
         "webhook",
     }
 )
+_WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS = frozenset(
+    {
+        "provider",
+        "provider_native_event_reference",
+        "provider_native_commerce_reference",
+        "normalized_commerce_reference_kind",
+        "normalized_commerce_reference_value",
+        "verified_amount_minor",
+        "verified_amount_currency",
+        "verified_amount_scale",
+        "verified_commerce_ingress_state",
+    }
+)
+_WEBHOOK_IDENTITY_TABLE_AVAILABLE: bool | None = None
 
 
 def _first_non_empty_resolution_token(*values: Any) -> str | None:
@@ -142,6 +156,77 @@ def _extract_click_resolution_key(
     return None
 
 
+def _extract_webhook_ingress_identity(
+    *,
+    source: str,
+    event_data: Mapping[str, Any],
+    tenant_id: UUID,
+    idempotency_key: str,
+    event_id: UUID,
+    event_timestamp: datetime,
+) -> dict[str, Any] | None:
+    normalized_source = source.strip().lower()
+    if normalized_source not in _WEBHOOK_INGRESS_SOURCES:
+        return None
+
+    missing_fields = [
+        key for key in sorted(_WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS)
+        if event_data.get(key) in (None, "")
+    ]
+    if missing_fields:
+        raise ValidationError(
+            "Missing required webhook identity envelope fields: "
+            + ", ".join(missing_fields)
+        )
+
+    amount_minor = event_data.get("verified_amount_minor")
+    amount_scale = event_data.get("verified_amount_scale")
+    try:
+        amount_minor_int = int(amount_minor)
+        amount_scale_int = int(amount_scale)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(
+            "Webhook identity envelope monetary fields must be integers"
+        ) from exc
+    if amount_minor_int < 0:
+        raise ValidationError("verified_amount_minor must be non-negative")
+    if amount_scale_int < 0:
+        raise ValidationError("verified_amount_scale must be non-negative")
+
+    amount_currency = str(event_data["verified_amount_currency"]).strip().upper()
+    if len(amount_currency) != 3:
+        raise ValidationError("verified_amount_currency must be a 3-letter ISO code")
+
+    return {
+        "id": uuid4(),
+        "tenant_id": tenant_id,
+        "event_id": event_id,
+        "provider": str(event_data["provider"]).strip().lower(),
+        "provider_native_event_reference": str(
+            event_data["provider_native_event_reference"]
+        ).strip(),
+        "provider_native_commerce_reference": str(
+            event_data["provider_native_commerce_reference"]
+        ).strip(),
+        "normalized_commerce_reference_kind": str(
+            event_data["normalized_commerce_reference_kind"]
+        ).strip(),
+        "normalized_commerce_reference_value": str(
+            event_data["normalized_commerce_reference_value"]
+        ).strip(),
+        "verified_amount_minor": amount_minor_int,
+        "verified_amount_currency": amount_currency,
+        "verified_amount_scale": amount_scale_int,
+        "event_timestamp": event_timestamp,
+        "idempotency_key": idempotency_key,
+        "verified_commerce_ingress_state": str(
+            event_data["verified_commerce_ingress_state"]
+        ).strip(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
 def _integrity_error_sqlstate(error: IntegrityError) -> str | None:
     orig = getattr(error, "orig", None)
     if orig is None:
@@ -191,6 +276,27 @@ def _is_idempotency_duplicate_integrity_error(error: IntegrityError) -> bool:
         "duplicate key value violates unique constraint" in msg
         and ("idempotency" in msg or _IDEMPOTENCY_UNIQUE_CONSTRAINT in msg)
     )
+
+
+async def _webhook_identity_table_available(session: AsyncSession) -> bool:
+    global _WEBHOOK_IDENTITY_TABLE_AVAILABLE
+    if _WEBHOOK_IDENTITY_TABLE_AVAILABLE is not None:
+        return _WEBHOOK_IDENTITY_TABLE_AVAILABLE
+
+    result = await session.execute(
+        text(
+            """
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'webhook_ingress_identities'
+        )
+        """
+        )
+    )
+    _WEBHOOK_IDENTITY_TABLE_AVAILABLE = bool(result.scalar())
+    return _WEBHOOK_IDENTITY_TABLE_AVAILABLE
 
 
 async def _fetch_existing_event_for_key(
@@ -396,10 +502,26 @@ class EventIngestionService:
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
+            webhook_ingress_identity = None
+            if await _webhook_identity_table_available(session):
+                webhook_identity_payload = _extract_webhook_ingress_identity(
+                    source=source,
+                    event_data=ingestion_event_data,
+                    tenant_id=tenant_id,
+                    idempotency_key=idempotency_key,
+                    event_id=event.id,
+                    event_timestamp=validated["event_timestamp"],
+                )
+                if webhook_identity_payload is not None:
+                    webhook_ingress_identity = WebhookIngressIdentity(
+                        **webhook_identity_payload
+                    )
 
             # 5. Persist to database
             session.add(event)
             session.add(raw_event_payload)
+            if webhook_ingress_identity is not None:
+                session.add(webhook_ingress_identity)
             await session.flush()  # Trigger constraint validation before commit
 
             logger.info(

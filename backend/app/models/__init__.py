@@ -63,6 +63,7 @@ from app.models.platform_credential import PlatformCredential
 from app.models.raw_event_payload import RawEventPayload
 from app.models.revenue_cache import RevenueCacheEntry
 from app.models.session_authority import SessionAuthority
+from app.models.webhook_ingress_identity import WebhookIngressIdentity
 
 __all__ = [
     "Base",
@@ -98,4 +99,5 @@ __all__ = [
     "SessionAuthority",
     "EphemeralOrderResolution",
     "EphemeralClickResolution",
+    "WebhookIngressIdentity",
 ]
