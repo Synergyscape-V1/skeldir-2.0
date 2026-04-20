@@ -59,6 +59,14 @@ _WEBHOOK_INGRESS_SOURCES = frozenset(
         "webhook",
     }
 )
+_WEBHOOK_IDENTITY_ENVELOPE_SOURCES = frozenset(
+    {
+        "shopify",
+        "stripe",
+        "paypal",
+        "woocommerce",
+    }
+)
 _WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS = frozenset(
     {
         "provider",
@@ -166,7 +174,11 @@ def _extract_webhook_ingress_identity(
     event_timestamp: datetime,
 ) -> dict[str, Any] | None:
     normalized_source = source.strip().lower()
-    if normalized_source not in _WEBHOOK_INGRESS_SOURCES:
+    provider_hint = str(event_data.get("provider", "")).strip().lower()
+    if (
+        normalized_source not in _WEBHOOK_IDENTITY_ENVELOPE_SOURCES
+        and provider_hint not in _WEBHOOK_IDENTITY_ENVELOPE_SOURCES
+    ):
         return None
 
     missing_fields = [
@@ -201,7 +213,7 @@ def _extract_webhook_ingress_identity(
         "id": uuid4(),
         "tenant_id": tenant_id,
         "event_id": event_id,
-        "provider": str(event_data["provider"]).strip().lower(),
+        "provider": provider_hint or normalized_source,
         "provider_native_event_reference": str(
             event_data["provider_native_event_reference"]
         ).strip(),
