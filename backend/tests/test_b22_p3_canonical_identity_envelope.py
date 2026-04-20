@@ -318,7 +318,7 @@ async def test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailabl
         _fail_substrate,
     )
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/webhooks/shopify/order_create",
