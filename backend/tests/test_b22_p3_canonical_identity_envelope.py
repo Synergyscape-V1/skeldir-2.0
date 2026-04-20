@@ -264,7 +264,7 @@ async def test_b22_p3_verified_state_is_first_class_queryable():
         {"id": order_id, "total_price": "10.00", "currency": "USD", "created_at": datetime.now(timezone.utc).isoformat()}
     ).encode()
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/webhooks/shopify/order_create",
