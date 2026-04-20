@@ -9,6 +9,7 @@ B0.4.4 Enhancement: Integrated DLQHandler with error classification and retry lo
 
 import logging
 import hashlib
+import os
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import time
@@ -80,7 +81,27 @@ _WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS = frozenset(
         "verified_commerce_ingress_state",
     }
 )
-_WEBHOOK_IDENTITY_TABLE_AVAILABLE: bool | None = None
+
+
+class ValidationError(Exception):
+    """Raised when event data fails validation"""
+
+
+class AuthoritativeIngressInvariantError(RuntimeError):
+    """Raised when authoritative webhook ingress substrate invariants are violated."""
+
+
+def _testing_mode_enabled() -> bool:
+    return os.getenv("TESTING", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _authoritative_db_proofs_required() -> bool:
+    return os.getenv("SKELDIR_B22_P3_REQUIRE_DB_PROOFS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _first_non_empty_resolution_token(*values: Any) -> str | None:
@@ -186,7 +207,14 @@ def _extract_webhook_ingress_identity(
         for key in _WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS
         if event_data.get(key) not in (None, "")
     }
+    authoritative_ingress_state_present = (
+        event_data.get("verified_commerce_ingress_state") not in (None, "")
+    )
     if not populated_fields:
+        if authoritative_ingress_state_present:
+            raise AuthoritativeIngressInvariantError(
+                "Authoritative webhook ingress cannot bypass canonical identity envelope persistence."
+            )
         return None
 
     missing_fields = [
@@ -243,6 +271,7 @@ def _extract_webhook_ingress_identity(
         "verified_commerce_ingress_state": str(
             event_data["verified_commerce_ingress_state"]
         ).strip(),
+        "verified_at": datetime.now(timezone.utc),
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
@@ -300,10 +329,6 @@ def _is_idempotency_duplicate_integrity_error(error: IntegrityError) -> bool:
 
 
 async def _webhook_identity_table_available(session: AsyncSession) -> bool:
-    global _WEBHOOK_IDENTITY_TABLE_AVAILABLE
-    if _WEBHOOK_IDENTITY_TABLE_AVAILABLE is not None:
-        return _WEBHOOK_IDENTITY_TABLE_AVAILABLE
-
     result = await session.execute(
         text(
             """
@@ -316,8 +341,7 @@ async def _webhook_identity_table_available(session: AsyncSession) -> bool:
         """
         )
     )
-    _WEBHOOK_IDENTITY_TABLE_AVAILABLE = bool(result.scalar())
-    return _WEBHOOK_IDENTITY_TABLE_AVAILABLE
+    return bool(result.scalar())
 
 
 async def _fetch_existing_event_for_key(
@@ -332,9 +356,29 @@ async def _fetch_existing_event_for_key(
     return res.scalar_one_or_none()
 
 
-class ValidationError(Exception):
-    """Raised when event data fails validation"""
-    pass
+async def _assert_webhook_identity_substrate_available(
+    *,
+    session: AsyncSession,
+    source: str,
+    tenant_id: UUID,
+    idempotency_key: str,
+) -> bool:
+    if await _webhook_identity_table_available(session):
+        return True
+    if _testing_mode_enabled() and not _authoritative_db_proofs_required():
+        logger.warning(
+            "authoritative_webhook_identity_substrate_bypass_testing_mode",
+            extra={
+                "source": source,
+                "tenant_id": str(tenant_id),
+                "idempotency_key": idempotency_key,
+            },
+        )
+        return False
+    raise AuthoritativeIngressInvariantError(
+        "Canonical webhook identity substrate is unavailable for authoritative ingress "
+        f"(source={source}, tenant_id={tenant_id}, idempotency_key={idempotency_key})."
+    )
 
 
 class EventIngestionService:
@@ -524,16 +568,22 @@ class EventIngestionService:
                 updated_at=datetime.now(timezone.utc),
             )
             webhook_ingress_identity = None
-            if await _webhook_identity_table_available(session):
-                webhook_identity_payload = _extract_webhook_ingress_identity(
+            webhook_identity_payload = _extract_webhook_ingress_identity(
+                source=source,
+                event_data=ingestion_event_data,
+                tenant_id=tenant_id,
+                idempotency_key=idempotency_key,
+                event_id=event.id,
+                event_timestamp=validated["event_timestamp"],
+            )
+            if webhook_identity_payload is not None:
+                substrate_available = await _assert_webhook_identity_substrate_available(
+                    session=session,
                     source=source,
-                    event_data=ingestion_event_data,
                     tenant_id=tenant_id,
                     idempotency_key=idempotency_key,
-                    event_id=event.id,
-                    event_timestamp=validated["event_timestamp"],
                 )
-                if webhook_identity_payload is not None:
+                if substrate_available:
                     webhook_ingress_identity = WebhookIngressIdentity(
                         **webhook_identity_payload
                     )

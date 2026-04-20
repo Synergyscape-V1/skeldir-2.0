@@ -13,6 +13,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from collections.abc import Callable
+from types import MappingProxyType
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
@@ -87,6 +88,24 @@ WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
     "paypal": ("paypal_webhook_secret", verify_paypal_signature),
     "woocommerce": ("woocommerce_webhook_secret", verify_woocommerce_signature),
 }
+_FIXED_MONEY_EXPONENT_BY_CURRENCY = MappingProxyType(
+    {
+        "USD": 2,
+        "EUR": 2,
+        "GBP": 2,
+        "CAD": 2,
+        "AUD": 2,
+        "NZD": 2,
+    }
+)
+_DEFAULT_MONEY_EXPONENT = 2
+
+
+def _canonical_money_scale(currency: str | None) -> int:
+    normalized = (currency or "").strip().upper()
+    if not normalized:
+        return _DEFAULT_MONEY_EXPONENT
+    return int(_FIXED_MONEY_EXPONENT_BY_CURRENCY.get(normalized, _DEFAULT_MONEY_EXPONENT))
 
 
 def _paypal_auth_envelope_header(
@@ -505,11 +524,11 @@ async def shopify_order_create(
 
     idempotency_key = str(uuid5(NAMESPACE_URL, f"shopify_order_create_{payload.id}"))
     set_business_correlation_id(idempotency_key)
-    verified_amount_scale = 2
+    verified_amount_currency = (payload.currency or "USD").upper()
+    verified_amount_scale = _canonical_money_scale(verified_amount_currency)
     raw_amount = payload.total_price or "0"
     parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
     verified_amount_minor = parsed_minor if parsed_minor is not None else 0
-    verified_amount_currency = (payload.currency or "USD").upper()
     event_data = {
         "event_type": "purchase",
         "event_timestamp": (payload.created_at or datetime.now(timezone.utc)).isoformat(),
@@ -562,9 +581,9 @@ async def stripe_payment_intent_succeeded(
     idempotency_key = x_idempotency_key or str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{payload.id}"))
     set_business_correlation_id(idempotency_key)
     ts = datetime.fromtimestamp(payload.created) if payload.created else datetime.now(timezone.utc)
-    verified_amount_scale = 2
     verified_amount_minor = int(payload.amount or 0)
     verified_amount_currency = payload.currency.upper() if payload.currency else "USD"
+    verified_amount_scale = _canonical_money_scale(verified_amount_currency)
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
@@ -775,9 +794,9 @@ async def stripe_payment_intent_succeeded_v2(
         }
 
     ts = datetime.fromtimestamp(created_epoch, tz=timezone.utc)
-    verified_amount_scale = 2
     verified_amount_minor = int(amount_cents)
     verified_amount_currency = currency.upper()
+    verified_amount_scale = _canonical_money_scale(verified_amount_currency)
     provider_event_reference = _resolution_token(event_id) or pi_id
     event_data = {
         "event_type": "purchase",
@@ -866,13 +885,13 @@ async def paypal_sale_completed(
     idempotency_key = str(uuid5(NAMESPACE_URL, f"paypal_sale_completed_{payload.id}"))
     set_business_correlation_id(idempotency_key)
     ts = payload.create_time or datetime.now(timezone.utc)
-    verified_amount_scale = 2
-    raw_amount = payload.amount.total if payload.amount and payload.amount.total is not None else "0"
-    parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
-    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
     verified_amount_currency = (
         payload.amount.currency if payload.amount and payload.amount.currency else "USD"
     ).upper()
+    verified_amount_scale = _canonical_money_scale(verified_amount_currency)
+    raw_amount = payload.amount.total if payload.amount and payload.amount.total is not None else "0"
+    parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
+    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
@@ -923,11 +942,11 @@ async def woocommerce_order_completed(
     idempotency_key = str(uuid5(NAMESPACE_URL, f"woocommerce_order_completed_{payload.id}"))
     set_business_correlation_id(idempotency_key)
     ts = payload.date_completed or datetime.now(timezone.utc)
-    verified_amount_scale = 2
+    verified_amount_currency = (payload.currency or "USD").upper()
+    verified_amount_scale = _canonical_money_scale(verified_amount_currency)
     raw_amount = payload.total or "0"
     parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
     verified_amount_minor = parsed_minor if parsed_minor is not None else 0
-    verified_amount_currency = (payload.currency or "USD").upper()
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
