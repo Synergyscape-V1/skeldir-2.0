@@ -11,7 +11,7 @@ import logging
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from collections.abc import Callable
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
@@ -282,7 +282,33 @@ def _request_headers_for_privacy_boundary(request: Request) -> dict[str, str]:
 def _verified_revenue_state() -> dict[str, str]:
     return {
         "verified_revenue_state": "authenticity_verified",
+        "verified_commerce_ingress_state": "authenticity_verified",
     }
+
+
+def _decimal_to_minor_units(value: str | int | Decimal, *, scale: int = 2) -> int:
+    quantizer = Decimal(10) ** (-scale)
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid canonical monetary amount.",
+        ) from exc
+    rounded = decimal_value.quantize(quantizer, rounding=ROUND_HALF_UP)
+    return int(rounded * (10**scale))
+
+
+def _minor_units_to_decimal_string(minor: int, *, scale: int = 2) -> str:
+    divisor = Decimal(10) ** scale
+    return str((Decimal(minor) / divisor).quantize(Decimal(10) ** (-scale)))
+
+
+def _try_decimal_to_minor_units(value: str | int | Decimal, *, scale: int = 2) -> int | None:
+    try:
+        return _decimal_to_minor_units(value, scale=scale)
+    except HTTPException:
+        return None
 
 
 def _identity_payload_from_request(request: Request) -> dict[str, Any] | None:
@@ -479,16 +505,33 @@ async def shopify_order_create(
 
     idempotency_key = str(uuid5(NAMESPACE_URL, f"shopify_order_create_{payload.id}"))
     set_business_correlation_id(idempotency_key)
+    verified_amount_scale = 2
+    raw_amount = payload.total_price or "0"
+    parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
+    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
+    verified_amount_currency = (payload.currency or "USD").upper()
     event_data = {
         "event_type": "purchase",
         "event_timestamp": (payload.created_at or datetime.now(timezone.utc)).isoformat(),
-        "revenue_amount": payload.total_price or "0",
-        "currency": payload.currency or "USD",
+        "revenue_amount": (
+            _minor_units_to_decimal_string(verified_amount_minor, scale=verified_amount_scale)
+            if parsed_minor is not None
+            else raw_amount
+        ),
+        "currency": verified_amount_currency,
         "session_id": str(generate_privacy_session_id()),
         "vendor": "shopify",
         "utm_source": "shopify",
         "external_event_id": str(payload.id),
         "order_id": str(payload.id),
+        "provider": "shopify",
+        "provider_native_event_reference": str(payload.id),
+        "provider_native_commerce_reference": str(payload.id),
+        "normalized_commerce_reference_kind": "shopify_order_id",
+        "normalized_commerce_reference_value": str(payload.id),
+        "verified_amount_minor": verified_amount_minor,
+        "verified_amount_currency": verified_amount_currency,
+        "verified_amount_scale": verified_amount_scale,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(
@@ -519,20 +562,29 @@ async def stripe_payment_intent_succeeded(
     idempotency_key = x_idempotency_key or str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{payload.id}"))
     set_business_correlation_id(idempotency_key)
     ts = datetime.fromtimestamp(payload.created) if payload.created else datetime.now(timezone.utc)
-    # Avoid float conversion issues; ingestion service converts Decimal-string -> cents.
-    revenue_amount = "0"
-    if payload.amount is not None:
-        revenue_amount = str((Decimal(payload.amount) / Decimal(100)).quantize(Decimal("0.01")))
+    verified_amount_scale = 2
+    verified_amount_minor = int(payload.amount or 0)
+    verified_amount_currency = payload.currency.upper() if payload.currency else "USD"
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
-        "revenue_amount": revenue_amount,
-        "currency": payload.currency.upper() if payload.currency else "USD",
+        "revenue_amount": _minor_units_to_decimal_string(
+            verified_amount_minor, scale=verified_amount_scale
+        ),
+        "currency": verified_amount_currency,
         "session_id": str(generate_privacy_session_id()),
         "vendor": "stripe",
         "utm_source": "stripe",
         "external_event_id": payload.id,
         "order_id": payload.id,
+        "provider": "stripe",
+        "provider_native_event_reference": payload.id,
+        "provider_native_commerce_reference": payload.id,
+        "normalized_commerce_reference_kind": "stripe_payment_intent_id",
+        "normalized_commerce_reference_value": payload.id,
+        "verified_amount_minor": verified_amount_minor,
+        "verified_amount_currency": verified_amount_currency,
+        "verified_amount_scale": verified_amount_scale,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(
@@ -723,17 +775,30 @@ async def stripe_payment_intent_succeeded_v2(
         }
 
     ts = datetime.fromtimestamp(created_epoch, tz=timezone.utc)
-    revenue_amount = str((Decimal(amount_cents) / Decimal(100)).quantize(Decimal("0.01")))
+    verified_amount_scale = 2
+    verified_amount_minor = int(amount_cents)
+    verified_amount_currency = currency.upper()
+    provider_event_reference = _resolution_token(event_id) or pi_id
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
-        "revenue_amount": revenue_amount,
-        "currency": currency.upper(),
+        "revenue_amount": _minor_units_to_decimal_string(
+            verified_amount_minor, scale=verified_amount_scale
+        ),
+        "currency": verified_amount_currency,
         "session_id": session_hint_for_authority or str(generate_privacy_session_id()),
         "vendor": vendor_for_normalization,
         "utm_source": utm_source_for_normalization,
         "external_event_id": pi_id,
         "order_id": order_id_for_resolution or pi_id,
+        "provider": "stripe",
+        "provider_native_event_reference": provider_event_reference,
+        "provider_native_commerce_reference": pi_id,
+        "normalized_commerce_reference_kind": "stripe_payment_intent_id",
+        "normalized_commerce_reference_value": pi_id,
+        "verified_amount_minor": verified_amount_minor,
+        "verified_amount_currency": verified_amount_currency,
+        "verified_amount_scale": verified_amount_scale,
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,
         **_verified_revenue_state(),
@@ -801,16 +866,35 @@ async def paypal_sale_completed(
     idempotency_key = str(uuid5(NAMESPACE_URL, f"paypal_sale_completed_{payload.id}"))
     set_business_correlation_id(idempotency_key)
     ts = payload.create_time or datetime.now(timezone.utc)
+    verified_amount_scale = 2
+    raw_amount = payload.amount.total if payload.amount and payload.amount.total is not None else "0"
+    parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
+    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
+    verified_amount_currency = (
+        payload.amount.currency if payload.amount and payload.amount.currency else "USD"
+    ).upper()
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
-        "revenue_amount": payload.amount.total or "0",
-        "currency": payload.amount.currency or "USD",
+        "revenue_amount": (
+            _minor_units_to_decimal_string(verified_amount_minor, scale=verified_amount_scale)
+            if parsed_minor is not None
+            else raw_amount
+        ),
+        "currency": verified_amount_currency,
         "session_id": str(generate_privacy_session_id()),
         "vendor": "paypal",
         "utm_source": "paypal",
         "external_event_id": payload.id,
         "order_id": payload.id,
+        "provider": "paypal",
+        "provider_native_event_reference": payload.id,
+        "provider_native_commerce_reference": payload.id,
+        "normalized_commerce_reference_kind": "paypal_transaction_id",
+        "normalized_commerce_reference_value": payload.id,
+        "verified_amount_minor": verified_amount_minor,
+        "verified_amount_currency": verified_amount_currency,
+        "verified_amount_scale": verified_amount_scale,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(
@@ -839,16 +923,33 @@ async def woocommerce_order_completed(
     idempotency_key = str(uuid5(NAMESPACE_URL, f"woocommerce_order_completed_{payload.id}"))
     set_business_correlation_id(idempotency_key)
     ts = payload.date_completed or datetime.now(timezone.utc)
+    verified_amount_scale = 2
+    raw_amount = payload.total or "0"
+    parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
+    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
+    verified_amount_currency = (payload.currency or "USD").upper()
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
-        "revenue_amount": payload.total or "0",
-        "currency": payload.currency or "USD",
+        "revenue_amount": (
+            _minor_units_to_decimal_string(verified_amount_minor, scale=verified_amount_scale)
+            if parsed_minor is not None
+            else raw_amount
+        ),
+        "currency": verified_amount_currency,
         "session_id": str(generate_privacy_session_id()),
         "vendor": "woocommerce",
         "utm_source": "woocommerce",
         "external_event_id": str(payload.id),
         "order_id": str(payload.id),
+        "provider": "woocommerce",
+        "provider_native_event_reference": str(payload.id),
+        "provider_native_commerce_reference": str(payload.id),
+        "normalized_commerce_reference_kind": "woocommerce_order_id",
+        "normalized_commerce_reference_value": str(payload.id),
+        "verified_amount_minor": verified_amount_minor,
+        "verified_amount_currency": verified_amount_currency,
+        "verified_amount_scale": verified_amount_scale,
         "correlation_id": str(_make_correlation_uuid(idempotency_key)),
     }
     return await _handle_ingestion(

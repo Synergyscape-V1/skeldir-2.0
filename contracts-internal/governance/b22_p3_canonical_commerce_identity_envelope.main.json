@@ -1,0 +1,46 @@
+{
+  "contract_id": "b22.p3.canonical_commerce_identity_envelope.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.2-P3",
+  "description": "Canonical provider-preserving webhook ingress identity envelope with explicit first-class verified-commerce ingress state and canonical money representation.",
+  "supported_providers": [
+    "shopify",
+    "woocommerce",
+    "stripe",
+    "paypal"
+  ],
+  "canonical_envelope_required_fields": [
+    "tenant_id",
+    "provider",
+    "provider_native_event_reference",
+    "provider_native_commerce_reference",
+    "normalized_commerce_reference_kind",
+    "normalized_commerce_reference_value",
+    "verified_amount_minor",
+    "verified_amount_currency",
+    "verified_amount_scale",
+    "event_timestamp",
+    "idempotency_key",
+    "verified_commerce_ingress_state"
+  ],
+  "normalized_reference_kind_by_provider": {
+    "shopify": "shopify_order_id",
+    "woocommerce": "woocommerce_order_id",
+    "stripe": "stripe_payment_intent_id",
+    "paypal": "paypal_transaction_id"
+  },
+  "required_verified_state_value": "authenticity_verified",
+  "required_monetary_scale": 2,
+  "required_runtime_proofs": [
+    "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_all_supported_providers_persist_canonical_identity_envelope",
+    "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_verified_state_is_first_class_queryable",
+    "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_negative_control_typed_reference_detector_is_non_vacuous"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py",
+    "pytest backend/tests/test_b22_p3_canonical_identity_envelope_enforcer.py -q",
+    "pytest backend/tests/test_b22_p3_canonical_identity_envelope.py -q"
+  ]
+}

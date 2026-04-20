@@ -2292,6 +2292,34 @@ ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: webhook_ingress_identities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhook_ingress_identities (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    event_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    provider_native_event_reference character varying(255) NOT NULL,
+    provider_native_commerce_reference character varying(255) NOT NULL,
+    normalized_commerce_reference_kind character varying(64) NOT NULL,
+    normalized_commerce_reference_value character varying(255) NOT NULL,
+    verified_amount_minor integer NOT NULL,
+    verified_amount_currency character(3) NOT NULL,
+    verified_amount_scale integer DEFAULT 2 NOT NULL,
+    event_timestamp timestamp with time zone NOT NULL,
+    idempotency_key character varying(255) NOT NULL,
+    verified_commerce_ingress_state character varying(64) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_webhook_ingress_amount_minor_non_negative CHECK ((verified_amount_minor >= 0)),
+    CONSTRAINT ck_webhook_ingress_amount_scale_non_negative CHECK ((verified_amount_scale >= 0))
+);
+
+ALTER TABLE ONLY public.webhook_ingress_identities FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: worker_failed_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2998,6 +3026,22 @@ ALTER TABLE ONLY public.tenant_memberships
 
 
 --
+-- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_ingress_identities
+    ADD CONSTRAINT uq_webhook_ingress_identities_tenant_event UNIQUE (tenant_id, event_id);
+
+
+--
+-- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_ingress_identities
+    ADD CONSTRAINT uq_webhook_ingress_identities_tenant_idempotency UNIQUE (tenant_id, idempotency_key);
+
+
+--
 -- Name: users users_login_identifier_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3011,6 +3055,14 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: webhook_ingress_identities webhook_ingress_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_ingress_identities
+    ADD CONSTRAINT webhook_ingress_identities_pkey PRIMARY KEY (id);
 
 
 --
@@ -3805,6 +3857,27 @@ CREATE INDEX idx_tool_calls_tenant ON public.investigation_tool_calls USING btre
 
 
 --
+-- Name: idx_webhook_ingress_identities_tenant_provider_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhook_ingress_identities_tenant_provider_created ON public.webhook_ingress_identities USING btree (tenant_id, provider, created_at DESC);
+
+
+--
+-- Name: idx_webhook_ingress_identities_tenant_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhook_ingress_identities_tenant_reference ON public.webhook_ingress_identities USING btree (tenant_id, normalized_commerce_reference_kind, normalized_commerce_reference_value);
+
+
+--
+-- Name: idx_webhook_ingress_identities_tenant_verified_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_webhook_ingress_identities_tenant_verified_state ON public.webhook_ingress_identities USING btree (tenant_id, verified_commerce_ingress_state, event_timestamp DESC);
+
+
+--
 -- Name: idx_worker_failed_jobs_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4517,6 +4590,22 @@ ALTER TABLE ONLY public.tenant_memberships
 
 
 --
+-- Name: webhook_ingress_identities webhook_ingress_identities_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_ingress_identities
+    ADD CONSTRAINT webhook_ingress_identities_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
+
+
+--
+-- Name: webhook_ingress_identities webhook_ingress_identities_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_ingress_identities
+    ADD CONSTRAINT webhook_ingress_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: worker_side_effects worker_side_effects_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5054,6 +5143,13 @@ CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_pay
 
 
 --
+-- Name: webhook_ingress_identities tenant_isolation_policy_webhook_ingress_identities; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webhook_ingress_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
 -- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -5104,6 +5200,13 @@ CREATE POLICY users_self_select_policy ON public.users FOR SELECT USING ((id = (
 --
 
 CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (current_setting('app.current_user_id'::text, true))::uuid)) WITH CHECK ((id = (current_setting('app.current_user_id'::text, true))::uuid));
+
+
+--
+-- Name: webhook_ingress_identities; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.webhook_ingress_identities ENABLE ROW LEVEL SECURITY;
 
 
 --
