@@ -181,9 +181,18 @@ def _extract_webhook_ingress_identity(
     ):
         return None
 
+    populated_fields = {
+        key
+        for key in _WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS
+        if event_data.get(key) not in (None, "")
+    }
+    if not populated_fields:
+        return None
+
     missing_fields = [
-        key for key in sorted(_WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS)
-        if event_data.get(key) in (None, "")
+        key
+        for key in sorted(_WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS)
+        if key not in populated_fields
     ]
     if missing_fields:
         raise ValidationError(
