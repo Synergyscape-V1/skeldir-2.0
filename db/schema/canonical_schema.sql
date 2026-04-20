@@ -3026,22 +3026,6 @@ ALTER TABLE ONLY public.tenant_memberships
 
 
 --
--- Name: users users_login_identifier_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_login_identifier_hash_key UNIQUE (login_identifier_hash);
-
-
---
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
-
-
---
 -- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3055,6 +3039,22 @@ ALTER TABLE ONLY public.webhook_ingress_identities
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_idempotency UNIQUE (tenant_id, idempotency_key);
+
+
+--
+-- Name: users users_login_identifier_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_login_identifier_hash_key UNIQUE (login_identifier_hash);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
 
 
 --
