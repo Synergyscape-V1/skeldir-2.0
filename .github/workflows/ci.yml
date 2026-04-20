@@ -97,6 +97,7 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p2_ci
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       SKELDIR_B22_P2_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_B22_P3_REQUIRE_DB_PROOFS: "1"
       TESTING: "1"
       CI: "true"
     steps:
@@ -257,6 +258,18 @@ jobs:
       - name: Run B2.2-P2 post-auth privacy boundary runtime proofs
         run: |
           pytest backend/tests/test_b22_p2_post_auth_privacy_boundary.py -q
+
+      - name: Enforce B2.2-P3 canonical identity envelope lock
+        run: |
+          python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
+
+      - name: Run B2.2-P3 canonical identity envelope negative controls
+        run: |
+          pytest backend/tests/test_b22_p3_canonical_identity_envelope_enforcer.py -q
+
+      - name: Run B2.2-P3 canonical identity envelope runtime proofs
+        run: |
+          pytest backend/tests/test_b22_p3_canonical_identity_envelope.py -q
 
       - name: Enforce contract semantic drift gate
         run: |
