@@ -1,7 +1,7 @@
 # Phase B2.2-P2 Remediation Evidence Pack
 
 Date: 2026-04-20  
-Branch inspected/remediated: corrective iteration on `main`  
+Branch inspected/remediated: `b22-p2-post-auth-privacy-boundary` -> merged to `main` (corrective iteration)  
 Phase target: **B2.2-P2 Post-Auth Privacy Boundary Closure + Verification Substrate Protection**
 
 ## 1) Initial findings (corrective iteration)
@@ -117,7 +117,13 @@ Phase target: **B2.2-P2 Post-Auth Privacy Boundary Closure + Verification Substr
 
 ### Authoritative protected-branch adjudication (corrective iteration)
 
-- Corrective PR merge/run metadata recorded after merge in this section.
+- PR merged: [#359](https://github.com/Synergyscape-V1/skeldir-2.0/pull/359) ✅
+- Merge commit on `main`: `90299ec34ba3d26b9a455d3d3cce741a3e9f8148` ✅
+- Main CI run (merge commit): [actions/runs/24672672601](https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24672672601) ✅ `success`
+- Required authoritative proof job:
+  - `Contract Semantic Drift Gate` [job/72148320777](https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24672672601/job/72148320777) ✅
+  - Job env shows `SKELDIR_B22_P2_REQUIRE_DB_PROOFS=1` and DB DSNs targeting `skeldir_b22_p2_ci`.
+  - Runtime proof output shows `backend/tests/test_b22_p2_post_auth_privacy_boundary.py` executed (non-skipped) with `4 passed`.
 
 ### Not-green runs due unrelated pre-existing/runtime-environment blockers
 
@@ -146,4 +152,8 @@ Phase target: **B2.2-P2 Post-Auth Privacy Boundary Closure + Verification Substr
   - authoritative job now has DB substrate,
   - DB-backed P2 proofs fail-closed in authoritative mode,
   - skip-to-green is no longer available in required context.
-- Final merge-to-main and green-run identifiers are captured after corrective PR landing.
+- Corrective directive completion requirements are now satisfied on authoritative `main`:
+  - PR #359 merged to `main`,
+  - merge commit `90299ec34ba3d26b9a455d3d3cce741a3e9f8148`,
+  - authoritative main CI run `24672672601` completed `success`,
+  - required DB-backed P2 runtime proofs executed non-skipped in the required job.
