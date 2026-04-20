@@ -149,6 +149,4 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS public.idx_webhook_ingress_identities_tenant_verified_state")
     op.execute("DROP INDEX IF EXISTS public.idx_webhook_ingress_identities_tenant_reference")
     op.execute("DROP INDEX IF EXISTS public.idx_webhook_ingress_identities_tenant_provider_created")
-    op.execute(
-        "DROP TABLE IF EXISTS public.webhook_ingress_identities -- CI:DESTRUCTIVE_OK - rollback for B2.2-P3 webhook ingress identity substrate."
-    )
+    op.execute("DROP TABLE IF EXISTS public.webhook_ingress_identities")  # CI:DESTRUCTIVE_OK - rollback for B2.2-P3 webhook ingress identity substrate.
