@@ -9,8 +9,10 @@ B0.4.4 Enhancement: Integrated DLQHandler with error classification and retry lo
 
 import logging
 import hashlib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from enum import Enum
 import time
 from typing import Any, Dict, Mapping, Optional
 from uuid import UUID, uuid4
@@ -89,6 +91,25 @@ class ValidationError(Exception):
 
 class AuthoritativeIngressInvariantError(RuntimeError):
     """Raised when authoritative webhook ingress substrate invariants are violated."""
+
+
+class IngestionResultState(str, Enum):
+    """Canonical ingestion outcomes surfaced to orchestration callers."""
+
+    INSERTED = "inserted"
+    DUPLICATE = "duplicate"
+
+
+@dataclass(frozen=True)
+class IngestionDecision:
+    """Explicit ingestion decision contract for orchestration boundaries."""
+
+    event: AttributionEvent
+    state: IngestionResultState
+
+    @property
+    def is_duplicate(self) -> bool:
+        return self.state == IngestionResultState.DUPLICATE
 
 
 def _first_non_empty_resolution_token(*values: Any) -> str | None:
@@ -383,7 +404,7 @@ class EventIngestionService:
         """Initialize service with DLQ handler."""
         self.dlq_handler = DLQHandler()
 
-    async def ingest_event(
+    async def ingest_event_with_decision(
         self,
         session: AsyncSession,
         tenant_id: UUID,
@@ -392,7 +413,7 @@ class EventIngestionService:
         source: str = "webhook",
         identity_payload: Mapping[str, Any] | None = None,
         request_headers: Mapping[str, str] | None = None,
-    ) -> AttributionEvent:
+    ) -> IngestionDecision:
         """
         Ingest event with idempotency guarantee and validation.
 
@@ -404,7 +425,7 @@ class EventIngestionService:
             source: Event source identifier (e.g., 'shopify', 'stripe')
 
         Returns:
-            AttributionEvent instance (new or existing if duplicate)
+            IngestionDecision with event + explicit duplicate/inserted state.
 
         Raises:
             ValidationError: Event data fails schema validation (routes to DLQ)
@@ -449,7 +470,6 @@ class EventIngestionService:
         # 1. Idempotency check - return existing event if duplicate
         existing = await self._check_duplicate(session, tenant_id, idempotency_key)
         if existing:
-            setattr(existing, "_ingestion_duplicate", True)
             await upsert_ephemeral_resolution_links(
                 session=session,
                 tenant_id=tenant_id,
@@ -472,7 +492,10 @@ class EventIngestionService:
             )
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
             events_duplicate_total.inc()
-            return existing
+            return IngestionDecision(
+                event=existing,
+                state=IngestionResultState.DUPLICATE,
+            )
 
         session_resolution = await resolve_session_authority(
             session=session,
@@ -587,8 +610,10 @@ class EventIngestionService:
             # B0.5.6.3: No labels on event metrics (bounded cardinality)
             events_ingested_total.inc()
             ingestion_duration_seconds.observe(duration)
-            setattr(event, "_ingestion_duplicate", False)
-            return event
+            return IngestionDecision(
+                event=event,
+                state=IngestionResultState.INSERTED,
+            )
 
         except ValidationError as e:
             # Route validation failures to dead-letter queue
@@ -632,7 +657,6 @@ class EventIngestionService:
                 session, tenant_id=tenant_id, idempotency_key=idempotency_key
             )
             if existing_after_race:
-                setattr(existing_after_race, "_ingestion_duplicate", True)
                 logger.info(
                     "duplicate_event_detected_race",
                     extra={
@@ -647,7 +671,10 @@ class EventIngestionService:
                 )
                 # B0.5.6.3: No labels on event metrics (bounded cardinality)
                 events_duplicate_total.inc()
-                return existing_after_race
+                return IngestionDecision(
+                    event=existing_after_race,
+                    state=IngestionResultState.DUPLICATE,
+                )
 
             raise
         except ProgrammingError as e:
@@ -657,6 +684,30 @@ class EventIngestionService:
                     f"(source={source}, tenant_id={tenant_id}, idempotency_key={idempotency_key})."
                 ) from e
             raise
+
+    async def ingest_event(
+        self,
+        session: AsyncSession,
+        tenant_id: UUID,
+        event_data: dict,
+        idempotency_key: str,
+        source: str = "webhook",
+        identity_payload: Mapping[str, Any] | None = None,
+        request_headers: Mapping[str, str] | None = None,
+    ) -> AttributionEvent:
+        """
+        Backward-compatible API returning only the ingestion event.
+        """
+        decision = await self.ingest_event_with_decision(
+            session=session,
+            tenant_id=tenant_id,
+            event_data=event_data,
+            idempotency_key=idempotency_key,
+            source=source,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+        return decision.event
 
     async def _check_duplicate(
         self, session: AsyncSession, tenant_id: UUID, idempotency_key: str
@@ -863,7 +914,7 @@ async def ingest_with_transaction(
     async with get_session(tenant_id=tenant_id) as session:
         try:
             service = EventIngestionService()
-            event = await service.ingest_event(
+            decision = await service.ingest_event_with_decision(
                 session=session,
                 tenant_id=tenant_id,
                 event_data=event_data,
@@ -872,6 +923,7 @@ async def ingest_with_transaction(
                 identity_payload=identity_payload,
                 request_headers=request_headers,
             )
+            event = decision.event
 
             # Commit handled by get_session context manager
             return {
@@ -880,7 +932,8 @@ async def ingest_with_transaction(
                 "session_id": str(event.session_id),
                 "channel": event.channel,
                 "idempotency_key": event.idempotency_key,
-                "is_duplicate": bool(getattr(event, "_ingestion_duplicate", False)),
+                "is_duplicate": decision.is_duplicate,
+                "ingestion_state": decision.state.value,
             }
 
         except ValidationError as e:
@@ -911,6 +964,7 @@ async def ingest_with_transaction(
                         "channel": existing.channel,
                         "idempotency_key": existing.idempotency_key,
                         "is_duplicate": True,
+                        "ingestion_state": IngestionResultState.DUPLICATE.value,
                     }
 
             # Database constraint violation (should be rare with validation)
