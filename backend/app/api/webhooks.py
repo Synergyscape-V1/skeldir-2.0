@@ -198,6 +198,7 @@ async def _authorize_webhook_request(
         raise unauthorized_auth_error()
 
     set_tenant_id(tenant_info["tenant_id"])
+    tenant_info["verified_at"] = datetime.now(timezone.utc)
     return tenant_info
 
 
@@ -453,12 +454,19 @@ async def _handle_ingestion(
     event_data: dict,
     idempotency_key: str,
     source: str,
+    verified_at: datetime,
     identity_payload: dict[str, Any] | None = None,
     request_headers: dict[str, str] | None = None,
 ):
+    verification_decision_time = (
+        verified_at.astimezone(timezone.utc)
+        if verified_at.tzinfo is not None
+        else verified_at.replace(tzinfo=timezone.utc)
+    )
     event_data = {
         **event_data,
         **_verified_revenue_state(),
+        "verified_at": verification_decision_time,
         "idempotency_key": idempotency_key,
     }
     # Use transactional helper to preserve DLQ commits on validation errors
@@ -558,6 +566,7 @@ async def shopify_order_create(
         event_data,
         idempotency_key,
         source="shopify",
+        verified_at=tenant_info["verified_at"],
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )
@@ -611,6 +620,7 @@ async def stripe_payment_intent_succeeded(
         event_data,
         idempotency_key,
         source="stripe",
+        verified_at=tenant_info["verified_at"],
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )
@@ -821,6 +831,11 @@ async def stripe_payment_intent_succeeded_v2(
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,
         **_verified_revenue_state(),
+        "verified_at": (
+            tenant_info["verified_at"].astimezone(timezone.utc)
+            if tenant_info["verified_at"].tzinfo is not None
+            else tenant_info["verified_at"].replace(tzinfo=timezone.utc)
+        ),
     }
     if utm_medium_for_normalization:
         event_data["utm_medium"] = utm_medium_for_normalization
@@ -921,6 +936,7 @@ async def paypal_sale_completed(
         event_data,
         idempotency_key,
         source="paypal",
+        verified_at=tenant_info["verified_at"],
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )
@@ -976,6 +992,7 @@ async def woocommerce_order_completed(
         event_data,
         idempotency_key,
         source="woocommerce",
+        verified_at=tenant_info["verified_at"],
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )

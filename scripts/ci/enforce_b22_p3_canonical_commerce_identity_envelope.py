@@ -96,6 +96,14 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
         violations.append("contract_fixed_money_exponent_authority_mismatch")
     if contract.get("required_ledger_anchor") != "event_id_unique_fk":
         violations.append("contract_required_ledger_anchor_mismatch")
+    if contract.get("authoritative_fail_close_authority") != "db_native_insert_failure":
+        violations.append("contract_authoritative_fail_close_authority_mismatch")
+    if contract.get("forbid_hot_path_schema_introspection") is not True:
+        violations.append("contract_hot_path_schema_probe_policy_mismatch")
+    if contract.get("production_path_testing_branching") != "forbidden":
+        violations.append("contract_testing_branch_policy_mismatch")
+    if contract.get("verified_at_capture_semantics") != "verification_decision_point":
+        violations.append("contract_verified_at_capture_semantics_mismatch")
 
 
 def _validate_model(path: Path, violations: list[str]) -> None:
@@ -133,6 +141,8 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
         "\"verified_commerce_ingress_state\": \"authenticity_verified\"",
         "_FIXED_MONEY_EXPONENT_BY_CURRENCY",
         "_canonical_money_scale(",
+        "\"verified_at\":",
+        "tenant_info[\"verified_at\"]",
     )
     for token in required_tokens:
         if token not in text:
@@ -156,12 +166,20 @@ def _validate_event_service(path: Path, violations: list[str]) -> None:
         "_WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS",
         "WebhookIngressIdentity(",
         "verified_commerce_ingress_state",
-        "_assert_webhook_identity_substrate_available(",
         "AuthoritativeIngressInvariantError",
+        "_is_missing_webhook_identity_relation_error(",
     )
     for token in required_tokens:
         if token not in text:
             violations.append(f"event_service_missing_token:{token}")
+    forbidden_tokens = (
+        "information_schema.tables",
+        "_testing_mode_enabled(",
+        "_authoritative_db_proofs_required(",
+    )
+    for token in forbidden_tokens:
+        if token in text:
+            violations.append(f"event_service_forbidden_token_present:{token}")
 
 
 def _validate_migration(path: Path, violations: list[str]) -> None:
@@ -205,6 +223,8 @@ def _validate_test_surfaces(*, p3_test: Path, p3_enforcer_test: Path, violations
         "test_b22_p3_verified_state_is_first_class_queryable",
         "test_b22_p3_negative_control_typed_reference_detector_is_non_vacuous",
         "test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailable",
+        "test_b22_p3_authoritative_path_avoids_request_time_schema_introspection",
+        "test_b22_p3_verified_at_capture_is_propagated_unchanged",
     )
     for token in p3_required_tests:
         if token not in p3_text:

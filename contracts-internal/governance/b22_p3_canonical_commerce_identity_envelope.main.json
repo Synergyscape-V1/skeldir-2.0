@@ -1,6 +1,6 @@
 {
   "contract_id": "b22.p3.canonical_commerce_identity_envelope.main",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.2-P3",
@@ -36,11 +36,17 @@
   "required_monetary_scale": 2,
   "fixed_money_exponent_authority": "in_process_map",
   "required_ledger_anchor": "event_id_unique_fk",
+  "authoritative_fail_close_authority": "db_native_insert_failure",
+  "forbid_hot_path_schema_introspection": true,
+  "production_path_testing_branching": "forbidden",
+  "verified_at_capture_semantics": "verification_decision_point",
   "required_runtime_proofs": [
     "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_all_supported_providers_persist_canonical_identity_envelope",
     "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_verified_state_is_first_class_queryable",
     "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_negative_control_typed_reference_detector_is_non_vacuous",
-    "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailable"
+    "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailable",
+    "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_authoritative_path_avoids_request_time_schema_introspection",
+    "backend/tests/test_b22_p3_canonical_identity_envelope.py::test_b22_p3_verified_at_capture_is_propagated_unchanged"
   ],
   "required_ci_wiring": [
     "python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py",
