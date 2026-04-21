@@ -1,0 +1,63 @@
+{
+  "contract_id": "b22.p4.idempotent_ack_orchestration.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.2-P4",
+  "description": "Explicit webhook orchestration idempotency + ACK protocol matrix lock with duplicate side-effect isolation.",
+  "supported_providers": [
+    "shopify",
+    "woocommerce",
+    "stripe",
+    "paypal"
+  ],
+  "duplicate_signal_contract": {
+    "ingestion_decision_type": "IngestionDecision",
+    "state_enum": [
+      "inserted",
+      "duplicate"
+    ],
+    "webhook_orchestration_gate_field": "is_duplicate",
+    "forbid_private_orm_duplicate_marker": true
+  },
+  "ack_matrix_contract": {
+    "success": {
+      "http_status": 200,
+      "response_status": "success"
+    },
+    "duplicate": {
+      "http_status": 200,
+      "response_status": "success"
+    },
+    "forged_signature": {
+      "http_status": 401
+    },
+    "malformed_authenticated_payload": {
+      "http_status": 200,
+      "response_status": "dlq_routed"
+    },
+    "oversized_payload": {
+      "http_status": 413
+    },
+    "missing_tenant_key": {
+      "http_status": 401
+    },
+    "wrong_tenant_key": {
+      "http_status": 401
+    },
+    "unsupported_event_family": {
+      "http_status": 404
+    }
+  },
+  "required_runtime_proofs": [
+    "backend/tests/test_b22_p4_idempotent_ack_orchestration.py::test_b22_p4_duplicate_replay_suppresses_downstream_tasks_for_all_supported_providers",
+    "backend/tests/test_b22_p4_idempotent_ack_orchestration.py::test_b22_p4_duplicate_replay_preserves_single_durable_event_row",
+    "backend/tests/test_b22_p4_idempotent_ack_orchestration.py::test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malformed_oversized_tenant_and_unsupported_outcomes",
+    "backend/tests/test_b22_p4_idempotent_ack_orchestration.py::test_b22_p4_stripe_alias_and_canonical_routes_share_ack_semantics"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py",
+    "pytest backend/tests/test_b22_p4_idempotent_ack_orchestration_enforcer.py -q",
+    "pytest backend/tests/test_b22_p4_idempotent_ack_orchestration.py -q"
+  ]
+}

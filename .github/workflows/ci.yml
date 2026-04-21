@@ -98,6 +98,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       SKELDIR_B22_P2_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P3_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_B22_P4_REQUIRE_DB_PROOFS: "1"
       TESTING: "1"
       CI: "true"
     steps:
@@ -270,6 +271,18 @@ jobs:
       - name: Run B2.2-P3 canonical identity envelope runtime proofs
         run: |
           pytest backend/tests/test_b22_p3_canonical_identity_envelope.py -q
+
+      - name: Enforce B2.2-P4 idempotent ACK + orchestration lock
+        run: |
+          python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
+
+      - name: Run B2.2-P4 idempotent ACK + orchestration negative controls
+        run: |
+          pytest backend/tests/test_b22_p4_idempotent_ack_orchestration_enforcer.py -q
+
+      - name: Run B2.2-P4 idempotent ACK + orchestration runtime proofs
+        run: |
+          pytest backend/tests/test_b22_p4_idempotent_ack_orchestration.py -q
 
       - name: Enforce contract semantic drift gate
         run: |
