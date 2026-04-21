@@ -45,7 +45,18 @@ Directive: Idempotent ACK semantics + webhook-orchestration side-effect isolatio
 
 ## 5) Protected-branch landing status
 
-- PR opened against `main`: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/367`
-- Current head branch: `b22-p4-idempotent-ack-orchestration`
-- Local remediation is implemented and test/enforcer surfaces are wired.
-- Protected-branch merge and post-merge green `main` CI evidence is pending completion of required checks on PR #367.
+- Protected workflow PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/367`
+- PR state: **MERGED** at `2026-04-21T18:00:23Z`
+- Merge commit on `main`: `7a84738adc38de30a8b1c54e7c9204ec7a33aee0`
+- Required-check adjudication for PR head passed prior to merge (authoritative `gh pr checks 367 --required` evidence captured).
+- Post-merge `main` CI run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24738191332`
+- Post-merge `main` CI status: **completed / success** for merge commit `7a84738adc38de30a8b1c54e7c9204ec7a33aee0`.
+
+## 6) Completion verdict
+
+- Phase B2.2-P4 directive closure status: **COMPLETE**
+- Falsifiable closure basis:
+  - explicit duplicate-state orchestration contract replaces hidden private marker coupling,
+  - merge-blocking P4 enforcement and runtime proofs are wired in CI,
+  - protected-branch PR merge to `main` is complete,
+  - and full `main` CI run for the merge commit completed green.
