@@ -31,6 +31,13 @@ EXPECTED_OUTCOMES = {
     "wrong_tenant_key",
     "unsupported_event_family",
 }
+EXPECTED_MALFORMED_ROUTE_SCOPE = {
+    "/api/webhooks/shopify/order_create",
+    "/api/webhooks/stripe/payment_intent_succeeded",
+    "/api/webhooks/stripe/payment_intent/succeeded",
+    "/api/webhooks/paypal/sale_completed",
+    "/api/webhooks/woocommerce/order_completed",
+}
 
 
 def _resolve(repo_root: Path, raw: str) -> Path:
@@ -77,6 +84,12 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
     outcomes = {str(key).strip() for key in ack_matrix.keys()}
     if outcomes != EXPECTED_OUTCOMES:
         violations.append("contract_ack_outcome_set_mismatch:" + "|".join(sorted(outcomes)))
+    malformed_scope = {
+        str(item).strip()
+        for item in (ack_matrix.get("malformed_authenticated_payload") or {}).get("route_scope", [])
+    }
+    if malformed_scope != EXPECTED_MALFORMED_ROUTE_SCOPE:
+        violations.append("contract_malformed_route_scope_mismatch:" + "|".join(sorted(malformed_scope)))
 
 
 def _validate_event_service(path: Path, violations: list[str]) -> None:
@@ -107,12 +120,23 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
         "not bool(result.get(\"is_duplicate\"))",
         "\"status\": \"dlq_routed\"",
         "status.HTTP_413_REQUEST_ENTITY_TOO_LARGE",
+        "_route_authenticated_malformed_payload(",
+        "_parse_json_object(",
         "/webhooks/stripe/payment_intent_succeeded",
         "/webhooks/stripe/payment_intent/succeeded",
     )
     for token in required_tokens:
         if token not in text:
             violations.append(f"webhooks_missing_token:{token}")
+    forbidden_tokens = (
+        "payload: ShopifyOrderCreateRequest = Body(...)",
+        "payload: StripePaymentIntentSucceededRequest = Body(...)",
+        "payload: PayPalSaleCompletedRequest = Body(...)",
+        "payload: WooCommerceOrderCompletedRequest = Body(...)",
+    )
+    for token in forbidden_tokens:
+        if token in text:
+            violations.append(f"webhooks_forbidden_token_present:{token}")
 
 
 def _validate_ci(path: Path, violations: list[str]) -> None:
@@ -135,6 +159,7 @@ def _validate_test_surfaces(*, p4_test: Path, p4_enforcer_test: Path, violations
         "test_b22_p4_duplicate_replay_preserves_single_durable_event_row",
         "test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malformed_oversized_tenant_and_unsupported_outcomes",
         "test_b22_p4_stripe_alias_and_canonical_routes_share_ack_semantics",
+        "malformed_cases = [",
     )
     for token in p4_required_tests:
         if token not in p4_text:

@@ -17,10 +17,9 @@ from types import MappingProxyType
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security, status
-from fastapi import Body
 from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Any, Mapping, Optional
 
 from app.api.problem_details import ProblemDetails
@@ -361,6 +360,55 @@ def _identity_payload_from_request(request: Request) -> dict[str, Any] | None:
     return parsed
 
 
+def _parse_json_object(raw_body: bytes) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        parsed = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, str(exc)
+    if not isinstance(parsed, dict):
+        return None, "payload root must be a JSON object"
+    return parsed, None
+
+
+def _malformed_idempotency_key(*, source: str, raw_body: bytes, suffix: str) -> str:
+    body_sha256 = hashlib.sha256(raw_body).hexdigest()
+    return str(uuid5(NAMESPACE_URL, f"{source}_{suffix}_{body_sha256}"))
+
+
+async def _route_authenticated_malformed_payload(
+    *,
+    tenant_id: UUID | str,
+    source: str,
+    idempotency_key: str,
+    error_message: str,
+    vendor_payload: dict[str, Any],
+    identity_payload: dict[str, Any],
+    request_headers: dict[str, str],
+) -> dict[str, str | None]:
+    correlation_id = str(_make_correlation_uuid(idempotency_key))
+    dead = await _route_to_dlq_direct(
+        tenant_id=tenant_id,
+        source=source,
+        correlation_id=correlation_id,
+        payload={
+            "event_type": "purchase",
+            "vendor": source,
+            "idempotency_key": idempotency_key,
+            "correlation_id": correlation_id,
+            "vendor_payload": vendor_payload,
+        },
+        error_message=error_message,
+        error_type="validation_error",
+        identity_payload=identity_payload,
+        request_headers=request_headers,
+    )
+    return {
+        "status": "dlq_routed",
+        "dead_event_id": str(dead.id),
+        "error": "validation_error",
+    }
+
+
 def _compute_recompute_window(event_timestamp: str) -> tuple[str, str]:
     """
     Normalize an event timestamp into a UTC day window (start inclusive, end exclusive).
@@ -535,11 +583,52 @@ async def _handle_ingestion(
 )
 async def shopify_order_create(
     request: Request,
-    payload: ShopifyOrderCreateRequest = Body(...),
     tenant_info=Depends(shopify_webhook_auth),
 ):
-    if not payload.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
+    raw_body = await _resolve_raw_body_for_webhook_auth(request)
+    request_headers = _request_headers_for_privacy_boundary(request)
+    identity_payload, parse_error = _parse_json_object(raw_body)
+    if parse_error is not None:
+        idempotency_key = _malformed_idempotency_key(
+            source="shopify",
+            raw_body=raw_body,
+            suffix="order_create_invalid_json",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            idempotency_key=idempotency_key,
+            error_message=f"invalid_json_payload:{parse_error}",
+            vendor_payload={
+                "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+                "raw_body_bytes": len(raw_body),
+                "parse_error": parse_error,
+            },
+            identity_payload={"raw_body_sha256": hashlib.sha256(raw_body).hexdigest()},
+            request_headers=request_headers,
+        )
+
+    try:
+        payload = ShopifyOrderCreateRequest.model_validate(identity_payload)
+        if not payload.id:
+            raise ValueError("Missing order id")
+    except (ValidationError, ValueError) as exc:
+        idempotency_key = _malformed_idempotency_key(
+            source="shopify",
+            raw_body=raw_body,
+            suffix="order_create_schema_invalid",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            idempotency_key=idempotency_key,
+            error_message=f"schema_validation_error:{exc}",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
 
     idempotency_key = str(uuid5(NAMESPACE_URL, f"shopify_order_create_{payload.id}"))
     set_business_correlation_id(idempotency_key)
@@ -578,8 +667,8 @@ async def shopify_order_create(
         idempotency_key,
         source="shopify",
         verified_at=_resolve_verified_at(tenant_info),
-        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
-        request_headers=_request_headers_for_privacy_boundary(request),
+        identity_payload=identity_payload,
+        request_headers=request_headers,
     )
 
 
@@ -591,12 +680,53 @@ async def shopify_order_create(
 )
 async def stripe_payment_intent_succeeded(
     request: Request,
-    payload: StripePaymentIntentSucceededRequest = Body(...),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     tenant_info=Depends(stripe_webhook_auth),
 ):
-    if not payload.id and not x_idempotency_key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing payment intent id")
+    raw_body = await _resolve_raw_body_for_webhook_auth(request)
+    request_headers = _request_headers_for_privacy_boundary(request)
+    identity_payload, parse_error = _parse_json_object(raw_body)
+    if parse_error is not None:
+        idempotency_key = x_idempotency_key or _malformed_idempotency_key(
+            source="stripe",
+            raw_body=raw_body,
+            suffix="payment_intent_succeeded_invalid_json",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            idempotency_key=idempotency_key,
+            error_message=f"invalid_json_payload:{parse_error}",
+            vendor_payload={
+                "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+                "raw_body_bytes": len(raw_body),
+                "parse_error": parse_error,
+            },
+            identity_payload={"raw_body_sha256": hashlib.sha256(raw_body).hexdigest()},
+            request_headers=request_headers,
+        )
+
+    try:
+        payload = StripePaymentIntentSucceededRequest.model_validate(identity_payload)
+        if not payload.id and not x_idempotency_key:
+            raise ValueError("Missing payment intent id")
+    except (ValidationError, ValueError) as exc:
+        idempotency_key = x_idempotency_key or _malformed_idempotency_key(
+            source="stripe",
+            raw_body=raw_body,
+            suffix="payment_intent_succeeded_schema_invalid",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            idempotency_key=idempotency_key,
+            error_message=f"schema_validation_error:{exc}",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
 
     idempotency_key = x_idempotency_key or str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{payload.id}"))
     set_business_correlation_id(idempotency_key)
@@ -632,8 +762,8 @@ async def stripe_payment_intent_succeeded(
         idempotency_key,
         source="stripe",
         verified_at=_resolve_verified_at(tenant_info),
-        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
-        request_headers=_request_headers_for_privacy_boundary(request),
+        identity_payload=identity_payload,
+        request_headers=request_headers,
     )
 
 
@@ -899,11 +1029,52 @@ async def stripe_payment_intent_succeeded_v2(
 )
 async def paypal_sale_completed(
     request: Request,
-    payload: PayPalSaleCompletedRequest = Body(...),
     tenant_info=Depends(paypal_webhook_auth),
 ):
-    if not payload.id or not payload.amount:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing transaction id or amount")
+    raw_body = await _resolve_raw_body_for_webhook_auth(request)
+    request_headers = _request_headers_for_privacy_boundary(request)
+    identity_payload, parse_error = _parse_json_object(raw_body)
+    if parse_error is not None:
+        idempotency_key = _malformed_idempotency_key(
+            source="paypal",
+            raw_body=raw_body,
+            suffix="sale_completed_invalid_json",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            idempotency_key=idempotency_key,
+            error_message=f"invalid_json_payload:{parse_error}",
+            vendor_payload={
+                "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+                "raw_body_bytes": len(raw_body),
+                "parse_error": parse_error,
+            },
+            identity_payload={"raw_body_sha256": hashlib.sha256(raw_body).hexdigest()},
+            request_headers=request_headers,
+        )
+
+    try:
+        payload = PayPalSaleCompletedRequest.model_validate(identity_payload)
+        if not payload.id or not payload.amount:
+            raise ValueError("Missing transaction id or amount")
+    except (ValidationError, ValueError) as exc:
+        idempotency_key = _malformed_idempotency_key(
+            source="paypal",
+            raw_body=raw_body,
+            suffix="sale_completed_schema_invalid",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            idempotency_key=idempotency_key,
+            error_message=f"schema_validation_error:{exc}",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
 
     idempotency_key = str(uuid5(NAMESPACE_URL, f"paypal_sale_completed_{payload.id}"))
     set_business_correlation_id(idempotency_key)
@@ -945,8 +1116,8 @@ async def paypal_sale_completed(
         idempotency_key,
         source="paypal",
         verified_at=_resolve_verified_at(tenant_info),
-        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
-        request_headers=_request_headers_for_privacy_boundary(request),
+        identity_payload=identity_payload,
+        request_headers=request_headers,
     )
 
 
@@ -957,11 +1128,52 @@ async def paypal_sale_completed(
 )
 async def woocommerce_order_completed(
     request: Request,
-    payload: WooCommerceOrderCompletedRequest = Body(...),
     tenant_info=Depends(woocommerce_webhook_auth),
 ):
-    if not payload.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing order id")
+    raw_body = await _resolve_raw_body_for_webhook_auth(request)
+    request_headers = _request_headers_for_privacy_boundary(request)
+    identity_payload, parse_error = _parse_json_object(raw_body)
+    if parse_error is not None:
+        idempotency_key = _malformed_idempotency_key(
+            source="woocommerce",
+            raw_body=raw_body,
+            suffix="order_completed_invalid_json",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            idempotency_key=idempotency_key,
+            error_message=f"invalid_json_payload:{parse_error}",
+            vendor_payload={
+                "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+                "raw_body_bytes": len(raw_body),
+                "parse_error": parse_error,
+            },
+            identity_payload={"raw_body_sha256": hashlib.sha256(raw_body).hexdigest()},
+            request_headers=request_headers,
+        )
+
+    try:
+        payload = WooCommerceOrderCompletedRequest.model_validate(identity_payload)
+        if not payload.id:
+            raise ValueError("Missing order id")
+    except (ValidationError, ValueError) as exc:
+        idempotency_key = _malformed_idempotency_key(
+            source="woocommerce",
+            raw_body=raw_body,
+            suffix="order_completed_schema_invalid",
+        )
+        set_business_correlation_id(idempotency_key)
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            idempotency_key=idempotency_key,
+            error_message=f"schema_validation_error:{exc}",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
 
     idempotency_key = str(uuid5(NAMESPACE_URL, f"woocommerce_order_completed_{payload.id}"))
     set_business_correlation_id(idempotency_key)
@@ -1001,6 +1213,6 @@ async def woocommerce_order_completed(
         idempotency_key,
         source="woocommerce",
         verified_at=_resolve_verified_at(tenant_info),
-        identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
-        request_headers=_request_headers_for_privacy_boundary(request),
+        identity_payload=identity_payload,
+        request_headers=request_headers,
     )

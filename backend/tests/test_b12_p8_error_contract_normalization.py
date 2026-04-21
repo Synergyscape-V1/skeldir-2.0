@@ -708,6 +708,15 @@ async def test_eg8422_business_validation_after_valid_auth_is_problem_details_an
         raise unauthorized_auth_error()
 
     monkeypatch.setattr(webhooks_api, "get_tenant_with_webhook_secrets", _tenant_lookup)
+    dlq_id = uuid4()
+
+    class _DeadEventStub:
+        id = dlq_id
+
+    async def _fake_route_to_dlq_direct(*, tenant_id, source, correlation_id, payload, error_message, **kwargs):
+        return _DeadEventStub()
+
+    monkeypatch.setattr(webhooks_api, "_route_to_dlq_direct", _fake_route_to_dlq_direct)
 
     invalid_body = b"[]"
     signature = _shopify_signature(invalid_body, "shopify_secret")
@@ -725,12 +734,10 @@ async def test_eg8422_business_validation_after_valid_auth_is_problem_details_an
             },
         )
 
-    problem = _assert_problem_response_shape(response, expected_status=422)
-    assert problem["code"] == "REQUEST_VALIDATION_FAILED"
-    serialized = json.dumps(problem, sort_keys=True).lower()
-    assert "loc" not in serialized
-    assert "input" not in serialized
-    assert "validationerror" not in serialized
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "dlq_routed"
+    assert payload.get("dead_event_id") == str(dlq_id)
 
 
 @pytest.mark.asyncio
