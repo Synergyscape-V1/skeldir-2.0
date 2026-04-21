@@ -14,6 +14,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 
 from app.core.secrets import get_database_url
 from app.db.session import get_session
@@ -309,14 +310,16 @@ async def test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailabl
         }
     ).encode()
 
-    async def _fail_substrate(**_: object) -> None:
-        raise event_service.AuthoritativeIngressInvariantError("forced substrate outage")
+    original_flush = event_service.AsyncSession.flush
 
-    monkeypatch.setattr(
-        event_service,
-        "_assert_webhook_identity_substrate_available",
-        _fail_substrate,
-    )
+    async def _fail_flush(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        raise ProgrammingError(
+            "INSERT INTO webhook_ingress_identities (...) VALUES (...)",
+            {},
+            Exception('relation "webhook_ingress_identities" does not exist'),
+        )
+
+    monkeypatch.setattr(event_service.AsyncSession, "flush", _fail_flush)
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -331,6 +334,70 @@ async def test_b22_p3_authoritative_webhook_path_fails_when_substrate_unavailabl
         )
 
     assert response.status_code >= 500
+    monkeypatch.setattr(event_service.AsyncSession, "flush", original_flush)
+
+
+@pytest.mark.asyncio
+async def test_b22_p3_authoritative_path_avoids_request_time_schema_introspection(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _, api_key, secrets = await create_tenant_with_secrets()
+    body = json.dumps(
+        {
+            "id": int(uuid4().int % 1_000_000),
+            "total_price": "10.00",
+            "currency": "USD",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).encode()
+    original_execute = event_service.AsyncSession.execute
+
+    async def _guard_execute(self, statement, *args, **kwargs):  # type: ignore[no-untyped-def]
+        statement_text = str(statement).lower()
+        assert "information_schema.tables" not in statement_text
+        return await original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(event_service.AsyncSession, "execute", _guard_execute)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/webhooks/shopify/order_create",
+            content=body,
+            headers={
+                "X-Shopify-Hmac-Sha256": sign_shopify(body, secrets["shopify_webhook_secret"]),
+                "X-Skeldir-Tenant-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    monkeypatch.setattr(event_service.AsyncSession, "execute", original_execute)
+
+
+def test_b22_p3_verified_at_capture_is_propagated_unchanged() -> None:
+    verified_at = datetime(2026, 4, 20, 22, 0, tzinfo=timezone.utc)
+    event_timestamp = datetime(2026, 4, 20, 21, 59, tzinfo=timezone.utc)
+    payload = event_service._extract_webhook_ingress_identity(
+        source="shopify",
+        event_data={
+            "provider": "shopify",
+            "provider_native_event_reference": "evt-1",
+            "provider_native_commerce_reference": "ord-1",
+            "normalized_commerce_reference_kind": "shopify_order_id",
+            "normalized_commerce_reference_value": "ord-1",
+            "verified_amount_minor": 100,
+            "verified_amount_currency": "USD",
+            "verified_amount_scale": 2,
+            "verified_commerce_ingress_state": "authenticity_verified",
+            "verified_at": verified_at,
+        },
+        tenant_id=uuid4(),
+        idempotency_key="idempotency-1",
+        event_id=uuid4(),
+        event_timestamp=event_timestamp,
+    )
+    assert payload is not None
+    assert payload["verified_at"] == verified_at
 
 
 def test_b22_p3_negative_control_typed_reference_detector_is_non_vacuous():

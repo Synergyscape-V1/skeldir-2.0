@@ -9,15 +9,14 @@ B0.4.4 Enhancement: Integrated DLQHandler with error classification and retry lo
 
 import logging
 import hashlib
-import os
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import time
 from typing import Any, Dict, Mapping, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ingestion.channel_normalization import normalize_channel
@@ -79,6 +78,7 @@ _WEBHOOK_INGRESS_IDENTITY_REQUIRED_FIELDS = frozenset(
         "verified_amount_currency",
         "verified_amount_scale",
         "verified_commerce_ingress_state",
+        "verified_at",
     }
 )
 
@@ -89,19 +89,6 @@ class ValidationError(Exception):
 
 class AuthoritativeIngressInvariantError(RuntimeError):
     """Raised when authoritative webhook ingress substrate invariants are violated."""
-
-
-def _testing_mode_enabled() -> bool:
-    return os.getenv("TESTING", "0").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _authoritative_db_proofs_required() -> bool:
-    return os.getenv("SKELDIR_B22_P3_REQUIRE_DB_PROOFS", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
 
 
 def _first_non_empty_resolution_token(*values: Any) -> str | None:
@@ -245,6 +232,17 @@ def _extract_webhook_ingress_identity(
     amount_currency = str(event_data["verified_amount_currency"]).strip().upper()
     if len(amount_currency) != 3:
         raise ValidationError("verified_amount_currency must be a 3-letter ISO code")
+    verified_at_value = event_data.get("verified_at")
+    if isinstance(verified_at_value, datetime):
+        verified_at = (
+            verified_at_value.astimezone(timezone.utc)
+            if verified_at_value.tzinfo is not None
+            else verified_at_value.replace(tzinfo=timezone.utc)
+        )
+    else:
+        raise ValidationError(
+            "verified_at must be captured at verification time and provided as a datetime"
+        )
 
     return {
         "id": uuid4(),
@@ -271,7 +269,7 @@ def _extract_webhook_ingress_identity(
         "verified_commerce_ingress_state": str(
             event_data["verified_commerce_ingress_state"]
         ).strip(),
-        "verified_at": datetime.now(timezone.utc),
+        "verified_at": verified_at,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
@@ -328,22 +326,6 @@ def _is_idempotency_duplicate_integrity_error(error: IntegrityError) -> bool:
     )
 
 
-async def _webhook_identity_table_available(session: AsyncSession) -> bool:
-    result = await session.execute(
-        text(
-            """
-        SELECT EXISTS (
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name = 'webhook_ingress_identities'
-        )
-        """
-        )
-    )
-    return bool(result.scalar())
-
-
 async def _fetch_existing_event_for_key(
     session: AsyncSession, *, tenant_id: UUID, idempotency_key: str
 ) -> Optional[AttributionEvent]:
@@ -356,28 +338,26 @@ async def _fetch_existing_event_for_key(
     return res.scalar_one_or_none()
 
 
-async def _assert_webhook_identity_substrate_available(
-    *,
-    session: AsyncSession,
-    source: str,
-    tenant_id: UUID,
-    idempotency_key: str,
-) -> bool:
-    if await _webhook_identity_table_available(session):
-        return True
-    if _testing_mode_enabled() and not _authoritative_db_proofs_required():
-        logger.warning(
-            "authoritative_webhook_identity_substrate_bypass_testing_mode",
-            extra={
-                "source": source,
-                "tenant_id": str(tenant_id),
-                "idempotency_key": idempotency_key,
-            },
-        )
-        return False
-    raise AuthoritativeIngressInvariantError(
-        "Canonical webhook identity substrate is unavailable for authoritative ingress "
-        f"(source={source}, tenant_id={tenant_id}, idempotency_key={idempotency_key})."
+def _programming_error_sqlstate(error: ProgrammingError) -> str | None:
+    orig = getattr(error, "orig", None)
+    if orig is None:
+        return None
+    for attr in ("pgcode", "sqlstate"):
+        value = getattr(orig, attr, None)
+        if value:
+            return str(value)
+    return None
+
+
+def _is_missing_webhook_identity_relation_error(error: ProgrammingError) -> bool:
+    sqlstate = _programming_error_sqlstate(error)
+    lowered = str(error).lower()
+    if sqlstate == "42P01":
+        return "webhook_ingress_identities" in lowered
+    return (
+        "relation" in lowered
+        and "does not exist" in lowered
+        and "webhook_ingress_identities" in lowered
     )
 
 
@@ -577,16 +557,9 @@ class EventIngestionService:
                 event_timestamp=validated["event_timestamp"],
             )
             if webhook_identity_payload is not None:
-                substrate_available = await _assert_webhook_identity_substrate_available(
-                    session=session,
-                    source=source,
-                    tenant_id=tenant_id,
-                    idempotency_key=idempotency_key,
+                webhook_ingress_identity = WebhookIngressIdentity(
+                    **webhook_identity_payload
                 )
-                if substrate_available:
-                    webhook_ingress_identity = WebhookIngressIdentity(
-                        **webhook_identity_payload
-                    )
 
             # 5. Persist to database
             session.add(event)
@@ -676,6 +649,13 @@ class EventIngestionService:
                 events_duplicate_total.inc()
                 return existing_after_race
 
+            raise
+        except ProgrammingError as e:
+            if _is_missing_webhook_identity_relation_error(e):
+                raise AuthoritativeIngressInvariantError(
+                    "Canonical webhook identity substrate is unavailable for authoritative ingress "
+                    f"(source={source}, tenant_id={tenant_id}, idempotency_key={idempotency_key})."
+                ) from e
             raise
 
     async def _check_duplicate(
