@@ -321,8 +321,37 @@ async def test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malforme
     ).encode()
     valid_signature = sign_shopify(valid_body, secrets["shopify_webhook_secret"])
 
-    malformed_signed_body = b"{not-json"
-    malformed_signature = sign_stripe(malformed_signed_body, secrets["stripe_webhook_secret"])
+    malformed_shopify_body = b"{not-json"
+    malformed_stripe_body = b"{not-json"
+    malformed_paypal_body = b"{not-json"
+    malformed_woo_body = b"{not-json"
+    malformed_cases = [
+        (
+            "/api/webhooks/shopify/order_create",
+            malformed_shopify_body,
+            {"X-Shopify-Hmac-Sha256": sign_shopify(malformed_shopify_body, secrets["shopify_webhook_secret"])},
+        ),
+        (
+            "/api/webhooks/stripe/payment_intent_succeeded",
+            malformed_stripe_body,
+            {"Stripe-Signature": sign_stripe(malformed_stripe_body, secrets["stripe_webhook_secret"])},
+        ),
+        (
+            "/api/webhooks/stripe/payment_intent/succeeded",
+            malformed_stripe_body,
+            {"Stripe-Signature": sign_stripe(malformed_stripe_body, secrets["stripe_webhook_secret"])},
+        ),
+        (
+            "/api/webhooks/paypal/sale_completed",
+            malformed_paypal_body,
+            paypal_auth_headers(malformed_paypal_body, secrets["paypal_webhook_secret"]),
+        ),
+        (
+            "/api/webhooks/woocommerce/order_completed",
+            malformed_woo_body,
+            {"X-WC-Webhook-Signature": sign_woocommerce(malformed_woo_body, secrets["woocommerce_webhook_secret"])},
+        ),
+    ]
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -349,15 +378,6 @@ async def test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malforme
             content=valid_body,
             headers={
                 "X-Shopify-Hmac-Sha256": "invalid",
-                "X-Skeldir-Tenant-Key": api_key,
-                "Content-Type": "application/json",
-            },
-        )
-        malformed = await client.post(
-            "/api/webhooks/stripe/payment_intent/succeeded",
-            content=malformed_signed_body,
-            headers={
-                "Stripe-Signature": malformed_signature,
                 "X-Skeldir-Tenant-Key": api_key,
                 "Content-Type": "application/json",
             },
@@ -398,6 +418,63 @@ async def test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malforme
                 "Content-Type": "application/json",
             },
         )
+        malformed_authenticated_responses = []
+        forged_malformed_responses = []
+        missing_tenant_malformed_responses = []
+        wrong_tenant_malformed_responses = []
+        for route, body, auth_headers in malformed_cases:
+            malformed_authenticated_responses.append(
+                await client.post(
+                    route,
+                    content=body,
+                    headers={
+                        **auth_headers,
+                        "X-Skeldir-Tenant-Key": api_key,
+                        "Content-Type": "application/json",
+                    },
+                )
+            )
+            forged_headers = dict(auth_headers)
+            if "X-Shopify-Hmac-Sha256" in forged_headers:
+                forged_headers["X-Shopify-Hmac-Sha256"] = "invalid"
+            elif "Stripe-Signature" in forged_headers:
+                forged_headers["Stripe-Signature"] = "t=0,v1=invalid"
+            elif "X-WC-Webhook-Signature" in forged_headers:
+                forged_headers["X-WC-Webhook-Signature"] = "invalid"
+            else:
+                forged_headers = paypal_auth_headers(body, "wrong_webhook_id")
+            forged_malformed_responses.append(
+                await client.post(
+                    route,
+                    content=body,
+                    headers={
+                        **forged_headers,
+                        "X-Skeldir-Tenant-Key": api_key,
+                        "Content-Type": "application/json",
+                    },
+                )
+            )
+            missing_tenant_malformed_responses.append(
+                await client.post(
+                    route,
+                    content=body,
+                    headers={
+                        **auth_headers,
+                        "Content-Type": "application/json",
+                    },
+                )
+            )
+            wrong_tenant_malformed_responses.append(
+                await client.post(
+                    route,
+                    content=body,
+                    headers={
+                        **auth_headers,
+                        "X-Skeldir-Tenant-Key": f"wrong_{uuid4()}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            )
 
     assert success.status_code == 200, success.text
     assert success.json()["status"] == "success"
@@ -405,12 +482,19 @@ async def test_b22_p4_ack_matrix_is_stable_for_success_duplicate_forged_malforme
     assert duplicate.json()["status"] == "success"
     assert duplicate.json()["event_id"] == success.json()["event_id"]
     assert forged.status_code == 401, forged.text
-    assert malformed.status_code == 200, malformed.text
-    assert malformed.json()["status"] == "dlq_routed"
     assert oversized.status_code == 413, oversized.text
     assert missing_tenant.status_code == 401, missing_tenant.text
     assert wrong_tenant.status_code == 401, wrong_tenant.text
     assert unsupported.status_code == 404, unsupported.text
+    for response in malformed_authenticated_responses:
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "dlq_routed"
+    for response in forged_malformed_responses:
+        assert response.status_code == 401, response.text
+    for response in missing_tenant_malformed_responses:
+        assert response.status_code == 401, response.text
+    for response in wrong_tenant_malformed_responses:
+        assert response.status_code == 401, response.text
     assert len(observed_calls) == 1
 
 
@@ -435,6 +519,7 @@ async def test_b22_p4_stripe_alias_and_canonical_routes_share_ack_semantics():
             "data": {"object": {"id": pi_id, "amount": 6100, "currency": "usd"}},
         }
     ).encode()
+    malformed_body = b"{not-json"
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -474,6 +559,24 @@ async def test_b22_p4_stripe_alias_and_canonical_routes_share_ack_semantics():
                 "Content-Type": "application/json",
             },
         )
+        canonical_malformed = await client.post(
+            "/api/webhooks/stripe/payment_intent_succeeded",
+            content=malformed_body,
+            headers={
+                "Stripe-Signature": sign_stripe(malformed_body, secrets["stripe_webhook_secret"]),
+                "X-Skeldir-Tenant-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+        alias_malformed = await client.post(
+            "/api/webhooks/stripe/payment_intent/succeeded",
+            content=malformed_body,
+            headers={
+                "Stripe-Signature": sign_stripe(malformed_body, secrets["stripe_webhook_secret"]),
+                "X-Skeldir-Tenant-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
 
     assert canonical_ok.status_code == 200, canonical_ok.text
     assert canonical_ok.json()["status"] == "success"
@@ -481,3 +584,7 @@ async def test_b22_p4_stripe_alias_and_canonical_routes_share_ack_semantics():
     assert alias_ok.json()["status"] == "success"
     assert canonical_forged.status_code == 401, canonical_forged.text
     assert alias_forged.status_code == 401, alias_forged.text
+    assert canonical_malformed.status_code == 200, canonical_malformed.text
+    assert canonical_malformed.json()["status"] == "dlq_routed"
+    assert alias_malformed.status_code == 200, alias_malformed.text
+    assert alias_malformed.json()["status"] == "dlq_routed"
