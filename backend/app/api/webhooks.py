@@ -21,7 +21,7 @@ from fastapi import Body
 from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from app.api.problem_details import ProblemDetails
 from app.core.config import settings
@@ -306,6 +306,17 @@ def _verified_revenue_state() -> dict[str, str]:
     }
 
 
+def _resolve_verified_at(tenant_info: Mapping[str, Any]) -> datetime:
+    raw_value = tenant_info.get("verified_at")
+    if isinstance(raw_value, datetime):
+        return (
+            raw_value.astimezone(timezone.utc)
+            if raw_value.tzinfo is not None
+            else raw_value.replace(tzinfo=timezone.utc)
+        )
+    return datetime.now(timezone.utc)
+
+
 def _decimal_to_minor_units(value: str | int | Decimal, *, scale: int = 2) -> int:
     quantizer = Decimal(10) ** (-scale)
     try:
@@ -566,7 +577,7 @@ async def shopify_order_create(
         event_data,
         idempotency_key,
         source="shopify",
-        verified_at=tenant_info["verified_at"],
+        verified_at=_resolve_verified_at(tenant_info),
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )
@@ -620,7 +631,7 @@ async def stripe_payment_intent_succeeded(
         event_data,
         idempotency_key,
         source="stripe",
-        verified_at=tenant_info["verified_at"],
+        verified_at=_resolve_verified_at(tenant_info),
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )
@@ -807,6 +818,7 @@ async def stripe_payment_intent_succeeded_v2(
     verified_amount_minor = int(amount_cents)
     verified_amount_currency = currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
+    verification_decision_time = _resolve_verified_at(tenant_info)
     provider_event_reference = _resolution_token(event_id) or pi_id
     event_data = {
         "event_type": "purchase",
@@ -831,11 +843,7 @@ async def stripe_payment_intent_succeeded_v2(
         "correlation_id": correlation_uuid,
         "vendor_payload": payload,
         **_verified_revenue_state(),
-        "verified_at": (
-            tenant_info["verified_at"].astimezone(timezone.utc)
-            if tenant_info["verified_at"].tzinfo is not None
-            else tenant_info["verified_at"].replace(tzinfo=timezone.utc)
-        ),
+        "verified_at": verification_decision_time,
     }
     if utm_medium_for_normalization:
         event_data["utm_medium"] = utm_medium_for_normalization
@@ -936,7 +944,7 @@ async def paypal_sale_completed(
         event_data,
         idempotency_key,
         source="paypal",
-        verified_at=tenant_info["verified_at"],
+        verified_at=_resolve_verified_at(tenant_info),
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )
@@ -992,7 +1000,7 @@ async def woocommerce_order_completed(
         event_data,
         idempotency_key,
         source="woocommerce",
-        verified_at=tenant_info["verified_at"],
+        verified_at=_resolve_verified_at(tenant_info),
         identity_payload=_identity_payload_from_request(request) or payload.model_dump(mode="json"),
         request_headers=_request_headers_for_privacy_boundary(request),
     )

@@ -142,7 +142,7 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
         "_FIXED_MONEY_EXPONENT_BY_CURRENCY",
         "_canonical_money_scale(",
         "\"verified_at\":",
-        "tenant_info[\"verified_at\"]",
+        "_resolve_verified_at(",
     )
     for token in required_tokens:
         if token not in text:
