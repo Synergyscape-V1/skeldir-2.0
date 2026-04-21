@@ -45,5 +45,7 @@ Directive: Idempotent ACK semantics + webhook-orchestration side-effect isolatio
 
 ## 5) Protected-branch landing status
 
+- PR opened against `main`: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/367`
+- Current head branch: `b22-p4-idempotent-ack-orchestration`
 - Local remediation is implemented and test/enforcer surfaces are wired.
-- Protected-branch merge and post-merge green `main` CI evidence is not yet attached in this local iteration.
+- Protected-branch merge and post-merge green `main` CI evidence is pending completion of required checks on PR #367.
