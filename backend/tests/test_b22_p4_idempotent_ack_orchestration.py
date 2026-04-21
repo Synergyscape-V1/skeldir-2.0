@@ -146,6 +146,7 @@ async def test_b22_p4_duplicate_replay_suppresses_downstream_tasks_for_all_suppo
     shopify_id = int(uuid4().int % 1_000_000)
     woo_id = int(uuid4().int % 1_000_000)
     stripe_pi_id = f"pi_{uuid4().hex[:12]}"
+    stripe_alias_pi_id = f"pi_{uuid4().hex[:12]}"
     stripe_event_id = f"evt_{uuid4().hex[:12]}"
     paypal_txn_id = f"txn_{uuid4().hex[:10]}"
 
@@ -174,7 +175,7 @@ async def test_b22_p4_duplicate_replay_suppresses_downstream_tasks_for_all_suppo
         {
             "id": stripe_event_id,
             "created": int(datetime.now(timezone.utc).timestamp()),
-            "data": {"object": {"id": stripe_pi_id, "amount": 5500, "currency": "usd"}},
+            "data": {"object": {"id": stripe_alias_pi_id, "amount": 5500, "currency": "usd"}},
         }
     ).encode()
     paypal_body = json.dumps(
