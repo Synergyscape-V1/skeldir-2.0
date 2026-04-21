@@ -82,15 +82,20 @@ Directive: Idempotent ACK semantics + webhook-orchestration side-effect isolatio
 ## 6) Protected-branch landing evidence (this corrective iteration)
 
 - Feature branch: `b22-p4-ack-route-stability-corrective`
-- PR: _pending_
-- Merge commit on `main`: _pending_
-- Post-merge `main` CI run URL: _pending_
-- Post-merge `main` CI status: _pending_
+- PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/369`
+- PR state: **MERGED** at `2026-04-21T20:31:36Z`
+- Merge commit on `main`: `1580e71cf07b2e4496838c759ea025150d9e013b`
+- Required-check adjudication on PR: **pass** (`gh pr checks 369 --required`)
+- Post-merge `main` CI run URL: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24744912462`
+- Post-merge `main` CI status: **completed / success** for head SHA `1580e71cf07b2e4496838c759ea025150d9e013b`
 
 ## 7) Completion verdict (current state)
 
-- Corrective implementation state: **READY FOR PROTECTED-BRANCH MERGE**
-- Final directive closure status: **PENDING** until:
-  - PR is merged into `main` through branch protection,
-  - required checks are green,
-  - and post-merge `main` CI is confirmed green for the landed corrective commit.
+- Corrective implementation state: **LANDED ON `main`**
+- Final directive closure status: **COMPLETE**
+- Falsifiable closure basis:
+  - malformed authenticated payload ACK semantics are route-stable across all supported mounted provider routes and alias,
+  - auth precedence remains intact (`401` for forged/missing/wrong tenant malformed requests),
+  - duplicate durable-row and duplicate downstream-task suppression remain intact,
+  - governance + enforcer + runtime proof surfaces reflect the corrected behavior,
+  - and protected-branch merge plus post-merge `main` CI success are both evidenced.
