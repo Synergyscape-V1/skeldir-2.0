@@ -279,6 +279,9 @@ def _validate_paypal_cert_url(cert_url: str) -> tuple[str | None, set[str]]:
     else:
         return None, set()
 
+    if _paypal_testing_override_matches(cert_url=cert_url, cert_host=host):
+        return host, {"TESTING_OVERRIDE"}
+
     dns_tokens = _resolve_public_ip_tokens(host)
     if not dns_tokens:
         return None, set()
@@ -361,16 +364,10 @@ def _fetch_paypal_certificate_pem(cert_url: str, cert_host: str) -> bytes | None
 def _testing_paypal_certificate_override(
     *, cert_url: str, cert_host: str
 ) -> bytes | None:
-    if os.getenv("TESTING") != "1":
+    if not _paypal_testing_override_matches(cert_url=cert_url, cert_host=cert_host):
         return None
-    override_url = (os.getenv(PAYPAL_TEST_CERT_URL_ENV) or "").strip()
     override_pem = (os.getenv(PAYPAL_TEST_CERT_PEM_ENV) or "").strip()
-    if not override_url or not override_pem:
-        return None
-    parsed_override = urlparse(override_url)
-    if (parsed_override.hostname or "").lower() != cert_host:
-        return None
-    if cert_url != override_url:
+    if not override_pem:
         return None
     encoded = override_pem.encode("utf-8")
     if len(encoded) > PAYPAL_CERT_MAX_BYTES:
@@ -378,11 +375,27 @@ def _testing_paypal_certificate_override(
     return encoded
 
 
+def _paypal_testing_override_matches(*, cert_url: str, cert_host: str) -> bool:
+    if os.getenv("TESTING") != "1":
+        return False
+    override_url = (os.getenv(PAYPAL_TEST_CERT_URL_ENV) or "").strip()
+    override_pem = (os.getenv(PAYPAL_TEST_CERT_PEM_ENV) or "").strip()
+    if not override_url or not override_pem:
+        return False
+    parsed_override = urlparse(override_url)
+    if (parsed_override.hostname or "").lower() != cert_host:
+        return False
+    return cert_url == override_url
+
+
 def _resolve_paypal_public_key(
     cert_url: str,
     cert_host: str,
     dns_tokens_before_fetch: set[str],
 ) -> rsa.RSAPublicKey | None:
+    testing_override_active = _paypal_testing_override_matches(
+        cert_url=cert_url, cert_host=cert_host
+    )
     cached = _get_cached_paypal_public_key(cert_url)
     if cached is not None:
         return cached
@@ -391,11 +404,12 @@ def _resolve_paypal_public_key(
     if certificate_bytes is None:
         return None
 
-    dns_tokens_after_fetch = _resolve_public_ip_tokens(cert_host)
-    if not dns_tokens_after_fetch:
-        return None
-    if dns_tokens_before_fetch.isdisjoint(dns_tokens_after_fetch):
-        return None
+    if not testing_override_active:
+        dns_tokens_after_fetch = _resolve_public_ip_tokens(cert_host)
+        if not dns_tokens_after_fetch:
+            return None
+        if dns_tokens_before_fetch.isdisjoint(dns_tokens_after_fetch):
+            return None
 
     loaded = _load_paypal_rsa_public_key(certificate_bytes)
     if loaded is None:
