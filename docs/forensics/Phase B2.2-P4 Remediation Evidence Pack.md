@@ -46,6 +46,11 @@ Directive: Idempotent ACK Semantics + Webhook-Orchestration Side-Effect Isolatio
   - Updated required webhook gate token to typed `not result.is_duplicate`.
   - Added forbidden dict duplicate-access tokens.
 
+- `scripts/ci/enforce_b14_p3_attribution_locality.py`
+  - Removed stale dict-token expectation (`session_id = result.get("session_id")`).
+  - Enforced typed runtime accessor token (`session_id = result.session_id`).
+  - Replaced stale event-service payload token check with typed session property checks.
+
 - `contracts-internal/governance/b22_p4_idempotent_ack_orchestration.main.json`
   - Version bump `1.1.0 -> 1.2.0`.
   - Added typed transaction contract field:
@@ -82,12 +87,18 @@ Directive: Idempotent ACK Semantics + Webhook-Orchestration Side-Effect Isolatio
 - Exit Gate 5 (Non-Regression): typed wrapper consumers updated; ingestion compatibility tests pass locally.
 - Exit Gate 6 (CI + Governance Correctness): PASS locally for enforcer surfaces; protected-branch workflow evidence captured in section 5.
 
-## 5) Protected-branch workflow evidence (to be finalized at merge)
+## 5) Protected-branch workflow evidence (finalized)
 
+- Repository: `Synergyscape-V1/skeldir-2.0`
 - Branch: `main`
-- Commit SHA: pending
-- Push time: pending
-- Main CI run URL: pending
-- Main CI status: pending
+- PR merged: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/371`
+- Merge commit on `main`: `cb07a0b44afa26a7c491a8d2483dc3ea03353587`
+- Merge timestamp (UTC): `2026-04-22T15:06:55Z`
+- Main CI (fresh manual full run on merged SHA): `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24790632408`
+- Main CI result: `completed/success` (head SHA `cb07a0b44afa26a7c491a8d2483dc3ea03353587`)
+- Protected-check convergence on PR head: all required checks green before merge.
 
-Completion is finalized only after this section is updated with merged SHA and green required checks on protected `main`.
+Falsifiable completion claim:
+- Typed runtime boundary closure is merged on protected `main`.
+- Required protected checks were green at merge.
+- Full `CI` workflow run on merged `main` SHA completed green once.
