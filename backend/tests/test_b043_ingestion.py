@@ -266,10 +266,10 @@ async def test_transaction_wrapper_success(test_tenant):
         source="sendgrid",
     )
 
-    assert result["status"] == "success"
-    assert "event_id" in result
-    assert "channel" in result
-    print(f"Wrapper success path PASS (event_id={result['event_id']})")
+    assert result.status == "success"
+    assert result.event_id is not None
+    assert result.channel is not None
+    print(f"Wrapper success path PASS (event_id={result.event_id})")
 
 
 @pytest.mark.asyncio
@@ -281,9 +281,8 @@ async def test_transaction_wrapper_error(test_tenant):
 
     invalid_data = {
         "event_type": "click",
-        "event_timestamp": datetime.now(timezone.utc).isoformat(),
         "revenue_amount": "0.00",
-        # Missing session_id
+        # Missing event_timestamp
     }
 
     result = await ingest_with_transaction(
@@ -293,9 +292,10 @@ async def test_transaction_wrapper_error(test_tenant):
         source="unknown",
     )
 
-    assert result["status"] == "error"
-    assert result["error_type"] == "validation_error"
-    assert "session_id" in result["error"]
+    assert result.status == "error"
+    assert result.error_type == "validation_error"
+    assert result.error is not None
+    assert "event_timestamp" in result.error
     print("Wrapper error path PASS")
 
 

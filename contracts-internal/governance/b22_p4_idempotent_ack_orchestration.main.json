@@ -1,6 +1,6 @@
 {
   "contract_id": "b22.p4.idempotent_ack_orchestration.main",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.2-P4",
@@ -13,6 +13,13 @@
   ],
   "duplicate_signal_contract": {
     "ingestion_decision_type": "IngestionDecision",
+    "ingestion_transaction_result_type": "IngestionTransactionResult",
+    "forbidden_boundary_shapes": [
+      "dict",
+      "typed_dict",
+      "tuple",
+      "list"
+    ],
     "state_enum": [
       "inserted",
       "duplicate"

@@ -105,11 +105,18 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
     required_tokens = (
         "raw_body = await _resolve_raw_body_for_webhook_auth(request)",
         "_verified_revenue_state()",
-        "not bool(result.get(\"is_duplicate\"))",
+        "not result.is_duplicate",
     )
     for token in required_tokens:
         if token not in text:
             violations.append(f"webhooks_missing_token:{token}")
+    forbidden_tokens = (
+        "result.get(\"is_duplicate\")",
+        "result[\"is_duplicate\"]",
+    )
+    for token in forbidden_tokens:
+        if token in text:
+            violations.append(f"webhooks_forbidden_token_present:{token}")
 
 
 def _validate_dlq(path: Path, violations: list[str]) -> None:

@@ -97,7 +97,7 @@ def run_enforcement(
 
     required_webhook_tokens = (
         '"session_id": session_id',
-        'session_id = result.get("session_id")',
+        "session_id = result.session_id",
         "session_id=str(session_id)",
         '"order_id":',
     )
@@ -105,8 +105,13 @@ def run_enforcement(
         if token not in webhooks_text:
             violations.append(f"webhooks_missing_token:{token}")
 
-    if '"session_id": str(event.session_id)' not in event_service_text:
-        violations.append("event_service_missing_session_id_in_success_payload")
+    required_event_service_session_tokens = (
+        "def session_id(self) -> str | None:",
+        "return str(event.session_id)",
+    )
+    for token in required_event_service_session_tokens:
+        if token not in event_service_text:
+            violations.append(f"event_service_missing_session_token:{token}")
 
     required_export_tokens = (
         "X-Attribution-Session-ID",

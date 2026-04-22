@@ -708,7 +708,7 @@ async def test_b14_p3_runtime_forbidden_proxy_identifier_payload_fails_closed():
             },
             request_headers={},
         )
-        assert ingress_result["status"] == "success"
+        assert ingress_result.status == "success"
 
         async with engine.begin() as conn:
             await set_tenant_guc(conn, tenant_id, local=True)
@@ -872,7 +872,7 @@ async def test_b14_p3_runtime_universal_webhook_order_resolution_adopts_active_b
             identity_payload={"order_id": order_id, "session_id": str(browser_session)},
             request_headers={},
         )
-        assert seed_result["status"] == "success"
+        assert seed_result.status == "success"
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
@@ -951,7 +951,7 @@ async def test_b14_p3_runtime_ephemeral_click_resolution_routes_and_expires_afte
         identity_payload={"click_id": click_id, "session_id": str(browser_session)},
         request_headers={},
     )
-    assert seed_result["status"] == "success"
+    assert seed_result.status == "success"
 
     conversion_result = await ingest_with_transaction(
         tenant_id=tenant_id,
@@ -973,8 +973,8 @@ async def test_b14_p3_runtime_ephemeral_click_resolution_routes_and_expires_afte
         identity_payload={"click_id": click_id},
         request_headers={},
     )
-    assert conversion_result["status"] == "success"
-    assert conversion_result["session_id"] == str(browser_session)
+    assert conversion_result.status == "success"
+    assert conversion_result.session_id == str(browser_session)
 
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)

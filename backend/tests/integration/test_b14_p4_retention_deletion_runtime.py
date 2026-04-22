@@ -91,7 +91,7 @@ async def test_b14_p4_runtime_schema_split_writes_raw_payloads_without_mutating_
         identity_payload={"session_id": str(session_id)},
         request_headers={"user-agent": "b14-p4-runtime-agent"},
     )
-    assert ingest_result["status"] == "success"
+    assert ingest_result.status == "success"
 
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
@@ -172,7 +172,7 @@ async def test_b14_p4_runtime_90_day_gc_deletes_raw_payloads_without_touching_at
         identity_payload={"session_id": str(session_id)},
         request_headers={},
     )
-    assert ingest_result["status"] == "success"
+    assert ingest_result.status == "success"
 
     async with engine.begin() as conn:
         await set_tenant_guc(conn, tenant_id, local=True)
@@ -245,8 +245,8 @@ async def test_b14_p4_runtime_deterministic_delete_wipes_payloads_and_invalidate
         identity_payload={"session_id": str(requested_session_id)},
         request_headers={},
     )
-    assert ingest_result["status"] == "success"
-    authoritative_session_id = ingest_result["session_id"]
+    assert ingest_result.status == "success"
+    authoritative_session_id = ingest_result.session_id
 
     delete_result = await _erase_tenant_privacy_surfaces(
         tenant_id=tenant_id,
@@ -421,7 +421,7 @@ async def test_b14_p4_runtime_export_roas_survives_payload_expiry():
                 identity_payload={"session_id": str(session_id)},
                 request_headers={},
             )
-            assert result["status"] == "success"
+            assert result.status == "success"
 
         window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
         window_end = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))

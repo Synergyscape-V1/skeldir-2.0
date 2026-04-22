@@ -69,6 +69,14 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
     else:
         if duplicate_contract.get("ingestion_decision_type") != "IngestionDecision":
             violations.append("contract_duplicate_signal_type_mismatch")
+        if duplicate_contract.get("ingestion_transaction_result_type") != "IngestionTransactionResult":
+            violations.append("contract_duplicate_transaction_type_mismatch")
+        forbidden_shapes = {
+            str(item).strip().lower()
+            for item in duplicate_contract.get("forbidden_boundary_shapes", [])
+        }
+        if forbidden_shapes != {"dict", "typed_dict", "tuple", "list"}:
+            violations.append("contract_forbidden_boundary_shapes_mismatch")
         states = {str(item).strip() for item in duplicate_contract.get("state_enum", [])}
         if states != {"inserted", "duplicate"}:
             violations.append("contract_duplicate_state_enum_mismatch")
@@ -97,8 +105,10 @@ def _validate_event_service(path: Path, violations: list[str]) -> None:
     required_tokens = (
         "class IngestionResultState(str, Enum):",
         "class IngestionDecision:",
+        "class IngestionTransactionResult:",
         "async def ingest_event_with_decision(",
-        "\"ingestion_state\": decision.state.value",
+        "async def ingest_with_transaction(",
+        ") -> IngestionTransactionResult:",
         "IngestionResultState.DUPLICATE",
         "IngestionResultState.INSERTED",
     )
@@ -108,6 +118,7 @@ def _validate_event_service(path: Path, violations: list[str]) -> None:
     forbidden_tokens = (
         "_ingestion_duplicate",
         "getattr(event, \"_ingestion_duplicate\"",
+        ") -> Dict[str, Any]:",
     )
     for token in forbidden_tokens:
         if token in text:
@@ -117,7 +128,7 @@ def _validate_event_service(path: Path, violations: list[str]) -> None:
 def _validate_webhooks(path: Path, violations: list[str]) -> None:
     text = _read_text(path)
     required_tokens = (
-        "not bool(result.get(\"is_duplicate\"))",
+        "not result.is_duplicate",
         "\"status\": \"dlq_routed\"",
         "status.HTTP_413_REQUEST_ENTITY_TOO_LARGE",
         "_route_authenticated_malformed_payload(",
@@ -129,6 +140,8 @@ def _validate_webhooks(path: Path, violations: list[str]) -> None:
         if token not in text:
             violations.append(f"webhooks_missing_token:{token}")
     forbidden_tokens = (
+        "result.get(\"is_duplicate\")",
+        "result[\"is_duplicate\"]",
         "payload: ShopifyOrderCreateRequest = Body(...)",
         "payload: StripePaymentIntentSucceededRequest = Body(...)",
         "payload: PayPalSaleCompletedRequest = Body(...)",

@@ -537,11 +537,11 @@ async def _handle_ingestion(
         identity_payload=identity_payload,
         request_headers=request_headers,
     )
-    if result.get("status") == "success":
+    if result.status == "success":
         correlation_id = get_request_correlation_id() or idempotency_key
         event_timestamp = event_data.get("event_timestamp")
-        session_id = result.get("session_id")
-        if event_timestamp and session_id and not bool(result.get("is_duplicate")):
+        session_id = result.session_id
+        if event_timestamp and session_id and not result.is_duplicate:
             _schedule_downstream_tasks(
                 tenant_id=tenant_id,
                 event_timestamp=str(event_timestamp),
@@ -550,9 +550,9 @@ async def _handle_ingestion(
             )
         return {
             "status": "success",
-            "event_id": result.get("event_id"),
+            "event_id": result.event_id,
             "idempotency_key": idempotency_key,
-            "channel": result.get("channel"),
+            "channel": result.channel,
         }
 
     # Validation errors routed to DLQ: locate the dead_event using correlation_id
@@ -572,7 +572,7 @@ async def _handle_ingestion(
     return {
         "status": "dlq_routed",
         "dead_event_id": str(dead_event.id) if dead_event else None,
-        "error": result.get("error"),
+        "error": result.error,
     }
 
 
@@ -989,11 +989,11 @@ async def stripe_payment_intent_succeeded_v2(
         request_headers=request_headers,
     )
 
-    if result.get("status") == "success":
+    if result.status == "success":
         correlation_id = get_request_correlation_id() or idempotency_key
         event_timestamp = event_data.get("event_timestamp")
-        session_id = result.get("session_id")
-        if event_timestamp and session_id and not bool(result.get("is_duplicate")):
+        session_id = result.session_id
+        if event_timestamp and session_id and not result.is_duplicate:
             _schedule_downstream_tasks(
                 tenant_id=tenant_info["tenant_id"],
                 event_timestamp=str(event_timestamp),
@@ -1002,9 +1002,9 @@ async def stripe_payment_intent_succeeded_v2(
             )
         return {
             "status": "success",
-            "event_id": result.get("event_id"),
+            "event_id": result.event_id,
             "idempotency_key": idempotency_key,
-            "channel": result.get("channel"),
+            "channel": result.channel,
         }
 
     # Validation errors routed to DLQ by service: locate via correlation_id for response
@@ -1018,7 +1018,7 @@ async def stripe_payment_intent_succeeded_v2(
     return {
         "status": "dlq_routed",
         "dead_event_id": str(dead_event.id) if dead_event else None,
-        "error": result.get("error_type") or result.get("error"),
+        "error": result.error_type or result.error,
     }
 
 

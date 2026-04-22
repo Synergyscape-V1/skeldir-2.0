@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 import time
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Mapping, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -110,6 +110,70 @@ class IngestionDecision:
     @property
     def is_duplicate(self) -> bool:
         return self.state == IngestionResultState.DUPLICATE
+
+
+@dataclass(frozen=True)
+class IngestionTransactionResult:
+    """
+    Runtime ingestion boundary contract for webhook orchestration callers.
+
+    Success state is represented by an IngestionDecision instance.
+    Error state is represented by explicit error_type/error fields.
+    """
+
+    decision: IngestionDecision | None = None
+    error_type: str | None = None
+    error: str | None = None
+
+    @property
+    def status(self) -> str:
+        return "success" if self.decision is not None else "error"
+
+    @property
+    def event(self) -> AttributionEvent | None:
+        if self.decision is None:
+            return None
+        return self.decision.event
+
+    @property
+    def event_id(self) -> str | None:
+        event = self.event
+        if event is None:
+            return None
+        return str(event.id)
+
+    @property
+    def session_id(self) -> str | None:
+        event = self.event
+        if event is None:
+            return None
+        return str(event.session_id)
+
+    @property
+    def channel(self) -> str | None:
+        event = self.event
+        if event is None:
+            return None
+        return event.channel
+
+    @property
+    def idempotency_key(self) -> str | None:
+        event = self.event
+        if event is None:
+            return None
+        return event.idempotency_key
+
+    @property
+    def is_duplicate(self) -> bool:
+        if self.decision is None:
+            return False
+        return self.decision.is_duplicate
+
+    @property
+    def ingestion_state(self) -> str | None:
+        if self.decision is None:
+            return None
+        return self.decision.state.value
 
 
 def _first_non_empty_resolution_token(*values: Any) -> str | None:
@@ -885,7 +949,7 @@ async def ingest_with_transaction(
     source: str = "webhook",
     identity_payload: Mapping[str, Any] | None = None,
     request_headers: Mapping[str, str] | None = None,
-) -> Dict[str, Any]:
+) -> IngestionTransactionResult:
     """
     Transactional wrapper for event ingestion.
 
@@ -899,12 +963,7 @@ async def ingest_with_transaction(
         source: Event source identifier
 
     Returns:
-        dict with keys:
-            - status: 'success' or 'error'
-            - event_id: UUID string (if success)
-            - channel: Canonical channel code (if success)
-            - error: Error message (if error)
-            - dlq_event_id: Dead event UUID (if validation error)
+        IngestionTransactionResult runtime boundary object.
 
     Raises:
         Exception: Database errors, unexpected failures
@@ -923,18 +982,8 @@ async def ingest_with_transaction(
                 identity_payload=identity_payload,
                 request_headers=request_headers,
             )
-            event = decision.event
-
             # Commit handled by get_session context manager
-            return {
-                "status": "success",
-                "event_id": str(event.id),
-                "session_id": str(event.session_id),
-                "channel": event.channel,
-                "idempotency_key": event.idempotency_key,
-                "is_duplicate": decision.is_duplicate,
-                "ingestion_state": decision.state.value,
-            }
+            return IngestionTransactionResult(decision=decision)
 
         except ValidationError as e:
             # Validation error already routed to DLQ
@@ -943,11 +992,10 @@ async def ingest_with_transaction(
                 "Ingestion failed - validation error",
                 extra={"error": str(e), "tenant_id": str(tenant_id)}
             )
-            return {
-                "status": "error",
-                "error_type": "validation_error",
-                "error": str(e),
-            }
+            return IngestionTransactionResult(
+                error_type="validation_error",
+                error=str(e),
+            )
 
         except IntegrityError as e:
             # Idempotency races can surface here if callers bypass service-level handling.
@@ -957,15 +1005,12 @@ async def ingest_with_transaction(
                     session, tenant_id=tenant_id, idempotency_key=idempotency_key
                 )
                 if existing:
-                    return {
-                        "status": "success",
-                        "event_id": str(existing.id),
-                        "session_id": str(existing.session_id),
-                        "channel": existing.channel,
-                        "idempotency_key": existing.idempotency_key,
-                        "is_duplicate": True,
-                        "ingestion_state": IngestionResultState.DUPLICATE.value,
-                    }
+                    return IngestionTransactionResult(
+                        decision=IngestionDecision(
+                            event=existing,
+                            state=IngestionResultState.DUPLICATE,
+                        )
+                    )
 
             # Database constraint violation (should be rare with validation)
             await session.rollback()

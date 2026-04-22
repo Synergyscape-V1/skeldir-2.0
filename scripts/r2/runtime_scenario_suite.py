@@ -253,7 +253,7 @@ async def _scenario_1_ingestion_happy_path(tenant_id: UUID) -> None:
         idempotency_key=idempotency_key,
         source="r2_suite",
     )
-    if result.get("status") != "success":
+    if result.status != "success":
         raise RuntimeError(f"Expected ingestion success, got: {result}")
 
 
@@ -277,7 +277,7 @@ async def _scenario_2_ingestion_duplicate(tenant_id: UUID) -> None:
         idempotency_key=idempotency_key,
         source="r2_suite",
     )
-    if first.get("status") != "success":
+    if first.status != "success":
         raise RuntimeError(f"Expected ingestion success, got: {first}")
 
     second = await ingest_with_transaction(
@@ -295,7 +295,7 @@ async def _scenario_2_ingestion_duplicate(tenant_id: UUID) -> None:
         idempotency_key=idempotency_key,
         source="r2_suite",
     )
-    if second.get("status") != "success":
+    if second.status != "success":
         raise RuntimeError(f"Expected ingestion duplicate to succeed, got: {second}")
 
 
@@ -317,7 +317,7 @@ async def _scenario_3_validation_failure_routes_to_dlq(tenant_id: UUID) -> None:
         idempotency_key=idempotency_key,
         source="r2_suite",
     )
-    if result.get("status") != "error" or result.get("error_type") != "validation_error":
+    if result.status != "error" or result.error_type != "validation_error":
         raise RuntimeError(f"Expected DLQ-routed validation_error, got: {result}")
 
 
