@@ -77,7 +77,7 @@ jobs:
   contract-semantic-drift-gate:
     name: Contract Semantic Drift Gate
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts, b21-p2-strategy-kernel-session-boundary, b21-p4-queue-isolation-performance-lock]
+    needs: [checkout, validate-contracts, b21-p2-strategy-kernel-session-boundary, b21-p4-queue-isolation-performance-lock, b22-p5-webhook-latency-adjudication]
     services:
       postgres:
         image: postgres:15-alpine
@@ -99,6 +99,7 @@ jobs:
       SKELDIR_B22_P2_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P3_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P4_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_B22_P5_REQUIRE_DB_PROOFS: "1"
       TESTING: "1"
       CI: "true"
     steps:
@@ -283,6 +284,22 @@ jobs:
       - name: Run B2.2-P4 idempotent ACK + orchestration runtime proofs
         run: |
           pytest backend/tests/test_b22_p4_idempotent_ack_orchestration.py -q
+
+      - name: Enforce B2.2-P5 performance semantics + negative-control lock
+        run: |
+          python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
+
+      - name: Run B2.2-P5 structural negative controls
+        run: |
+          pytest backend/tests/test_b22_p5_performance_negative_control_lock_enforcer.py -q
+
+      - name: Run B2.2-P5 runtime negative-control + parity proofs
+        run: |
+          pytest backend/tests/test_b22_p5_performance_negative_controls.py -q
+
+      - name: Run B2.2-P5 benchmark adjudication negative controls
+        run: |
+          pytest backend/tests/test_b22_p5_webhook_benchmark_adjudication_enforcer.py -q
 
       - name: Enforce contract semantic drift gate
         run: |
@@ -693,6 +710,106 @@ jobs:
         with:
           name: b21-p4-queue-isolation-benchmark
           path: artifacts/b21_p4_benchmark
+          if-no-files-found: error
+
+  b22-p5-webhook-latency-adjudication:
+    name: B2.2-P5 Webhook Latency Adjudication
+    runs-on: ubuntu-latest
+    needs: [checkout]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_b22_p5_benchmark
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p5_benchmark
+      CELERY_BROKER_URL: sqla+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b22_p5_benchmark
+      CELERY_RESULT_BACKEND: db+postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b22_p5_benchmark
+      EXPECTED_RUNTIME_DB_USER: app_user
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      CONTRACT_TESTING: "0"
+      CI: "true"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.2-P5 benchmark authority boundary
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name "skeldir_b22_p5_benchmark" \
+            --runtime-user "app_user" \
+            --runtime-password "app_user" \
+            --migration-user "migration_owner" \
+            --migration-password "migration_owner" \
+            --app-rw-role "app_rw" \
+            --app-ro-role "app_ro"
+
+      - name: Apply migrations using formal migration authority
+        env:
+          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p5_benchmark
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p5_benchmark
+        run: |
+          alembic upgrade head
+
+      - name: Enforce migration metadata least privilege boundary
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d skeldir_b22_p5_benchmark -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
+
+      - name: Run B2.2-P5 benchmark harness integrity
+        run: |
+          mkdir -p artifacts/b22_p5_benchmark
+          python scripts/benchmarks/b22_p5_webhook_ingress_benchmark.py \
+            --mode integrity \
+            --output artifacts/b22_p5_benchmark/integrity.json
+
+      - name: Run B2.2-P5 webhook composed-path benchmark
+        run: |
+          python scripts/benchmarks/b22_p5_webhook_ingress_benchmark.py \
+            --mode measure \
+            --threshold-ms 500 \
+            --warmup-per-route 5 \
+            --iterations-per-route 25 \
+            --output artifacts/b22_p5_benchmark/measure.json
+
+      - name: Enforce B2.2-P5 benchmark adjudication
+        run: |
+          python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py \
+            --measure-file artifacts/b22_p5_benchmark/measure.json \
+            --threshold-ms 500 \
+            --max-stripe-alias-delta-ms 75
+
+      - name: Upload B2.2-P5 benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: b22-p5-webhook-benchmark
+          path: artifacts/b22_p5_benchmark
           if-no-files-found: error
 
   b21-p5-non-vacuous-proof-harness:

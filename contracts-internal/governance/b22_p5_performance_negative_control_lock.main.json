@@ -1,0 +1,84 @@
+{
+  "contract_id": "b22.p5.performance_negative_control_lock.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.2-P5",
+  "description": "Webhook ingress composed-path performance semantics lock with anti-cheat and negative-control completeness closure.",
+  "mounted_routes": [
+    "/api/webhooks/shopify/order_create",
+    "/api/webhooks/stripe/payment_intent_succeeded",
+    "/api/webhooks/stripe/payment_intent/succeeded",
+    "/api/webhooks/paypal/sale_completed",
+    "/api/webhooks/woocommerce/order_completed"
+  ],
+  "latency_adjudication": {
+    "authoritative_ci_job": "B2.2-P5 Webhook Latency Adjudication",
+    "benchmark_schema_version": "b22_p5_webhook_ingress_benchmark.v1",
+    "timing_boundary": "mounted_http_request_to_ack_response",
+    "hard_p95_ms_threshold": 500.0,
+    "max_stripe_alias_canonical_p95_delta_ms": 75.0
+  },
+  "anti_cheat": {
+    "required_component_modules": {
+      "shopify_signature": "app.webhooks.signatures",
+      "stripe_signature": "app.webhooks.signatures",
+      "paypal_signature": "app.webhooks.signatures",
+      "woocommerce_signature": "app.webhooks.signatures",
+      "tenant_resolution": "app.core.tenant_context",
+      "ingestion_transaction": "app.ingestion.event_service"
+    },
+    "forbidden_harness_tokens": [
+      "monkeypatch",
+      "unittest.mock",
+      "pytest-mock",
+      "MagicMock",
+      "Mock(",
+      "patch("
+    ]
+  },
+  "negative_control_matrix": {
+    "required_classes": [
+      "forged_signature",
+      "missing_tenant_key",
+      "wrong_tenant_key",
+      "malformed_payload",
+      "oversized_payload",
+      "duplicate_replay",
+      "unsupported_event_family"
+    ],
+    "unsupported_event_family_contract": {
+      "response_status": "unsupported_event_family_ignored",
+      "error": "unsupported_event_family",
+      "http_status": 200,
+      "provider_retry_safe": true,
+      "route_owned": true
+    }
+  },
+  "stripe_alias_canonical_parity": {
+    "canonical_route": "/api/webhooks/stripe/payment_intent_succeeded",
+    "alias_route": "/api/webhooks/stripe/payment_intent/succeeded",
+    "required_equivalence_classes": [
+      "success",
+      "forged_signature",
+      "malformed_authenticated_payload",
+      "missing_tenant_key",
+      "wrong_tenant_key",
+      "unsupported_event_family",
+      "performance_p95"
+    ]
+  },
+  "required_runtime_proofs": [
+    "backend/tests/test_b22_p5_performance_negative_controls.py::test_b22_p5_negative_control_matrix_includes_route_owned_provider_safe_unsupported_family_semantics",
+    "backend/tests/test_b22_p5_performance_negative_controls.py::test_b22_p5_stripe_alias_and_canonical_routes_have_equivalent_success_failure_and_unsupported_family_semantics"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py",
+    "pytest backend/tests/test_b22_p5_performance_negative_control_lock_enforcer.py -q",
+    "pytest backend/tests/test_b22_p5_performance_negative_controls.py -q",
+    "pytest backend/tests/test_b22_p5_webhook_benchmark_adjudication_enforcer.py -q",
+    "python scripts/benchmarks/b22_p5_webhook_ingress_benchmark.py --mode integrity",
+    "python scripts/benchmarks/b22_p5_webhook_ingress_benchmark.py --mode measure",
+    "python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py"
+  ]
+}
