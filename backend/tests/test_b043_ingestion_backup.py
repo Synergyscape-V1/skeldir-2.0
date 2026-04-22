@@ -349,7 +349,7 @@ async def test_transaction_wrapper_success_path():
 
     Exit Criteria:
         - Transaction wrapper commits on success
-        - Returns dict with status='success' and event_id
+        - Returns runtime boundary object with status='success' and event_id
     """
     tenant_id = uuid4()
     idempotency_key = f"test_wrapper_{uuid4()}"
@@ -370,10 +370,10 @@ async def test_transaction_wrapper_success_path():
         source="sendgrid",
     )
 
-    assert result["status"] == "success", f"Expected success, got {result}"
-    assert "event_id" in result, "Missing event_id in response"
-    assert "channel" in result, "Missing channel in response"
-    event_id = result["event_id"]
+    assert result.status == "success", f"Expected success, got {result}"
+    assert result.event_id is not None, "Missing event_id in response"
+    assert result.channel is not None, "Missing channel in response"
+    event_id = result.event_id
 
     # Verify event exists in database
     async with get_session(tenant_id=tenant_id) as session:
@@ -398,19 +398,18 @@ async def test_transaction_wrapper_error_path():
     Validate ingest_with_transaction() wrapper for validation errors.
 
     Exit Criteria:
-        - Transaction wrapper returns dict with status='error'
+        - Transaction wrapper returns runtime boundary object with status='error'
         - Error type and message included in response
         - No unhandled exceptions
     """
     tenant_id = uuid4()
     idempotency_key = f"test_wrapper_error_{uuid4()}"
 
-    # Invalid event data (missing session_id)
+    # Invalid event data (missing event_timestamp)
     invalid_event_data = {
         "event_type": "click",
-        "event_timestamp": datetime.now(timezone.utc).isoformat(),
         "revenue_amount": "0.00",
-        # "session_id": str(uuid4()),  # MISSING
+        # "event_timestamp": datetime.now(timezone.utc).isoformat(),  # MISSING
     }
 
     result = await ingest_with_transaction(
@@ -420,9 +419,10 @@ async def test_transaction_wrapper_error_path():
         source="unknown",
     )
 
-    assert result["status"] == "error", f"Expected error status, got {result}"
-    assert result["error_type"] == "validation_error", f"Expected validation_error, got {result['error_type']}"
-    assert "session_id" in result["error"], f"Expected session_id error, got {result['error']}"
+    assert result.status == "error", f"Expected error status, got {result}"
+    assert result.error_type == "validation_error", f"Expected validation_error, got {result.error_type}"
+    assert result.error is not None
+    assert "event_timestamp" in result.error, f"Expected event_timestamp error, got {result.error}"
 
     # Cleanup DLQ entries
     async with get_session(tenant_id=tenant_id) as session:

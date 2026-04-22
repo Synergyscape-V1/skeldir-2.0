@@ -116,7 +116,7 @@ async def test_b14_p5_runtime_export_allowlist_blocks_identity_fields():
                 "x-real-ip": "198.51.100.90",
             },
         )
-        assert result["status"] == "success"
+        assert result.status == "success"
 
         window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
         window_end = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))

@@ -169,8 +169,8 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
             identity_payload={"session_id": provided_session},
             request_headers={"user-agent": "b14-p7-runtime-agent", "x-real-ip": "198.51.100.45"},
         )
-        assert ingest_a["status"] == "success"
-        canonical_session_a = ingest_a["session_id"]
+    assert ingest_a.status == "success"
+    canonical_session_a = ingest_a.session_id
         assert canonical_session_a != provided_session
 
         async with engine.begin() as conn:
@@ -211,8 +211,8 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
             identity_payload={"session_id": provided_session},
             request_headers={"user-agent": "b14-p7-runtime-agent"},
         )
-        assert ingest_b["status"] == "success"
-        canonical_session_b = ingest_b["session_id"]
+    assert ingest_b.status == "success"
+    canonical_session_b = ingest_b.session_id
         assert canonical_session_b != canonical_session_a
 
         async with engine.begin() as conn:
@@ -261,8 +261,8 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
             identity_payload={"session_id": canonical_session_a},
             request_headers={"user-agent": "b14-p7-runtime-agent"},
         )
-        assert ingest_c["status"] == "success"
-        canonical_session_c = ingest_c["session_id"]
+    assert ingest_c.status == "success"
+    canonical_session_c = ingest_c.session_id
         assert canonical_session_c != canonical_session_a
 
         window_start = _iso(now.replace(hour=0, minute=0, second=0, microsecond=0))
@@ -279,8 +279,10 @@ async def test_b14_p7_composed_runtime_privacy_contract_holds_end_to_end() -> No
         ).get()
         assert recompute_result["status"] == "succeeded"
 
-        allocation_b = await _allocation_count_for_event(tenant_id=tenant_a, event_id=ingest_b["event_id"])
-        allocation_c = await _allocation_count_for_event(tenant_id=tenant_a, event_id=ingest_c["event_id"])
+    assert ingest_b.event_id is not None
+    assert ingest_c.event_id is not None
+    allocation_b = await _allocation_count_for_event(tenant_id=tenant_a, event_id=ingest_b.event_id)
+    allocation_c = await _allocation_count_for_event(tenant_id=tenant_a, event_id=ingest_c.event_id)
         assert allocation_b > 0
         assert allocation_c == 0
 
@@ -500,9 +502,9 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
             identity_payload={"session_id": deterministic_session},
             request_headers={},
         )
-        assert ingress_a["status"] == "success"
-        assert ingress_b["status"] == "success"
-        cross_session_linkage_blocked = ingress_a["session_id"] != ingress_b["session_id"]
+    assert ingress_a.status == "success"
+    assert ingress_b.status == "success"
+    cross_session_linkage_blocked = ingress_a.session_id != ingress_b.session_id
 
         ingress_c = await ingest_with_transaction(
             tenant_id=tenant_id,
@@ -523,7 +525,7 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
             identity_payload={"session_id": str(uuid4())},
             request_headers={},
         )
-        assert ingress_c["status"] == "success"
+    assert ingress_c.status == "success"
 
         async with engine.begin() as conn:
             await set_tenant_guc(conn, tenant_id, local=True)
@@ -619,7 +621,7 @@ async def test_b14_p7_negative_controls_and_tenant_fail_closed_guards(tmp_path: 
             kwargs={
                 "window_start": _iso(now.replace(hour=0, minute=0, second=0, microsecond=0)),
                 "window_end": _iso(now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)),
-                "session_id": ingress_b["session_id"],
+                        "session_id": ingress_b.session_id,
             }
         )
         with pytest.raises(ValueError, match="authority_envelope header is required"):

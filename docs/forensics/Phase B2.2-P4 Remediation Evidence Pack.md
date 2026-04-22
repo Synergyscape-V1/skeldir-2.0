@@ -1,101 +1,93 @@
 # Phase B2.2-P4 Remediation Evidence Pack
 
-Date: 2026-04-21  
-Branch basis: `main` (corrective-action iteration after rejected closeout)  
-Directive: Idempotent ACK semantics + webhook-orchestration side-effect isolation
+Date: 2026-04-22  
+Branch basis: `main`  
+Directive: Idempotent ACK Semantics + Webhook-Orchestration Side-Effect Isolation
 
-## 1) Corrective blocker identified
+## 1) Initial findings (falsifiable)
 
-- Prior P4 landing correctly fixed duplicate suppression and side-effect isolation, but ACK protocol stability was incomplete.
-- Root blocker: malformed authenticated payload handling was route-dependent:
-  - `stripe` alias route (`/api/webhooks/stripe/payment_intent/succeeded`) already used route-owned raw parsing and returned `200` + `status: dlq_routed`.
-  - `shopify`, `stripe` canonical (`/api/webhooks/stripe/payment_intent_succeeded`), `paypal`, and `woocommerce` still used FastAPI typed `Body(...)` signature binding, allowing framework pre-handler validation behavior and potential `422` leakage.
-- This violated the P4 protocol law requiring route-stable malformed authenticated ACK semantics across supported mounted providers and aliases.
+- H01 validated: `backend/app/ingestion/event_service.py` exposed `ingest_with_transaction(...)-> Dict[str, Any]` and downgraded typed ingestion state into mapping keys.
+- H02 validated: `backend/app/api/webhooks.py` orchestration gate used `result.get("is_duplicate")` on the webhook path.
+- H03 validated: `scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py` and `scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py` enforced the dict-based duplicate gate token.
+- H04 validated: governance claimed `IngestionDecision` but runtime boundary exported dict.
+- H07 validated: `backend/app/main.py` contained webhook-specific protocol branching in global `RequestValidationError` handler.
+- Runtime behavior before refactor remained mostly correct (duplicate row suppression and ACK outcomes), but architecture/enforcement were misaligned with required typed-boundary law.
 
-## 2) Forensic hypotheses adjudicated
+## 2) Remediations implemented
 
-- H01/H02 (framework-prevalidation leak and narrow proof surface): **Validated**.
-- H03 (global handler shortcut risk): **Rejected as implementation path**; no global `RequestValidationError` special-casing was used to implement the fix.
-- H04 (duplicate seam still dict-consumed): **Still bounded hardening debt**, but not the blocker for this corrective action.
-- H05/H06 (auth-precedence and non-regression risk): **Addressed in runtime tests** by explicit forged/missing/wrong-tenant malformed assertions and duplicate-substrate preservation checks.
-
-## 3) Remediations implemented
+- `backend/app/ingestion/event_service.py`
+  - Added typed runtime boundary object `IngestionTransactionResult` (`@dataclass(frozen=True)`).
+  - Changed `ingest_with_transaction()` return type from `Dict[str, Any]` to `IngestionTransactionResult`.
+  - Removed dict serialization seam from success and race-duplicate paths.
+  - Preserved deterministic duplicate state via `decision: IngestionDecision` and `is_duplicate` property.
 
 - `backend/app/api/webhooks.py`
-  - Removed typed `Body(...)` request binding from supported webhook handlers:
-    - `shopify_order_create`
-    - `stripe_payment_intent_succeeded` (canonical)
-    - `paypal_sale_completed`
-    - `woocommerce_order_completed`
-  - Added route-local post-auth parsing surface:
-    - `_parse_json_object(...)`
-    - `_malformed_idempotency_key(...)`
-    - `_route_authenticated_malformed_payload(...)`
-  - Enforced malformed authenticated behavior at webhook boundary (after auth success):
-    - invalid JSON or invalid required shape now routes to DLQ and returns `200` + `status: dlq_routed` consistently.
-  - Preserved auth precedence:
-    - forged/missing-tenant/wrong-tenant requests continue to terminate in `401` auth class before malformed-DLQ handling.
-  - Preserved duplicate substrate and scheduling isolation:
-    - no change to duplicate suppression gate (`result.get("is_duplicate")`) and no change to scheduling failure containment behavior.
+  - Replaced orchestration dict lookups with typed attribute access:
+    - `result.status`
+    - `result.session_id`
+    - `result.is_duplicate`
+    - `result.event_id`
+    - `result.channel`
+    - `result.error_type` / `result.error`
+  - Downstream scheduling gate is now explicitly:
+    - `if event_timestamp and session_id and not result.is_duplicate:`
 
-- `backend/tests/test_b22_p4_idempotent_ack_orchestration.py`
-  - Expanded ACK matrix runtime proof to include malformed authenticated route coverage for:
-    - Shopify
-    - Stripe canonical
-    - Stripe alias
-    - PayPal
-    - WooCommerce
-  - Added auth-precedence assertions per malformed route:
-    - forged malformed -> `401`
-    - missing-tenant malformed -> `401`
-    - wrong-tenant malformed -> `401`
-  - Extended stripe canonical vs alias parity proof to include malformed ACK parity (`200` + `dlq_routed` on both).
-
-- `contracts-internal/governance/b22_p4_idempotent_ack_orchestration.main.json`
-  - Bumped contract version to `1.1.0`.
-  - Added explicit `route_scope` for `malformed_authenticated_payload` ACK contract covering all supported mounted routes/alias.
+- `backend/app/main.py`
+  - Removed webhook-specific protocol ownership from global validation middleware.
+  - `RequestValidationError` handler now delegates to FastAPI default handler without `/api/webhooks/*` routing logic.
 
 - `scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py`
-  - Added governance check for malformed route scope completeness.
-  - Added webhook-surface invariant checks forbidding typed `Body(...)` binding on supported webhook routes.
-  - Kept duplicate-substrate and CI wiring assertions intact.
+  - Rewired enforcement to require typed boundary usage.
+  - Added checks for `IngestionTransactionResult` and typed return annotation.
+  - Added forbidden checks for `result.get("is_duplicate")` and `result["is_duplicate"]`.
+  - Added contract checks for forbidden boundary shapes.
 
-- `backend/tests/test_b12_p8_error_contract_normalization.py`
-  - Updated authenticated malformed webhook expectation from `422` problem-details path to route-owned `200` + `dlq_routed`.
-  - Added DLQ stub in this test to keep it deterministic and independent of tenant-table fixture persistence.
+- `scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py`
+  - Updated required webhook gate token to typed `not result.is_duplicate`.
+  - Added forbidden dict duplicate-access tokens.
 
-## 4) Local falsifiable proof outcomes
+- `contracts-internal/governance/b22_p4_idempotent_ack_orchestration.main.json`
+  - Version bump `1.1.0 -> 1.2.0`.
+  - Added typed transaction contract field:
+    - `ingestion_transaction_result_type: "IngestionTransactionResult"`
+  - Added forbidden boundary shape policy:
+    - `dict`, `typed_dict`, `tuple`, `list`.
 
-- `python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py` -> **PASS**
-- `pytest backend/tests/test_b22_p4_idempotent_ack_orchestration_enforcer.py -q` -> **5 passed**
-- `pytest backend/tests/test_b22_p4_idempotent_ack_orchestration.py -q` -> **4 skipped** locally (authoritative DB proof gate unchanged; requires migrated DB and `SKELDIR_B22_P4_REQUIRE_DB_PROOFS=1`)
-- `pytest backend/tests/test_b12_p8_error_contract_normalization.py -q` -> **14 passed**
+- Compatibility updates (non-architectural behavior preserved)
+  - Updated ingestion-wrapper consumers to typed access in:
+    - `backend/tests/test_b043_ingestion.py`
+    - `backend/tests/test_b043_ingestion_backup.py`
+    - `backend/tests/integration/test_b14_p3_attribution_locality_runtime.py`
+    - `backend/tests/integration/test_b14_p4_retention_deletion_runtime.py`
+    - `backend/tests/integration/test_b14_p5_export_log_artifact_no_leak_runtime.py`
+    - `backend/tests/integration/test_b14_p7_e2e_privacy_system_proofs.py`
+    - `scripts/r2/runtime_scenario_suite.py`
 
-## 5) Exit gate adjudication (corrective iteration)
+## 3) Local falsifiable validation
 
-- Exit Gate 1 (Duplicate-Suppression Integrity): **Maintained**.
-- Exit Gate 2 (ACK Protocol Physics, primary blocker): **Addressed in implementation + expanded route matrix proofs**.
-- Exit Gate 3 (Auth-Precedence): **Explicitly proven in malformed-route auth-precedence checks**.
-- Exit Gate 4 (B0.4 + Scheduling Non-Regression): **Maintained** (duplicate and scheduling logic unchanged; compatibility surfaces preserved).
-- Exit Gate 5 (Merge-Blocking P4 Adjudication): **Pending protected-branch merge + post-merge `main` CI success evidence capture**.
+- `python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py` -> PASS
+- `python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py` -> PASS
+- `pytest backend/tests/test_b22_p2_post_auth_privacy_boundary_enforcer.py -q` -> 5 passed
+- `pytest backend/tests/test_b22_p4_idempotent_ack_orchestration_enforcer.py -q` -> 5 passed
+- `pytest backend/tests/test_b043_ingestion.py::test_transaction_wrapper_success backend/tests/test_b043_ingestion.py::test_transaction_wrapper_error -q` -> 2 passed
+- `pytest backend/tests/test_b12_p8_error_contract_normalization.py::test_eg83_paypal_hmac_failure_variants_share_non_leaky_problem_contract backend/tests/test_b12_p8_error_contract_normalization.py::test_eg8cf_paypal_constant_work_unknown_key_and_known_bad_signature_both_invoke_compute backend/tests/test_b12_p8_error_contract_normalization.py::test_eg8route_stripe_alias_and_canonical_auth_failures_are_equivalent -q` -> 3 passed
+- `pytest backend/tests/test_b22_p4_idempotent_ack_orchestration.py -q` -> 4 skipped locally (authoritative DB proof harness not provisioned in local run)
 
-## 6) Protected-branch landing evidence (this corrective iteration)
+## 4) Exit gate status after remediation
 
-- Feature branch: `b22-p4-ack-route-stability-corrective`
-- PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/369`
-- PR state: **MERGED** at `2026-04-21T20:31:36Z`
-- Merge commit on `main`: `1580e71cf07b2e4496838c759ea025150d9e013b`
-- Required-check adjudication on PR: **pass** (`gh pr checks 369 --required`)
-- Post-merge `main` CI run URL: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24744912462`
-- Post-merge `main` CI status: **completed / success** for head SHA `1580e71cf07b2e4496838c759ea025150d9e013b`
+- Exit Gate 1 (Typed Boundary Closure): PASS locally by code + enforcer proof.
+- Exit Gate 2 (Duplicate Suppression Integrity): preserved; full authoritative proof delegated to CI runtime DB harness.
+- Exit Gate 3 (ACK Protocol Stability): preserved (targeted normalization tests passed; malformed webhook behavior remains route-owned).
+- Exit Gate 4 (Auth Precedence): preserved (targeted auth failure normalization tests passed).
+- Exit Gate 5 (Non-Regression): typed wrapper consumers updated; ingestion compatibility tests pass locally.
+- Exit Gate 6 (CI + Governance Correctness): PASS locally for enforcer surfaces; protected-branch workflow evidence captured in section 5.
 
-## 7) Completion verdict (current state)
+## 5) Protected-branch workflow evidence (to be finalized at merge)
 
-- Corrective implementation state: **LANDED ON `main`**
-- Final directive closure status: **COMPLETE**
-- Falsifiable closure basis:
-  - malformed authenticated payload ACK semantics are route-stable across all supported mounted provider routes and alias,
-  - auth precedence remains intact (`401` for forged/missing/wrong tenant malformed requests),
-  - duplicate durable-row and duplicate downstream-task suppression remain intact,
-  - governance + enforcer + runtime proof surfaces reflect the corrected behavior,
-  - and protected-branch merge plus post-merge `main` CI success are both evidenced.
+- Branch: `main`
+- Commit SHA: pending
+- Push time: pending
+- Main CI run URL: pending
+- Main CI status: pending
+
+Completion is finalized only after this section is updated with merged SHA and green required checks on protected `main`.
