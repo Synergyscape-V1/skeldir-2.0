@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 QUEUE_FILE = "backend/app/core/queues.py"
@@ -20,6 +22,13 @@ BENCHMARK_ADJUDICATOR_FILE = "scripts/ci/enforce_b21_p4_benchmark_adjudication.p
 CI_WORKFLOW_FILE = ".github/workflows/ci.yml"
 REQUIRED_CHECKS_FILE = "contracts-internal/governance/b03_phase2_required_status_checks.main.json"
 REQUIRED_CONTEXT = "B2.1-P4 Queue Isolation + Performance Semantics Lock"
+CONTRACT_GATE_JOB = "contract-semantic-drift-gate"
+REQUIRED_CONTRACT_GATE_NEEDS = (
+    "checkout",
+    "validate-contracts",
+    "b21-p2-strategy-kernel-session-boundary",
+    "b21-p4-queue-isolation-performance-lock",
+)
 
 
 def _resolve(repo_root: Path, value: str) -> Path:
@@ -37,6 +46,13 @@ def _read_json(path: Path) -> dict[str, Any]:
     payload = json.loads(_read_text(path))
     if not isinstance(payload, dict):
         raise ValueError(f"JSON payload must be an object: {path}")
+    return payload
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    payload = yaml.safe_load(_read_text(path)) or {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"YAML payload must be an object: {path}")
     return payload
 
 
@@ -76,6 +92,7 @@ def run_enforcement(
     benchmark_text = _read_text(benchmark_file)
     adjudicator_text = _read_text(benchmark_adjudicator_file)
     ci_text = _read_text(ci_workflow_file)
+    ci_payload = _read_yaml(ci_workflow_file)
     required_checks = _read_json(required_checks_file)
 
     queue_tokens = (
@@ -137,7 +154,6 @@ def run_enforcement(
             violations.append(f"benchmark_adjudicator_missing_token:{token}")
 
     ci_required_tokens = (
-        "needs: [checkout, validate-contracts, b21-p2-strategy-kernel-session-boundary, b21-p4-queue-isolation-performance-lock]",
         "Enforce B2.1-P4 queue isolation and performance semantics lock",
         "Run B2.1-P4 queue isolation negative controls",
         "Run B2.1-P4 benchmark adjudication negative controls",
@@ -152,6 +168,28 @@ def run_enforcement(
     for token in ci_required_tokens:
         if token not in ci_text:
             violations.append(f"ci_workflow_missing_token:{token}")
+
+    jobs = ci_payload.get("jobs")
+    if not isinstance(jobs, dict):
+        violations.append("ci_workflow_jobs_invalid")
+    else:
+        contract_gate = jobs.get(CONTRACT_GATE_JOB)
+        if not isinstance(contract_gate, dict):
+            violations.append("ci_workflow_missing_contract_gate_job")
+        else:
+            needs = contract_gate.get("needs", [])
+            if isinstance(needs, str):
+                needs_set = {needs}
+            elif isinstance(needs, list):
+                needs_set = {item for item in needs if isinstance(item, str)}
+            else:
+                needs_set = set()
+                violations.append("ci_workflow_contract_gate_needs_invalid")
+            for required_need in REQUIRED_CONTRACT_GATE_NEEDS:
+                if required_need not in needs_set:
+                    violations.append(
+                        f"ci_workflow_missing_contract_gate_need:{required_need}"
+                    )
 
     required_contexts = required_checks.get("required_contexts", [])
     if not isinstance(required_contexts, list):
