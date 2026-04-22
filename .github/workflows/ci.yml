@@ -492,6 +492,7 @@ jobs:
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       CONTRACT_TESTING: "0"
       CI: "true"
     steps:
