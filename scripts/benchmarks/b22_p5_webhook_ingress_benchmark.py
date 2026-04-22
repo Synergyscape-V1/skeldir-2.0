@@ -744,6 +744,16 @@ async def _run_measurement(
 
 
 async def _collect_persistence_proof_counts(*, tenant_id: UUID) -> dict[str, int]:
+    raw_payload_order_column = (
+        getattr(RawEventPayload, "ingested_at", None)
+        or getattr(RawEventPayload, "created_at", None)
+        or getattr(RawEventPayload, "updated_at", None)
+    )
+    if raw_payload_order_column is None:
+        raise RuntimeError(
+            "RawEventPayload model missing timestamp column for benchmark ordering"
+        )
+
     async with get_session(tenant_id=tenant_id) as session:
         attribution_events = await session.scalar(
             select(func.count())
@@ -767,7 +777,7 @@ async def _collect_persistence_proof_counts(*, tenant_id: UUID) -> dict[str, int
                 RawEventPayload.raw_headers,
             )
             .where(RawEventPayload.tenant_id == tenant_id)
-            .order_by(RawEventPayload.ingested_at.desc())
+            .order_by(raw_payload_order_column.desc())
             .limit(1)
         )
         latest = minimized_row.first()
