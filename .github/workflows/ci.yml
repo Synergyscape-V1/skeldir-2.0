@@ -77,6 +77,7 @@ jobs:
   contract-semantic-drift-gate:
     name: Contract Semantic Drift Gate
     runs-on: ubuntu-latest
+    if: ${{ always() }}
     needs: [checkout, validate-contracts, b21-p2-strategy-kernel-session-boundary, b21-p4-queue-isolation-performance-lock, b22-p5-webhook-latency-adjudication]
     services:
       postgres:
@@ -101,8 +102,23 @@ jobs:
       SKELDIR_B22_P4_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B22_P5_REQUIRE_DB_PROOFS: "1"
       TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       CI: "true"
     steps:
+      - name: Enforce prerequisite adjudication success
+        env:
+          CHECKOUT_RESULT: ${{ needs.checkout.result }}
+          VALIDATE_CONTRACTS_RESULT: ${{ needs.validate-contracts.result }}
+          B21_P2_RESULT: ${{ needs.b21-p2-strategy-kernel-session-boundary.result }}
+          B21_P4_RESULT: ${{ needs.b21-p4-queue-isolation-performance-lock.result }}
+          B22_P5_RESULT: ${{ needs.b22-p5-webhook-latency-adjudication.result }}
+        run: |
+          test "$CHECKOUT_RESULT" = "success"
+          test "$VALIDATE_CONTRACTS_RESULT" = "success"
+          test "$B21_P2_RESULT" = "success"
+          test "$B21_P4_RESULT" = "success"
+          test "$B22_P5_RESULT" = "success"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -330,6 +346,7 @@ jobs:
       ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
       CONTRACT_TESTING: "0"
       CI: "true"
     steps:
