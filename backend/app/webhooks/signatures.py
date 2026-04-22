@@ -1,6 +1,7 @@
 """
 Vendor-specific signature verification helpers for webhook endpoints.
 """
+
 from __future__ import annotations
 
 import base64
@@ -8,6 +9,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import os
 import socket
 import ssl
 import time
@@ -18,7 +20,13 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional
 from urllib.parse import urlparse
-from urllib.request import HTTPSHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.request import (
+    HTTPSHandler,
+    HTTPRedirectHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -31,11 +39,15 @@ PAYPAL_ALLOWED_CERT_HOST_SUFFIXES = ("paypal.com", "paypalobjects.com")
 PAYPAL_ALLOWED_AUTH_ALGOS = {"SHA256WITHRSA"}
 PAYPAL_CERT_FETCH_CONNECT_TIMEOUT_SECONDS = 0.35
 PAYPAL_CERT_FETCH_READ_TIMEOUT_SECONDS = 0.35
-PAYPAL_CERT_FETCH_TIMEOUT_SECONDS = PAYPAL_CERT_FETCH_CONNECT_TIMEOUT_SECONDS + PAYPAL_CERT_FETCH_READ_TIMEOUT_SECONDS
+PAYPAL_CERT_FETCH_TIMEOUT_SECONDS = (
+    PAYPAL_CERT_FETCH_CONNECT_TIMEOUT_SECONDS + PAYPAL_CERT_FETCH_READ_TIMEOUT_SECONDS
+)
 PAYPAL_CERT_MAX_BYTES = 128 * 1024
 PAYPAL_CERT_CACHE_MAX_ENTRIES = 256
 PAYPAL_CERT_CACHE_TTL_SECONDS = 6 * 60 * 60
 PAYPAL_CERT_EXPIRY_SAFETY_SECONDS = 60
+PAYPAL_TEST_CERT_URL_ENV = "SKELDIR_PAYPAL_TEST_CERT_URL"
+PAYPAL_TEST_CERT_PEM_ENV = "SKELDIR_PAYPAL_TEST_CERT_PEM"
 
 
 @dataclass
@@ -55,7 +67,9 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         return None
 
 
-def verify_shopify_signature(raw_body: bytes, secret: Optional[str], header: Optional[str]) -> bool:
+def verify_shopify_signature(
+    raw_body: bytes, secret: Optional[str], header: Optional[str]
+) -> bool:
     if not secret or not header:
         return False
     computed = hmac.new(secret.encode(), raw_body, hashlib.sha256).digest()
@@ -66,7 +80,9 @@ def verify_shopify_signature(raw_body: bytes, secret: Optional[str], header: Opt
     return hmac.compare_digest(computed, provided)
 
 
-def verify_woocommerce_signature(raw_body: bytes, secret: Optional[str], header: Optional[str]) -> bool:
+def verify_woocommerce_signature(
+    raw_body: bytes, secret: Optional[str], header: Optional[str]
+) -> bool:
     if not secret or not header:
         return False
     computed = hmac.new(secret.encode(), raw_body, hashlib.sha256).digest()
@@ -78,7 +94,9 @@ def verify_woocommerce_signature(raw_body: bytes, secret: Optional[str], header:
     return hmac.compare_digest(computed, provided)
 
 
-def verify_stripe_signature(raw_body: bytes, secret: Optional[str], header: Optional[str], tolerance: int = 300) -> bool:
+def verify_stripe_signature(
+    raw_body: bytes, secret: Optional[str], header: Optional[str], tolerance: int = 300
+) -> bool:
     """
     Minimal Stripe-style signature verification.
 
@@ -106,7 +124,9 @@ def verify_stripe_signature(raw_body: bytes, secret: Optional[str], header: Opti
     return hmac.compare_digest(computed, signature)
 
 
-def verify_paypal_signature(raw_body: bytes, secret: Optional[str], header: Optional[str]) -> bool:
+def verify_paypal_signature(
+    raw_body: bytes, secret: Optional[str], header: Optional[str]
+) -> bool:
     """
     Provider-correct local PayPal verification.
 
@@ -139,7 +159,10 @@ def verify_paypal_signature(raw_body: bytes, secret: Optional[str], header: Opti
     if abs(int(time.time()) - transmission_timestamp) > PAYPAL_AUTH_TOLERANCE_SECONDS:
         return False
 
-    if _normalize_paypal_auth_algo(envelope["auth_algo"]) not in PAYPAL_ALLOWED_AUTH_ALGOS:
+    if (
+        _normalize_paypal_auth_algo(envelope["auth_algo"])
+        not in PAYPAL_ALLOWED_AUTH_ALGOS
+    ):
         return False
 
     cert_url = envelope["cert_url"]
@@ -244,7 +267,10 @@ def _validate_paypal_cert_url(cert_url: str) -> tuple[str | None, set[str]]:
         return None, set()
     if parsed.port not in (None, 443):
         return None, set()
-    if not any(host == suffix or host.endswith(f".{suffix}") for suffix in PAYPAL_ALLOWED_CERT_HOST_SUFFIXES):
+    if not any(
+        host == suffix or host.endswith(f".{suffix}")
+        for suffix in PAYPAL_ALLOWED_CERT_HOST_SUFFIXES
+    ):
         return None, set()
     try:
         ipaddress.ip_address(host)
@@ -252,6 +278,9 @@ def _validate_paypal_cert_url(cert_url: str) -> tuple[str | None, set[str]]:
         pass
     else:
         return None, set()
+
+    if _paypal_testing_override_matches(cert_url=cert_url, cert_host=host):
+        return host, {"TESTING_OVERRIDE"}
 
     dns_tokens = _resolve_public_ip_tokens(host)
     if not dns_tokens:
@@ -295,6 +324,12 @@ def _get_paypal_cert_url_opener():
 
 
 def _fetch_paypal_certificate_pem(cert_url: str, cert_host: str) -> bytes | None:
+    testing_override = _testing_paypal_certificate_override(
+        cert_url=cert_url, cert_host=cert_host
+    )
+    if testing_override is not None:
+        return testing_override
+
     request = Request(cert_url, method="GET")
     try:
         with _get_paypal_cert_url_opener().open(
@@ -326,11 +361,41 @@ def _fetch_paypal_certificate_pem(cert_url: str, cert_host: str) -> bytes | None
     return content
 
 
+def _testing_paypal_certificate_override(
+    *, cert_url: str, cert_host: str
+) -> bytes | None:
+    if not _paypal_testing_override_matches(cert_url=cert_url, cert_host=cert_host):
+        return None
+    override_pem = (os.getenv(PAYPAL_TEST_CERT_PEM_ENV) or "").strip()
+    if not override_pem:
+        return None
+    encoded = override_pem.encode("utf-8")
+    if len(encoded) > PAYPAL_CERT_MAX_BYTES:
+        return None
+    return encoded
+
+
+def _paypal_testing_override_matches(*, cert_url: str, cert_host: str) -> bool:
+    if os.getenv("TESTING") != "1":
+        return False
+    override_url = (os.getenv(PAYPAL_TEST_CERT_URL_ENV) or "").strip()
+    override_pem = (os.getenv(PAYPAL_TEST_CERT_PEM_ENV) or "").strip()
+    if not override_url or not override_pem:
+        return False
+    parsed_override = urlparse(override_url)
+    if (parsed_override.hostname or "").lower() != cert_host:
+        return False
+    return cert_url == override_url
+
+
 def _resolve_paypal_public_key(
     cert_url: str,
     cert_host: str,
     dns_tokens_before_fetch: set[str],
 ) -> rsa.RSAPublicKey | None:
+    testing_override_active = _paypal_testing_override_matches(
+        cert_url=cert_url, cert_host=cert_host
+    )
     cached = _get_cached_paypal_public_key(cert_url)
     if cached is not None:
         return cached
@@ -339,11 +404,12 @@ def _resolve_paypal_public_key(
     if certificate_bytes is None:
         return None
 
-    dns_tokens_after_fetch = _resolve_public_ip_tokens(cert_host)
-    if not dns_tokens_after_fetch:
-        return None
-    if dns_tokens_before_fetch.isdisjoint(dns_tokens_after_fetch):
-        return None
+    if not testing_override_active:
+        dns_tokens_after_fetch = _resolve_public_ip_tokens(cert_host)
+        if not dns_tokens_after_fetch:
+            return None
+        if dns_tokens_before_fetch.isdisjoint(dns_tokens_after_fetch):
+            return None
 
     loaded = _load_paypal_rsa_public_key(certificate_bytes)
     if loaded is None:
@@ -353,7 +419,9 @@ def _resolve_paypal_public_key(
     return public_key
 
 
-def _load_paypal_rsa_public_key(cert_bytes: bytes) -> tuple[rsa.RSAPublicKey, int] | None:
+def _load_paypal_rsa_public_key(
+    cert_bytes: bytes,
+) -> tuple[rsa.RSAPublicKey, int] | None:
     certificate = _parse_x509_certificate(cert_bytes)
     if certificate is None:
         return None
@@ -371,7 +439,10 @@ def _load_paypal_rsa_public_key(cert_bytes: bytes) -> tuple[rsa.RSAPublicKey, in
     if not isinstance(public_key, rsa.RSAPublicKey):
         return None
 
-    remaining_seconds = max(1, int((not_after - now_utc).total_seconds()) - PAYPAL_CERT_EXPIRY_SAFETY_SECONDS)
+    remaining_seconds = max(
+        1,
+        int((not_after - now_utc).total_seconds()) - PAYPAL_CERT_EXPIRY_SAFETY_SECONDS,
+    )
     ttl_seconds = min(PAYPAL_CERT_CACHE_TTL_SECONDS, remaining_seconds)
     return public_key, ttl_seconds
 
@@ -413,7 +484,9 @@ def _get_cached_paypal_public_key(cert_url: str) -> rsa.RSAPublicKey | None:
         return entry.public_key
 
 
-def _store_cached_paypal_public_key(cert_url: str, public_key: rsa.RSAPublicKey, ttl_seconds: int) -> None:
+def _store_cached_paypal_public_key(
+    cert_url: str, public_key: rsa.RSAPublicKey, ttl_seconds: int
+) -> None:
     expires = time.monotonic() + float(max(1, ttl_seconds))
     with _PAYPAL_CERT_CACHE_LOCK:
         _PAYPAL_CERT_CACHE[cert_url] = _PayPalCertCacheEntry(

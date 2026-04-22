@@ -7,6 +7,7 @@ Responsibilities:
 - Apply PII stripping (handled by middleware) and ingest via EventIngestionService
 - Return 200 for success and DLQ-routed validation failures; 401 for signature/tenant failures
 """
+
 import logging
 import hashlib
 import json
@@ -79,6 +80,7 @@ UNAUTHORIZED_PROBLEM_RESPONSE = {
 WEBHOOK_DUMMY_SECRET = "skeldir_webhook_dummy_secret_constant_work"
 WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL = "Request payload too large."
 WEBHOOK_INVALID_PAYLOAD_DETAIL = "Invalid request payload."
+WEBHOOK_UNSUPPORTED_EVENT_FAMILY_STATUS = "unsupported_event_family_ignored"
 
 WebhookVerifier = Callable[[bytes, Optional[str], Optional[str]], bool]
 WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
@@ -98,13 +100,28 @@ _FIXED_MONEY_EXPONENT_BY_CURRENCY = MappingProxyType(
     }
 )
 _DEFAULT_MONEY_EXPONENT = 2
+_SUPPORTED_EVENT_FAMILY_HINTS = MappingProxyType(
+    {
+        "shopify": frozenset({"orders.create", "order_create"}),
+        "stripe": frozenset(
+            {
+                "payment_intent.succeeded",
+                "payment_intent_succeeded",
+            }
+        ),
+        "paypal": frozenset({"payment.sale.completed", "sale_completed"}),
+        "woocommerce": frozenset({"order.completed", "order_completed"}),
+    }
+)
 
 
 def _canonical_money_scale(currency: str | None) -> int:
     normalized = (currency or "").strip().upper()
     if not normalized:
         return _DEFAULT_MONEY_EXPONENT
-    return int(_FIXED_MONEY_EXPONENT_BY_CURRENCY.get(normalized, _DEFAULT_MONEY_EXPONENT))
+    return int(
+        _FIXED_MONEY_EXPONENT_BY_CURRENCY.get(normalized, _DEFAULT_MONEY_EXPONENT)
+    )
 
 
 def _paypal_auth_envelope_header(
@@ -135,9 +152,15 @@ def _parse_content_length_header(request: Request) -> int | None:
     try:
         parsed = int(raw)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=WEBHOOK_INVALID_PAYLOAD_DETAIL) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=WEBHOOK_INVALID_PAYLOAD_DETAIL,
+        ) from exc
     if parsed < 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=WEBHOOK_INVALID_PAYLOAD_DETAIL)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=WEBHOOK_INVALID_PAYLOAD_DETAIL,
+        )
     return parsed
 
 
@@ -168,7 +191,9 @@ async def _resolve_raw_body_for_webhook_auth(request: Request) -> bytes:
     return raw_body
 
 
-async def _resolve_tenant_info_for_webhook_auth(api_key: str | None) -> dict[str, Any] | None:
+async def _resolve_tenant_info_for_webhook_auth(
+    api_key: str | None,
+) -> dict[str, Any] | None:
     if not api_key or not api_key.strip():
         return None
     try:
@@ -187,9 +212,13 @@ async def _authorize_webhook_request(
     raw_body = await _resolve_raw_body_for_webhook_auth(request)
     verification_material_field, verifier = WEBHOOK_VERIFIERS[provider]
     tenant_info = await _resolve_tenant_info_for_webhook_auth(api_key)
-    material_found = tenant_info is not None and bool(tenant_info.get(verification_material_field))
+    material_found = tenant_info is not None and bool(
+        tenant_info.get(verification_material_field)
+    )
     material_for_compute = (
-        str(tenant_info[verification_material_field]) if material_found else WEBHOOK_DUMMY_SECRET
+        str(tenant_info[verification_material_field])
+        if material_found
+        else WEBHOOK_DUMMY_SECRET
     )
     signature_valid = verifier(raw_body, material_for_compute, signature_header)
 
@@ -294,6 +323,59 @@ def _resolution_token(value: Any) -> str | None:
     return token if token else None
 
 
+def _normalize_event_family_hint(value: Any) -> str | None:
+    token = _resolution_token(value)
+    if token is None:
+        return None
+    return token.lower().replace("/", ".")
+
+
+def _unsupported_event_family_reason(
+    *,
+    provider: str,
+    payload: Mapping[str, Any],
+    request_headers: Mapping[str, str],
+) -> str | None:
+    supported_hints = _SUPPORTED_EVENT_FAMILY_HINTS[provider]
+
+    if provider == "shopify":
+        observed_topic = _normalize_event_family_hint(
+            request_headers.get("x-shopify-topic")
+        )
+        if observed_topic is not None and observed_topic not in supported_hints:
+            return f"x-shopify-topic={observed_topic}"
+        return None
+
+    if provider == "woocommerce":
+        observed_topic = _normalize_event_family_hint(
+            request_headers.get("x-wc-webhook-topic")
+        )
+        if observed_topic is not None and observed_topic not in supported_hints:
+            return f"x-wc-webhook-topic={observed_topic}"
+        observed_status = _normalize_event_family_hint(payload.get("status"))
+        if observed_status is not None and observed_status != "completed":
+            return f"status={observed_status}"
+        return None
+
+    if provider == "paypal":
+        observed_type = _normalize_event_family_hint(payload.get("event_type"))
+        if observed_type is not None and observed_type not in supported_hints:
+            return f"event_type={observed_type}"
+        return None
+
+    if provider == "stripe":
+        for key in ("type", "event_type"):
+            observed_type = _normalize_event_family_hint(payload.get(key))
+            if observed_type is not None and observed_type not in supported_hints:
+                return f"{key}={observed_type}"
+        observed_status = _normalize_event_family_hint(payload.get("status"))
+        if observed_status is not None and observed_status != "succeeded":
+            return f"status={observed_status}"
+        return None
+
+    return None
+
+
 def _request_headers_for_privacy_boundary(request: Request) -> dict[str, str]:
     return {str(key).lower(): str(value) for key, value in request.headers.items()}
 
@@ -334,7 +416,9 @@ def _minor_units_to_decimal_string(minor: int, *, scale: int = 2) -> str:
     return str((Decimal(minor) / divisor).quantize(Decimal(10) ** (-scale)))
 
 
-def _try_decimal_to_minor_units(value: str | int | Decimal, *, scale: int = 2) -> int | None:
+def _try_decimal_to_minor_units(
+    value: str | int | Decimal, *, scale: int = 2
+) -> int | None:
     try:
         return _decimal_to_minor_units(value, scale=scale)
     except HTTPException:
@@ -373,6 +457,34 @@ def _parse_json_object(raw_body: bytes) -> tuple[dict[str, Any] | None, str | No
 def _malformed_idempotency_key(*, source: str, raw_body: bytes, suffix: str) -> str:
     body_sha256 = hashlib.sha256(raw_body).hexdigest()
     return str(uuid5(NAMESPACE_URL, f"{source}_{suffix}_{body_sha256}"))
+
+
+def _route_unsupported_event_family(
+    *,
+    source: str,
+    raw_body: bytes,
+    reason: str,
+) -> dict[str, str]:
+    idempotency_key = _malformed_idempotency_key(
+        source=source,
+        raw_body=raw_body,
+        suffix="unsupported_event_family",
+    )
+    set_business_correlation_id(idempotency_key)
+    logger.info(
+        "webhook_unsupported_event_family_ignored",
+        extra={
+            "provider": source,
+            "reason": reason,
+            "idempotency_key": idempotency_key,
+            "payload_sha256": hashlib.sha256(raw_body).hexdigest(),
+        },
+    )
+    return {
+        "status": WEBHOOK_UNSUPPORTED_EVENT_FAMILY_STATUS,
+        "error": "unsupported_event_family",
+        "idempotency_key": idempotency_key,
+    }
 
 
 async def _route_authenticated_malformed_payload(
@@ -559,6 +671,7 @@ async def _handle_ingestion(
     correlation_id = _make_correlation_uuid(idempotency_key)
     async with get_session(tenant_id=tenant_id) as session:
         from sqlalchemy import select
+
         res = await session.execute(
             select(DeadEvent).where(DeadEvent.correlation_id == correlation_id)
         )
@@ -609,6 +722,18 @@ async def shopify_order_create(
             request_headers=request_headers,
         )
 
+    unsupported_reason = _unsupported_event_family_reason(
+        provider="shopify",
+        payload=identity_payload,
+        request_headers=request_headers,
+    )
+    if unsupported_reason is not None:
+        return _route_unsupported_event_family(
+            source="shopify",
+            raw_body=raw_body,
+            reason=unsupported_reason,
+        )
+
     try:
         payload = ShopifyOrderCreateRequest.model_validate(identity_payload)
         if not payload.id:
@@ -639,9 +764,13 @@ async def shopify_order_create(
     verified_amount_minor = parsed_minor if parsed_minor is not None else 0
     event_data = {
         "event_type": "purchase",
-        "event_timestamp": (payload.created_at or datetime.now(timezone.utc)).isoformat(),
+        "event_timestamp": (
+            payload.created_at or datetime.now(timezone.utc)
+        ).isoformat(),
         "revenue_amount": (
-            _minor_units_to_decimal_string(verified_amount_minor, scale=verified_amount_scale)
+            _minor_units_to_decimal_string(
+                verified_amount_minor, scale=verified_amount_scale
+            )
             if parsed_minor is not None
             else raw_amount
         ),
@@ -707,6 +836,18 @@ async def stripe_payment_intent_succeeded(
             request_headers=request_headers,
         )
 
+    unsupported_reason = _unsupported_event_family_reason(
+        provider="stripe",
+        payload=identity_payload,
+        request_headers=request_headers,
+    )
+    if unsupported_reason is not None:
+        return _route_unsupported_event_family(
+            source="stripe",
+            raw_body=raw_body,
+            reason=unsupported_reason,
+        )
+
     try:
         payload = StripePaymentIntentSucceededRequest.model_validate(identity_payload)
         if not payload.id and not x_idempotency_key:
@@ -728,9 +869,15 @@ async def stripe_payment_intent_succeeded(
             request_headers=request_headers,
         )
 
-    idempotency_key = x_idempotency_key or str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{payload.id}"))
+    idempotency_key = x_idempotency_key or str(
+        uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{payload.id}")
+    )
     set_business_correlation_id(idempotency_key)
-    ts = datetime.fromtimestamp(payload.created) if payload.created else datetime.now(timezone.utc)
+    ts = (
+        datetime.fromtimestamp(payload.created)
+        if payload.created
+        else datetime.now(timezone.utc)
+    )
     verified_amount_minor = int(payload.amount or 0)
     verified_amount_currency = payload.currency.upper() if payload.currency else "USD"
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
@@ -833,19 +980,32 @@ async def stripe_payment_intent_succeeded_v2(
             pi_id = obj.get("id")
             amount_cents = obj.get("amount")
             currency = obj.get("currency")
-            metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+            metadata = (
+                obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+            )
             if metadata:
                 vendor_candidate = metadata.get("vendor")
                 if isinstance(vendor_candidate, str) and vendor_candidate.strip():
                     vendor_for_normalization = vendor_candidate.strip().lower()
                 utm_source_candidate = metadata.get("utm_source")
-                if isinstance(utm_source_candidate, str) and utm_source_candidate.strip():
+                if (
+                    isinstance(utm_source_candidate, str)
+                    and utm_source_candidate.strip()
+                ):
                     utm_source_for_normalization = utm_source_candidate.strip()
                 utm_medium_candidate = metadata.get("utm_medium")
-                if isinstance(utm_medium_candidate, str) and utm_medium_candidate.strip():
+                if (
+                    isinstance(utm_medium_candidate, str)
+                    and utm_medium_candidate.strip()
+                ):
                     utm_medium_for_normalization = utm_medium_candidate.strip()
-                session_id_candidate = metadata.get("session_id") or metadata.get("skeldir_session_id")
-                if isinstance(session_id_candidate, str) and session_id_candidate.strip():
+                session_id_candidate = metadata.get("session_id") or metadata.get(
+                    "skeldir_session_id"
+                )
+                if (
+                    isinstance(session_id_candidate, str)
+                    and session_id_candidate.strip()
+                ):
                     parsed_session_hint = session_id_candidate.strip()
                     try:
                         UUID(parsed_session_hint)
@@ -864,14 +1024,33 @@ async def stripe_payment_intent_succeeded_v2(
             if order_id_for_resolution is None:
                 order_id_for_resolution = _resolution_token(pi_id)
             if not idempotency_key and pi_id:
-                idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}"))
+                idempotency_key = str(
+                    uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{pi_id}")
+                )
         except Exception:
             # Handled as malformed below (routes to DLQ).
             pass
     elif not idempotency_key:
         # Keep malformed-body routing deterministic even without a client idempotency key.
         body_sha256 = hashlib.sha256(raw_body).hexdigest()
-        idempotency_key = str(uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_invalid_json_{body_sha256}"))
+        idempotency_key = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"stripe_payment_intent_succeeded_invalid_json_{body_sha256}",
+            )
+        )
+
+    unsupported_reason = _unsupported_event_family_reason(
+        provider="stripe",
+        payload=identity_payload or payload,
+        request_headers=request_headers,
+    )
+    if unsupported_reason is not None:
+        return _route_unsupported_event_family(
+            source="stripe",
+            raw_body=raw_body,
+            reason=unsupported_reason,
+        )
 
     if not idempotency_key:
         return JSONResponse(
@@ -900,7 +1079,8 @@ async def stripe_payment_intent_succeeded_v2(
             },
             error_message="invalid_json_payload",
             error_type="validation_error",
-            identity_payload=identity_payload or {
+            identity_payload=identity_payload
+            or {
                 "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
             },
             request_headers=request_headers,
@@ -1010,8 +1190,11 @@ async def stripe_payment_intent_succeeded_v2(
     # Validation errors routed to DLQ by service: locate via correlation_id for response
     async with get_session(tenant_id=tenant_info["tenant_id"]) as session:
         from sqlalchemy import select
+
         res = await session.execute(
-            select(DeadEvent).where(DeadEvent.correlation_id == uuid5(NAMESPACE_URL, idempotency_key))
+            select(DeadEvent).where(
+                DeadEvent.correlation_id == uuid5(NAMESPACE_URL, idempotency_key)
+            )
         )
         dead_event = res.scalar_one_or_none()
 
@@ -1055,6 +1238,18 @@ async def paypal_sale_completed(
             request_headers=request_headers,
         )
 
+    unsupported_reason = _unsupported_event_family_reason(
+        provider="paypal",
+        payload=identity_payload,
+        request_headers=request_headers,
+    )
+    if unsupported_reason is not None:
+        return _route_unsupported_event_family(
+            source="paypal",
+            raw_body=raw_body,
+            reason=unsupported_reason,
+        )
+
     try:
         payload = PayPalSaleCompletedRequest.model_validate(identity_payload)
         if not payload.id or not payload.amount:
@@ -1083,14 +1278,20 @@ async def paypal_sale_completed(
         payload.amount.currency if payload.amount and payload.amount.currency else "USD"
     ).upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
-    raw_amount = payload.amount.total if payload.amount and payload.amount.total is not None else "0"
+    raw_amount = (
+        payload.amount.total
+        if payload.amount and payload.amount.total is not None
+        else "0"
+    )
     parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
     verified_amount_minor = parsed_minor if parsed_minor is not None else 0
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
         "revenue_amount": (
-            _minor_units_to_decimal_string(verified_amount_minor, scale=verified_amount_scale)
+            _minor_units_to_decimal_string(
+                verified_amount_minor, scale=verified_amount_scale
+            )
             if parsed_minor is not None
             else raw_amount
         ),
@@ -1154,6 +1355,18 @@ async def woocommerce_order_completed(
             request_headers=request_headers,
         )
 
+    unsupported_reason = _unsupported_event_family_reason(
+        provider="woocommerce",
+        payload=identity_payload,
+        request_headers=request_headers,
+    )
+    if unsupported_reason is not None:
+        return _route_unsupported_event_family(
+            source="woocommerce",
+            raw_body=raw_body,
+            reason=unsupported_reason,
+        )
+
     try:
         payload = WooCommerceOrderCompletedRequest.model_validate(identity_payload)
         if not payload.id:
@@ -1175,7 +1388,9 @@ async def woocommerce_order_completed(
             request_headers=request_headers,
         )
 
-    idempotency_key = str(uuid5(NAMESPACE_URL, f"woocommerce_order_completed_{payload.id}"))
+    idempotency_key = str(
+        uuid5(NAMESPACE_URL, f"woocommerce_order_completed_{payload.id}")
+    )
     set_business_correlation_id(idempotency_key)
     ts = payload.date_completed or datetime.now(timezone.utc)
     verified_amount_currency = (payload.currency or "USD").upper()
@@ -1187,7 +1402,9 @@ async def woocommerce_order_completed(
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
         "revenue_amount": (
-            _minor_units_to_decimal_string(verified_amount_minor, scale=verified_amount_scale)
+            _minor_units_to_decimal_string(
+                verified_amount_minor, scale=verified_amount_scale
+            )
             if parsed_minor is not None
             else raw_amount
         ),

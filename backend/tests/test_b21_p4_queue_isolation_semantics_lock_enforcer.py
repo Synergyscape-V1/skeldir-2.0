@@ -122,6 +122,38 @@ def test_b21_p4_queue_isolation_semantics_lock_enforcer_negative_control_missing
     )
 
 
+def test_b21_p4_queue_isolation_semantics_lock_enforcer_negative_control_missing_contract_gate_need(
+    tmp_path: Path,
+) -> None:
+    workflow_regression = tmp_path / "ci.needs.regression.yml"
+    workflow_regression.write_text(
+        CI_WORKFLOW_FILE.read_text(encoding="utf-8").replace(
+            "b21-p4-queue-isolation-performance-lock",
+            "b21-p4-queue-isolation-performance-lock-regressed",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ENFORCER),
+            "--ci-workflow-file",
+            str(workflow_regression),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    assert (
+        "ci_workflow_missing_contract_gate_need:b21-p4-queue-isolation-performance-lock"
+        in combined
+    )
+
+
 def test_b21_p4_queue_isolation_semantics_lock_enforcer_negative_control_missing_required_context(
     tmp_path: Path,
 ) -> None:
