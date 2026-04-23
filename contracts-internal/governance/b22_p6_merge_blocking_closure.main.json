@@ -1,0 +1,62 @@
+{
+  "contract_id": "b22.p6.merge_blocking_closure.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.2-P6",
+  "description": "Final B2.2 closure contract binding P0-P5 invariants to merge-blocking required checks plus authoritative end-to-end provider truth-ingress and B2.3 downstream-readiness/no-reconciliation proofs.",
+  "required_check_contexts": [
+    "Contract Semantic Drift Gate",
+    "B2.2-P5 Webhook Latency Adjudication",
+    "B2.2-P6 Merge-Blocking Closure + Downstream Readiness"
+  ],
+  "required_b22_phase_enforcers": [
+    "python scripts/ci/enforce_b22_p0_webhook_surface_lock.py",
+    "python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py",
+    "python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py",
+    "python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py",
+    "python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py",
+    "python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py",
+    "python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py"
+  ],
+  "required_b22_phase_runtime_proofs": [
+    "pytest backend/tests/test_b22_p1_authenticity_semantics.py -q",
+    "pytest backend/tests/test_b22_p2_post_auth_privacy_boundary.py -q",
+    "pytest backend/tests/test_b22_p3_canonical_identity_envelope.py -q",
+    "pytest backend/tests/test_b22_p4_idempotent_ack_orchestration.py -q",
+    "pytest backend/tests/test_b22_p5_performance_negative_controls.py -q"
+  ],
+  "required_provider_truth_ingress_suite": {
+    "test_file": "backend/tests/integration/test_b22_p6_end_to_end_truth_ingress.py",
+    "required_tests": [
+      "test_b22_p6_supported_providers_emit_one_canonical_verified_ingress_record_each_without_duplicate_side_effects",
+      "test_b22_p6_provider_authenticity_failures_do_not_persist_verified_ingress_records"
+    ],
+    "required_providers": [
+      "shopify",
+      "woocommerce",
+      "stripe",
+      "paypal"
+    ]
+  },
+  "required_b23_downstream_readiness_suite": {
+    "test_file": "backend/tests/integration/test_b22_p6_b23_downstream_readiness.py",
+    "required_tests": [
+      "test_b22_p6_b23_compatibility_surface_exposes_canonical_identity_and_verified_state",
+      "test_b22_p6_b23_readiness_proves_ingress_path_never_invokes_reconciliation_logic"
+    ],
+    "required_ingress_fields": [
+      "provider_native_event_reference",
+      "provider_native_commerce_reference",
+      "normalized_commerce_reference_kind",
+      "normalized_commerce_reference_value",
+      "verified_commerce_ingress_state",
+      "verified_at"
+    ]
+  },
+  "forbidden_reconciliation_tokens_in_ingress": [
+    "reconcile_order(",
+    "get_reconciliation_by_order(",
+    "RevenueReconciliationService"
+  ]
+}
