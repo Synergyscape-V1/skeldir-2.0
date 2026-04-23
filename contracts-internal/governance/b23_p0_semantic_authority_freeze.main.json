@@ -1,0 +1,103 @@
+{
+  "contract_id": "b23.p0.semantic_authority_freeze.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P0",
+  "description": "B2.3-P0 executable semantic authority freeze for deterministic revenue verification and matching handoff boundaries.",
+  "baseline_authority": {
+    "authoritative_branch": "main",
+    "require_main_ancestor_for_semantic_work": true
+  },
+  "shared_identity_canonicalization": {
+    "law_id": "b23_p0_dual_sided_canonicalization_v1",
+    "precedence_order": [
+      "normalized_commerce_reference",
+      "provider_native_commerce_reference",
+      "strict_order_id"
+    ],
+    "canonicalization_failure_state": "canonicalization_failed_explicit",
+    "supported_decorated_variants": [
+      "#1004",
+      "1004",
+      "shopify_1004",
+      "TX-1004",
+      "tx_1004"
+    ]
+  },
+  "privacy_safe_delayed_arrival": {
+    "forbidden_mechanisms": [
+      "extend_attribution_session_window",
+      "cross_session_identity_reconstruction",
+      "persist_pii_for_matching",
+      "persist_reversible_user_linked_hashes",
+      "privacy_ambiguous_shadow_identity_graph"
+    ],
+    "allowed_topology": "durable_tenant_scoped_non_pii_commerce_identity_substrate",
+    "delayed_arrival_policy": "match_via_durable_commerce_identity_else_explicit_unmatched_or_unsupported"
+  },
+  "financial_truth_semantics": {
+    "amount_basis": "verified_captured_amount_minor_units",
+    "currency_stance": "same_currency_only_cross_currency_unsupported",
+    "unsupported_payment_adjustments": [
+      "refund",
+      "partial_capture",
+      "split_payment",
+      "provider_adjustment"
+    ]
+  },
+  "b23_b21_boundary": {
+    "b23_scope": "verified_revenue_truth_at_order_conversion_grain",
+    "b23_must_not_allocate_attribution": true,
+    "downstream_consumers": [
+      "B2.1",
+      "B2.5"
+    ]
+  },
+  "verdict_taxonomy": [
+    "matched",
+    "flagged",
+    "severe",
+    "unmatched",
+    "unsupported",
+    "canonicalization_failed"
+  ],
+  "discrepancy_taxonomy": [
+    "exact",
+    "within_tolerance",
+    "over_tolerance",
+    "severe_gap",
+    "unsupported",
+    "identity_failure"
+  ],
+  "false_authority_exclusions": [
+    "revenue_ledger.state",
+    "revenue_ledger.discrepancy_bps",
+    "reconciliation_runs.state",
+    "RevenueReconciliationService",
+    "/api/reconciliation/status",
+    "/api/reconciliation/platform/{platform_id}"
+  ],
+  "downstream_mapping": {
+    "strategy": "typed_deterministic_mapping_only",
+    "verdict_map_target": "b23.verdict.*",
+    "discrepancy_map_target": "b23.discrepancy.*",
+    "ad_hoc_free_form_translation_forbidden": true
+  },
+  "performance_authority": {
+    "kernel_1000_orders_max_seconds": 5,
+    "report_1000_orders_max_seconds": 10
+  },
+  "required_runtime_proofs": [
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_contract_load_is_authoritative",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_dual_sided_canonicalization_converges_decorated_variants",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_precedence_order_is_deterministic",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_illegal_delayed_arrival_strategies_fail_closed",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_false_authority_sources_are_rejected"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py",
+    "pytest backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py -q",
+    "pytest backend/tests/test_b23_p0_semantic_authority.py -q"
+  ]
+}

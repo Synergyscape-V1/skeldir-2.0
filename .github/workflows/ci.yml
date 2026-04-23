@@ -317,6 +317,18 @@ jobs:
         run: |
           pytest backend/tests/test_b22_p5_webhook_benchmark_adjudication_enforcer.py -q
 
+      - name: Enforce B2.3-P0 semantic authority freeze
+        run: |
+          python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
+
+      - name: Run B2.3-P0 semantic authority freeze negative controls
+        run: |
+          pytest backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py -q
+
+      - name: Run B2.3-P0 semantic authority runtime proofs
+        run: |
+          pytest backend/tests/test_b23_p0_semantic_authority.py -q
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q

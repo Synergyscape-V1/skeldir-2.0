@@ -32,6 +32,11 @@ from app.privacy.ephemeral_resolution import (
     upsert_ephemeral_resolution_links,
 )
 from app.privacy.session_authority import resolve_session_authority
+from app.revenue_verification.semantic_authority import (
+    CanonicalizationStatus,
+    canonicalize_attribution_commerce_reference,
+    resolve_canonical_match_key,
+)
 from app.observability.api_metrics import (
     events_dlq_total,
     events_duplicate_total,
@@ -236,10 +241,25 @@ def _extract_order_resolution_key(
     event_data: Mapping[str, Any],
     identity_payload: Mapping[str, Any],
 ) -> str | None:
-    return _first_non_empty_resolution_token(
+    raw_order_id = _first_non_empty_resolution_token(
         event_data.get("order_id"),
         identity_payload.get("order_id"),
     )
+    if raw_order_id is None:
+        return None
+
+    provider_hint = _first_non_empty_resolution_token(
+        event_data.get("provider"),
+        event_data.get("vendor"),
+        identity_payload.get("provider"),
+    )
+    canonicalized = canonicalize_attribution_commerce_reference(
+        provider=provider_hint,
+        raw_reference=raw_order_id,
+    )
+    if canonicalized.status is CanonicalizationStatus.CANONICALIZED:
+        return canonicalized.canonical_reference
+    return None
 
 
 def _extract_click_resolution_key(
@@ -327,6 +347,21 @@ def _extract_webhook_ingress_identity(
     else:
         raise ValidationError(
             "verified_at must be captured at verification time and provided as a datetime"
+        )
+
+    precedence_resolution = resolve_canonical_match_key(
+        provider=provider_hint or normalized_source,
+        normalized_commerce_reference=str(
+            event_data["normalized_commerce_reference_value"]
+        ).strip(),
+        provider_native_commerce_reference=str(
+            event_data["provider_native_commerce_reference"]
+        ).strip(),
+        strict_order_id=_first_non_empty_resolution_token(event_data.get("order_id")),
+    )
+    if precedence_resolution.status is CanonicalizationStatus.CANONICALIZATION_FAILED:
+        raise ValidationError(
+            "Webhook identity canonicalization failed under B2.3-P0 authority policy."
         )
 
     return {
