@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 
@@ -21,6 +23,11 @@ EVENT_SERVICE_FILE = "backend/app/ingestion/event_service.py"
 RUNTIME_PROOF_FILE = "backend/tests/test_b23_p0_semantic_authority.py"
 ENFORCER_PROOF_FILE = "backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py"
 CI_WORKFLOW_FILE = ".github/workflows/ci.yml"
+TOPOLOGY_MODEL_FILE = "backend/app/models/attribution_commerce_identity.py"
+TOPOLOGY_PERSISTENCE_FILE = "backend/app/privacy/durable_commerce_identity.py"
+TOPOLOGY_SCHEMA_PROOF_FILE = (
+    "alembic/versions/007_skeldir_foundation/202604231130_b23_p0_durable_commerce_identity_substrate.py"
+)
 
 
 def _resolve(repo_root: Path, raw: str) -> Path:
@@ -39,6 +46,27 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"JSON payload must be an object: {path}")
     return payload
+
+
+def _load_module_from_file(path: Path, module_name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"unable to load module from {path}")
+    sys.modules.pop(module_name, None)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_python_script(repo_root: Path, script_path: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, script_path],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def _git_ref_exists(repo_root: Path, ref: str) -> bool:
@@ -184,7 +212,12 @@ def _validate_baseline_ancestry(repo_root: Path, violations: list[str]) -> None:
         violations.append("baseline_authority_main_ref_unavailable")
 
 
-def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
+def _validate_contract(
+    *,
+    contract: dict[str, Any],
+    semantic_module: ModuleType,
+    violations: list[str],
+) -> None:
     if contract.get("contract_id") != "b23.p0.semantic_authority_freeze.main":
         violations.append("contract_id_mismatch")
     if contract.get("branch") != "main":
@@ -206,14 +239,12 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
         violations.append("contract_shared_identity_invalid")
     else:
         precedence = tuple(shared_identity.get("precedence_order", []))
-        expected_precedence = (
-            "normalized_commerce_reference",
-            "provider_native_commerce_reference",
-            "strict_order_id",
-        )
-        if precedence != expected_precedence:
+        if precedence != tuple(semantic_module.B23_PRECEDENCE_ORDER):
             violations.append("contract_precedence_order_mismatch")
-        if shared_identity.get("canonicalization_failure_state") != "canonicalization_failed_explicit":
+        if (
+            shared_identity.get("canonicalization_failure_state")
+            != semantic_module.CanonicalizationStatus.CANONICALIZATION_FAILED.value
+        ):
             violations.append("contract_canonicalization_failure_state_mismatch")
 
     delayed_arrival = contract.get("privacy_safe_delayed_arrival")
@@ -221,39 +252,41 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
         violations.append("contract_privacy_safe_delayed_arrival_invalid")
     else:
         forbidden = set(delayed_arrival.get("forbidden_mechanisms", []))
-        expected_forbidden = {
-            "extend_attribution_session_window",
-            "cross_session_identity_reconstruction",
-            "persist_pii_for_matching",
-            "persist_reversible_user_linked_hashes",
-            "privacy_ambiguous_shadow_identity_graph",
-        }
-        if forbidden != expected_forbidden:
+        if forbidden != set(semantic_module.FORBIDDEN_DELAYED_ARRIVAL_STRATEGIES):
             violations.append("contract_forbidden_delayed_arrival_mechanisms_mismatch")
-        if delayed_arrival.get("allowed_topology") != "durable_tenant_scoped_non_pii_commerce_identity_substrate":
+        if delayed_arrival.get("allowed_topology") != semantic_module.ALLOWED_DELAYED_ARRIVAL_TOPOLOGY:
             violations.append("contract_allowed_topology_mismatch")
-        if (
-            delayed_arrival.get("delayed_arrival_policy")
-            != "match_via_durable_commerce_identity_else_explicit_unmatched_or_unsupported"
-        ):
+        if delayed_arrival.get("delayed_arrival_policy") != semantic_module.DELAYED_ARRIVAL_POLICY:
             violations.append("contract_delayed_arrival_policy_mismatch")
+
+        topology_binding = delayed_arrival.get("topology_schema_binding")
+        if not isinstance(topology_binding, dict):
+            violations.append("contract_topology_schema_binding_invalid")
+        else:
+            if topology_binding.get("table") != semantic_module.ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE:
+                violations.append("contract_topology_table_mismatch")
+            if set(topology_binding.get("required_columns", [])) != set(
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS
+            ):
+                violations.append("contract_topology_required_columns_mismatch")
+            if set(topology_binding.get("forbidden_columns", [])) != set(
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS
+            ):
+                violations.append("contract_topology_forbidden_columns_mismatch")
+            if topology_binding.get("requires_rls") is not True:
+                violations.append("contract_topology_requires_rls_mismatch")
 
     financial_truth = contract.get("financial_truth_semantics")
     if not isinstance(financial_truth, dict):
         violations.append("contract_financial_truth_semantics_invalid")
     else:
-        if financial_truth.get("amount_basis") != "verified_captured_amount_minor_units":
+        if financial_truth.get("amount_basis") != semantic_module.B23_AMOUNT_BASIS:
             violations.append("contract_amount_basis_mismatch")
-        if financial_truth.get("currency_stance") != "same_currency_only_cross_currency_unsupported":
+        if financial_truth.get("currency_stance") != semantic_module.B23_CURRENCY_STANCE:
             violations.append("contract_currency_stance_mismatch")
-        unsupported_adjustments = set(financial_truth.get("unsupported_payment_adjustments", []))
-        expected_unsupported_adjustments = {
-            "refund",
-            "partial_capture",
-            "split_payment",
-            "provider_adjustment",
-        }
-        if unsupported_adjustments != expected_unsupported_adjustments:
+        if set(financial_truth.get("unsupported_payment_adjustments", [])) != set(
+            semantic_module.UNSUPPORTED_PAYMENT_ADJUSTMENTS
+        ):
             violations.append("contract_unsupported_payment_adjustments_mismatch")
 
     boundary = contract.get("b23_b21_boundary")
@@ -266,49 +299,55 @@ def _validate_contract(contract: dict[str, Any], violations: list[str]) -> None:
             violations.append("contract_boundary_allocation_forbidden_mismatch")
 
     verdict_taxonomy = set(contract.get("verdict_taxonomy", []))
-    expected_verdict_taxonomy = {
-        "matched",
-        "flagged",
-        "severe",
-        "unmatched",
-        "unsupported",
-        "canonicalization_failed",
-    }
+    expected_verdict_taxonomy = {member.value for member in semantic_module.B23Verdict}
     if verdict_taxonomy != expected_verdict_taxonomy:
         violations.append("contract_verdict_taxonomy_mismatch")
 
     discrepancy_taxonomy = set(contract.get("discrepancy_taxonomy", []))
-    expected_discrepancy_taxonomy = {
-        "exact",
-        "within_tolerance",
-        "over_tolerance",
-        "severe_gap",
-        "unsupported",
-        "identity_failure",
-    }
+    expected_discrepancy_taxonomy = {member.value for member in semantic_module.B23DiscrepancyClass}
     if discrepancy_taxonomy != expected_discrepancy_taxonomy:
         violations.append("contract_discrepancy_taxonomy_mismatch")
 
-    false_authority_exclusions = set(contract.get("false_authority_exclusions", []))
-    expected_false_authority_exclusions = {
-        "revenue_ledger.state",
-        "revenue_ledger.discrepancy_bps",
-        "reconciliation_runs.state",
-        "RevenueReconciliationService",
-        "/api/reconciliation/status",
-        "/api/reconciliation/platform/{platform_id}",
-    }
-    if false_authority_exclusions != expected_false_authority_exclusions:
+    if set(contract.get("false_authority_exclusions", [])) != set(
+        semantic_module.B23_FORBIDDEN_FALSE_AUTHORITIES
+    ):
         violations.append("contract_false_authority_exclusions_mismatch")
+
+    downstream_mapping = contract.get("downstream_mapping")
+    if not isinstance(downstream_mapping, dict):
+        violations.append("contract_downstream_mapping_invalid")
+    else:
+        if downstream_mapping.get("strategy") != "typed_deterministic_mapping_only":
+            violations.append("contract_downstream_mapping_strategy_mismatch")
+        if downstream_mapping.get("ad_hoc_free_form_translation_forbidden") is not True:
+            violations.append("contract_downstream_mapping_freeform_forbidden_mismatch")
+        if downstream_mapping.get("pre_dispatch_validation_required") is not True:
+            violations.append("contract_downstream_mapping_pre_dispatch_validation_missing")
 
     performance_authority = contract.get("performance_authority")
     if not isinstance(performance_authority, dict):
         violations.append("contract_performance_authority_invalid")
     else:
-        if int(performance_authority.get("kernel_1000_orders_max_seconds", -1)) != 5:
+        runtime_thresholds = dict(semantic_module.get_b23_p0_performance_thresholds())
+        if int(performance_authority.get("kernel_1000_orders_max_seconds", -1)) != int(
+            runtime_thresholds.get("kernel_1000_orders_max_seconds", -1)
+        ):
             violations.append("contract_performance_kernel_threshold_mismatch")
-        if int(performance_authority.get("report_1000_orders_max_seconds", -1)) != 10:
+        if int(performance_authority.get("report_1000_orders_max_seconds", -1)) != int(
+            runtime_thresholds.get("report_1000_orders_max_seconds", -1)
+        ):
             violations.append("contract_performance_report_threshold_mismatch")
+
+    typed_boundary = contract.get("typed_boundary_adjudication")
+    if not isinstance(typed_boundary, dict):
+        violations.append("contract_typed_boundary_adjudication_invalid")
+    else:
+        if typed_boundary.get("required_enforcer") != "scripts/ci/enforce_b15_p4_mock_sdk_boundary.py":
+            violations.append("contract_typed_boundary_enforcer_mismatch")
+        if typed_boundary.get("required_ci_job") != "b15-p4-mock-sdk-typed-boundary":
+            violations.append("contract_typed_boundary_ci_job_mismatch")
+        if typed_boundary.get("expected_status") != "mainline_clean_no_live_conflict":
+            violations.append("contract_typed_boundary_status_mismatch")
 
 
 def _validate_semantic_authority_file(path: Path, violations: list[str]) -> None:
@@ -318,6 +357,9 @@ def _validate_semantic_authority_file(path: Path, violations: list[str]) -> None
         "B23_PRECEDENCE_ORDER = (",
         "FORBIDDEN_DELAYED_ARRIVAL_STRATEGIES = frozenset(",
         "ALLOWED_DELAYED_ARRIVAL_TOPOLOGY = (",
+        "ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE = \"attribution_commerce_identities\"",
+        "ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS = frozenset(",
+        "ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS = frozenset(",
         "DELAYED_ARRIVAL_POLICY = (",
         "B23_AMOUNT_BASIS = \"verified_captured_amount_minor_units\"",
         "B23_CURRENCY_STANCE = \"same_currency_only_cross_currency_unsupported\"",
@@ -325,17 +367,22 @@ def _validate_semantic_authority_file(path: Path, violations: list[str]) -> None
         "B23_FORBIDDEN_FALSE_AUTHORITIES = frozenset(",
         "class B23Verdict(str, Enum):",
         "class B23DiscrepancyClass(str, Enum):",
+        "class B23DownstreamSemanticProjection(BaseModel):",
         "def canonicalize_verified_commerce_reference(",
         "def canonicalize_attribution_commerce_reference(",
         "def resolve_canonical_match_key(",
         "def validate_delayed_arrival_strategy(",
         "def validate_delayed_arrival_topology(",
+        "def validate_delayed_arrival_topology_binding(",
         "def assert_b23_boundary_not_allocation(",
         "def assert_b23_authority_source(",
         "def map_b23_verdict_for_downstream(",
         "def map_b23_discrepancy_for_downstream(",
+        "def build_validated_downstream_projection(",
+        "def validate_downstream_projection_payload(",
         "def load_b23_p0_semantic_authority_contract(",
         "B23_P0_PERFORMANCE_AUTHORITY = B23PerformanceAuthority(",
+        "def get_b23_p0_performance_thresholds() -> Mapping[str, int]:",
     )
     for token in required_tokens:
         if token not in text:
@@ -344,6 +391,82 @@ def _validate_semantic_authority_file(path: Path, violations: list[str]) -> None
     shared_call_token = "return canonicalize_commerce_reference("
     if text.count(shared_call_token) < 2:
         violations.append("semantic_authority_dual_side_shared_canonicalizer_missing")
+
+
+def _validate_topology_model_file(path: Path, violations: list[str]) -> None:
+    text = _read_text(path)
+    required_tokens = (
+        "class AttributionCommerceIdentity(Base, TenantMixin):",
+        "__tablename__ = \"attribution_commerce_identities\"",
+        "attribution_event_id",
+        "canonical_commerce_reference",
+        "uq_attr_commerce_identity_tenant_provider_reference",
+        "ck_attr_commerce_identity_observed_time_order",
+    )
+    for token in required_tokens:
+        if token not in text:
+            violations.append(f"topology_model_missing_token:{token}")
+
+    forbidden_tokens = ("session_id", "user_id", "email", "ip_address")
+    for token in forbidden_tokens:
+        if token in text:
+            violations.append(f"topology_model_contains_forbidden_identity_column:{token}")
+
+
+def _validate_topology_persistence_file(path: Path, violations: list[str]) -> None:
+    text = _read_text(path)
+    required_tokens = (
+        "def upsert_durable_commerce_identity_link(",
+        "insert(AttributionCommerceIdentity)",
+        ".on_conflict_do_update(",
+        "canonical_commerce_reference",
+        "attribution_event_id",
+    )
+    for token in required_tokens:
+        if token not in text:
+            violations.append(f"topology_persistence_missing_token:{token}")
+
+
+def _validate_topology_schema_file(
+    *,
+    path: Path,
+    contract: dict[str, Any],
+    violations: list[str],
+) -> None:
+    text = _read_text(path)
+    delayed_arrival = contract.get("privacy_safe_delayed_arrival", {})
+    topology_binding = delayed_arrival.get("topology_schema_binding", {})
+    expected_table = str(topology_binding.get("table") or "").strip()
+    if not expected_table:
+        violations.append("contract_topology_table_missing")
+        return
+
+    required_tokens = (
+        f"CREATE TABLE public.{expected_table} (",
+        "tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE",
+        "attribution_event_id uuid NOT NULL REFERENCES public.attribution_events(id) ON DELETE CASCADE",
+        "provider varchar(32) NOT NULL",
+        "canonical_commerce_reference varchar(255) NOT NULL",
+        "ALTER TABLE public.attribution_commerce_identities ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE ONLY public.attribution_commerce_identities FORCE ROW LEVEL SECURITY",
+        "CREATE POLICY tenant_isolation_policy_attribution_commerce_identities",
+        "uq_attr_commerce_identity_tenant_provider_reference",
+    )
+    for token in required_tokens:
+        if token not in text:
+            violations.append(f"topology_schema_missing_token:{token}")
+
+    for column in topology_binding.get("required_columns", []):
+        normalized = str(column).strip()
+        if normalized and normalized not in text:
+            violations.append(f"topology_schema_missing_required_column:{normalized}")
+
+    for column in topology_binding.get("forbidden_columns", []):
+        normalized = str(column).strip()
+        if not normalized:
+            continue
+        if normalized in text:
+            violations.append(f"topology_schema_contains_forbidden_column:{normalized}")
 
 
 def _validate_runtime_proof_file(path: Path, violations: list[str]) -> None:
@@ -355,10 +478,14 @@ def _validate_runtime_proof_file(path: Path, violations: list[str]) -> None:
         "test_b23_p0_canonicalization_failure_state_is_explicit",
         "test_b23_p0_illegal_delayed_arrival_strategies_fail_closed",
         "test_b23_p0_only_allowed_delayed_arrival_topology_is_accepted",
+        "test_b23_p0_delayed_arrival_topology_binding_is_schema_anchored",
         "test_b23_p0_amount_currency_and_adjustment_stance_is_frozen",
         "test_b23_p0_boundary_law_blocks_allocation_inside_b23",
         "test_b23_p0_false_authority_sources_are_rejected",
+        "test_b23_p0_b06_false_authority_surfaces_are_rejected",
         "test_b23_p0_downstream_mapping_is_typed_and_deterministic",
+        "test_b23_p0_downstream_mapping_payload_requires_pre_dispatch_validation",
+        "test_b23_p0_performance_thresholds_are_contract_aligned",
     )
     for token in required_tests:
         if token not in text:
@@ -370,7 +497,9 @@ def _validate_event_service_file(path: Path, violations: list[str]) -> None:
     required_tokens = (
         "canonicalize_attribution_commerce_reference(",
         "resolve_canonical_match_key(",
+        "upsert_durable_commerce_identity_link(",
         "Webhook identity canonicalization failed under B2.3-P0 authority policy.",
+        "B2.3-P0 delayed-arrival commerce identity substrate is unavailable",
     )
     for token in required_tokens:
         if token not in text:
@@ -391,6 +520,8 @@ def _validate_ci_workflow(
         "pytest backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py -q",
         "Run B2.3-P0 semantic authority runtime proofs",
         "pytest backend/tests/test_b23_p0_semantic_authority.py -q",
+        "b15-p4-mock-sdk-typed-boundary:",
+        "python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py",
     )
     for token in required_tokens:
         if token not in text:
@@ -406,11 +537,36 @@ def _validate_ci_workflow(
             violations.append(f"workflow_missing_contract_ci_wiring_token:{normalized}")
 
 
+def _validate_typed_boundary_adjudication(
+    *,
+    repo_root: Path,
+    contract: dict[str, Any],
+    violations: list[str],
+) -> None:
+    typed_boundary = contract.get("typed_boundary_adjudication")
+    if not isinstance(typed_boundary, dict):
+        violations.append("typed_boundary_adjudication_missing")
+        return
+
+    enforcer = str(typed_boundary.get("required_enforcer") or "").strip()
+    if not enforcer:
+        violations.append("typed_boundary_required_enforcer_missing")
+        return
+
+    proc = _run_python_script(repo_root, enforcer)
+    if proc.returncode != 0:
+        violations.append("typed_boundary_conflict_live_or_unadjudicated")
+
+
 def _validate_enforcer_proof_file(path: Path, violations: list[str]) -> None:
     text = _read_text(path)
     required_tokens = (
         "test_b23_p0_semantic_authority_freeze_enforcer_passes_repo_state",
         "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_forced_regression",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_topology_contract_mismatch",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_topology_schema_absent",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_failure",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_threshold_drift",
     )
     for token in required_tokens:
         if token not in text:
@@ -426,7 +582,11 @@ def run_enforcement(
     runtime_proof_file: Path,
     enforcer_proof_file: Path,
     ci_workflow_file: Path,
+    topology_model_file: Path,
+    topology_persistence_file: Path,
+    topology_schema_proof_file: Path,
     skip_baseline_git_check: bool = False,
+    skip_typed_boundary_execution: bool = False,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
     required_files = (
@@ -436,6 +596,9 @@ def run_enforcement(
         runtime_proof_file,
         enforcer_proof_file,
         ci_workflow_file,
+        topology_model_file,
+        topology_persistence_file,
+        topology_schema_proof_file,
     )
     for path in required_files:
         if not path.exists():
@@ -444,8 +607,16 @@ def run_enforcement(
         return 1, violations
 
     contract = _read_json(governance_contract_file)
-    _validate_contract(contract, violations)
+    semantic_module = _load_module_from_file(semantic_authority_file, "b23_p0_semantic_authority")
+    _validate_contract(contract=contract, semantic_module=semantic_module, violations=violations)
     _validate_semantic_authority_file(semantic_authority_file, violations)
+    _validate_topology_model_file(topology_model_file, violations)
+    _validate_topology_persistence_file(topology_persistence_file, violations)
+    _validate_topology_schema_file(
+        path=topology_schema_proof_file,
+        contract=contract,
+        violations=violations,
+    )
     _validate_event_service_file(event_service_file, violations)
     _validate_runtime_proof_file(runtime_proof_file, violations)
     _validate_enforcer_proof_file(enforcer_proof_file, violations)
@@ -454,6 +625,12 @@ def run_enforcement(
         contract=contract,
         violations=violations,
     )
+    if not skip_typed_boundary_execution:
+        _validate_typed_boundary_adjudication(
+            repo_root=repo_root,
+            contract=contract,
+            violations=violations,
+        )
     if not skip_baseline_git_check:
         _validate_baseline_ancestry(repo_root, violations)
 
@@ -471,7 +648,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--runtime-proof-file", default=RUNTIME_PROOF_FILE)
     parser.add_argument("--enforcer-proof-file", default=ENFORCER_PROOF_FILE)
     parser.add_argument("--ci-workflow-file", default=CI_WORKFLOW_FILE)
+    parser.add_argument("--topology-model-file", default=TOPOLOGY_MODEL_FILE)
+    parser.add_argument("--topology-persistence-file", default=TOPOLOGY_PERSISTENCE_FILE)
+    parser.add_argument("--topology-schema-proof-file", default=TOPOLOGY_SCHEMA_PROOF_FILE)
     parser.add_argument("--skip-baseline-git-check", action="store_true")
+    parser.add_argument("--skip-typed-boundary-execution", action="store_true")
     parser.add_argument("--simulate-regression", action="store_true")
     parser.add_argument("--simulate-baseline-drift", action="store_true")
     args = parser.parse_args(argv[1:])
@@ -501,7 +682,11 @@ def main(argv: list[str]) -> int:
         runtime_proof_file=_resolve(repo_root, args.runtime_proof_file),
         enforcer_proof_file=_resolve(repo_root, args.enforcer_proof_file),
         ci_workflow_file=_resolve(repo_root, args.ci_workflow_file),
+        topology_model_file=_resolve(repo_root, args.topology_model_file),
+        topology_persistence_file=_resolve(repo_root, args.topology_persistence_file),
+        topology_schema_proof_file=_resolve(repo_root, args.topology_schema_proof_file),
         skip_baseline_git_check=bool(args.skip_baseline_git_check),
+        skip_typed_boundary_execution=bool(args.skip_typed_boundary_execution),
     )
 
     lines = ["b23_p0_semantic_authority_freeze_enforcer"]

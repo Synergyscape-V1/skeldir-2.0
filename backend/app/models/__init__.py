@@ -39,6 +39,7 @@ from app.models.auth_substrate import (
     TenantMembershipRole,
     UserIdentity,
 )
+from app.models.attribution_commerce_identity import AttributionCommerceIdentity
 from app.models.base import Base, TenantMixin
 from app.models.channel_taxonomy import ChannelTaxonomy
 from app.models.compliance_audit_ledger import ComplianceAuditLedger
@@ -77,6 +78,7 @@ __all__ = [
     "AuthAccessTokenDenylist",
     "AuthUserTokenCutoff",
     "AttributionEvent",
+    "AttributionCommerceIdentity",
     "DeadEvent",
     "ComplianceAuditLedger",
     "ChannelTaxonomy",

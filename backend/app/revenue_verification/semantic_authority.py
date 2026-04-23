@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 B23_P0_SEMANTIC_AUTHORITY_VERSION = "b2.3-p0-v1"
@@ -41,6 +41,30 @@ ALLOWED_DELAYED_ARRIVAL_TOPOLOGY = (
 DELAYED_ARRIVAL_POLICY = (
     "match_via_durable_commerce_identity_else_explicit_unmatched_or_unsupported"
 )
+ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE = "attribution_commerce_identities"
+ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS = frozenset(
+    {
+        "tenant_id",
+        "attribution_event_id",
+        "provider",
+        "canonical_commerce_reference",
+        "source",
+        "first_observed_at",
+        "last_observed_at",
+    }
+)
+ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS = frozenset(
+    {
+        "session_id",
+        "user_id",
+        "email",
+        "ip_address",
+        "gclid",
+        "fbclid",
+        "external_user_id",
+        "device_id",
+    }
+)
 
 B23_AMOUNT_BASIS = "verified_captured_amount_minor_units"
 B23_CURRENCY_STANCE = "same_currency_only_cross_currency_unsupported"
@@ -61,6 +85,11 @@ B23_FORBIDDEN_FALSE_AUTHORITIES = frozenset(
         "RevenueReconciliationService",
         "/api/reconciliation/status",
         "/api/reconciliation/platform/{platform_id}",
+        "/api/v1/revenue/realtime",
+        "/api/attribution/revenue/realtime",
+        "build_realtime_revenue_v1_response",
+        "build_attribution_realtime_revenue_response",
+        "get_realtime_revenue_snapshot",
     }
 )
 
@@ -131,6 +160,16 @@ B23_P0_PERFORMANCE_AUTHORITY = B23PerformanceAuthority(
     kernel_1000_orders_max_seconds=5,
     report_1000_orders_max_seconds=10,
 )
+_B23_P0_PERFORMANCE_THRESHOLDS = MappingProxyType(
+    {
+        "kernel_1000_orders_max_seconds": B23_P0_PERFORMANCE_AUTHORITY.kernel_1000_orders_max_seconds,
+        "report_1000_orders_max_seconds": B23_P0_PERFORMANCE_AUTHORITY.report_1000_orders_max_seconds,
+    }
+)
+
+
+def get_b23_p0_performance_thresholds() -> Mapping[str, int]:
+    return _B23_P0_PERFORMANCE_THRESHOLDS
 
 B23_DOWNSTREAM_VERDICT_MAP = MappingProxyType(
     {
@@ -170,12 +209,22 @@ class SharedIdentityModel(BaseModel):
     supported_decorated_variants: list[str]
 
 
+class DelayedArrivalTopologyBindingModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    table: str
+    required_columns: list[str]
+    forbidden_columns: list[str]
+    requires_rls: bool
+
+
 class DelayedArrivalModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     forbidden_mechanisms: list[str]
     allowed_topology: str
     delayed_arrival_policy: str
+    topology_schema_binding: DelayedArrivalTopologyBindingModel
 
 
 class FinancialTruthModel(BaseModel):
@@ -192,6 +241,31 @@ class BoundaryModel(BaseModel):
     b23_scope: str
     b23_must_not_allocate_attribution: bool
     downstream_consumers: list[str]
+
+
+class DownstreamMappingModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    strategy: str
+    verdict_map_target: str
+    discrepancy_map_target: str
+    ad_hoc_free_form_translation_forbidden: bool
+    pre_dispatch_validation_required: bool
+
+
+class PerformanceAuthorityModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kernel_1000_orders_max_seconds: int
+    report_1000_orders_max_seconds: int
+
+
+class TypedBoundaryAdjudicationModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    required_enforcer: str
+    required_ci_job: str
+    expected_status: str
 
 
 class B23P0SemanticAuthorityContract(BaseModel):
@@ -211,10 +285,34 @@ class B23P0SemanticAuthorityContract(BaseModel):
     verdict_taxonomy: list[str]
     discrepancy_taxonomy: list[str]
     false_authority_exclusions: list[str]
-    downstream_mapping: dict[str, Any]
-    performance_authority: dict[str, int]
+    downstream_mapping: DownstreamMappingModel
+    performance_authority: PerformanceAuthorityModel
+    typed_boundary_adjudication: TypedBoundaryAdjudicationModel
     required_runtime_proofs: list[str] = Field(default_factory=list)
     required_ci_wiring: list[str] = Field(default_factory=list)
+
+
+class B23DownstreamSemanticProjection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verdict: str
+    discrepancy: str
+
+    @field_validator("verdict")
+    @classmethod
+    def _validate_verdict(cls, value: str) -> str:
+        token = str(value or "").strip()
+        if token not in B23_DOWNSTREAM_VERDICT_MAP.values():
+            raise ValueError("invalid downstream verdict mapping token")
+        return token
+
+    @field_validator("discrepancy")
+    @classmethod
+    def _validate_discrepancy(cls, value: str) -> str:
+        token = str(value or "").strip()
+        if token not in B23_DOWNSTREAM_DISCREPANCY_MAP.values():
+            raise ValueError("invalid downstream discrepancy mapping token")
+        return token
 
 
 def _contract_file_path() -> Path:
@@ -362,6 +460,38 @@ def validate_delayed_arrival_topology(topology: str) -> None:
         )
 
 
+def validate_delayed_arrival_topology_binding(
+    *,
+    table_name: str,
+    columns: set[str],
+    rls_enabled: bool,
+) -> None:
+    normalized_table = str(table_name or "").strip()
+    if normalized_table != ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival topology binding mismatch: "
+            f"expected table {ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE}, observed {normalized_table}"
+        )
+
+    normalized_columns = {str(column).strip() for column in columns if str(column).strip()}
+    missing = ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS - normalized_columns
+    if missing:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival topology binding missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+
+    forbidden = ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS & normalized_columns
+    if forbidden:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival topology binding contains forbidden identity columns: "
+            + ", ".join(sorted(forbidden))
+        )
+
+    if not rls_enabled:
+        raise ValueError("B2.3-P0 delayed-arrival topology binding requires RLS enforcement")
+
+
 def classify_payment_adjustment_support(adjustment_type: str) -> PaymentAdjustmentSupport:
     normalized = str(adjustment_type or "").strip().lower()
     if normalized in UNSUPPORTED_PAYMENT_ADJUSTMENTS:
@@ -394,6 +524,25 @@ def map_b23_discrepancy_for_downstream(discrepancy: B23DiscrepancyClass) -> str:
     return B23_DOWNSTREAM_DISCREPANCY_MAP[discrepancy]
 
 
+def build_validated_downstream_projection(
+    *,
+    verdict: B23Verdict,
+    discrepancy: B23DiscrepancyClass,
+) -> B23DownstreamSemanticProjection:
+    return B23DownstreamSemanticProjection.model_validate(
+        {
+            "verdict": map_b23_verdict_for_downstream(verdict),
+            "discrepancy": map_b23_discrepancy_for_downstream(discrepancy),
+        }
+    )
+
+
+def validate_downstream_projection_payload(
+    payload: Mapping[str, Any],
+) -> B23DownstreamSemanticProjection:
+    return B23DownstreamSemanticProjection.model_validate(dict(payload))
+
+
 def load_b23_p0_semantic_authority_contract(
     contract_path: Path | None = None,
 ) -> B23P0SemanticAuthorityContract:
@@ -421,4 +570,35 @@ def load_b23_p0_semantic_authority_contract(
         raise ValueError("B2.3-P0 amount basis drift detected")
     if contract.financial_truth_semantics.currency_stance != B23_CURRENCY_STANCE:
         raise ValueError("B2.3-P0 currency stance drift detected")
+    topology_binding = contract.privacy_safe_delayed_arrival.topology_schema_binding
+    if topology_binding.table != ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE:
+        raise ValueError("B2.3-P0 delayed-arrival topology table drift detected")
+    if set(topology_binding.required_columns) != ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS:
+        raise ValueError("B2.3-P0 delayed-arrival topology required-column drift detected")
+    if set(topology_binding.forbidden_columns) != ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS:
+        raise ValueError("B2.3-P0 delayed-arrival topology forbidden-column drift detected")
+    if topology_binding.requires_rls is not True:
+        raise ValueError("B2.3-P0 delayed-arrival topology must require RLS")
+    if set(contract.false_authority_exclusions) != B23_FORBIDDEN_FALSE_AUTHORITIES:
+        raise ValueError("B2.3-P0 false-authority exclusion drift detected")
+    if contract.downstream_mapping.strategy != "typed_deterministic_mapping_only":
+        raise ValueError("B2.3-P0 downstream mapping strategy drift detected")
+    if contract.downstream_mapping.ad_hoc_free_form_translation_forbidden is not True:
+        raise ValueError("B2.3-P0 downstream mapping free-form prohibition drift detected")
+    if contract.downstream_mapping.pre_dispatch_validation_required is not True:
+        raise ValueError("B2.3-P0 downstream pre-dispatch validation requirement drift detected")
+    if contract.typed_boundary_adjudication.required_enforcer != (
+        "scripts/ci/enforce_b15_p4_mock_sdk_boundary.py"
+    ):
+        raise ValueError("B2.3-P0 typed-boundary enforcer authority drift detected")
+    if contract.typed_boundary_adjudication.required_ci_job != "b15-p4-mock-sdk-typed-boundary":
+        raise ValueError("B2.3-P0 typed-boundary CI job authority drift detected")
+    if contract.typed_boundary_adjudication.expected_status != "mainline_clean_no_live_conflict":
+        raise ValueError("B2.3-P0 typed-boundary status expectation drift detected")
+    contract_thresholds = {
+        "kernel_1000_orders_max_seconds": contract.performance_authority.kernel_1000_orders_max_seconds,
+        "report_1000_orders_max_seconds": contract.performance_authority.report_1000_orders_max_seconds,
+    }
+    if contract_thresholds != dict(_B23_P0_PERFORMANCE_THRESHOLDS):
+        raise ValueError("B2.3-P0 performance threshold drift detected")
     return contract
