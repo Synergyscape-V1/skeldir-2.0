@@ -902,6 +902,29 @@ ALTER TABLE ONLY public.attribution_allocations FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: attribution_commerce_identities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.attribution_commerce_identities (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    attribution_event_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    canonical_commerce_reference character varying(255) NOT NULL,
+    source character varying(64) DEFAULT 'ingestion_runtime'::character varying NOT NULL,
+    first_observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_attr_commerce_identity_observed_time_order CHECK ((last_observed_at >= first_observed_at)),
+    CONSTRAINT ck_attr_commerce_identity_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
+    CONSTRAINT ck_attr_commerce_identity_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0))
+);
+
+ALTER TABLE ONLY public.attribution_commerce_identities FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: attribution_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2419,6 +2442,14 @@ ALTER TABLE ONLY public.attribution_allocations
 
 
 --
+-- Name: attribution_commerce_identities attribution_commerce_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribution_commerce_identities
+    ADD CONSTRAINT attribution_commerce_identities_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: attribution_events attribution_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2899,6 +2930,22 @@ ALTER TABLE ONLY public.tenants
 
 
 --
+-- Name: attribution_commerce_identities uq_attr_commerce_identity_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribution_commerce_identities
+    ADD CONSTRAINT uq_attr_commerce_identity_tenant_event UNIQUE (tenant_id, attribution_event_id);
+
+
+--
+-- Name: attribution_commerce_identities uq_attr_commerce_identity_tenant_provider_reference; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribution_commerce_identities
+    ADD CONSTRAINT uq_attr_commerce_identity_tenant_provider_reference UNIQUE (tenant_id, provider, canonical_commerce_reference);
+
+
+--
 -- Name: attribution_events uq_attribution_events_tenant_idempotency_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3094,6 +3141,20 @@ CREATE INDEX idx_allocations_channel_performance ON public.attribution_allocatio
 --
 
 CREATE INDEX idx_allocations_tenant_projection_channel ON public.attribution_allocations USING btree (tenant_id, recompute_job_id, model_type, channel_code);
+
+
+--
+-- Name: idx_attr_commerce_identity_tenant_last_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attr_commerce_identity_tenant_last_observed ON public.attribution_commerce_identities USING btree (tenant_id, last_observed_at DESC);
+
+
+--
+-- Name: idx_attr_commerce_identity_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attr_commerce_identity_tenant_provider_reference ON public.attribution_commerce_identities USING btree (tenant_id, provider, canonical_commerce_reference);
 
 
 --
@@ -4127,6 +4188,22 @@ ALTER TABLE ONLY public.attribution_allocations
 
 
 --
+-- Name: attribution_commerce_identities attribution_commerce_identities_attribution_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribution_commerce_identities
+    ADD CONSTRAINT attribution_commerce_identities_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
+
+
+--
+-- Name: attribution_commerce_identities attribution_commerce_identities_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribution_commerce_identities
+    ADD CONSTRAINT attribution_commerce_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: attribution_events attribution_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4629,6 +4706,12 @@ ALTER TABLE ONLY public.worker_side_effects
 ALTER TABLE public.attribution_allocations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: attribution_commerce_identities; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.attribution_commerce_identities ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: attribution_events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -5121,6 +5204,13 @@ CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user U
 --
 
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+
+--
+-- Name: attribution_commerce_identities tenant_isolation_policy_attribution_commerce_identities; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_attribution_commerce_identities ON public.attribution_commerce_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 
 --

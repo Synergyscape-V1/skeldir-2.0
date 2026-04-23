@@ -27,6 +27,7 @@ from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
 from app.models import AttributionEvent, DeadEvent, RawEventPayload, WebhookIngressIdentity
 from app.observability.context import log_context
 from app.privacy.authority import minimize_event_payload_for_storage
+from app.privacy.durable_commerce_identity import upsert_durable_commerce_identity_link
 from app.privacy.ephemeral_resolution import (
     resolve_session_candidate_with_ephemeral_substrate,
     upsert_ephemeral_resolution_links,
@@ -481,6 +482,18 @@ def _is_missing_webhook_identity_relation_error(error: ProgrammingError) -> bool
     )
 
 
+def _is_missing_attribution_commerce_identity_relation_error(error: ProgrammingError) -> bool:
+    sqlstate = _programming_error_sqlstate(error)
+    lowered = str(error).lower()
+    if sqlstate == "42P01":
+        return "attribution_commerce_identities" in lowered
+    return (
+        "relation" in lowered
+        and "does not exist" in lowered
+        and "attribution_commerce_identities" in lowered
+    )
+
+
 class EventIngestionService:
     """
     Core service for idempotent webhook event ingestion.
@@ -552,6 +565,12 @@ class EventIngestionService:
             event_data=ingestion_event_data,
             identity_payload=identity_payload,
         )
+        commerce_identity_provider = _first_non_empty_resolution_token(
+            ingestion_event_data.get("provider"),
+            ingestion_event_data.get("vendor"),
+            identity_payload.get("provider"),
+            source,
+        ) or "unknown"
         click_resolution_key = _extract_click_resolution_key(
             event_data=ingestion_event_data,
             identity_payload=identity_payload,
@@ -689,6 +708,16 @@ class EventIngestionService:
             if webhook_ingress_identity is not None:
                 session.add(webhook_ingress_identity)
             await session.flush()  # Trigger constraint validation before commit
+            if order_resolution_key is not None:
+                await upsert_durable_commerce_identity_link(
+                    session=session,
+                    tenant_id=tenant_id,
+                    attribution_event_id=event.id,
+                    provider=commerce_identity_provider,
+                    canonical_commerce_reference=order_resolution_key,
+                    source=source,
+                    observed_at=validated["event_timestamp"],
+                )
 
             logger.info(
                 "event_ingested",
@@ -781,6 +810,12 @@ class EventIngestionService:
                 raise AuthoritativeIngressInvariantError(
                     "Canonical webhook identity substrate is unavailable for authoritative ingress "
                     f"(source={source}, tenant_id={tenant_id}, idempotency_key={idempotency_key})."
+                ) from e
+            if _is_missing_attribution_commerce_identity_relation_error(e):
+                raise AuthoritativeIngressInvariantError(
+                    "B2.3-P0 delayed-arrival commerce identity substrate is unavailable for "
+                    f"authoritative ingestion (source={source}, tenant_id={tenant_id}, "
+                    f"idempotency_key={idempotency_key})."
                 ) from e
             raise
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from app.revenue_verification.semantic_authority import (
+    ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS,
+    ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS,
     ALLOWED_DELAYED_ARRIVAL_TOPOLOGY,
+    ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE,
     B23_AMOUNT_BASIS,
     B23_CURRENCY_STANCE,
     B23DiscrepancyClass,
@@ -12,15 +15,19 @@ from app.revenue_verification.semantic_authority import (
     PaymentAdjustmentSupport,
     assert_b23_authority_source,
     assert_b23_boundary_not_allocation,
+    build_validated_downstream_projection,
     canonicalize_attribution_commerce_reference,
     canonicalize_verified_commerce_reference,
     classify_payment_adjustment_support,
+    get_b23_p0_performance_thresholds,
     load_b23_p0_semantic_authority_contract,
     map_b23_discrepancy_for_downstream,
     map_b23_verdict_for_downstream,
     resolve_canonical_match_key,
+    validate_delayed_arrival_topology_binding,
     validate_delayed_arrival_strategy,
     validate_delayed_arrival_topology,
+    validate_downstream_projection_payload,
 )
 
 
@@ -100,6 +107,59 @@ def test_b23_p0_only_allowed_delayed_arrival_topology_is_accepted() -> None:
         raise AssertionError("expected topology validation to fail for unsupported topology")
 
 
+def test_b23_p0_delayed_arrival_topology_binding_is_schema_anchored() -> None:
+    validate_delayed_arrival_topology_binding(
+        table_name=ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE,
+        columns=set(ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS) | {"id", "created_at", "updated_at"},
+        rls_enabled=True,
+    )
+    try:
+        validate_delayed_arrival_topology_binding(
+            table_name="ephemeral_order_resolution",
+            columns=set(ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS),
+            rls_enabled=True,
+        )
+    except ValueError as exc:
+        assert ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE in str(exc)
+    else:
+        raise AssertionError("expected topology binding mismatch for wrong table")
+
+    missing_columns = set(ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS)
+    missing_columns.remove("provider")
+    try:
+        validate_delayed_arrival_topology_binding(
+            table_name=ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE,
+            columns=missing_columns,
+            rls_enabled=True,
+        )
+    except ValueError as exc:
+        assert "provider" in str(exc)
+    else:
+        raise AssertionError("expected topology binding failure when required columns are missing")
+
+    try:
+        validate_delayed_arrival_topology_binding(
+            table_name=ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE,
+            columns=set(ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS) | {"session_id"},
+            rls_enabled=True,
+        )
+    except ValueError as exc:
+        assert "session_id" in str(exc)
+    else:
+        raise AssertionError("expected topology binding failure when forbidden columns are present")
+
+    try:
+        validate_delayed_arrival_topology_binding(
+            table_name=ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE,
+            columns=set(ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS),
+            rls_enabled=False,
+        )
+    except ValueError as exc:
+        assert "requires RLS" in str(exc)
+    else:
+        raise AssertionError("expected topology binding failure when RLS is disabled")
+
+
 def test_b23_p0_amount_currency_and_adjustment_stance_is_frozen() -> None:
     assert B23_AMOUNT_BASIS == "verified_captured_amount_minor_units"
     assert B23_CURRENCY_STANCE == "same_currency_only_cross_currency_unsupported"
@@ -132,6 +192,22 @@ def test_b23_p0_false_authority_sources_are_rejected() -> None:
             raise AssertionError(f"expected false-authority rejection for source={source}")
 
 
+def test_b23_p0_b06_false_authority_surfaces_are_rejected() -> None:
+    for source in (
+        "/api/v1/revenue/realtime",
+        "/api/attribution/revenue/realtime",
+        "build_realtime_revenue_v1_response",
+        "build_attribution_realtime_revenue_response",
+        "get_realtime_revenue_snapshot",
+    ):
+        try:
+            assert_b23_authority_source(source)
+        except ValueError as exc:
+            assert source in str(exc)
+        else:
+            raise AssertionError(f"expected B0.6 false-authority rejection for source={source}")
+
+
 def test_b23_p0_downstream_mapping_is_typed_and_deterministic() -> None:
     assert map_b23_verdict_for_downstream(B23Verdict.MATCHED) == "b23.verdict.matched"
     assert map_b23_verdict_for_downstream(B23Verdict.CANONICALIZATION_FAILED) == (
@@ -145,6 +221,48 @@ def test_b23_p0_downstream_mapping_is_typed_and_deterministic() -> None:
     )
 
 
+def test_b23_p0_downstream_mapping_payload_requires_pre_dispatch_validation() -> None:
+    projection = build_validated_downstream_projection(
+        verdict=B23Verdict.MATCHED,
+        discrepancy=B23DiscrepancyClass.EXACT,
+    )
+    assert projection.verdict == "b23.verdict.matched"
+    assert projection.discrepancy == "b23.discrepancy.exact"
+    validated = validate_downstream_projection_payload(
+        {"verdict": projection.verdict, "discrepancy": projection.discrepancy}
+    )
+    assert validated.verdict == projection.verdict
+    assert validated.discrepancy == projection.discrepancy
+    try:
+        validate_downstream_projection_payload(
+            {"verdict": "free_form_value", "discrepancy": "b23.discrepancy.exact"}
+        )
+    except Exception as exc:  # pydantic ValidationError
+        assert "invalid downstream verdict mapping token" in str(exc)
+    else:
+        raise AssertionError("expected pre-dispatch validation failure for free-form verdict mapping")
+
+
 def test_b23_p0_performance_authority_is_explicit() -> None:
     assert B23_P0_PERFORMANCE_AUTHORITY.kernel_1000_orders_max_seconds == 5
     assert B23_P0_PERFORMANCE_AUTHORITY.report_1000_orders_max_seconds == 10
+
+
+def test_b23_p0_performance_thresholds_are_contract_aligned() -> None:
+    contract = load_b23_p0_semantic_authority_contract()
+    runtime_thresholds = get_b23_p0_performance_thresholds()
+    assert contract.performance_authority.kernel_1000_orders_max_seconds == runtime_thresholds[
+        "kernel_1000_orders_max_seconds"
+    ]
+    assert contract.performance_authority.report_1000_orders_max_seconds == runtime_thresholds[
+        "report_1000_orders_max_seconds"
+    ]
+    assert runtime_thresholds["kernel_1000_orders_max_seconds"] == (
+        B23_P0_PERFORMANCE_AUTHORITY.kernel_1000_orders_max_seconds
+    )
+    assert runtime_thresholds["report_1000_orders_max_seconds"] == (
+        B23_P0_PERFORMANCE_AUTHORITY.report_1000_orders_max_seconds
+    )
+    assert ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS == set(
+        contract.privacy_safe_delayed_arrival.topology_schema_binding.forbidden_columns
+    )

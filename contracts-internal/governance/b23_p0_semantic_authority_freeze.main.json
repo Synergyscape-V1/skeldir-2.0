@@ -1,6 +1,6 @@
 {
   "contract_id": "b23.p0.semantic_authority_freeze.main",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.3-P0",
@@ -34,7 +34,30 @@
       "privacy_ambiguous_shadow_identity_graph"
     ],
     "allowed_topology": "durable_tenant_scoped_non_pii_commerce_identity_substrate",
-    "delayed_arrival_policy": "match_via_durable_commerce_identity_else_explicit_unmatched_or_unsupported"
+    "delayed_arrival_policy": "match_via_durable_commerce_identity_else_explicit_unmatched_or_unsupported",
+    "topology_schema_binding": {
+      "table": "attribution_commerce_identities",
+      "required_columns": [
+        "tenant_id",
+        "attribution_event_id",
+        "provider",
+        "canonical_commerce_reference",
+        "source",
+        "first_observed_at",
+        "last_observed_at"
+      ],
+      "forbidden_columns": [
+        "session_id",
+        "user_id",
+        "email",
+        "ip_address",
+        "gclid",
+        "fbclid",
+        "external_user_id",
+        "device_id"
+      ],
+      "requires_rls": true
+    }
   },
   "financial_truth_semantics": {
     "amount_basis": "verified_captured_amount_minor_units",
@@ -71,33 +94,49 @@
     "identity_failure"
   ],
   "false_authority_exclusions": [
-    "revenue_ledger.state",
-    "revenue_ledger.discrepancy_bps",
-    "reconciliation_runs.state",
-    "RevenueReconciliationService",
+    "/api/attribution/revenue/realtime",
+    "/api/reconciliation/platform/{platform_id}",
     "/api/reconciliation/status",
-    "/api/reconciliation/platform/{platform_id}"
+    "/api/v1/revenue/realtime",
+    "RevenueReconciliationService",
+    "build_attribution_realtime_revenue_response",
+    "build_realtime_revenue_v1_response",
+    "get_realtime_revenue_snapshot",
+    "reconciliation_runs.state",
+    "revenue_ledger.discrepancy_bps",
+    "revenue_ledger.state"
   ],
   "downstream_mapping": {
     "strategy": "typed_deterministic_mapping_only",
     "verdict_map_target": "b23.verdict.*",
     "discrepancy_map_target": "b23.discrepancy.*",
-    "ad_hoc_free_form_translation_forbidden": true
+    "ad_hoc_free_form_translation_forbidden": true,
+    "pre_dispatch_validation_required": true
   },
   "performance_authority": {
     "kernel_1000_orders_max_seconds": 5,
     "report_1000_orders_max_seconds": 10
   },
   "required_runtime_proofs": [
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_b06_false_authority_surfaces_are_rejected",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_contract_load_is_authoritative",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_delayed_arrival_topology_binding_is_schema_anchored",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_downstream_mapping_payload_requires_pre_dispatch_validation",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_dual_sided_canonicalization_converges_decorated_variants",
-    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_precedence_order_is_deterministic",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_false_authority_sources_are_rejected",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_illegal_delayed_arrival_strategies_fail_closed",
-    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_false_authority_sources_are_rejected"
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_performance_thresholds_are_contract_aligned",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_precedence_order_is_deterministic"
   ],
   "required_ci_wiring": [
-    "python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py",
+    "pytest backend/tests/test_b23_p0_semantic_authority.py -q",
     "pytest backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py -q",
-    "pytest backend/tests/test_b23_p0_semantic_authority.py -q"
-  ]
+    "python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py",
+    "python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py"
+  ],
+  "typed_boundary_adjudication": {
+    "required_enforcer": "scripts/ci/enforce_b15_p4_mock_sdk_boundary.py",
+    "required_ci_job": "b15-p4-mock-sdk-typed-boundary",
+    "expected_status": "mainline_clean_no_live_conflict"
+  }
 }

@@ -24,6 +24,15 @@ ENFORCER_PROOF_FILE = (
     REPO_ROOT / "backend" / "tests" / "test_b23_p0_semantic_authority_freeze_enforcer.py"
 )
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+TOPOLOGY_MODEL_FILE = REPO_ROOT / "backend" / "app" / "models" / "attribution_commerce_identity.py"
+TOPOLOGY_PERSISTENCE_FILE = REPO_ROOT / "backend" / "app" / "privacy" / "durable_commerce_identity.py"
+TOPOLOGY_SCHEMA_PROOF_FILE = (
+    REPO_ROOT
+    / "alembic"
+    / "versions"
+    / "007_skeldir_foundation"
+    / "202604231130_b23_p0_durable_commerce_identity_substrate.py"
+)
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -45,6 +54,9 @@ def test_b23_p0_semantic_authority_freeze_enforcer_passes_repo_state() -> None:
         runtime_proof_file=RUNTIME_PROOF_FILE,
         enforcer_proof_file=ENFORCER_PROOF_FILE,
         ci_workflow_file=CI_WORKFLOW,
+        topology_model_file=TOPOLOGY_MODEL_FILE,
+        topology_persistence_file=TOPOLOGY_PERSISTENCE_FILE,
+        topology_schema_proof_file=TOPOLOGY_SCHEMA_PROOF_FILE,
     )
     assert status == 0, f"unexpected B2.3-P0 enforcement violations: {violations}"
 
@@ -118,3 +130,62 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_dual_side_di
             proc.stdout + proc.stderr
         )
     )
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_topology_contract_mismatch(
+    tmp_path: Path,
+) -> None:
+    payload = json.loads(GOVERNANCE_CONTRACT.read_text(encoding="utf-8"))
+    payload["privacy_safe_delayed_arrival"]["topology_schema_binding"]["table"] = "shadow_identity_graph"
+    mutated = tmp_path / "b23_p0.contract.topology_mismatch.json"
+    mutated.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    proc = _run("--governance-contract-file", str(mutated))
+    assert proc.returncode != 0
+    assert "contract_topology_table_mismatch" in (proc.stdout + proc.stderr)
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_topology_schema_absent(
+    tmp_path: Path,
+) -> None:
+    mutated_schema = tmp_path / "topology_schema.regression.py"
+    mutated_schema.write_text(
+        TOPOLOGY_SCHEMA_PROOF_FILE.read_text(encoding="utf-8").replace(
+            "CREATE TABLE public.attribution_commerce_identities",
+            "CREATE TABLE public.attribution_commerce_identities_shadow",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--topology-schema-proof-file", str(mutated_schema))
+    assert proc.returncode != 0
+    assert "topology_schema_missing_token:CREATE TABLE public.attribution_commerce_identities (" in (
+        proc.stdout + proc.stderr
+    )
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_failure(
+    tmp_path: Path,
+) -> None:
+    payload = json.loads(GOVERNANCE_CONTRACT.read_text(encoding="utf-8"))
+    payload["typed_boundary_adjudication"]["required_enforcer"] = "scripts/ci/does_not_exist.py"
+    mutated = tmp_path / "b23_p0.contract.typed_boundary_mismatch.json"
+    mutated.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    proc = _run("--governance-contract-file", str(mutated))
+    assert proc.returncode != 0
+    assert "typed_boundary_conflict_live_or_unadjudicated" in (proc.stdout + proc.stderr)
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_threshold_drift(
+    tmp_path: Path,
+) -> None:
+    payload = json.loads(GOVERNANCE_CONTRACT.read_text(encoding="utf-8"))
+    payload["performance_authority"]["kernel_1000_orders_max_seconds"] = 9
+    mutated = tmp_path / "b23_p0.contract.threshold_drift.json"
+    mutated.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    proc = _run("--governance-contract-file", str(mutated))
+    assert proc.returncode != 0
+    assert "contract_performance_kernel_threshold_mismatch" in (proc.stdout + proc.stderr)
