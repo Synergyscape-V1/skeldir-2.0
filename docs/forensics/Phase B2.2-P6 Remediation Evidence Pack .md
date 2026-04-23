@@ -115,17 +115,35 @@ Result: **pass (local authoritative proof run complete)**
 
 ## 5. Exit Gate Status
 
-1. Exit Gate 1 - Merge-Blocking Closure Gate: **Implemented in code; pending live main verification**
-2. Exit Gate 2 - End-to-End Truth-Ingress Gate: **Implemented in code; pending live main verification**
-3. Exit Gate 3 - Downstream Readiness Gate: **Implemented in code; pending live main verification**
-4. Exit Gate 4 - Non-Regression Gate: **Pending live main verification**
-5. Exit Gate 5 - Governance Truthfulness Gate: **Implemented in code; pending live main verification**
+1. Exit Gate 1 - Merge-Blocking Closure Gate: **pass**
+2. Exit Gate 2 - End-to-End Truth-Ingress Gate: **pass**
+3. Exit Gate 3 - Downstream Readiness Gate: **pass**
+4. Exit Gate 4 - Non-Regression Gate: **pass**
+5. Exit Gate 5 - Governance Truthfulness Gate: **pass**
+
+Gate evidence:
+- PR required checks run (`24829758748`) passed, including:
+  - `Contract Semantic Drift Gate` (success),
+  - `B2.2-P5 Webhook Latency Adjudication` (success),
+  - `B2.2-P6 Merge-Blocking Closure + Downstream Readiness` (success),
+  - all other required contexts for protected `main`.
+- `B2.2-P6 Merge-Blocking Closure + Downstream Readiness` job step evidence confirms:
+  - closure enforcer pass,
+  - truth-ingress suite pass,
+  - B2.3 readiness/no-reconciliation suite pass.
 
 ## 6. Mainline Landing Evidence
 
-Status: **pending**
+Status: **complete**
 
-- PR: pending
-- Merge commit on `main`: pending
-- Required checks update on protected branch: pending
-- Post-merge `main` CI run: pending
+- PR: `#376` — https://github.com/Synergyscape-V1/skeldir-2.0/pull/376
+- Merge commit on `main`: `cade89d6e9270201c6131bfeef4d4dcd35c0f354`
+- Protected branch required-check contexts (live API) include:
+  - `B2.2-P5 Webhook Latency Adjudication`
+  - `B2.2-P6 Merge-Blocking Closure + Downstream Readiness`
+- Post-merge `main` CI run:
+  - run id `24830382147`
+  - URL: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/24830382147
+  - status: `completed`
+  - conclusion: `success`
+  - head SHA: `cade89d6e9270201c6131bfeef4d4dcd35c0f354`
