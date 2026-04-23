@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -61,25 +62,122 @@ def _git_try_fetch_main(repo_root: Path) -> None:
     )
 
 
-def _validate_baseline_ancestry(repo_root: Path, violations: list[str]) -> None:
-    refs_to_try = ("origin/main", "main")
-    if not any(_git_ref_exists(repo_root, ref) for ref in refs_to_try):
-        _git_try_fetch_main(repo_root)
+def _git_try_fetch_ref(repo_root: Path, ref: str) -> None:
+    subprocess.run(
+        ["git", "fetch", "--quiet", "origin", ref, "--depth=1"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
+
+def _git_is_shallow_repository(repo_root: Path) -> bool:
+    proc = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return proc.returncode == 0 and proc.stdout.strip() == "true"
+
+
+def _git_try_unshallow(repo_root: Path) -> None:
+    proc = subprocess.run(
+        ["git", "fetch", "--quiet", "--unshallow", "origin"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode == 0:
+        return
+    subprocess.run(
+        ["git", "fetch", "--quiet", "--deepen=500", "origin", "main"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _git_is_ancestor(repo_root: Path, ancestor: str, descendant: str = "HEAD") -> bool:
+    proc = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def _read_pull_request_base_sha() -> str | None:
+    event_path = os.getenv("GITHUB_EVENT_PATH")
+    if not event_path:
+        return None
+    try:
+        payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    pull_request = payload.get("pull_request")
+    if not isinstance(pull_request, dict):
+        return None
+    base = pull_request.get("base")
+    if not isinstance(base, dict):
+        return None
+    sha = base.get("sha")
+    if isinstance(sha, str) and sha.strip():
+        return sha.strip()
+    return None
+
+
+def _main_ref_ancestor_check(repo_root: Path, refs_to_try: tuple[str, ...]) -> tuple[bool, bool]:
     seen_ref = False
     for ref in refs_to_try:
         if not _git_ref_exists(repo_root, ref):
             continue
         seen_ref = True
-        proc = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", ref, "HEAD"],
-            cwd=repo_root,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if proc.returncode == 0:
+        if _git_is_ancestor(repo_root, ref):
+            return True, True
+    return False, seen_ref
+
+
+def _validate_baseline_ancestry(repo_root: Path, violations: list[str]) -> None:
+    pr_base_sha = _read_pull_request_base_sha()
+    if pr_base_sha:
+        if not _git_ref_exists(repo_root, pr_base_sha):
+            _git_try_fetch_ref(repo_root, pr_base_sha)
+        if _git_is_ancestor(repo_root, pr_base_sha):
             return
+        if _git_is_shallow_repository(repo_root):
+            _git_try_unshallow(repo_root)
+            if not _git_ref_exists(repo_root, pr_base_sha):
+                _git_try_fetch_ref(repo_root, pr_base_sha)
+            if _git_is_ancestor(repo_root, pr_base_sha):
+                return
+        violations.append("baseline_authority_main_ancestor_check_failed")
+        return
+
+    refs_to_try = ("origin/main", "main")
+    if not any(_git_ref_exists(repo_root, ref) for ref in refs_to_try):
+        _git_try_fetch_main(repo_root)
+
+    matched, seen_ref = _main_ref_ancestor_check(repo_root, refs_to_try)
+    if matched:
+        return
+
+    if seen_ref and _git_is_shallow_repository(repo_root):
+        _git_try_unshallow(repo_root)
+        if not any(_git_ref_exists(repo_root, ref) for ref in refs_to_try):
+            _git_try_fetch_main(repo_root)
+        matched, seen_ref = _main_ref_ancestor_check(repo_root, refs_to_try)
+        if matched:
+            return
+
     if seen_ref:
         violations.append("baseline_authority_main_ancestor_check_failed")
     else:
