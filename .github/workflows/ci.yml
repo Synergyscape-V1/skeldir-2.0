@@ -831,6 +831,104 @@ jobs:
           path: artifacts/b22_p5_benchmark
           if-no-files-found: error
 
+  b22-p6-merge-blocking-closure-readiness:
+    name: B2.2-P6 Merge-Blocking Closure + Downstream Readiness
+    runs-on: ubuntu-latest
+    needs: [checkout, validate-contracts, contract-semantic-drift-gate, b22-p5-webhook-latency-adjudication]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b22_p6
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p6
+      EXPECTED_RUNTIME_DB_USER: app_user
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+      TESTING: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      CONTRACT_TESTING: "0"
+      CI: "true"
+      SKELDIR_B22_P6_REQUIRE_DB_PROOFS: "1"
+    steps:
+      - name: Enforce prerequisite adjudication success
+        env:
+          CHECKOUT_RESULT: ${{ needs.checkout.result }}
+          VALIDATE_CONTRACTS_RESULT: ${{ needs.validate-contracts.result }}
+          CONTRACT_SEMANTIC_DRIFT_RESULT: ${{ needs.contract-semantic-drift-gate.result }}
+          B22_P5_RESULT: ${{ needs.b22-p5-webhook-latency-adjudication.result }}
+        run: |
+          test "$CHECKOUT_RESULT" = "success"
+          test "$VALIDATE_CONTRACTS_RESULT" = "success"
+          test "$CONTRACT_SEMANTIC_DRIFT_RESULT" = "success"
+          test "$B22_P5_RESULT" = "success"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.2-P6 runtime closure boundary
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
+            --database-name "skeldir_b22_p6" \
+            --runtime-user "app_user" \
+            --runtime-password "app_user" \
+            --migration-user "migration_owner" \
+            --migration-password "migration_owner" \
+            --app-rw-role "app_rw" \
+            --app-ro-role "app_ro"
+
+      - name: Apply migrations using formal migration authority
+        env:
+          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p6
+          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p6
+        run: |
+          alembic upgrade head
+
+      - name: Enforce migration metadata least privilege boundary
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d skeldir_b22_p6 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
+
+      - name: Enforce B2.2-P6 merge-blocking closure and downstream-readiness lock
+        run: |
+          python scripts/ci/enforce_b22_p6_merge_blocking_closure.py
+
+      - name: Run B2.2-P6 closure enforcer negative controls
+        run: |
+          pytest backend/tests/test_b22_p6_merge_blocking_closure_enforcer.py -q
+
+      - name: Run B2.2-P6 end-to-end provider truth-ingress proofs
+        run: |
+          pytest backend/tests/integration/test_b22_p6_end_to_end_truth_ingress.py -q
+
+      - name: Run B2.2-P6 downstream readiness and no-reconciliation proofs
+        run: |
+          pytest backend/tests/integration/test_b22_p6_b23_downstream_readiness.py -q
+
   b21-p5-non-vacuous-proof-harness:
     name: B2.1-P5 Non-Vacuous Proof Harness + Merge-Blocking Adjudication
     runs-on: ubuntu-latest
