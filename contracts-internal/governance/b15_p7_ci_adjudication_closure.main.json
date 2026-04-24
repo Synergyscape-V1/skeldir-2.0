@@ -43,7 +43,11 @@
     "required_commands": [
       "python scripts/ci/b15_p7_phase_closure_gate.py",
       "--mode technical",
-      "--status-file docs/forensics/evidence/b15_p7/mental_model_study/status.json"
+      "--status-file docs/forensics/evidence/b15_p7/mental_model_study/status.json",
+      "Guard Neon control-plane secrets (fail closed when missing)",
+      "Missing required Neon control-plane values for governed production deploy.",
+      "missing_extension:pg_cron",
+      "missing_cron_job:b23_p0_prune_attribution_commerce_identities_hourly"
     ]
   },
   "mental_model_study": {

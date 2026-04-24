@@ -4,12 +4,41 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 INDEX_PATH = Path("docs/forensics/INDEX.md")
 EVIDENCE_ROOT = Path("docs/forensics")
 PLACEHOLDER_TOKENS = ("pending", "local-uncommitted", "ci-pending")
 B057_PHASE_TAG = "B0.5.7"
+GIT_FETCH_ATTEMPTS = 4
+GIT_FETCH_BACKOFF_SECONDS = 2.0
+
+
+def fetch_base_ref(base_ref: str) -> None:
+    last_error: subprocess.CalledProcessError | None = None
+    for attempt in range(1, GIT_FETCH_ATTEMPTS + 1):
+        try:
+            subprocess.run(
+                ["git", "fetch", "origin", base_ref, "--depth=1"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return
+        except subprocess.CalledProcessError as error:
+            last_error = error
+            if attempt == GIT_FETCH_ATTEMPTS:
+                break
+            sleep_seconds = GIT_FETCH_BACKOFF_SECONDS * attempt
+            print(
+                f"git fetch origin {base_ref} failed on attempt {attempt}/"
+                f"{GIT_FETCH_ATTEMPTS}; retrying in {sleep_seconds:.1f}s",
+                file=sys.stderr,
+            )
+            time.sleep(sleep_seconds)
+    if last_error is not None:
+        raise last_error
 
 
 def git_diff(base_ref: str | None, path: str | None = None) -> list[str]:
@@ -17,7 +46,7 @@ def git_diff(base_ref: str | None, path: str | None = None) -> list[str]:
     if path:
         diff_args = ["--", path]
     if base_ref:
-        subprocess.run(["git", "fetch", "origin", base_ref, "--depth=1"], check=True)
+        fetch_base_ref(base_ref)
         try:
             diff = run_git(
                 ["git", "diff", "--unified=0", f"origin/{base_ref}...HEAD", *diff_args]
@@ -80,7 +109,7 @@ def changed_files() -> list[str]:
     if event == "pull_request":
         base_ref = os.environ.get("GITHUB_BASE_REF")
         if base_ref:
-            subprocess.run(["git", "fetch", "origin", base_ref, "--depth=1"], check=True)
+            fetch_base_ref(base_ref)
             try:
                 diff = run_git(
                     ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"]
