@@ -292,7 +292,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delete integer DEFAULT 1000) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-AS $$
+    AS $$
             DECLARE
                 cutoff timestamptz := now() - interval '90 days';
                 deleted_count integer := 0;
