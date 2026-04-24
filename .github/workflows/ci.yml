@@ -317,6 +317,14 @@ jobs:
         run: |
           pytest backend/tests/test_b22_p5_webhook_benchmark_adjudication_enforcer.py -q
 
+      - name: Enforce B2.3-P0 typed-boundary source alignment
+        run: |
+          python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
+
+      - name: Run B2.3-P0 typed-boundary source alignment negative controls
+        run: |
+          pytest backend/tests/test_b23_p0_typed_boundary_source_alignment_enforcer.py -q
+
       - name: Enforce B2.3-P0 semantic authority freeze
         run: |
           python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py

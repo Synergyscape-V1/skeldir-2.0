@@ -23,10 +23,14 @@ EVENT_SERVICE_FILE = "backend/app/ingestion/event_service.py"
 RUNTIME_PROOF_FILE = "backend/tests/test_b23_p0_semantic_authority.py"
 ENFORCER_PROOF_FILE = "backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py"
 CI_WORKFLOW_FILE = ".github/workflows/ci.yml"
+DEPLOY_WORKFLOW_FILE = ".github/workflows/schema-deploy-production.yml"
 TOPOLOGY_MODEL_FILE = "backend/app/models/attribution_commerce_identity.py"
 TOPOLOGY_PERSISTENCE_FILE = "backend/app/privacy/durable_commerce_identity.py"
 TOPOLOGY_SCHEMA_PROOF_FILE = (
     "alembic/versions/007_skeldir_foundation/202604231130_b23_p0_durable_commerce_identity_substrate.py"
+)
+TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE = (
+    "alembic/versions/007_skeldir_foundation/202604241015_b23_p0_commerce_identity_lifecycle_bounds.py"
 )
 
 
@@ -276,6 +280,31 @@ def _validate_contract(
             if topology_binding.get("requires_rls") is not True:
                 violations.append("contract_topology_requires_rls_mismatch")
 
+        lifecycle_binding = delayed_arrival.get("lifecycle_binding")
+        if not isinstance(lifecycle_binding, dict):
+            violations.append("contract_topology_lifecycle_binding_invalid")
+        else:
+            if int(lifecycle_binding.get("retention_days", -1)) != int(
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS
+            ):
+                violations.append("contract_topology_lifecycle_retention_days_mismatch")
+            if lifecycle_binding.get("db_pruning_mode") != (
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE
+            ):
+                violations.append("contract_topology_lifecycle_mode_mismatch")
+            if lifecycle_binding.get("pruning_function") != (
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION
+            ):
+                violations.append("contract_topology_lifecycle_pruning_function_mismatch")
+            if lifecycle_binding.get("pruning_trigger") != (
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER
+            ):
+                violations.append("contract_topology_lifecycle_pruning_trigger_mismatch")
+            if int(lifecycle_binding.get("prune_batch_size", -1)) != int(
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE
+            ):
+                violations.append("contract_topology_lifecycle_prune_batch_size_mismatch")
+
     financial_truth = contract.get("financial_truth_semantics")
     if not isinstance(financial_truth, dict):
         violations.append("contract_financial_truth_semantics_invalid")
@@ -346,6 +375,18 @@ def _validate_contract(
             violations.append("contract_typed_boundary_enforcer_mismatch")
         if typed_boundary.get("required_ci_job") != "b15-p4-mock-sdk-typed-boundary":
             violations.append("contract_typed_boundary_ci_job_mismatch")
+        if typed_boundary.get("required_route_spec_alignment_enforcer") != (
+            "scripts/ci/enforce_b15_p3_runtime_route_binding.py"
+        ):
+            violations.append("contract_typed_boundary_route_spec_enforcer_mismatch")
+        if typed_boundary.get("required_route_spec_alignment_ci_job") != (
+            "b15-p3-runtime-route-binding"
+        ):
+            violations.append("contract_typed_boundary_route_spec_ci_job_mismatch")
+        if typed_boundary.get("required_native_source_alignment_enforcer") != (
+            "scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py"
+        ):
+            violations.append("contract_typed_boundary_native_source_alignment_enforcer_mismatch")
         if typed_boundary.get("expected_status") != "mainline_clean_no_live_conflict":
             violations.append("contract_typed_boundary_status_mismatch")
 
@@ -358,6 +399,11 @@ def _validate_semantic_authority_file(path: Path, violations: list[str]) -> None
         "FORBIDDEN_DELAYED_ARRIVAL_STRATEGIES = frozenset(",
         "ALLOWED_DELAYED_ARRIVAL_TOPOLOGY = (",
         "ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE = \"attribution_commerce_identities\"",
+        "ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS = 90",
+        "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE = \"database_trigger_pruning\"",
+        "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION = \"fn_b23_p0_prune_attribution_commerce_identities\"",
+        "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER = \"trg_b23_p0_prune_attribution_commerce_identities\"",
+        "ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE = 1000",
         "ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS = frozenset(",
         "ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS = frozenset(",
         "DELAYED_ARRIVAL_POLICY = (",
@@ -374,6 +420,7 @@ def _validate_semantic_authority_file(path: Path, violations: list[str]) -> None
         "def validate_delayed_arrival_strategy(",
         "def validate_delayed_arrival_topology(",
         "def validate_delayed_arrival_topology_binding(",
+        "def validate_delayed_arrival_lifecycle_binding(",
         "def assert_b23_boundary_not_allocation(",
         "def assert_b23_authority_source(",
         "def map_b23_verdict_for_downstream(",
@@ -469,6 +516,25 @@ def _validate_topology_schema_file(
             violations.append(f"topology_schema_contains_forbidden_column:{normalized}")
 
 
+def _validate_topology_lifecycle_schema_file(path: Path, violations: list[str]) -> None:
+    text = _read_text(path)
+    required_tokens = (
+        "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(",
+        "RETURNS integer",
+        "interval '90 days'",
+        "LIMIT GREATEST(max_delete, 1)",
+        "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()",
+        "CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities\n",
+        "AFTER INSERT OR UPDATE OF last_observed_at ON public.attribution_commerce_identities",
+        "EXECUTE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()",
+        "SELECT public.fn_b23_p0_prune_attribution_commerce_identities(500000)",
+        "CREATE INDEX IF NOT EXISTS idx_attr_commerce_identity_last_observed",
+    )
+    for token in required_tokens:
+        if token not in text:
+            violations.append(f"topology_lifecycle_schema_missing_token:{token}")
+
+
 def _validate_runtime_proof_file(path: Path, violations: list[str]) -> None:
     text = _read_text(path)
     required_tests = (
@@ -479,6 +545,7 @@ def _validate_runtime_proof_file(path: Path, violations: list[str]) -> None:
         "test_b23_p0_illegal_delayed_arrival_strategies_fail_closed",
         "test_b23_p0_only_allowed_delayed_arrival_topology_is_accepted",
         "test_b23_p0_delayed_arrival_topology_binding_is_schema_anchored",
+        "test_b23_p0_delayed_arrival_lifecycle_binding_is_bounded_and_database_native",
         "test_b23_p0_amount_currency_and_adjustment_stance_is_frozen",
         "test_b23_p0_boundary_law_blocks_allocation_inside_b23",
         "test_b23_p0_false_authority_sources_are_rejected",
@@ -520,6 +587,8 @@ def _validate_ci_workflow(
         "pytest backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py -q",
         "Run B2.3-P0 semantic authority runtime proofs",
         "pytest backend/tests/test_b23_p0_semantic_authority.py -q",
+        "b15-p3-runtime-route-binding:",
+        "python scripts/ci/enforce_b15_p3_runtime_route_binding.py",
         "b15-p4-mock-sdk-typed-boundary:",
         "python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py",
     )
@@ -535,6 +604,23 @@ def _validate_ci_workflow(
         normalized = str(command).strip()
         if normalized and normalized not in text:
             violations.append(f"workflow_missing_contract_ci_wiring_token:{normalized}")
+
+
+def _validate_deploy_workflow(path: Path, violations: list[str]) -> None:
+    text = _read_text(path)
+    required_tokens = (
+        "python scripts/ci/b15_p7_phase_closure_gate.py",
+        "--mode technical",
+        "alembic upgrade head",
+        "Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production",
+        "missing_table:public.attribution_commerce_identities",
+        "missing_index:public.idx_attr_commerce_identity_last_observed",
+        "missing_function:public.fn_b23_p0_prune_attribution_commerce_identities",
+        "missing_trigger:public.trg_b23_p0_prune_attribution_commerce_identities",
+    )
+    for token in required_tokens:
+        if token not in text:
+            violations.append(f"deploy_workflow_missing_token:{token}")
 
 
 def _validate_typed_boundary_adjudication(
@@ -553,6 +639,25 @@ def _validate_typed_boundary_adjudication(
         violations.append("typed_boundary_required_enforcer_missing")
         return
 
+    route_spec_enforcer = str(
+        typed_boundary.get("required_route_spec_alignment_enforcer") or ""
+    ).strip()
+    if not route_spec_enforcer:
+        violations.append("typed_boundary_required_route_spec_enforcer_missing")
+        return
+    native_source_alignment_enforcer = str(
+        typed_boundary.get("required_native_source_alignment_enforcer") or ""
+    ).strip()
+    if not native_source_alignment_enforcer:
+        violations.append("typed_boundary_required_native_source_alignment_enforcer_missing")
+        return
+
+    proc = _run_python_script(repo_root, native_source_alignment_enforcer)
+    if proc.returncode != 0:
+        violations.append("typed_boundary_native_source_alignment_conflict_live_or_unadjudicated")
+    proc = _run_python_script(repo_root, route_spec_enforcer)
+    if proc.returncode != 0:
+        violations.append("typed_boundary_source_alignment_conflict_live_or_unadjudicated")
     proc = _run_python_script(repo_root, enforcer)
     if proc.returncode != 0:
         violations.append("typed_boundary_conflict_live_or_unadjudicated")
@@ -563,9 +668,13 @@ def _validate_enforcer_proof_file(path: Path, violations: list[str]) -> None:
     required_tokens = (
         "test_b23_p0_semantic_authority_freeze_enforcer_passes_repo_state",
         "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_forced_regression",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_runtime_proof_missing",
         "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_topology_contract_mismatch",
         "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_topology_schema_absent",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_schema_absent",
         "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_failure",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_route_spec_alignment_failure",
+        "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_native_source_alignment_failure",
         "test_b23_p0_semantic_authority_freeze_enforcer_negative_control_threshold_drift",
     )
     for token in required_tokens:
@@ -582,9 +691,11 @@ def run_enforcement(
     runtime_proof_file: Path,
     enforcer_proof_file: Path,
     ci_workflow_file: Path,
+    deploy_workflow_file: Path,
     topology_model_file: Path,
     topology_persistence_file: Path,
     topology_schema_proof_file: Path,
+    topology_lifecycle_schema_proof_file: Path,
     skip_baseline_git_check: bool = False,
     skip_typed_boundary_execution: bool = False,
 ) -> tuple[int, list[str]]:
@@ -596,9 +707,11 @@ def run_enforcement(
         runtime_proof_file,
         enforcer_proof_file,
         ci_workflow_file,
+        deploy_workflow_file,
         topology_model_file,
         topology_persistence_file,
         topology_schema_proof_file,
+        topology_lifecycle_schema_proof_file,
     )
     for path in required_files:
         if not path.exists():
@@ -617,6 +730,7 @@ def run_enforcement(
         contract=contract,
         violations=violations,
     )
+    _validate_topology_lifecycle_schema_file(topology_lifecycle_schema_proof_file, violations)
     _validate_event_service_file(event_service_file, violations)
     _validate_runtime_proof_file(runtime_proof_file, violations)
     _validate_enforcer_proof_file(enforcer_proof_file, violations)
@@ -625,6 +739,7 @@ def run_enforcement(
         contract=contract,
         violations=violations,
     )
+    _validate_deploy_workflow(deploy_workflow_file, violations)
     if not skip_typed_boundary_execution:
         _validate_typed_boundary_adjudication(
             repo_root=repo_root,
@@ -648,9 +763,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--runtime-proof-file", default=RUNTIME_PROOF_FILE)
     parser.add_argument("--enforcer-proof-file", default=ENFORCER_PROOF_FILE)
     parser.add_argument("--ci-workflow-file", default=CI_WORKFLOW_FILE)
+    parser.add_argument("--deploy-workflow-file", default=DEPLOY_WORKFLOW_FILE)
     parser.add_argument("--topology-model-file", default=TOPOLOGY_MODEL_FILE)
     parser.add_argument("--topology-persistence-file", default=TOPOLOGY_PERSISTENCE_FILE)
     parser.add_argument("--topology-schema-proof-file", default=TOPOLOGY_SCHEMA_PROOF_FILE)
+    parser.add_argument(
+        "--topology-lifecycle-schema-proof-file",
+        default=TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE,
+    )
     parser.add_argument("--skip-baseline-git-check", action="store_true")
     parser.add_argument("--skip-typed-boundary-execution", action="store_true")
     parser.add_argument("--simulate-regression", action="store_true")
@@ -682,9 +802,13 @@ def main(argv: list[str]) -> int:
         runtime_proof_file=_resolve(repo_root, args.runtime_proof_file),
         enforcer_proof_file=_resolve(repo_root, args.enforcer_proof_file),
         ci_workflow_file=_resolve(repo_root, args.ci_workflow_file),
+        deploy_workflow_file=_resolve(repo_root, args.deploy_workflow_file),
         topology_model_file=_resolve(repo_root, args.topology_model_file),
         topology_persistence_file=_resolve(repo_root, args.topology_persistence_file),
         topology_schema_proof_file=_resolve(repo_root, args.topology_schema_proof_file),
+        topology_lifecycle_schema_proof_file=_resolve(
+            repo_root, args.topology_lifecycle_schema_proof_file
+        ),
         skip_baseline_git_check=bool(args.skip_baseline_git_check),
         skip_typed_boundary_execution=bool(args.skip_typed_boundary_execution),
     )

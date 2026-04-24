@@ -286,6 +286,48 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
 
 
 --
+-- Name: fn_b23_p0_prune_attribution_commerce_identities(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delete integer DEFAULT 1000) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+            DECLARE
+                cutoff timestamptz := now() - interval '90 days';
+                deleted_count integer := 0;
+            BEGIN
+                WITH doomed AS (
+                    SELECT id
+                    FROM attribution_commerce_identities
+                    WHERE last_observed_at < cutoff
+                    ORDER BY last_observed_at ASC
+                    LIMIT GREATEST(max_delete, 1)
+                )
+                DELETE FROM public.attribution_commerce_identities target
+                USING doomed
+                WHERE target.id = doomed.id;
+
+                GET DIAGNOSTICS deleted_count = ROW_COUNT;
+                RETURN deleted_count;
+            END;
+            $$;
+
+
+--
+-- Name: fn_b23_p0_prune_attribution_commerce_identities_trigger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+            BEGIN
+                PERFORM public.fn_b23_p0_prune_attribution_commerce_identities(1000);
+                RETURN NULL;
+            END;
+            $$;
+
+
+--
 -- Name: fn_bind_session_authority_from_event(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3144,6 +3186,13 @@ CREATE INDEX idx_allocations_tenant_projection_channel ON public.attribution_all
 
 
 --
+-- Name: idx_attr_commerce_identity_last_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attr_commerce_identity_last_observed ON public.attribution_commerce_identities USING btree (last_observed_at);
+
+
+--
 -- Name: idx_attr_commerce_identity_tenant_last_observed; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4057,6 +4106,13 @@ CREATE UNIQUE INDEX ux_worker_side_effects_tenant_task_id ON public.worker_side_
 --
 
 CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_code ON public.attribution_allocations FOR EACH ROW WHEN ((old.channel_code IS DISTINCT FROM new.channel_code)) EXECUTE FUNCTION public.fn_log_channel_assignment_correction();
+
+
+--
+-- Name: attribution_commerce_identities trg_b23_p0_prune_attribution_commerce_identities; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities AFTER INSERT OR UPDATE OF last_observed_at ON public.attribution_commerce_identities FOR EACH STATEMENT EXECUTE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger();
 
 
 --

@@ -1,6 +1,6 @@
 {
   "contract_id": "b15.p7.ci_adjudication_closure.main",
-  "contract_version": "1.2.0",
+  "contract_version": "1.2.1",
   "phase": "B1.5-P7",
   "required_ci_job": {
     "job_id": "b15-p7-ci-adjudication-closure",
@@ -42,7 +42,7 @@
     "workflow_file": ".github/workflows/schema-deploy-production.yml",
     "required_commands": [
       "python scripts/ci/b15_p7_phase_closure_gate.py",
-      "--mode full-phase",
+      "--mode technical",
       "--status-file docs/forensics/evidence/b15_p7/mental_model_study/status.json"
     ]
   },

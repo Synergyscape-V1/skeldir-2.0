@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from app.revenue_verification.semantic_authority import (
     ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS,
+    ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
+    ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
+    ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
+    ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
     ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS,
+    ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS,
     ALLOWED_DELAYED_ARRIVAL_TOPOLOGY,
     ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE,
     B23_AMOUNT_BASIS,
@@ -27,6 +32,7 @@ from app.revenue_verification.semantic_authority import (
     validate_delayed_arrival_topology_binding,
     validate_delayed_arrival_strategy,
     validate_delayed_arrival_topology,
+    validate_delayed_arrival_lifecycle_binding,
     validate_downstream_projection_payload,
 )
 
@@ -39,6 +45,10 @@ def test_b23_p0_contract_load_is_authoritative() -> None:
     assert tuple(contract.shared_identity_canonicalization.precedence_order) == B23_PRECEDENCE_ORDER
     assert contract.financial_truth_semantics.amount_basis == B23_AMOUNT_BASIS
     assert contract.financial_truth_semantics.currency_stance == B23_CURRENCY_STANCE
+    assert (
+        contract.privacy_safe_delayed_arrival.lifecycle_binding.retention_days
+        == ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS
+    )
 
 
 def test_b23_p0_dual_sided_canonicalization_converges_decorated_variants() -> None:
@@ -158,6 +168,28 @@ def test_b23_p0_delayed_arrival_topology_binding_is_schema_anchored() -> None:
         assert "requires RLS" in str(exc)
     else:
         raise AssertionError("expected topology binding failure when RLS is disabled")
+
+
+def test_b23_p0_delayed_arrival_lifecycle_binding_is_bounded_and_database_native() -> None:
+    validate_delayed_arrival_lifecycle_binding(
+        retention_days=ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS,
+        db_pruning_mode=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
+        pruning_function=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
+        pruning_trigger=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
+        prune_batch_size=ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
+    )
+    try:
+        validate_delayed_arrival_lifecycle_binding(
+            retention_days=365,
+            db_pruning_mode=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
+            pruning_function=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
+            pruning_trigger=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
+            prune_batch_size=ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
+        )
+    except ValueError as exc:
+        assert "retention mismatch" in str(exc)
+    else:
+        raise AssertionError("expected lifecycle retention mismatch failure")
 
 
 def test_b23_p0_amount_currency_and_adjustment_stance_is_frozen() -> None:
