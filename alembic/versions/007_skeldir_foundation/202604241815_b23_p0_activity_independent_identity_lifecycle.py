@@ -23,7 +23,23 @@ _CRON_SCHEDULE = "0 * * * *"
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_cron")
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_available_extensions
+                WHERE name = 'pg_cron'
+            ) THEN
+                EXECUTE 'CREATE EXTENSION IF NOT EXISTS pg_cron';
+            ELSE
+                RAISE NOTICE 'pg_cron unavailable in this environment; skipping scheduled lifecycle registration';
+            END IF;
+        END
+        $$;
+        """
+    )
 
     op.execute(
         """
@@ -49,7 +65,8 @@ def upgrade() -> None:
             scheduled_job_id bigint;
         BEGIN
             IF to_regnamespace('cron') IS NULL THEN
-                RAISE EXCEPTION 'missing_required_schema:cron';
+                RAISE NOTICE 'cron schema unavailable; skipping scheduled lifecycle registration';
+                RETURN;
             END IF;
 
             SELECT jobid
