@@ -32,6 +32,8 @@ def upgrade() -> None:
             max_delete integer DEFAULT 1000
         ) RETURNS integer
             LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = public
             AS $$
             DECLARE
                 cutoff timestamptz := now() - interval '90 days';
@@ -60,6 +62,7 @@ def upgrade() -> None:
         CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()
         RETURNS trigger
             LANGUAGE plpgsql
+            SET search_path = public
             AS $$
             BEGIN
                 PERFORM public.fn_b23_p0_prune_attribution_commerce_identities(1000);

@@ -521,6 +521,8 @@ def _validate_topology_lifecycle_schema_file(path: Path, violations: list[str]) 
     required_tokens = (
         "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(",
         "RETURNS integer",
+        "SECURITY DEFINER",
+        "SET search_path = public",
         "interval '90 days'",
         "LIMIT GREATEST(max_delete, 1)",
         "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()",

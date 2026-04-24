@@ -218,6 +218,26 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_sc
     )
 
 
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_schema_without_security_definer(
+    tmp_path: Path,
+) -> None:
+    mutated_lifecycle_schema = tmp_path / "topology_lifecycle_schema.security.regression.py"
+    mutated_lifecycle_schema.write_text(
+        TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE.read_text(encoding="utf-8").replace(
+            "SECURITY DEFINER",
+            "SECURITY INVOKER",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--topology-lifecycle-schema-proof-file", str(mutated_lifecycle_schema))
+    assert proc.returncode != 0
+    assert "topology_lifecycle_schema_missing_token:SECURITY DEFINER" in (
+        proc.stdout + proc.stderr
+    )
+
+
 def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_failure(
     tmp_path: Path,
 ) -> None:
