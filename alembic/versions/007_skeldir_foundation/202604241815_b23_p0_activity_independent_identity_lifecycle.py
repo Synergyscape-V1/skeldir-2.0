@@ -1,4 +1,4 @@
-﻿"""B2.3-P0 activity-independent lifecycle bounds for durable commerce identities.
+"""B2.3-P0 activity-independent lifecycle bounds for durable commerce identities.
 
 Revision ID: 202604241815
 Revises: 202604241015
