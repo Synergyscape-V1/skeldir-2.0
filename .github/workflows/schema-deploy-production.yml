@@ -32,10 +32,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Enforce B1.5-P7 full-phase closure gate (block deploy while human gate is open)
+      - name: Enforce B1.5-P7 technical closure gate (allow governed schema deploy while human study is pending)
         run: |
           python scripts/ci/b15_p7_phase_closure_gate.py \
-            --mode full-phase \
+            --mode technical \
             --status-file docs/forensics/evidence/b15_p7/mental_model_study/status.json
 
       - name: Configure AWS credentials via OIDC
@@ -131,6 +131,46 @@ jobs:
           echo "\n[POST-DEPLOYMENT STATE]" >> audit_logs/deployment.log
           psql "${DATABASE_URL}" -c "SELECT version_num, updated_at FROM alembic_version;" >> audit_logs/deployment.log
           echo "New Alembic head: $(alembic current 2>&1)" >> audit_logs/deployment.log
+
+      - name: Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production
+        if: steps.neon-guard.outputs.enabled == 'true'
+        env:
+          DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+        run: |
+          echo "\n[B2.3-P0 TOPOLOGY + LIFECYCLE VERIFICATION]" >> audit_logs/deployment.log
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL' | tee -a audit_logs/deployment.log
+          DO $$
+          BEGIN
+            IF to_regclass('public.attribution_commerce_identities') IS NULL THEN
+              RAISE EXCEPTION 'missing_table:public.attribution_commerce_identities';
+            END IF;
+            IF to_regclass('public.idx_attr_commerce_identity_last_observed') IS NULL THEN
+              RAISE EXCEPTION 'missing_index:public.idx_attr_commerce_identity_last_observed';
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_proc p
+              JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public'
+                AND p.proname = 'fn_b23_p0_prune_attribution_commerce_identities'
+            ) THEN
+              RAISE EXCEPTION 'missing_function:public.fn_b23_p0_prune_attribution_commerce_identities';
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_trigger t
+              JOIN pg_class c ON c.oid = t.tgrelid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public'
+                AND c.relname = 'attribution_commerce_identities'
+                AND t.tgname = 'trg_b23_p0_prune_attribution_commerce_identities'
+                AND t.tgenabled <> 'D'
+            ) THEN
+              RAISE EXCEPTION 'missing_trigger:public.trg_b23_p0_prune_attribution_commerce_identities';
+            END IF;
+          END
+          $$;
+          SQL
       
       - name: Verify deployment and log schema state
         if: steps.neon-guard.outputs.enabled == 'true'

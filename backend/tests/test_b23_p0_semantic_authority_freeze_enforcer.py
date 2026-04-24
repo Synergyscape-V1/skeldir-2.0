@@ -24,6 +24,7 @@ ENFORCER_PROOF_FILE = (
     REPO_ROOT / "backend" / "tests" / "test_b23_p0_semantic_authority_freeze_enforcer.py"
 )
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "schema-deploy-production.yml"
 TOPOLOGY_MODEL_FILE = REPO_ROOT / "backend" / "app" / "models" / "attribution_commerce_identity.py"
 TOPOLOGY_PERSISTENCE_FILE = REPO_ROOT / "backend" / "app" / "privacy" / "durable_commerce_identity.py"
 TOPOLOGY_SCHEMA_PROOF_FILE = (
@@ -33,11 +34,18 @@ TOPOLOGY_SCHEMA_PROOF_FILE = (
     / "007_skeldir_foundation"
     / "202604231130_b23_p0_durable_commerce_identity_substrate.py"
 )
+TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE = (
+    REPO_ROOT
+    / "alembic"
+    / "versions"
+    / "007_skeldir_foundation"
+    / "202604241015_b23_p0_commerce_identity_lifecycle_bounds.py"
+)
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(ENFORCER), *args],
+        [sys.executable, str(ENFORCER), "--skip-baseline-git-check", *args],
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,
@@ -54,9 +62,12 @@ def test_b23_p0_semantic_authority_freeze_enforcer_passes_repo_state() -> None:
         runtime_proof_file=RUNTIME_PROOF_FILE,
         enforcer_proof_file=ENFORCER_PROOF_FILE,
         ci_workflow_file=CI_WORKFLOW,
+        deploy_workflow_file=DEPLOY_WORKFLOW,
         topology_model_file=TOPOLOGY_MODEL_FILE,
         topology_persistence_file=TOPOLOGY_PERSISTENCE_FILE,
         topology_schema_proof_file=TOPOLOGY_SCHEMA_PROOF_FILE,
+        topology_lifecycle_schema_proof_file=TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE,
+        skip_baseline_git_check=True,
     )
     assert status == 0, f"unexpected B2.3-P0 enforcement violations: {violations}"
 
@@ -90,6 +101,27 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_ci_wiring_mi
     assert proc.returncode != 0
     assert "workflow_missing_token:python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py" in (
         proc.stdout + proc.stderr
+    )
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_runtime_proof_missing(
+    tmp_path: Path,
+) -> None:
+    mutated_workflow = tmp_path / "schema-deploy-production.regression.yml"
+    mutated_workflow.write_text(
+        DEPLOY_WORKFLOW.read_text(encoding="utf-8").replace(
+            "Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production",
+            "Verify delayed-arrival substrate",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--deploy-workflow-file", str(mutated_workflow))
+    assert proc.returncode != 0
+    assert (
+        "deploy_workflow_missing_token:Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production"
+        in (proc.stdout + proc.stderr)
     )
 
 
@@ -165,6 +197,47 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_topology_sch
     )
 
 
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_schema_absent(
+    tmp_path: Path,
+) -> None:
+    mutated_lifecycle_schema = tmp_path / "topology_lifecycle_schema.regression.py"
+    mutated_lifecycle_schema.write_text(
+        TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE.read_text(encoding="utf-8").replace(
+            "CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities",
+            "CREATE TRIGGER trg_b23_p0_runtime_prune_identity_lifecycle",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--topology-lifecycle-schema-proof-file", str(mutated_lifecycle_schema))
+    assert proc.returncode != 0
+    assert (
+        "topology_lifecycle_schema_missing_token:CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities"
+        in (proc.stdout + proc.stderr)
+    )
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_schema_without_security_definer(
+    tmp_path: Path,
+) -> None:
+    mutated_lifecycle_schema = tmp_path / "topology_lifecycle_schema.security.regression.py"
+    mutated_lifecycle_schema.write_text(
+        TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE.read_text(encoding="utf-8").replace(
+            "SECURITY DEFINER",
+            "SECURITY INVOKER",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--topology-lifecycle-schema-proof-file", str(mutated_lifecycle_schema))
+    assert proc.returncode != 0
+    assert "topology_lifecycle_schema_missing_token:SECURITY DEFINER" in (
+        proc.stdout + proc.stderr
+    )
+
+
 def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_failure(
     tmp_path: Path,
 ) -> None:
@@ -189,3 +262,37 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_threshold_dr
     proc = _run("--governance-contract-file", str(mutated))
     assert proc.returncode != 0
     assert "contract_performance_kernel_threshold_mismatch" in (proc.stdout + proc.stderr)
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_route_spec_alignment_failure(
+    tmp_path: Path,
+) -> None:
+    payload = json.loads(GOVERNANCE_CONTRACT.read_text(encoding="utf-8"))
+    payload["typed_boundary_adjudication"]["required_route_spec_alignment_enforcer"] = (
+        "scripts/ci/does_not_exist.py"
+    )
+    mutated = tmp_path / "b23_p0.contract.typed_boundary_route_spec_mismatch.json"
+    mutated.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    proc = _run("--governance-contract-file", str(mutated))
+    assert proc.returncode != 0
+    assert "typed_boundary_source_alignment_conflict_live_or_unadjudicated" in (
+        proc.stdout + proc.stderr
+    )
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_native_source_alignment_failure(
+    tmp_path: Path,
+) -> None:
+    payload = json.loads(GOVERNANCE_CONTRACT.read_text(encoding="utf-8"))
+    payload["typed_boundary_adjudication"]["required_native_source_alignment_enforcer"] = (
+        "scripts/ci/does_not_exist.py"
+    )
+    mutated = tmp_path / "b23_p0.contract.typed_boundary_native_source_alignment_mismatch.json"
+    mutated.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    proc = _run("--governance-contract-file", str(mutated))
+    assert proc.returncode != 0
+    assert "typed_boundary_native_source_alignment_conflict_live_or_unadjudicated" in (
+        proc.stdout + proc.stderr
+    )

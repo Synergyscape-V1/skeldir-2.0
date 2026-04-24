@@ -1,6 +1,6 @@
 {
   "contract_id": "b23.p0.semantic_authority_freeze.main",
-  "contract_version": "1.1.0",
+  "contract_version": "1.3.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.3-P0",
@@ -57,6 +57,13 @@
         "device_id"
       ],
       "requires_rls": true
+    },
+    "lifecycle_binding": {
+      "retention_days": 90,
+      "db_pruning_mode": "database_trigger_pruning",
+      "pruning_function": "fn_b23_p0_prune_attribution_commerce_identities",
+      "pruning_trigger": "trg_b23_p0_prune_attribution_commerce_identities",
+      "prune_batch_size": 1000
     }
   },
   "financial_truth_semantics": {
@@ -121,6 +128,7 @@
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_b06_false_authority_surfaces_are_rejected",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_contract_load_is_authoritative",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_delayed_arrival_topology_binding_is_schema_anchored",
+    "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_delayed_arrival_lifecycle_binding_is_bounded_and_database_native",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_downstream_mapping_payload_requires_pre_dispatch_validation",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_dual_sided_canonicalization_converges_decorated_variants",
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_false_authority_sources_are_rejected",
@@ -129,14 +137,20 @@
     "backend/tests/test_b23_p0_semantic_authority.py::test_b23_p0_precedence_order_is_deterministic"
   ],
   "required_ci_wiring": [
+    "python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py",
+    "pytest backend/tests/test_b23_p0_typed_boundary_source_alignment_enforcer.py -q",
     "pytest backend/tests/test_b23_p0_semantic_authority.py -q",
     "pytest backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py -q",
+    "python scripts/ci/enforce_b15_p3_runtime_route_binding.py",
     "python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py",
     "python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py"
   ],
   "typed_boundary_adjudication": {
     "required_enforcer": "scripts/ci/enforce_b15_p4_mock_sdk_boundary.py",
     "required_ci_job": "b15-p4-mock-sdk-typed-boundary",
+    "required_route_spec_alignment_enforcer": "scripts/ci/enforce_b15_p3_runtime_route_binding.py",
+    "required_route_spec_alignment_ci_job": "b15-p3-runtime-route-binding",
+    "required_native_source_alignment_enforcer": "scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py",
     "expected_status": "mainline_clean_no_live_conflict"
   }
 }

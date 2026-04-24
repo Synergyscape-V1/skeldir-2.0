@@ -42,6 +42,11 @@ DELAYED_ARRIVAL_POLICY = (
     "match_via_durable_commerce_identity_else_explicit_unmatched_or_unsupported"
 )
 ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE = "attribution_commerce_identities"
+ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS = 90
+ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE = "database_trigger_pruning"
+ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION = "fn_b23_p0_prune_attribution_commerce_identities"
+ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER = "trg_b23_p0_prune_attribution_commerce_identities"
+ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE = 1000
 ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS = frozenset(
     {
         "tenant_id",
@@ -218,6 +223,16 @@ class DelayedArrivalTopologyBindingModel(BaseModel):
     requires_rls: bool
 
 
+class DelayedArrivalLifecycleModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retention_days: int
+    db_pruning_mode: str
+    pruning_function: str
+    pruning_trigger: str
+    prune_batch_size: int
+
+
 class DelayedArrivalModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -225,6 +240,7 @@ class DelayedArrivalModel(BaseModel):
     allowed_topology: str
     delayed_arrival_policy: str
     topology_schema_binding: DelayedArrivalTopologyBindingModel
+    lifecycle_binding: DelayedArrivalLifecycleModel
 
 
 class FinancialTruthModel(BaseModel):
@@ -265,6 +281,9 @@ class TypedBoundaryAdjudicationModel(BaseModel):
 
     required_enforcer: str
     required_ci_job: str
+    required_route_spec_alignment_enforcer: str
+    required_route_spec_alignment_ci_job: str
+    required_native_source_alignment_enforcer: str
     expected_status: str
 
 
@@ -492,6 +511,41 @@ def validate_delayed_arrival_topology_binding(
         raise ValueError("B2.3-P0 delayed-arrival topology binding requires RLS enforcement")
 
 
+def validate_delayed_arrival_lifecycle_binding(
+    *,
+    retention_days: int,
+    db_pruning_mode: str,
+    pruning_function: str,
+    pruning_trigger: str,
+    prune_batch_size: int,
+) -> None:
+    if int(retention_days) != ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle retention mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS}, observed {retention_days}"
+        )
+    if str(db_pruning_mode).strip() != ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle mode mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE}, observed {db_pruning_mode}"
+        )
+    if str(pruning_function).strip() != ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle function mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION}, observed {pruning_function}"
+        )
+    if str(pruning_trigger).strip() != ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle trigger mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER}, observed {pruning_trigger}"
+        )
+    if int(prune_batch_size) != ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle prune-batch mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE}, observed {prune_batch_size}"
+        )
+
+
 def classify_payment_adjustment_support(adjustment_type: str) -> PaymentAdjustmentSupport:
     normalized = str(adjustment_type or "").strip().lower()
     if normalized in UNSUPPORTED_PAYMENT_ADJUSTMENTS:
@@ -579,6 +633,14 @@ def load_b23_p0_semantic_authority_contract(
         raise ValueError("B2.3-P0 delayed-arrival topology forbidden-column drift detected")
     if topology_binding.requires_rls is not True:
         raise ValueError("B2.3-P0 delayed-arrival topology must require RLS")
+    lifecycle_binding = contract.privacy_safe_delayed_arrival.lifecycle_binding
+    validate_delayed_arrival_lifecycle_binding(
+        retention_days=lifecycle_binding.retention_days,
+        db_pruning_mode=lifecycle_binding.db_pruning_mode,
+        pruning_function=lifecycle_binding.pruning_function,
+        pruning_trigger=lifecycle_binding.pruning_trigger,
+        prune_batch_size=lifecycle_binding.prune_batch_size,
+    )
     if set(contract.false_authority_exclusions) != B23_FORBIDDEN_FALSE_AUTHORITIES:
         raise ValueError("B2.3-P0 false-authority exclusion drift detected")
     if contract.downstream_mapping.strategy != "typed_deterministic_mapping_only":
@@ -593,6 +655,18 @@ def load_b23_p0_semantic_authority_contract(
         raise ValueError("B2.3-P0 typed-boundary enforcer authority drift detected")
     if contract.typed_boundary_adjudication.required_ci_job != "b15-p4-mock-sdk-typed-boundary":
         raise ValueError("B2.3-P0 typed-boundary CI job authority drift detected")
+    if contract.typed_boundary_adjudication.required_route_spec_alignment_enforcer != (
+        "scripts/ci/enforce_b15_p3_runtime_route_binding.py"
+    ):
+        raise ValueError("B2.3-P0 typed-boundary route/spec enforcer authority drift detected")
+    if contract.typed_boundary_adjudication.required_route_spec_alignment_ci_job != (
+        "b15-p3-runtime-route-binding"
+    ):
+        raise ValueError("B2.3-P0 typed-boundary route/spec CI job authority drift detected")
+    if contract.typed_boundary_adjudication.required_native_source_alignment_enforcer != (
+        "scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py"
+    ):
+        raise ValueError("B2.3-P0 typed-boundary native source-alignment enforcer drift detected")
     if contract.typed_boundary_adjudication.expected_status != "mainline_clean_no_live_conflict":
         raise ValueError("B2.3-P0 typed-boundary status expectation drift detected")
     contract_thresholds = {

@@ -96,4 +96,8 @@ class AttributionCommerceIdentity(Base, TenantMixin):
             "tenant_id",
             "last_observed_at",
         ),
+        Index(
+            "idx_attr_commerce_identity_last_observed",
+            "last_observed_at",
+        ),
     )
