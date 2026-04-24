@@ -43,10 +43,13 @@ DELAYED_ARRIVAL_POLICY = (
 )
 ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE = "attribution_commerce_identities"
 ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS = 90
-ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE = "database_trigger_pruning"
+ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE = "database_scheduled_pruning"
 ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION = "fn_b23_p0_prune_attribution_commerce_identities"
 ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER = "trg_b23_p0_prune_attribution_commerce_identities"
+ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE = "0 * * * *"
+ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME = "b23_p0_prune_attribution_commerce_identities_hourly"
 ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE = 1000
+ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT = True
 ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS = frozenset(
     {
         "tenant_id",
@@ -230,7 +233,10 @@ class DelayedArrivalLifecycleModel(BaseModel):
     db_pruning_mode: str
     pruning_function: str
     pruning_trigger: str
+    pruning_schedule: str
+    pruning_job_name: str
     prune_batch_size: int
+    activity_independent_enforcement: bool
 
 
 class DelayedArrivalModel(BaseModel):
@@ -517,7 +523,10 @@ def validate_delayed_arrival_lifecycle_binding(
     db_pruning_mode: str,
     pruning_function: str,
     pruning_trigger: str,
+    pruning_schedule: str,
+    pruning_job_name: str,
     prune_batch_size: int,
+    activity_independent_enforcement: bool,
 ) -> None:
     if int(retention_days) != ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS:
         raise ValueError(
@@ -539,10 +548,28 @@ def validate_delayed_arrival_lifecycle_binding(
             "B2.3-P0 delayed-arrival lifecycle trigger mismatch: "
             f"expected {ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER}, observed {pruning_trigger}"
         )
+    if str(pruning_schedule).strip() != ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle schedule mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE}, observed {pruning_schedule}"
+        )
+    if str(pruning_job_name).strip() != ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME:
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle job-name mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME}, observed {pruning_job_name}"
+        )
     if int(prune_batch_size) != ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE:
         raise ValueError(
             "B2.3-P0 delayed-arrival lifecycle prune-batch mismatch: "
             f"expected {ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE}, observed {prune_batch_size}"
+        )
+    if bool(activity_independent_enforcement) is not (
+        ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT
+    ):
+        raise ValueError(
+            "B2.3-P0 delayed-arrival lifecycle activity-independent enforcement mismatch: "
+            f"expected {ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT}, "
+            f"observed {activity_independent_enforcement}"
         )
 
 
@@ -639,7 +666,10 @@ def load_b23_p0_semantic_authority_contract(
         db_pruning_mode=lifecycle_binding.db_pruning_mode,
         pruning_function=lifecycle_binding.pruning_function,
         pruning_trigger=lifecycle_binding.pruning_trigger,
+        pruning_schedule=lifecycle_binding.pruning_schedule,
+        pruning_job_name=lifecycle_binding.pruning_job_name,
         prune_batch_size=lifecycle_binding.prune_batch_size,
+        activity_independent_enforcement=lifecycle_binding.activity_independent_enforcement,
     )
     if set(contract.false_authority_exclusions) != B23_FORBIDDEN_FALSE_AUTHORITIES:
         raise ValueError("B2.3-P0 false-authority exclusion drift detected")

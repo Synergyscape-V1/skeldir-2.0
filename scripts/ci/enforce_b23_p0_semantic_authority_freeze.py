@@ -30,7 +30,7 @@ TOPOLOGY_SCHEMA_PROOF_FILE = (
     "alembic/versions/007_skeldir_foundation/202604231130_b23_p0_durable_commerce_identity_substrate.py"
 )
 TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE = (
-    "alembic/versions/007_skeldir_foundation/202604241015_b23_p0_commerce_identity_lifecycle_bounds.py"
+    "alembic/versions/007_skeldir_foundation/202604241815_b23_p0_activity_independent_identity_lifecycle.py"
 )
 
 
@@ -300,10 +300,22 @@ def _validate_contract(
                 semantic_module.ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER
             ):
                 violations.append("contract_topology_lifecycle_pruning_trigger_mismatch")
+            if lifecycle_binding.get("pruning_schedule") != (
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE
+            ):
+                violations.append("contract_topology_lifecycle_pruning_schedule_mismatch")
+            if lifecycle_binding.get("pruning_job_name") != (
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME
+            ):
+                violations.append("contract_topology_lifecycle_pruning_job_name_mismatch")
             if int(lifecycle_binding.get("prune_batch_size", -1)) != int(
                 semantic_module.ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE
             ):
                 violations.append("contract_topology_lifecycle_prune_batch_size_mismatch")
+            if bool(lifecycle_binding.get("activity_independent_enforcement")) is not bool(
+                semantic_module.ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT
+            ):
+                violations.append("contract_topology_lifecycle_activity_independence_mismatch")
 
     financial_truth = contract.get("financial_truth_semantics")
     if not isinstance(financial_truth, dict):
@@ -400,10 +412,13 @@ def _validate_semantic_authority_file(path: Path, violations: list[str]) -> None
         "ALLOWED_DELAYED_ARRIVAL_TOPOLOGY = (",
         "ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE = \"attribution_commerce_identities\"",
         "ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS = 90",
-        "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE = \"database_trigger_pruning\"",
+        "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE = \"database_scheduled_pruning\"",
         "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION = \"fn_b23_p0_prune_attribution_commerce_identities\"",
         "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER = \"trg_b23_p0_prune_attribution_commerce_identities\"",
+        "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE = \"0 * * * *\"",
+        "ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME = \"b23_p0_prune_attribution_commerce_identities_hourly\"",
         "ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE = 1000",
+        "ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT = True",
         "ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS = frozenset(",
         "ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS = frozenset(",
         "DELAYED_ARRIVAL_POLICY = (",
@@ -519,18 +534,17 @@ def _validate_topology_schema_file(
 def _validate_topology_lifecycle_schema_file(path: Path, violations: list[str]) -> None:
     text = _read_text(path)
     required_tokens = (
-        "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(",
-        "RETURNS integer",
+        "CREATE EXTENSION IF NOT EXISTS pg_cron",
+        "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()",
         "SECURITY DEFINER",
         "SET search_path = public",
-        "interval '90 days'",
-        "LIMIT GREATEST(max_delete, 1)",
-        "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()",
-        "CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities\n",
-        "AFTER INSERT OR UPDATE OF last_observed_at ON public.attribution_commerce_identities",
-        "EXECUTE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()",
+        "to_regnamespace('cron')",
+        "cron.schedule(",
+        "b23_p0_prune_attribution_commerce_identities_hourly",
+        "0 * * * *",
+        "cron.unschedule(existing_job_id)",
+        "SELECT public.fn_b23_p0_prune_attribution_commerce_identities(1000);",
         "SELECT public.fn_b23_p0_prune_attribution_commerce_identities(500000)",
-        "CREATE INDEX IF NOT EXISTS idx_attr_commerce_identity_last_observed",
     )
     for token in required_tokens:
         if token not in text:
@@ -613,12 +627,17 @@ def _validate_deploy_workflow(path: Path, violations: list[str]) -> None:
     required_tokens = (
         "python scripts/ci/b15_p7_phase_closure_gate.py",
         "--mode technical",
+        "Guard Neon control-plane secrets (fail closed when missing)",
+        "Missing required Neon control-plane values for governed production deploy.",
+        "exit 1",
         "alembic upgrade head",
         "Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production",
         "missing_table:public.attribution_commerce_identities",
         "missing_index:public.idx_attr_commerce_identity_last_observed",
         "missing_function:public.fn_b23_p0_prune_attribution_commerce_identities",
         "missing_trigger:public.trg_b23_p0_prune_attribution_commerce_identities",
+        "missing_extension:pg_cron",
+        "missing_cron_job:b23_p0_prune_attribution_commerce_identities_hourly",
     )
     for token in required_tokens:
         if token not in text:

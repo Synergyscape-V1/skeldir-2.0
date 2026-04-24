@@ -4,12 +4,15 @@ from app.revenue_verification.semantic_authority import (
     ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS,
     ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
     ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
+    ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE,
+    ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME,
     ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
     ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
     ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS,
     ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS,
     ALLOWED_DELAYED_ARRIVAL_TOPOLOGY,
     ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE,
+    ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT,
     B23_AMOUNT_BASIS,
     B23_CURRENCY_STANCE,
     B23DiscrepancyClass,
@@ -176,7 +179,10 @@ def test_b23_p0_delayed_arrival_lifecycle_binding_is_bounded_and_database_native
         db_pruning_mode=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
         pruning_function=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
         pruning_trigger=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
+        pruning_schedule=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE,
+        pruning_job_name=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME,
         prune_batch_size=ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
+        activity_independent_enforcement=ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT,
     )
     try:
         validate_delayed_arrival_lifecycle_binding(
@@ -184,12 +190,47 @@ def test_b23_p0_delayed_arrival_lifecycle_binding_is_bounded_and_database_native
             db_pruning_mode=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
             pruning_function=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
             pruning_trigger=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
+            pruning_schedule=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE,
+            pruning_job_name=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME,
             prune_batch_size=ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
+            activity_independent_enforcement=ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT,
         )
     except ValueError as exc:
         assert "retention mismatch" in str(exc)
     else:
         raise AssertionError("expected lifecycle retention mismatch failure")
+
+    try:
+        validate_delayed_arrival_lifecycle_binding(
+            retention_days=ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS,
+            db_pruning_mode=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
+            pruning_function=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
+            pruning_trigger=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
+            pruning_schedule="0 0 * * *",
+            pruning_job_name=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME,
+            prune_batch_size=ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
+            activity_independent_enforcement=ALLOWED_DELAYED_ARRIVAL_ACTIVITY_INDEPENDENT_ENFORCEMENT,
+        )
+    except ValueError as exc:
+        assert "schedule mismatch" in str(exc)
+    else:
+        raise AssertionError("expected lifecycle schedule mismatch failure")
+
+    try:
+        validate_delayed_arrival_lifecycle_binding(
+            retention_days=ALLOWED_DELAYED_ARRIVAL_RETENTION_DAYS,
+            db_pruning_mode=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_MODE,
+            pruning_function=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_FUNCTION,
+            pruning_trigger=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_TRIGGER,
+            pruning_schedule=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_SCHEDULE,
+            pruning_job_name=ALLOWED_DELAYED_ARRIVAL_LIFECYCLE_JOB_NAME,
+            prune_batch_size=ALLOWED_DELAYED_ARRIVAL_PRUNE_BATCH_SIZE,
+            activity_independent_enforcement=False,
+        )
+    except ValueError as exc:
+        assert "activity-independent enforcement mismatch" in str(exc)
+    else:
+        raise AssertionError("expected lifecycle activity-independence mismatch failure")
 
 
 def test_b23_p0_amount_currency_and_adjustment_stance_is_frozen() -> None:

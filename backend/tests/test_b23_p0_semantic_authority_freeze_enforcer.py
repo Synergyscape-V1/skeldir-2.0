@@ -39,7 +39,7 @@ TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE = (
     / "alembic"
     / "versions"
     / "007_skeldir_foundation"
-    / "202604241015_b23_p0_commerce_identity_lifecycle_bounds.py"
+    / "202604241815_b23_p0_activity_independent_identity_lifecycle.py"
 )
 
 
@@ -203,8 +203,8 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_sc
     mutated_lifecycle_schema = tmp_path / "topology_lifecycle_schema.regression.py"
     mutated_lifecycle_schema.write_text(
         TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE.read_text(encoding="utf-8").replace(
-            "CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities",
-            "CREATE TRIGGER trg_b23_p0_runtime_prune_identity_lifecycle",
+            "cron.schedule(",
+            "cron.schedule_disabled(",
             1,
         ),
         encoding="utf-8",
@@ -213,7 +213,7 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_sc
     proc = _run("--topology-lifecycle-schema-proof-file", str(mutated_lifecycle_schema))
     assert proc.returncode != 0
     assert (
-        "topology_lifecycle_schema_missing_token:CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities"
+        "topology_lifecycle_schema_missing_token:cron.schedule("
         in (proc.stdout + proc.stderr)
     )
 
@@ -235,6 +235,27 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_sc
     assert proc.returncode != 0
     assert "topology_lifecycle_schema_missing_token:SECURITY DEFINER" in (
         proc.stdout + proc.stderr
+    )
+
+
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_soft_skip_guard(
+    tmp_path: Path,
+) -> None:
+    mutated_workflow = tmp_path / "schema-deploy-production.soft-skip.regression.yml"
+    mutated_workflow.write_text(
+        DEPLOY_WORKFLOW.read_text(encoding="utf-8").replace(
+            "Missing required Neon control-plane values for governed production deploy.",
+            "Neon control-plane values missing; skipping production schema deployment.",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--deploy-workflow-file", str(mutated_workflow))
+    assert proc.returncode != 0
+    assert (
+        "deploy_workflow_missing_token:Missing required Neon control-plane values for governed production deploy."
+        in (proc.stdout + proc.stderr)
     )
 
 

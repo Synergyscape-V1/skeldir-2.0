@@ -44,36 +44,31 @@ jobs:
           role-to-assume: arn:aws:iam::326730685463:role/skeldir-ci-deploy
           aws-region: us-east-2
 
-      - name: Guard Neon control-plane secrets (skip deploy if missing)
+      - name: Guard Neon control-plane secrets (fail closed when missing)
         id: neon-guard
         run: |
           set -euo pipefail
           NEON_API_KEY=$(aws secretsmanager get-secret-value --secret-id "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)
           NEON_PROJECT_ID=$(aws ssm get-parameter --name "/skeldir/${SKELDIR_ENV}/config/ci/neon-project-id" --with-decryption --query Parameter.Value --output text --region "${AWS_REGION}" 2>/dev/null || true)
           if [ -z "${NEON_API_KEY}" ] || [ -z "${NEON_PROJECT_ID}" ]; then
-            echo "Neon control-plane values missing; skipping production schema deployment."
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "Missing required Neon control-plane values for governed production deploy."
+            exit 1
           fi
           echo "::add-mask::${NEON_API_KEY}"
           echo "NEON_API_KEY=${NEON_API_KEY}" >> "$GITHUB_ENV"
           echo "NEON_PROJECT_ID=${NEON_PROJECT_ID}" >> "$GITHUB_ENV"
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        if: steps.neon-guard.outputs.enabled == 'true'
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
       
       - name: Install dependencies
-        if: steps.neon-guard.outputs.enabled == 'true'
         run: |
           pip install --upgrade pip
           pip install alembic sqlalchemy psycopg2-binary
       
       - name: Initialize audit log
-        if: steps.neon-guard.outputs.enabled == 'true'
         run: |
           mkdir -p audit_logs
           echo "=== CI SCHEMA DEPLOYMENT AUDIT LOG ===" > audit_logs/deployment.log
@@ -85,7 +80,6 @@ jobs:
       
       - name: Get Neon connection string
         id: neon-connection
-        if: steps.neon-guard.outputs.enabled == 'true'
         run: |
           set -euo pipefail
           RESPONSE=$(curl -s "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
@@ -103,7 +97,6 @@ jobs:
           echo "Connected to Neon production branch: $PROD_BRANCH_ID" >> audit_logs/deployment.log
       
       - name: Capture pre-deployment state
-        if: steps.neon-guard.outputs.enabled == 'true'
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
@@ -112,19 +105,17 @@ jobs:
           echo "Current Alembic head: $(alembic current 2>&1)" >> audit_logs/deployment.log
       
       - name: Apply migrations with DDL logging
-        if: steps.neon-guard.outputs.enabled == 'true'
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
           echo "\n[MIGRATION EXECUTION]" >> audit_logs/deployment.log
-          echo "🚀 Deploying schema migrations to Neon production..." | tee -a audit_logs/deployment.log
+          echo "Deploying schema migrations to Neon production..." | tee -a audit_logs/deployment.log
           
           alembic upgrade head 2>&1 | tee -a audit_logs/deployment.log
           
-          echo "\n✅ Migrations completed" | tee -a audit_logs/deployment.log
+          echo "\nMigrations completed" | tee -a audit_logs/deployment.log
       
       - name: Capture post-deployment state
-        if: steps.neon-guard.outputs.enabled == 'true'
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
@@ -133,7 +124,6 @@ jobs:
           echo "New Alembic head: $(alembic current 2>&1)" >> audit_logs/deployment.log
 
       - name: Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production
-        if: steps.neon-guard.outputs.enabled == 'true'
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
@@ -158,6 +148,16 @@ jobs:
             END IF;
             IF NOT EXISTS (
               SELECT 1
+              FROM pg_proc p
+              JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public'
+                AND p.proname = 'fn_b23_p0_prune_attribution_commerce_identities_trigger'
+                AND p.prosecdef
+            ) THEN
+              RAISE EXCEPTION 'missing_security_definer_trigger_wrapper:public.fn_b23_p0_prune_attribution_commerce_identities_trigger';
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1
               FROM pg_trigger t
               JOIN pg_class c ON c.oid = t.tgrelid
               JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -168,12 +168,28 @@ jobs:
             ) THEN
               RAISE EXCEPTION 'missing_trigger:public.trg_b23_p0_prune_attribution_commerce_identities';
             END IF;
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_extension
+              WHERE extname = 'pg_cron'
+            ) THEN
+              RAISE EXCEPTION 'missing_extension:pg_cron';
+            END IF;
+            IF to_regnamespace('cron') IS NULL THEN
+              RAISE EXCEPTION 'missing_schema:cron';
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1
+              FROM cron.job
+              WHERE jobname = 'b23_p0_prune_attribution_commerce_identities_hourly'
+            ) THEN
+              RAISE EXCEPTION 'missing_cron_job:b23_p0_prune_attribution_commerce_identities_hourly';
+            END IF;
           END
           $$;
           SQL
       
       - name: Verify deployment and log schema state
-        if: steps.neon-guard.outputs.enabled == 'true'
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
@@ -181,14 +197,13 @@ jobs:
           
           psql "${DATABASE_URL}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" > /tmp/table_count.txt
           TABLE_COUNT=$(cat /tmp/table_count.txt | tr -d ' ')
-          echo "✅ Deployed schema version: $(alembic current)" | tee -a audit_logs/deployment.log
-          echo "📊 Total tables in production: $TABLE_COUNT" | tee -a audit_logs/deployment.log
+          echo "Deployed schema version: $(alembic current)" | tee -a audit_logs/deployment.log
+          echo "Total tables in production: $TABLE_COUNT" | tee -a audit_logs/deployment.log
           
           echo "\n[TABLE INVENTORY]" >> audit_logs/deployment.log
           psql "${DATABASE_URL}" -c "SELECT schemaname, tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;" >> audit_logs/deployment.log
       
       - name: Log DDL audit trail from PostgreSQL
-        if: steps.neon-guard.outputs.enabled == 'true'
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
@@ -206,7 +221,7 @@ jobs:
           retention-days: 90
       
       - name: Update deployment documentation
-        if: success() && steps.neon-guard.outputs.enabled == 'true'
+        if: success()
         run: |
           echo "" >> docs/SCHEMA_DEPLOYMENT_COMPLETE.md
           echo "## Deployment $(date -u +\"%Y-%m-%d %H:%M:%S UTC\")" >> docs/SCHEMA_DEPLOYMENT_COMPLETE.md

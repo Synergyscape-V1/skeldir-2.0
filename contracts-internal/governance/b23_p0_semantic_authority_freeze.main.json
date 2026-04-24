@@ -1,6 +1,6 @@
 {
   "contract_id": "b23.p0.semantic_authority_freeze.main",
-  "contract_version": "1.3.0",
+  "contract_version": "1.4.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.3-P0",
@@ -60,10 +60,13 @@
     },
     "lifecycle_binding": {
       "retention_days": 90,
-      "db_pruning_mode": "database_trigger_pruning",
+      "db_pruning_mode": "database_scheduled_pruning",
       "pruning_function": "fn_b23_p0_prune_attribution_commerce_identities",
       "pruning_trigger": "trg_b23_p0_prune_attribution_commerce_identities",
-      "prune_batch_size": 1000
+      "pruning_schedule": "0 * * * *",
+      "pruning_job_name": "b23_p0_prune_attribution_commerce_identities_hourly",
+      "prune_batch_size": 1000,
+      "activity_independent_enforcement": true
     }
   },
   "financial_truth_semantics": {

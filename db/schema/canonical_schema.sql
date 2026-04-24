@@ -40,6 +40,13 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
 
 --
+-- Name: pg_cron; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+
+--
 -- Name: lookup_user_auth_by_login_hash(text); Type: FUNCTION; Schema: auth; Owner: -
 --
 
@@ -319,7 +326,7 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delet
 --
 
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
             BEGIN
