@@ -378,6 +378,43 @@ jobs:
             fi
           }
 
+          extract_connection_uri_from_json() {
+            local payload
+            payload="${1:-}"
+            echo "${payload}" | jq -r '
+              [
+                .uri,
+                .connection_uri,
+                (.connection_uris[]?.connection_uri),
+                (.connection_uris[]?.uri),
+                (.branch.connection_uris[]?.connection_uri),
+                (.branch.connection_uris[]?.uri)
+              ]
+              | map(select(type == "string" and length > 0))
+              | .[0] // empty
+            '
+          }
+
+          request_connection_uri() {
+            local url response uri diagnostic
+            url="${1:-}"
+            response=$(curl -sS "${url}" \
+              -H "Authorization: Bearer ${NEON_API_KEY}" \
+              -H "Accept: application/json")
+            uri=$(extract_connection_uri_from_json "${response}")
+            if [ -n "${uri}" ]; then
+              echo "${uri}"
+              return 0
+            fi
+            diagnostic=$(echo "${response}" | jq -r '(.message // .error // empty)')
+            if [ -n "${diagnostic}" ]; then
+              echo "Neon API empty URI for ${url}; diagnostic=${diagnostic}" >> audit_logs/deployment.log
+            else
+              echo "Neon API empty URI for ${url}; no message/error diagnostic returned." >> audit_logs/deployment.log
+            fi
+            return 1
+          }
+
           echo "Neon credential source: api=${NEON_API_SOURCE:-unknown}, project=${NEON_PROJECT_SOURCE:-unknown}, db_url=${NEON_DATABASE_SOURCE:-none}" >> audit_logs/deployment.log
           if [ -n "${NEON_DATABASE_URL:-}" ]; then
             DIRECT_SYNC_URL="$(to_sync_migration_dsn "${NEON_DATABASE_URL}")"
@@ -403,14 +440,52 @@ jobs:
             PROD_BRANCH_ID=$(echo "${PROJECT_RESPONSE}" | jq -r '(.project.default_branch_id // empty)')
           fi
 
-          if [ -z "${PROD_BRANCH_ID}" ]; then
-            CONNECTION_URI=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?role_name=neondb_owner&database_name=neondb" \
-              -H "Authorization: Bearer ${NEON_API_KEY}" \
-              -H "Accept: application/json" | jq -r '(.uri // empty)')
-          else
-            CONNECTION_URI=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${PROD_BRANCH_ID}&role_name=neondb_owner&database_name=neondb" \
-              -H "Authorization: Bearer ${NEON_API_KEY}" \
-              -H "Accept: application/json" | jq -r '(.uri // empty)')
+          PRIMARY_ROLE_NAME=""
+          PRIMARY_DATABASE_NAME=""
+          if [ -n "${PROD_BRANCH_ID}" ]; then
+            PRIMARY_ROLE_NAME=$(echo "${RESPONSE}" | jq -r --arg branch_id "${PROD_BRANCH_ID}" '
+              ((.branches // []) | map(select(.id == $branch_id)) | .[0].roles // [])
+              | map(.name // empty)
+              | map(select(length > 0))
+              | .[0] // empty
+            ')
+            PRIMARY_DATABASE_NAME=$(echo "${RESPONSE}" | jq -r --arg branch_id "${PROD_BRANCH_ID}" '
+              ((.branches // []) | map(select(.id == $branch_id)) | .[0].databases // [])
+              | map(.name // empty)
+              | map(select(length > 0))
+              | .[0] // empty
+            ')
+          fi
+
+          CONNECTION_URI=""
+          if [ -n "${PROD_BRANCH_ID}" ]; then
+            echo "Resolved Neon branch id for governed deploy: ${PROD_BRANCH_ID}" >> audit_logs/deployment.log
+            if [ -n "${PRIMARY_ROLE_NAME}" ] || [ -n "${PRIMARY_DATABASE_NAME}" ]; then
+              ROLE_PARAM="${PRIMARY_ROLE_NAME:-neondb_owner}"
+              DB_PARAM="${PRIMARY_DATABASE_NAME:-neondb}"
+              CONNECTION_URI=$(request_connection_uri "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${PROD_BRANCH_ID}&role_name=${ROLE_PARAM}&database_name=${DB_PARAM}" || true)
+            fi
+            if [ -z "${CONNECTION_URI}" ]; then
+              CONNECTION_URI=$(request_connection_uri "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${PROD_BRANCH_ID}&role_name=neondb_owner&database_name=neondb" || true)
+            fi
+            if [ -z "${CONNECTION_URI}" ]; then
+              CONNECTION_URI=$(request_connection_uri "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${PROD_BRANCH_ID}" || true)
+            fi
+            if [ -z "${CONNECTION_URI}" ]; then
+              BRANCH_DETAIL_RESPONSE=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches/${PROD_BRANCH_ID}" \
+                -H "Authorization: Bearer ${NEON_API_KEY}" \
+                -H "Accept: application/json")
+              CONNECTION_URI=$(extract_connection_uri_from_json "${BRANCH_DETAIL_RESPONSE}")
+              if [ -n "${CONNECTION_URI}" ]; then
+                echo "Resolved governed Neon connection URI via branch detail payload fallback." >> audit_logs/deployment.log
+              fi
+            fi
+          fi
+          if [ -z "${CONNECTION_URI}" ]; then
+            CONNECTION_URI=$(request_connection_uri "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?role_name=neondb_owner&database_name=neondb" || true)
+          fi
+          if [ -z "${CONNECTION_URI}" ]; then
+            CONNECTION_URI=$(request_connection_uri "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri" || true)
           fi
 
           if [ -z "${CONNECTION_URI}" ]; then
