@@ -156,7 +156,7 @@ jobs:
                   normalized=$(echo "${payload}" | jq -r '(.NEON_PROJECT_ID // .neon_project_id // .project_id // .id // empty)')
                   ;;
                 neon_database_url)
-                  normalized=$(echo "${payload}" | jq -r '(.DATABASE_URL // .database_url // .url // .uri // .connection_uri // .runtime_url // .migration_url // empty)')
+                  normalized=$(echo "${payload}" | jq -r '(.MIGRATION_DATABASE_URL // .migration_database_url // .DATABASE_URL // .database_url // .RUNTIME_DATABASE_URL // .runtime_database_url // .connection_uri // .uri // .runtime_url // .migration_url // .url // empty)')
                   ;;
                 *)
                   normalized="${payload}"
@@ -166,6 +166,18 @@ jobs:
             # Trim incidental whitespace/newlines from managed secret payloads.
             normalized="$(printf '%s' "${normalized}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             printf '%s' "${normalized}"
+          }
+
+          is_valid_database_dsn() {
+            local value
+            value="${1:-}"
+            if [[ "${value}" =~ ^postgres(ql)?(\+[a-zA-Z0-9_]+)?:// ]]; then
+              return 0
+            fi
+            if [[ "${value}" =~ ^host= ]]; then
+              return 0
+            fi
+            return 1
           }
 
           NEON_API_SOURCE="none"
@@ -212,12 +224,18 @@ jobs:
             "/skeldir/${SKELDIR_ENV}/secret/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/database-url" || true)
           NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
+          if [ -n "${NEON_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_DATABASE_URL}"; then
+            NEON_DATABASE_URL=""
+          fi
           if [ -n "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_SOURCE="aws_secrets_manager_explicit"
           fi
           if [ -z "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_URL=$(resolve_secret_manager_by_fragments neon database url || true)
             NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${NEON_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_DATABASE_URL}"; then
+              NEON_DATABASE_URL=""
+            fi
             if [ -n "${NEON_DATABASE_URL}" ]; then
               NEON_DATABASE_SOURCE="aws_secrets_manager_fragment"
             fi
@@ -229,6 +247,9 @@ jobs:
               "/skeldir/${SKELDIR_ENV}/config/neon-database-url" \
               "/skeldir/${SKELDIR_ENV}/config/database-url" || true)
             NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${NEON_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_DATABASE_URL}"; then
+              NEON_DATABASE_URL=""
+            fi
             if [ -n "${NEON_DATABASE_URL}" ]; then
               NEON_DATABASE_SOURCE="aws_ssm_explicit"
             fi
@@ -236,6 +257,9 @@ jobs:
           if [ -z "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_URL=$(resolve_ssm_by_fragments neon database url || true)
             NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${NEON_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_DATABASE_URL}"; then
+              NEON_DATABASE_URL=""
+            fi
             if [ -n "${NEON_DATABASE_URL}" ]; then
               NEON_DATABASE_SOURCE="aws_ssm_fragment"
             fi
@@ -326,6 +350,10 @@ jobs:
             echo "Unable to resolve Neon connection URI for governed production deploy."
             exit 1
           fi
+          if ! is_valid_database_dsn "${CONNECTION_URI}"; then
+            echo "Resolved Neon connection URI is not a valid Postgres DSN."
+            exit 1
+          fi
           
           echo "::add-mask::${CONNECTION_URI}"
           echo "DATABASE_URL=${CONNECTION_URI}" >> $GITHUB_OUTPUT
@@ -338,15 +366,19 @@ jobs:
       - name: Capture pre-deployment state
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
+          set -euo pipefail
           echo "\n[PRE-DEPLOYMENT STATE]" >> audit_logs/deployment.log
-          psql "${DATABASE_URL}" -c "SELECT version_num, updated_at FROM alembic_version;" >> audit_logs/deployment.log 2>&1 || echo "No alembic_version table yet" >> audit_logs/deployment.log
+          psql "${DATABASE_URL}" -c "SELECT version_num FROM alembic_version;" >> audit_logs/deployment.log 2>&1 || echo "No alembic_version table yet" >> audit_logs/deployment.log
           echo "Current Alembic head: $(alembic current 2>&1)" >> audit_logs/deployment.log
       
       - name: Apply migrations with DDL logging
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
+          set -euo pipefail
           echo "\n[MIGRATION EXECUTION]" >> audit_logs/deployment.log
           echo "Deploying schema migrations to Neon production..." | tee -a audit_logs/deployment.log
           
@@ -357,9 +389,11 @@ jobs:
       - name: Capture post-deployment state
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
+          set -euo pipefail
           echo "\n[POST-DEPLOYMENT STATE]" >> audit_logs/deployment.log
-          psql "${DATABASE_URL}" -c "SELECT version_num, updated_at FROM alembic_version;" >> audit_logs/deployment.log
+          psql "${DATABASE_URL}" -c "SELECT version_num FROM alembic_version;" >> audit_logs/deployment.log
           echo "New Alembic head: $(alembic current 2>&1)" >> audit_logs/deployment.log
 
       - name: Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production
