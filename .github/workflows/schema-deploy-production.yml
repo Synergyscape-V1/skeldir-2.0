@@ -316,9 +316,55 @@ jobs:
         id: neon-connection
         run: |
           set -euo pipefail
+          is_valid_database_dsn() {
+            local value
+            value="${1:-}"
+            if [[ "${value}" =~ ^postgres(ql)?(\+[a-zA-Z0-9_]+)?:// ]]; then
+              return 0
+            fi
+            if [[ "${value}" =~ ^host= ]]; then
+              return 0
+            fi
+            return 1
+          }
+
+          to_sync_migration_dsn() {
+            local value
+            value="${1:-}"
+            if [[ "${value}" =~ ^postgresql\+asyncpg:// ]]; then
+              echo "${value/postgresql+asyncpg:\/\//postgresql://}"
+              return 0
+            fi
+            if [[ "${value}" =~ ^postgres\+asyncpg:// ]]; then
+              echo "${value/postgres+asyncpg:\/\//postgres://}"
+              return 0
+            fi
+            echo "${value}"
+          }
+
+          emit_database_outputs() {
+            local resolved_url migration_url
+            resolved_url="${1:-}"
+            if ! is_valid_database_dsn "${resolved_url}"; then
+              echo "Resolved Neon connection URI is not a valid Postgres DSN."
+              exit 1
+            fi
+            migration_url="$(to_sync_migration_dsn "${resolved_url}")"
+            if ! is_valid_database_dsn "${migration_url}"; then
+              echo "Derived migration DSN is not a valid Postgres DSN."
+              exit 1
+            fi
+            echo "::add-mask::${migration_url}"
+            echo "DATABASE_URL=${migration_url}" >> "$GITHUB_OUTPUT"
+            echo "MIGRATION_DATABASE_URL=${migration_url}" >> "$GITHUB_OUTPUT"
+            if [ "${resolved_url}" != "${migration_url}" ]; then
+              echo "Normalized async Postgres DSN to sync Postgres DSN for Alembic/psql compatibility." >> audit_logs/deployment.log
+            fi
+          }
+
           echo "Neon credential source: api=${NEON_API_SOURCE:-unknown}, project=${NEON_PROJECT_SOURCE:-unknown}, db_url=${NEON_DATABASE_SOURCE:-none}" >> audit_logs/deployment.log
           if [ -n "${NEON_DATABASE_URL:-}" ]; then
-            echo "DATABASE_URL=${NEON_DATABASE_URL}" >> $GITHUB_OUTPUT
+            emit_database_outputs "${NEON_DATABASE_URL}"
             echo "Connected via governed direct Neon database URL secret/parameter." >> audit_logs/deployment.log
             exit 0
           fi
@@ -350,13 +396,7 @@ jobs:
             echo "Unable to resolve Neon connection URI for governed production deploy."
             exit 1
           fi
-          if ! is_valid_database_dsn "${CONNECTION_URI}"; then
-            echo "Resolved Neon connection URI is not a valid Postgres DSN."
-            exit 1
-          fi
-          
-          echo "::add-mask::${CONNECTION_URI}"
-          echo "DATABASE_URL=${CONNECTION_URI}" >> $GITHUB_OUTPUT
+          emit_database_outputs "${CONNECTION_URI}"
           if [ -n "${PROD_BRANCH_ID}" ]; then
             echo "Connected to Neon production branch: ${PROD_BRANCH_ID}" >> audit_logs/deployment.log
           else
@@ -366,7 +406,7 @@ jobs:
       - name: Capture pre-deployment state
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
-          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.MIGRATION_DATABASE_URL }}
         run: |
           set -euo pipefail
           echo "\n[PRE-DEPLOYMENT STATE]" >> audit_logs/deployment.log
@@ -376,7 +416,7 @@ jobs:
       - name: Apply migrations with DDL logging
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
-          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.MIGRATION_DATABASE_URL }}
         run: |
           set -euo pipefail
           echo "\n[MIGRATION EXECUTION]" >> audit_logs/deployment.log
@@ -389,7 +429,7 @@ jobs:
       - name: Capture post-deployment state
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
-          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ steps.neon-connection.outputs.MIGRATION_DATABASE_URL }}
         run: |
           set -euo pipefail
           echo "\n[POST-DEPLOYMENT STATE]" >> audit_logs/deployment.log
