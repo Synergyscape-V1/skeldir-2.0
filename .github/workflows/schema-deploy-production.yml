@@ -264,6 +264,34 @@ jobs:
             return 1
           }
 
+          resolve_secret_manager_database_dsn_value() {
+            local secret_id raw normalized local_candidate
+            local_candidate=""
+            for secret_id in "$@"; do
+              raw=$(aws secretsmanager get-secret-value \
+                --secret-id "${secret_id}" \
+                --query SecretString \
+                --output text \
+                --region "${AWS_REGION}" 2>/dev/null || true)
+              normalized=$(normalize_secret_payload "${raw:-}" neon_database_url)
+              if [ -z "${normalized}" ] || ! is_valid_database_dsn "${normalized}"; then
+                continue
+              fi
+              if ! is_localhost_database_dsn "${normalized}"; then
+                echo "${normalized}"
+                return 0
+              fi
+              if [ -z "${local_candidate}" ]; then
+                local_candidate="${normalized}"
+              fi
+            done
+            if [ -n "${local_candidate}" ]; then
+              echo "${local_candidate}"
+              return 0
+            fi
+            return 1
+          }
+
           NEON_API_SOURCE="none"
           NEON_PROJECT_SOURCE="none"
           NEON_DATABASE_SOURCE="none"
@@ -363,14 +391,10 @@ jobs:
             fi
           fi
 
-          NEON_MIGRATION_DATABASE_URL=$(resolve_secret_manager_value \
+          NEON_MIGRATION_DATABASE_URL=$(resolve_secret_manager_database_dsn_value \
             "/skeldir/${SKELDIR_ENV}/secret/database/migration-url" \
             "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-migration-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-migration-database-url" || true)
-          NEON_MIGRATION_DATABASE_URL=$(normalize_secret_payload "${NEON_MIGRATION_DATABASE_URL:-}" neon_database_url)
-          if [ -n "${NEON_MIGRATION_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_MIGRATION_DATABASE_URL}"; then
-            NEON_MIGRATION_DATABASE_URL=""
-          fi
           if [ -n "${NEON_MIGRATION_DATABASE_URL}" ]; then
             NEON_MIGRATION_DATABASE_SOURCE="aws_secrets_manager_explicit"
           fi
@@ -408,17 +432,13 @@ jobs:
             fi
           fi
 
-          NEON_DATABASE_URL=$(resolve_secret_manager_value \
+          NEON_DATABASE_URL=$(resolve_secret_manager_database_dsn_value \
             "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url" \
             "/skeldir/${SKELDIR_ENV}/secret/database/migration-url" \
             "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/database-url" || true)
-          NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
-          if [ -n "${NEON_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_DATABASE_URL}"; then
-            NEON_DATABASE_URL=""
-          fi
           if [ -n "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_SOURCE="aws_secrets_manager_explicit"
           fi

@@ -279,6 +279,27 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_soft_
     )
 
 
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_explicit_dsn_localhost_preference_regression(
+    tmp_path: Path,
+) -> None:
+    mutated_workflow = tmp_path / "schema-deploy-production.explicit-dsn-localhost.regression.yml"
+    mutated_workflow.write_text(
+        DEPLOY_WORKFLOW.read_text(encoding="utf-8").replace(
+            "if ! is_localhost_database_dsn \"${normalized}\"; then",
+            "if false; then",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--deploy-workflow-file", str(mutated_workflow))
+    assert proc.returncode != 0
+    assert (
+        "deploy_workflow_missing_token:if ! is_localhost_database_dsn \"${normalized}\"; then"
+        in (proc.stdout + proc.stderr)
+    )
+
+
 def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_failure(
     tmp_path: Path,
 ) -> None:
