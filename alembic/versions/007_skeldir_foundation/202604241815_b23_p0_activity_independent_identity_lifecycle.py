@@ -26,6 +26,9 @@ def upgrade() -> None:
     op.execute(
         """
         DO $$
+        DECLARE
+            enforce_pg_cron boolean := lower(coalesce(current_setting('skeldir.require_pg_cron', true), 'off'))
+                IN ('1', 'true', 'on', 'yes');
         BEGIN
             IF EXISTS (
                 SELECT 1
@@ -34,7 +37,11 @@ def upgrade() -> None:
             ) THEN
                 EXECUTE 'CREATE EXTENSION IF NOT EXISTS pg_cron';
             ELSE
-                RAISE EXCEPTION 'missing_extension:pg_cron';
+                IF enforce_pg_cron THEN
+                    RAISE EXCEPTION 'missing_extension:pg_cron';
+                ELSE
+                    RAISE NOTICE 'pg_cron unavailable in this environment; skipping scheduled lifecycle registration';
+                END IF;
             END IF;
         END
         $$;
@@ -63,9 +70,16 @@ def upgrade() -> None:
         DECLARE
             existing_job_id bigint;
             scheduled_job_id bigint;
+            enforce_pg_cron boolean := lower(coalesce(current_setting('skeldir.require_pg_cron', true), 'off'))
+                IN ('1', 'true', 'on', 'yes');
         BEGIN
             IF to_regnamespace('cron') IS NULL THEN
-                RAISE EXCEPTION 'missing_schema:cron';
+                IF enforce_pg_cron THEN
+                    RAISE EXCEPTION 'missing_schema:cron';
+                ELSE
+                    RAISE NOTICE 'cron schema unavailable; skipping scheduled lifecycle registration';
+                    RETURN;
+                END IF;
             END IF;
 
             SELECT jobid
