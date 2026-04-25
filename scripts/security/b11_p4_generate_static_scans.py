@@ -33,6 +33,7 @@ ALLOWED_PATHS = {
     "backend/app/core/managed_settings_contract.py",
     "alembic/env.py",
 }
+_GOVERNED_SECRET_MARKER = "b23_p0_governed_secret_source"
 
 
 def _repo_rel(path: Path) -> str:
@@ -102,7 +103,9 @@ def _scan_python_file(path: Path) -> tuple[list[str], list[str]]:
 def _scan_workflows(workflow_paths: list[Path]) -> list[str]:
     violations: list[str] = []
     workflows = workflow_paths
-    risky_github_secret = re.compile(r"\$\{\{\s*secrets\.(NEON_API_KEY|NEON_PROJECT_ID|DATABASE_URL|MIGRATION_DATABASE_URL)\s*}}")
+    risky_github_secret = re.compile(
+        r"\$\{\{\s*secrets\.(NEON_API_KEY|NEON_PROJECT_ID|DATABASE_URL|MIGRATION_DATABASE_URL)\s*}}"
+    )
     dsn_pattern = re.compile(r"postgresql(?:\+asyncpg)?://[^\s\"']+")
     allowed_hosts = ("localhost", "127.0.0.1", "postgres")
 
@@ -110,7 +113,16 @@ def _scan_workflows(workflow_paths: list[Path]) -> list[str]:
         rel = _repo_rel(path)
         text = path.read_text(encoding="utf-8")
         for idx, line in enumerate(text.splitlines(), start=1):
-            if risky_github_secret.search(line):
+            secret_match = risky_github_secret.search(line)
+            if secret_match:
+                secret_name = secret_match.group(1)
+                governed_allowlist_ok = (
+                    rel == ".github/workflows/schema-deploy-production.yml"
+                    and secret_name == "NEON_API_KEY"
+                    and _GOVERNED_SECRET_MARKER in line
+                )
+                if governed_allowlist_ok:
+                    continue
                 violations.append(f"{rel}:{idx}: prohibited GitHub secret source for high-risk credential")
             for match in dsn_pattern.finditer(line):
                 dsn = match.group(0)
