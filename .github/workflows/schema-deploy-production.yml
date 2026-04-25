@@ -142,6 +142,32 @@ jobs:
             return 1
           }
 
+          normalize_secret_payload() {
+            local payload kind normalized
+            payload="${1:-}"
+            kind="${2:-}"
+            normalized="${payload}"
+            if [ -n "${payload}" ] && echo "${payload}" | jq -e . >/dev/null 2>&1; then
+              case "${kind}" in
+                neon_api_key)
+                  normalized=$(echo "${payload}" | jq -r '(.NEON_API_KEY // .neon_api_key // .api_key // .key // empty)')
+                  ;;
+                neon_project_id)
+                  normalized=$(echo "${payload}" | jq -r '(.NEON_PROJECT_ID // .neon_project_id // .project_id // .id // empty)')
+                  ;;
+                neon_database_url)
+                  normalized=$(echo "${payload}" | jq -r '(.DATABASE_URL // .database_url // .url // .uri // .connection_uri // .runtime_url // .migration_url // empty)')
+                  ;;
+                *)
+                  normalized="${payload}"
+                  ;;
+              esac
+            fi
+            # Trim incidental whitespace/newlines from managed secret payloads.
+            normalized="$(printf '%s' "${normalized}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            printf '%s' "${normalized}"
+          }
+
           NEON_API_SOURCE="none"
           NEON_PROJECT_SOURCE="none"
           NEON_DATABASE_SOURCE="none"
@@ -150,11 +176,13 @@ jobs:
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" \
             "/skeldir/${SKELDIR_ENV}/secret/neon-api-key" \
             "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-api-key" || true)
+          NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
           if [ -n "${NEON_API_KEY}" ]; then
             NEON_API_SOURCE="aws_secrets_manager_explicit"
           fi
           if [ -z "${NEON_API_KEY}" ]; then
             NEON_API_KEY=$(resolve_secret_manager_by_fragments neon api key || true)
+            NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
             if [ -n "${NEON_API_KEY}" ]; then
               NEON_API_SOURCE="aws_secrets_manager_fragment"
             fi
@@ -164,11 +192,13 @@ jobs:
             "/skeldir/${SKELDIR_ENV}/config/ci/neon-project-id" \
             "/skeldir/${SKELDIR_ENV}/config/neon-project-id" \
             "/skeldir/${SKELDIR_ENV}/config/control-plane/neon-project-id" || true)
+          NEON_PROJECT_ID=$(normalize_secret_payload "${NEON_PROJECT_ID:-}" neon_project_id)
           if [ -n "${NEON_PROJECT_ID}" ]; then
             NEON_PROJECT_SOURCE="aws_ssm_explicit"
           fi
           if [ -z "${NEON_PROJECT_ID}" ]; then
             NEON_PROJECT_ID=$(resolve_ssm_by_fragments neon project id || true)
+            NEON_PROJECT_ID=$(normalize_secret_payload "${NEON_PROJECT_ID:-}" neon_project_id)
             if [ -n "${NEON_PROJECT_ID}" ]; then
               NEON_PROJECT_SOURCE="aws_ssm_fragment"
             fi
@@ -181,11 +211,13 @@ jobs:
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/database-url" || true)
+          NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
           if [ -n "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_SOURCE="aws_secrets_manager_explicit"
           fi
           if [ -z "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_URL=$(resolve_secret_manager_by_fragments neon database url || true)
+            NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
             if [ -n "${NEON_DATABASE_URL}" ]; then
               NEON_DATABASE_SOURCE="aws_secrets_manager_fragment"
             fi
@@ -196,12 +228,14 @@ jobs:
               "/skeldir/${SKELDIR_ENV}/config/control-plane/neon-database-url" \
               "/skeldir/${SKELDIR_ENV}/config/neon-database-url" \
               "/skeldir/${SKELDIR_ENV}/config/database-url" || true)
+            NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
             if [ -n "${NEON_DATABASE_URL}" ]; then
               NEON_DATABASE_SOURCE="aws_ssm_explicit"
             fi
           fi
           if [ -z "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_URL=$(resolve_ssm_by_fragments neon database url || true)
+            NEON_DATABASE_URL=$(normalize_secret_payload "${NEON_DATABASE_URL:-}" neon_database_url)
             if [ -n "${NEON_DATABASE_URL}" ]; then
               NEON_DATABASE_SOURCE="aws_ssm_fragment"
             fi
