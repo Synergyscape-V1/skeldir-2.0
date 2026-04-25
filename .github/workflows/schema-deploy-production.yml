@@ -156,7 +156,7 @@ jobs:
                   normalized=$(echo "${payload}" | jq -r '(.NEON_PROJECT_ID // .neon_project_id // .project_id // .id // empty)')
                   ;;
                 neon_database_url)
-                  normalized=$(echo "${payload}" | jq -r '(.MIGRATION_DATABASE_URL // .migration_database_url // .DATABASE_URL // .database_url // .RUNTIME_DATABASE_URL // .runtime_database_url // .connection_uri // .uri // .runtime_url // .migration_url // .url // empty)')
+                  normalized=$(echo "${payload}" | jq -r '(.RUNTIME_DATABASE_URL // .runtime_database_url // .DATABASE_URL // .database_url // .connection_uri // .uri // .runtime_url // .url // .MIGRATION_DATABASE_URL // .migration_database_url // .migration_url // empty)')
                   ;;
                 *)
                   normalized="${payload}"
@@ -328,6 +328,18 @@ jobs:
             return 1
           }
 
+          is_localhost_database_dsn() {
+            local value
+            value="${1:-}"
+            if [[ "${value}" =~ ://([^/@]+@)?(localhost|127\.0\.0\.1|\[::1\]|::1)(:|/|$) ]]; then
+              return 0
+            fi
+            if [[ "${value}" =~ (^|[[:space:]])host=(localhost|127\.0\.0\.1|::1|\[::1\])([[:space:]]|$) ]]; then
+              return 0
+            fi
+            return 1
+          }
+
           to_sync_migration_dsn() {
             local value
             value="${1:-}"
@@ -352,6 +364,10 @@ jobs:
             migration_url="$(to_sync_migration_dsn "${resolved_url}")"
             if ! is_valid_database_dsn "${migration_url}"; then
               echo "Derived migration DSN is not a valid Postgres DSN."
+              exit 1
+            fi
+            if is_localhost_database_dsn "${migration_url}"; then
+              echo "Resolved governed production database DSN points to localhost and is invalid for Neon deployment."
               exit 1
             fi
             echo "::add-mask::${migration_url}"
