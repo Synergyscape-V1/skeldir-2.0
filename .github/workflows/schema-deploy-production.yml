@@ -217,8 +217,8 @@ jobs:
           fi
 
           NEON_DATABASE_URL=$(resolve_secret_manager_value \
-            "/skeldir/${SKELDIR_ENV}/secret/database/migration-url" \
             "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url" \
+            "/skeldir/${SKELDIR_ENV}/secret/database/migration-url" \
             "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/neon-database-url" \
