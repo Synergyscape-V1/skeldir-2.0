@@ -380,9 +380,14 @@ jobs:
 
           echo "Neon credential source: api=${NEON_API_SOURCE:-unknown}, project=${NEON_PROJECT_SOURCE:-unknown}, db_url=${NEON_DATABASE_SOURCE:-none}" >> audit_logs/deployment.log
           if [ -n "${NEON_DATABASE_URL:-}" ]; then
-            emit_database_outputs "${NEON_DATABASE_URL}"
-            echo "Connected via governed direct Neon database URL secret/parameter." >> audit_logs/deployment.log
-            exit 0
+            DIRECT_SYNC_URL="$(to_sync_migration_dsn "${NEON_DATABASE_URL}")"
+            if is_localhost_database_dsn "${DIRECT_SYNC_URL}"; then
+              echo "Ignoring governed direct database URL secret/parameter because it targets localhost; falling back to Neon API connection resolution." >> audit_logs/deployment.log
+            else
+              emit_database_outputs "${NEON_DATABASE_URL}"
+              echo "Connected via governed direct Neon database URL secret/parameter." >> audit_logs/deployment.log
+              exit 0
+            fi
           fi
 
           RESPONSE=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
