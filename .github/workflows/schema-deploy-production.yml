@@ -48,6 +48,71 @@ jobs:
         id: neon-guard
         run: |
           set -euo pipefail
+          resolve_secret_manager_by_fragments() {
+            local value names name lower_name
+            names=$(aws secretsmanager list-secrets \
+              --filters "Key=name,Values=/skeldir/${SKELDIR_ENV}/secret/" \
+              --query "SecretList[].Name" \
+              --output text \
+              --region "${AWS_REGION}" 2>/dev/null || true)
+            for name in ${names}; do
+              lower_name=$(echo "${name}" | tr '[:upper:]' '[:lower:]')
+              local matches=true
+              local fragment
+              for fragment in "$@"; do
+                if [[ "${lower_name}" != *"${fragment}"* ]]; then
+                  matches=false
+                  break
+                fi
+              done
+              if [ "${matches}" = true ]; then
+                value=$(aws secretsmanager get-secret-value \
+                  --secret-id "${name}" \
+                  --query SecretString \
+                  --output text \
+                  --region "${AWS_REGION}" 2>/dev/null || true)
+                if [ -n "${value}" ]; then
+                  echo "${value}"
+                  return 0
+                fi
+              fi
+            done
+            return 1
+          }
+
+          resolve_ssm_by_fragments() {
+            local value names name lower_name
+            names=$(aws ssm describe-parameters \
+              --parameter-filters "Key=Name,Option=BeginsWith,Values=/skeldir/${SKELDIR_ENV}/config/" \
+              --query "Parameters[].Name" \
+              --output text \
+              --region "${AWS_REGION}" 2>/dev/null || true)
+            for name in ${names}; do
+              lower_name=$(echo "${name}" | tr '[:upper:]' '[:lower:]')
+              local matches=true
+              local fragment
+              for fragment in "$@"; do
+                if [[ "${lower_name}" != *"${fragment}"* ]]; then
+                  matches=false
+                  break
+                fi
+              done
+              if [ "${matches}" = true ]; then
+                value=$(aws ssm get-parameter \
+                  --name "${name}" \
+                  --with-decryption \
+                  --query Parameter.Value \
+                  --output text \
+                  --region "${AWS_REGION}" 2>/dev/null || true)
+                if [ -n "${value}" ]; then
+                  echo "${value}"
+                  return 0
+                fi
+              fi
+            done
+            return 1
+          }
+
           resolve_secret_manager_value() {
             local secret_id
             for secret_id in "$@"; do
@@ -78,17 +143,50 @@ jobs:
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" \
             "/skeldir/${SKELDIR_ENV}/secret/neon-api-key" \
             "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-api-key" || true)
+          if [ -z "${NEON_API_KEY}" ]; then
+            NEON_API_KEY=$(resolve_secret_manager_by_fragments neon api key || true)
+          fi
+
           NEON_PROJECT_ID=$(resolve_ssm_value \
             "/skeldir/${SKELDIR_ENV}/config/ci/neon-project-id" \
             "/skeldir/${SKELDIR_ENV}/config/neon-project-id" \
             "/skeldir/${SKELDIR_ENV}/config/control-plane/neon-project-id" || true)
-          if [ -z "${NEON_API_KEY}" ] || [ -z "${NEON_PROJECT_ID}" ]; then
+          if [ -z "${NEON_PROJECT_ID}" ]; then
+            NEON_PROJECT_ID=$(resolve_ssm_by_fragments neon project id || true)
+          fi
+
+          NEON_DATABASE_URL=$(resolve_secret_manager_value \
+            "/skeldir/${SKELDIR_ENV}/secret/ci/neon-database-url" \
+            "/skeldir/${SKELDIR_ENV}/secret/neon-database-url" \
+            "/skeldir/${SKELDIR_ENV}/secret/database-url" || true)
+          if [ -z "${NEON_DATABASE_URL}" ]; then
+            NEON_DATABASE_URL=$(resolve_secret_manager_by_fragments neon database url || true)
+          fi
+          if [ -z "${NEON_DATABASE_URL}" ]; then
+            NEON_DATABASE_URL=$(resolve_ssm_value \
+              "/skeldir/${SKELDIR_ENV}/config/ci/neon-database-url" \
+              "/skeldir/${SKELDIR_ENV}/config/neon-database-url" \
+              "/skeldir/${SKELDIR_ENV}/config/database-url" || true)
+          fi
+          if [ -z "${NEON_DATABASE_URL}" ]; then
+            NEON_DATABASE_URL=$(resolve_ssm_by_fragments neon database url || true)
+          fi
+
+          if [ -z "${NEON_DATABASE_URL}" ] && { [ -z "${NEON_API_KEY}" ] || [ -z "${NEON_PROJECT_ID}" ]; }; then
             echo "Missing required Neon control-plane values for governed production deploy."
             exit 1
           fi
-          echo "::add-mask::${NEON_API_KEY}"
-          echo "NEON_API_KEY=${NEON_API_KEY}" >> "$GITHUB_ENV"
-          echo "NEON_PROJECT_ID=${NEON_PROJECT_ID}" >> "$GITHUB_ENV"
+          if [ -n "${NEON_API_KEY}" ]; then
+            echo "::add-mask::${NEON_API_KEY}"
+            echo "NEON_API_KEY=${NEON_API_KEY}" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${NEON_PROJECT_ID}" ]; then
+            echo "NEON_PROJECT_ID=${NEON_PROJECT_ID}" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${NEON_DATABASE_URL}" ]; then
+            echo "::add-mask::${NEON_DATABASE_URL}"
+            echo "NEON_DATABASE_URL=${NEON_DATABASE_URL}" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -114,6 +212,12 @@ jobs:
         id: neon-connection
         run: |
           set -euo pipefail
+          if [ -n "${NEON_DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL=${NEON_DATABASE_URL}" >> $GITHUB_OUTPUT
+            echo "Connected via governed direct Neon database URL secret/parameter." >> audit_logs/deployment.log
+            exit 0
+          fi
+
           RESPONSE=$(curl -s "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
             -H "Authorization: Bearer ${NEON_API_KEY}" \
             -H "Accept: application/json")
