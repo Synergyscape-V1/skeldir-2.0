@@ -29,8 +29,11 @@ jobs:
       AWS_REGION: us-east-2
       # B11 control-plane governance: skeldir-ci-deploy role is scoped to /skeldir/ci/*.
       SKELDIR_ENV: ci
+      PGOPTIONS: -c skeldir.require_pg_cron=on
       GH_NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # b23_p0_governed_secret_source
       GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      GH_NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }} # b23_p0_governed_secret_source
+      GH_NEON_MIGRATION_DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }} # b23_p0_governed_secret_source
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -397,6 +400,13 @@ jobs:
               NEON_MIGRATION_DATABASE_SOURCE="aws_ssm_neon_database_scan"
             fi
           fi
+          if { [ -z "${NEON_MIGRATION_DATABASE_URL}" ] || is_localhost_database_dsn "${NEON_MIGRATION_DATABASE_URL}"; } && [ -n "${GH_NEON_MIGRATION_DATABASE_URL:-}" ]; then
+            CANDIDATE_MIGRATION_DATABASE_URL=$(normalize_secret_payload "${GH_NEON_MIGRATION_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${CANDIDATE_MIGRATION_DATABASE_URL}" ] && is_valid_database_dsn "${CANDIDATE_MIGRATION_DATABASE_URL}" && ! is_localhost_database_dsn "${CANDIDATE_MIGRATION_DATABASE_URL}"; then
+              NEON_MIGRATION_DATABASE_URL="${CANDIDATE_MIGRATION_DATABASE_URL}"
+              NEON_MIGRATION_DATABASE_SOURCE="github_secret_allowlisted"
+            fi
+          fi
 
           NEON_DATABASE_URL=$(resolve_secret_manager_value \
             "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url" \
@@ -460,6 +470,13 @@ jobs:
             if [ -n "${CANDIDATE_DATABASE_URL}" ] && is_valid_database_dsn "${CANDIDATE_DATABASE_URL}" && ! is_localhost_database_dsn "${CANDIDATE_DATABASE_URL}"; then
               NEON_DATABASE_URL="${CANDIDATE_DATABASE_URL}"
               NEON_DATABASE_SOURCE="aws_ssm_neon_database_scan"
+            fi
+          fi
+          if { [ -z "${NEON_DATABASE_URL}" ] || is_localhost_database_dsn "${NEON_DATABASE_URL}"; } && [ -n "${GH_NEON_DATABASE_URL:-}" ]; then
+            CANDIDATE_DATABASE_URL=$(normalize_secret_payload "${GH_NEON_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${CANDIDATE_DATABASE_URL}" ] && is_valid_database_dsn "${CANDIDATE_DATABASE_URL}" && ! is_localhost_database_dsn "${CANDIDATE_DATABASE_URL}"; then
+              NEON_DATABASE_URL="${CANDIDATE_DATABASE_URL}"
+              NEON_DATABASE_SOURCE="github_secret_allowlisted"
             fi
           fi
           if [ -z "${NEON_API_KEY}" ] && [ -n "${GH_NEON_API_KEY:-}" ]; then

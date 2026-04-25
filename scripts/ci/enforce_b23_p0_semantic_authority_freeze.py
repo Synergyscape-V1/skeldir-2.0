@@ -535,6 +535,11 @@ def _validate_topology_lifecycle_schema_file(path: Path, violations: list[str]) 
     text = _read_text(path)
     required_tokens = (
         "CREATE EXTENSION IF NOT EXISTS pg_cron",
+        "current_setting('skeldir.require_pg_cron', true)",
+        "skeldir.require_pg_cron",
+        "missing_extension:pg_cron",
+        "missing_schema:cron",
+        "skipping scheduled lifecycle registration",
         "CREATE OR REPLACE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()",
         "SECURITY DEFINER",
         "SET search_path = public",
@@ -627,6 +632,7 @@ def _validate_deploy_workflow(path: Path, violations: list[str]) -> None:
     required_tokens = (
         "python scripts/ci/b15_p7_phase_closure_gate.py",
         "--mode technical",
+        "PGOPTIONS: -c skeldir.require_pg_cron=on",
         "Guard Neon control-plane secrets (fail closed when missing)",
         "GH_NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # b23_p0_governed_secret_source",
         "GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}",

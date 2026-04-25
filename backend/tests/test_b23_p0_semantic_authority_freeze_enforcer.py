@@ -238,6 +238,26 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_sc
     )
 
 
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_schema_missing_governed_toggle(
+    tmp_path: Path,
+) -> None:
+    mutated_lifecycle_schema = tmp_path / "topology_lifecycle_schema.toggle.regression.py"
+    mutated_lifecycle_schema.write_text(
+        TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE.read_text(encoding="utf-8").replace(
+            "current_setting('skeldir.require_pg_cron', true)",
+            "current_setting('skeldir.require_pg_cron_disabled', true)",
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--topology-lifecycle-schema-proof-file", str(mutated_lifecycle_schema))
+    assert proc.returncode != 0
+    assert (
+        "topology_lifecycle_schema_missing_token:current_setting('skeldir.require_pg_cron', true)"
+        in (proc.stdout + proc.stderr)
+    )
+
+
 def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_soft_skip_guard(
     tmp_path: Path,
 ) -> None:
