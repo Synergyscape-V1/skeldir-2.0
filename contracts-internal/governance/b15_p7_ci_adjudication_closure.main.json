@@ -45,6 +45,8 @@
       "--mode technical",
       "--status-file docs/forensics/evidence/b15_p7/mental_model_study/status.json",
       "Guard Neon control-plane secrets (fail closed when missing)",
+      "/skeldir/${SKELDIR_ENV}/secret/database/migration-url",
+      "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url",
       "Missing required Neon control-plane values for governed production deploy.",
       "missing_extension:pg_cron",
       "missing_cron_job:b23_p0_prune_attribution_commerce_identities_hourly"

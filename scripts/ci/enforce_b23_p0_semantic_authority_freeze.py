@@ -628,6 +628,8 @@ def _validate_deploy_workflow(path: Path, violations: list[str]) -> None:
         "python scripts/ci/b15_p7_phase_closure_gate.py",
         "--mode technical",
         "Guard Neon control-plane secrets (fail closed when missing)",
+        "/skeldir/${SKELDIR_ENV}/secret/database/migration-url",
+        "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url",
         "Missing required Neon control-plane values for governed production deploy.",
         "exit 1",
         "alembic upgrade head",
