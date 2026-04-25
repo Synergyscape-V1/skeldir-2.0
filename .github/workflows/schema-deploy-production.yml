@@ -200,7 +200,32 @@ jobs:
                   fi
                   ;;
                 neon_database_url)
-                  normalized=$(echo "${payload}" | jq -r '(.RUNTIME_DATABASE_URL // .runtime_database_url // .DATABASE_URL // .database_url // .connection_uri // .uri // .runtime_url // .url // .MIGRATION_DATABASE_URL // .migration_database_url // .migration_url // empty)')
+                  normalized=$(echo "${payload}" | jq -r '
+                    def dsn_candidates:
+                      [
+                        .RUNTIME_DATABASE_URL,
+                        .runtime_database_url,
+                        .DATABASE_URL,
+                        .database_url,
+                        .connection_uri,
+                        .uri,
+                        .runtime_url,
+                        .url,
+                        .MIGRATION_DATABASE_URL,
+                        .migration_database_url,
+                        .migration_url,
+                        (.. | strings | select(test("^postgres(ql)?(\\+[A-Za-z0-9_]+)?://"))),
+                        (.. | strings | select(test("(^|[[:space:]])host=")))
+                      ]
+                      | map(select(type == "string" and length > 0))
+                      | map(gsub("^\\s+|\\s+$"; ""));
+                    def is_local:
+                      test("://([^/@]+@)?(localhost|127\\.0\\.0\\.1|\\[::1\\]|::1)(:|/|$)")
+                      or test("(^|[[:space:]])host=(localhost|127\\.0\\.0\\.1|::1|\\[::1\\])([[:space:]]|$)");
+                    (dsn_candidates | map(select((is_local | not))) | .[0])
+                    // (dsn_candidates | .[0])
+                    // empty
+                  ')
                   ;;
                 *)
                   normalized="${payload}"
@@ -242,6 +267,23 @@ jobs:
             NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
             if [ -n "${NEON_API_KEY}" ]; then
               NEON_API_SOURCE="aws_secrets_manager_fragment"
+            fi
+          fi
+          if [ -z "${NEON_API_KEY}" ]; then
+            NEON_API_KEY=$(resolve_ssm_value \
+              "/skeldir/${SKELDIR_ENV}/config/ci/neon-api-key" \
+              "/skeldir/${SKELDIR_ENV}/config/neon-api-key" \
+              "/skeldir/${SKELDIR_ENV}/config/control-plane/neon-api-key" || true)
+            NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
+            if [ -n "${NEON_API_KEY}" ]; then
+              NEON_API_SOURCE="aws_ssm_explicit"
+            fi
+          fi
+          if [ -z "${NEON_API_KEY}" ]; then
+            NEON_API_KEY=$(resolve_ssm_by_fragments neon api key || true)
+            NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
+            if [ -n "${NEON_API_KEY}" ]; then
+              NEON_API_SOURCE="aws_ssm_fragment"
             fi
           fi
 
