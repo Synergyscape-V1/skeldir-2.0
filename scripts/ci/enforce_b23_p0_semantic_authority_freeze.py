@@ -633,6 +633,7 @@ def _validate_deploy_workflow(path: Path, violations: list[str]) -> None:
         "/skeldir/${SKELDIR_ENV}/secret/database/migration-url",
         "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url",
         "Missing required Neon control-plane values for governed production deploy.",
+        "Unable to resolve Neon connection URI for governed production deploy.",
         "exit 1",
         "alembic upgrade head",
         "Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production",

@@ -53,7 +53,7 @@ jobs:
           resolve_secret_manager_by_fragments() {
             local value names name lower_name
             names=$(aws secretsmanager list-secrets \
-              --filters "Key=name,Values=/skeldir/${SKELDIR_ENV}/secret/" \
+              --filters "Key=name,Values=/skeldir/${SKELDIR_ENV}/" \
               --query "SecretList[].Name" \
               --output text \
               --region "${AWS_REGION}" 2>/dev/null || true)
@@ -85,7 +85,7 @@ jobs:
           resolve_ssm_by_fragments() {
             local value names name lower_name
             names=$(aws ssm describe-parameters \
-              --parameter-filters "Key=Name,Option=BeginsWith,Values=/skeldir/${SKELDIR_ENV}/config/" \
+              --parameter-filters "Key=Name,Option=BeginsWith,Values=/skeldir/${SKELDIR_ENV}/" \
               --query "Parameters[].Name" \
               --output text \
               --region "${AWS_REGION}" 2>/dev/null || true)
@@ -141,45 +141,77 @@ jobs:
             return 1
           }
 
+          NEON_API_SOURCE="none"
+          NEON_PROJECT_SOURCE="none"
+          NEON_DATABASE_SOURCE="none"
+
           NEON_API_KEY=$(resolve_secret_manager_value \
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" \
             "/skeldir/${SKELDIR_ENV}/secret/neon-api-key" \
             "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-api-key" || true)
+          if [ -n "${NEON_API_KEY}" ]; then
+            NEON_API_SOURCE="aws_secrets_manager_explicit"
+          fi
           if [ -z "${NEON_API_KEY}" ]; then
             NEON_API_KEY=$(resolve_secret_manager_by_fragments neon api key || true)
+            if [ -n "${NEON_API_KEY}" ]; then
+              NEON_API_SOURCE="aws_secrets_manager_fragment"
+            fi
           fi
 
           NEON_PROJECT_ID=$(resolve_ssm_value \
             "/skeldir/${SKELDIR_ENV}/config/ci/neon-project-id" \
             "/skeldir/${SKELDIR_ENV}/config/neon-project-id" \
             "/skeldir/${SKELDIR_ENV}/config/control-plane/neon-project-id" || true)
+          if [ -n "${NEON_PROJECT_ID}" ]; then
+            NEON_PROJECT_SOURCE="aws_ssm_explicit"
+          fi
           if [ -z "${NEON_PROJECT_ID}" ]; then
             NEON_PROJECT_ID=$(resolve_ssm_by_fragments neon project id || true)
+            if [ -n "${NEON_PROJECT_ID}" ]; then
+              NEON_PROJECT_SOURCE="aws_ssm_fragment"
+            fi
           fi
 
           NEON_DATABASE_URL=$(resolve_secret_manager_value \
             "/skeldir/${SKELDIR_ENV}/secret/database/migration-url" \
             "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url" \
+            "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/neon-database-url" \
             "/skeldir/${SKELDIR_ENV}/secret/database-url" || true)
+          if [ -n "${NEON_DATABASE_URL}" ]; then
+            NEON_DATABASE_SOURCE="aws_secrets_manager_explicit"
+          fi
           if [ -z "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_URL=$(resolve_secret_manager_by_fragments neon database url || true)
+            if [ -n "${NEON_DATABASE_URL}" ]; then
+              NEON_DATABASE_SOURCE="aws_secrets_manager_fragment"
+            fi
           fi
           if [ -z "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_URL=$(resolve_ssm_value \
               "/skeldir/${SKELDIR_ENV}/config/ci/neon-database-url" \
+              "/skeldir/${SKELDIR_ENV}/config/control-plane/neon-database-url" \
               "/skeldir/${SKELDIR_ENV}/config/neon-database-url" \
               "/skeldir/${SKELDIR_ENV}/config/database-url" || true)
+            if [ -n "${NEON_DATABASE_URL}" ]; then
+              NEON_DATABASE_SOURCE="aws_ssm_explicit"
+            fi
           fi
           if [ -z "${NEON_DATABASE_URL}" ]; then
             NEON_DATABASE_URL=$(resolve_ssm_by_fragments neon database url || true)
+            if [ -n "${NEON_DATABASE_URL}" ]; then
+              NEON_DATABASE_SOURCE="aws_ssm_fragment"
+            fi
           fi
           if [ -z "${NEON_API_KEY}" ] && [ -n "${GH_NEON_API_KEY:-}" ]; then
             NEON_API_KEY="${GH_NEON_API_KEY}"
+            NEON_API_SOURCE="github_secret_allowlisted"
           fi
           if [ -z "${NEON_PROJECT_ID}" ] && [ -n "${GH_NEON_PROJECT_ID:-}" ]; then
             NEON_PROJECT_ID="${GH_NEON_PROJECT_ID}"
+            NEON_PROJECT_SOURCE="github_variable"
           fi
 
           if [ -z "${NEON_DATABASE_URL}" ] && { [ -z "${NEON_API_KEY}" ] || [ -z "${NEON_PROJECT_ID}" ]; }; then
@@ -197,6 +229,9 @@ jobs:
             echo "::add-mask::${NEON_DATABASE_URL}"
             echo "NEON_DATABASE_URL=${NEON_DATABASE_URL}" >> "$GITHUB_ENV"
           fi
+          echo "NEON_API_SOURCE=${NEON_API_SOURCE}" >> "$GITHUB_ENV"
+          echo "NEON_PROJECT_SOURCE=${NEON_PROJECT_SOURCE}" >> "$GITHUB_ENV"
+          echo "NEON_DATABASE_SOURCE=${NEON_DATABASE_SOURCE}" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -222,25 +257,48 @@ jobs:
         id: neon-connection
         run: |
           set -euo pipefail
+          echo "Neon credential source: api=${NEON_API_SOURCE:-unknown}, project=${NEON_PROJECT_SOURCE:-unknown}, db_url=${NEON_DATABASE_SOURCE:-none}" >> audit_logs/deployment.log
           if [ -n "${NEON_DATABASE_URL:-}" ]; then
             echo "DATABASE_URL=${NEON_DATABASE_URL}" >> $GITHUB_OUTPUT
             echo "Connected via governed direct Neon database URL secret/parameter." >> audit_logs/deployment.log
             exit 0
           fi
 
-          RESPONSE=$(curl -s "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
+          RESPONSE=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
             -H "Authorization: Bearer ${NEON_API_KEY}" \
             -H "Accept: application/json")
           
-          PROD_BRANCH_ID=$(echo "$RESPONSE" | jq -r '.branches[] | select(.name == "production" or .name == "main") | .id' | head -n 1)
-          
-          CONNECTION_URI=$(curl -s "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${PROD_BRANCH_ID}&role_name=neondb_owner&database_name=neondb" \
-            -H "Authorization: Bearer ${NEON_API_KEY}" \
-            -H "Accept: application/json" | jq -r '.uri')
+          PROD_BRANCH_ID=$(echo "$RESPONSE" | jq -r '((.branches // []) | map(select(.name == "production" or .name == "main")) | .[0].id) // empty')
+
+          if [ -z "${PROD_BRANCH_ID}" ]; then
+            PROJECT_RESPONSE=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}" \
+              -H "Authorization: Bearer ${NEON_API_KEY}" \
+              -H "Accept: application/json")
+            PROD_BRANCH_ID=$(echo "${PROJECT_RESPONSE}" | jq -r '(.project.default_branch_id // empty)')
+          fi
+
+          if [ -z "${PROD_BRANCH_ID}" ]; then
+            CONNECTION_URI=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?role_name=neondb_owner&database_name=neondb" \
+              -H "Authorization: Bearer ${NEON_API_KEY}" \
+              -H "Accept: application/json" | jq -r '(.uri // empty)')
+          else
+            CONNECTION_URI=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${PROD_BRANCH_ID}&role_name=neondb_owner&database_name=neondb" \
+              -H "Authorization: Bearer ${NEON_API_KEY}" \
+              -H "Accept: application/json" | jq -r '(.uri // empty)')
+          fi
+
+          if [ -z "${CONNECTION_URI}" ]; then
+            echo "Unable to resolve Neon connection URI for governed production deploy."
+            exit 1
+          fi
           
           echo "::add-mask::${CONNECTION_URI}"
           echo "DATABASE_URL=${CONNECTION_URI}" >> $GITHUB_OUTPUT
-          echo "Connected to Neon production branch: $PROD_BRANCH_ID" >> audit_logs/deployment.log
+          if [ -n "${PROD_BRANCH_ID}" ]; then
+            echo "Connected to Neon production branch: ${PROD_BRANCH_ID}" >> audit_logs/deployment.log
+          else
+            echo "Connected via Neon default branch resolution." >> audit_logs/deployment.log
+          fi
       
       - name: Capture pre-deployment state
         env:
