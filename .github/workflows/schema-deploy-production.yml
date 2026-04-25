@@ -249,6 +249,18 @@ jobs:
             return 1
           }
 
+          is_localhost_database_dsn() {
+            local value
+            value="${1:-}"
+            if [[ "${value}" =~ ://([^/@]+@)?(localhost|127\.0\.0\.1|\[::1\]|::1)(:|/|$) ]]; then
+              return 0
+            fi
+            if [[ "${value}" =~ (^|[[:space:]])host=(localhost|127\.0\.0\.1|::1|\[::1\])([[:space:]]|$) ]]; then
+              return 0
+            fi
+            return 1
+          }
+
           NEON_API_SOURCE="none"
           NEON_PROJECT_SOURCE="none"
           NEON_DATABASE_SOURCE="none"
@@ -284,6 +296,34 @@ jobs:
             NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
             if [ -n "${NEON_API_KEY}" ]; then
               NEON_API_SOURCE="aws_ssm_fragment"
+            fi
+          fi
+          if [ -z "${NEON_API_KEY}" ]; then
+            NEON_API_KEY=$(resolve_secret_manager_by_fragments neon token || true)
+            NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
+            if [ -n "${NEON_API_KEY}" ]; then
+              NEON_API_SOURCE="aws_secrets_manager_token_fragment"
+            fi
+          fi
+          if [ -z "${NEON_API_KEY}" ]; then
+            NEON_API_KEY=$(resolve_secret_manager_by_fragments neon || true)
+            NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
+            if [ -n "${NEON_API_KEY}" ]; then
+              NEON_API_SOURCE="aws_secrets_manager_neon_scan"
+            fi
+          fi
+          if [ -z "${NEON_API_KEY}" ]; then
+            NEON_API_KEY=$(resolve_ssm_by_fragments neon token || true)
+            NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
+            if [ -n "${NEON_API_KEY}" ]; then
+              NEON_API_SOURCE="aws_ssm_token_fragment"
+            fi
+          fi
+          if [ -z "${NEON_API_KEY}" ]; then
+            NEON_API_KEY=$(resolve_ssm_by_fragments neon || true)
+            NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
+            if [ -n "${NEON_API_KEY}" ]; then
+              NEON_API_SOURCE="aws_ssm_neon_scan"
             fi
           fi
 
@@ -341,6 +381,22 @@ jobs:
               NEON_MIGRATION_DATABASE_SOURCE="aws_secrets_manager_fragment"
             fi
           fi
+          if [ -n "${NEON_MIGRATION_DATABASE_URL}" ] && is_localhost_database_dsn "${NEON_MIGRATION_DATABASE_URL}"; then
+            CANDIDATE_MIGRATION_DATABASE_URL=$(resolve_secret_manager_by_fragments neon database || true)
+            CANDIDATE_MIGRATION_DATABASE_URL=$(normalize_secret_payload "${CANDIDATE_MIGRATION_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${CANDIDATE_MIGRATION_DATABASE_URL}" ] && is_valid_database_dsn "${CANDIDATE_MIGRATION_DATABASE_URL}" && ! is_localhost_database_dsn "${CANDIDATE_MIGRATION_DATABASE_URL}"; then
+              NEON_MIGRATION_DATABASE_URL="${CANDIDATE_MIGRATION_DATABASE_URL}"
+              NEON_MIGRATION_DATABASE_SOURCE="aws_secrets_manager_neon_database_scan"
+            fi
+          fi
+          if { [ -z "${NEON_MIGRATION_DATABASE_URL}" ] || is_localhost_database_dsn "${NEON_MIGRATION_DATABASE_URL}"; }; then
+            CANDIDATE_MIGRATION_DATABASE_URL=$(resolve_ssm_by_fragments neon database || true)
+            CANDIDATE_MIGRATION_DATABASE_URL=$(normalize_secret_payload "${CANDIDATE_MIGRATION_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${CANDIDATE_MIGRATION_DATABASE_URL}" ] && is_valid_database_dsn "${CANDIDATE_MIGRATION_DATABASE_URL}" && ! is_localhost_database_dsn "${CANDIDATE_MIGRATION_DATABASE_URL}"; then
+              NEON_MIGRATION_DATABASE_URL="${CANDIDATE_MIGRATION_DATABASE_URL}"
+              NEON_MIGRATION_DATABASE_SOURCE="aws_ssm_neon_database_scan"
+            fi
+          fi
 
           NEON_DATABASE_URL=$(resolve_secret_manager_value \
             "/skeldir/${SKELDIR_ENV}/secret/database/runtime-url" \
@@ -388,6 +444,22 @@ jobs:
             fi
             if [ -n "${NEON_DATABASE_URL}" ]; then
               NEON_DATABASE_SOURCE="aws_ssm_fragment"
+            fi
+          fi
+          if [ -n "${NEON_DATABASE_URL}" ] && is_localhost_database_dsn "${NEON_DATABASE_URL}"; then
+            CANDIDATE_DATABASE_URL=$(resolve_secret_manager_by_fragments neon database || true)
+            CANDIDATE_DATABASE_URL=$(normalize_secret_payload "${CANDIDATE_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${CANDIDATE_DATABASE_URL}" ] && is_valid_database_dsn "${CANDIDATE_DATABASE_URL}" && ! is_localhost_database_dsn "${CANDIDATE_DATABASE_URL}"; then
+              NEON_DATABASE_URL="${CANDIDATE_DATABASE_URL}"
+              NEON_DATABASE_SOURCE="aws_secrets_manager_neon_database_scan"
+            fi
+          fi
+          if { [ -z "${NEON_DATABASE_URL}" ] || is_localhost_database_dsn "${NEON_DATABASE_URL}"; }; then
+            CANDIDATE_DATABASE_URL=$(resolve_ssm_by_fragments neon database || true)
+            CANDIDATE_DATABASE_URL=$(normalize_secret_payload "${CANDIDATE_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${CANDIDATE_DATABASE_URL}" ] && is_valid_database_dsn "${CANDIDATE_DATABASE_URL}" && ! is_localhost_database_dsn "${CANDIDATE_DATABASE_URL}"; then
+              NEON_DATABASE_URL="${CANDIDATE_DATABASE_URL}"
+              NEON_DATABASE_SOURCE="aws_ssm_neon_database_scan"
             fi
           fi
           if [ -z "${NEON_API_KEY}" ] && [ -n "${GH_NEON_API_KEY:-}" ]; then
