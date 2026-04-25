@@ -150,10 +150,54 @@ jobs:
             if [ -n "${payload}" ] && echo "${payload}" | jq -e . >/dev/null 2>&1; then
               case "${kind}" in
                 neon_api_key)
-                  normalized=$(echo "${payload}" | jq -r '(.NEON_API_KEY // .neon_api_key // .api_key // .key // empty)')
+                  normalized=$(echo "${payload}" | jq -r '
+                    (
+                      .NEON_API_KEY
+                      // .neon_api_key
+                      // .api_key
+                      // .API_KEY
+                      // .NEON_API_TOKEN
+                      // .neon_api_token
+                      // .token
+                      // .TOKEN
+                      // .key
+                      // empty
+                    ) // empty
+                  ')
+                  if [ -z "${normalized}" ]; then
+                    normalized=$(echo "${payload}" | jq -r '
+                      [
+                        (to_entries[]? | select((.key | ascii_downcase | test("neon.*api.*key|api.*key|api.*token|token|access.*token|key")) and (.value | type == "string" and (.value | length > 0))) | .value),
+                        (.. | strings | select(test("^napi_")))
+                      ]
+                      | map(select(length > 0))
+                      | .[0] // empty
+                    ')
+                  fi
                   ;;
                 neon_project_id)
-                  normalized=$(echo "${payload}" | jq -r '(.NEON_PROJECT_ID // .neon_project_id // .project_id // .id // empty)')
+                  normalized=$(echo "${payload}" | jq -r '
+                    (
+                      .NEON_PROJECT_ID
+                      // .neon_project_id
+                      // .project_id
+                      // .projectId
+                      // .PROJECT_ID
+                      // .id
+                      // .project
+                      // empty
+                    ) // empty
+                  ')
+                  if [ -z "${normalized}" ]; then
+                    normalized=$(echo "${payload}" | jq -r '
+                      [
+                        (to_entries[]? | select((.key | ascii_downcase | test("project")) and (.value | type == "string" and (.value | length > 0))) | .value),
+                        (.. | strings | select(test("^[a-z0-9-]+-[a-z0-9-]+-[0-9]+$")))
+                      ]
+                      | map(select(length > 0))
+                      | .[0] // empty
+                    ')
+                  fi
                   ;;
                 neon_database_url)
                   normalized=$(echo "${payload}" | jq -r '(.RUNTIME_DATABASE_URL // .runtime_database_url // .DATABASE_URL // .database_url // .connection_uri // .uri // .runtime_url // .url // .MIGRATION_DATABASE_URL // .migration_database_url // .migration_url // empty)')
@@ -183,6 +227,7 @@ jobs:
           NEON_API_SOURCE="none"
           NEON_PROJECT_SOURCE="none"
           NEON_DATABASE_SOURCE="none"
+          NEON_MIGRATION_DATABASE_SOURCE="none"
 
           NEON_API_KEY=$(resolve_secret_manager_value \
             "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" \
@@ -213,6 +258,45 @@ jobs:
             NEON_PROJECT_ID=$(normalize_secret_payload "${NEON_PROJECT_ID:-}" neon_project_id)
             if [ -n "${NEON_PROJECT_ID}" ]; then
               NEON_PROJECT_SOURCE="aws_ssm_fragment"
+            fi
+          fi
+          if [ -z "${NEON_PROJECT_ID}" ]; then
+            NEON_PROJECT_ID=$(resolve_secret_manager_value \
+              "/skeldir/${SKELDIR_ENV}/secret/ci/neon-project-id" \
+              "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-project-id" \
+              "/skeldir/${SKELDIR_ENV}/secret/neon-project-id" || true)
+            NEON_PROJECT_ID=$(normalize_secret_payload "${NEON_PROJECT_ID:-}" neon_project_id)
+            if [ -n "${NEON_PROJECT_ID}" ]; then
+              NEON_PROJECT_SOURCE="aws_secrets_manager_explicit"
+            fi
+          fi
+          if [ -z "${NEON_PROJECT_ID}" ]; then
+            NEON_PROJECT_ID=$(resolve_secret_manager_by_fragments neon project id || true)
+            NEON_PROJECT_ID=$(normalize_secret_payload "${NEON_PROJECT_ID:-}" neon_project_id)
+            if [ -n "${NEON_PROJECT_ID}" ]; then
+              NEON_PROJECT_SOURCE="aws_secrets_manager_fragment"
+            fi
+          fi
+
+          NEON_MIGRATION_DATABASE_URL=$(resolve_secret_manager_value \
+            "/skeldir/${SKELDIR_ENV}/secret/database/migration-url" \
+            "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-migration-database-url" \
+            "/skeldir/${SKELDIR_ENV}/secret/ci/neon-migration-database-url" || true)
+          NEON_MIGRATION_DATABASE_URL=$(normalize_secret_payload "${NEON_MIGRATION_DATABASE_URL:-}" neon_database_url)
+          if [ -n "${NEON_MIGRATION_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_MIGRATION_DATABASE_URL}"; then
+            NEON_MIGRATION_DATABASE_URL=""
+          fi
+          if [ -n "${NEON_MIGRATION_DATABASE_URL}" ]; then
+            NEON_MIGRATION_DATABASE_SOURCE="aws_secrets_manager_explicit"
+          fi
+          if [ -z "${NEON_MIGRATION_DATABASE_URL}" ]; then
+            NEON_MIGRATION_DATABASE_URL=$(resolve_secret_manager_by_fragments neon migration database url || true)
+            NEON_MIGRATION_DATABASE_URL=$(normalize_secret_payload "${NEON_MIGRATION_DATABASE_URL:-}" neon_database_url)
+            if [ -n "${NEON_MIGRATION_DATABASE_URL}" ] && ! is_valid_database_dsn "${NEON_MIGRATION_DATABASE_URL}"; then
+              NEON_MIGRATION_DATABASE_URL=""
+            fi
+            if [ -n "${NEON_MIGRATION_DATABASE_URL}" ]; then
+              NEON_MIGRATION_DATABASE_SOURCE="aws_secrets_manager_fragment"
             fi
           fi
 
@@ -288,9 +372,14 @@ jobs:
             echo "::add-mask::${NEON_DATABASE_URL}"
             echo "NEON_DATABASE_URL=${NEON_DATABASE_URL}" >> "$GITHUB_ENV"
           fi
+          if [ -n "${NEON_MIGRATION_DATABASE_URL}" ]; then
+            echo "::add-mask::${NEON_MIGRATION_DATABASE_URL}"
+            echo "NEON_MIGRATION_DATABASE_URL=${NEON_MIGRATION_DATABASE_URL}" >> "$GITHUB_ENV"
+          fi
           echo "NEON_API_SOURCE=${NEON_API_SOURCE}" >> "$GITHUB_ENV"
           echo "NEON_PROJECT_SOURCE=${NEON_PROJECT_SOURCE}" >> "$GITHUB_ENV"
           echo "NEON_DATABASE_SOURCE=${NEON_DATABASE_SOURCE}" >> "$GITHUB_ENV"
+          echo "NEON_MIGRATION_DATABASE_SOURCE=${NEON_MIGRATION_DATABASE_SOURCE}" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -415,11 +504,19 @@ jobs:
             return 1
           }
 
-          echo "Neon credential source: api=${NEON_API_SOURCE:-unknown}, project=${NEON_PROJECT_SOURCE:-unknown}, db_url=${NEON_DATABASE_SOURCE:-none}" >> audit_logs/deployment.log
+          echo "Neon credential source: api=${NEON_API_SOURCE:-unknown}, project=${NEON_PROJECT_SOURCE:-unknown}, db_url=${NEON_DATABASE_SOURCE:-none}, migration_db_url=${NEON_MIGRATION_DATABASE_SOURCE:-none}" >> audit_logs/deployment.log
           if [ -n "${NEON_DATABASE_URL:-}" ]; then
             DIRECT_SYNC_URL="$(to_sync_migration_dsn "${NEON_DATABASE_URL}")"
             if is_localhost_database_dsn "${DIRECT_SYNC_URL}"; then
-              echo "Ignoring governed direct database URL secret/parameter because it targets localhost; falling back to Neon API connection resolution." >> audit_logs/deployment.log
+              if [ -n "${NEON_MIGRATION_DATABASE_URL:-}" ]; then
+                MIGRATION_SYNC_URL="$(to_sync_migration_dsn "${NEON_MIGRATION_DATABASE_URL}")"
+                if is_valid_database_dsn "${MIGRATION_SYNC_URL}" && ! is_localhost_database_dsn "${MIGRATION_SYNC_URL}"; then
+                  emit_database_outputs "${NEON_MIGRATION_DATABASE_URL}"
+                  echo "Runtime database URL targeted localhost; using governed migration database URL fallback." >> audit_logs/deployment.log
+                  exit 0
+                fi
+              fi
+              echo "Ignoring governed direct database URL secret/parameter because it targets localhost and no non-local migration URL fallback was available; falling back to Neon API connection resolution." >> audit_logs/deployment.log
             else
               emit_database_outputs "${NEON_DATABASE_URL}"
               echo "Connected via governed direct Neon database URL secret/parameter." >> audit_logs/deployment.log
