@@ -27,7 +27,8 @@ jobs:
       contents: read
     env:
       AWS_REGION: us-east-2
-      SKELDIR_ENV: prod
+      # B11 control-plane governance: skeldir-ci-deploy role is scoped to /skeldir/ci/*.
+      SKELDIR_ENV: ci
       GH_NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # b23_p0_governed_secret_source
       GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
     steps:
