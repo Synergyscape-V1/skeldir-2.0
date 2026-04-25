@@ -34,7 +34,7 @@ def upgrade() -> None:
             ) THEN
                 EXECUTE 'CREATE EXTENSION IF NOT EXISTS pg_cron';
             ELSE
-                RAISE NOTICE 'pg_cron unavailable in this environment; skipping scheduled lifecycle registration';
+                RAISE EXCEPTION 'missing_extension:pg_cron';
             END IF;
         END
         $$;
@@ -65,8 +65,7 @@ def upgrade() -> None:
             scheduled_job_id bigint;
         BEGIN
             IF to_regnamespace('cron') IS NULL THEN
-                RAISE NOTICE 'cron schema unavailable; skipping scheduled lifecycle registration';
-                RETURN;
+                RAISE EXCEPTION 'missing_schema:cron';
             END IF;
 
             SELECT jobid

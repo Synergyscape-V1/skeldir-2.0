@@ -238,6 +238,27 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_sc
     )
 
 
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_lifecycle_schema_soft_skip_notice(
+    tmp_path: Path,
+) -> None:
+    mutated_lifecycle_schema = tmp_path / "topology_lifecycle_schema.soft_skip.regression.py"
+    mutated_lifecycle_schema.write_text(
+        TOPOLOGY_LIFECYCLE_SCHEMA_PROOF_FILE.read_text(encoding="utf-8").replace(
+            "RAISE EXCEPTION 'missing_extension:pg_cron';",
+            "RAISE NOTICE 'pg_cron unavailable in this environment; skipping scheduled lifecycle registration';",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--topology-lifecycle-schema-proof-file", str(mutated_lifecycle_schema))
+    assert proc.returncode != 0
+    assert (
+        "topology_lifecycle_schema_contains_soft_skip_token:RAISE NOTICE 'pg_cron unavailable in this environment; skipping scheduled lifecycle registration'"
+        in (proc.stdout + proc.stderr)
+    )
+
+
 def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_soft_skip_guard(
     tmp_path: Path,
 ) -> None:

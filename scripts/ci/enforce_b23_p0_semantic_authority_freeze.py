@@ -550,6 +550,14 @@ def _validate_topology_lifecycle_schema_file(path: Path, violations: list[str]) 
         if token not in text:
             violations.append(f"topology_lifecycle_schema_missing_token:{token}")
 
+    forbidden_soft_skip_tokens = (
+        "RAISE NOTICE 'pg_cron unavailable in this environment; skipping scheduled lifecycle registration'",
+        "RAISE NOTICE 'cron schema unavailable; skipping scheduled lifecycle registration'",
+    )
+    for token in forbidden_soft_skip_tokens:
+        if token in text:
+            violations.append(f"topology_lifecycle_schema_contains_soft_skip_token:{token}")
+
 
 def _validate_runtime_proof_file(path: Path, violations: list[str]) -> None:
     text = _read_text(path)
