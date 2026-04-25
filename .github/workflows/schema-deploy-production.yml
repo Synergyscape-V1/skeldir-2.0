@@ -48,8 +48,40 @@ jobs:
         id: neon-guard
         run: |
           set -euo pipefail
-          NEON_API_KEY=$(aws secretsmanager get-secret-value --secret-id "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)
-          NEON_PROJECT_ID=$(aws ssm get-parameter --name "/skeldir/${SKELDIR_ENV}/config/ci/neon-project-id" --with-decryption --query Parameter.Value --output text --region "${AWS_REGION}" 2>/dev/null || true)
+          resolve_secret_manager_value() {
+            local secret_id
+            for secret_id in "$@"; do
+              local value
+              value=$(aws secretsmanager get-secret-value --secret-id "${secret_id}" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)
+              if [ -n "${value}" ]; then
+                echo "${value}"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          resolve_ssm_value() {
+            local parameter_name
+            for parameter_name in "$@"; do
+              local value
+              value=$(aws ssm get-parameter --name "${parameter_name}" --with-decryption --query Parameter.Value --output text --region "${AWS_REGION}" 2>/dev/null || true)
+              if [ -n "${value}" ]; then
+                echo "${value}"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          NEON_API_KEY=$(resolve_secret_manager_value \
+            "/skeldir/${SKELDIR_ENV}/secret/ci/neon-api-key" \
+            "/skeldir/${SKELDIR_ENV}/secret/neon-api-key" \
+            "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-api-key" || true)
+          NEON_PROJECT_ID=$(resolve_ssm_value \
+            "/skeldir/${SKELDIR_ENV}/config/ci/neon-project-id" \
+            "/skeldir/${SKELDIR_ENV}/config/neon-project-id" \
+            "/skeldir/${SKELDIR_ENV}/config/control-plane/neon-project-id" || true)
           if [ -z "${NEON_API_KEY}" ] || [ -z "${NEON_PROJECT_ID}" ]; then
             echo "Missing required Neon control-plane values for governed production deploy."
             exit 1
