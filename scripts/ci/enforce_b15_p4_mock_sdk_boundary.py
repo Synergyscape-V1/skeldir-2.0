@@ -41,6 +41,7 @@ def run_enforcement(
     contract_negative_tsconfig_file: Path,
     contract_gate_file: Path,
     contract_negative_control_file: Path,
+    contract_negative_script_file: Path,
     investigations_wrapper_file: Path,
     budget_wrapper_file: Path,
 ) -> tuple[int, list[str]]:
@@ -57,6 +58,7 @@ def run_enforcement(
         contract_negative_tsconfig_file,
         contract_gate_file,
         contract_negative_control_file,
+        contract_negative_script_file,
         investigations_wrapper_file,
         budget_wrapper_file,
     )
@@ -209,6 +211,18 @@ def run_enforcement(
     if "flattenedShouldFail" not in negative_control_text:
         violations.append("negative_control_missing_flattening_probe")
 
+    negative_control_script_text = _read_text(contract_negative_script_file)
+    required_negative_script_markers = (
+        "Unexpected TypeScript diagnostics outside the controlled negative-control surface:",
+        "requiredDiagnosticPatterns",
+        "Property 'startInvestigation'",
+        "Property '\\/api\\/budget\\/optimization'",
+        "error TS2739:",
+    )
+    for marker in required_negative_script_markers:
+        if marker not in negative_control_script_text:
+            violations.append(f"negative_control_script_missing_marker:{marker}")
+
     return (1 if violations else 0), violations
 
 
@@ -247,6 +261,10 @@ def main(argv: list[str]) -> int:
         default="frontend/src/contract-consumption-negative-control.ts",
     )
     parser.add_argument(
+        "--contract-negative-script-file",
+        default="frontend/scripts/contractNegativeControl.mjs",
+    )
+    parser.add_argument(
         "--investigations-wrapper-file",
         default="frontend/src/api/contracts/llmInvestigationsClient.ts",
     )
@@ -283,6 +301,9 @@ def main(argv: list[str]) -> int:
         contract_gate_file=_resolve(repo_root, args.contract_gate_file),
         contract_negative_control_file=_resolve(
             repo_root, args.contract_negative_control_file
+        ),
+        contract_negative_script_file=_resolve(
+            repo_root, args.contract_negative_script_file
         ),
         investigations_wrapper_file=_resolve(
             repo_root, args.investigations_wrapper_file

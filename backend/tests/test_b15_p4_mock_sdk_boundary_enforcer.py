@@ -128,3 +128,38 @@ def test_b15_p4_enforcer_negative_control_missing_flattening_probe(
     assert "negative_control_missing_flattening_probe" in (
         result.stdout + result.stderr
     )
+
+
+def test_b15_p4_enforcer_negative_control_negative_script_guard_missing(
+    tmp_path: Path,
+) -> None:
+    original_negative_script = (
+        _repo_root() / "frontend" / "scripts" / "contractNegativeControl.mjs"
+    ).read_text(encoding="utf-8")
+    mutated_negative_script = tmp_path / "contractNegativeControl.regression.mjs"
+    mutated_negative_script.write_text(
+        original_negative_script.replace(
+            "Unexpected TypeScript diagnostics outside the controlled negative-control surface:",
+            "unexpected diagnostics",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_script_path()),
+            "--contract-negative-script-file",
+            str(mutated_negative_script),
+        ],
+        cwd=_repo_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert (
+        "negative_control_script_missing_marker:Unexpected TypeScript diagnostics outside the controlled negative-control surface:"
+        in (result.stdout + result.stderr)
+    )

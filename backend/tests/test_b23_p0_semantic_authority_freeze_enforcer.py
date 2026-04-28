@@ -300,6 +300,26 @@ def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_expli
     )
 
 
+def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_deploy_binary_secret_resolution_regression(
+    tmp_path: Path,
+) -> None:
+    mutated_workflow = tmp_path / "schema-deploy-production.binary-secret.regression.yml"
+    mutated_workflow.write_text(
+        DEPLOY_WORKFLOW.read_text(encoding="utf-8").replace(
+            "get_secret_manager_payload()",
+            "get_secret_manager_payload_disabled()",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    proc = _run("--deploy-workflow-file", str(mutated_workflow))
+    assert proc.returncode != 0
+    assert "deploy_workflow_missing_token:get_secret_manager_payload()" in (
+        proc.stdout + proc.stderr
+    )
+
+
 def test_b23_p0_semantic_authority_freeze_enforcer_negative_control_typed_boundary_failure(
     tmp_path: Path,
 ) -> None:
