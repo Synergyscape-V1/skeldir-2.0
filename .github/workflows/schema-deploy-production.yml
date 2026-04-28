@@ -934,6 +934,142 @@ jobs:
           else
             echo "Connected via Neon default branch resolution." >> audit_logs/deployment.log
           fi
+
+      - name: Enforce pg_cron control-database alignment for B2.3-P0 lifecycle
+        env:
+          DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          echo "\n[B2.3-P0 PG_CRON CONTROL DATABASE ALIGNMENT]" >> audit_logs/deployment.log
+
+          TARGET_DATABASE_NAME=$(python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          dsn = os.environ["DATABASE_URL"]
+          parsed = urlsplit(dsn)
+          print((parsed.path or "").lstrip("/") or "neondb")
+          PY
+          )
+
+          CURRENT_CRON_DATABASE=$(psql "${DATABASE_URL}" -tA -v ON_ERROR_STOP=1 -c "SHOW cron.database_name;" | tr -d '[:space:]')
+          if [ -z "${CURRENT_CRON_DATABASE}" ]; then
+            echo "Unable to resolve current cron.database_name from governed Neon runtime."
+            exit 1
+          fi
+
+          echo "target_db=${TARGET_DATABASE_NAME} current_cron_db=${CURRENT_CRON_DATABASE}" >> audit_logs/deployment.log
+
+          if [ "${CURRENT_CRON_DATABASE}" != "${TARGET_DATABASE_NAME}" ]; then
+            echo "cron.database_name mismatch detected; attempting governed endpoint alignment + restart." >> audit_logs/deployment.log
+
+            ENDPOINT_ID=$(python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from urllib.parse import urlsplit
+
+          dsn = os.environ["DATABASE_URL"]
+          project_id = os.environ["NEON_PROJECT_ID"]
+          api_key = os.environ["NEON_API_KEY"]
+          host = urlsplit(dsn).hostname
+          if not host:
+              raise SystemExit("Unable to parse DATABASE_URL hostname for endpoint lookup.")
+
+          cmd = [
+              "curl", "-sS",
+              "-H", f"Authorization: Bearer {api_key}",
+              "-H", "Accept: application/json",
+              f"https://console.neon.tech/api/v2/projects/{project_id}/endpoints",
+          ]
+          payload = subprocess.check_output(cmd, text=True)
+          data = json.loads(payload)
+          endpoints = data.get("endpoints", [])
+          for endpoint in endpoints:
+              if endpoint.get("host") == host:
+                  print(endpoint["id"])
+                  raise SystemExit(0)
+              hosts = endpoint.get("hosts") or {}
+              if hosts.get("read_write_host") == host or hosts.get("read_write_pooled_host") == host:
+                  print(endpoint["id"])
+                  raise SystemExit(0)
+          raise SystemExit(f"Unable to map governed runtime host '{host}' to a Neon endpoint in project {project_id}.")
+          PY
+            )
+
+            echo "resolved_endpoint_id=${ENDPOINT_ID}" >> audit_logs/deployment.log
+
+            PATCH_RESPONSE=$(curl -sS -X PATCH \
+              -H "Authorization: Bearer ${NEON_API_KEY}" \
+              -H "Accept: application/json" \
+              -H "Content-Type: application/json" \
+              "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/endpoints/${ENDPOINT_ID}" \
+              --data "{\"endpoint\":{\"settings\":{\"pg_settings\":{\"cron.database_name\":\"${TARGET_DATABASE_NAME}\"}}}}")
+
+            APPLY_CONFIG_OPERATION_ID=$(echo "${PATCH_RESPONSE}" | jq -r '.operations[0].id // empty')
+            if [ -z "${APPLY_CONFIG_OPERATION_ID}" ]; then
+              echo "Failed to obtain apply_config operation ID from endpoint patch response."
+              echo "${PATCH_RESPONSE}" >> audit_logs/deployment.log
+              exit 1
+            fi
+            echo "apply_config_operation_id=${APPLY_CONFIG_OPERATION_ID}" >> audit_logs/deployment.log
+
+            for _ in $(seq 1 60); do
+              APPLY_STATUS=$(curl -sS \
+                -H "Authorization: Bearer ${NEON_API_KEY}" \
+                -H "Accept: application/json" \
+                "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/operations/${APPLY_CONFIG_OPERATION_ID}" | jq -r '.operation.status // empty')
+              if [ "${APPLY_STATUS}" = "finished" ]; then
+                break
+              fi
+              if [ "${APPLY_STATUS}" = "failed" ]; then
+                echo "Endpoint apply_config operation failed."
+                exit 1
+              fi
+              sleep 2
+            done
+            if [ "${APPLY_STATUS:-}" != "finished" ]; then
+              echo "Timed out waiting for endpoint apply_config operation to finish."
+              exit 1
+            fi
+
+            RESTART_RESPONSE=$(curl -sS -X POST \
+              -H "Authorization: Bearer ${NEON_API_KEY}" \
+              -H "Accept: application/json" \
+              "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/endpoints/${ENDPOINT_ID}/restart")
+            RESTART_OPERATION_ID=$(echo "${RESTART_RESPONSE}" | jq -r '.operations[0].id // empty')
+            if [ -z "${RESTART_OPERATION_ID}" ]; then
+              echo "Failed to obtain restart operation ID from endpoint restart response."
+              echo "${RESTART_RESPONSE}" >> audit_logs/deployment.log
+              exit 1
+            fi
+            echo "restart_operation_id=${RESTART_OPERATION_ID}" >> audit_logs/deployment.log
+
+            for _ in $(seq 1 120); do
+              RESTART_STATUS=$(curl -sS \
+                -H "Authorization: Bearer ${NEON_API_KEY}" \
+                -H "Accept: application/json" \
+                "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/operations/${RESTART_OPERATION_ID}" | jq -r '.operation.status // empty')
+              if [ "${RESTART_STATUS}" = "finished" ]; then
+                break
+              fi
+              if [ "${RESTART_STATUS}" = "failed" ]; then
+                echo "Endpoint restart operation failed."
+                exit 1
+              fi
+              sleep 2
+            done
+            if [ "${RESTART_STATUS:-}" != "finished" ]; then
+              echo "Timed out waiting for endpoint restart operation to finish."
+              exit 1
+            fi
+          fi
+
+          RESOLVED_CRON_DATABASE=$(psql "${DATABASE_URL}" -tA -v ON_ERROR_STOP=1 -c "SHOW cron.database_name;" | tr -d '[:space:]')
+          if [ "${RESOLVED_CRON_DATABASE}" != "${TARGET_DATABASE_NAME}" ]; then
+            echo "cron.database_name remained '${RESOLVED_CRON_DATABASE}' after alignment; expected '${TARGET_DATABASE_NAME}'."
+            exit 1
+          fi
+          echo "resolved_cron_db=${RESOLVED_CRON_DATABASE}" >> audit_logs/deployment.log
       
       - name: Capture pre-deployment state
         env:
@@ -973,12 +1109,20 @@ jobs:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
           set -euo pipefail
+          CRON_DATABASE_NAME=$(psql "${DATABASE_URL}" -tA -v ON_ERROR_STOP=1 -c "SHOW cron.database_name;" | tr -d '[:space:]')
+          if [ -z "${CRON_DATABASE_NAME}" ]; then
+            echo "Unable to resolve cron.database_name for lifecycle registration."
+            exit 1
+          fi
+          export CRON_DATABASE_NAME
+
           CONTROL_DATABASE_URL=$(python - <<'PY'
           import os
           from urllib.parse import urlsplit, urlunsplit
           dsn = os.environ["DATABASE_URL"]
+          cron_db = os.environ["CRON_DATABASE_NAME"]
           parsed = urlsplit(dsn)
-          print(urlunsplit((parsed.scheme, parsed.netloc, "/postgres", parsed.query, parsed.fragment)))
+          print(urlunsplit((parsed.scheme, parsed.netloc, f"/{cron_db}", parsed.query, parsed.fragment)))
           PY
           )
           TARGET_DATABASE_NAME=$(python - <<'PY'
@@ -1002,22 +1146,12 @@ jobs:
 
           echo "::add-mask::${CONTROL_DATABASE_URL}"
           echo "\n[B2.3-P0 CONTROL DATABASE CRON REGISTRATION]" >> audit_logs/deployment.log
-          echo "target_db=${TARGET_DATABASE_NAME} target_user=${TARGET_DATABASE_USER}" >> audit_logs/deployment.log
+          echo "cron_db=${CRON_DATABASE_NAME} target_db=${TARGET_DATABASE_NAME} target_user=${TARGET_DATABASE_USER}" >> audit_logs/deployment.log
 
           psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 \
             -v target_db="${TARGET_DATABASE_NAME}" \
             -v target_user="${TARGET_DATABASE_USER}" <<'SQL' | tee -a audit_logs/deployment.log
-          DO $$
-          BEGIN
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_extension
-              WHERE extname = 'pg_cron'
-            ) THEN
-              RAISE EXCEPTION 'missing_extension:pg_cron';
-            END IF;
-          END
-          $$;
+          CREATE EXTENSION IF NOT EXISTS pg_cron;
 
           SELECT cron.unschedule(jobid)
           FROM cron.job
@@ -1039,12 +1173,20 @@ jobs:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
           set -euo pipefail
+          CRON_DATABASE_NAME=$(psql "${DATABASE_URL}" -tA -v ON_ERROR_STOP=1 -c "SHOW cron.database_name;" | tr -d '[:space:]')
+          if [ -z "${CRON_DATABASE_NAME}" ]; then
+            echo "Unable to resolve cron.database_name for topology verification."
+            exit 1
+          fi
+          export CRON_DATABASE_NAME
+
           CONTROL_DATABASE_URL=$(python - <<'PY'
           import os
           from urllib.parse import urlsplit, urlunsplit
           dsn = os.environ["DATABASE_URL"]
+          cron_db = os.environ["CRON_DATABASE_NAME"]
           parsed = urlsplit(dsn)
-          print(urlunsplit((parsed.scheme, parsed.netloc, "/postgres", parsed.query, parsed.fragment)))
+          print(urlunsplit((parsed.scheme, parsed.netloc, f"/{cron_db}", parsed.query, parsed.fragment)))
           PY
           )
           TARGET_DATABASE_NAME=$(python - <<'PY'
@@ -1058,6 +1200,7 @@ jobs:
           )
 
           echo "\n[B2.3-P0 TOPOLOGY + LIFECYCLE VERIFICATION]" >> audit_logs/deployment.log
+          echo "cron_db=${CRON_DATABASE_NAME} target_db=${TARGET_DATABASE_NAME}" >> audit_logs/deployment.log
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL' | tee -a audit_logs/deployment.log
           DO $$
           BEGIN
