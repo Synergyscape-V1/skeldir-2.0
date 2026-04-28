@@ -1259,32 +1259,33 @@ jobs:
           $$;
           SQL
 
-          psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 -v target_db="${TARGET_DATABASE_NAME}" <<'SQL' | tee -a audit_logs/deployment.log
-          DO $$
-          BEGIN
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_extension
-              WHERE extname = 'pg_cron'
-            ) THEN
-              RAISE EXCEPTION 'missing_extension:pg_cron';
-            END IF;
-            IF to_regnamespace('cron') IS NULL THEN
-              RAISE EXCEPTION 'missing_schema:cron';
-            END IF;
-            IF NOT EXISTS (
-              SELECT 1
-              FROM cron.job
-              WHERE jobname = 'b23_p0_prune_attribution_commerce_identities_hourly'
-                AND database = :'target_db'
-                AND command = 'SELECT public.fn_b23_p0_prune_attribution_commerce_identities(1000);'
-                AND active
-            ) THEN
-              RAISE EXCEPTION 'missing_cron_job:b23_p0_prune_attribution_commerce_identities_hourly';
-            END IF;
-          END
-          $$;
+          CRON_EXTENSION_COUNT=$(psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 -tA -c "SELECT COUNT(*) FROM pg_extension WHERE extname = 'pg_cron';")
+          if [[ "${CRON_EXTENSION_COUNT}" != "1" ]]; then
+            echo "::error::missing_extension:pg_cron"
+            exit 1
+          fi
+
+          CRON_NAMESPACE_OID=$(psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 -tA -c "SELECT COALESCE(to_regnamespace('cron')::text, '');")
+          if [[ -z "${CRON_NAMESPACE_OID}" ]]; then
+            echo "::error::missing_schema:cron"
+            exit 1
+          fi
+
+          CRON_JOB_COUNT=$(psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 -v target_db="${TARGET_DATABASE_NAME}" -tA <<'SQL'
+          SELECT COUNT(*)
+          FROM cron.job
+          WHERE jobname = 'b23_p0_prune_attribution_commerce_identities_hourly'
+            AND database = :'target_db'
+            AND command = 'SELECT public.fn_b23_p0_prune_attribution_commerce_identities(1000);'
+            AND active;
           SQL
+          )
+          if [[ "${CRON_JOB_COUNT}" != "1" ]]; then
+            echo "::error::missing_cron_job:b23_p0_prune_attribution_commerce_identities_hourly"
+            exit 1
+          fi
+
+          echo "verified_extension=pg_cron verified_schema=cron verified_job=b23_p0_prune_attribution_commerce_identities_hourly target_db=${TARGET_DATABASE_NAME}" | tee -a audit_logs/deployment.log
       
       - name: Verify deployment and log schema state
         env:
