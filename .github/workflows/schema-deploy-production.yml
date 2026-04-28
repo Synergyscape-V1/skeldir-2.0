@@ -1157,7 +1157,20 @@ jobs:
           FROM cron.job
           WHERE jobname = 'b23_p0_prune_attribution_commerce_identities_hourly'
             AND database = :'target_db';
+          SQL
 
+          if [ "${CRON_DATABASE_NAME}" = "${TARGET_DATABASE_NAME}" ]; then
+            psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL' | tee -a audit_logs/deployment.log
+          SELECT cron.schedule(
+            'b23_p0_prune_attribution_commerce_identities_hourly',
+            '0 * * * *',
+            $$SELECT public.fn_b23_p0_prune_attribution_commerce_identities(1000);$$
+          );
+          SQL
+          else
+            psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 \
+              -v target_db="${TARGET_DATABASE_NAME}" \
+              -v target_user="${TARGET_DATABASE_USER}" <<'SQL' | tee -a audit_logs/deployment.log
           SELECT cron.schedule_in_database(
             'b23_p0_prune_attribution_commerce_identities_hourly',
             '0 * * * *',
@@ -1167,6 +1180,7 @@ jobs:
             true
           );
           SQL
+          fi
 
       - name: Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production
         env:
