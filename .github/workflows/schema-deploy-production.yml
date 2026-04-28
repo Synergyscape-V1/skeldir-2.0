@@ -29,7 +29,7 @@ jobs:
       AWS_REGION: us-east-2
       # B11 control-plane governance: skeldir-ci-deploy role is scoped to /skeldir/ci/*.
       SKELDIR_ENV: ci
-      SKELDIR_ENV_FALLBACK: prod
+      SKELDIR_ENV_FALLBACK: prod,production,stage
       PGOPTIONS: -c skeldir.require_pg_cron=on
       GH_NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # b23_p0_governed_secret_source
       GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
@@ -56,17 +56,21 @@ jobs:
         run: |
           set -euo pipefail
           SCOPE_PRIMARY="${SKELDIR_ENV:-ci}"
-          SCOPE_SECONDARY="${SKELDIR_ENV_FALLBACK:-prod}"
+          SCOPE_FALLBACK_CSV="${SKELDIR_ENV_FALLBACK:-prod}"
 
           scope_is_allowed() {
-            local lower_name
+            local lower_name scope_candidate
             lower_name="${1:-}"
             if [[ "${lower_name}" == *"/skeldir/${SCOPE_PRIMARY}/"* ]]; then
               return 0
             fi
-            if [ -n "${SCOPE_SECONDARY}" ] && [[ "${lower_name}" == *"/skeldir/${SCOPE_SECONDARY}/"* ]]; then
-              return 0
-            fi
+            IFS=',' read -r -a _scope_candidates <<< "${SCOPE_FALLBACK_CSV}"
+            for scope_candidate in "${_scope_candidates[@]}"; do
+              scope_candidate="$(echo "${scope_candidate}" | tr '[:upper:]' '[:lower:]' | xargs)"
+              if [ -n "${scope_candidate}" ] && [[ "${lower_name}" == *"/skeldir/${scope_candidate}/"* ]]; then
+                return 0
+              fi
+            done
             return 1
           }
 
@@ -742,6 +746,15 @@ jobs:
               echo "Connected via governed direct Neon database URL secret/parameter." >> audit_logs/deployment.log
               exit 0
             fi
+          fi
+
+          if [ -z "${NEON_API_KEY:-}" ]; then
+            echo "No valid Neon API key available for governed production deploy connection resolution."
+            exit 1
+          fi
+          if [ -z "${NEON_PROJECT_ID:-}" ]; then
+            echo "No Neon project ID available for governed production deploy connection resolution."
+            exit 1
           fi
 
           RESPONSE=$(curl -sS "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
