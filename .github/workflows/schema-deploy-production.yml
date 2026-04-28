@@ -29,6 +29,7 @@ jobs:
       AWS_REGION: us-east-2
       # B11 control-plane governance: skeldir-ci-deploy role is scoped to /skeldir/ci/*.
       SKELDIR_ENV: ci
+      SKELDIR_ENV_FALLBACK: prod
       PGOPTIONS: -c skeldir.require_pg_cron=on
       GH_NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # b23_p0_governed_secret_source
       GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
@@ -54,15 +55,33 @@ jobs:
         id: neon-guard
         run: |
           set -euo pipefail
+          SCOPE_PRIMARY="${SKELDIR_ENV:-ci}"
+          SCOPE_SECONDARY="${SKELDIR_ENV_FALLBACK:-prod}"
+
+          scope_is_allowed() {
+            local lower_name
+            lower_name="${1:-}"
+            if [[ "${lower_name}" == *"/skeldir/${SCOPE_PRIMARY}/"* ]]; then
+              return 0
+            fi
+            if [ -n "${SCOPE_SECONDARY}" ] && [[ "${lower_name}" == *"/skeldir/${SCOPE_SECONDARY}/"* ]]; then
+              return 0
+            fi
+            return 1
+          }
+
           resolve_secret_manager_by_fragments() {
             local value names name lower_name
             names=$(aws secretsmanager list-secrets \
-              --filters "Key=name,Values=/skeldir/${SKELDIR_ENV}/" \
+              --filters "Key=name,Values=/skeldir/" \
               --query "SecretList[].Name" \
               --output text \
               --region "${AWS_REGION}" 2>/dev/null || true)
             for name in ${names}; do
               lower_name=$(echo "${name}" | tr '[:upper:]' '[:lower:]')
+              if ! scope_is_allowed "${lower_name}"; then
+                continue
+              fi
               local matches=true
               local fragment
               for fragment in "$@"; do
@@ -85,12 +104,15 @@ jobs:
           resolve_ssm_by_fragments() {
             local value names name lower_name
             names=$(aws ssm describe-parameters \
-              --parameter-filters "Key=Name,Option=BeginsWith,Values=/skeldir/${SKELDIR_ENV}/" \
+              --parameter-filters "Key=Name,Option=BeginsWith,Values=/skeldir/" \
               --query "Parameters[].Name" \
               --output text \
               --region "${AWS_REGION}" 2>/dev/null || true)
             for name in ${names}; do
               lower_name=$(echo "${name}" | tr '[:upper:]' '[:lower:]')
+              if ! scope_is_allowed "${lower_name}"; then
+                continue
+              fi
               local matches=true
               local fragment
               for fragment in "$@"; do
@@ -167,6 +189,24 @@ jobs:
                 return 0
               fi
             done
+            return 1
+          }
+
+          neon_api_key_auth_valid() {
+            local key response_path http_code
+            key="${1:-}"
+            if [ -z "${key}" ]; then
+              return 1
+            fi
+            response_path=$(mktemp)
+            http_code=$(curl -sS -o "${response_path}" -w "%{http_code}" "https://console.neon.tech/api/v2/auth" \
+              -H "Authorization: Bearer ${key}" \
+              -H "Accept: application/json" || true)
+            if [ "${http_code}" = "200" ]; then
+              rm -f "${response_path}"
+              return 0
+            fi
+            rm -f "${response_path}"
             return 1
           }
 
@@ -325,6 +365,10 @@ jobs:
           NEON_API_KEY=$(normalize_secret_payload "${NEON_API_KEY:-}" neon_api_key)
           if [ -n "${NEON_API_KEY}" ]; then
             NEON_API_SOURCE="aws_secrets_manager_explicit"
+            if ! neon_api_key_auth_valid "${NEON_API_KEY}"; then
+              NEON_API_KEY=""
+              NEON_API_SOURCE="aws_secrets_manager_explicit_invalid"
+            fi
           fi
           if [ -z "${NEON_API_KEY}" ]; then
             NEON_API_KEY=$(resolve_secret_manager_by_fragments neon api key || true)
@@ -523,6 +567,10 @@ jobs:
           if [ -z "${NEON_API_KEY}" ] && [ -n "${GH_NEON_API_KEY:-}" ]; then
             NEON_API_KEY="${GH_NEON_API_KEY}"
             NEON_API_SOURCE="github_secret_allowlisted"
+            if ! neon_api_key_auth_valid "${NEON_API_KEY}"; then
+              NEON_API_KEY=""
+              NEON_API_SOURCE="github_secret_allowlisted_invalid"
+            fi
           fi
           if [ -z "${NEON_PROJECT_ID}" ] && [ -n "${GH_NEON_PROJECT_ID:-}" ]; then
             NEON_PROJECT_ID="${GH_NEON_PROJECT_ID}"
