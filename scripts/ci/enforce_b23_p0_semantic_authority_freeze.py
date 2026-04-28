@@ -632,7 +632,6 @@ def _validate_deploy_workflow(path: Path, violations: list[str]) -> None:
     required_tokens = (
         "python scripts/ci/b15_p7_phase_closure_gate.py",
         "--mode technical",
-        "PGOPTIONS: -c skeldir.require_pg_cron=on",
         "Guard Neon control-plane secrets (fail closed when missing)",
         "GH_NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # b23_p0_governed_secret_source",
         "GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}",

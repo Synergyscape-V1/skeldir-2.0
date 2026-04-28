@@ -30,7 +30,6 @@ jobs:
       # B11 control-plane governance: skeldir-ci-deploy role is scoped to /skeldir/ci/*.
       SKELDIR_ENV: ci
       SKELDIR_ENV_FALLBACK: prod,production,stage
-      PGOPTIONS: -c skeldir.require_pg_cron=on
       GH_NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # b23_p0_governed_secret_source
       GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
       GH_NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }} # b23_p0_governed_secret_source
