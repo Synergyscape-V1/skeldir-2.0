@@ -72,11 +72,7 @@ jobs:
                 fi
               done
               if [ "${matches}" = true ]; then
-                value=$(aws secretsmanager get-secret-value \
-                  --secret-id "${name}" \
-                  --query SecretString \
-                  --output text \
-                  --region "${AWS_REGION}" 2>/dev/null || true)
+                value=$(get_secret_manager_payload "${name}" || true)
                 if [ -n "${value}" ]; then
                   echo "${value}"
                   return 0
@@ -119,11 +115,40 @@ jobs:
             return 1
           }
 
+          get_secret_manager_payload() {
+            local secret_id response secret_string secret_binary decoded_binary
+            secret_id="${1:-}"
+            if [ -z "${secret_id}" ]; then
+              return 1
+            fi
+            response=$(aws secretsmanager get-secret-value \
+              --secret-id "${secret_id}" \
+              --output json \
+              --region "${AWS_REGION}" 2>/dev/null || true)
+            if [ -z "${response}" ] || [ "${response}" = "null" ]; then
+              return 1
+            fi
+            secret_string=$(echo "${response}" | jq -r '.SecretString // empty')
+            if [ -n "${secret_string}" ] && [ "${secret_string}" != "null" ]; then
+              echo "${secret_string}"
+              return 0
+            fi
+            secret_binary=$(echo "${response}" | jq -r '.SecretBinary // empty')
+            if [ -n "${secret_binary}" ] && [ "${secret_binary}" != "null" ]; then
+              decoded_binary=$(echo "${secret_binary}" | base64 --decode 2>/dev/null || true)
+              if [ -n "${decoded_binary}" ]; then
+                echo "${decoded_binary}"
+                return 0
+              fi
+            fi
+            return 1
+          }
+
           resolve_secret_manager_value() {
             local secret_id
             for secret_id in "$@"; do
               local value
-              value=$(aws secretsmanager get-secret-value --secret-id "${secret_id}" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)
+              value=$(get_secret_manager_payload "${secret_id}" || true)
               if [ -n "${value}" ]; then
                 echo "${value}"
                 return 0
@@ -268,11 +293,7 @@ jobs:
             local secret_id raw normalized local_candidate
             local_candidate=""
             for secret_id in "$@"; do
-              raw=$(aws secretsmanager get-secret-value \
-                --secret-id "${secret_id}" \
-                --query SecretString \
-                --output text \
-                --region "${AWS_REGION}" 2>/dev/null || true)
+              raw=$(get_secret_manager_payload "${secret_id}" || true)
               normalized=$(normalize_secret_payload "${raw:-}" neon_database_url)
               if [ -z "${normalized}" ] || ! is_valid_database_dsn "${normalized}"; then
                 continue
