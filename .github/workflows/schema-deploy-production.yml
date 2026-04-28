@@ -34,6 +34,8 @@ jobs:
       GH_NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
       GH_NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }} # b23_p0_governed_secret_source
       GH_NEON_MIGRATION_DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }} # b23_p0_governed_secret_source
+      GH_PLATFORM_TOKEN_ENCRYPTION_KEY: ${{ secrets.PLATFORM_TOKEN_ENCRYPTION_KEY }} # b23_p0_governed_secret_source
+      GH_PLATFORM_TOKEN_KEY_ID: ${{ vars.PLATFORM_TOKEN_KEY_ID }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -298,6 +300,33 @@ jobs:
                     // empty
                   ')
                   ;;
+                platform_token_encryption_key)
+                  normalized=$(echo "${payload}" | jq -r '
+                    if (type == "object" and ((.keys? | type) == "object") and ((.current_key_id // "") | tostring | length > 0)) then
+                      tojson
+                    else
+                      (
+                        .PLATFORM_TOKEN_ENCRYPTION_KEY
+                        // .platform_token_encryption_key
+                        // .token_encryption_key
+                        // .platform_key
+                        // .key
+                        // empty
+                      ) // empty
+                    end
+                  ')
+                  ;;
+                platform_token_key_id)
+                  normalized=$(echo "${payload}" | jq -r '
+                    (
+                      .PLATFORM_TOKEN_KEY_ID
+                      // .platform_token_key_id
+                      // .token_key_id
+                      // .key_id
+                      // empty
+                    ) // empty
+                  ')
+                  ;;
                 *)
                   normalized="${payload}"
                   ;;
@@ -459,6 +488,71 @@ jobs:
             fi
           fi
 
+          PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE="none"
+          PLATFORM_TOKEN_KEY_ID_SOURCE="none"
+
+          PLATFORM_TOKEN_ENCRYPTION_KEY=$(resolve_secret_manager_value \
+            "/skeldir/${SKELDIR_ENV}/secret/platform/token-encryption-key" \
+            "/skeldir/${SKELDIR_ENV}/secret/control-plane/platform-token-encryption-key" \
+            "/skeldir/${SKELDIR_ENV}/secret/platform-token-encryption-key" || true)
+          PLATFORM_TOKEN_ENCRYPTION_KEY=$(normalize_secret_payload "${PLATFORM_TOKEN_ENCRYPTION_KEY:-}" platform_token_encryption_key)
+          if [ -n "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+            PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE="aws_secrets_manager_explicit"
+          fi
+          if [ -z "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+            PLATFORM_TOKEN_ENCRYPTION_KEY=$(resolve_secret_manager_by_fragments platform token encryption key || true)
+            PLATFORM_TOKEN_ENCRYPTION_KEY=$(normalize_secret_payload "${PLATFORM_TOKEN_ENCRYPTION_KEY:-}" platform_token_encryption_key)
+            if [ -n "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+              PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE="aws_secrets_manager_fragment"
+            fi
+          fi
+          if [ -z "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+            PLATFORM_TOKEN_ENCRYPTION_KEY=$(resolve_ssm_value \
+              "/skeldir/${SKELDIR_ENV}/secret/platform/token-encryption-key" \
+              "/skeldir/${SKELDIR_ENV}/config/platform/token-encryption-key" \
+              "/skeldir/${SKELDIR_ENV}/config/platform-token-encryption-key" || true)
+            PLATFORM_TOKEN_ENCRYPTION_KEY=$(normalize_secret_payload "${PLATFORM_TOKEN_ENCRYPTION_KEY:-}" platform_token_encryption_key)
+            if [ -n "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+              PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE="aws_ssm_explicit"
+            fi
+          fi
+          if [ -z "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+            PLATFORM_TOKEN_ENCRYPTION_KEY=$(resolve_ssm_by_fragments platform token encryption key || true)
+            PLATFORM_TOKEN_ENCRYPTION_KEY=$(normalize_secret_payload "${PLATFORM_TOKEN_ENCRYPTION_KEY:-}" platform_token_encryption_key)
+            if [ -n "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+              PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE="aws_ssm_fragment"
+            fi
+          fi
+          if [ -z "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ] && [ -n "${GH_PLATFORM_TOKEN_ENCRYPTION_KEY:-}" ]; then
+            PLATFORM_TOKEN_ENCRYPTION_KEY=$(normalize_secret_payload "${GH_PLATFORM_TOKEN_ENCRYPTION_KEY:-}" platform_token_encryption_key)
+            if [ -n "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+              PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE="github_secret_allowlisted"
+            fi
+          fi
+
+          PLATFORM_TOKEN_KEY_ID=$(resolve_ssm_value \
+            "/skeldir/${SKELDIR_ENV}/config/platform/token-key-id" \
+            "/skeldir/${SKELDIR_ENV}/config/platform-token-key-id" || true)
+          PLATFORM_TOKEN_KEY_ID=$(normalize_secret_payload "${PLATFORM_TOKEN_KEY_ID:-}" platform_token_key_id)
+          if [ -n "${PLATFORM_TOKEN_KEY_ID}" ]; then
+            PLATFORM_TOKEN_KEY_ID_SOURCE="aws_ssm_explicit"
+          fi
+          if [ -z "${PLATFORM_TOKEN_KEY_ID}" ]; then
+            PLATFORM_TOKEN_KEY_ID=$(resolve_secret_manager_value \
+              "/skeldir/${SKELDIR_ENV}/secret/platform/token-key-id" \
+              "/skeldir/${SKELDIR_ENV}/secret/control-plane/platform-token-key-id" || true)
+            PLATFORM_TOKEN_KEY_ID=$(normalize_secret_payload "${PLATFORM_TOKEN_KEY_ID:-}" platform_token_key_id)
+            if [ -n "${PLATFORM_TOKEN_KEY_ID}" ]; then
+              PLATFORM_TOKEN_KEY_ID_SOURCE="aws_secrets_manager_explicit"
+            fi
+          fi
+          if [ -z "${PLATFORM_TOKEN_KEY_ID}" ] && [ -n "${GH_PLATFORM_TOKEN_KEY_ID:-}" ]; then
+            PLATFORM_TOKEN_KEY_ID=$(normalize_secret_payload "${GH_PLATFORM_TOKEN_KEY_ID:-}" platform_token_key_id)
+            if [ -n "${PLATFORM_TOKEN_KEY_ID}" ]; then
+              PLATFORM_TOKEN_KEY_ID_SOURCE="github_variable"
+            fi
+          fi
+
           NEON_MIGRATION_DATABASE_URL=$(resolve_secret_manager_database_dsn_value \
             "/skeldir/${SKELDIR_ENV}/secret/database/migration-url" \
             "/skeldir/${SKELDIR_ENV}/secret/control-plane/neon-migration-database-url" \
@@ -584,6 +678,10 @@ jobs:
             echo "Missing required Neon control-plane values for governed production deploy."
             exit 1
           fi
+          if [ -z "${PLATFORM_TOKEN_ENCRYPTION_KEY:-}" ]; then
+            echo "Missing required platform encryption material for governed production deploy migrations."
+            exit 1
+          fi
           if [ -n "${NEON_API_KEY}" ]; then
             echo "::add-mask::${NEON_API_KEY}"
             echo "NEON_API_KEY=${NEON_API_KEY}" >> "$GITHUB_ENV"
@@ -599,10 +697,19 @@ jobs:
             echo "::add-mask::${NEON_MIGRATION_DATABASE_URL}"
             echo "NEON_MIGRATION_DATABASE_URL=${NEON_MIGRATION_DATABASE_URL}" >> "$GITHUB_ENV"
           fi
+          if [ -n "${PLATFORM_TOKEN_ENCRYPTION_KEY}" ]; then
+            echo "::add-mask::${PLATFORM_TOKEN_ENCRYPTION_KEY}"
+            echo "PLATFORM_TOKEN_ENCRYPTION_KEY=${PLATFORM_TOKEN_ENCRYPTION_KEY}" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${PLATFORM_TOKEN_KEY_ID:-}" ]; then
+            echo "PLATFORM_TOKEN_KEY_ID=${PLATFORM_TOKEN_KEY_ID}" >> "$GITHUB_ENV"
+          fi
           echo "NEON_API_SOURCE=${NEON_API_SOURCE}" >> "$GITHUB_ENV"
           echo "NEON_PROJECT_SOURCE=${NEON_PROJECT_SOURCE}" >> "$GITHUB_ENV"
           echo "NEON_DATABASE_SOURCE=${NEON_DATABASE_SOURCE}" >> "$GITHUB_ENV"
           echo "NEON_MIGRATION_DATABASE_SOURCE=${NEON_MIGRATION_DATABASE_SOURCE}" >> "$GITHUB_ENV"
+          echo "PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE=${PLATFORM_TOKEN_ENCRYPTION_KEY_SOURCE}" >> "$GITHUB_ENV"
+          echo "PLATFORM_TOKEN_KEY_ID_SOURCE=${PLATFORM_TOKEN_KEY_ID_SOURCE}" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v4
