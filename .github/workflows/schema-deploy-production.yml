@@ -1007,7 +1007,17 @@ jobs:
           psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 \
             -v target_db="${TARGET_DATABASE_NAME}" \
             -v target_user="${TARGET_DATABASE_USER}" <<'SQL' | tee -a audit_logs/deployment.log
-          CREATE EXTENSION IF NOT EXISTS pg_cron;
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_extension
+              WHERE extname = 'pg_cron'
+            ) THEN
+              RAISE EXCEPTION 'missing_extension:pg_cron';
+            END IF;
+          END
+          $$;
 
           SELECT cron.unschedule(jobid)
           FROM cron.job
