@@ -35,7 +35,20 @@ def upgrade() -> None:
                 FROM pg_available_extensions
                 WHERE name = 'pg_cron'
             ) THEN
-                EXECUTE 'CREATE EXTENSION IF NOT EXISTS pg_cron';
+                BEGIN
+                    EXECUTE 'CREATE EXTENSION IF NOT EXISTS pg_cron';
+                EXCEPTION
+                    WHEN raise_exception THEN
+                        IF POSITION('can only create extension in database postgres' IN SQLERRM) > 0 THEN
+                            IF enforce_pg_cron THEN
+                                RAISE EXCEPTION 'missing_extension:pg_cron';
+                            ELSE
+                                RAISE NOTICE 'pg_cron control database differs from current database; deferring lifecycle job registration to governed deploy workflow';
+                            END IF;
+                        ELSE
+                            RAISE;
+                        END IF;
+                END;
             ELSE
                 IF enforce_pg_cron THEN
                     RAISE EXCEPTION 'missing_extension:pg_cron';

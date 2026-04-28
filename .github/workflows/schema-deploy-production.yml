@@ -968,10 +968,85 @@ jobs:
           psql "${DATABASE_URL}" -c "SELECT version_num FROM alembic_version;" >> audit_logs/deployment.log
           echo "New Alembic head: $(alembic current 2>&1)" >> audit_logs/deployment.log
 
+      - name: Register B2.3-P0 lifecycle pg_cron job in Neon control database
+        env:
+          DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          CONTROL_DATABASE_URL=$(python - <<'PY'
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+          dsn = os.environ["DATABASE_URL"]
+          parsed = urlsplit(dsn)
+          print(urlunsplit((parsed.scheme, parsed.netloc, "/postgres", parsed.query, parsed.fragment)))
+          PY
+          )
+          TARGET_DATABASE_NAME=$(python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          dsn = os.environ["DATABASE_URL"]
+          parsed = urlsplit(dsn)
+          db = (parsed.path or "").lstrip("/") or "neondb"
+          print(db)
+          PY
+          )
+          TARGET_DATABASE_USER=$(python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          dsn = os.environ["DATABASE_URL"]
+          parsed = urlsplit(dsn)
+          user = parsed.username or "neondb_owner"
+          print(user)
+          PY
+          )
+
+          echo "::add-mask::${CONTROL_DATABASE_URL}"
+          echo "\n[B2.3-P0 CONTROL DATABASE CRON REGISTRATION]" >> audit_logs/deployment.log
+          echo "target_db=${TARGET_DATABASE_NAME} target_user=${TARGET_DATABASE_USER}" >> audit_logs/deployment.log
+
+          psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 \
+            -v target_db="${TARGET_DATABASE_NAME}" \
+            -v target_user="${TARGET_DATABASE_USER}" <<'SQL' | tee -a audit_logs/deployment.log
+          CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+          SELECT cron.unschedule(jobid)
+          FROM cron.job
+          WHERE jobname = 'b23_p0_prune_attribution_commerce_identities_hourly'
+            AND database = :'target_db';
+
+          SELECT cron.schedule_in_database(
+            'b23_p0_prune_attribution_commerce_identities_hourly',
+            '0 * * * *',
+            $$SELECT public.fn_b23_p0_prune_attribution_commerce_identities(1000);$$,
+            :'target_db',
+            :'target_user',
+            true
+          );
+          SQL
+
       - name: Verify B2.3-P0 delayed-arrival lifecycle substrate in Neon production
         env:
           DATABASE_URL: ${{ steps.neon-connection.outputs.DATABASE_URL }}
         run: |
+          set -euo pipefail
+          CONTROL_DATABASE_URL=$(python - <<'PY'
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+          dsn = os.environ["DATABASE_URL"]
+          parsed = urlsplit(dsn)
+          print(urlunsplit((parsed.scheme, parsed.netloc, "/postgres", parsed.query, parsed.fragment)))
+          PY
+          )
+          TARGET_DATABASE_NAME=$(python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          dsn = os.environ["DATABASE_URL"]
+          parsed = urlsplit(dsn)
+          db = (parsed.path or "").lstrip("/") or "neondb"
+          print(db)
+          PY
+          )
+
           echo "\n[B2.3-P0 TOPOLOGY + LIFECYCLE VERIFICATION]" >> audit_logs/deployment.log
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL' | tee -a audit_logs/deployment.log
           DO $$
@@ -1013,6 +1088,13 @@ jobs:
             ) THEN
               RAISE EXCEPTION 'missing_trigger:public.trg_b23_p0_prune_attribution_commerce_identities';
             END IF;
+          END
+          $$;
+          SQL
+
+          psql "${CONTROL_DATABASE_URL}" -v ON_ERROR_STOP=1 -v target_db="${TARGET_DATABASE_NAME}" <<'SQL' | tee -a audit_logs/deployment.log
+          DO $$
+          BEGIN
             IF NOT EXISTS (
               SELECT 1
               FROM pg_extension
@@ -1027,6 +1109,9 @@ jobs:
               SELECT 1
               FROM cron.job
               WHERE jobname = 'b23_p0_prune_attribution_commerce_identities_hourly'
+                AND database = :'target_db'
+                AND command = 'SELECT public.fn_b23_p0_prune_attribution_commerce_identities(1000);'
+                AND active
             ) THEN
               RAISE EXCEPTION 'missing_cron_job:b23_p0_prune_attribution_commerce_identities_hourly';
             END IF;
