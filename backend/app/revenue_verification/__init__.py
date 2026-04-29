@@ -24,6 +24,11 @@ from .semantic_authority import (
     validate_delayed_arrival_topology,
     validate_downstream_projection_payload,
 )
+from .timing_constants import (
+    PROVISIONAL_MATCH_WINDOW,
+    REFUND_REOPENING_WINDOW,
+    WEBHOOK_ARRIVAL_WINDOW,
+)
 
 __all__ = [
     "ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS",
@@ -43,6 +48,9 @@ __all__ = [
     "map_b23_discrepancy_for_downstream",
     "map_b23_verdict_for_downstream",
     "resolve_canonical_match_key",
+    "WEBHOOK_ARRIVAL_WINDOW",
+    "PROVISIONAL_MATCH_WINDOW",
+    "REFUND_REOPENING_WINDOW",
     "validate_delayed_arrival_topology_binding",
     "validate_delayed_arrival_lifecycle_binding",
     "validate_delayed_arrival_strategy",

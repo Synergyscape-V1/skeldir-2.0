@@ -5378,6 +5378,221 @@ ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: b23_match_verdicts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b23_match_verdicts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    attribution_event_id uuid,
+    webhook_ingress_identity_id uuid,
+    provider character varying(32) NOT NULL,
+    canonical_commerce_reference character varying(255) NOT NULL,
+    provider_native_event_reference character varying(255) NOT NULL,
+    provider_native_commerce_reference character varying(255) NOT NULL,
+    status character varying(32) NOT NULL,
+    match_quality character varying(16) NOT NULL,
+    attributed_amount_minor integer NOT NULL,
+    verified_amount_minor integer NOT NULL,
+    currency_code character(3) NOT NULL,
+    pending_since timestamp with time zone DEFAULT now() NOT NULL,
+    provisional_expires_at timestamp with time zone,
+    confirmed_at timestamp with time zone,
+    adjusted_at timestamp with time zone,
+    unmatched_marked_at timestamp with time zone,
+    last_transition_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_match_verdicts_attributed_amount_non_negative CHECK ((attributed_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
+    CONSTRAINT ck_b23_match_verdicts_match_quality CHECK (((match_quality)::text = ANY ((ARRAY['high'::character varying, 'medium'::character varying, 'low'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_verdicts_provider_commerce_reference_not_blank CHECK ((char_length((provider_native_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_provider_event_reference_not_blank CHECK ((char_length((provider_native_event_reference)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_verdicts_verified_amount_non_negative CHECK ((verified_amount_minor >= 0)),
+    CONSTRAINT uq_b23_match_verdicts_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference)
+);
+
+ALTER TABLE ONLY public.b23_match_verdicts FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b23_exception_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b23_exception_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    match_verdict_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    canonical_commerce_reference character varying(255) NOT NULL,
+    status character varying(16) NOT NULL,
+    severity character varying(16) NOT NULL,
+    resolution_code character varying(64),
+    resolution_notes text,
+    raised_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_at timestamp with time zone,
+    dismissed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_exception_records_resolution_code_required CHECK ((((status)::text <> ALL ((ARRAY['resolved'::character varying, 'dismissed'::character varying])::text[])) OR ((resolution_code IS NOT NULL) AND (char_length(TRIM(BOTH FROM resolution_code)) > 0)))),
+    CONSTRAINT ck_b23_exception_records_severity CHECK (((severity)::text = ANY ((ARRAY['flagged'::character varying, 'alert'::character varying])::text[]))),
+    CONSTRAINT ck_b23_exception_records_status CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.b23_exception_records FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b23_revenue_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b23_revenue_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    match_verdict_id uuid,
+    webhook_ingress_identity_id uuid,
+    provider character varying(32) NOT NULL,
+    provider_native_event_reference character varying(255) NOT NULL,
+    provider_native_commerce_reference character varying(255) NOT NULL,
+    canonical_commerce_reference character varying(255) NOT NULL,
+    event_type character varying(32) NOT NULL,
+    amount_minor integer NOT NULL,
+    currency_code character(3) NOT NULL,
+    event_occurred_at timestamp with time zone NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_revenue_events_amount_non_negative CHECK ((amount_minor >= 0)),
+    CONSTRAINT ck_b23_revenue_events_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
+    CONSTRAINT ck_b23_revenue_events_event_type CHECK (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_opened'::character varying, 'chargeback_won'::character varying, 'chargeback_lost'::character varying, 'reversal'::character varying])::text[]))),
+    CONSTRAINT ck_b23_revenue_events_provider_commerce_reference_not_blank CHECK ((char_length((provider_native_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_provider_event_reference_not_blank CHECK ((char_length((provider_native_event_reference)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
+    CONSTRAINT uq_b23_revenue_events_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference)
+);
+
+ALTER TABLE ONLY public.b23_revenue_events FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: b23_webhook_ingestion_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.b23_webhook_ingestion_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    provider_native_event_reference character varying(255),
+    ingestion_status character varying(16) NOT NULL,
+    failure_reason text,
+    correlation_id uuid,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_webhook_ingestion_logs_failure_reason_when_failed CHECK ((((ingestion_status)::text <> 'failed'::text) OR ((failure_reason IS NOT NULL) AND (char_length(TRIM(BOTH FROM failure_reason)) > 0)))),
+    CONSTRAINT ck_b23_webhook_ingestion_logs_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
+    CONSTRAINT ck_b23_webhook_ingestion_logs_status CHECK (((ingestion_status)::text = ANY ((ARRAY['success'::character varying, 'failed'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.b23_webhook_ingestion_logs FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: idx_b23_match_verdicts_tenant_provider_commerce_native; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_match_verdicts_tenant_provider_commerce_native ON public.b23_match_verdicts USING btree (tenant_id, provider, provider_native_commerce_reference);
+
+--
+-- Name: idx_b23_match_verdicts_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_match_verdicts_tenant_provider_reference ON public.b23_match_verdicts USING btree (tenant_id, provider, canonical_commerce_reference);
+
+--
+-- Name: idx_b23_match_verdicts_tenant_state_timestamps; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_match_verdicts_tenant_state_timestamps ON public.b23_match_verdicts USING btree (tenant_id, pending_since, provisional_expires_at, confirmed_at, unmatched_marked_at, adjusted_at);
+
+--
+-- Name: idx_b23_match_verdicts_tenant_status_transition; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_match_verdicts_tenant_status_transition ON public.b23_match_verdicts USING btree (tenant_id, status, last_transition_at DESC);
+
+--
+-- Name: idx_b23_exception_records_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_exception_records_tenant_provider_reference ON public.b23_exception_records USING btree (tenant_id, provider, canonical_commerce_reference);
+
+--
+-- Name: idx_b23_exception_records_tenant_status_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_exception_records_tenant_status_severity ON public.b23_exception_records USING btree (tenant_id, status, severity, raised_at DESC);
+
+--
+-- Name: idx_b23_revenue_events_tenant_event_type_recorded; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_revenue_events_tenant_event_type_recorded ON public.b23_revenue_events USING btree (tenant_id, event_type, recorded_at DESC);
+
+--
+-- Name: idx_b23_revenue_events_tenant_provider_commerce_native; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_revenue_events_tenant_provider_commerce_native ON public.b23_revenue_events USING btree (tenant_id, provider, provider_native_commerce_reference);
+
+--
+-- Name: idx_b23_revenue_events_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_revenue_events USING btree (tenant_id, provider, canonical_commerce_reference, event_occurred_at DESC);
+
+--
+-- Name: idx_b23_webhook_ingestion_logs_tenant_provider_received; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
+
+--
+-- Name: idx_b23_webhook_ingestion_logs_tenant_status_received; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
+
+
+--
+-- Name: b23_match_verdicts tenant_isolation_policy_b23_match_verdicts; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_verdicts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+--
+-- Name: b23_exception_records tenant_isolation_policy_b23_exception_records; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b23_exception_records ON public.b23_exception_records USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+--
+-- Name: b23_revenue_events tenant_isolation_policy_b23_revenue_events; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+--
+-- Name: b23_webhook_ingestion_logs tenant_isolation_policy_b23_webhook_ingestion_logs; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tenant_isolation_policy_b23_webhook_ingestion_logs ON public.b23_webhook_ingestion_logs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+--
 -- PostgreSQL database dump complete
 --
 
