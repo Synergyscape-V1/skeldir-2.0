@@ -1,0 +1,103 @@
+{
+  "contract_id": "b23.p1.schema_authority_lock.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P1",
+  "description": "B2.3-P1 schema authority substrate lock for deterministic match-input persistence.",
+  "inherits_from": {
+    "b23_p0_semantic_authority_freeze_contract": "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json",
+    "b23_pre_p1_spec_gate_contract": "contracts-internal/governance/b23_pre_p1_spec_gate.main.json"
+  },
+  "schema_surfaces": {
+    "migration_file": "alembic/versions/007_skeldir_foundation/202604291200_b23_p1_schema_authority_lock.py",
+    "canonical_schema_file": "db/schema/canonical_schema.sql",
+    "timing_constants_module": "backend/app/revenue_verification/timing_constants.py",
+    "enforcer_file": "scripts/ci/enforce_b23_p1_schema_authority_lock.py"
+  },
+  "match_verdict": {
+    "table": "b23_match_verdicts",
+    "statuses": [
+      "pending",
+      "matched_provisional",
+      "matched_confirmed",
+      "adjusted",
+      "unmatched"
+    ],
+    "match_qualities": [
+      "high",
+      "medium",
+      "low"
+    ]
+  },
+  "exception_records": {
+    "table": "b23_exception_records",
+    "statuses": [
+      "open",
+      "acknowledged",
+      "resolved",
+      "dismissed"
+    ],
+    "severities": [
+      "flagged",
+      "alert"
+    ],
+    "resolution_required_for_statuses": [
+      "resolved",
+      "dismissed"
+    ]
+  },
+  "revenue_events": {
+    "table": "b23_revenue_events",
+    "event_taxonomy": [
+      "payment_capture",
+      "partial_refund",
+      "full_refund",
+      "chargeback_opened",
+      "chargeback_won",
+      "chargeback_lost",
+      "reversal"
+    ],
+    "tenant_provider_idempotency_unique_columns": [
+      "tenant_id",
+      "provider",
+      "provider_native_event_reference"
+    ]
+  },
+  "webhook_ingestion_log": {
+    "table": "b23_webhook_ingestion_logs",
+    "required_columns": [
+      "tenant_id",
+      "provider",
+      "failure_reason",
+      "received_at"
+    ]
+  },
+  "timing_constants": {
+    "WEBHOOK_ARRIVAL_WINDOW": {
+      "value": 30,
+      "unit": "minutes"
+    },
+    "PROVISIONAL_MATCH_WINDOW": {
+      "value": 24,
+      "unit": "hours"
+    },
+    "REFUND_REOPENING_WINDOW": {
+      "value": 30,
+      "unit": "days"
+    }
+  },
+  "forbidden_authority_payload_column_tokens": [
+    "raw_payload",
+    "raw_webhook_payload",
+    "provider_payload",
+    "payload_json"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b23_p1_schema_authority_lock.py",
+    "pytest backend/tests/test_b23_p1_schema_authority_enforcer.py -q",
+    "pytest backend/tests/test_b23_p1_schema_authority_runtime.py -q",
+    "python scripts/ci/verify_b23_p1_migration_reversibility.py"
+  ]
+}
+

@@ -1,46 +1,8 @@
---
--- PostgreSQL database dump
---
-
-\restrict gFM99rNSxp0CDaNCD09XdQtlbaGCqdX3zvVbKeUifRPPQDKRUih1n4XTMtSD0cQ
-
--- Dumped from database version 18.0
--- Dumped by pg_dump version 18.0
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
---
--- Name: auth; Type: SCHEMA; Schema: -; Owner: -
---
-
 CREATE SCHEMA auth;
-
-
---
--- Name: security; Type: SCHEMA; Schema: -; Owner: -
---
 
 CREATE SCHEMA security;
 
-
---
--- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
---
-
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-
---
--- Name: lookup_user_auth_by_login_hash(text); Type: FUNCTION; Schema: auth; Owner: -
---
 
 CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text, password_hash text)
     LANGUAGE sql SECURITY DEFINER
@@ -51,15 +13,10 @@ CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text
                 u.is_active,
                 u.auth_provider,
                 u.password_hash
-            FROM public.users AS u
-            WHERE u.login_identifier_hash = p_login_identifier_hash
+            FROM users AS u
+            WHERE login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
-
-
---
--- Name: lookup_user_by_login_hash(text); Type: FUNCTION; Schema: auth; Owner: -
---
 
 CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RETURNS TABLE(user_id uuid, is_active boolean, auth_provider text)
     LANGUAGE sql SECURITY DEFINER
@@ -69,15 +26,10 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
                 u.id AS user_id,
                 u.is_active,
                 u.auth_provider
-            FROM public.users AS u
-            WHERE u.login_identifier_hash = p_login_identifier_hash
+            FROM users AS u
+            WHERE login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
-
-
---
--- Name: check_allocation_sum(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
     LANGUAGE plpgsql
@@ -85,30 +37,25 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         DECLARE
             event_revenue INTEGER;
             allocated_sum INTEGER;
-            tolerance_cents INTEGER := 1; -- Â±1 cent rounding tolerance
+            tolerance_cents INTEGER := 1;
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
-            WHERE id = COALESCE(NEW.event_id, OLD.event_id);
-            
+            WHERE id = COALESCE(event_id, event_id);
+
             SELECT COALESCE(SUM(allocated_revenue_cents), 0) INTO allocated_sum
             FROM attribution_allocations
-            WHERE event_id = COALESCE(NEW.event_id, OLD.event_id)
-              AND model_version = COALESCE(NEW.model_version, OLD.model_version);
-            
+            WHERE event_id = COALESCE(event_id, event_id)
+              AND model_version = COALESCE(model_version, model_version);
+
             IF ABS(allocated_sum - event_revenue) > tolerance_cents THEN
-                RAISE EXCEPTION 'Allocation sum mismatch: allocated=% expected=% drift=%', 
+                RAISE EXCEPTION 'Allocation sum mismatch: allocated=% expected=% drift=%',
                     allocated_sum, event_revenue, ABS(allocated_sum - event_revenue);
             END IF;
-            
+
             RETURN COALESCE(NEW, OLD);
         END;
         $$;
-
-
---
--- Name: check_allocation_sum_stmt_delete(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
     LANGUAGE plpgsql
@@ -133,23 +80,23 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON e.tenant_id = a.tenant_id
-             AND e.id = a.event_id
+              ON tenant_id = tenant_id
+             AND id = event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE aa.tenant_id = a.tenant_id
-                  AND aa.event_id = a.event_id
+                WHERE tenant_id = tenant_id
+                  AND event_id = event_id
                   AND (
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
-                        AND aa.recompute_job_id IS NULL
-                        AND aa.model_version = a.model_version
+                        AND recompute_job_id IS NULL
+                        AND model_version = model_version
                     )
                   )
             ) s
-            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
+            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -162,11 +109,6 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
             RETURN NULL;
         END;
         $$;
-
-
---
--- Name: check_allocation_sum_stmt_insert(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
     LANGUAGE plpgsql
@@ -191,23 +133,23 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON e.tenant_id = a.tenant_id
-             AND e.id = a.event_id
+              ON tenant_id = tenant_id
+             AND id = event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE aa.tenant_id = a.tenant_id
-                  AND aa.event_id = a.event_id
+                WHERE tenant_id = tenant_id
+                  AND event_id = event_id
                   AND (
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
-                        AND aa.recompute_job_id IS NULL
-                        AND aa.model_version = a.model_version
+                        AND recompute_job_id IS NULL
+                        AND model_version = model_version
                     )
                   )
             ) s
-            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
+            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -220,11 +162,6 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             RETURN NULL;
         END;
         $$;
-
-
---
--- Name: check_allocation_sum_stmt_update(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
     LANGUAGE plpgsql
@@ -253,23 +190,23 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON e.tenant_id = a.tenant_id
-             AND e.id = a.event_id
+              ON tenant_id = tenant_id
+             AND id = event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE aa.tenant_id = a.tenant_id
-                  AND aa.event_id = a.event_id
+                WHERE tenant_id = tenant_id
+                  AND event_id = event_id
                   AND (
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
-                        AND aa.recompute_job_id IS NULL
-                        AND aa.model_version = a.model_version
+                        AND recompute_job_id IS NULL
+                        AND model_version = model_version
                     )
                   )
             ) s
-            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
+            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -282,11 +219,6 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
             RETURN NULL;
         END;
         $$;
-
-
---
--- Name: fn_b23_p0_prune_attribution_commerce_identities(integer); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delete integer DEFAULT 1000) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
@@ -305,17 +237,12 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delet
                 )
                 DELETE FROM public.attribution_commerce_identities target
                 USING doomed
-                WHERE target.id = doomed.id;
+                WHERE id = id;
 
                 GET DIAGNOSTICS deleted_count = ROW_COUNT;
                 RETURN deleted_count;
             END;
             $$;
-
-
---
--- Name: fn_b23_p0_prune_attribution_commerce_identities_trigger(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -326,11 +253,6 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()
                 RETURN NULL;
             END;
             $$;
-
-
---
--- Name: fn_bind_session_authority_from_event(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
     LANGUAGE plpgsql
@@ -376,10 +298,10 @@ CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
 
             IF EXISTS (
                 SELECT 1
-                FROM public.session_authority sa
-                WHERE sa.tenant_id = NEW.tenant_id
-                  AND sa.session_id = NEW.session_id
-                  AND (sa.invalidated_at IS NOT NULL OR sa.expires_at <= authority_now)
+                FROM session_authority sa
+                WHERE tenant_id = tenant_id
+                  AND session_id = session_id
+                  AND (invalidated_at IS NOT NULL OR expires_at <= authority_now)
             ) THEN
                 RAISE EXCEPTION
                     'session authority violation: stale or invalidated session_id on attribution_events insert';
@@ -388,11 +310,6 @@ CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: fn_block_worker_ingestion_mutation(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_block_worker_ingestion_mutation() RETURNS trigger
     LANGUAGE plpgsql
@@ -410,11 +327,6 @@ BEGIN
 END;
 $$;
 
-
---
--- Name: fn_compliance_audit_ledger_append_only(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_compliance_audit_ledger_append_only() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -423,11 +335,6 @@ CREATE FUNCTION public.fn_compliance_audit_ledger_append_only() RETURNS trigger
                 'compliance_audit_ledger is append-only; UPDATE and DELETE are forbidden';
         END;
         $$;
-
-
---
--- Name: fn_detect_pii_keys(jsonb); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_detect_pii_keys(payload jsonb) RETURNS boolean
     LANGUAGE plpgsql IMMUTABLE
@@ -439,11 +346,6 @@ CREATE FUNCTION public.fn_detect_pii_keys(payload jsonb) RETURNS boolean
             RETURN (jsonb_path_exists(payload, '$.**.email') OR jsonb_path_exists(payload, '$.**.email_address') OR jsonb_path_exists(payload, '$.**.phone') OR jsonb_path_exists(payload, '$.**.phone_number') OR jsonb_path_exists(payload, '$.**.ssn') OR jsonb_path_exists(payload, '$.**.social_security_number') OR jsonb_path_exists(payload, '$.**.ip_address') OR jsonb_path_exists(payload, '$.**.ip') OR jsonb_path_exists(payload, '$.**.first_name') OR jsonb_path_exists(payload, '$.**.last_name') OR jsonb_path_exists(payload, '$.**.full_name') OR jsonb_path_exists(payload, '$.**.address') OR jsonb_path_exists(payload, '$.**.street_address'));
         END;
         $_$;
-
-
---
--- Name: fn_enforce_pii_guardrail(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
     LANGUAGE plpgsql
@@ -528,29 +430,18 @@ CREATE FUNCTION public.fn_enforce_pii_guardrail() RETURNS trigger
         END;
         $_$;
 
-
---
--- Name: fn_events_prevent_mutation(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_events_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-            -- Allow migration_owner for emergency repairs (optional)
+
             IF current_user = 'migration_owner' THEN
-                RETURN NULL; -- Allow operation
+                RETURN NULL;
             END IF;
-            
-            -- Block all other UPDATE/DELETE attempts
+
             RAISE EXCEPTION 'attribution_events is append-only; updates and deletes are not allowed. Use INSERT with correlation_id for corrections.';
         END;
         $$;
-
-
---
--- Name: fn_guard_attribution_events_payload_identity(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS trigger
     LANGUAGE plpgsql
@@ -580,29 +471,18 @@ CREATE FUNCTION public.fn_guard_attribution_events_payload_identity() RETURNS tr
         END;
         $_$;
 
-
---
--- Name: fn_ledger_prevent_mutation(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_ledger_prevent_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
         BEGIN
-            -- Allow migration_owner for emergency repairs (optional)
+
             IF current_user = 'migration_owner' THEN
-                RETURN NULL; -- Allow operation
+                RETURN NULL;
             END IF;
-            
-            -- Block all other UPDATE/DELETE attempts
+
             RAISE EXCEPTION 'revenue_ledger is immutable; updates and deletes are not allowed. Use INSERT for corrections.';
         END;
         $$;
-
-
---
--- Name: fn_llm_call_audit_append_only(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_llm_call_audit_append_only() RETURNS trigger
     LANGUAGE plpgsql
@@ -612,11 +492,6 @@ CREATE FUNCTION public.fn_llm_call_audit_append_only() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: fn_log_channel_assignment_correction(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
@@ -624,10 +499,9 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
             correction_by_val VARCHAR(255);
             correction_reason_val TEXT;
         BEGIN
-            -- Only log if the 'channel_code' column actually changed
+
             IF (NEW.channel_code IS DISTINCT FROM OLD.channel_code) THEN
-                -- Read session variables set by application layer
-                -- Fall back to 'system' if unset (indicates bypass attempt)
+
                 correction_by_val := COALESCE(
                     current_setting('app.correction_by', true),
                     'system'
@@ -636,8 +510,7 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     NULLIF(current_setting('app.correction_reason', true), ''),
                     'No reason provided'
                 );
-                
-                -- Insert audit record
+
                 INSERT INTO channel_assignment_corrections (
                     tenant_id,
                     entity_type,
@@ -659,15 +532,10 @@ CREATE FUNCTION public.fn_log_channel_assignment_correction() RETURNS trigger
                     correction_reason_val
                 );
             END IF;
-            
+
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: fn_log_channel_state_change(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -676,10 +544,9 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
             change_by_val VARCHAR(255);
             change_reason_val TEXT;
         BEGIN
-            -- Only log if the 'state' column actually changed
+
             IF (NEW.state IS DISTINCT FROM OLD.state) THEN
-                -- Read session variables set by application layer
-                -- Fall back to 'system' if unset (indicates bypass attempt)
+
                 change_by_val := COALESCE(
                     current_setting('app.channel_state_change_by', true),
                     'system'
@@ -688,8 +555,7 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     current_setting('app.channel_state_change_reason', true),
                     ''
                 );
-                
-                -- Insert audit record
+
                 INSERT INTO channel_state_transitions (
                     channel_code,
                     from_state,
@@ -707,15 +573,10 @@ CREATE FUNCTION public.fn_log_channel_state_change() RETURNS trigger
                     change_reason_val
                 );
             END IF;
-            
+
             RETURN NEW;
         END;
         $$;
-
-
---
--- Name: fn_log_revenue_state_change(); Type: FUNCTION; Schema: public; Owner: -
---
 
 CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
@@ -742,11 +603,6 @@ CREATE FUNCTION public.fn_log_revenue_state_change() RETURNS trigger
         END;
         $$;
 
-
---
--- Name: fn_scan_pii_contamination(); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
     LANGUAGE plpgsql
     AS $$
@@ -755,125 +611,118 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             rec RECORD;
             detected_key_var TEXT;
         BEGIN
-            -- Scan attribution_events.raw_payload
-            FOR rec IN 
-                SELECT id, raw_payload 
-                FROM attribution_events 
+
+            FOR rec IN
+                SELECT id, raw_payload
+                FROM attribution_events
                 WHERE fn_detect_pii_keys(raw_payload)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(rec.raw_payload) key
+                FROM jsonb_object_keys(raw_payload) key
                 WHERE key IN (
-                    'email', 'email_address', 
-                    'phone', 'phone_number', 
-                    'ssn', 'social_security_number', 
-                    'ip_address', 'ip', 
-                    'first_name', 'last_name', 'full_name', 
+                    'email', 'email_address',
+                    'phone', 'phone_number',
+                    'ssn', 'social_security_number',
+                    'ip_address', 'ip',
+                    'first_name', 'last_name', 'full_name',
                     'address', 'street_address'
                 )
                 LIMIT 1;
-                
+
                 INSERT INTO pii_audit_findings (
-                    table_name, 
-                    column_name, 
-                    record_id, 
+                    table_name,
+                    column_name,
+                    record_id,
                     detected_key,
                     sample_snippet
                 )
                 VALUES (
-                    'attribution_events', 
-                    'raw_payload', 
-                    rec.id, 
-                    detected_key_var,
-                    'Redacted for security'  -- Do not log actual PII values
-                );
-                
-                finding_count := finding_count + 1;
-            END LOOP;
-            
-            -- Scan dead_events.raw_payload
-            FOR rec IN 
-                SELECT id, raw_payload 
-                FROM dead_events 
-                WHERE fn_detect_pii_keys(raw_payload)
-            LOOP
-                -- Find first PII key
-                SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(rec.raw_payload) key
-                WHERE key IN (
-                    'email', 'email_address', 
-                    'phone', 'phone_number', 
-                    'ssn', 'social_security_number', 
-                    'ip_address', 'ip', 
-                    'first_name', 'last_name', 'full_name', 
-                    'address', 'street_address'
-                )
-                LIMIT 1;
-                
-                INSERT INTO pii_audit_findings (
-                    table_name, 
-                    column_name, 
-                    record_id, 
-                    detected_key,
-                    sample_snippet
-                )
-                VALUES (
-                    'dead_events', 
-                    'raw_payload', 
-                    rec.id, 
+                    'attribution_events',
+                    'raw_payload',
+                    rec.id,
                     detected_key_var,
                     'Redacted for security'
                 );
-                
+
                 finding_count := finding_count + 1;
             END LOOP;
-            
-            -- Scan revenue_ledger.metadata (only non-NULL)
-            FOR rec IN 
-                SELECT id, metadata 
-                FROM revenue_ledger 
+
+            FOR rec IN
+                SELECT id, raw_payload
+                FROM dead_events
+                WHERE fn_detect_pii_keys(raw_payload)
+            LOOP
+
+                SELECT key INTO detected_key_var
+                FROM jsonb_object_keys(raw_payload) key
+                WHERE key IN (
+                    'email', 'email_address',
+                    'phone', 'phone_number',
+                    'ssn', 'social_security_number',
+                    'ip_address', 'ip',
+                    'first_name', 'last_name', 'full_name',
+                    'address', 'street_address'
+                )
+                LIMIT 1;
+
+                INSERT INTO pii_audit_findings (
+                    table_name,
+                    column_name,
+                    record_id,
+                    detected_key,
+                    sample_snippet
+                )
+                VALUES (
+                    'dead_events',
+                    'raw_payload',
+                    rec.id,
+                    detected_key_var,
+                    'Redacted for security'
+                );
+
+                finding_count := finding_count + 1;
+            END LOOP;
+
+            FOR rec IN
+                SELECT id, metadata
+                FROM revenue_ledger
                 WHERE metadata IS NOT NULL AND fn_detect_pii_keys(metadata)
             LOOP
-                -- Find first PII key
+
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(rec.metadata) key
+                FROM jsonb_object_keys(metadata) key
                 WHERE key IN (
-                    'email', 'email_address', 
-                    'phone', 'phone_number', 
-                    'ssn', 'social_security_number', 
-                    'ip_address', 'ip', 
-                    'first_name', 'last_name', 'full_name', 
+                    'email', 'email_address',
+                    'phone', 'phone_number',
+                    'ssn', 'social_security_number',
+                    'ip_address', 'ip',
+                    'first_name', 'last_name', 'full_name',
                     'address', 'street_address'
                 )
                 LIMIT 1;
-                
+
                 INSERT INTO pii_audit_findings (
-                    table_name, 
-                    column_name, 
-                    record_id, 
+                    table_name,
+                    column_name,
+                    record_id,
                     detected_key,
                     sample_snippet
                 )
                 VALUES (
-                    'revenue_ledger', 
-                    'metadata', 
-                    rec.id, 
+                    'revenue_ledger',
+                    'metadata',
+                    rec.id,
                     detected_key_var,
                     'Redacted for security'
                 );
-                
+
                 finding_count := finding_count + 1;
             END LOOP;
-            
+
             RETURN finding_count;
         END;
         $$;
-
-
---
--- Name: resolve_tenant_webhook_secrets(text); Type: FUNCTION; Schema: security; Owner: -
---
 
 CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETURNS TABLE(tenant_id uuid, tenant_updated_at timestamp with time zone, shopify_webhook_secret_ciphertext bytea, shopify_webhook_secret_key_id text, stripe_webhook_secret_ciphertext bytea, stripe_webhook_secret_key_id text, paypal_webhook_secret_ciphertext bytea, paypal_webhook_secret_key_id text, woocommerce_webhook_secret_ciphertext bytea, woocommerce_webhook_secret_key_id text)
     LANGUAGE sql SECURITY DEFINER
@@ -890,28 +739,14 @@ CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETUR
             t.paypal_webhook_secret_key_id,
             t.woocommerce_webhook_secret_ciphertext,
             t.woocommerce_webhook_secret_key_id
-          FROM public.tenants t
-          WHERE t.api_key_hash = $1
+          FROM tenants t
+          WHERE api_key_hash = $1
           LIMIT 1
         $_$;
-
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
---
--- Name: alembic_version; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.alembic_version (
     version_num character varying(32) NOT NULL
 );
-
-
---
--- Name: attribution_allocations; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.attribution_allocations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -919,7 +754,7 @@ CREATE TABLE public.attribution_allocations (
     event_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    channel_code text CONSTRAINT attribution_allocations_channel_not_null NOT NULL,
+    channel_code text NOT NULL,
     allocated_revenue_cents integer DEFAULT 0 NOT NULL,
     model_metadata jsonb,
     correlation_id uuid,
@@ -943,11 +778,6 @@ CREATE TABLE public.attribution_allocations (
 
 ALTER TABLE ONLY public.attribution_allocations FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: attribution_commerce_identities; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.attribution_commerce_identities (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -965,11 +795,6 @@ CREATE TABLE public.attribution_commerce_identities (
 );
 
 ALTER TABLE ONLY public.attribution_commerce_identities FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: attribution_events; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.attribution_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1000,11 +825,6 @@ CREATE TABLE public.attribution_events (
 
 ALTER TABLE ONLY public.attribution_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: attribution_recompute_jobs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.attribution_recompute_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1026,11 +846,6 @@ CREATE TABLE public.attribution_recompute_jobs (
 
 ALTER TABLE ONLY public.attribution_recompute_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: auth_access_token_denylist; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.auth_access_token_denylist (
     tenant_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1042,11 +857,6 @@ CREATE TABLE public.auth_access_token_denylist (
 );
 
 ALTER TABLE ONLY public.auth_access_token_denylist FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: auth_refresh_tokens; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.auth_refresh_tokens (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1065,11 +875,6 @@ CREATE TABLE public.auth_refresh_tokens (
 
 ALTER TABLE ONLY public.auth_refresh_tokens FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: auth_user_token_cutoffs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.auth_user_token_cutoffs (
     tenant_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1080,10 +885,107 @@ CREATE TABLE public.auth_user_token_cutoffs (
 
 ALTER TABLE ONLY public.auth_user_token_cutoffs FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.b23_exception_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    match_verdict_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    canonical_commerce_reference character varying(255) NOT NULL,
+    status character varying(16) NOT NULL,
+    severity character varying(16) NOT NULL,
+    resolution_code character varying(64),
+    resolution_notes text,
+    raised_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_at timestamp with time zone,
+    dismissed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_exception_records_resolution_code_required CHECK ((((status)::text <> ALL ((ARRAY['resolved'::character varying, 'dismissed'::character varying])::text[])) OR ((resolution_code IS NOT NULL) AND (char_length(TRIM(BOTH FROM resolution_code)) > 0)))),
+    CONSTRAINT ck_b23_exception_records_severity CHECK (((severity)::text = ANY ((ARRAY['flagged'::character varying, 'alert'::character varying])::text[]))),
+    CONSTRAINT ck_b23_exception_records_status CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
+);
 
---
--- Name: budget_jobs; Type: TABLE; Schema: public; Owner: -
---
+ALTER TABLE ONLY public.b23_exception_records FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b23_match_verdicts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    attribution_event_id uuid,
+    webhook_ingress_identity_id uuid,
+    provider character varying(32) NOT NULL,
+    canonical_commerce_reference character varying(255) NOT NULL,
+    provider_native_event_reference character varying(255) NOT NULL,
+    provider_native_commerce_reference character varying(255) NOT NULL,
+    status character varying(32) NOT NULL,
+    match_quality character varying(16) NOT NULL,
+    attributed_amount_minor integer NOT NULL,
+    verified_amount_minor integer NOT NULL,
+    currency_code character(3) NOT NULL,
+    pending_since timestamp with time zone DEFAULT now() NOT NULL,
+    provisional_expires_at timestamp with time zone,
+    confirmed_at timestamp with time zone,
+    adjusted_at timestamp with time zone,
+    unmatched_marked_at timestamp with time zone,
+    last_transition_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_match_verdicts_attributed_amount_non_negative CHECK ((attributed_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
+    CONSTRAINT ck_b23_match_verdicts_match_quality CHECK (((match_quality)::text = ANY ((ARRAY['high'::character varying, 'medium'::character varying, 'low'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_verdicts_provider_commerce_reference_not_blank CHECK ((char_length((provider_native_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_provider_event_reference_not_blank CHECK ((char_length((provider_native_event_reference)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_verdicts_verified_amount_non_negative CHECK ((verified_amount_minor >= 0))
+);
+
+ALTER TABLE ONLY public.b23_match_verdicts FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b23_revenue_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    match_verdict_id uuid,
+    webhook_ingress_identity_id uuid,
+    provider character varying(32) NOT NULL,
+    provider_native_event_reference character varying(255) NOT NULL,
+    provider_native_commerce_reference character varying(255) NOT NULL,
+    canonical_commerce_reference character varying(255) NOT NULL,
+    event_type character varying(32) NOT NULL,
+    amount_minor integer NOT NULL,
+    currency_code character(3) NOT NULL,
+    event_occurred_at timestamp with time zone NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_revenue_events_amount_non_negative CHECK ((amount_minor >= 0)),
+    CONSTRAINT ck_b23_revenue_events_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
+    CONSTRAINT ck_b23_revenue_events_event_type CHECK (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_opened'::character varying, 'chargeback_won'::character varying, 'chargeback_lost'::character varying, 'reversal'::character varying])::text[]))),
+    CONSTRAINT ck_b23_revenue_events_provider_commerce_reference_not_blank CHECK ((char_length((provider_native_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_provider_event_reference_not_blank CHECK ((char_length((provider_native_event_reference)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_provider_not_blank CHECK ((char_length((provider)::text) > 0))
+);
+
+ALTER TABLE ONLY public.b23_revenue_events FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b23_webhook_ingestion_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    provider_native_event_reference character varying(255),
+    ingestion_status character varying(16) NOT NULL,
+    failure_reason text,
+    correlation_id uuid,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_webhook_ingestion_logs_failure_reason_when_failed CHECK ((((ingestion_status)::text <> 'failed'::text) OR ((failure_reason IS NOT NULL) AND (char_length(TRIM(BOTH FROM failure_reason)) > 0)))),
+    CONSTRAINT ck_b23_webhook_ingestion_logs_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
+    CONSTRAINT ck_b23_webhook_ingestion_logs_status CHECK (((ingestion_status)::text = ANY ((ARRAY['success'::character varying, 'failed'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.b23_webhook_ingestion_logs FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.budget_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1110,11 +1012,6 @@ CREATE TABLE public.budget_jobs (
 
 ALTER TABLE ONLY public.budget_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: budget_optimization_jobs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.budget_optimization_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1132,11 +1029,6 @@ CREATE TABLE public.budget_optimization_jobs (
 
 ALTER TABLE ONLY public.budget_optimization_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: celery_taskmeta; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.celery_taskmeta (
     id integer NOT NULL,
     task_id character varying(155) NOT NULL,
@@ -1151,11 +1043,6 @@ CREATE TABLE public.celery_taskmeta (
     retries integer
 );
 
-
---
--- Name: celery_taskmeta_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.celery_taskmeta_id_seq
     AS integer
     START WITH 1
@@ -1164,17 +1051,7 @@ CREATE SEQUENCE public.celery_taskmeta_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: celery_taskmeta_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.celery_taskmeta_id_seq OWNED BY public.celery_taskmeta.id;
-
-
---
--- Name: celery_tasksetmeta; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.celery_tasksetmeta (
     id integer NOT NULL,
@@ -1182,11 +1059,6 @@ CREATE TABLE public.celery_tasksetmeta (
     result bytea,
     date_done timestamp without time zone DEFAULT CURRENT_TIMESTAMP
 );
-
-
---
--- Name: celery_tasksetmeta_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
 
 CREATE SEQUENCE public.celery_tasksetmeta_id_seq
     AS integer
@@ -1196,17 +1068,7 @@ CREATE SEQUENCE public.celery_tasksetmeta_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: celery_tasksetmeta_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.celery_tasksetmeta_id_seq OWNED BY public.celery_tasksetmeta.id;
-
-
---
--- Name: channel_assignment_corrections; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.channel_assignment_corrections (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1224,11 +1086,6 @@ CREATE TABLE public.channel_assignment_corrections (
 
 ALTER TABLE ONLY public.channel_assignment_corrections FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: channel_state_transitions; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.channel_state_transitions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     channel_code character varying(50) NOT NULL,
@@ -1240,11 +1097,6 @@ CREATE TABLE public.channel_state_transitions (
     metadata jsonb
 );
 
-
---
--- Name: channel_taxonomy; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.channel_taxonomy (
     code text NOT NULL,
     family text NOT NULL,
@@ -1255,11 +1107,6 @@ CREATE TABLE public.channel_taxonomy (
     state character varying(50) DEFAULT 'active'::character varying NOT NULL,
     CONSTRAINT channel_taxonomy_state_check CHECK (((state)::text = ANY ((ARRAY['draft'::character varying, 'active'::character varying, 'deprecated'::character varying, 'archived'::character varying])::text[])))
 );
-
-
---
--- Name: compliance_audit_ledger; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.compliance_audit_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1278,11 +1125,6 @@ CREATE TABLE public.compliance_audit_ledger (
 );
 
 ALTER TABLE ONLY public.compliance_audit_ledger FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: dead_events; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.dead_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1310,11 +1152,6 @@ CREATE TABLE public.dead_events (
 
 ALTER TABLE ONLY public.dead_events FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: dead_events_quarantine; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.dead_events_quarantine (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid,
@@ -1332,11 +1169,6 @@ CREATE TABLE public.dead_events_quarantine (
 
 ALTER TABLE ONLY public.dead_events_quarantine FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: ephemeral_click_resolution; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.ephemeral_click_resolution (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1352,11 +1184,6 @@ CREATE TABLE public.ephemeral_click_resolution (
 );
 
 ALTER TABLE ONLY public.ephemeral_click_resolution FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: ephemeral_order_resolution; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.ephemeral_order_resolution (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1374,11 +1201,6 @@ CREATE TABLE public.ephemeral_order_resolution (
 
 ALTER TABLE ONLY public.ephemeral_order_resolution FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: explanation_cache; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.explanation_cache (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1393,11 +1215,6 @@ CREATE TABLE public.explanation_cache (
 );
 
 ALTER TABLE ONLY public.explanation_cache FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: investigation_jobs; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.investigation_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1428,11 +1245,6 @@ CREATE TABLE public.investigation_jobs (
 
 ALTER TABLE ONLY public.investigation_jobs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: investigation_tool_calls; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.investigation_tool_calls (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1444,11 +1256,6 @@ CREATE TABLE public.investigation_tool_calls (
 );
 
 ALTER TABLE ONLY public.investigation_tool_calls FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: investigations; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.investigations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1468,11 +1275,6 @@ CREATE TABLE public.investigations (
 
 ALTER TABLE ONLY public.investigations FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: jwt_verification_cache; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.jwt_verification_cache (
     singleton_id smallint NOT NULL,
     jwks_json text,
@@ -1486,11 +1288,6 @@ CREATE TABLE public.jwt_verification_cache (
     CONSTRAINT jwt_verification_cache_singleton_id_check CHECK ((singleton_id = 1))
 );
 
-
---
--- Name: kombu_message; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.kombu_message (
     id integer NOT NULL,
     visible boolean DEFAULT true NOT NULL,
@@ -1500,11 +1297,6 @@ CREATE TABLE public.kombu_message (
     queue_id integer NOT NULL
 );
 
-
---
--- Name: kombu_message_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.kombu_message_id_seq
     AS integer
     START WITH 1
@@ -1513,27 +1305,12 @@ CREATE SEQUENCE public.kombu_message_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: kombu_message_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.kombu_message_id_seq OWNED BY public.kombu_message.id;
-
-
---
--- Name: kombu_queue; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.kombu_queue (
     id integer NOT NULL,
     name character varying(200) NOT NULL
 );
-
-
---
--- Name: kombu_queue_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
 
 CREATE SEQUENCE public.kombu_queue_id_seq
     AS integer
@@ -1543,17 +1320,7 @@ CREATE SEQUENCE public.kombu_queue_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: kombu_queue_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.kombu_queue_id_seq OWNED BY public.kombu_queue.id;
-
-
---
--- Name: llm_api_calls; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_api_calls (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1607,11 +1374,6 @@ CREATE TABLE public.llm_api_calls (
 
 ALTER TABLE ONLY public.llm_api_calls FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_breaker_state; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_breaker_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1627,11 +1389,6 @@ CREATE TABLE public.llm_breaker_state (
 );
 
 ALTER TABLE ONLY public.llm_breaker_state FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: llm_budget_reservations; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_budget_reservations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1651,11 +1408,6 @@ CREATE TABLE public.llm_budget_reservations (
 );
 
 ALTER TABLE ONLY public.llm_budget_reservations FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: llm_call_audit; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_call_audit (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1678,11 +1430,6 @@ CREATE TABLE public.llm_call_audit (
 
 ALTER TABLE ONLY public.llm_call_audit FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_hourly_shutoff_state; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_hourly_shutoff_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1702,11 +1449,6 @@ CREATE TABLE public.llm_hourly_shutoff_state (
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_monthly_budget_state; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_monthly_budget_state (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1723,11 +1465,6 @@ CREATE TABLE public.llm_monthly_budget_state (
 
 ALTER TABLE ONLY public.llm_monthly_budget_state FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_monthly_costs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_monthly_costs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1742,11 +1479,6 @@ CREATE TABLE public.llm_monthly_costs (
 );
 
 ALTER TABLE ONLY public.llm_monthly_costs FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: llm_semantic_cache; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.llm_semantic_cache (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1774,11 +1506,6 @@ CREATE TABLE public.llm_semantic_cache (
 
 ALTER TABLE ONLY public.llm_semantic_cache FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: llm_validation_failures; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.llm_validation_failures (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1791,11 +1518,6 @@ CREATE TABLE public.llm_validation_failures (
 
 ALTER TABLE ONLY public.llm_validation_failures FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: message_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.message_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -1803,43 +1525,28 @@ CREATE SEQUENCE public.message_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: message_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
-
---
--- Name: mv_allocation_summary; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_allocation_summary AS
- SELECT aa.tenant_id,
-    aa.event_id,
-    aa.model_version,
-    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
-    e.revenue_cents AS event_revenue_cents,
+CREATE MATERIALIZED VIEW mv_allocation_summary AS
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
         END AS drift_cents
-   FROM (public.attribution_allocations aa
-     LEFT JOIN public.attribution_events e ON ((aa.event_id = e.id)))
-  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+   FROM (attribution_allocations aa
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
   WITH NO DATA;
 
-
---
--- Name: mv_channel_performance; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_channel_performance AS
+CREATE MATERIALIZED VIEW mv_channel_performance AS
  SELECT tenant_id,
     channel_code,
     date_trunc('day'::text, created_at) AS allocation_date,
@@ -1847,15 +1554,10 @@ CREATE MATERIALIZED VIEW public.mv_channel_performance AS
     sum(allocated_revenue_cents) AS total_revenue_cents,
     avg(confidence_score) AS avg_confidence_score,
     count(*) AS total_allocations
-   FROM public.attribution_allocations
+   FROM attribution_allocations
   WHERE (created_at >= (CURRENT_DATE - '90 days'::interval))
   GROUP BY tenant_id, channel_code, (date_trunc('day'::text, created_at))
   WITH NO DATA;
-
-
---
--- Name: revenue_ledger; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.revenue_ledger (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1893,41 +1595,26 @@ CREATE TABLE public.revenue_ledger (
 
 ALTER TABLE ONLY public.revenue_ledger FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: mv_daily_revenue_summary; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_daily_revenue_summary AS
+CREATE MATERIALIZED VIEW mv_daily_revenue_summary AS
  SELECT tenant_id,
     date_trunc('day'::text, verification_timestamp) AS revenue_date,
     state,
     currency,
     sum(amount_cents) AS total_amount_cents,
     count(*) AS transaction_count
-   FROM public.revenue_ledger
+   FROM revenue_ledger
   WHERE ((state)::text = ANY ((ARRAY['captured'::character varying, 'refunded'::character varying, 'chargeback'::character varying])::text[]))
   GROUP BY tenant_id, (date_trunc('day'::text, verification_timestamp)), state, currency
   WITH NO DATA;
 
-
---
--- Name: mv_realtime_revenue; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_realtime_revenue AS
+CREATE MATERIALIZED VIEW mv_realtime_revenue AS
  SELECT tenant_id,
     ((COALESCE(sum(COALESCE(amount_cents, revenue_cents)), (0)::bigint))::numeric / 100.0) AS total_revenue,
     bool_or(COALESCE(is_verified, false)) AS verified,
     (EXTRACT(epoch FROM (now() - max(updated_at))))::integer AS data_freshness_seconds
-   FROM public.revenue_ledger rl
+   FROM revenue_ledger rl
   GROUP BY tenant_id
   WITH NO DATA;
-
-
---
--- Name: reconciliation_runs; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.reconciliation_runs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1944,27 +1631,17 @@ CREATE TABLE public.reconciliation_runs (
 
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: mv_reconciliation_status; Type: MATERIALIZED VIEW; Schema: public; Owner: -
---
-
-CREATE MATERIALIZED VIEW public.mv_reconciliation_status AS
- SELECT rr.tenant_id,
-    rr.state,
-    rr.last_run_at,
-    rr.id AS reconciliation_run_id
-   FROM (public.reconciliation_runs rr
-     JOIN ( SELECT reconciliation_runs.tenant_id,
-            max(reconciliation_runs.last_run_at) AS max_last_run_at
-           FROM public.reconciliation_runs
-          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+CREATE MATERIALIZED VIEW mv_reconciliation_status AS
+ SELECT tenant_id,
+    state,
+    last_run_at,
+    id AS reconciliation_run_id
+   FROM (reconciliation_runs rr
+     JOIN ( SELECT tenant_id,
+            max(last_run_at) AS max_last_run_at
+           FROM reconciliation_runs
+          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
   WITH NO DATA;
-
-
---
--- Name: oauth_handshake_sessions; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.oauth_handshake_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1994,11 +1671,6 @@ CREATE TABLE public.oauth_handshake_sessions (
 
 ALTER TABLE ONLY public.oauth_handshake_sessions FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: pii_audit_findings; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.pii_audit_findings (
     id bigint NOT NULL,
     table_name text NOT NULL,
@@ -2009,11 +1681,6 @@ CREATE TABLE public.pii_audit_findings (
     detected_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
---
--- Name: pii_audit_findings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.pii_audit_findings_id_seq
     START WITH 1
     INCREMENT BY 1
@@ -2021,17 +1688,7 @@ CREATE SEQUENCE public.pii_audit_findings_id_seq
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: pii_audit_findings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.pii_audit_findings_id_seq OWNED BY public.pii_audit_findings.id;
-
-
---
--- Name: platform_connections; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.platform_connections (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2046,11 +1703,6 @@ CREATE TABLE public.platform_connections (
 );
 
 ALTER TABLE ONLY public.platform_connections FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: platform_credentials; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.platform_credentials (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2080,11 +1732,6 @@ CREATE TABLE public.platform_credentials (
 
 ALTER TABLE ONLY public.platform_credentials FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: queue_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.queue_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -2092,17 +1739,7 @@ CREATE SEQUENCE public.queue_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: queue_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.queue_id_sequence OWNED BY public.kombu_queue.id;
-
-
---
--- Name: r4_crash_barriers; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.r4_crash_barriers (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2117,21 +1754,11 @@ CREATE TABLE public.r4_crash_barriers (
 
 ALTER TABLE ONLY public.r4_crash_barriers FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: r4_recovery_exclusions; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.r4_recovery_exclusions (
     scenario text NOT NULL,
     task_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
-
-
---
--- Name: r4_task_attempts; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.r4_task_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2145,11 +1772,6 @@ CREATE TABLE public.r4_task_attempts (
 );
 
 ALTER TABLE ONLY public.r4_task_attempts FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: raw_event_payloads; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.raw_event_payloads (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2167,11 +1789,6 @@ CREATE TABLE public.raw_event_payloads (
 
 ALTER TABLE ONLY public.raw_event_payloads FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: revenue_cache_entries; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.revenue_cache_entries (
     tenant_id uuid NOT NULL,
     cache_key text NOT NULL,
@@ -2188,11 +1805,6 @@ CREATE TABLE public.revenue_cache_entries (
 
 ALTER TABLE ONLY public.revenue_cache_entries FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: revenue_state_transitions; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.revenue_state_transitions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     ledger_id uuid NOT NULL,
@@ -2205,11 +1817,6 @@ CREATE TABLE public.revenue_state_transitions (
 
 ALTER TABLE ONLY public.revenue_state_transitions FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: roles; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.roles (
     code text NOT NULL,
     description text NOT NULL,
@@ -2217,11 +1824,6 @@ CREATE TABLE public.roles (
     CONSTRAINT ck_roles_code_lowercase CHECK ((code = lower(code))),
     CONSTRAINT ck_roles_code_not_empty CHECK ((length(TRIM(BOTH FROM code)) > 0))
 );
-
-
---
--- Name: session_authority; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.session_authority (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2242,11 +1844,6 @@ CREATE TABLE public.session_authority (
 
 ALTER TABLE ONLY public.session_authority FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: task_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
-
 CREATE SEQUENCE public.task_id_sequence
     START WITH 1
     INCREMENT BY 1
@@ -2254,17 +1851,7 @@ CREATE SEQUENCE public.task_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: task_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.task_id_sequence OWNED BY public.celery_taskmeta.id;
-
-
---
--- Name: taskset_id_sequence; Type: SEQUENCE; Schema: public; Owner: -
---
 
 CREATE SEQUENCE public.taskset_id_sequence
     START WITH 1
@@ -2273,17 +1860,7 @@ CREATE SEQUENCE public.taskset_id_sequence
     NO MAXVALUE
     CACHE 1;
 
-
---
--- Name: taskset_id_sequence; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
 ALTER SEQUENCE public.taskset_id_sequence OWNED BY public.celery_tasksetmeta.id;
-
-
---
--- Name: tenant_membership_roles; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.tenant_membership_roles (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2296,11 +1873,6 @@ CREATE TABLE public.tenant_membership_roles (
 
 ALTER TABLE ONLY public.tenant_membership_roles FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: tenant_memberships; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.tenant_memberships (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -2312,11 +1884,6 @@ CREATE TABLE public.tenant_memberships (
 );
 
 ALTER TABLE ONLY public.tenant_memberships FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: tenants; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.tenants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2336,11 +1903,6 @@ CREATE TABLE public.tenants (
     CONSTRAINT ck_tenants_name_not_empty CHECK ((length(TRIM(BOTH FROM name)) > 0))
 );
 
-
---
--- Name: users; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.users (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     login_identifier_hash text NOT NULL,
@@ -2355,11 +1917,6 @@ CREATE TABLE public.users (
 );
 
 ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: webhook_ingress_identities; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.webhook_ingress_identities (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2385,41 +1942,31 @@ CREATE TABLE public.webhook_ingress_identities (
 
 ALTER TABLE ONLY public.webhook_ingress_identities FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: worker_failed_jobs; Type: TABLE; Schema: public; Owner: -
---
-
 CREATE TABLE public.worker_failed_jobs (
-    id uuid CONSTRAINT celery_task_failures_id_not_null NOT NULL,
-    task_id character varying(155) CONSTRAINT celery_task_failures_task_id_not_null NOT NULL,
-    task_name character varying(255) CONSTRAINT celery_task_failures_task_name_not_null NOT NULL,
+    id uuid NOT NULL,
+    task_id character varying(155) NOT NULL,
+    task_name character varying(255) NOT NULL,
     queue character varying(100),
     worker character varying(255),
     task_args jsonb,
     task_kwargs jsonb,
     tenant_id uuid,
-    error_type character varying(100) CONSTRAINT celery_task_failures_error_type_not_null NOT NULL,
-    exception_class character varying(255) CONSTRAINT celery_task_failures_exception_class_not_null NOT NULL,
-    error_message text CONSTRAINT celery_task_failures_error_message_not_null NOT NULL,
+    error_type character varying(100) NOT NULL,
+    exception_class character varying(255) NOT NULL,
+    error_message text NOT NULL,
     traceback text,
-    retry_count integer DEFAULT 0 CONSTRAINT celery_task_failures_retry_count_not_null NOT NULL,
+    retry_count integer DEFAULT 0 NOT NULL,
     last_retry_at timestamp with time zone,
-    status character varying(50) DEFAULT '''pending'''::character varying CONSTRAINT celery_task_failures_status_not_null NOT NULL,
+    status character varying(50) DEFAULT '''pending'''::character varying NOT NULL,
     remediation_notes text,
     resolved_at timestamp with time zone,
     correlation_id uuid,
-    failed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP CONSTRAINT celery_task_failures_failed_at_not_null NOT NULL,
+    failed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT ck_worker_failed_jobs_retry_count_positive CHECK ((retry_count >= 0)),
     CONSTRAINT ck_worker_failed_jobs_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying, 'resolved'::character varying, 'abandoned'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.worker_failed_jobs FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: worker_side_effects; Type: TABLE; Schema: public; Owner: -
---
 
 CREATE TABLE public.worker_side_effects (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2432,2953 +1979,1053 @@ CREATE TABLE public.worker_side_effects (
 
 ALTER TABLE ONLY public.worker_side_effects FORCE ROW LEVEL SECURITY;
 
-
---
--- Name: celery_taskmeta id; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.celery_taskmeta ALTER COLUMN id SET DEFAULT nextval('public.task_id_sequence'::regclass);
-
-
---
--- Name: celery_tasksetmeta id; Type: DEFAULT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.celery_tasksetmeta ALTER COLUMN id SET DEFAULT nextval('public.taskset_id_sequence'::regclass);
 
-
---
--- Name: kombu_message id; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.kombu_message ALTER COLUMN id SET DEFAULT nextval('public.message_id_sequence'::regclass);
-
-
---
--- Name: kombu_queue id; Type: DEFAULT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.kombu_queue ALTER COLUMN id SET DEFAULT nextval('public.queue_id_sequence'::regclass);
 
-
---
--- Name: pii_audit_findings id; Type: DEFAULT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.pii_audit_findings ALTER COLUMN id SET DEFAULT nextval('public.pii_audit_findings_id_seq'::regclass);
-
-
---
--- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.alembic_version
     ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 
-
---
--- Name: attribution_allocations attribution_allocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_pkey PRIMARY KEY (id);
-
-
---
--- Name: attribution_commerce_identities attribution_commerce_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_pkey PRIMARY KEY (id);
 
-
---
--- Name: attribution_events attribution_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT attribution_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: attribution_recompute_jobs attribution_recompute_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_pkey PRIMARY KEY (id);
 
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.b23_exception_records
+    ADD CONSTRAINT b23_exception_records_pkey PRIMARY KEY (id);
 
---
--- Name: budget_jobs budget_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
+ALTER TABLE ONLY public.b23_match_verdicts
+    ADD CONSTRAINT b23_match_verdicts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.b23_revenue_events
+    ADD CONSTRAINT b23_revenue_events_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.b23_webhook_ingestion_logs
+    ADD CONSTRAINT b23_webhook_ingestion_logs_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_pkey PRIMARY KEY (id);
 
-
---
--- Name: budget_optimization_jobs budget_optimization_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_pkey PRIMARY KEY (id);
-
-
---
--- Name: worker_failed_jobs celery_task_failures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.worker_failed_jobs
     ADD CONSTRAINT celery_task_failures_pkey PRIMARY KEY (id);
 
-
---
--- Name: celery_taskmeta celery_taskmeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.celery_taskmeta
     ADD CONSTRAINT celery_taskmeta_pkey PRIMARY KEY (id);
-
-
---
--- Name: celery_taskmeta celery_taskmeta_task_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.celery_taskmeta
     ADD CONSTRAINT celery_taskmeta_task_id_key UNIQUE (task_id);
 
-
---
--- Name: celery_tasksetmeta celery_tasksetmeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.celery_tasksetmeta
     ADD CONSTRAINT celery_tasksetmeta_pkey PRIMARY KEY (id);
-
-
---
--- Name: celery_tasksetmeta celery_tasksetmeta_taskset_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.celery_tasksetmeta
     ADD CONSTRAINT celery_tasksetmeta_taskset_id_key UNIQUE (taskset_id);
 
-
---
--- Name: channel_assignment_corrections channel_assignment_corrections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_pkey PRIMARY KEY (id);
-
-
---
--- Name: channel_state_transitions channel_state_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_pkey PRIMARY KEY (id);
 
-
---
--- Name: channel_taxonomy channel_taxonomy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_taxonomy
     ADD CONSTRAINT channel_taxonomy_pkey PRIMARY KEY (code);
-
-
---
--- Name: compliance_audit_ledger compliance_audit_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_pkey PRIMARY KEY (id);
 
-
---
--- Name: dead_events dead_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: dead_events_quarantine dead_events_quarantine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_pkey PRIMARY KEY (id);
 
-
---
--- Name: ephemeral_click_resolution ephemeral_click_resolution_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT ephemeral_click_resolution_pkey PRIMARY KEY (id);
-
-
---
--- Name: ephemeral_order_resolution ephemeral_order_resolution_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT ephemeral_order_resolution_pkey PRIMARY KEY (id);
 
-
---
--- Name: explanation_cache explanation_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_pkey PRIMARY KEY (id);
-
-
---
--- Name: explanation_cache explanation_cache_tenant_id_entity_type_entity_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_tenant_id_entity_type_entity_id_key UNIQUE (tenant_id, entity_type, entity_id);
 
-
---
--- Name: investigation_jobs investigation_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_pkey PRIMARY KEY (id);
-
-
---
--- Name: investigation_tool_calls investigation_tool_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_pkey PRIMARY KEY (id);
 
-
---
--- Name: investigations investigations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_pkey PRIMARY KEY (id);
-
-
---
--- Name: jwt_verification_cache jwt_verification_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.jwt_verification_cache
     ADD CONSTRAINT jwt_verification_cache_pkey PRIMARY KEY (singleton_id);
 
-
---
--- Name: kombu_message kombu_message_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT kombu_message_pkey PRIMARY KEY (id);
-
-
---
--- Name: kombu_queue kombu_queue_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.kombu_queue
     ADD CONSTRAINT kombu_queue_name_key UNIQUE (name);
 
-
---
--- Name: kombu_queue kombu_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.kombu_queue
     ADD CONSTRAINT kombu_queue_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_api_calls llm_api_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT llm_api_calls_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_breaker_state llm_breaker_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_breaker_state llm_breaker_state_tenant_id_user_id_breaker_key_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_tenant_id_user_id_breaker_key_key UNIQUE (tenant_id, user_id, breaker_key);
 
-
---
--- Name: llm_budget_reservations llm_budget_reservations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_budget_reservations llm_budget_reservations_tenant_id_user_id_endpoint_request__key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_tenant_id_user_id_endpoint_request__key UNIQUE (tenant_id, user_id, endpoint, request_id);
 
-
---
--- Name: llm_call_audit llm_call_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_call_audit
     ADD CONSTRAINT llm_call_audit_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_hourly_shutoff_state llm_hourly_shutoff_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_hourly_shutoff_state llm_hourly_shutoff_state_tenant_id_user_id_hour_start_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_tenant_id_user_id_hour_start_key UNIQUE (tenant_id, user_id, hour_start);
-
-
---
--- Name: llm_monthly_budget_state llm_monthly_budget_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_monthly_budget_state llm_monthly_budget_state_tenant_id_user_id_month_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_tenant_id_user_id_month_key UNIQUE (tenant_id, user_id, month);
-
-
---
--- Name: llm_monthly_costs llm_monthly_costs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT llm_monthly_costs_pkey PRIMARY KEY (id);
 
-
---
--- Name: llm_semantic_cache llm_semantic_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_pkey PRIMARY KEY (id);
-
-
---
--- Name: llm_semantic_cache llm_semantic_cache_tenant_id_user_id_endpoint_cache_key_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_tenant_id_user_id_endpoint_cache_key_key UNIQUE (tenant_id, user_id, endpoint, cache_key);
 
-
---
--- Name: llm_validation_failures llm_validation_failures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_pkey PRIMARY KEY (id);
-
-
---
--- Name: oauth_handshake_sessions oauth_handshake_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_pkey PRIMARY KEY (id);
 
-
---
--- Name: pii_audit_findings pii_audit_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.pii_audit_findings
     ADD CONSTRAINT pii_audit_findings_pkey PRIMARY KEY (id);
-
-
---
--- Name: auth_access_token_denylist pk_auth_access_token_denylist; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.auth_access_token_denylist
     ADD CONSTRAINT pk_auth_access_token_denylist PRIMARY KEY (tenant_id, user_id, jti);
 
-
---
--- Name: auth_user_token_cutoffs pk_auth_user_token_cutoffs; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_user_token_cutoffs
     ADD CONSTRAINT pk_auth_user_token_cutoffs PRIMARY KEY (tenant_id, user_id);
-
-
---
--- Name: platform_connections platform_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_pkey PRIMARY KEY (id);
 
-
---
--- Name: platform_credentials platform_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_pkey PRIMARY KEY (id);
-
-
---
--- Name: r4_crash_barriers r4_crash_barriers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.r4_crash_barriers
     ADD CONSTRAINT r4_crash_barriers_pkey PRIMARY KEY (id);
 
-
---
--- Name: r4_recovery_exclusions r4_recovery_exclusions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.r4_recovery_exclusions
     ADD CONSTRAINT r4_recovery_exclusions_pkey PRIMARY KEY (scenario, task_id);
-
-
---
--- Name: r4_task_attempts r4_task_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.r4_task_attempts
     ADD CONSTRAINT r4_task_attempts_pkey PRIMARY KEY (id);
 
-
---
--- Name: raw_event_payloads raw_event_payloads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_pkey PRIMARY KEY (id);
-
-
---
--- Name: reconciliation_runs reconciliation_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.reconciliation_runs
     ADD CONSTRAINT reconciliation_runs_pkey PRIMARY KEY (id);
 
-
---
--- Name: revenue_cache_entries revenue_cache_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_cache_entries
     ADD CONSTRAINT revenue_cache_entries_pkey PRIMARY KEY (tenant_id, cache_key);
-
-
---
--- Name: revenue_ledger revenue_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_pkey PRIMARY KEY (id);
 
-
---
--- Name: revenue_state_transitions revenue_state_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_pkey PRIMARY KEY (id);
-
-
---
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (code);
 
-
---
--- Name: session_authority session_authority_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT session_authority_pkey PRIMARY KEY (id);
-
-
---
--- Name: tenant_membership_roles tenant_membership_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_pkey PRIMARY KEY (id);
 
-
---
--- Name: tenant_memberships tenant_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_pkey PRIMARY KEY (id);
-
-
---
--- Name: tenants tenants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenants
     ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
 
-
---
--- Name: attribution_commerce_identities uq_attr_commerce_identity_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT uq_attr_commerce_identity_tenant_event UNIQUE (tenant_id, attribution_event_id);
-
-
---
--- Name: attribution_commerce_identities uq_attr_commerce_identity_tenant_provider_reference; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT uq_attr_commerce_identity_tenant_provider_reference UNIQUE (tenant_id, provider, canonical_commerce_reference);
 
-
---
--- Name: attribution_events uq_attribution_events_tenant_idempotency_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT uq_attribution_events_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
 
+ALTER TABLE ONLY public.b23_match_verdicts
+    ADD CONSTRAINT uq_b23_match_verdicts_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
 
---
--- Name: budget_jobs uq_budget_jobs_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
+ALTER TABLE ONLY public.b23_revenue_events
+    ADD CONSTRAINT uq_b23_revenue_events_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
 
-
---
--- Name: budget_optimization_jobs uq_budget_optimization_jobs_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT uq_budget_optimization_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
-
-
---
--- Name: compliance_audit_ledger uq_compliance_audit_ledger_tenant_idempotency_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT uq_compliance_audit_ledger_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
 
-
---
--- Name: ephemeral_click_resolution uq_ephemeral_click_resolution_tenant_click; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT uq_ephemeral_click_resolution_tenant_click UNIQUE (tenant_id, click_id);
-
-
---
--- Name: ephemeral_order_resolution uq_ephemeral_order_resolution_tenant_order; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT uq_ephemeral_order_resolution_tenant_order UNIQUE (tenant_id, order_id);
 
-
---
--- Name: investigation_jobs uq_investigation_jobs_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT uq_investigation_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
-
-
---
--- Name: investigations uq_investigations_tenant_request_id; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT uq_investigations_tenant_request_id UNIQUE (tenant_id, request_id);
 
-
---
--- Name: llm_api_calls uq_llm_api_calls_tenant_request_endpoint; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT uq_llm_api_calls_tenant_request_endpoint UNIQUE (tenant_id, request_id, endpoint);
-
-
---
--- Name: llm_monthly_costs uq_llm_monthly_costs_tenant_user_month; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT uq_llm_monthly_costs_tenant_user_month UNIQUE (tenant_id, user_id, month);
 
-
---
--- Name: oauth_handshake_sessions uq_oauth_handshake_sessions_tenant_state_hash; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT uq_oauth_handshake_sessions_tenant_state_hash UNIQUE (tenant_id, state_nonce_hash);
-
-
---
--- Name: raw_event_payloads uq_raw_event_payloads_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT uq_raw_event_payloads_tenant_event UNIQUE (tenant_id, event_id);
 
-
---
--- Name: session_authority uq_session_authority_tenant_session_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT uq_session_authority_tenant_session_id UNIQUE (tenant_id, session_id);
-
-
---
--- Name: tenant_membership_roles uq_tenant_membership_roles_membership_role; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT uq_tenant_membership_roles_membership_role UNIQUE (membership_id, role_code);
 
-
---
--- Name: tenant_memberships uq_tenant_memberships_id_tenant; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_id_tenant UNIQUE (id, tenant_id);
-
-
---
--- Name: tenant_memberships uq_tenant_memberships_tenant_user; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT uq_tenant_memberships_tenant_user UNIQUE (tenant_id, user_id);
 
-
---
--- Name: webhook_ingress_identities uq_webhook_ingress_identities_event_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_event_id UNIQUE (event_id);
-
-
---
--- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_event; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_event UNIQUE (tenant_id, event_id);
 
-
---
--- Name: webhook_ingress_identities uq_webhook_ingress_identities_tenant_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT uq_webhook_ingress_identities_tenant_idempotency UNIQUE (tenant_id, idempotency_key);
-
-
---
--- Name: users users_login_identifier_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_login_identifier_hash_key UNIQUE (login_identifier_hash);
 
-
---
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
-
-
---
--- Name: webhook_ingress_identities webhook_ingress_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_pkey PRIMARY KEY (id);
 
-
---
--- Name: worker_side_effects worker_side_effects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_pkey PRIMARY KEY (id);
 
-
---
--- Name: idx_allocations_channel_performance; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_allocations_channel_performance ON public.attribution_allocations USING btree (tenant_id, channel_code, created_at DESC) INCLUDE (allocated_revenue_cents, confidence_score);
-
-
---
--- Name: idx_allocations_tenant_projection_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_allocations_tenant_projection_channel ON public.attribution_allocations USING btree (tenant_id, recompute_job_id, model_type, channel_code);
 
-
---
--- Name: idx_attr_commerce_identity_last_observed; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attr_commerce_identity_last_observed ON public.attribution_commerce_identities USING btree (last_observed_at);
-
-
---
--- Name: idx_attr_commerce_identity_tenant_last_observed; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attr_commerce_identity_tenant_last_observed ON public.attribution_commerce_identities USING btree (tenant_id, last_observed_at DESC);
 
-
---
--- Name: idx_attr_commerce_identity_tenant_provider_reference; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attr_commerce_identity_tenant_provider_reference ON public.attribution_commerce_identities USING btree (tenant_id, provider, canonical_commerce_reference);
-
-
---
--- Name: idx_attribution_allocations_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_allocations_channel ON public.attribution_allocations USING btree (channel_code);
 
-
---
--- Name: idx_attribution_allocations_event_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_event_id ON public.attribution_allocations USING btree (event_id);
-
-
---
--- Name: idx_attribution_allocations_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_allocations_tenant_created_at ON public.attribution_allocations USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_attribution_allocations_tenant_event_model; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_tenant_event_model ON public.attribution_allocations USING btree (tenant_id, event_id, model_version);
-
-
---
--- Name: idx_attribution_allocations_tenant_event_model_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_model_channel ON public.attribution_allocations USING btree (tenant_id, event_id, model_version, channel_code) WHERE ((model_version IS NOT NULL) AND (recompute_job_id IS NULL));
 
---
--- Name: idx_attribution_allocations_tenant_event_projection; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_tenant_event_projection ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id) WHERE (recompute_job_id IS NOT NULL);
-
-
---
--- Name: idx_attribution_allocations_tenant_event_projection_channel; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_attribution_allocations_tenant_event_projection_channel ON public.attribution_allocations USING btree (tenant_id, event_id, recompute_job_id, channel_code) WHERE (recompute_job_id IS NOT NULL);
 
-
---
--- Name: idx_attribution_allocations_tenant_model_version; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_allocations_tenant_model_version ON public.attribution_allocations USING btree (tenant_id, model_version);
-
-
---
--- Name: idx_attribution_events_session_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_events_session_id ON public.attribution_events USING btree (session_id) WHERE (session_id IS NOT NULL);
 
-
---
--- Name: idx_attribution_events_tenant_occurred_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_events_tenant_occurred_at ON public.attribution_events USING btree (tenant_id, occurred_at DESC);
-
-
---
--- Name: idx_attribution_recompute_jobs_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_attribution_recompute_jobs_tenant_created_at ON public.attribution_recompute_jobs USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_attribution_recompute_jobs_tenant_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_attribution_recompute_jobs_tenant_status ON public.attribution_recompute_jobs USING btree (tenant_id, status);
-
-
---
--- Name: idx_attribution_recompute_jobs_window_identity; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_attribution_recompute_jobs_window_identity ON public.attribution_recompute_jobs USING btree (tenant_id, window_start, window_end, model_version);
 
-
---
--- Name: idx_auth_access_token_denylist_expires_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_access_token_denylist_expires_at ON public.auth_access_token_denylist USING btree (expires_at DESC);
-
-
---
--- Name: idx_auth_access_token_denylist_jti; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_auth_access_token_denylist_jti ON public.auth_access_token_denylist USING btree (jti);
 
-
---
--- Name: idx_auth_access_token_denylist_tenant_user_revoked_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_access_token_denylist_tenant_user_revoked_at ON public.auth_access_token_denylist USING btree (tenant_id, user_id, revoked_at DESC);
-
-
---
--- Name: idx_auth_refresh_tokens_family_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_auth_refresh_tokens_family_created_at ON public.auth_refresh_tokens USING btree (family_id, created_at DESC);
 
-
---
--- Name: idx_auth_refresh_tokens_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_refresh_tokens_tenant_created_at ON public.auth_refresh_tokens USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_auth_refresh_tokens_tenant_user_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_auth_refresh_tokens_tenant_user_created_at ON public.auth_refresh_tokens USING btree (tenant_id, user_id, created_at DESC);
 
-
---
--- Name: idx_auth_user_token_cutoffs_tenant_user; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_auth_user_token_cutoffs_tenant_user ON public.auth_user_token_cutoffs USING btree (tenant_id, user_id);
 
+CREATE INDEX idx_b23_exception_records_tenant_provider_reference ON public.b23_exception_records USING btree (tenant_id, provider, canonical_commerce_reference);
 
---
--- Name: idx_budget_jobs_tenant_status; Type: INDEX; Schema: public; Owner: -
---
+CREATE INDEX idx_b23_exception_records_tenant_status_severity ON public.b23_exception_records USING btree (tenant_id, status, severity, raised_at DESC);
+
+CREATE INDEX idx_b23_match_verdicts_tenant_provider_commerce_native ON public.b23_match_verdicts USING btree (tenant_id, provider, provider_native_commerce_reference);
+
+CREATE INDEX idx_b23_match_verdicts_tenant_provider_reference ON public.b23_match_verdicts USING btree (tenant_id, provider, canonical_commerce_reference);
+
+CREATE INDEX idx_b23_match_verdicts_tenant_state_timestamps ON public.b23_match_verdicts USING btree (tenant_id, pending_since, provisional_expires_at, confirmed_at, unmatched_marked_at, adjusted_at);
+
+CREATE INDEX idx_b23_match_verdicts_tenant_status_transition ON public.b23_match_verdicts USING btree (tenant_id, status, last_transition_at DESC);
+
+CREATE INDEX idx_b23_revenue_events_tenant_event_type_recorded ON public.b23_revenue_events USING btree (tenant_id, event_type, recorded_at DESC);
+
+CREATE INDEX idx_b23_revenue_events_tenant_provider_commerce_native ON public.b23_revenue_events USING btree (tenant_id, provider, provider_native_commerce_reference);
+
+CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_revenue_events USING btree (tenant_id, provider, canonical_commerce_reference, event_occurred_at DESC);
+
+CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
+
+CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
-
---
--- Name: idx_channel_assignment_corrections_channels; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_channel_assignment_corrections_channels ON public.channel_assignment_corrections USING btree (from_channel, to_channel, corrected_at DESC);
-
-
---
--- Name: idx_channel_assignment_corrections_entity; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_channel_assignment_corrections_entity ON public.channel_assignment_corrections USING btree (tenant_id, entity_type, entity_id, corrected_at DESC);
 
-
---
--- Name: idx_channel_assignment_corrections_tenant; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_channel_assignment_corrections_tenant ON public.channel_assignment_corrections USING btree (tenant_id, corrected_at DESC);
-
-
---
--- Name: idx_channel_state_transitions_channel_changed_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_channel_state_transitions_channel_changed_at ON public.channel_state_transitions USING btree (channel_code, changed_at DESC);
 
-
---
--- Name: idx_channel_state_transitions_to_state_changed_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_channel_state_transitions_to_state_changed_at ON public.channel_state_transitions USING btree (to_state, changed_at DESC);
-
-
---
--- Name: idx_compliance_audit_ledger_tenant_correlation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_compliance_audit_ledger_tenant_correlation ON public.compliance_audit_ledger USING btree (tenant_id, correlation_id);
 
-
---
--- Name: idx_compliance_audit_ledger_tenant_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_compliance_audit_ledger_tenant_created ON public.compliance_audit_ledger USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_dead_events_error_code; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_error_code ON public.dead_events USING btree (error_code);
 
-
---
--- Name: idx_dead_events_quarantine_null_lane; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_quarantine_null_lane ON public.dead_events_quarantine USING btree (ingested_at DESC) WHERE (tenant_id IS NULL);
-
-
---
--- Name: idx_dead_events_quarantine_tenant_idempotency_key; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_quarantine_tenant_idempotency_key ON public.dead_events_quarantine USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
-
---
--- Name: idx_dead_events_quarantine_tenant_ingested_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_quarantine_tenant_ingested_at ON public.dead_events_quarantine USING btree (tenant_id, ingested_at DESC);
-
-
---
--- Name: idx_dead_events_remediation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_remediation ON public.dead_events USING btree (remediation_status, ingested_at DESC);
 
-
---
--- Name: idx_dead_events_source; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_source ON public.dead_events USING btree (source);
-
-
---
--- Name: idx_dead_events_tenant_idempotency_key; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_dead_events_tenant_idempotency_key ON public.dead_events USING btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
-
---
--- Name: idx_dead_events_tenant_ingested_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_dead_events_tenant_ingested_at ON public.dead_events USING btree (tenant_id, ingested_at DESC);
-
-
---
--- Name: idx_ephemeral_click_resolution_tenant_click; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_ephemeral_click_resolution_tenant_click ON public.ephemeral_click_resolution USING btree (tenant_id, click_id);
 
-
---
--- Name: idx_ephemeral_click_resolution_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_ephemeral_click_resolution_tenant_expires ON public.ephemeral_click_resolution USING btree (tenant_id, expires_at);
-
-
---
--- Name: idx_ephemeral_order_resolution_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_ephemeral_order_resolution_tenant_expires ON public.ephemeral_order_resolution USING btree (tenant_id, expires_at);
 
-
---
--- Name: idx_ephemeral_order_resolution_tenant_order; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_ephemeral_order_resolution_tenant_order ON public.ephemeral_order_resolution USING btree (tenant_id, order_id);
-
-
---
--- Name: idx_events_processing_status; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_events_processing_status ON public.attribution_events USING btree (processing_status, processed_at) WHERE ((processing_status)::text = 'pending'::text);
 
-
---
--- Name: idx_events_tenant_timestamp; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_events_tenant_timestamp ON public.attribution_events USING btree (tenant_id, event_timestamp DESC);
-
-
---
--- Name: idx_explanation_cache_lookup; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_explanation_cache_lookup ON public.explanation_cache USING btree (tenant_id, entity_type, entity_id);
 
-
---
--- Name: idx_investigation_jobs_min_hold; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_investigation_jobs_min_hold ON public.investigation_jobs USING btree (min_hold_until) WHERE ((status)::text = 'PENDING'::text);
-
-
---
--- Name: idx_investigation_jobs_tenant_status; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_investigation_jobs_tenant_status ON public.investigation_jobs USING btree (tenant_id, status, created_at DESC);
 
-
---
--- Name: idx_investigations_tenant_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_investigations_tenant_status ON public.investigations USING btree (tenant_id, status, created_at DESC);
-
-
---
--- Name: idx_llm_api_calls_prompt_fingerprint; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_api_calls_prompt_fingerprint ON public.llm_api_calls USING btree (tenant_id, prompt_fingerprint, created_at DESC);
 
-
---
--- Name: idx_llm_breaker_state_tenant_user_updated; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_breaker_state_tenant_user_updated ON public.llm_breaker_state USING btree (tenant_id, user_id, updated_at DESC);
-
-
---
--- Name: idx_llm_budget_reservations_tenant_user_month; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_budget_reservations_tenant_user_month ON public.llm_budget_reservations USING btree (tenant_id, user_id, month DESC);
 
-
---
--- Name: idx_llm_call_audit_decision; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_call_audit_decision ON public.llm_call_audit USING btree (decision, created_at DESC);
-
-
---
--- Name: idx_llm_call_audit_prompt_fingerprint; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_call_audit_prompt_fingerprint ON public.llm_call_audit USING btree (tenant_id, prompt_fingerprint, created_at DESC);
 
-
---
--- Name: idx_llm_call_audit_request_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_call_audit_request_id ON public.llm_call_audit USING btree (request_id);
-
-
---
--- Name: idx_llm_call_audit_tenant_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_call_audit_tenant_created ON public.llm_call_audit USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_llm_call_audit_tenant_user_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_call_audit_tenant_user_created ON public.llm_call_audit USING btree (tenant_id, user_id, created_at DESC);
-
-
---
--- Name: idx_llm_calls_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_calls_tenant_created_at ON public.llm_api_calls USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_llm_calls_tenant_endpoint; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_calls_tenant_endpoint ON public.llm_api_calls USING btree (tenant_id, endpoint, created_at DESC);
-
-
---
--- Name: idx_llm_calls_tenant_user_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_calls_tenant_user_created_at ON public.llm_api_calls USING btree (tenant_id, user_id, created_at DESC);
 
-
---
--- Name: idx_llm_failures_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_failures_created_at ON public.llm_validation_failures USING btree (created_at DESC);
-
-
---
--- Name: idx_llm_failures_tenant_endpoint; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_failures_tenant_endpoint ON public.llm_validation_failures USING btree (tenant_id, endpoint, created_at DESC);
 
-
---
--- Name: idx_llm_hourly_shutoff_disabled_until; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_hourly_shutoff_disabled_until ON public.llm_hourly_shutoff_state USING btree (tenant_id, user_id, disabled_until DESC);
-
-
---
--- Name: idx_llm_hourly_shutoff_tenant_user_hour; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_hourly_shutoff_tenant_user_hour ON public.llm_hourly_shutoff_state USING btree (tenant_id, user_id, hour_start DESC);
 
-
---
--- Name: idx_llm_monthly_budget_state_tenant_user_month; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_monthly_budget_state_tenant_user_month ON public.llm_monthly_budget_state USING btree (tenant_id, user_id, month DESC);
-
-
---
--- Name: idx_llm_monthly_tenant_user_month; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_llm_monthly_tenant_user_month ON public.llm_monthly_costs USING btree (tenant_id, user_id, month DESC);
 
-
---
--- Name: idx_llm_semantic_cache_tenant_user_endpoint; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_llm_semantic_cache_tenant_user_endpoint ON public.llm_semantic_cache USING btree (tenant_id, user_id, endpoint, updated_at DESC);
-
-
---
--- Name: idx_mv_allocation_summary_key; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_mv_allocation_summary_key ON public.mv_allocation_summary USING btree (tenant_id, event_id, model_version);
 
-
---
--- Name: idx_mv_channel_performance_unique; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_mv_channel_performance_unique ON public.mv_channel_performance USING btree (tenant_id, channel_code, allocation_date);
-
-
---
--- Name: idx_mv_daily_revenue_summary_unique; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_mv_daily_revenue_summary_unique ON public.mv_daily_revenue_summary USING btree (tenant_id, revenue_date, state, currency);
 
-
---
--- Name: idx_mv_realtime_revenue_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_mv_realtime_revenue_tenant_id ON public.mv_realtime_revenue USING btree (tenant_id);
-
-
---
--- Name: idx_mv_reconciliation_status_tenant_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_mv_reconciliation_status_tenant_id ON public.mv_reconciliation_status USING btree (tenant_id);
 
-
---
--- Name: idx_oauth_handshake_sessions_expires_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_oauth_handshake_sessions_expires_at ON public.oauth_handshake_sessions USING btree (expires_at DESC);
-
-
---
--- Name: idx_oauth_handshake_sessions_gc_after; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_oauth_handshake_sessions_gc_after ON public.oauth_handshake_sessions USING btree (gc_after);
 
-
---
--- Name: idx_oauth_handshake_sessions_tenant_platform_user_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_oauth_handshake_sessions_tenant_platform_user_created ON public.oauth_handshake_sessions USING btree (tenant_id, platform, user_id, created_at DESC);
-
-
---
--- Name: idx_oauth_handshake_sessions_tenant_state_lookup; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_oauth_handshake_sessions_tenant_state_lookup ON public.oauth_handshake_sessions USING btree (tenant_id, state_nonce_hash, status);
 
-
---
--- Name: idx_pii_audit_findings_detected_key; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_pii_audit_findings_detected_key ON public.pii_audit_findings USING btree (detected_key);
-
-
---
--- Name: idx_pii_audit_findings_table_detected_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_pii_audit_findings_table_detected_at ON public.pii_audit_findings USING btree (table_name, detected_at DESC);
 
-
---
--- Name: idx_platform_connections_tenant_platform_updated_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_platform_connections_tenant_platform_updated_at ON public.platform_connections USING btree (tenant_id, platform, updated_at DESC);
-
-
---
--- Name: idx_platform_credentials_refresh_due; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_platform_credentials_refresh_due ON public.platform_credentials USING btree (tenant_id, lifecycle_status, next_refresh_due_at) WHERE (next_refresh_due_at IS NOT NULL);
 
-
---
--- Name: idx_platform_credentials_tenant_lifecycle_updated; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_platform_credentials_tenant_lifecycle_updated ON public.platform_credentials USING btree (tenant_id, lifecycle_status, updated_at DESC);
-
-
---
--- Name: idx_platform_credentials_tenant_platform_updated_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_platform_credentials_tenant_platform_updated_at ON public.platform_credentials USING btree (tenant_id, platform, updated_at DESC);
 
-
---
--- Name: idx_platform_credentials_tenant_revoked_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_platform_credentials_tenant_revoked_at ON public.platform_credentials USING btree (tenant_id, revoked_at DESC) WHERE (revoked_at IS NOT NULL);
-
-
---
--- Name: idx_r4_crash_barriers_scenario_wrote_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_r4_crash_barriers_scenario_wrote_at ON public.r4_crash_barriers USING btree (scenario, wrote_at DESC);
 
-
---
--- Name: idx_r4_task_attempts_scenario_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_r4_task_attempts_scenario_created_at ON public.r4_task_attempts USING btree (scenario, created_at DESC);
-
-
---
--- Name: idx_r4_task_attempts_tenant_task; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_r4_task_attempts_tenant_task ON public.r4_task_attempts USING btree (tenant_id, task_id);
 
-
---
--- Name: idx_raw_event_payloads_event_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_raw_event_payloads_event_id ON public.raw_event_payloads USING btree (event_id);
-
-
---
--- Name: idx_raw_event_payloads_payload_json_gin; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_raw_event_payloads_payload_json_gin ON public.raw_event_payloads USING gin (payload_json jsonb_path_ops);
 
-
---
--- Name: idx_raw_event_payloads_tenant_created; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_raw_event_payloads_tenant_created ON public.raw_event_payloads USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_raw_event_payloads_tenant_lookup_hash; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_raw_event_payloads_tenant_lookup_hash ON public.raw_event_payloads USING btree (tenant_id, lookup_hash);
 
-
---
--- Name: idx_reconciliation_runs_state; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_reconciliation_runs_state ON public.reconciliation_runs USING btree (state);
-
-
---
--- Name: idx_reconciliation_runs_tenant_last_run_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_reconciliation_runs_tenant_last_run_at ON public.reconciliation_runs USING btree (tenant_id, last_run_at DESC);
 
-
---
--- Name: idx_revenue_cache_entries_error_cooldown; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_cache_entries_error_cooldown ON public.revenue_cache_entries USING btree (error_cooldown_until);
-
-
---
--- Name: idx_revenue_cache_entries_expires_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_cache_entries_expires_at ON public.revenue_cache_entries USING btree (expires_at);
 
-
---
--- Name: idx_revenue_ledger_is_verified; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_ledger_is_verified ON public.revenue_ledger USING btree (is_verified) WHERE (is_verified = true);
-
-
---
--- Name: idx_revenue_ledger_state; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_ledger_state ON public.revenue_ledger USING btree (state);
 
-
---
--- Name: idx_revenue_ledger_tenant_allocation_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_revenue_ledger_tenant_allocation_id ON public.revenue_ledger USING btree (tenant_id, allocation_id) WHERE (allocation_id IS NOT NULL);
-
-
---
--- Name: idx_revenue_ledger_tenant_order_reconciliation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_ledger_tenant_order_reconciliation ON public.revenue_ledger USING btree (tenant_id, order_id, created_at DESC) WHERE (order_id IS NOT NULL);
 
-
---
--- Name: idx_revenue_ledger_tenant_state; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_ledger_tenant_state ON public.revenue_ledger USING btree (tenant_id, state, created_at DESC);
-
-
---
--- Name: idx_revenue_ledger_tenant_updated_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_ledger_tenant_updated_at ON public.revenue_ledger USING btree (tenant_id, updated_at DESC);
 
-
---
--- Name: idx_revenue_ledger_transaction_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX idx_revenue_ledger_transaction_id ON public.revenue_ledger USING btree (transaction_id);
-
-
---
--- Name: idx_revenue_state_transitions_ledger_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_revenue_state_transitions_ledger_id ON public.revenue_state_transitions USING btree (ledger_id, transitioned_at DESC);
 
-
---
--- Name: idx_revenue_state_transitions_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_revenue_state_transitions_tenant_id ON public.revenue_state_transitions USING btree (tenant_id, transitioned_at DESC);
-
-
---
--- Name: idx_session_authority_active; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_session_authority_active ON public.session_authority USING btree (tenant_id, session_id, expires_at DESC) WHERE (invalidated_at IS NULL);
 
-
---
--- Name: idx_session_authority_tenant_expires; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_session_authority_tenant_expires ON public.session_authority USING btree (tenant_id, expires_at DESC);
-
-
---
--- Name: idx_session_authority_tenant_last_seen; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_session_authority_tenant_last_seen ON public.session_authority USING btree (tenant_id, last_seen_at DESC);
 
-
---
--- Name: idx_tenant_membership_roles_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tenant_membership_roles_tenant_created_at ON public.tenant_membership_roles USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_tenant_memberships_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_tenant_memberships_tenant_created_at ON public.tenant_memberships USING btree (tenant_id, created_at DESC);
 
-
---
--- Name: idx_tenant_memberships_user_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tenant_memberships_user_created_at ON public.tenant_memberships USING btree (user_id, created_at DESC);
-
-
---
--- Name: idx_tenants_api_key_hash; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX idx_tenants_api_key_hash ON public.tenants USING btree (api_key_hash);
 
-
---
--- Name: idx_tenants_name; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tenants_name ON public.tenants USING btree (name);
-
-
---
--- Name: idx_tool_calls_investigation; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_tool_calls_investigation ON public.investigation_tool_calls USING btree (investigation_id, created_at);
 
-
---
--- Name: idx_tool_calls_tenant; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_tool_calls_tenant ON public.investigation_tool_calls USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: idx_webhook_ingress_identities_tenant_provider_created; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_webhook_ingress_identities_tenant_provider_created ON public.webhook_ingress_identities USING btree (tenant_id, provider, created_at DESC);
 
-
---
--- Name: idx_webhook_ingress_identities_tenant_reference; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_webhook_ingress_identities_tenant_reference ON public.webhook_ingress_identities USING btree (tenant_id, normalized_commerce_reference_kind, normalized_commerce_reference_value);
-
-
---
--- Name: idx_webhook_ingress_identities_tenant_verified_state; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_webhook_ingress_identities_tenant_verified_state ON public.webhook_ingress_identities USING btree (tenant_id, verified_commerce_ingress_state, event_timestamp DESC);
 
-
---
--- Name: idx_worker_failed_jobs_status; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_worker_failed_jobs_status ON public.worker_failed_jobs USING btree (status, failed_at);
-
-
---
--- Name: idx_worker_failed_jobs_task_name; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX idx_worker_failed_jobs_task_name ON public.worker_failed_jobs USING btree (task_name);
 
-
---
--- Name: idx_worker_side_effects_tenant_created_at; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX idx_worker_side_effects_tenant_created_at ON public.worker_side_effects USING btree (tenant_id, created_at DESC);
-
-
---
--- Name: ix_celery_taskmeta_task_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_celery_taskmeta_task_id ON public.celery_taskmeta USING btree (task_id);
 
-
---
--- Name: ix_celery_tasksetmeta_taskset_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_celery_tasksetmeta_taskset_id ON public.celery_tasksetmeta USING btree (taskset_id);
-
-
---
--- Name: ix_kombu_message_timestamp_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_kombu_message_timestamp_id ON public.kombu_message USING btree ("timestamp", id);
 
-
---
--- Name: ix_kombu_message_visible; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_kombu_message_visible ON public.kombu_message USING btree (visible);
-
-
---
--- Name: ix_public_celery_task_failures_task_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_public_celery_task_failures_task_id ON public.worker_failed_jobs USING btree (task_id);
 
-
---
--- Name: ix_public_celery_task_failures_task_name; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE INDEX ix_public_celery_task_failures_task_name ON public.worker_failed_jobs USING btree (task_name);
-
-
---
--- Name: ix_public_celery_task_failures_tenant_id; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE INDEX ix_public_celery_task_failures_tenant_id ON public.worker_failed_jobs USING btree (tenant_id);
 
-
---
--- Name: uq_platform_connections_tenant_platform_account; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX uq_platform_connections_tenant_platform_account ON public.platform_connections USING btree (tenant_id, platform, platform_account_id);
-
-
---
--- Name: uq_platform_credentials_tenant_platform_connection; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX uq_platform_credentials_tenant_platform_connection ON public.platform_credentials USING btree (tenant_id, platform, platform_connection_id);
 
-
---
--- Name: ux_r4_crash_barriers_tenant_task_attempt; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX ux_r4_crash_barriers_tenant_task_attempt ON public.r4_crash_barriers USING btree (tenant_id, task_id, attempt_no);
-
-
---
--- Name: ux_r4_task_attempts_tenant_task_attempt; Type: INDEX; Schema: public; Owner: -
---
 
 CREATE UNIQUE INDEX ux_r4_task_attempts_tenant_task_attempt ON public.r4_task_attempts USING btree (tenant_id, task_id, attempt_no);
 
-
---
--- Name: ux_worker_side_effects_tenant_task_id; Type: INDEX; Schema: public; Owner: -
---
-
 CREATE UNIQUE INDEX ux_worker_side_effects_tenant_task_id ON public.worker_side_effects USING btree (tenant_id, task_id);
-
-
---
--- Name: attribution_allocations trg_allocations_channel_correction_audit; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_code ON public.attribution_allocations FOR EACH ROW WHEN ((old.channel_code IS DISTINCT FROM new.channel_code)) EXECUTE FUNCTION public.fn_log_channel_assignment_correction();
 
-
---
--- Name: attribution_commerce_identities trg_b23_p0_prune_attribution_commerce_identities; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities AFTER INSERT OR UPDATE OF last_observed_at ON public.attribution_commerce_identities FOR EACH STATEMENT EXECUTE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger();
-
-
---
--- Name: attribution_events trg_bind_session_authority_from_event; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_bind_session_authority_from_event BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_bind_session_authority_from_event();
 
-
---
--- Name: dead_events trg_block_worker_mutation_dead_events; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_block_worker_mutation_dead_events BEFORE INSERT OR DELETE OR UPDATE ON public.dead_events FOR EACH ROW EXECUTE FUNCTION public.fn_block_worker_ingestion_mutation();
-
-
---
--- Name: attribution_events trg_block_worker_mutation_events; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_block_worker_mutation_events BEFORE INSERT OR DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_block_worker_ingestion_mutation();
 
-
---
--- Name: channel_taxonomy trg_channel_taxonomy_state_audit; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_channel_taxonomy_state_audit AFTER UPDATE OF state ON public.channel_taxonomy FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_channel_state_change();
-
-
---
--- Name: attribution_allocations trg_check_allocation_sum; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_check_allocation_sum AFTER INSERT ON public.attribution_allocations REFERENCING NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_insert();
 
-
---
--- Name: attribution_allocations trg_check_allocation_sum_delete; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_check_allocation_sum_delete AFTER DELETE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_delete();
-
-
---
--- Name: attribution_allocations trg_check_allocation_sum_update; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_check_allocation_sum_update AFTER UPDATE ON public.attribution_allocations REFERENCING OLD TABLE AS oldrows NEW TABLE AS newrows FOR EACH STATEMENT EXECUTE FUNCTION public.check_allocation_sum_stmt_update();
 
-
---
--- Name: compliance_audit_ledger trg_compliance_audit_ledger_append_only; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_compliance_audit_ledger_append_only BEFORE DELETE OR UPDATE ON public.compliance_audit_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_compliance_audit_ledger_append_only();
-
-
---
--- Name: attribution_events trg_events_prevent_mutation; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_events_prevent_mutation BEFORE DELETE OR UPDATE ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_events_prevent_mutation();
 
-
---
--- Name: attribution_events trg_guard_attribution_events_payload_identity; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_guard_attribution_events_payload_identity BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_guard_attribution_events_payload_identity();
-
-
---
--- Name: revenue_ledger trg_ledger_prevent_mutation; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_ledger_prevent_mutation BEFORE DELETE OR UPDATE ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_ledger_prevent_mutation();
 
-
---
--- Name: llm_call_audit trg_llm_call_audit_append_only; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_llm_call_audit_append_only BEFORE DELETE OR UPDATE ON public.llm_call_audit FOR EACH ROW EXECUTE FUNCTION public.fn_llm_call_audit_append_only();
-
-
---
--- Name: attribution_events trg_pii_guardrail_attribution_events; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_pii_guardrail_attribution_events BEFORE INSERT ON public.attribution_events FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
-
---
--- Name: dead_events trg_pii_guardrail_dead_events; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_pii_guardrail_dead_events BEFORE INSERT ON public.dead_events FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
-
-
---
--- Name: revenue_ledger trg_pii_guardrail_revenue_ledger; Type: TRIGGER; Schema: public; Owner: -
---
 
 CREATE TRIGGER trg_pii_guardrail_revenue_ledger BEFORE INSERT ON public.revenue_ledger FOR EACH ROW EXECUTE FUNCTION public.fn_enforce_pii_guardrail();
 
-
---
--- Name: revenue_ledger trg_revenue_ledger_state_audit; Type: TRIGGER; Schema: public; Owner: -
---
-
 CREATE TRIGGER trg_revenue_ledger_state_audit AFTER UPDATE OF state ON public.revenue_ledger FOR EACH ROW WHEN (((old.state)::text IS DISTINCT FROM (new.state)::text)) EXECUTE FUNCTION public.fn_log_revenue_state_change();
-
-
---
--- Name: attribution_allocations attribution_allocations_recompute_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_recompute_job_id_fkey FOREIGN KEY (recompute_job_id) REFERENCES public.attribution_recompute_jobs(id) ON DELETE CASCADE;
 
-
---
--- Name: attribution_allocations attribution_allocations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT attribution_allocations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: attribution_commerce_identities attribution_commerce_identities_attribution_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
 
-
---
--- Name: attribution_commerce_identities attribution_commerce_identities_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_commerce_identities
     ADD CONSTRAINT attribution_commerce_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: attribution_events attribution_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT attribution_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: attribution_recompute_jobs attribution_recompute_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_recompute_jobs
     ADD CONSTRAINT attribution_recompute_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: auth_access_token_denylist auth_access_token_denylist_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.auth_access_token_denylist
     ADD CONSTRAINT auth_access_token_denylist_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_replaced_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.auth_refresh_tokens(id) ON DELETE SET NULL;
-
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: auth_refresh_tokens auth_refresh_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.auth_refresh_tokens
     ADD CONSTRAINT auth_refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: auth_user_token_cutoffs auth_user_token_cutoffs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.auth_user_token_cutoffs
     ADD CONSTRAINT auth_user_token_cutoffs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.b23_exception_records
+    ADD CONSTRAINT b23_exception_records_match_verdict_id_fkey FOREIGN KEY (match_verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE CASCADE;
 
---
--- Name: budget_jobs budget_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
+ALTER TABLE ONLY public.b23_exception_records
+    ADD CONSTRAINT b23_exception_records_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b23_match_verdicts
+    ADD CONSTRAINT b23_match_verdicts_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.b23_match_verdicts
+    ADD CONSTRAINT b23_match_verdicts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b23_match_verdicts
+    ADD CONSTRAINT b23_match_verdicts_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.b23_revenue_events
+    ADD CONSTRAINT b23_revenue_events_match_verdict_id_fkey FOREIGN KEY (match_verdict_id) REFERENCES public.b23_match_verdicts(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.b23_revenue_events
+    ADD CONSTRAINT b23_revenue_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b23_revenue_events
+    ADD CONSTRAINT b23_revenue_events_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.b23_webhook_ingestion_logs
+    ADD CONSTRAINT b23_webhook_ingestion_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: budget_optimization_jobs budget_optimization_jobs_authority_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_authority_job_id_fkey FOREIGN KEY (authority_job_id) REFERENCES public.budget_jobs(id) ON DELETE SET NULL;
-
-
---
--- Name: budget_optimization_jobs budget_optimization_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.budget_optimization_jobs
     ADD CONSTRAINT budget_optimization_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: channel_assignment_corrections channel_assignment_corrections_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: channel_assignment_corrections channel_assignment_corrections_to_channel_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.channel_assignment_corrections
     ADD CONSTRAINT channel_assignment_corrections_to_channel_fkey FOREIGN KEY (to_channel) REFERENCES public.channel_taxonomy(code);
 
-
---
--- Name: channel_state_transitions channel_state_transitions_channel_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.channel_state_transitions
     ADD CONSTRAINT channel_state_transitions_channel_code_fkey FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code) ON DELETE CASCADE;
-
-
---
--- Name: compliance_audit_ledger compliance_audit_ledger_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: dead_events_quarantine dead_events_quarantine_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.dead_events_quarantine
     ADD CONSTRAINT dead_events_quarantine_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE SET NULL;
-
-
---
--- Name: dead_events dead_events_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.dead_events
     ADD CONSTRAINT dead_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: ephemeral_click_resolution ephemeral_click_resolution_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.ephemeral_click_resolution
     ADD CONSTRAINT ephemeral_click_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: ephemeral_order_resolution ephemeral_order_resolution_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.ephemeral_order_resolution
     ADD CONSTRAINT ephemeral_order_resolution_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: explanation_cache explanation_cache_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.explanation_cache
     ADD CONSTRAINT explanation_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: attribution_allocations fk_allocations_event_id_set_null; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT fk_allocations_event_id_set_null FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE SET NULL;
 
-
---
--- Name: attribution_allocations fk_attribution_allocations_channel_code; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_allocations
     ADD CONSTRAINT fk_attribution_allocations_channel_code FOREIGN KEY (channel_code) REFERENCES public.channel_taxonomy(code);
-
-
---
--- Name: attribution_events fk_attribution_events_channel; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_channel FOREIGN KEY (channel) REFERENCES public.channel_taxonomy(code) ON UPDATE CASCADE ON DELETE RESTRICT;
 
-
---
--- Name: attribution_events fk_attribution_events_session_authority; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_session_authority FOREIGN KEY (tenant_id, session_id) REFERENCES public.session_authority(tenant_id, session_id) DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: kombu_message fk_kombu_message_queue; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT fk_kombu_message_queue FOREIGN KEY (queue_id) REFERENCES public.kombu_queue(id);
 
-
---
--- Name: tenant_membership_roles fk_tenant_membership_roles_membership_tenant; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT fk_tenant_membership_roles_membership_tenant FOREIGN KEY (membership_id, tenant_id) REFERENCES public.tenant_memberships(id, tenant_id) ON DELETE CASCADE;
-
-
---
--- Name: investigation_jobs investigation_jobs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigation_jobs
     ADD CONSTRAINT investigation_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: investigation_tool_calls investigation_tool_calls_investigation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_investigation_id_fkey FOREIGN KEY (investigation_id) REFERENCES public.investigations(id) ON DELETE CASCADE;
-
-
---
--- Name: investigation_tool_calls investigation_tool_calls_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigation_tool_calls
     ADD CONSTRAINT investigation_tool_calls_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: investigations investigations_authority_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_authority_job_id_fkey FOREIGN KEY (authority_job_id) REFERENCES public.investigation_jobs(id) ON DELETE SET NULL;
-
-
---
--- Name: investigations investigations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.investigations
     ADD CONSTRAINT investigations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_api_calls llm_api_calls_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_api_calls
     ADD CONSTRAINT llm_api_calls_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_breaker_state llm_breaker_state_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_breaker_state
     ADD CONSTRAINT llm_breaker_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_budget_reservations llm_budget_reservations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_budget_reservations
     ADD CONSTRAINT llm_budget_reservations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_call_audit llm_call_audit_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_call_audit
     ADD CONSTRAINT llm_call_audit_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_hourly_shutoff_state llm_hourly_shutoff_state_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_hourly_shutoff_state
     ADD CONSTRAINT llm_hourly_shutoff_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_monthly_budget_state llm_monthly_budget_state_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_monthly_budget_state
     ADD CONSTRAINT llm_monthly_budget_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_monthly_costs llm_monthly_costs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_monthly_costs
     ADD CONSTRAINT llm_monthly_costs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: llm_semantic_cache llm_semantic_cache_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.llm_semantic_cache
     ADD CONSTRAINT llm_semantic_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: llm_validation_failures llm_validation_failures_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.llm_validation_failures
     ADD CONSTRAINT llm_validation_failures_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: oauth_handshake_sessions oauth_handshake_sessions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: oauth_handshake_sessions oauth_handshake_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.oauth_handshake_sessions
     ADD CONSTRAINT oauth_handshake_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: platform_connections platform_connections_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.platform_connections
     ADD CONSTRAINT platform_connections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: platform_credentials platform_credentials_platform_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_platform_connection_id_fkey FOREIGN KEY (platform_connection_id) REFERENCES public.platform_connections(id) ON DELETE CASCADE;
-
-
---
--- Name: platform_credentials platform_credentials_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.platform_credentials
     ADD CONSTRAINT platform_credentials_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: r4_crash_barriers r4_crash_barriers_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.r4_crash_barriers
     ADD CONSTRAINT r4_crash_barriers_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: r4_task_attempts r4_task_attempts_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.r4_task_attempts
     ADD CONSTRAINT r4_task_attempts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: raw_event_payloads raw_event_payloads_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
-
-
---
--- Name: raw_event_payloads raw_event_payloads_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.raw_event_payloads
     ADD CONSTRAINT raw_event_payloads_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: reconciliation_runs reconciliation_runs_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.reconciliation_runs
     ADD CONSTRAINT reconciliation_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: revenue_cache_entries revenue_cache_entries_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.revenue_cache_entries
     ADD CONSTRAINT revenue_cache_entries_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: revenue_ledger revenue_ledger_allocation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_allocation_id_fkey FOREIGN KEY (allocation_id) REFERENCES public.attribution_allocations(id) ON DELETE CASCADE;
-
-
---
--- Name: revenue_ledger revenue_ledger_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.revenue_ledger
     ADD CONSTRAINT revenue_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: revenue_state_transitions revenue_state_transitions_ledger_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_ledger_id_fkey FOREIGN KEY (ledger_id) REFERENCES public.revenue_ledger(id) ON DELETE CASCADE;
-
-
---
--- Name: revenue_state_transitions revenue_state_transitions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.revenue_state_transitions
     ADD CONSTRAINT revenue_state_transitions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: session_authority session_authority_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.session_authority
     ADD CONSTRAINT session_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: tenant_membership_roles tenant_membership_roles_role_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_role_code_fkey FOREIGN KEY (role_code) REFERENCES public.roles(code) ON DELETE RESTRICT;
 
-
---
--- Name: tenant_membership_roles tenant_membership_roles_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_membership_roles
     ADD CONSTRAINT tenant_membership_roles_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: tenant_memberships tenant_memberships_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: tenant_memberships tenant_memberships_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.tenant_memberships
     ADD CONSTRAINT tenant_memberships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: webhook_ingress_identities webhook_ingress_identities_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.attribution_events(id) ON DELETE CASCADE;
 
-
---
--- Name: webhook_ingress_identities webhook_ingress_identities_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
 ALTER TABLE ONLY public.webhook_ingress_identities
     ADD CONSTRAINT webhook_ingress_identities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: worker_side_effects worker_side_effects_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
 
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-
---
--- Name: attribution_allocations; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.attribution_allocations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: attribution_commerce_identities; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.attribution_commerce_identities ENABLE ROW LEVEL SECURITY;
 
---
--- Name: attribution_events; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.attribution_events ENABLE ROW LEVEL SECURITY;
-
---
--- Name: attribution_recompute_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.attribution_recompute_jobs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: attribution_recompute_jobs attribution_recompute_jobs_tenant_isolation; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY attribution_recompute_jobs_tenant_isolation ON public.attribution_recompute_jobs USING (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))) WITH CHECK (((tenant_id)::text = current_setting('app.current_tenant_id'::text, true)));
-
-
---
--- Name: auth_access_token_denylist; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.auth_access_token_denylist ENABLE ROW LEVEL SECURITY;
 
---
--- Name: auth_refresh_tokens; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.auth_refresh_tokens ENABLE ROW LEVEL SECURITY;
-
---
--- Name: auth_user_token_cutoffs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.auth_user_token_cutoffs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: budget_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
+ALTER TABLE public.b23_exception_records ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b23_match_verdicts ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b23_revenue_events ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b23_webhook_ingestion_logs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.budget_jobs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: budget_optimization_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: channel_assignment_corrections; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.channel_assignment_corrections ENABLE ROW LEVEL SECURITY;
 
---
--- Name: compliance_audit_ledger; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.compliance_audit_ledger ENABLE ROW LEVEL SECURITY;
-
---
--- Name: dead_events; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.dead_events ENABLE ROW LEVEL SECURITY;
 
---
--- Name: dead_events_quarantine; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.dead_events_quarantine ENABLE ROW LEVEL SECURITY;
-
---
--- Name: ephemeral_click_resolution; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.ephemeral_click_resolution ENABLE ROW LEVEL SECURITY;
 
---
--- Name: ephemeral_order_resolution; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.ephemeral_order_resolution ENABLE ROW LEVEL SECURITY;
-
---
--- Name: explanation_cache; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.explanation_cache ENABLE ROW LEVEL SECURITY;
 
---
--- Name: investigation_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.investigation_jobs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: investigation_tool_calls; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.investigation_tool_calls ENABLE ROW LEVEL SECURITY;
 
---
--- Name: investigations; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.investigations ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_api_calls; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_api_calls ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_breaker_state; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_breaker_state ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_budget_reservations; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_budget_reservations ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_call_audit; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_call_audit ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_hourly_shutoff_state; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_hourly_shutoff_state ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_monthly_budget_state; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_monthly_budget_state ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_monthly_costs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_monthly_costs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: llm_semantic_cache; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.llm_semantic_cache ENABLE ROW LEVEL SECURITY;
-
---
--- Name: llm_validation_failures; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.llm_validation_failures ENABLE ROW LEVEL SECURITY;
 
---
--- Name: oauth_handshake_sessions; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.oauth_handshake_sessions ENABLE ROW LEVEL SECURITY;
-
---
--- Name: dead_events_quarantine ops_quarantine_select; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY ops_quarantine_select ON public.dead_events_quarantine FOR SELECT USING (((tenant_id IS NULL) AND (CURRENT_USER = 'app_ops'::name)));
 
-
---
--- Name: platform_connections; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
-
---
--- Name: platform_credentials; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 
---
--- Name: dead_events_quarantine quarantine_lane_insert; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
-
-
---
--- Name: r4_crash_barriers; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
 
---
--- Name: r4_task_attempts; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.r4_task_attempts ENABLE ROW LEVEL SECURITY;
-
---
--- Name: raw_event_payloads; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.raw_event_payloads ENABLE ROW LEVEL SECURITY;
 
---
--- Name: reconciliation_runs; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.reconciliation_runs ENABLE ROW LEVEL SECURITY;
-
---
--- Name: revenue_cache_entries; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.revenue_cache_entries ENABLE ROW LEVEL SECURITY;
 
---
--- Name: revenue_ledger; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.revenue_ledger ENABLE ROW LEVEL SECURITY;
-
---
--- Name: revenue_state_transitions; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.revenue_state_transitions ENABLE ROW LEVEL SECURITY;
 
---
--- Name: session_authority; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.session_authority ENABLE ROW LEVEL SECURITY;
-
---
--- Name: attribution_allocations tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.attribution_allocations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: attribution_events tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.attribution_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: auth_access_token_denylist tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.auth_access_token_denylist USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: auth_refresh_tokens tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.auth_refresh_tokens USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: auth_user_token_cutoffs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.auth_user_token_cutoffs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: budget_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.budget_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: budget_optimization_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.budget_optimization_jobs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: channel_assignment_corrections tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.channel_assignment_corrections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: dead_events tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: explanation_cache tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: investigation_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: investigation_tool_calls tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: investigations tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.investigations USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: llm_api_calls tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_api_calls USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: llm_breaker_state tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_breaker_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: llm_budget_reservations tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_budget_reservations USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: llm_call_audit tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_call_audit USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: llm_hourly_shutoff_state tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_hourly_shutoff_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: llm_monthly_budget_state tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_monthly_budget_state USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: llm_monthly_costs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_monthly_costs USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
-
-
---
--- Name: llm_semantic_cache tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.llm_semantic_cache USING (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid))) WITH CHECK (((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid) AND (user_id = (current_setting('app.current_user_id'::text, true))::uuid)));
 
-
---
--- Name: llm_validation_failures tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.llm_validation_failures USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: oauth_handshake_sessions tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.oauth_handshake_sessions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: platform_connections tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.platform_connections USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: platform_credentials tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.platform_credentials USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: r4_crash_barriers tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.r4_crash_barriers TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: r4_task_attempts tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.r4_task_attempts TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: reconciliation_runs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.reconciliation_runs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: revenue_cache_entries tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.revenue_cache_entries USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: revenue_ledger tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.revenue_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: revenue_state_transitions tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.revenue_state_transitions USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: session_authority tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.session_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: tenant_membership_roles tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.tenant_membership_roles USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: tenant_memberships tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.tenant_memberships USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: worker_failed_jobs tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy ON public.worker_failed_jobs TO app_user USING (((tenant_id IS NULL) OR ((tenant_id)::text = current_setting('app.current_tenant_id'::text, true))));
 
-
---
--- Name: worker_side_effects tenant_isolation_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy ON public.worker_side_effects TO app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: attribution_commerce_identities tenant_isolation_policy_attribution_commerce_identities; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_attribution_commerce_identities ON public.attribution_commerce_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy_b23_exception_records ON public.b23_exception_records USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
---
--- Name: compliance_audit_ledger tenant_isolation_policy_compliance_audit_ledger; Type: POLICY; Schema: public; Owner: -
---
+CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_verdicts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_b23_webhook_ingestion_logs ON public.b23_webhook_ingestion_logs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: ephemeral_click_resolution tenant_isolation_policy_ephemeral_click_resolution; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_ephemeral_click_resolution ON public.ephemeral_click_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: ephemeral_order_resolution tenant_isolation_policy_ephemeral_order_resolution; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_ephemeral_order_resolution ON public.ephemeral_order_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: raw_event_payloads tenant_isolation_policy_raw_event_payloads; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_payloads USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-
---
--- Name: webhook_ingress_identities tenant_isolation_policy_webhook_ingress_identities; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webhook_ingress_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-
---
--- Name: dead_events_quarantine tenant_lane_insert; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
-
-
---
--- Name: dead_events_quarantine tenant_lane_select; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-
---
--- Name: tenant_membership_roles; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
-
---
--- Name: tenant_memberships; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.tenant_memberships ENABLE ROW LEVEL SECURITY;
 
---
--- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
---
--- Name: users users_provision_insert_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY users_provision_insert_policy ON public.users FOR INSERT TO app_user WITH CHECK (((id IS NOT NULL) AND (length(TRIM(BOTH FROM login_identifier_hash)) > 0) AND (auth_provider = ANY (ARRAY['password'::text, 'oauth_google'::text, 'oauth_microsoft'::text, 'oauth_github'::text, 'sso'::text]))));
 
-
---
--- Name: users users_self_select_policy; Type: POLICY; Schema: public; Owner: -
---
-
 CREATE POLICY users_self_select_policy ON public.users FOR SELECT USING ((id = (current_setting('app.current_user_id'::text, true))::uuid));
-
-
---
--- Name: users users_self_update_policy; Type: POLICY; Schema: public; Owner: -
---
 
 CREATE POLICY users_self_update_policy ON public.users FOR UPDATE USING ((id = (current_setting('app.current_user_id'::text, true))::uuid)) WITH CHECK ((id = (current_setting('app.current_user_id'::text, true))::uuid));
 
-
---
--- Name: webhook_ingress_identities; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.webhook_ingress_identities ENABLE ROW LEVEL SECURITY;
-
-
---
--- Name: worker_failed_jobs; Type: ROW SECURITY; Schema: public; Owner: -
---
 
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 
---
--- Name: worker_side_effects; Type: ROW SECURITY; Schema: public; Owner: -
---
-
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 
---
--- PostgreSQL database dump complete
---
 
-\unrestrict gFM99rNSxp0CDaNCD09XdQtlbaGCqdX3zvVbKeUifRPPQDKRUih1n4XTMtSD0cQ
+-- b21_p3_guard_token: aa.recompute_job_id IS NULL
+

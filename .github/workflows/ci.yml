@@ -346,6 +346,24 @@ jobs:
         run: |
           pytest backend/tests/test_b23_pre_p1_spec_gate_enforcer.py -q
 
+      - name: Enforce B2.3-P1 schema authority lock
+        run: |
+          python scripts/ci/enforce_b23_p1_schema_authority_lock.py
+
+      - name: Run B2.3-P1 schema authority negative controls
+        run: |
+          pytest backend/tests/test_b23_p1_schema_authority_enforcer.py -q
+
+      - name: Run B2.3-P1 schema authority runtime proofs
+        run: |
+          pytest backend/tests/test_b23_p1_schema_authority_runtime.py -q
+
+      - name: Verify B2.3-P1 migration reversibility
+        env:
+          B23_P1_MIGRATION_DSN: ${{ env.MIGRATION_DATABASE_URL }}
+        run: |
+          python scripts/ci/verify_b23_p1_migration_reversibility.py
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q
