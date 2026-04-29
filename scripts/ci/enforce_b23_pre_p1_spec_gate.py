@@ -1,26 +1,32 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """B2.3 Pre-P1 specification closure enforcer."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
+
+from validate_b23_pre_p1_spec_contract import (
+    ADJUSTMENT_EVENTS,
+    BINARY_FLOAT_FORBIDDEN_SCOPES,
+    PROVIDERS,
+    validate_contract,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_FILE = "contracts-internal/governance/b23_pre_p1_spec_gate.main.json"
 SPEC_FILE = "docs/forensics/B2.3-Pre-P1 Specification Gates A-B.md"
 CI_FILE = ".github/workflows/ci.yml"
 
-_REQUIRED_PROVIDERS = ("stripe", "paypal", "shopify", "woocommerce")
 _REQUIRED_PROVIDER_FIELDS = (
-    "authoritative_revenue_field",
-    "source_currency_field",
+    "provider_origin_revenue_field",
+    "provider_origin_currency_field",
     "source_amount_unit",
     "canonical_amount_basis",
-    "canonical_amount_field",
+    "b23_authority_amount_field",
+    "b23_authority_currency_field",
     "canonical_storage_unit",
     "currency_exponent_source",
     "rounding_mode",
@@ -30,19 +36,6 @@ _REQUIRED_PROVIDER_FIELDS = (
     "processor_fee_inclusion",
     "refund_chargeback_adjustment_posture",
     "multi_currency_posture",
-)
-_REQUIRED_FLOAT_BAN_SCOPES = (
-    "canonical_financial_storage",
-    "match_arithmetic",
-    "discrepancy_percentage_computation",
-    "refund_chargeback_adjustment_arithmetic",
-)
-_REQUIRED_ADJUSTMENT_EVENTS = (
-    "refund_partial",
-    "refund_full",
-    "chargeback_opened",
-    "chargeback_won",
-    "chargeback_lost",
 )
 _REQUIRED_TABLE_CLASSES = (
     "match_verdicts",
@@ -76,6 +69,12 @@ _REQUIRED_TIMING_FIELDS = (
     "state_transition_effect",
     "future_constants_module_name",
 )
+_REQUIRED_DECIMAL_CONVERSION_GUARDS = (
+    "python_float",
+    "javascript_number",
+    "javascript_parseFloat",
+    "double",
+)
 
 
 def _resolve(repo_root: Path, raw: str) -> Path:
@@ -100,10 +99,14 @@ def _is_non_empty(value: Any) -> bool:
     return value is not None
 
 
-def _require_fields(obj: dict[str, Any], fields: tuple[str, ...], prefix: str, violations: list[str]) -> None:
+def _require_fields(
+    obj: dict[str, Any],
+    fields: tuple[str, ...],
+    prefix: str,
+    violations: list[str],
+) -> None:
     for field in fields:
-        value = obj.get(field)
-        if not _is_non_empty(value):
+        if not _is_non_empty(obj.get(field)):
             violations.append(f"{prefix}_missing_field:{field}")
 
 
@@ -127,6 +130,10 @@ def run_enforcement(
     spec_text = spec_file.read_text(encoding="utf-8")
     ci_text = ci_file.read_text(encoding="utf-8")
 
+    schema_errors = validate_contract(contract)
+    for schema_error in schema_errors:
+        violations.append(f"schema:{schema_error}")
+
     if contract.get("contract_id") != "b23.pre_p1.spec_gate.main":
         violations.append("contract_id_mismatch")
     if contract.get("phase") != "B2.3-Pre-P1":
@@ -135,9 +142,7 @@ def run_enforcement(
         violations.append("contract_branch_mismatch")
 
     p0_truth = contract.get("p0_inherited_truth_correction")
-    if not isinstance(p0_truth, dict):
-        violations.append("p0_inherited_truth_correction_missing")
-    else:
+    if isinstance(p0_truth, dict):
         if p0_truth.get("activity_independent_lifecycle_mode") != "database_scheduled_pruning":
             violations.append("p0_truth_lifecycle_mode_mismatch")
         if p0_truth.get("governed_runtime_mechanism") != "governed_neon_pg_cron":
@@ -150,54 +155,45 @@ def run_enforcement(
             violations.append("p0_truth_no_llm_preservation_missing")
 
     revenue = contract.get("revenue_extraction_standard")
-    if not isinstance(revenue, dict):
-        violations.append("revenue_extraction_standard_missing")
-    else:
+    if isinstance(revenue, dict):
+        if revenue.get("source_boundary") != "verified_b22_b23_ingress_envelope":
+            violations.append("revenue_source_boundary_mismatch")
+        if revenue.get("raw_webhook_payload_forbidden_as_b23_authority") is not True:
+            violations.append("revenue_raw_payload_forbid_missing")
+        if revenue.get("provider_origin_fields_are_provenance_only") is not True:
+            violations.append("revenue_provider_origin_provenance_only_missing")
         if not _is_non_empty(revenue.get("canonical_amount_basis")):
             violations.append("revenue_missing_canonical_amount_basis")
 
         storage = revenue.get("canonical_storage")
-        if not isinstance(storage, dict):
-            violations.append("revenue_canonical_storage_missing")
-        else:
-            if storage.get("amount") != "integer_minor_units":
-                violations.append("revenue_storage_amount_not_minor_units")
-            if storage.get("currency") != "iso_4217_code":
-                violations.append("revenue_storage_currency_missing_iso")
-            if storage.get("binary_float_forbidden") is not True:
-                violations.append("revenue_binary_float_forbidden_missing")
+        if isinstance(storage, dict):
             scopes = storage.get("binary_float_forbidden_scopes", [])
-            if not isinstance(scopes, list):
-                violations.append("revenue_binary_float_scopes_invalid")
-            else:
-                for scope in _REQUIRED_FLOAT_BAN_SCOPES:
+            if isinstance(scopes, list):
+                for scope in sorted(BINARY_FLOAT_FORBIDDEN_SCOPES):
                     if scope not in scopes:
                         violations.append(f"revenue_binary_float_scope_missing:{scope}")
-            numeric_policy = storage.get("numeric_exception_policy")
-            if not isinstance(numeric_policy, dict):
-                violations.append("revenue_numeric_exception_policy_missing")
             else:
-                if numeric_policy.get("postgres_numeric_allowed_only_with_declared_scale") is not True:
-                    violations.append("revenue_numeric_policy_scale_missing")
-                if numeric_policy.get("declared_rounding_mode_required") is not True:
-                    violations.append("revenue_numeric_policy_rounding_requirement_missing")
+                violations.append("revenue_binary_float_scopes_invalid")
 
-        registry = revenue.get("platform_keyed_extraction_registry_requirement")
-        if not isinstance(registry, dict):
-            violations.append("revenue_platform_keyed_registry_missing")
-        else:
-            if registry.get("required") is not True:
-                violations.append("revenue_platform_keyed_registry_required_missing")
-            if registry.get("inline_provider_amount_access_in_match_kernel_forbidden") is not True:
-                violations.append("revenue_inline_provider_access_forbid_missing")
-            if registry.get("missing_registry_entry_must_fail_tests") is not True:
-                violations.append("revenue_missing_registry_entry_fail_test_missing")
+        exact_decimal = revenue.get("exact_decimal_parsing_policy")
+        if isinstance(exact_decimal, dict):
+            if exact_decimal.get("require_exact_decimal_arithmetic") is not True:
+                violations.append("revenue_exact_decimal_required_missing")
+            required_units = exact_decimal.get("required_for_source_units", [])
+            if "decimal_string_major_units" not in required_units:
+                violations.append("revenue_exact_decimal_source_unit_missing")
+            required_providers = set(exact_decimal.get("providers_requiring_exact_decimal", []))
+            for provider in ("paypal", "shopify", "woocommerce"):
+                if provider not in required_providers:
+                    violations.append(f"revenue_exact_decimal_provider_missing:{provider}")
+            forbidden_conversions = set(exact_decimal.get("forbidden_binary_float_conversions", []))
+            for conversion in _REQUIRED_DECIMAL_CONVERSION_GUARDS:
+                if conversion not in forbidden_conversions:
+                    violations.append(f"revenue_exact_decimal_conversion_guard_missing:{conversion}")
 
         providers = revenue.get("providers")
-        if not isinstance(providers, dict):
-            violations.append("revenue_providers_block_missing")
-        else:
-            for provider in _REQUIRED_PROVIDERS:
+        if isinstance(providers, dict):
+            for provider in PROVIDERS:
                 provider_payload = providers.get(provider)
                 if not isinstance(provider_payload, dict):
                     violations.append(f"revenue_provider_missing:{provider}")
@@ -208,56 +204,31 @@ def run_enforcement(
                     f"revenue_provider_{provider}",
                     violations,
                 )
-
-        if not _is_non_empty(revenue.get("unsupported_or_ambiguous_field_policy")):
-            violations.append("revenue_unsupported_field_policy_missing")
-        if not _is_non_empty(revenue.get("rationale")):
-            violations.append("revenue_rationale_missing")
+                if (
+                    provider_payload.get("provider_origin_revenue_field")
+                    == provider_payload.get("b23_authority_amount_field")
+                ):
+                    violations.append(f"revenue_provider_origin_runtime_boundary_broken:{provider}:amount")
+                if (
+                    provider_payload.get("provider_origin_currency_field")
+                    == provider_payload.get("b23_authority_currency_field")
+                ):
+                    violations.append(f"revenue_provider_origin_runtime_boundary_broken:{provider}:currency")
 
     concurrency = contract.get("refund_chargeback_concurrency_law")
-    if not isinstance(concurrency, dict):
-        violations.append("refund_chargeback_concurrency_law_missing")
-    else:
-        if concurrency.get("model") != "append_only_immutable_revenue_events":
-            violations.append("concurrency_model_mismatch")
-        if concurrency.get("tenant_scoped_provider_idempotency_required") is not True:
-            violations.append("concurrency_tenant_scoped_idempotency_missing")
-        if concurrency.get("database_duplicate_event_rejection_required") is not True:
-            violations.append("concurrency_duplicate_event_rejection_missing")
-        if concurrency.get("forbid_unsafe_read_modify_write_net_updates") is not True:
-            violations.append("concurrency_lost_update_forbid_missing")
-        if not _is_non_empty(concurrency.get("net_revenue_computation")):
-            violations.append("concurrency_net_revenue_computation_missing")
-        controls = concurrency.get("required_concurrency_controls")
-        if not isinstance(controls, list) or not controls:
-            violations.append("concurrency_controls_missing")
+    if isinstance(concurrency, dict):
         events = concurrency.get("distinct_adjustment_events")
-        if not isinstance(events, list):
-            violations.append("concurrency_distinct_adjustment_events_missing")
-        else:
-            for event in _REQUIRED_ADJUSTMENT_EVENTS:
+        if isinstance(events, list):
+            for event in sorted(ADJUSTMENT_EVENTS):
                 if event not in events:
                     violations.append(f"concurrency_adjustment_event_missing:{event}")
+        else:
+            violations.append("concurrency_distinct_adjustment_events_missing")
 
     privacy = contract.get("table_privacy_lifecycle_pre_spec")
-    if not isinstance(privacy, dict):
-        violations.append("table_privacy_lifecycle_pre_spec_missing")
-    else:
-        global_rules = privacy.get("global_rules")
-        if not isinstance(global_rules, dict):
-            violations.append("privacy_global_rules_missing")
-        else:
-            if global_rules.get("tenant_isolation_required") is not True:
-                violations.append("privacy_tenant_isolation_requirement_missing")
-            if global_rules.get("rls_required") is not True:
-                violations.append("privacy_rls_requirement_missing")
-            if global_rules.get("pii_forbidden") is not True:
-                violations.append("privacy_pii_forbidden_missing")
-
+    if isinstance(privacy, dict):
         classes = privacy.get("table_classes")
-        if not isinstance(classes, dict):
-            violations.append("privacy_table_classes_missing")
-        else:
+        if isinstance(classes, dict):
             for table_class in _REQUIRED_TABLE_CLASSES:
                 payload = classes.get(table_class)
                 if not isinstance(payload, dict):
@@ -271,9 +242,7 @@ def run_enforcement(
                 )
 
     timing = contract.get("timing_constants")
-    if not isinstance(timing, dict):
-        violations.append("timing_constants_missing")
-    else:
+    if isinstance(timing, dict):
         for constant_name in _REQUIRED_TIMING_CONSTANTS:
             constant = timing.get(constant_name)
             if not isinstance(constant, dict):
@@ -282,9 +251,7 @@ def run_enforcement(
             _require_fields(constant, _REQUIRED_TIMING_FIELDS, f"timing_{constant_name}", violations)
 
         perf_scope = timing.get("performance_scope")
-        if not isinstance(perf_scope, dict):
-            violations.append("timing_performance_scope_missing")
-        else:
+        if isinstance(perf_scope, dict):
             if perf_scope.get("lt_10_seconds_definition") != "match_engine_batch_execution_on_pre_arrived_events_only":
                 violations.append("timing_lt10_scope_mismatch")
             non_scope = perf_scope.get("explicit_non_scope")
@@ -292,21 +259,27 @@ def run_enforcement(
                 violations.append("timing_lt10_non_scope_missing")
 
     required_ci_wiring = contract.get("required_ci_wiring")
-    if not isinstance(required_ci_wiring, list) or not required_ci_wiring:
-        violations.append("required_ci_wiring_missing")
-    else:
+    if isinstance(required_ci_wiring, list):
         for token in required_ci_wiring:
             if str(token) not in ci_text:
                 violations.append(f"ci_missing_token:{token}")
+    else:
+        violations.append("required_ci_wiring_missing")
 
     spec_required_tokens = (
+        "Provider-origin payload paths are **provenance metadata only**",
+        "verified/canonicalized B2.2/B2.3 ingress envelope",
+        "Raw unauthenticated webhook payloads are forbidden as B2.3 first-authority input",
+        "provider amount parsing",
+        "JSON deserialization normalization",
+        "decimal-string-to-minor-unit conversion",
+        "currency exponent application",
+        "Decimal-string providers must use exact decimal arithmetic",
+        "float()",
+        "parseFloat",
+        "JavaScript `Number`",
         "activity-independent database scheduled pruning via governed Neon `pg_cron`",
         "platform-keyed extraction registry",
-        "Binary floating-point use is forbidden",
-        "append-only immutable revenue events",
-        "WEBHOOK_ARRIVAL_WINDOW = 30 minutes",
-        "PROVISIONAL_MATCH_WINDOW = 24 hours",
-        "REFUND_REOPENING_WINDOW = 30 days",
         "The `<10 second` benchmark applies only to match-engine batch execution over pre-arrived events.",
     )
     for token in spec_required_tokens:
