@@ -25,6 +25,7 @@ def _run(cmd: list[str], *, env: dict[str, str] | None = None, cwd: Path | None 
 def _normalize_schema(text: str) -> str:
     not_null_constraint_re = re.compile(r"\bCONSTRAINT\s+[A-Za-z0-9_]+\s+NOT\s+NULL\b")
     qualifier_re = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.")
+    policy_roles_re = re.compile(r"\bTO\s+([A-Za-z0-9_,\s]+?)\s+(USING|WITH\s+CHECK|;)")
 
     out: list[str] = []
     in_matview_query = False
@@ -49,6 +50,14 @@ def _normalize_schema(text: str) -> str:
         norm = not_null_constraint_re.sub("NOT NULL", norm)
         if norm.startswith("CREATE MATERIALIZED VIEW "):
             in_matview_query = True
+        if norm.startswith("CREATE POLICY "):
+            match = policy_roles_re.search(norm)
+            if match is not None:
+                raw_roles = match.group(1)
+                roles = sorted({part.strip() for part in raw_roles.split(",") if part.strip()})
+                if roles:
+                    replacement = f"TO {', '.join(roles)} {match.group(2)}"
+                    norm = norm[: match.start()] + replacement + norm[match.end() :]
         # Cross-version pg_dump may qualify column refs differently in SELECT bodies.
         if norm.lstrip().startswith(
             (
