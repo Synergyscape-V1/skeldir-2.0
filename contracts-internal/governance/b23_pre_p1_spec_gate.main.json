@@ -1,6 +1,6 @@
-﻿{
+{
   "contract_id": "b23.pre_p1.spec_gate.main",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.3-Pre-P1",
@@ -26,12 +26,19 @@
     "preserve_no_llm_deterministic_authority_path": true
   },
   "revenue_extraction_standard": {
+    "source_boundary": "verified_b22_b23_ingress_envelope",
+    "raw_webhook_payload_forbidden_as_b23_authority": true,
+    "provider_origin_fields_are_provenance_only": true,
     "canonical_amount_basis": "verified_captured_gross_amount_excluding_processor_fees",
     "canonical_storage": {
       "amount": "integer_minor_units",
       "currency": "iso_4217_code",
       "binary_float_forbidden": true,
       "binary_float_forbidden_scopes": [
+        "provider_amount_parsing",
+        "json_deserialization_normalization",
+        "decimal_string_to_minor_unit_conversion",
+        "currency_exponent_application",
         "canonical_financial_storage",
         "match_arithmetic",
         "discrepancy_percentage_computation",
@@ -44,6 +51,23 @@
         "default_rounding_mode": "ROUND_HALF_UP"
       }
     },
+    "exact_decimal_parsing_policy": {
+      "required_for_source_units": [
+        "decimal_string_major_units"
+      ],
+      "providers_requiring_exact_decimal": [
+        "paypal",
+        "shopify",
+        "woocommerce"
+      ],
+      "require_exact_decimal_arithmetic": true,
+      "forbidden_binary_float_conversions": [
+        "python_float",
+        "javascript_number",
+        "javascript_parseFloat",
+        "double"
+      ]
+    },
     "platform_keyed_extraction_registry_requirement": {
       "required": true,
       "inline_provider_amount_access_in_match_kernel_forbidden": true,
@@ -52,11 +76,12 @@
     },
     "providers": {
       "stripe": {
-        "authoritative_revenue_field": "data.object.amount",
-        "source_currency_field": "data.object.currency",
+        "provider_origin_revenue_field": "data.object.amount",
+        "provider_origin_currency_field": "data.object.currency",
         "source_amount_unit": "minor_units_integer",
         "canonical_amount_basis": "captured_payment_intent_gross",
-        "canonical_amount_field": "verified_amount_minor",
+        "b23_authority_amount_field": "verified_amount_minor",
+        "b23_authority_currency_field": "verified_currency_code",
         "canonical_storage_unit": "minor_units_integer",
         "currency_exponent_source": "iso_4217_exponent_by_currency",
         "rounding_mode": "ROUND_HALF_UP",
@@ -68,11 +93,12 @@
         "multi_currency_posture": "same_currency_only_no_cross_currency_match"
       },
       "paypal": {
-        "authoritative_revenue_field": "amount.total",
-        "source_currency_field": "amount.currency",
+        "provider_origin_revenue_field": "amount.total",
+        "provider_origin_currency_field": "amount.currency",
         "source_amount_unit": "decimal_string_major_units",
         "canonical_amount_basis": "captured_sale_or_capture_gross",
-        "canonical_amount_field": "verified_amount_minor",
+        "b23_authority_amount_field": "verified_amount_minor",
+        "b23_authority_currency_field": "verified_currency_code",
         "canonical_storage_unit": "minor_units_integer",
         "currency_exponent_source": "iso_4217_exponent_by_currency",
         "rounding_mode": "ROUND_HALF_UP",
@@ -84,11 +110,12 @@
         "multi_currency_posture": "same_currency_only_no_cross_currency_match"
       },
       "shopify": {
-        "authoritative_revenue_field": "total_price",
-        "source_currency_field": "currency",
+        "provider_origin_revenue_field": "total_price",
+        "provider_origin_currency_field": "currency",
         "source_amount_unit": "decimal_string_major_units",
         "canonical_amount_basis": "order_total_gross",
-        "canonical_amount_field": "verified_amount_minor",
+        "b23_authority_amount_field": "verified_amount_minor",
+        "b23_authority_currency_field": "verified_currency_code",
         "canonical_storage_unit": "minor_units_integer",
         "currency_exponent_source": "iso_4217_exponent_by_currency",
         "rounding_mode": "ROUND_HALF_UP",
@@ -100,11 +127,12 @@
         "multi_currency_posture": "same_currency_only_no_cross_currency_match"
       },
       "woocommerce": {
-        "authoritative_revenue_field": "total",
-        "source_currency_field": "currency",
+        "provider_origin_revenue_field": "total",
+        "provider_origin_currency_field": "currency",
         "source_amount_unit": "decimal_string_major_units",
         "canonical_amount_basis": "order_total_gross",
-        "canonical_amount_field": "verified_amount_minor",
+        "b23_authority_amount_field": "verified_amount_minor",
+        "b23_authority_currency_field": "verified_currency_code",
         "canonical_storage_unit": "minor_units_integer",
         "currency_exponent_source": "iso_4217_exponent_by_currency",
         "rounding_mode": "ROUND_HALF_UP",
@@ -117,7 +145,7 @@
       }
     },
     "unsupported_or_ambiguous_field_policy": "fail_closed_to_unmatched_or_unsupported_with_audit_reason",
-    "rationale": "Canonical matching must compare gross captured commerce amounts normalized into integer minor units with explicit currency semantics, excluding processor fees and avoiding binary floating-point ambiguity."
+    "rationale": "B2.3 matching consumes verified/canonicalized ingress-envelope fields and never raw unauthenticated webhook payloads; provider-origin paths are provenance metadata only."
   },
   "refund_chargeback_concurrency_law": {
     "model": "append_only_immutable_revenue_events",
@@ -151,8 +179,21 @@
     "table_classes": {
       "match_verdicts": {
         "data_classification": "financial_verification_decision_data",
-        "allowed_identifier_classes": ["tenant_id", "provider", "commerce_reference", "transaction_reference"],
-        "forbidden_columns": ["email", "full_name", "phone", "full_ip", "street_address", "device_id", "cross_device_identifier"],
+        "allowed_identifier_classes": [
+          "tenant_id",
+          "provider",
+          "commerce_reference",
+          "transaction_reference"
+        ],
+        "forbidden_columns": [
+          "email",
+          "full_name",
+          "phone",
+          "full_ip",
+          "street_address",
+          "device_id",
+          "cross_device_identifier"
+        ],
         "raw_provider_payload_posture": "forbidden",
         "tenant_isolation_requirement": "tenant_id_uuid_fk",
         "rls_requirement": "tenant_id_equals_current_setting_app_current_tenant_id",
@@ -162,8 +203,21 @@
       },
       "exception_records": {
         "data_classification": "financial_discrepancy_workflow_data",
-        "allowed_identifier_classes": ["tenant_id", "provider", "commerce_reference", "exception_reference"],
-        "forbidden_columns": ["email", "full_name", "phone", "full_ip", "street_address", "device_id", "cross_device_identifier"],
+        "allowed_identifier_classes": [
+          "tenant_id",
+          "provider",
+          "commerce_reference",
+          "exception_reference"
+        ],
+        "forbidden_columns": [
+          "email",
+          "full_name",
+          "phone",
+          "full_ip",
+          "street_address",
+          "device_id",
+          "cross_device_identifier"
+        ],
         "raw_provider_payload_posture": "forbidden",
         "tenant_isolation_requirement": "tenant_id_uuid_fk",
         "rls_requirement": "tenant_id_equals_current_setting_app_current_tenant_id",
@@ -173,8 +227,21 @@
       },
       "revenue_events": {
         "data_classification": "financial_event_ledger_data",
-        "allowed_identifier_classes": ["tenant_id", "provider", "provider_event_reference", "commerce_reference"],
-        "forbidden_columns": ["email", "full_name", "phone", "full_ip", "street_address", "device_id", "cross_device_identifier"],
+        "allowed_identifier_classes": [
+          "tenant_id",
+          "provider",
+          "provider_event_reference",
+          "commerce_reference"
+        ],
+        "forbidden_columns": [
+          "email",
+          "full_name",
+          "phone",
+          "full_ip",
+          "street_address",
+          "device_id",
+          "cross_device_identifier"
+        ],
         "raw_provider_payload_posture": "hashed_or_redacted_minimum_fields_only",
         "tenant_isolation_requirement": "tenant_id_uuid_fk",
         "rls_requirement": "tenant_id_equals_current_setting_app_current_tenant_id",
@@ -184,8 +251,21 @@
       },
       "webhook_ingestion_logs": {
         "data_classification": "operational_integrity_event_log",
-        "allowed_identifier_classes": ["tenant_id", "provider", "event_reference", "correlation_id"],
-        "forbidden_columns": ["email", "full_name", "phone", "full_ip", "street_address", "device_id", "cross_device_identifier"],
+        "allowed_identifier_classes": [
+          "tenant_id",
+          "provider",
+          "event_reference",
+          "correlation_id"
+        ],
+        "forbidden_columns": [
+          "email",
+          "full_name",
+          "phone",
+          "full_ip",
+          "street_address",
+          "device_id",
+          "cross_device_identifier"
+        ],
         "raw_provider_payload_posture": "redacted_or_structurally_minimized",
         "tenant_isolation_requirement": "tenant_id_uuid_fk",
         "rls_requirement": "tenant_id_equals_current_setting_app_current_tenant_id",
@@ -195,8 +275,20 @@
       },
       "read_models_or_materialized_summaries": {
         "data_classification": "derived_financial_summary_data",
-        "allowed_identifier_classes": ["tenant_id", "provider", "period_key"],
-        "forbidden_columns": ["email", "full_name", "phone", "full_ip", "street_address", "device_id", "cross_device_identifier"],
+        "allowed_identifier_classes": [
+          "tenant_id",
+          "provider",
+          "period_key"
+        ],
+        "forbidden_columns": [
+          "email",
+          "full_name",
+          "phone",
+          "full_ip",
+          "street_address",
+          "device_id",
+          "cross_device_identifier"
+        ],
         "raw_provider_payload_posture": "forbidden",
         "tenant_isolation_requirement": "tenant_id_uuid_fk",
         "rls_requirement": "tenant_id_equals_current_setting_app_current_tenant_id",
@@ -211,7 +303,12 @@
       "value": 30,
       "unit": "minutes",
       "rationale": "Bounds expected post-capture webhook propagation delay before unmatched classification is allowed.",
-      "consuming_phases": ["P1", "P2", "P3", "P4"],
+      "consuming_phases": [
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
       "tenant_configurable_pre_launch": false,
       "state_transition_effect": "pending_to_unmatched_blocked_until_window_elapsed",
       "future_constants_module_name": "WEBHOOK_ARRIVAL_WINDOW"
@@ -220,7 +317,12 @@
       "value": 24,
       "unit": "hours",
       "rationale": "Allows asynchronous refund/chargeback signals before terminal confirmation.",
-      "consuming_phases": ["P1", "P2", "P3", "P4"],
+      "consuming_phases": [
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
       "tenant_configurable_pre_launch": false,
       "state_transition_effect": "provisional_to_confirmed_after_window_without_adjustments",
       "future_constants_module_name": "PROVISIONAL_MATCH_WINDOW"
@@ -229,7 +331,12 @@
       "value": 30,
       "unit": "days",
       "rationale": "Supports realistic post-confirmation refund and early chargeback correction windows.",
-      "consuming_phases": ["P1", "P2", "P3", "P4"],
+      "consuming_phases": [
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
       "tenant_configurable_pre_launch": false,
       "state_transition_effect": "confirmed_can_reopen_on_adjustment_events_within_window",
       "future_constants_module_name": "REFUND_REOPENING_WINDOW"
