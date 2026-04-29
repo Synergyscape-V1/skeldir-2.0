@@ -479,20 +479,27 @@ def downgrade() -> None:
 
     op.execute("DROP INDEX IF EXISTS public.idx_b23_webhook_ingestion_logs_tenant_status_received")
     op.execute("DROP INDEX IF EXISTS public.idx_b23_webhook_ingestion_logs_tenant_provider_received")
-    op.execute("DROP TABLE IF EXISTS public.b23_webhook_ingestion_logs")
+    op.execute(
+        "DROP TABLE IF EXISTS public.b23_webhook_ingestion_logs"
+    )  # CI:DESTRUCTIVE_OK - reversible downgrade for B2.3-P1 schema authority lock migration
 
     op.execute("DROP INDEX IF EXISTS public.idx_b23_revenue_events_tenant_provider_commerce_native")
     op.execute("DROP INDEX IF EXISTS public.idx_b23_revenue_events_tenant_provider_reference")
     op.execute("DROP INDEX IF EXISTS public.idx_b23_revenue_events_tenant_event_type_recorded")
-    op.execute("DROP TABLE IF EXISTS public.b23_revenue_events")
+    op.execute(
+        "DROP TABLE IF EXISTS public.b23_revenue_events"
+    )  # CI:DESTRUCTIVE_OK - reversible downgrade for B2.3-P1 schema authority lock migration
 
     op.execute("DROP INDEX IF EXISTS public.idx_b23_exception_records_tenant_provider_reference")
     op.execute("DROP INDEX IF EXISTS public.idx_b23_exception_records_tenant_status_severity")
-    op.execute("DROP TABLE IF EXISTS public.b23_exception_records")
+    op.execute(
+        "DROP TABLE IF EXISTS public.b23_exception_records"
+    )  # CI:DESTRUCTIVE_OK - reversible downgrade for B2.3-P1 schema authority lock migration
 
     op.execute("DROP INDEX IF EXISTS public.idx_b23_match_verdicts_tenant_state_timestamps")
     op.execute("DROP INDEX IF EXISTS public.idx_b23_match_verdicts_tenant_provider_commerce_native")
     op.execute("DROP INDEX IF EXISTS public.idx_b23_match_verdicts_tenant_provider_reference")
     op.execute("DROP INDEX IF EXISTS public.idx_b23_match_verdicts_tenant_status_transition")
-    op.execute("DROP TABLE IF EXISTS public.b23_match_verdicts")
-
+    op.execute(
+        "DROP TABLE IF EXISTS public.b23_match_verdicts"
+    )  # CI:DESTRUCTIVE_OK - reversible downgrade for B2.3-P1 schema authority lock migration

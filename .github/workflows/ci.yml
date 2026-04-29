@@ -359,6 +359,8 @@ jobs:
           pytest backend/tests/test_b23_p1_schema_authority_runtime.py -q
 
       - name: Verify B2.3-P1 migration reversibility
+        env:
+          B23_P1_MIGRATION_DSN: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
           python scripts/ci/verify_b23_p1_migration_reversibility.py
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -32,18 +33,18 @@ def _run_alembic(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _database_url_for_sync_pg() -> str:
-    dsn = os.getenv("MIGRATION_DATABASE_URL") or os.getenv("DATABASE_URL")
-    if not dsn:
-        raise RuntimeError("MIGRATION_DATABASE_URL or DATABASE_URL must be set")
+def _database_url_for_sync_pg(dsn_input: str) -> str:
+    if not dsn_input:
+        raise RuntimeError("B23_P1_MIGRATION_DSN is required")
+    dsn = dsn_input
     if dsn.startswith("postgresql+"):
         return dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
     return dsn
 
 
-def _capture_signature(sync_dsn: str) -> dict[str, Any]:
+def _capture_signature(database_dsn: str) -> dict[str, Any]:
     signature: dict[str, Any] = {"tables": {}, "indexes": {}, "policies": {}}
-    with psycopg2.connect(sync_dsn) as conn:
+    with psycopg2.connect(database_dsn) as conn:
         with conn.cursor() as cursor:
             for table in TARGET_TABLES:
                 cursor.execute(
@@ -84,7 +85,17 @@ def _capture_signature(sync_dsn: str) -> dict[str, Any]:
 
 
 def main() -> int:
-    sync_dsn = _database_url_for_sync_pg()
+    parser = argparse.ArgumentParser(description="Verify B2.3-P1 migration reversibility")
+    parser.add_argument(
+        "--migration-dsn",
+        default=os.getenv("B23_P1_MIGRATION_DSN", ""),
+        help="Synchronous psycopg2 DSN used for signature capture",
+    )
+    args = parser.parse_args()
+
+    sync_dsn = _database_url_for_sync_pg(args.migration_dsn)
+    if "MIGRATION_DATABASE_URL" not in os.environ:
+        os.environ["MIGRATION_DATABASE_URL"] = sync_dsn
 
     up_proc = _run_alembic("upgrade", "head")
     if up_proc.returncode != 0:
