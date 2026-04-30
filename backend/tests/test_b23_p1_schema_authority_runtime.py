@@ -41,6 +41,26 @@ async def _assert_table_exists(table_name: str) -> None:
         pytest.skip(message)
 
 
+async def _assert_column_presence(*, table_name: str, column_name: str, expected_present: bool) -> None:
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = :table_name
+                      AND column_name = :column_name
+                )
+                """
+            ),
+            {"table_name": table_name, "column_name": column_name},
+        )
+    is_present = bool(result.scalar())
+    assert is_present is expected_present
+
+
 @pytest.mark.asyncio
 async def test_b23_p1_exception_resolved_requires_resolution_code_db_constraint(test_tenant_pair) -> None:
     await _assert_table_exists("b23_exception_records")
@@ -62,6 +82,12 @@ async def test_b23_p1_exception_resolved_requires_resolution_code_db_constraint(
                     match_quality,
                     attributed_amount_minor,
                     verified_amount_minor,
+                    canonical_expected_gross_amount_minor,
+                    canonical_captured_gross_amount_minor,
+                    canonical_net_verified_amount_minor,
+                    discrepancy_amount_minor,
+                    discrepancy_ratio_bps,
+                    discrepancy_band,
                     currency_code
                 )
                 VALUES (
@@ -75,6 +101,12 @@ async def test_b23_p1_exception_resolved_requires_resolution_code_db_constraint(
                     :match_quality,
                     :attributed_amount_minor,
                     :verified_amount_minor,
+                    :canonical_expected_gross_amount_minor,
+                    :canonical_captured_gross_amount_minor,
+                    :canonical_net_verified_amount_minor,
+                    :discrepancy_amount_minor,
+                    :discrepancy_ratio_bps,
+                    :discrepancy_band,
                     :currency_code
                 )
                 """
@@ -90,6 +122,12 @@ async def test_b23_p1_exception_resolved_requires_resolution_code_db_constraint(
                 "match_quality": "high",
                 "attributed_amount_minor": 1200,
                 "verified_amount_minor": 1200,
+                "canonical_expected_gross_amount_minor": 1200,
+                "canonical_captured_gross_amount_minor": 1200,
+                "canonical_net_verified_amount_minor": 1200,
+                "discrepancy_amount_minor": 0,
+                "discrepancy_ratio_bps": 0,
+                "discrepancy_band": "exact",
                 "currency_code": "USD",
             },
         )
@@ -130,22 +168,25 @@ async def test_b23_p1_exception_resolved_requires_resolution_code_db_constraint(
 
 
 @pytest.mark.asyncio
-async def test_b23_p1_revenue_event_idempotency_is_db_enforced(test_tenant_pair) -> None:
+async def test_b23_p1_revenue_event_idempotency_and_operand_semantics_are_db_enforced(test_tenant_pair) -> None:
     await _assert_table_exists("b23_revenue_events")
     tenant_a, _ = test_tenant_pair
-    provider_event_reference = f"evt-{uuid4()}"
+    payload = {
+        "tenant_id": str(tenant_a),
+        "provider": "paypal",
+        "provider_native_event_reference": f"evt-{uuid4()}",
+        "provider_native_commerce_reference": f"txn-{uuid4()}",
+        "canonical_commerce_reference": f"order-{uuid4()}",
+        "event_type": "payment_capture",
+        "captured_amount_minor": 1550,
+        "refund_amount_minor": None,
+        "chargeback_amount_minor": None,
+        "reversal_amount_minor": None,
+        "net_effect_sign": 1,
+        "currency_code": "USD",
+    }
 
     async with get_session(tenant_a) as session:
-        payload = {
-            "tenant_id": str(tenant_a),
-            "provider": "paypal",
-            "provider_native_event_reference": provider_event_reference,
-            "provider_native_commerce_reference": f"txn-{uuid4()}",
-            "canonical_commerce_reference": f"order-{uuid4()}",
-            "event_type": "payment_capture",
-            "amount_minor": 1550,
-            "currency_code": "USD",
-        }
         await session.execute(
             text(
                 """
@@ -156,7 +197,11 @@ async def test_b23_p1_revenue_event_idempotency_is_db_enforced(test_tenant_pair)
                     provider_native_commerce_reference,
                     canonical_commerce_reference,
                     event_type,
-                    amount_minor,
+                    captured_amount_minor,
+                    refund_amount_minor,
+                    chargeback_amount_minor,
+                    reversal_amount_minor,
+                    net_effect_sign,
                     currency_code,
                     event_occurred_at
                 )
@@ -167,7 +212,11 @@ async def test_b23_p1_revenue_event_idempotency_is_db_enforced(test_tenant_pair)
                     :provider_native_commerce_reference,
                     :canonical_commerce_reference,
                     :event_type,
-                    :amount_minor,
+                    :captured_amount_minor,
+                    :refund_amount_minor,
+                    :chargeback_amount_minor,
+                    :reversal_amount_minor,
+                    :net_effect_sign,
                     :currency_code,
                     now()
                 )
@@ -186,7 +235,11 @@ async def test_b23_p1_revenue_event_idempotency_is_db_enforced(test_tenant_pair)
                         provider_native_commerce_reference,
                         canonical_commerce_reference,
                         event_type,
-                        amount_minor,
+                        captured_amount_minor,
+                        refund_amount_minor,
+                        chargeback_amount_minor,
+                        reversal_amount_minor,
+                        net_effect_sign,
                         currency_code,
                         event_occurred_at
                     )
@@ -197,13 +250,111 @@ async def test_b23_p1_revenue_event_idempotency_is_db_enforced(test_tenant_pair)
                         :provider_native_commerce_reference,
                         :canonical_commerce_reference,
                         :event_type,
-                        :amount_minor,
+                        :captured_amount_minor,
+                        :refund_amount_minor,
+                        :chargeback_amount_minor,
+                        :reversal_amount_minor,
+                        :net_effect_sign,
                         :currency_code,
                         now()
                     )
                     """
                 ),
                 payload,
+            )
+
+    async with get_session(tenant_a) as session:
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO b23_revenue_events (
+                        tenant_id,
+                        provider,
+                        provider_native_event_reference,
+                        provider_native_commerce_reference,
+                        canonical_commerce_reference,
+                        event_type,
+                        captured_amount_minor,
+                        refund_amount_minor,
+                        chargeback_amount_minor,
+                        reversal_amount_minor,
+                        net_effect_sign,
+                        currency_code,
+                        event_occurred_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :provider,
+                        :provider_native_event_reference,
+                        :provider_native_commerce_reference,
+                        :canonical_commerce_reference,
+                        'partial_refund',
+                        100,
+                        NULL,
+                        NULL,
+                        NULL,
+                        -1,
+                        :currency_code,
+                        now()
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "provider": "paypal",
+                    "provider_native_event_reference": f"evt-{uuid4()}",
+                    "provider_native_commerce_reference": f"txn-{uuid4()}",
+                    "canonical_commerce_reference": f"order-{uuid4()}",
+                    "currency_code": "USD",
+                },
+            )
+
+    async with get_session(tenant_a) as session:
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO b23_revenue_events (
+                        tenant_id,
+                        provider,
+                        provider_native_event_reference,
+                        provider_native_commerce_reference,
+                        canonical_commerce_reference,
+                        event_type,
+                        captured_amount_minor,
+                        refund_amount_minor,
+                        chargeback_amount_minor,
+                        reversal_amount_minor,
+                        net_effect_sign,
+                        currency_code,
+                        event_occurred_at
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :provider,
+                        :provider_native_event_reference,
+                        :provider_native_commerce_reference,
+                        :canonical_commerce_reference,
+                        'payment_capture',
+                        100,
+                        NULL,
+                        NULL,
+                        NULL,
+                        -1,
+                        :currency_code,
+                        now()
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_a),
+                    "provider": "stripe",
+                    "provider_native_event_reference": f"evt-{uuid4()}",
+                    "provider_native_commerce_reference": f"txn-{uuid4()}",
+                    "canonical_commerce_reference": f"order-{uuid4()}",
+                    "currency_code": "USD",
+                },
             )
 
 
@@ -304,3 +455,33 @@ async def test_b23_p1_tenant_rls_blocks_cross_tenant_visibility_and_missing_cont
                 },
             )
 
+
+@pytest.mark.asyncio
+async def test_b23_p1_lifecycle_function_and_split_operands_exist() -> None:
+    await _assert_table_exists("b23_revenue_events")
+    await _assert_column_presence(
+        table_name="b23_revenue_events",
+        column_name="amount_minor",
+        expected_present=False,
+    )
+    await _assert_column_presence(
+        table_name="b23_revenue_events",
+        column_name="captured_amount_minor",
+        expected_present=True,
+    )
+
+    async with engine.begin() as conn:
+        fn_result = await conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_proc p
+                    JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public'
+                      AND p.proname = 'fn_b23_p1_apply_lifecycle'
+                )
+                """
+            )
+        )
+        assert bool(fn_result.scalar()) is True
