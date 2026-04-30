@@ -147,6 +147,22 @@ def _canonical_discrepancy_ratio_bps(
     return int(ratio_bps)
 
 
+def _post_capture_revenue_operands(
+    *,
+    event_type: B23_POST_CAPTURE_EVENT_TYPE,
+    amount_minor: int,
+) -> tuple[int | None, int | None, int | None, int | None, int]:
+    if event_type in {"partial_refund", "full_refund"}:
+        return None, amount_minor, None, None, -1
+    if event_type == "chargeback_opened":
+        return None, None, amount_minor, None, 0
+    if event_type == "chargeback_lost":
+        return None, None, amount_minor, None, -1
+    if event_type == "chargeback_won":
+        return None, None, amount_minor, None, 1
+    raise ValueError("unsupported_post_capture_event_type")
+
+
 def classify_b23_discrepancy(
     *,
     attributed_amount_minor: int,
@@ -369,12 +385,13 @@ async def process_b23_capture_match(
                 provider_native_commerce_reference,
                 canonical_commerce_reference,
                 event_type,
-                amount_minor,
+                captured_amount_minor,
                 currency_code,
                 event_occurred_at,
                 recorded_at,
                 created_at,
-                updated_at
+                updated_at,
+                net_effect_sign
             )
             VALUES (
                 :tenant_id,
@@ -385,12 +402,13 @@ async def process_b23_capture_match(
                 :provider_native_commerce_reference,
                 :canonical_commerce_reference,
                 'payment_capture',
-                :amount_minor,
+                :captured_amount_minor,
                 :currency_code,
                 :event_occurred_at,
                 :recorded_at,
                 :created_at,
-                :updated_at
+                :updated_at,
+                1
             )
             ON CONFLICT (tenant_id, provider, provider_native_event_reference)
             DO NOTHING
@@ -409,7 +427,7 @@ async def process_b23_capture_match(
             "provider_native_event_reference": match_input.provider_native_event_reference,
             "provider_native_commerce_reference": match_input.provider_native_commerce_reference,
             "canonical_commerce_reference": precedence.canonical_reference,
-            "amount_minor": extracted.amount_minor,
+            "captured_amount_minor": extracted.amount_minor,
             "currency_code": verified_currency,
             "event_occurred_at": event_occurred_at,
             "recorded_at": event_occurred_at,
@@ -627,6 +645,17 @@ async def register_b23_post_capture_event(
         await _insert_unresolved_post_capture_failure(session, post_capture_input)
         return False
 
+    (
+        captured_amount_minor,
+        refund_amount_minor,
+        chargeback_amount_minor,
+        reversal_amount_minor,
+        net_effect_sign,
+    ) = _post_capture_revenue_operands(
+        event_type=post_capture_input.event_type,
+        amount_minor=post_capture_input.amount_minor,
+    )
+
     await session.execute(
         text(
             """
@@ -638,7 +667,11 @@ async def register_b23_post_capture_event(
                 provider_native_commerce_reference,
                 canonical_commerce_reference,
                 event_type,
-                amount_minor,
+                captured_amount_minor,
+                refund_amount_minor,
+                chargeback_amount_minor,
+                reversal_amount_minor,
+                net_effect_sign,
                 currency_code,
                 event_occurred_at,
                 recorded_at,
@@ -653,7 +686,11 @@ async def register_b23_post_capture_event(
                 :provider_native_commerce_reference,
                 :canonical_commerce_reference,
                 :event_type,
-                :amount_minor,
+                :captured_amount_minor,
+                :refund_amount_minor,
+                :chargeback_amount_minor,
+                :reversal_amount_minor,
+                :net_effect_sign,
                 :currency_code,
                 :event_occurred_at,
                 :recorded_at,
@@ -672,7 +709,11 @@ async def register_b23_post_capture_event(
             "provider_native_commerce_reference": post_capture_input.provider_native_commerce_reference,
             "canonical_commerce_reference": str(canonical_reference),
             "event_type": post_capture_input.event_type,
-            "amount_minor": post_capture_input.amount_minor,
+            "captured_amount_minor": captured_amount_minor,
+            "refund_amount_minor": refund_amount_minor,
+            "chargeback_amount_minor": chargeback_amount_minor,
+            "reversal_amount_minor": reversal_amount_minor,
+            "net_effect_sign": net_effect_sign,
             "currency_code": post_capture_input.currency_code.strip().upper(),
             "event_occurred_at": timestamp,
             "recorded_at": timestamp,
