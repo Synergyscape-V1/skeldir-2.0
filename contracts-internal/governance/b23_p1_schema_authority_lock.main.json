@@ -1,19 +1,21 @@
 {
   "contract_id": "b23.p1.schema_authority_lock.main",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.3-P1",
-  "description": "B2.3-P1 schema authority substrate lock for deterministic match-input persistence.",
+  "description": "B2.3-P1 follow-up corrective schema authority closure for lifecycle, financial operands, discrepancy persistence, and P2 write-surface readiness.",
   "inherits_from": {
     "b23_p0_semantic_authority_freeze_contract": "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json",
     "b23_pre_p1_spec_gate_contract": "contracts-internal/governance/b23_pre_p1_spec_gate.main.json"
   },
   "schema_surfaces": {
-    "migration_file": "alembic/versions/007_skeldir_foundation/202604291200_b23_p1_schema_authority_lock.py",
+    "base_migration_file": "alembic/versions/007_skeldir_foundation/202604291200_b23_p1_schema_authority_lock.py",
+    "corrective_migration_file": "alembic/versions/007_skeldir_foundation/202604301030_b23_p1_followup_lifecycle_operands.py",
     "canonical_schema_file": "db/schema/canonical_schema.sql",
     "timing_constants_module": "backend/app/revenue_verification/timing_constants.py",
-    "enforcer_file": "scripts/ci/enforce_b23_p1_schema_authority_lock.py"
+    "enforcer_file": "scripts/ci/enforce_b23_p1_schema_authority_lock.py",
+    "reversibility_script_file": "scripts/ci/verify_b23_p1_migration_reversibility.py"
   },
   "match_verdict": {
     "table": "b23_match_verdicts",
@@ -73,6 +75,222 @@
       "received_at"
     ]
   },
+  "lifecycle_requirements": {
+    "mechanism": "database_native_pg_cron_function",
+    "function_name": "fn_b23_p1_apply_lifecycle",
+    "schedule": "30 3 * * *",
+    "job_name": "b23_p1_apply_lifecycle_daily",
+    "activity_independent_enforcement": true,
+    "batch_size": 5000,
+    "tables": {
+      "b23_webhook_ingestion_logs": {
+        "lifecycle_class": "telemetry_operational",
+        "retention_days": 365,
+        "prune_timestamp_column": "received_at",
+        "retention_rationale": "Operational telemetry retained for bounded incident forensics without raw-payload authority."
+      },
+      "b23_exception_records": {
+        "lifecycle_class": "financial_audit_workflow",
+        "retention_days": 1825,
+        "prune_timestamp_column": "raised_at",
+        "retention_rationale": "Exception adjudication evidence retained for financial/audit traceability with bounded lifespan."
+      },
+      "b23_match_verdicts": {
+        "lifecycle_class": "financial_verification_outcome",
+        "retention_days": 1825,
+        "prune_timestamp_column": "created_at",
+        "retention_rationale": "Deterministic verification outcomes retained for audit windows then pruned by governed DB lifecycle."
+      },
+      "b23_revenue_events": {
+        "lifecycle_class": "financial_adjustment_ledger",
+        "retention_days": 2555,
+        "prune_timestamp_column": "event_occurred_at",
+        "retention_rationale": "Post-capture adjustment evidence retained for longer financial lookback obligations with bounded expiry."
+      }
+    },
+    "forbidden_primary_mechanisms": [
+      "application_server_cron",
+      "github_actions_cleanup",
+      "external_worker_primary_cleanup",
+      "comment_only_lifecycle"
+    ]
+  },
+  "financial_operand_requirements": {
+    "money_unit": "integer_minor_units",
+    "currency_binding_column": "currency_code",
+    "forbidden_unresolved_generic_money_columns": [
+      "amount_minor"
+    ],
+    "forbidden_float_or_decimal_authority": true
+  },
+  "match_verdict_operand_requirements": {
+    "expected_gross_column": "canonical_expected_gross_amount_minor",
+    "captured_gross_column": "canonical_captured_gross_amount_minor",
+    "net_verified_column": "canonical_net_verified_amount_minor",
+    "discrepancy_amount_column": "discrepancy_amount_minor",
+    "discrepancy_ratio_column": "discrepancy_ratio_bps",
+    "discrepancy_ratio_unit": "basis_points",
+    "discrepancy_band_column": "discrepancy_band",
+    "discrepancy_band_values": [
+      "exact",
+      "within_tolerance",
+      "over_tolerance",
+      "severe_gap"
+    ]
+  },
+  "revenue_event_operand_requirements": {
+    "columns": {
+      "payment_capture": {
+        "amount_column": "captured_amount_minor",
+        "net_effect_sign": 1,
+        "amount_semantics": "absolute_credit"
+      },
+      "partial_refund": {
+        "amount_column": "refund_amount_minor",
+        "net_effect_sign": -1,
+        "amount_semantics": "absolute_debit"
+      },
+      "full_refund": {
+        "amount_column": "refund_amount_minor",
+        "net_effect_sign": -1,
+        "amount_semantics": "absolute_debit"
+      },
+      "chargeback_opened": {
+        "amount_column": "chargeback_amount_minor",
+        "net_effect_sign": 0,
+        "amount_semantics": "status_only_pending_amount"
+      },
+      "chargeback_won": {
+        "amount_column": "chargeback_amount_minor",
+        "net_effect_sign": 1,
+        "amount_semantics": "absolute_credit"
+      },
+      "chargeback_lost": {
+        "amount_column": "chargeback_amount_minor",
+        "net_effect_sign": -1,
+        "amount_semantics": "absolute_debit"
+      },
+      "reversal": {
+        "amount_column": "reversal_amount_minor",
+        "net_effect_sign": 1,
+        "amount_semantics": "absolute_credit"
+      }
+    },
+    "sign_column": "net_effect_sign",
+    "required_amount_columns": [
+      "captured_amount_minor",
+      "refund_amount_minor",
+      "chargeback_amount_minor",
+      "reversal_amount_minor"
+    ]
+  },
+  "discrepancy_persistence_requirements": {
+    "required_columns": [
+      "discrepancy_amount_minor",
+      "discrepancy_ratio_bps",
+      "discrepancy_band"
+    ],
+    "required_indexes": [
+      "idx_b23_match_verdicts_tenant_discrepancy_band",
+      "idx_b23_match_verdicts_tenant_discrepancy_ratio_bps"
+    ]
+  },
+  "p2_write_surface_requirements": {
+    "match_verdict_status": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.status"
+    },
+    "match_quality": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.match_quality"
+    },
+    "canonical_expected_gross_amount_minor": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.canonical_expected_gross_amount_minor"
+    },
+    "canonical_captured_gross_amount_minor": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.canonical_captured_gross_amount_minor"
+    },
+    "canonical_net_verified_amount_minor": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.canonical_net_verified_amount_minor"
+    },
+    "discrepancy_amount_minor": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.discrepancy_amount_minor"
+    },
+    "discrepancy_ratio_bps": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.discrepancy_ratio_bps"
+    },
+    "discrepancy_band": {
+      "classification": "materialized_indexed_telemetry",
+      "destination": "b23_match_verdicts.discrepancy_band"
+    },
+    "provisional_expires_at": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.provisional_expires_at"
+    },
+    "confirmed_at": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.confirmed_at"
+    },
+    "unmatched_marked_at": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.unmatched_marked_at"
+    },
+    "adjusted_at": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_match_verdicts.adjusted_at"
+    },
+    "revenue_event_adjustment_amount": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_revenue_events.[captured_amount_minor|refund_amount_minor|chargeback_amount_minor|reversal_amount_minor]"
+    },
+    "exception_creation_basis": {
+      "classification": "persisted_canonical_column",
+      "destination": "b23_exception_records.[status|severity|resolution_code|raised_at]"
+    }
+  },
+  "deterministic_db_object_name_requirements": {
+    "require_explicit_deterministic_names": true,
+    "required_named_constraints": [
+      "ck_b23_match_verdicts_status",
+      "ck_b23_match_verdicts_match_quality",
+      "uq_b23_match_verdicts_tenant_provider_event_ref",
+      "ck_b23_exception_records_resolution_code_required",
+      "ck_b23_revenue_events_event_type",
+      "uq_b23_revenue_events_tenant_provider_event_ref",
+      "ck_b23_revenue_events_operand_columns_by_event_type",
+      "ck_b23_revenue_events_split_operand_exactly_one_non_null",
+      "ck_b23_revenue_events_net_effect_sign",
+      "ck_b23_revenue_events_net_effect_sign_by_event_type",
+      "ck_b23_match_verdicts_discrepancy_amount_consistency",
+      "ck_b23_match_verdicts_discrepancy_ratio_consistency",
+      "ck_b23_match_verdicts_discrepancy_band",
+      "ck_b23_match_verdicts_discrepancy_ratio_range"
+    ],
+    "required_named_indexes": [
+      "idx_b23_match_verdicts_tenant_status_transition",
+      "idx_b23_match_verdicts_tenant_discrepancy_band",
+      "idx_b23_match_verdicts_tenant_discrepancy_ratio_bps",
+      "idx_b23_revenue_events_tenant_event_effect_sign",
+      "idx_b23_revenue_events_tenant_provider_reference"
+    ],
+    "required_named_policies": [
+      "tenant_isolation_policy_b23_match_verdicts",
+      "tenant_isolation_policy_b23_exception_records",
+      "tenant_isolation_policy_b23_revenue_events",
+      "tenant_isolation_policy_b23_webhook_ingestion_logs"
+    ],
+    "required_named_functions": [
+      "fn_b23_p1_apply_lifecycle"
+    ],
+    "required_named_jobs": [
+      "b23_p1_apply_lifecycle_daily"
+    ]
+  },
   "timing_constants": {
     "WEBHOOK_ARRIVAL_WINDOW": {
       "value": 30,
@@ -100,4 +318,3 @@
     "python scripts/ci/verify_b23_p1_migration_reversibility.py"
   ]
 }
-

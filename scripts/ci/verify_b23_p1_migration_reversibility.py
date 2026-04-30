@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
-import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +20,13 @@ TARGET_TABLES = (
     "b23_exception_records",
     "b23_revenue_events",
     "b23_webhook_ingestion_logs",
+)
+TARGET_FUNCTIONS = ("fn_b23_p1_apply_lifecycle",)
+TARGET_POLICIES = (
+    "tenant_isolation_policy_b23_match_verdicts",
+    "tenant_isolation_policy_b23_exception_records",
+    "tenant_isolation_policy_b23_revenue_events",
+    "tenant_isolation_policy_b23_webhook_ingestion_logs",
 )
 
 
@@ -43,7 +50,15 @@ def _database_url_for_sync_pg(dsn_input: str) -> str:
 
 
 def _capture_signature(database_dsn: str) -> dict[str, Any]:
-    signature: dict[str, Any] = {"tables": {}, "indexes": {}, "policies": {}}
+    signature: dict[str, Any] = {
+        "tables": {},
+        "indexes": {},
+        "policies": {},
+        "constraints": {},
+        "force_rls": {},
+        "functions": {},
+        "cron_jobs": [],
+    }
     with psycopg2.connect(database_dsn) as conn:
         with conn.cursor() as cursor:
             for table in TARGET_TABLES:
@@ -71,6 +86,19 @@ def _capture_signature(database_dsn: str) -> dict[str, Any]:
 
                 cursor.execute(
                     """
+                    SELECT conname, contype, pg_get_constraintdef(c.oid)
+                    FROM pg_constraint c
+                    JOIN pg_class t ON t.oid = c.conrelid
+                    JOIN pg_namespace n ON n.oid = t.relnamespace
+                    WHERE n.nspname = 'public' AND t.relname = %s
+                    ORDER BY conname
+                    """,
+                    (table,),
+                )
+                signature["constraints"][table] = cursor.fetchall()
+
+                cursor.execute(
+                    """
                     SELECT polname, pg_get_expr(polqual, polrelid), pg_get_expr(polwithcheck, polrelid)
                     FROM pg_policy
                     JOIN pg_class ON pg_class.oid = pg_policy.polrelid
@@ -80,7 +108,53 @@ def _capture_signature(database_dsn: str) -> dict[str, Any]:
                     """,
                     (table,),
                 )
-                signature["policies"][table] = cursor.fetchall()
+                policies = cursor.fetchall()
+                signature["policies"][table] = policies
+
+                cursor.execute(
+                    """
+                    SELECT relrowsecurity, relforcerowsecurity
+                    FROM pg_class
+                    JOIN pg_namespace n ON n.oid = pg_class.relnamespace
+                    WHERE n.nspname = 'public' AND relname = %s
+                    """,
+                    (table,),
+                )
+                row = cursor.fetchone()
+                signature["force_rls"][table] = row
+
+            for policy_name in TARGET_POLICIES:
+                if not any(policy_name == pol[0] for table in signature["policies"].values() for pol in table):
+                    signature["policies"].setdefault("missing", []).append(policy_name)
+
+            for function_name in TARGET_FUNCTIONS:
+                cursor.execute(
+                    """
+                    SELECT
+                        p.proname,
+                        pg_get_function_identity_arguments(p.oid),
+                        pg_get_functiondef(p.oid)
+                    FROM pg_proc p
+                    JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public' AND p.proname = %s
+                    ORDER BY p.proname
+                    """,
+                    (function_name,),
+                )
+                signature["functions"][function_name] = cursor.fetchall()
+
+            cursor.execute("SELECT to_regnamespace('cron')")
+            cron_ns = cursor.fetchone()
+            if cron_ns and cron_ns[0] is not None:
+                cursor.execute(
+                    """
+                    SELECT jobname, schedule, command
+                    FROM cron.job
+                    WHERE jobname = 'b23_p1_apply_lifecycle_daily'
+                    ORDER BY jobname
+                    """
+                )
+                signature["cron_jobs"] = cursor.fetchall()
     return signature
 
 

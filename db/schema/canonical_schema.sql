@@ -254,6 +254,78 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger()
             END;
             $$;
 
+CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000) RETURNS TABLE(table_name text, deleted_rows integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+            DECLARE
+                effective_limit integer := GREATEST(1, COALESCE(max_delete, 5000));
+                removed integer := 0;
+            BEGIN
+                WITH doomed AS (
+                    SELECT id
+                    FROM public.b23_webhook_ingestion_logs
+                    WHERE received_at < (now() - interval '365 days')
+                    ORDER BY received_at
+                    LIMIT effective_limit
+                )
+                DELETE FROM public.b23_webhook_ingestion_logs target
+                USING doomed
+                WHERE target.id = doomed.id;
+                GET DIAGNOSTICS removed = ROW_COUNT;
+                table_name := 'b23_webhook_ingestion_logs';
+                deleted_rows := removed;
+                RETURN NEXT;
+
+                WITH doomed AS (
+                    SELECT id
+                    FROM public.b23_exception_records
+                    WHERE raised_at < (now() - interval '1825 days')
+                    ORDER BY raised_at
+                    LIMIT effective_limit
+                )
+                DELETE FROM public.b23_exception_records target
+                USING doomed
+                WHERE target.id = doomed.id;
+                GET DIAGNOSTICS removed = ROW_COUNT;
+                table_name := 'b23_exception_records';
+                deleted_rows := removed;
+                RETURN NEXT;
+
+                WITH doomed AS (
+                    SELECT id
+                    FROM public.b23_match_verdicts
+                    WHERE created_at < (now() - interval '1825 days')
+                    ORDER BY created_at
+                    LIMIT effective_limit
+                )
+                DELETE FROM public.b23_match_verdicts target
+                USING doomed
+                WHERE target.id = doomed.id;
+                GET DIAGNOSTICS removed = ROW_COUNT;
+                table_name := 'b23_match_verdicts';
+                deleted_rows := removed;
+                RETURN NEXT;
+
+                WITH doomed AS (
+                    SELECT id
+                    FROM public.b23_revenue_events
+                    WHERE event_occurred_at < (now() - interval '2555 days')
+                    ORDER BY event_occurred_at
+                    LIMIT effective_limit
+                )
+                DELETE FROM public.b23_revenue_events target
+                USING doomed
+                WHERE target.id = doomed.id;
+                GET DIAGNOSTICS removed = ROW_COUNT;
+                table_name := 'b23_revenue_events';
+                deleted_rows := removed;
+                RETURN NEXT;
+
+                RETURN;
+            END;
+            $$;
+
 CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -920,6 +992,12 @@ CREATE TABLE public.b23_match_verdicts (
     match_quality character varying(16) NOT NULL,
     attributed_amount_minor integer NOT NULL,
     verified_amount_minor integer NOT NULL,
+    canonical_expected_gross_amount_minor integer NOT NULL,
+    canonical_captured_gross_amount_minor integer NOT NULL,
+    canonical_net_verified_amount_minor integer NOT NULL,
+    discrepancy_amount_minor integer NOT NULL,
+    discrepancy_ratio_bps integer NOT NULL,
+    discrepancy_band character varying(32) NOT NULL,
     currency_code character(3) NOT NULL,
     pending_since timestamp with time zone DEFAULT now() NOT NULL,
     provisional_expires_at timestamp with time zone,
@@ -937,7 +1015,16 @@ CREATE TABLE public.b23_match_verdicts (
     CONSTRAINT ck_b23_match_verdicts_provider_event_reference_not_blank CHECK ((char_length((provider_native_event_reference)::text) > 0)),
     CONSTRAINT ck_b23_match_verdicts_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
     CONSTRAINT ck_b23_match_verdicts_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]))),
-    CONSTRAINT ck_b23_match_verdicts_verified_amount_non_negative CHECK ((verified_amount_minor >= 0))
+    CONSTRAINT ck_b23_match_verdicts_verified_amount_non_negative CHECK ((verified_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_expected_amount_non_negative CHECK ((canonical_expected_gross_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_captured_amount_non_negative CHECK ((canonical_captured_gross_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_net_amount_non_negative CHECK ((canonical_net_verified_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_band CHECK (((discrepancy_band)::text = ANY ((ARRAY['exact'::character varying, 'within_tolerance'::character varying, 'over_tolerance'::character varying, 'severe_gap'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_ratio_range CHECK ((discrepancy_ratio_bps >= '-1000000'::integer) AND (discrepancy_ratio_bps <= 1000000)),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_amount_consistency CHECK ((discrepancy_amount_minor = (canonical_expected_gross_amount_minor - canonical_net_verified_amount_minor))),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_ratio_consistency CHECK ((discrepancy_ratio_bps = CASE WHEN (canonical_expected_gross_amount_minor = 0) THEN 0 ELSE ((discrepancy_amount_minor * 10000) / canonical_expected_gross_amount_minor) END)),
+    CONSTRAINT ck_b23_match_verdicts_expected_matches_legacy CHECK ((canonical_expected_gross_amount_minor = attributed_amount_minor)),
+    CONSTRAINT ck_b23_match_verdicts_captured_matches_legacy CHECK ((canonical_captured_gross_amount_minor = verified_amount_minor))
 );
 
 ALTER TABLE ONLY public.b23_match_verdicts FORCE ROW LEVEL SECURITY;
@@ -952,13 +1039,24 @@ CREATE TABLE public.b23_revenue_events (
     provider_native_commerce_reference character varying(255) NOT NULL,
     canonical_commerce_reference character varying(255) NOT NULL,
     event_type character varying(32) NOT NULL,
-    amount_minor integer NOT NULL,
+    captured_amount_minor integer,
+    refund_amount_minor integer,
+    chargeback_amount_minor integer,
+    reversal_amount_minor integer,
+    net_effect_sign smallint NOT NULL,
     currency_code character(3) NOT NULL,
     event_occurred_at timestamp with time zone NOT NULL,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_b23_revenue_events_amount_non_negative CHECK ((amount_minor >= 0)),
+    CONSTRAINT ck_b23_revenue_events_captured_amount_non_negative CHECK (((captured_amount_minor IS NULL) OR (captured_amount_minor >= 0))),
+    CONSTRAINT ck_b23_revenue_events_refund_amount_non_negative CHECK (((refund_amount_minor IS NULL) OR (refund_amount_minor >= 0))),
+    CONSTRAINT ck_b23_revenue_events_chargeback_amount_non_negative CHECK (((chargeback_amount_minor IS NULL) OR (chargeback_amount_minor >= 0))),
+    CONSTRAINT ck_b23_revenue_events_reversal_amount_non_negative CHECK (((reversal_amount_minor IS NULL) OR (reversal_amount_minor >= 0))),
+    CONSTRAINT ck_b23_revenue_events_net_effect_sign CHECK ((net_effect_sign = ANY (ARRAY['-1'::integer, 0, 1]))),
+    CONSTRAINT ck_b23_revenue_events_net_effect_sign_by_event_type CHECK ((((event_type)::text = 'payment_capture'::text) AND (net_effect_sign = 1)) OR (((event_type)::text = ANY ((ARRAY['partial_refund'::character varying, 'full_refund'::character varying])::text[])) AND (net_effect_sign = '-1'::integer)) OR (((event_type)::text = 'chargeback_opened'::text) AND (net_effect_sign = 0)) OR (((event_type)::text = 'chargeback_lost'::text) AND (net_effect_sign = '-1'::integer)) OR (((event_type)::text = ANY ((ARRAY['chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (net_effect_sign = 1))),
+    CONSTRAINT ck_b23_revenue_events_split_operand_exactly_one_non_null CHECK (((CASE WHEN (captured_amount_minor IS NULL) THEN 0 ELSE 1 END + CASE WHEN (refund_amount_minor IS NULL) THEN 0 ELSE 1 END) + CASE WHEN (chargeback_amount_minor IS NULL) THEN 0 ELSE 1 END + CASE WHEN (reversal_amount_minor IS NULL) THEN 0 ELSE 1 END) = 1),
+    CONSTRAINT ck_b23_revenue_events_operand_columns_by_event_type CHECK ((((event_type)::text = 'payment_capture'::text) AND (captured_amount_minor IS NOT NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = ANY ((ARRAY['partial_refund'::character varying, 'full_refund'::character varying])::text[])) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NOT NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = ANY ((ARRAY['chargeback_opened'::character varying, 'chargeback_won'::character varying, 'chargeback_lost'::character varying])::text[])) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NOT NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = 'reversal'::text) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NOT NULL))),
     CONSTRAINT ck_b23_revenue_events_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
     CONSTRAINT ck_b23_revenue_events_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
     CONSTRAINT ck_b23_revenue_events_event_type CHECK (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_opened'::character varying, 'chargeback_won'::character varying, 'chargeback_lost'::character varying, 'reversal'::character varying])::text[]))),
@@ -2329,6 +2427,10 @@ CREATE INDEX idx_b23_match_verdicts_tenant_provider_commerce_native ON public.b2
 
 CREATE INDEX idx_b23_match_verdicts_tenant_provider_reference ON public.b23_match_verdicts USING btree (tenant_id, provider, canonical_commerce_reference);
 
+CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_band ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_band, last_transition_at DESC);
+
+CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_ratio_bps ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_ratio_bps, last_transition_at DESC);
+
 CREATE INDEX idx_b23_match_verdicts_tenant_state_timestamps ON public.b23_match_verdicts USING btree (tenant_id, pending_since, provisional_expires_at, confirmed_at, unmatched_marked_at, adjusted_at);
 
 CREATE INDEX idx_b23_match_verdicts_tenant_status_transition ON public.b23_match_verdicts USING btree (tenant_id, status, last_transition_at DESC);
@@ -2338,6 +2440,8 @@ CREATE INDEX idx_b23_revenue_events_tenant_event_type_recorded ON public.b23_rev
 CREATE INDEX idx_b23_revenue_events_tenant_provider_commerce_native ON public.b23_revenue_events USING btree (tenant_id, provider, provider_native_commerce_reference);
 
 CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_revenue_events USING btree (tenant_id, provider, canonical_commerce_reference, event_occurred_at DESC);
+
+CREATE INDEX idx_b23_revenue_events_tenant_event_effect_sign ON public.b23_revenue_events USING btree (tenant_id, event_type, net_effect_sign, event_occurred_at DESC);
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
 
@@ -3028,4 +3132,3 @@ ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
 
 
 -- b21_p3_guard_token: aa.recompute_job_id IS NULL
-
