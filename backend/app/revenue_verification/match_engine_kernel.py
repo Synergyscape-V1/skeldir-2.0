@@ -132,6 +132,21 @@ def _canonical_discrepancy_ratio(
     return (Decimal(delta) / Decimal(baseline)).quantize(Decimal("0.0001"))
 
 
+def _canonical_discrepancy_ratio_bps(
+    *,
+    canonical_expected_gross_amount_minor: int,
+    discrepancy_amount_minor: int,
+) -> int:
+    if canonical_expected_gross_amount_minor == 0:
+        return 0
+    ratio_bps = (
+        Decimal(discrepancy_amount_minor)
+        * Decimal("10000")
+        / Decimal(canonical_expected_gross_amount_minor)
+    )
+    return int(ratio_bps)
+
+
 def classify_b23_discrepancy(
     *,
     attributed_amount_minor: int,
@@ -224,6 +239,16 @@ async def process_b23_capture_match(
         discrepancy_ratio=ratio,
         conversion_to_event_delta=(event_occurred_at - conversion_occurred_at),
     )
+    canonical_expected_gross_amount_minor = match_input.attributed_amount_minor
+    canonical_captured_gross_amount_minor = extracted.amount_minor
+    canonical_net_verified_amount_minor = extracted.amount_minor
+    discrepancy_amount_minor = (
+        canonical_expected_gross_amount_minor - canonical_net_verified_amount_minor
+    )
+    discrepancy_ratio_bps = _canonical_discrepancy_ratio_bps(
+        canonical_expected_gross_amount_minor=canonical_expected_gross_amount_minor,
+        discrepancy_amount_minor=discrepancy_amount_minor,
+    )
 
     verdict_result = await session.execute(
         text(
@@ -245,7 +270,13 @@ async def process_b23_capture_match(
                 provisional_expires_at,
                 last_transition_at,
                 created_at,
-                updated_at
+                updated_at,
+                canonical_expected_gross_amount_minor,
+                canonical_captured_gross_amount_minor,
+                canonical_net_verified_amount_minor,
+                discrepancy_amount_minor,
+                discrepancy_ratio_bps,
+                discrepancy_band
             )
             VALUES (
                 :tenant_id,
@@ -264,7 +295,13 @@ async def process_b23_capture_match(
                 :provisional_expires_at,
                 :last_transition_at,
                 :created_at,
-                :updated_at
+                :updated_at,
+                :canonical_expected_gross_amount_minor,
+                :canonical_captured_gross_amount_minor,
+                :canonical_net_verified_amount_minor,
+                :discrepancy_amount_minor,
+                :discrepancy_ratio_bps,
+                :discrepancy_band
             )
             ON CONFLICT (tenant_id, provider, provider_native_event_reference)
             DO UPDATE SET
@@ -275,6 +312,12 @@ async def process_b23_capture_match(
                 verified_amount_minor = EXCLUDED.verified_amount_minor,
                 currency_code = EXCLUDED.currency_code,
                 provisional_expires_at = EXCLUDED.provisional_expires_at,
+                canonical_expected_gross_amount_minor = EXCLUDED.canonical_expected_gross_amount_minor,
+                canonical_captured_gross_amount_minor = EXCLUDED.canonical_captured_gross_amount_minor,
+                canonical_net_verified_amount_minor = EXCLUDED.canonical_net_verified_amount_minor,
+                discrepancy_amount_minor = EXCLUDED.discrepancy_amount_minor,
+                discrepancy_ratio_bps = EXCLUDED.discrepancy_ratio_bps,
+                discrepancy_band = EXCLUDED.discrepancy_band,
                 updated_at = EXCLUDED.updated_at
             RETURNING id
             """
@@ -304,6 +347,12 @@ async def process_b23_capture_match(
             "last_transition_at": event_occurred_at,
             "created_at": event_occurred_at,
             "updated_at": event_occurred_at,
+            "canonical_expected_gross_amount_minor": canonical_expected_gross_amount_minor,
+            "canonical_captured_gross_amount_minor": canonical_captured_gross_amount_minor,
+            "canonical_net_verified_amount_minor": canonical_net_verified_amount_minor,
+            "discrepancy_amount_minor": discrepancy_amount_minor,
+            "discrepancy_ratio_bps": discrepancy_ratio_bps,
+            "discrepancy_band": discrepancy_class.value,
         },
     )
     verdict_id = UUID(str(verdict_result.scalar_one()))
@@ -407,7 +456,13 @@ async def _insert_unresolved_post_capture_failure(
                 pending_since,
                 last_transition_at,
                 created_at,
-                updated_at
+                updated_at,
+                canonical_expected_gross_amount_minor,
+                canonical_captured_gross_amount_minor,
+                canonical_net_verified_amount_minor,
+                discrepancy_amount_minor,
+                discrepancy_ratio_bps,
+                discrepancy_band
             )
             VALUES (
                 :tenant_id,
@@ -423,7 +478,13 @@ async def _insert_unresolved_post_capture_failure(
                 :pending_since,
                 :last_transition_at,
                 :created_at,
-                :updated_at
+                :updated_at,
+                0,
+                0,
+                0,
+                0,
+                0,
+                'exact'
             )
             ON CONFLICT (tenant_id, provider, provider_native_event_reference)
             DO UPDATE SET updated_at = EXCLUDED.updated_at
@@ -671,7 +732,13 @@ async def seed_pending_match_verdict(
                 pending_since,
                 last_transition_at,
                 created_at,
-                updated_at
+                updated_at,
+                canonical_expected_gross_amount_minor,
+                canonical_captured_gross_amount_minor,
+                canonical_net_verified_amount_minor,
+                discrepancy_amount_minor,
+                discrepancy_ratio_bps,
+                discrepancy_band
             )
             VALUES (
                 :tenant_id,
@@ -687,7 +754,13 @@ async def seed_pending_match_verdict(
                 :pending_since,
                 :last_transition_at,
                 :created_at,
-                :updated_at
+                :updated_at,
+                0,
+                0,
+                0,
+                0,
+                0,
+                'exact'
             )
             ON CONFLICT (tenant_id, provider, provider_native_event_reference)
             DO UPDATE SET
