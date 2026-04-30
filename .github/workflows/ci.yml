@@ -364,6 +364,18 @@ jobs:
         run: |
           python scripts/ci/verify_b23_p1_migration_reversibility.py
 
+      - name: Enforce B2.3-P2 match-engine kernel lock
+        run: |
+          python scripts/ci/enforce_b23_p2_match_engine_kernel.py
+
+      - name: Run B2.3-P2 match-engine kernel negative controls
+        run: |
+          pytest backend/tests/test_b23_p2_match_engine_kernel_enforcer.py -q
+
+      - name: Run B2.3-P2 match-engine kernel runtime proofs
+        run: |
+          pytest backend/tests/test_b23_p2_match_engine_kernel.py -q
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q

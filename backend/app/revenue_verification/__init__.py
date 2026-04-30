@@ -1,5 +1,30 @@
 """B2.3 revenue verification semantic authority package."""
 
+from .extraction_registry import (
+    B23ProviderKey,
+    B23_REVENUE_EXTRACTOR_REGISTRY,
+    DecimalMajorRevenueExtractionInput,
+    ExtractedRevenue,
+    PersistedIngressExtractionInput,
+    RevenueExtractionInput,
+    StripeRevenueExtractionInput,
+    SUPPORTED_B23_PROVIDERS,
+    extract_revenue_from_typed_input,
+)
+from .match_engine_kernel import (
+    B23CaptureMatchInput,
+    B23MatchKernelOutcome,
+    B23PostCaptureInput,
+    B23_POST_CAPTURE_HANDLER_REGISTRY,
+    build_persisted_ingress_revenue_input,
+    classify_b23_discrepancy,
+    classify_b23_match_quality,
+    classify_stale_pending_as_unmatched,
+    discrepancy_ratio_percent,
+    process_b23_capture_match,
+    register_b23_post_capture_event,
+    seed_pending_match_verdict,
+)
 from .semantic_authority import (
     ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS,
     ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS,
@@ -31,6 +56,27 @@ from .timing_constants import (
 )
 
 __all__ = [
+    "B23ProviderKey",
+    "SUPPORTED_B23_PROVIDERS",
+    "ExtractedRevenue",
+    "PersistedIngressExtractionInput",
+    "StripeRevenueExtractionInput",
+    "DecimalMajorRevenueExtractionInput",
+    "RevenueExtractionInput",
+    "B23_REVENUE_EXTRACTOR_REGISTRY",
+    "extract_revenue_from_typed_input",
+    "B23CaptureMatchInput",
+    "B23PostCaptureInput",
+    "B23MatchKernelOutcome",
+    "B23_POST_CAPTURE_HANDLER_REGISTRY",
+    "process_b23_capture_match",
+    "register_b23_post_capture_event",
+    "seed_pending_match_verdict",
+    "classify_stale_pending_as_unmatched",
+    "classify_b23_match_quality",
+    "classify_b23_discrepancy",
+    "build_persisted_ingress_revenue_input",
+    "discrepancy_ratio_percent",
     "ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS",
     "ALLOWED_DELAYED_ARRIVAL_REQUIRED_COLUMNS",
     "ALLOWED_DELAYED_ARRIVAL_TOPOLOGY_TABLE",
