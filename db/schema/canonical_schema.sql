@@ -992,12 +992,6 @@ CREATE TABLE public.b23_match_verdicts (
     match_quality character varying(16) NOT NULL,
     attributed_amount_minor integer NOT NULL,
     verified_amount_minor integer NOT NULL,
-    canonical_expected_gross_amount_minor integer NOT NULL,
-    canonical_captured_gross_amount_minor integer NOT NULL,
-    canonical_net_verified_amount_minor integer NOT NULL,
-    discrepancy_amount_minor integer NOT NULL,
-    discrepancy_ratio_bps integer NOT NULL,
-    discrepancy_band character varying(32) NOT NULL,
     currency_code character(3) NOT NULL,
     pending_since timestamp with time zone DEFAULT now() NOT NULL,
     provisional_expires_at timestamp with time zone,
@@ -1007,24 +1001,34 @@ CREATE TABLE public.b23_match_verdicts (
     last_transition_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    canonical_expected_gross_amount_minor integer NOT NULL,
+    canonical_captured_gross_amount_minor integer NOT NULL,
+    canonical_net_verified_amount_minor integer NOT NULL,
+    discrepancy_amount_minor integer NOT NULL,
+    discrepancy_ratio_bps integer NOT NULL,
+    discrepancy_band character varying(32) NOT NULL,
     CONSTRAINT ck_b23_match_verdicts_attributed_amount_non_negative CHECK ((attributed_amount_minor >= 0)),
     CONSTRAINT ck_b23_match_verdicts_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_match_verdicts_captured_amount_non_negative CHECK ((canonical_captured_gross_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_captured_matches_legacy CHECK ((canonical_captured_gross_amount_minor = verified_amount_minor)),
     CONSTRAINT ck_b23_match_verdicts_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_amount_consistency CHECK ((discrepancy_amount_minor = (canonical_expected_gross_amount_minor - canonical_net_verified_amount_minor))),
     CONSTRAINT ck_b23_match_verdicts_match_quality CHECK (((match_quality)::text = ANY ((ARRAY['high'::character varying, 'medium'::character varying, 'low'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_band CHECK (((discrepancy_band)::text = ANY ((ARRAY['exact'::character varying, 'within_tolerance'::character varying, 'over_tolerance'::character varying, 'severe_gap'::character varying])::text[]))),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_ratio_consistency CHECK ((discrepancy_ratio_bps =
+CASE
+    WHEN (canonical_expected_gross_amount_minor = 0) THEN 0
+    ELSE ((discrepancy_amount_minor * 10000) / canonical_expected_gross_amount_minor)
+END)),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_ratio_range CHECK (((discrepancy_ratio_bps >= '-1000000'::integer) AND (discrepancy_ratio_bps <= 1000000))),
+    CONSTRAINT ck_b23_match_verdicts_expected_amount_non_negative CHECK ((canonical_expected_gross_amount_minor >= 0)),
+    CONSTRAINT ck_b23_match_verdicts_expected_matches_legacy CHECK ((canonical_expected_gross_amount_minor = attributed_amount_minor)),
+    CONSTRAINT ck_b23_match_verdicts_net_amount_non_negative CHECK ((canonical_net_verified_amount_minor >= 0)),
     CONSTRAINT ck_b23_match_verdicts_provider_commerce_reference_not_blank CHECK ((char_length((provider_native_commerce_reference)::text) > 0)),
     CONSTRAINT ck_b23_match_verdicts_provider_event_reference_not_blank CHECK ((char_length((provider_native_event_reference)::text) > 0)),
     CONSTRAINT ck_b23_match_verdicts_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
     CONSTRAINT ck_b23_match_verdicts_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]))),
-    CONSTRAINT ck_b23_match_verdicts_verified_amount_non_negative CHECK ((verified_amount_minor >= 0)),
-    CONSTRAINT ck_b23_match_verdicts_expected_amount_non_negative CHECK ((canonical_expected_gross_amount_minor >= 0)),
-    CONSTRAINT ck_b23_match_verdicts_captured_amount_non_negative CHECK ((canonical_captured_gross_amount_minor >= 0)),
-    CONSTRAINT ck_b23_match_verdicts_net_amount_non_negative CHECK ((canonical_net_verified_amount_minor >= 0)),
-    CONSTRAINT ck_b23_match_verdicts_discrepancy_band CHECK (((discrepancy_band)::text = ANY ((ARRAY['exact'::character varying, 'within_tolerance'::character varying, 'over_tolerance'::character varying, 'severe_gap'::character varying])::text[]))),
-    CONSTRAINT ck_b23_match_verdicts_discrepancy_ratio_range CHECK ((discrepancy_ratio_bps >= '-1000000'::integer) AND (discrepancy_ratio_bps <= 1000000)),
-    CONSTRAINT ck_b23_match_verdicts_discrepancy_amount_consistency CHECK ((discrepancy_amount_minor = (canonical_expected_gross_amount_minor - canonical_net_verified_amount_minor))),
-    CONSTRAINT ck_b23_match_verdicts_discrepancy_ratio_consistency CHECK ((discrepancy_ratio_bps = CASE WHEN (canonical_expected_gross_amount_minor = 0) THEN 0 ELSE ((discrepancy_amount_minor * 10000) / canonical_expected_gross_amount_minor) END)),
-    CONSTRAINT ck_b23_match_verdicts_expected_matches_legacy CHECK ((canonical_expected_gross_amount_minor = attributed_amount_minor)),
-    CONSTRAINT ck_b23_match_verdicts_captured_matches_legacy CHECK ((canonical_captured_gross_amount_minor = verified_amount_minor))
+    CONSTRAINT ck_b23_match_verdicts_verified_amount_non_negative CHECK ((verified_amount_minor >= 0))
 );
 
 ALTER TABLE ONLY public.b23_match_verdicts FORCE ROW LEVEL SECURITY;
@@ -1039,30 +1043,46 @@ CREATE TABLE public.b23_revenue_events (
     provider_native_commerce_reference character varying(255) NOT NULL,
     canonical_commerce_reference character varying(255) NOT NULL,
     event_type character varying(32) NOT NULL,
-    captured_amount_minor integer,
-    refund_amount_minor integer,
-    chargeback_amount_minor integer,
-    reversal_amount_minor integer,
-    net_effect_sign smallint NOT NULL,
     currency_code character(3) NOT NULL,
     event_occurred_at timestamp with time zone NOT NULL,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_b23_revenue_events_captured_amount_non_negative CHECK (((captured_amount_minor IS NULL) OR (captured_amount_minor >= 0))),
-    CONSTRAINT ck_b23_revenue_events_refund_amount_non_negative CHECK (((refund_amount_minor IS NULL) OR (refund_amount_minor >= 0))),
-    CONSTRAINT ck_b23_revenue_events_chargeback_amount_non_negative CHECK (((chargeback_amount_minor IS NULL) OR (chargeback_amount_minor >= 0))),
-    CONSTRAINT ck_b23_revenue_events_reversal_amount_non_negative CHECK (((reversal_amount_minor IS NULL) OR (reversal_amount_minor >= 0))),
-    CONSTRAINT ck_b23_revenue_events_net_effect_sign CHECK ((net_effect_sign = ANY (ARRAY['-1'::integer, 0, 1]))),
-    CONSTRAINT ck_b23_revenue_events_net_effect_sign_by_event_type CHECK ((((event_type)::text = 'payment_capture'::text) AND (net_effect_sign = 1)) OR (((event_type)::text = ANY ((ARRAY['partial_refund'::character varying, 'full_refund'::character varying])::text[])) AND (net_effect_sign = '-1'::integer)) OR (((event_type)::text = 'chargeback_opened'::text) AND (net_effect_sign = 0)) OR (((event_type)::text = 'chargeback_lost'::text) AND (net_effect_sign = '-1'::integer)) OR (((event_type)::text = ANY ((ARRAY['chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (net_effect_sign = 1))),
-    CONSTRAINT ck_b23_revenue_events_split_operand_exactly_one_non_null CHECK (((CASE WHEN (captured_amount_minor IS NULL) THEN 0 ELSE 1 END + CASE WHEN (refund_amount_minor IS NULL) THEN 0 ELSE 1 END) + CASE WHEN (chargeback_amount_minor IS NULL) THEN 0 ELSE 1 END + CASE WHEN (reversal_amount_minor IS NULL) THEN 0 ELSE 1 END) = 1),
-    CONSTRAINT ck_b23_revenue_events_operand_columns_by_event_type CHECK ((((event_type)::text = 'payment_capture'::text) AND (captured_amount_minor IS NOT NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = ANY ((ARRAY['partial_refund'::character varying, 'full_refund'::character varying])::text[])) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NOT NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = ANY ((ARRAY['chargeback_opened'::character varying, 'chargeback_won'::character varying, 'chargeback_lost'::character varying])::text[])) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NOT NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = 'reversal'::text) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NOT NULL))),
+    captured_amount_minor integer,
+    refund_amount_minor integer,
+    chargeback_amount_minor integer,
+    reversal_amount_minor integer,
+    net_effect_sign smallint NOT NULL,
     CONSTRAINT ck_b23_revenue_events_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_captured_amount_non_negative CHECK (((captured_amount_minor IS NULL) OR (captured_amount_minor >= 0))),
+    CONSTRAINT ck_b23_revenue_events_chargeback_amount_non_negative CHECK (((chargeback_amount_minor IS NULL) OR (chargeback_amount_minor >= 0))),
     CONSTRAINT ck_b23_revenue_events_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
     CONSTRAINT ck_b23_revenue_events_event_type CHECK (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_opened'::character varying, 'chargeback_won'::character varying, 'chargeback_lost'::character varying, 'reversal'::character varying])::text[]))),
+    CONSTRAINT ck_b23_revenue_events_net_effect_sign CHECK ((net_effect_sign = ANY (ARRAY['-1'::integer, 0, 1]))),
+    CONSTRAINT ck_b23_revenue_events_net_effect_sign_by_event_type CHECK (((((event_type)::text = 'payment_capture'::text) AND (net_effect_sign = 1)) OR (((event_type)::text = ANY ((ARRAY['partial_refund'::character varying, 'full_refund'::character varying])::text[])) AND (net_effect_sign = '-1'::integer)) OR (((event_type)::text = 'chargeback_opened'::text) AND (net_effect_sign = 0)) OR (((event_type)::text = 'chargeback_lost'::text) AND (net_effect_sign = '-1'::integer)) OR (((event_type)::text = ANY ((ARRAY['chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (net_effect_sign = 1)))),
+    CONSTRAINT ck_b23_revenue_events_operand_columns_by_event_type CHECK (((((event_type)::text = 'payment_capture'::text) AND (captured_amount_minor IS NOT NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = ANY ((ARRAY['partial_refund'::character varying, 'full_refund'::character varying])::text[])) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NOT NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = ANY ((ARRAY['chargeback_opened'::character varying, 'chargeback_won'::character varying, 'chargeback_lost'::character varying])::text[])) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NOT NULL) AND (reversal_amount_minor IS NULL)) OR (((event_type)::text = 'reversal'::text) AND (captured_amount_minor IS NULL) AND (refund_amount_minor IS NULL) AND (chargeback_amount_minor IS NULL) AND (reversal_amount_minor IS NOT NULL)))),
     CONSTRAINT ck_b23_revenue_events_provider_commerce_reference_not_blank CHECK ((char_length((provider_native_commerce_reference)::text) > 0)),
     CONSTRAINT ck_b23_revenue_events_provider_event_reference_not_blank CHECK ((char_length((provider_native_event_reference)::text) > 0)),
-    CONSTRAINT ck_b23_revenue_events_provider_not_blank CHECK ((char_length((provider)::text) > 0))
+    CONSTRAINT ck_b23_revenue_events_provider_not_blank CHECK ((char_length((provider)::text) > 0)),
+    CONSTRAINT ck_b23_revenue_events_refund_amount_non_negative CHECK (((refund_amount_minor IS NULL) OR (refund_amount_minor >= 0))),
+    CONSTRAINT ck_b23_revenue_events_reversal_amount_non_negative CHECK (((reversal_amount_minor IS NULL) OR (reversal_amount_minor >= 0))),
+    CONSTRAINT ck_b23_revenue_events_split_operand_exactly_one_non_null CHECK (((((
+CASE
+    WHEN (captured_amount_minor IS NULL) THEN 0
+    ELSE 1
+END +
+CASE
+    WHEN (refund_amount_minor IS NULL) THEN 0
+    ELSE 1
+END) +
+CASE
+    WHEN (chargeback_amount_minor IS NULL) THEN 0
+    ELSE 1
+END) +
+CASE
+    WHEN (reversal_amount_minor IS NULL) THEN 0
+    ELSE 1
+END) = 1))
 );
 
 ALTER TABLE ONLY public.b23_revenue_events FORCE ROW LEVEL SECURITY;

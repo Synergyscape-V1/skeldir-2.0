@@ -418,10 +418,10 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_amount_non_negative"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_amount_non_negative"  # CI:DESTRUCTIVE_OK - replacing generic amount authority with event-specific operands
     )  # CI:DESTRUCTIVE_OK - replacing generic amount authority with event-specific operands
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS amount_minor"
+        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS amount_minor"  # CI:DESTRUCTIVE_OK - replacing generic amount authority with event-specific operands
     )  # CI:DESTRUCTIVE_OK - replacing generic amount authority with event-specific operands
     op.execute(
         """
@@ -843,28 +843,28 @@ def downgrade() -> None:
         "DROP INDEX IF EXISTS public.idx_b23_revenue_events_tenant_event_effect_sign"
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_operand_columns_by_event_type"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_operand_columns_by_event_type"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_split_operand_exactly_one_non_null"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_split_operand_exactly_one_non_null"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_net_effect_sign_by_event_type"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_net_effect_sign_by_event_type"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_net_effect_sign"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_net_effect_sign"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_reversal_amount_non_negative"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_reversal_amount_non_negative"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_chargeback_amount_non_negative"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_chargeback_amount_non_negative"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_refund_amount_non_negative"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_refund_amount_non_negative"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_captured_amount_non_negative"
+        "ALTER TABLE public.b23_revenue_events DROP CONSTRAINT IF EXISTS ck_b23_revenue_events_captured_amount_non_negative"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
         "ALTER TABLE public.b23_revenue_events ADD COLUMN IF NOT EXISTS amount_minor integer"
@@ -900,19 +900,19 @@ def downgrade() -> None:
         """
     )
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS net_effect_sign"
+        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS net_effect_sign"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS reversal_amount_minor"
+        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS reversal_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS chargeback_amount_minor"
+        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS chargeback_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS refund_amount_minor"
+        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS refund_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS captured_amount_minor"
+        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS captured_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
 
     op.execute(
@@ -922,47 +922,47 @@ def downgrade() -> None:
         "DROP INDEX IF EXISTS public.idx_b23_match_verdicts_tenant_discrepancy_band"
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_captured_matches_legacy"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_captured_matches_legacy"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_expected_matches_legacy"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_expected_matches_legacy"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_consistency"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_consistency"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_amount_consistency"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_amount_consistency"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_range"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_range"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_band"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_band"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_net_amount_non_negative"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_net_amount_non_negative"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_captured_amount_non_negative"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_captured_amount_non_negative"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_expected_amount_non_negative"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_expected_amount_non_negative"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS discrepancy_band"
+        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS discrepancy_band"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS discrepancy_ratio_bps"
+        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS discrepancy_ratio_bps"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS discrepancy_amount_minor"
+        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS discrepancy_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS canonical_net_verified_amount_minor"
+        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS canonical_net_verified_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS canonical_captured_gross_amount_minor"
+        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS canonical_captured_gross_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS canonical_expected_gross_amount_minor"
+        "ALTER TABLE public.b23_match_verdicts DROP COLUMN IF EXISTS canonical_expected_gross_amount_minor"  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
     )  # CI:DESTRUCTIVE_OK - reversible corrective P1 follow-up cleanup
