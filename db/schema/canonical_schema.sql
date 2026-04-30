@@ -258,73 +258,73 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-            DECLARE
-                effective_limit integer := GREATEST(1, COALESCE(max_delete, 5000));
-                removed integer := 0;
-            BEGIN
-                WITH doomed AS (
-                    SELECT id
-                    FROM public.b23_webhook_ingestion_logs
-                    WHERE received_at < (now() - interval '365 days')
-                    ORDER BY received_at
-                    LIMIT effective_limit
-                )
-                DELETE FROM public.b23_webhook_ingestion_logs target
-                USING doomed
-                WHERE target.id = doomed.id;
-                GET DIAGNOSTICS removed = ROW_COUNT;
-                table_name := 'b23_webhook_ingestion_logs';
-                deleted_rows := removed;
-                RETURN NEXT;
+        DECLARE
+            effective_limit integer := GREATEST(1, COALESCE(max_delete, 5000));
+            removed integer := 0;
+        BEGIN
+            WITH doomed AS (
+                SELECT id
+                FROM public.b23_webhook_ingestion_logs
+                WHERE received_at < (now() - interval '365 days')
+                ORDER BY received_at
+                LIMIT effective_limit
+            )
+            DELETE FROM public.b23_webhook_ingestion_logs target
+            USING doomed
+            WHERE target.id = doomed.id;
+            GET DIAGNOSTICS removed = ROW_COUNT;
+            table_name := 'b23_webhook_ingestion_logs';
+            deleted_rows := removed;
+            RETURN NEXT;
 
-                WITH doomed AS (
-                    SELECT id
-                    FROM public.b23_exception_records
-                    WHERE raised_at < (now() - interval '1825 days')
-                    ORDER BY raised_at
-                    LIMIT effective_limit
-                )
-                DELETE FROM public.b23_exception_records target
-                USING doomed
-                WHERE target.id = doomed.id;
-                GET DIAGNOSTICS removed = ROW_COUNT;
-                table_name := 'b23_exception_records';
-                deleted_rows := removed;
-                RETURN NEXT;
+            WITH doomed AS (
+                SELECT id
+                FROM public.b23_exception_records
+                WHERE raised_at < (now() - interval '1825 days')
+                ORDER BY raised_at
+                LIMIT effective_limit
+            )
+            DELETE FROM public.b23_exception_records target
+            USING doomed
+            WHERE target.id = doomed.id;
+            GET DIAGNOSTICS removed = ROW_COUNT;
+            table_name := 'b23_exception_records';
+            deleted_rows := removed;
+            RETURN NEXT;
 
-                WITH doomed AS (
-                    SELECT id
-                    FROM public.b23_match_verdicts
-                    WHERE created_at < (now() - interval '1825 days')
-                    ORDER BY created_at
-                    LIMIT effective_limit
-                )
-                DELETE FROM public.b23_match_verdicts target
-                USING doomed
-                WHERE target.id = doomed.id;
-                GET DIAGNOSTICS removed = ROW_COUNT;
-                table_name := 'b23_match_verdicts';
-                deleted_rows := removed;
-                RETURN NEXT;
+            WITH doomed AS (
+                SELECT id
+                FROM public.b23_match_verdicts
+                WHERE created_at < (now() - interval '1825 days')
+                ORDER BY created_at
+                LIMIT effective_limit
+            )
+            DELETE FROM public.b23_match_verdicts target
+            USING doomed
+            WHERE target.id = doomed.id;
+            GET DIAGNOSTICS removed = ROW_COUNT;
+            table_name := 'b23_match_verdicts';
+            deleted_rows := removed;
+            RETURN NEXT;
 
-                WITH doomed AS (
-                    SELECT id
-                    FROM public.b23_revenue_events
-                    WHERE event_occurred_at < (now() - interval '2555 days')
-                    ORDER BY event_occurred_at
-                    LIMIT effective_limit
-                )
-                DELETE FROM public.b23_revenue_events target
-                USING doomed
-                WHERE target.id = doomed.id;
-                GET DIAGNOSTICS removed = ROW_COUNT;
-                table_name := 'b23_revenue_events';
-                deleted_rows := removed;
-                RETURN NEXT;
+            WITH doomed AS (
+                SELECT id
+                FROM public.b23_revenue_events
+                WHERE event_occurred_at < (now() - interval '2555 days')
+                ORDER BY event_occurred_at
+                LIMIT effective_limit
+            )
+            DELETE FROM public.b23_revenue_events target
+            USING doomed
+            WHERE target.id = doomed.id;
+            GET DIAGNOSTICS removed = ROW_COUNT;
+            table_name := 'b23_revenue_events';
+            deleted_rows := removed;
+            RETURN NEXT;
 
-                RETURN;
-            END;
-            $$;
+            RETURN;
+        END;
+        $$;
 
 CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
     LANGUAGE plpgsql
