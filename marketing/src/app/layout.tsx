@@ -16,7 +16,7 @@ const playfairDisplay = Playfair_Display({
   style: ["normal", "italic"],
 });
 
-const FAVICON_VERSION = "20260415a";
+const FAVICON_VERSION = "20260430a";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://skeldir.com"),
