@@ -1,0 +1,121 @@
+{
+  "contract_id": "b23.p2.match_engine_kernel.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P2",
+  "description": "B2.3-P2 deterministic match-engine kernel authority lock.",
+  "inherits_from": {
+    "b23_p0_semantic_authority_freeze_contract": "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json",
+    "b23_pre_p1_spec_gate_contract": "contracts-internal/governance/b23_pre_p1_spec_gate.main.json",
+    "b23_p1_schema_authority_lock_contract": "contracts-internal/governance/b23_p1_schema_authority_lock.main.json"
+  },
+  "authoritative_surfaces": {
+    "extraction_module": "backend/app/revenue_verification/extraction_registry.py",
+    "kernel_module": "backend/app/revenue_verification/match_engine_kernel.py",
+    "enforcer_file": "scripts/ci/enforce_b23_p2_match_engine_kernel.py",
+    "runtime_tests": "backend/tests/test_b23_p2_match_engine_kernel.py",
+    "enforcer_tests": "backend/tests/test_b23_p2_match_engine_kernel_enforcer.py"
+  },
+  "platform_keyed_extraction_registry": {
+    "providers": [
+      "stripe",
+      "paypal",
+      "shopify",
+      "woocommerce"
+    ],
+    "typed_extractor_input_required": true,
+    "inline_provider_field_access_outside_extraction_module_forbidden": true,
+    "raw_dict_walking_reaching_arithmetic_forbidden": true,
+    "dict_get_zero_money_fallback_forbidden": true,
+    "binary_float_conversion_forbidden": true,
+    "stripe_gross_captured_required": true,
+    "stripe_net_after_fees_forbidden_as_canonical": true
+  },
+  "post_capture_failure_routing": {
+    "designated_durable_substrate": "b23_exception_records",
+    "designated_ingestion_telemetry_substrate": "b23_webhook_ingestion_logs",
+    "unresolved_event_behavior": {
+      "durable_failure_record_required": true,
+      "failure_reason_queryable_required": true,
+      "revenue_event_write_forbidden": true,
+      "logger_only_handling_forbidden": true
+    },
+    "new_dlq_schema_forbidden": true
+  },
+  "concurrency_strategy": {
+    "transaction_bound_postgres_native_required": true,
+    "required_primitives": [
+      "pg_advisory_xact_lock",
+      "insert_on_conflict",
+      "row_level_lock"
+    ],
+    "forbidden_primary_mechanisms": [
+      "asyncio.Lock",
+      "redis_lock",
+      "process_local_mutex",
+      "queue_only_serialization"
+    ],
+    "duplicate_same_event_must_create_one_effect": true,
+    "distinct_concurrent_events_must_each_persist_once": true
+  },
+  "timing_and_state": {
+    "arrival_window_constant": "WEBHOOK_ARRIVAL_WINDOW",
+    "hardcoded_timing_literals_forbidden": true,
+    "narrow_unmatched_executor_only": true,
+    "allowed_transition": "pending_to_unmatched_after_arrival_window",
+    "forbidden_transition": "provisional_to_confirmed_scheduler_in_p2"
+  },
+  "match_quality": {
+    "output_classes": [
+      "high",
+      "medium",
+      "low"
+    ],
+    "deterministic_inputs": [
+      "precedence_source_field",
+      "discrepancy_ratio",
+      "conversion_to_event_delta"
+    ],
+    "randomness_forbidden": true,
+    "llm_forbidden": true,
+    "bayesian_forbidden": true
+  },
+  "refund_chargeback_handlers": {
+    "required_platforms": [
+      "stripe",
+      "paypal",
+      "shopify",
+      "woocommerce"
+    ],
+    "required_event_types": [
+      "partial_refund",
+      "full_refund",
+      "chargeback_opened",
+      "chargeback_won",
+      "chargeback_lost"
+    ]
+  },
+  "authority_boundaries": {
+    "b23_tables_required": [
+      "b23_match_verdicts",
+      "b23_revenue_events",
+      "b23_exception_records",
+      "b23_webhook_ingestion_logs"
+    ],
+    "revenue_ledger_first_authority_forbidden": true,
+    "llm_provider_reachability_from_entrypoints_forbidden": true,
+    "p3_p4_scope_surfaces_forbidden": [
+      "APIRouter",
+      "provisional_to_confirmed",
+      "benchmark_1000_orders",
+      "queue_isolation"
+    ]
+  },
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b23_p2_match_engine_kernel.py",
+    "pytest backend/tests/test_b23_p2_match_engine_kernel_enforcer.py -q",
+    "pytest backend/tests/test_b23_p2_match_engine_kernel.py -q"
+  ]
+}
+
