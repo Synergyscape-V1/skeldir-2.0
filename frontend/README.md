@@ -25,3 +25,6 @@ npm run ci:compare
 Add this file before CI/build:
 
 `public/assets/Final_Skeldir_Logo__No_wording_.png`
+
+## CI Note
+This file includes a no-functional-impact touch to force Netlify preview status emission for protected-branch checks.
