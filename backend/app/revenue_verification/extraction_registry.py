@@ -21,7 +21,7 @@ _MINOR_SCALE = Decimal("0.01")
 class ExtractedRevenue(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount_minor: int = Field(ge=0)
+    amount_minor: int = Field(gt=0)
     currency_code: str = Field(min_length=3, max_length=3)
 
 
@@ -29,7 +29,7 @@ class PersistedIngressExtractionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: B23ProviderKey
-    verified_amount_minor: int = Field(ge=0)
+    verified_amount_minor: int = Field(gt=0)
     verified_amount_currency: str = Field(min_length=3, max_length=3)
 
 
@@ -37,9 +37,9 @@ class StripeRevenueExtractionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: Literal["stripe"] = "stripe"
-    gross_captured_minor: int | None = Field(default=None, ge=0)
+    gross_captured_minor: int | None = Field(default=None, gt=0)
     currency_code: str = Field(min_length=3, max_length=3)
-    net_after_fees_minor: int | None = Field(default=None, ge=0)
+    net_after_fees_minor: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validate_gross_authority(self) -> "StripeRevenueExtractionInput":
@@ -73,12 +73,15 @@ def _major_to_minor(gross_major: str) -> int:
     except (InvalidOperation, AttributeError) as exc:
         raise ValueError("invalid_major_unit_amount") from exc
     quantized = major.quantize(_MINOR_SCALE, rounding=ROUND_HALF_UP)
-    return int(quantized * 100)
+    amount_minor = int(quantized * 100)
+    if amount_minor <= 0:
+        raise ValueError("non_positive_major_unit_amount")
+    return amount_minor
 
 
 def _extract_from_stripe(payload: StripeRevenueExtractionInput) -> ExtractedRevenue:
     return ExtractedRevenue(
-        amount_minor=int(payload.gross_captured_minor or 0),
+        amount_minor=int(payload.gross_captured_minor),
         currency_code=_normalize_currency(payload.currency_code),
     )
 

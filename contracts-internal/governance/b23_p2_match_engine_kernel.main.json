@@ -13,6 +13,8 @@
   "authoritative_surfaces": {
     "extraction_module": "backend/app/revenue_verification/extraction_registry.py",
     "kernel_module": "backend/app/revenue_verification/match_engine_kernel.py",
+    "failure_boundary_module": "backend/app/revenue_verification/failure_boundary.py",
+    "webhook_module": "backend/app/api/webhooks.py",
     "enforcer_file": "scripts/ci/enforce_b23_p2_match_engine_kernel.py",
     "runtime_tests": "backend/tests/test_b23_p2_match_engine_kernel.py",
     "enforcer_tests": "backend/tests/test_b23_p2_match_engine_kernel_enforcer.py"
@@ -116,6 +118,11 @@
     "python scripts/ci/enforce_b23_p2_match_engine_kernel.py",
     "pytest backend/tests/test_b23_p2_match_engine_kernel_enforcer.py -q",
     "pytest backend/tests/test_b23_p2_match_engine_kernel.py -q"
+  ],
+  "required_ci_runtime_db_proof_lock": [
+    "SKELDIR_B23_P2_REQUIRE_DB_PROOFS: \"1\"",
+    "Verify B2.3-P2 runtime DB proof-lock prerequisites",
+    "B2.3-P2 runtime DB proof-lock preflight passed",
+    "B2.3-P2 runtime proofs reported skipped tests"
   ]
 }
-

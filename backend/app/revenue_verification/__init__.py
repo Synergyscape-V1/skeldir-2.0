@@ -11,6 +11,11 @@ from .extraction_registry import (
     SUPPORTED_B23_PROVIDERS,
     extract_revenue_from_typed_input,
 )
+from .failure_boundary import (
+    B23FailureBoundaryClass,
+    B23FailureBoundaryDecision,
+    classify_b23_failure_boundary,
+)
 from .match_engine_kernel import (
     B23CaptureMatchInput,
     B23MatchKernelOutcome,
@@ -65,6 +70,9 @@ __all__ = [
     "RevenueExtractionInput",
     "B23_REVENUE_EXTRACTOR_REGISTRY",
     "extract_revenue_from_typed_input",
+    "B23FailureBoundaryClass",
+    "B23FailureBoundaryDecision",
+    "classify_b23_failure_boundary",
     "B23CaptureMatchInput",
     "B23PostCaptureInput",
     "B23MatchKernelOutcome",
