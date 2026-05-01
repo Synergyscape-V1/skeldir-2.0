@@ -33,6 +33,53 @@ jobs:
         run: |
           python3 scripts/check_evidence_placement.py
 
+
+  change-scope:
+    name: Detect Change Scope
+    runs-on: ubuntu-latest
+    needs: checkout
+    outputs:
+      marketing_only: ${{ steps.scope.outputs.marketing_only }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ADJUDICATED_SHA }}
+          fetch-depth: 0
+      - id: scope
+        name: Compute marketing-only change flag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1
+            BASE_REF="origin/${{ github.base_ref }}"
+            HEAD_REF="${{ env.ADJUDICATED_SHA }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            BASE_REF="${{ github.event.before }}"
+            HEAD_REF="${{ github.sha }}"
+          else
+            echo "marketing_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            echo "marketing_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$BASE_REF..$HEAD_REF" || true)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "marketing_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NON_MARKETING=$(echo "$CHANGED_FILES" | grep -v '^marketing/' || true)
+          if [ -z "$NON_MARKETING" ]; then
+            echo "marketing_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "marketing_only=false" >> "$GITHUB_OUTPUT"
+          fi
   governance-guardrails:
     name: Governance Guardrails
     runs-on: ubuntu-latest
@@ -78,8 +125,8 @@ jobs:
   contract-semantic-drift-gate:
     name: Contract Semantic Drift Gate
     runs-on: ubuntu-latest
-    if: ${{ always() }}
-    needs: [checkout, validate-contracts, b21-p2-strategy-kernel-session-boundary, b21-p4-queue-isolation-performance-lock, b22-p5-webhook-latency-adjudication]
+    if: ${{ always() && needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, b21-p2-strategy-kernel-session-boundary, b21-p4-queue-isolation-performance-lock, b22-p5-webhook-latency-adjudication, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -383,7 +430,8 @@ jobs:
   b21-p0-runtime-authority-closeout:
     name: B2.1-P0 Runtime Authority Closeout
     runs-on: ubuntu-latest
-    needs: [checkout]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -456,7 +504,8 @@ jobs:
   b21-p1-semantic-replay-lock:
     name: B2.1-P1 Semantic Replay Lock
     runs-on: ubuntu-latest
-    needs: [checkout]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -529,7 +578,8 @@ jobs:
   b21-p2-strategy-kernel-session-boundary:
     name: B2.1-P2 Strategy Kernel + Session Boundary Proofs
     runs-on: ubuntu-latest
-    needs: [checkout]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -603,7 +653,8 @@ jobs:
   b21-p3-persistence-read-surface:
     name: B2.1-P3 Persistence Authority + Minimal Read Surface
     runs-on: ubuntu-latest
-    needs: [checkout]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -675,7 +726,8 @@ jobs:
   b21-p4-queue-isolation-performance-lock:
     name: B2.1-P4 Queue Isolation + Performance Semantics Lock
     runs-on: ubuntu-latest
-    needs: [checkout]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -792,7 +844,8 @@ jobs:
   b22-p5-webhook-latency-adjudication:
     name: B2.2-P5 Webhook Latency Adjudication
     runs-on: ubuntu-latest
-    needs: [checkout]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -893,7 +946,8 @@ jobs:
   b22-p6-merge-blocking-closure-readiness:
     name: B2.2-P6 Merge-Blocking Closure + Downstream Readiness
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts, contract-semantic-drift-gate, b22-p5-webhook-latency-adjudication]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, contract-semantic-drift-gate, b22-p5-webhook-latency-adjudication, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -991,7 +1045,8 @@ jobs:
   b21-p5-non-vacuous-proof-harness:
     name: B2.1-P5 Non-Vacuous Proof Harness + Merge-Blocking Adjudication
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts, b21-p1-semantic-replay-lock, b21-p2-strategy-kernel-session-boundary, b21-p3-persistence-read-surface, b21-p4-queue-isolation-performance-lock]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, b21-p1-semantic-replay-lock, b21-p2-strategy-kernel-session-boundary, b21-p3-persistence-read-surface, b21-p4-queue-isolation-performance-lock, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1079,7 +1134,8 @@ jobs:
   b21-p6-full-chain-closure-readiness:
     name: B2.1-P6 Full End-to-End Closure + Downstream Readiness
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts, b21-p0-runtime-authority-closeout, b21-p1-semantic-replay-lock, b21-p2-strategy-kernel-session-boundary, b21-p3-persistence-read-surface, b21-p4-queue-isolation-performance-lock, b21-p5-non-vacuous-proof-harness]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, b21-p0-runtime-authority-closeout, b21-p1-semantic-replay-lock, b21-p2-strategy-kernel-session-boundary, b21-p3-persistence-read-surface, b21-p4-queue-isolation-performance-lock, b21-p5-non-vacuous-proof-harness, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1203,7 +1259,8 @@ jobs:
   b17-explanation-runtime-adjudication:
     name: B1.7 Explanation Runtime Adjudication
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1268,7 +1325,8 @@ jobs:
   b14-p0-privacy-authority-lock:
     name: B1.4 P0 Privacy Authority Lock
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1330,7 +1388,8 @@ jobs:
   b13-p0-governance-scope-lock:
     name: B1.3 P0 Governance & Scope Lock
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
@@ -1373,7 +1432,8 @@ jobs:
   b13-p1-contract-authority-proofs:
     name: B1.3 P1 Contract Authority Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir_validation
       MIGRATION_DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_validation
@@ -1404,7 +1464,8 @@ jobs:
   b13-p2-handshake-state-proofs:
     name: B1.3 P2 Handshake State Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1465,7 +1526,8 @@ jobs:
   b13-p3-durable-lifecycle-schema-proofs:
     name: B1.3 P3 Durable Lifecycle Schema Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1522,7 +1584,8 @@ jobs:
   b13-p4-boundary-hardening-proofs:
     name: B1.3 P4 Boundary Hardening Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1578,7 +1641,8 @@ jobs:
   b13-p5-adapter-layer-proofs:
     name: B1.3 P5 Adapter Layer Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
@@ -1610,7 +1674,8 @@ jobs:
   b13-p6-runtime-lifecycle-proofs:
     name: B1.3 P6 Runtime Lifecycle Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1666,7 +1731,8 @@ jobs:
   b13-p7-refresh-orchestration-proofs:
     name: B1.3 P7 Refresh Orchestration Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1719,7 +1785,8 @@ jobs:
   b13-p8-failure-baseline-proofs:
     name: B1.3 P8 Failure & Baseline Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1773,7 +1840,8 @@ jobs:
   b13-p9-core-substrate-closure-proofs:
     name: B1.3 P9 Core Substrate Closure Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1842,7 +1910,8 @@ jobs:
   b13-p10-provider-tranche-proofs:
     name: B1.3 P10 Provider Tranche Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1915,7 +1984,8 @@ jobs:
   b13-p11-e2e-system-proofs:
     name: B1.3 P11 E2E System Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -1992,7 +2062,8 @@ jobs:
   b14-p1-ingress-contract-sanitization:
     name: B1.4 P1 Ingress Contract Sanitization
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -2058,7 +2129,8 @@ jobs:
   b14-p2-session-authority-proofs:
     name: B1.4 P2 Session Authority Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -2124,7 +2196,8 @@ jobs:
   b14-p3-attribution-locality-proofs:
     name: B1.4 P3 Attribution Locality Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -2190,7 +2263,8 @@ jobs:
   b14-p4-retention-deletion-proofs:
     name: B1.4 P4 Retention + Deterministic Deletion Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -2256,7 +2330,8 @@ jobs:
   b14-p5-export-log-artifact-no-leak:
     name: B1.4 P5 Export Log Artifact No-Leak
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -2332,6 +2407,7 @@ jobs:
   b14-p6-proof-plane-binding:
     name: B1.4 P6 Merge-Blocking Privacy Proof Plane Binding
     runs-on: ubuntu-latest
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
     needs:
       - checkout
       - validate-contracts
@@ -2386,6 +2462,7 @@ jobs:
   b14-p7-e2e-privacy-system-proofs:
     name: B1.4 P7 E2E Privacy System Proofs
     runs-on: ubuntu-latest
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
     needs:
       - checkout
       - validate-contracts
@@ -2524,7 +2601,8 @@ jobs:
   b15-p0-authority-scope-invariant-lock:
     name: B1.5 P0 Authority Scope Invariant Lock
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
@@ -2557,7 +2635,8 @@ jobs:
   b15-p1-lifecycle-authority-lock:
     name: B1.5 P1 Lifecycle Authority Lock
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -2612,7 +2691,8 @@ jobs:
   b15-p3-runtime-route-binding:
     name: B1.5 P3 Runtime Route Binding and Review Enforcement
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -2667,7 +2747,8 @@ jobs:
   b15-p4-mock-sdk-typed-boundary:
     name: B1.5 P4 Mock Plane, SDK, and Typed Boundary Enforcement
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
@@ -2729,7 +2810,8 @@ jobs:
   b15-p5-frontend-control-grammar:
     name: B1.5 P5 Frontend Control Grammar Enforcement
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
@@ -2787,7 +2869,8 @@ jobs:
   b15-p6-anti-cyborg-governance-lock:
     name: B1.5 P6 Anti-Cyborg Governance Lock
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
@@ -2850,7 +2933,8 @@ jobs:
   b15-p7-ci-adjudication-closure:
     name: B1.5 P7 Technical Closure Harness, Browser E2E Truth, and Mental-Model Blocking Gate
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts, b15-p6-anti-cyborg-governance-lock]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, b15-p6-anti-cyborg-governance-lock, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3033,7 +3117,8 @@ jobs:
   validate-contracts:
     name: Validate Contracts
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -3342,7 +3427,8 @@ jobs:
   phase1-negative-controls:
     name: Phase 1 Negative Controls
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3414,7 +3500,8 @@ jobs:
   phase1-runtime-conformance:
     name: Phase 1 Runtime Conformance
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
@@ -3441,7 +3528,8 @@ jobs:
   jwt-tenant-context-invariants:
     name: JWT Tenant Context Invariants
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3494,7 +3582,8 @@ jobs:
   b12-p6-rbac-proofs:
     name: B1.2 P6 RBAC Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3538,7 +3627,8 @@ jobs:
   b12-p7-worker-coherence-proofs:
     name: B1.2 P7 Worker Coherence Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3589,7 +3679,8 @@ jobs:
   b12-p8-error-contract-proofs:
     name: B1.2 P8 Error Contract Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3635,7 +3726,8 @@ jobs:
   b12-p9-e2e-system-proofs:
     name: B1.2 P9 E2E System Proofs
     runs-on: ubuntu-latest
-    needs: [checkout, validate-contracts]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-contracts, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3689,7 +3781,8 @@ jobs:
   validate-phase-manifest:
     name: Validate Phase Manifest
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -3726,7 +3819,8 @@ jobs:
   phase-gates:
     name: Phase Gates
     runs-on: ubuntu-latest
-    needs: [checkout, validate-phase-manifest]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-phase-manifest, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3856,7 +3950,8 @@ jobs:
   phase-chain:
     name: Phase Chain (B0.4 target)
     runs-on: ubuntu-latest
-    needs: [checkout, validate-phase-manifest]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, validate-phase-manifest, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -3962,7 +4057,8 @@ jobs:
   proof-pack:
     name: Proof Pack (EG-5)
     runs-on: ubuntu-latest
-    needs: [phase-gates]
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [phase-gates, change-scope]
     # Generate even if other non-gate jobs fail; EG-5 is scoped to VALUE gates.
     if: always()
     permissions:
@@ -3997,7 +4093,8 @@ jobs:
   test-backend:
     name: Test Backend
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || contains(github.event.head_commit.modified, 'backend/') || contains(github.event.head_commit.added, 'backend/')
     services:
       postgres:
@@ -4067,7 +4164,8 @@ jobs:
   b057-p6-e2e:
     name: B0.5.7 P6 E2E (Least-Privilege)
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:16
@@ -4208,7 +4306,8 @@ jobs:
   b07-p2-runtime-proof:
     name: B0.7 P2 Runtime Proof (LLM + Redaction)
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:16
@@ -4616,7 +4715,8 @@ jobs:
   b060-phase6-e2e:
     name: B0.6 Phase 6 E2E (Monolith + Mock Platform)
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     env:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       E2E_API_BASE_URL: http://127.0.0.1:8000
@@ -4757,7 +4857,8 @@ jobs:
   celery-foundation:
     name: Celery Foundation B0.5.1
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -5034,7 +5135,8 @@ jobs:
   b0567-backend-integration:
     name: Backend Integration (B0567)
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
@@ -5122,6 +5224,7 @@ jobs:
   b0533-revenue-contract:
     name: B0.5.3.3 Revenue Contract Tests
     runs-on: ubuntu-latest
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
     needs: checkout  # Only depends on checkout, NOT celery-foundation
     services:
       postgres:
@@ -5688,7 +5791,8 @@ jobs:
   validate-migrations:
     name: Validate Migrations
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -5738,7 +5842,8 @@ jobs:
   generate-models:
     name: Generate Pydantic Models
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     if: contains(github.event.head_commit.modified, 'contracts/') || contains(github.event.head_commit.added, 'contracts/')
     steps:
       - name: Checkout code
@@ -5771,7 +5876,8 @@ jobs:
   zero-drift:
     name: Zero-Drift v3.2 CI Truth Layer
     runs-on: ubuntu-latest
-    needs: checkout
+    if: ${{ needs.change-scope.outputs.marketing_only != 'true' }}
+    needs: [checkout, change-scope]
     services:
       postgres:
         image: postgres:15-alpine
