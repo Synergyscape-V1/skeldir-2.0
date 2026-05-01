@@ -43,6 +43,10 @@ from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import tenant_task_signature
 from app.security.auth import AuthError, unauthorized_auth_error
 from app.privacy.authority import generate_privacy_session_id
+from app.revenue_verification.failure_boundary import (
+    B23FailureBoundaryClass,
+    classify_b23_failure_boundary,
+)
 from app.webhooks.signatures import (
     verify_shopify_signature,
     verify_stripe_signature,
@@ -459,12 +463,18 @@ def _malformed_idempotency_key(*, source: str, raw_body: bytes, suffix: str) -> 
     return str(uuid5(NAMESPACE_URL, f"{source}_{suffix}_{body_sha256}"))
 
 
-def _route_unsupported_event_family(
+async def _route_unsupported_event_family(
     *,
     source: str,
     raw_body: bytes,
     reason: str,
-) -> dict[str, str]:
+    tenant_id: UUID | str | None = None,
+    identity_payload: dict[str, Any] | None = None,
+    request_headers: dict[str, str] | None = None,
+) -> dict[str, str | None]:
+    boundary = classify_b23_failure_boundary(
+        B23FailureBoundaryClass.UNSUPPORTED_AUTHENTICATED_PROVIDER_EVENT_TYPE
+    )
     idempotency_key = _malformed_idempotency_key(
         source=source,
         raw_body=raw_body,
@@ -478,12 +488,37 @@ def _route_unsupported_event_family(
             "reason": reason,
             "idempotency_key": idempotency_key,
             "payload_sha256": hashlib.sha256(raw_body).hexdigest(),
+            "b23_failure_boundary": boundary.boundary_class.value,
         },
     )
+    dead_event_id: str | None = None
+    if tenant_id is not None:
+        correlation_id = str(_make_correlation_uuid(idempotency_key))
+        dead = await _route_to_dlq_direct(
+            tenant_id=tenant_id,
+            source=source,
+            correlation_id=correlation_id,
+            payload={
+                "event_type": "purchase",
+                "vendor": source,
+                "idempotency_key": idempotency_key,
+                "correlation_id": correlation_id,
+                "vendor_payload": identity_payload
+                or {"raw_body_sha256": hashlib.sha256(raw_body).hexdigest()},
+                "b23_failure_boundary": boundary.boundary_class.value,
+            },
+            error_message=f"unsupported_event_family:{reason}",
+            error_type="validation_error",
+            identity_payload=identity_payload
+            or {"raw_body_sha256": hashlib.sha256(raw_body).hexdigest()},
+            request_headers=request_headers,
+        )
+        dead_event_id = str(dead.id)
     return {
         "status": WEBHOOK_UNSUPPORTED_EVENT_FAMILY_STATUS,
         "error": "unsupported_event_family",
         "idempotency_key": idempotency_key,
+        "dead_event_id": dead_event_id,
     }
 
 
@@ -497,6 +532,9 @@ async def _route_authenticated_malformed_payload(
     identity_payload: dict[str, Any],
     request_headers: dict[str, str],
 ) -> dict[str, str | None]:
+    boundary = classify_b23_failure_boundary(
+        B23FailureBoundaryClass.AUTHENTICATED_MALFORMED_CANONICAL_PAYLOAD
+    )
     correlation_id = str(_make_correlation_uuid(idempotency_key))
     dead = await _route_to_dlq_direct(
         tenant_id=tenant_id,
@@ -508,6 +546,7 @@ async def _route_authenticated_malformed_payload(
             "idempotency_key": idempotency_key,
             "correlation_id": correlation_id,
             "vendor_payload": vendor_payload,
+            "b23_failure_boundary": boundary.boundary_class.value,
         },
         error_message=error_message,
         error_type="validation_error",
@@ -728,10 +767,13 @@ async def shopify_order_create(
         request_headers=request_headers,
     )
     if unsupported_reason is not None:
-        return _route_unsupported_event_family(
+        return await _route_unsupported_event_family(
             source="shopify",
             raw_body=raw_body,
             reason=unsupported_reason,
+            tenant_id=tenant_info["tenant_id"],
+            identity_payload=identity_payload,
+            request_headers=request_headers,
         )
 
     try:
@@ -757,22 +799,48 @@ async def shopify_order_create(
 
     idempotency_key = str(uuid5(NAMESPACE_URL, f"shopify_order_create_{payload.id}"))
     set_business_correlation_id(idempotency_key)
-    verified_amount_currency = (payload.currency or "USD").upper()
+    if payload.currency is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_currency",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if payload.total_price is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_total_price",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    verified_amount_currency = payload.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
-    raw_amount = payload.total_price or "0"
+    raw_amount = payload.total_price
     parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
-    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
+    if parsed_minor is None or parsed_minor <= 0:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="shopify",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:invalid_total_price",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    verified_amount_minor = parsed_minor
     event_data = {
         "event_type": "purchase",
         "event_timestamp": (
             payload.created_at or datetime.now(timezone.utc)
         ).isoformat(),
-        "revenue_amount": (
-            _minor_units_to_decimal_string(
-                verified_amount_minor, scale=verified_amount_scale
-            )
-            if parsed_minor is not None
-            else raw_amount
+        "revenue_amount": _minor_units_to_decimal_string(
+            verified_amount_minor, scale=verified_amount_scale
         ),
         "currency": verified_amount_currency,
         "session_id": str(generate_privacy_session_id()),
@@ -842,10 +910,13 @@ async def stripe_payment_intent_succeeded(
         request_headers=request_headers,
     )
     if unsupported_reason is not None:
-        return _route_unsupported_event_family(
+        return await _route_unsupported_event_family(
             source="stripe",
             raw_body=raw_body,
             reason=unsupported_reason,
+            tenant_id=tenant_info["tenant_id"],
+            identity_payload=identity_payload,
+            request_headers=request_headers,
         )
 
     try:
@@ -873,13 +944,43 @@ async def stripe_payment_intent_succeeded(
         uuid5(NAMESPACE_URL, f"stripe_payment_intent_succeeded_{payload.id}")
     )
     set_business_correlation_id(idempotency_key)
+    if payload.amount is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_amount_minor",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if payload.amount <= 0:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:non_positive_amount_minor",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if payload.currency is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="stripe",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_currency",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     ts = (
         datetime.fromtimestamp(payload.created)
         if payload.created
         else datetime.now(timezone.utc)
     )
-    verified_amount_minor = int(payload.amount or 0)
-    verified_amount_currency = payload.currency.upper() if payload.currency else "USD"
+    verified_amount_minor = int(payload.amount)
+    verified_amount_currency = payload.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
     event_data = {
         "event_type": "purchase",
@@ -1046,10 +1147,13 @@ async def stripe_payment_intent_succeeded_v2(
         request_headers=request_headers,
     )
     if unsupported_reason is not None:
-        return _route_unsupported_event_family(
+        return await _route_unsupported_event_family(
             source="stripe",
             raw_body=raw_body,
             reason=unsupported_reason,
+            tenant_id=tenant_info["tenant_id"],
+            identity_payload=identity_payload or payload,
+            request_headers=request_headers,
         )
 
     if not idempotency_key:
@@ -1097,6 +1201,8 @@ async def stripe_payment_intent_succeeded_v2(
             raise ValueError("created must be an integer unix timestamp")
         if not isinstance(amount_cents, int):
             raise ValueError("amount must be an integer cents value")
+        if amount_cents <= 0:
+            raise ValueError("amount must be a positive integer cents value")
         if not isinstance(currency, str) or len(currency) != 3:
             raise ValueError("currency must be a 3-letter code")
         if not pi_id or not isinstance(pi_id, str):
@@ -1244,10 +1350,13 @@ async def paypal_sale_completed(
         request_headers=request_headers,
     )
     if unsupported_reason is not None:
-        return _route_unsupported_event_family(
+        return await _route_unsupported_event_family(
             source="paypal",
             raw_body=raw_body,
             reason=unsupported_reason,
+            tenant_id=tenant_info["tenant_id"],
+            identity_payload=identity_payload,
+            request_headers=request_headers,
         )
 
     try:
@@ -1273,27 +1382,57 @@ async def paypal_sale_completed(
 
     idempotency_key = str(uuid5(NAMESPACE_URL, f"paypal_sale_completed_{payload.id}"))
     set_business_correlation_id(idempotency_key)
+    if payload.amount is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_amount",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if payload.amount.currency is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_currency",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if payload.amount.total is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_amount_total",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     ts = payload.create_time or datetime.now(timezone.utc)
-    verified_amount_currency = (
-        payload.amount.currency if payload.amount and payload.amount.currency else "USD"
-    ).upper()
+    verified_amount_currency = payload.amount.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
-    raw_amount = (
-        payload.amount.total
-        if payload.amount and payload.amount.total is not None
-        else "0"
-    )
+    raw_amount = payload.amount.total
     parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
-    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
+    if parsed_minor is None or parsed_minor <= 0:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="paypal",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:invalid_amount_total",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    verified_amount_minor = parsed_minor
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
-        "revenue_amount": (
-            _minor_units_to_decimal_string(
-                verified_amount_minor, scale=verified_amount_scale
-            )
-            if parsed_minor is not None
-            else raw_amount
+        "revenue_amount": _minor_units_to_decimal_string(
+            verified_amount_minor, scale=verified_amount_scale
         ),
         "currency": verified_amount_currency,
         "session_id": str(generate_privacy_session_id()),
@@ -1361,10 +1500,13 @@ async def woocommerce_order_completed(
         request_headers=request_headers,
     )
     if unsupported_reason is not None:
-        return _route_unsupported_event_family(
+        return await _route_unsupported_event_family(
             source="woocommerce",
             raw_body=raw_body,
             reason=unsupported_reason,
+            tenant_id=tenant_info["tenant_id"],
+            identity_payload=identity_payload,
+            request_headers=request_headers,
         )
 
     try:
@@ -1392,21 +1534,47 @@ async def woocommerce_order_completed(
         uuid5(NAMESPACE_URL, f"woocommerce_order_completed_{payload.id}")
     )
     set_business_correlation_id(idempotency_key)
+    if payload.currency is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_currency",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    if payload.total is None:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:missing_total",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
     ts = payload.date_completed or datetime.now(timezone.utc)
-    verified_amount_currency = (payload.currency or "USD").upper()
+    verified_amount_currency = payload.currency.upper()
     verified_amount_scale = _canonical_money_scale(verified_amount_currency)
-    raw_amount = payload.total or "0"
+    raw_amount = payload.total
     parsed_minor = _try_decimal_to_minor_units(raw_amount, scale=verified_amount_scale)
-    verified_amount_minor = parsed_minor if parsed_minor is not None else 0
+    if parsed_minor is None or parsed_minor <= 0:
+        return await _route_authenticated_malformed_payload(
+            tenant_id=tenant_info["tenant_id"],
+            source="woocommerce",
+            idempotency_key=idempotency_key,
+            error_message="schema_validation_error:invalid_total",
+            vendor_payload=identity_payload,
+            identity_payload=identity_payload,
+            request_headers=request_headers,
+        )
+    verified_amount_minor = parsed_minor
     event_data = {
         "event_type": "purchase",
         "event_timestamp": ts.isoformat(),
-        "revenue_amount": (
-            _minor_units_to_decimal_string(
-                verified_amount_minor, scale=verified_amount_scale
-            )
-            if parsed_minor is not None
-            else raw_amount
+        "revenue_amount": _minor_units_to_decimal_string(
+            verified_amount_minor, scale=verified_amount_scale
         ),
         "currency": verified_amount_currency,
         "session_id": str(generate_privacy_session_id()),

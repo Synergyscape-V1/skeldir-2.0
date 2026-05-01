@@ -80,6 +80,109 @@ def _assert_forbidden_tokens_absent(
             violations.append(f"{violation_prefix}:{token}")
 
 
+def _is_decimal_zero_call(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    if not isinstance(node.func, ast.Name) or node.func.id != "Decimal":
+        return False
+    if not node.args:
+        return False
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value.strip() in {"0", "0.0", "0.00", "+0", "-0"}
+    return False
+
+
+def _is_zero_like(node: ast.AST, *, zero_names: set[str]) -> bool:
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float)):
+            return node.value == 0
+        if isinstance(node.value, str):
+            return node.value.strip() in {"0", "0.0", "0.00", "+0", "-0"}
+        return False
+    if isinstance(node, ast.Name):
+        return node.id in zero_names
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        return _is_zero_like(node.operand, zero_names=zero_names)
+    return _is_decimal_zero_call(node)
+
+
+def _collect_zero_name_assignments(function_node: ast.FunctionDef) -> set[str]:
+    zero_names: set[str] = set()
+    for node in ast.walk(function_node):
+        if isinstance(node, ast.Assign):
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                continue
+            if _is_zero_like(node.value, zero_names=zero_names):
+                zero_names.add(node.targets[0].id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.value is not None and _is_zero_like(node.value, zero_names=zero_names):
+                zero_names.add(node.target.id)
+    return zero_names
+
+
+def _is_zero_fallback_expression(node: ast.AST, *, zero_names: set[str]) -> bool:
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+        return any(_is_zero_like(value, zero_names=zero_names) for value in node.values)
+    if isinstance(node, ast.IfExp):
+        return _is_zero_like(node.orelse, zero_names=zero_names)
+    return False
+
+
+def _semantic_zero_fallback_violations(extraction_text: str) -> list[str]:
+    tree = ast.parse(extraction_text)
+    violations: list[str] = []
+    for function_node in (
+        node for node in tree.body if isinstance(node, ast.FunctionDef)
+    ):
+        zero_names = _collect_zero_name_assignments(function_node)
+        for node in ast.walk(function_node):
+            if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+                if any(_is_zero_like(value, zero_names=zero_names) for value in node.values):
+                    violations.append(
+                        f"semantic_zero_fallback_bool_or:{function_node.name}:{ast.unparse(node)}"
+                    )
+            elif isinstance(node, ast.IfExp):
+                if _is_zero_like(node.orelse, zero_names=zero_names):
+                    violations.append(
+                        f"semantic_zero_fallback_ternary:{function_node.name}:{ast.unparse(node)}"
+                    )
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+                    if len(node.args) >= 2 and _is_zero_like(
+                        node.args[1], zero_names=zero_names
+                    ):
+                        violations.append(
+                            f"semantic_zero_fallback_dict_get_default:{function_node.name}:{ast.unparse(node)}"
+                        )
+
+                for keyword in node.keywords:
+                    if keyword.arg in {"default", "fallback", "default_amount"} and _is_zero_like(
+                        keyword.value, zero_names=zero_names
+                    ):
+                        violations.append(
+                            f"semantic_zero_fallback_keyword_default:{function_node.name}:{ast.unparse(node)}"
+                        )
+
+                call_name = ast.unparse(node.func).lower()
+                if "zero" in call_name and any(
+                    token in call_name for token in ("coerce", "normalize", "fallback")
+                ):
+                    violations.append(
+                        f"semantic_zero_fallback_helper:{function_node.name}:{ast.unparse(node)}"
+                    )
+
+                if isinstance(node.func, ast.Name) and node.func.id in {"int", "Decimal"}:
+                    if node.args and _is_zero_fallback_expression(
+                        node.args[0], zero_names=zero_names
+                    ):
+                        violations.append(
+                            f"semantic_zero_fallback_pre_numeric_conversion:{function_node.name}:{ast.unparse(node)}"
+                        )
+
+    return sorted(set(violations))
+
+
 def run_enforcement(
     *,
     repo_root: Path,
@@ -87,10 +190,19 @@ def run_enforcement(
     workflow_file: Path,
     extraction_module: Path,
     kernel_module: Path,
+    failure_boundary_module: Path,
+    webhook_module: Path,
     simulate_regression: bool,
 ) -> tuple[int, list[str]]:
     violations: list[str] = []
-    for required in (contract_file, workflow_file, extraction_module, kernel_module):
+    for required in (
+        contract_file,
+        workflow_file,
+        extraction_module,
+        kernel_module,
+        failure_boundary_module,
+        webhook_module,
+    ):
         if not required.exists():
             violations.append(f"missing_file:{required}")
     if violations:
@@ -99,6 +211,8 @@ def run_enforcement(
     contract = _read_json(contract_file)
     extraction_text = _read_text(extraction_module)
     kernel_text = _read_text(kernel_module)
+    failure_boundary_text = _read_text(failure_boundary_module)
+    webhook_text = _read_text(webhook_module)
     workflow_text = _read_text(workflow_file)
 
     if contract.get("contract_id") != "b23.p2.match_engine_kernel.main":
@@ -155,6 +269,7 @@ def run_enforcement(
         "gross_captured_minor",
         "net_after_fees_minor",
         "extract_revenue_from_typed_input",
+        "amount_minor=int(payload.gross_captured_minor)",
     )
     for token in required_extraction_tokens:
         if token not in extraction_text:
@@ -162,6 +277,9 @@ def run_enforcement(
 
     if "amount_minor=int(payload.net_after_fees_minor" in extraction_text:
         violations.append("stripe_net_after_fees_used_as_canonical_amount")
+
+    for fallback_violation in _semantic_zero_fallback_violations(extraction_text):
+        violations.append(fallback_violation)
 
     required_kernel_tokens = (
         "INSERT INTO b23_match_verdicts",
@@ -173,10 +291,34 @@ def run_enforcement(
         "FOR UPDATE",
         "classify_stale_pending_as_unmatched",
         "WEBHOOK_ARRIVAL_WINDOW",
+        "classify_b23_failure_boundary",
+        "VALID_POST_CAPTURE_UNRESOLVED_ORDER_IDENTITY",
+        "UNSUPPORTED_AUTHENTICATED_PROVIDER_EVENT_TYPE",
     )
     for token in required_kernel_tokens:
         if token not in kernel_text:
             violations.append(f"kernel_missing_token:{token}")
+
+    required_failure_boundary_tokens = (
+        "class B23FailureBoundaryClass",
+        "UNAUTHENTICATED_MALFORMED_WEBHOOK",
+        "AUTHENTICATED_MALFORMED_CANONICAL_PAYLOAD",
+        "VALID_POST_CAPTURE_UNRESOLVED_ORDER_IDENTITY",
+        "UNSUPPORTED_AUTHENTICATED_PROVIDER_EVENT_TYPE",
+        "classify_b23_failure_boundary",
+    )
+    for token in required_failure_boundary_tokens:
+        if token not in failure_boundary_text:
+            violations.append(f"failure_boundary_missing_token:{token}")
+
+    required_webhook_boundary_tokens = (
+        "B23FailureBoundaryClass.AUTHENTICATED_MALFORMED_CANONICAL_PAYLOAD",
+        "B23FailureBoundaryClass.UNSUPPORTED_AUTHENTICATED_PROVIDER_EVENT_TYPE",
+        "b23_failure_boundary",
+    )
+    for token in required_webhook_boundary_tokens:
+        if token not in webhook_text:
+            violations.append(f"webhook_boundary_missing_token:{token}")
 
     _assert_forbidden_tokens_absent(
         text_payload=kernel_text,
@@ -220,6 +362,9 @@ def run_enforcement(
     for token in contract.get("required_ci_wiring", []):
         if str(token) not in workflow_text:
             violations.append(f"ci_missing_token:{token}")
+    for token in contract.get("required_ci_runtime_db_proof_lock", []):
+        if str(token) not in workflow_text:
+            violations.append(f"ci_missing_runtime_db_proof_token:{token}")
 
     if simulate_regression:
         violations.append("synthetic_regression=forced_failure_path")
@@ -236,6 +381,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--workflow-file", default=WORKFLOW_FILE)
     parser.add_argument("--extraction-module", default="")
     parser.add_argument("--kernel-module", default="")
+    parser.add_argument("--failure-boundary-module", default="")
+    parser.add_argument("--webhook-module", default="")
     parser.add_argument("--simulate-regression", action="store_true")
     args = parser.parse_args(argv[1:])
 
@@ -251,6 +398,16 @@ def main(argv: list[str]) -> int:
         repo_root,
         args.kernel_module or str(contract["authoritative_surfaces"]["kernel_module"]),
     )
+    failure_boundary_module = _resolve(
+        repo_root,
+        args.failure_boundary_module
+        or str(contract["authoritative_surfaces"]["failure_boundary_module"]),
+    )
+    webhook_module = _resolve(
+        repo_root,
+        args.webhook_module
+        or str(contract["authoritative_surfaces"]["webhook_module"]),
+    )
 
     status, violations = run_enforcement(
         repo_root=repo_root,
@@ -258,6 +415,8 @@ def main(argv: list[str]) -> int:
         workflow_file=_resolve(repo_root, args.workflow_file),
         extraction_module=extraction_module,
         kernel_module=kernel_module,
+        failure_boundary_module=failure_boundary_module,
+        webhook_module=webhook_module,
         simulate_regression=bool(args.simulate_regression),
     )
     print("b23_p2_match_engine_kernel_enforcer")
@@ -268,7 +427,7 @@ def main(argv: list[str]) -> int:
         return status
     print("result=PASS")
     print(
-        "enforcement=b23_p2_typed_extraction_concurrency_unmatched_handler_boundary_locked"
+        "enforcement=b23_p2_typed_extraction_concurrency_unmatched_handler_boundary_and_runtime_db_lock"
     )
     return 0
 

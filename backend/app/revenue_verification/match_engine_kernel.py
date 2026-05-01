@@ -18,6 +18,7 @@ from .extraction_registry import (
     RevenueExtractionInput,
     extract_revenue_from_typed_input,
 )
+from .failure_boundary import B23FailureBoundaryClass, classify_b23_failure_boundary
 from .semantic_authority import (
     B23DiscrepancyClass,
     CanonicalizationStatus,
@@ -451,6 +452,9 @@ async def _insert_unresolved_post_capture_failure(
     session: AsyncSession,
     post_capture_input: B23PostCaptureInput,
 ) -> UUID:
+    boundary = classify_b23_failure_boundary(
+        B23FailureBoundaryClass.VALID_POST_CAPTURE_UNRESOLVED_ORDER_IDENTITY
+    )
     timestamp = _normalize_utc(post_capture_input.event_occurred_at)
     canonical_reference = (
         post_capture_input.canonical_commerce_reference
@@ -561,7 +565,7 @@ async def _insert_unresolved_post_capture_failure(
             "provider": post_capture_input.provider,
             "canonical_commerce_reference": canonical_reference,
             "resolution_notes": post_capture_input.failure_reason
-            or "unresolved_post_capture_event",
+            or boundary.boundary_class.value,
             "raised_at": timestamp,
             "created_at": timestamp,
             "updated_at": timestamp,
@@ -597,13 +601,61 @@ async def _insert_unresolved_post_capture_failure(
             "provider": post_capture_input.provider,
             "provider_native_event_reference": post_capture_input.provider_native_event_reference,
             "failure_reason": post_capture_input.failure_reason
-            or "unresolved_post_capture_event",
+            or boundary.boundary_class.value,
             "received_at": timestamp,
             "created_at": timestamp,
             "updated_at": timestamp,
         },
     )
     return verdict_id
+
+
+async def _insert_unsupported_post_capture_failure(
+    session: AsyncSession,
+    post_capture_input: B23PostCaptureInput,
+) -> None:
+    boundary = classify_b23_failure_boundary(
+        B23FailureBoundaryClass.UNSUPPORTED_AUTHENTICATED_PROVIDER_EVENT_TYPE
+    )
+    timestamp = _normalize_utc(post_capture_input.event_occurred_at)
+    await session.execute(
+        text(
+            """
+            INSERT INTO b23_webhook_ingestion_logs (
+                tenant_id,
+                provider,
+                provider_native_event_reference,
+                ingestion_status,
+                failure_reason,
+                received_at,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                :tenant_id,
+                :provider,
+                :provider_native_event_reference,
+                'failed',
+                :failure_reason,
+                :received_at,
+                :created_at,
+                :updated_at
+            )
+            ON CONFLICT DO NOTHING
+            """
+        ),
+        {
+            "tenant_id": str(post_capture_input.tenant_id),
+            "provider": post_capture_input.provider,
+            "provider_native_event_reference": post_capture_input.provider_native_event_reference,
+            "failure_reason": (
+                f"{boundary.boundary_class.value}:{post_capture_input.event_type}"
+            ),
+            "received_at": timestamp,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        },
+    )
 
 
 async def register_b23_post_capture_event(
@@ -620,6 +672,7 @@ async def register_b23_post_capture_event(
         post_capture_input.event_type
         not in B23_POST_CAPTURE_HANDLER_REGISTRY[post_capture_input.provider]
     ):
+        await _insert_unsupported_post_capture_failure(session, post_capture_input)
         raise ValueError("post_capture_event_type_not_registered")
     timestamp = _normalize_utc(post_capture_input.event_occurred_at)
     if post_capture_input.match_verdict_id is None:
