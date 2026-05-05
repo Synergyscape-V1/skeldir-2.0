@@ -227,6 +227,45 @@ jobs:
                   raise SystemExit(f"unable to locate {label} function block in canonical schema")
               deferred_blocks.append(match.group(0).strip() + "\n")
               reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
+          allocation_summary_view = """CREATE MATERIALIZED VIEW mv_allocation_summary AS
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
+        CASE
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
+        END AS is_balanced,
+        CASE
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
+        END AS drift_cents
+   FROM (attribution_allocations aa
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
+  WITH NO DATA;"""
+          allocation_summary_view_bootstrap = """CREATE MATERIALIZED VIEW mv_allocation_summary AS
+ SELECT aa.tenant_id,
+    aa.event_id,
+    aa.model_version,
+    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
+    e.revenue_cents AS event_revenue_cents,
+        CASE
+            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+        END AS is_balanced,
+        CASE
+            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+        END AS drift_cents
+   FROM (attribution_allocations aa
+     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
+  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+  WITH NO DATA;"""
+          if allocation_summary_view not in reordered:
+              raise SystemExit("unable to locate mv_allocation_summary block in canonical schema")
+          reordered = reordered.replace(allocation_summary_view, allocation_summary_view_bootstrap, 1)
           target.write_text(reordered.rstrip() + "\n\n" + "\n".join(deferred_blocks), encoding="utf-8")
           PY
           podman exec -i skeldir-r2-postgres psql -v ON_ERROR_STOP=1 -U $POSTGRES_USER -d $POSTGRES_DB < /tmp/canonical_schema_r2_bootstrap.sql
