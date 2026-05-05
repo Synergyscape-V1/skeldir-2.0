@@ -33,10 +33,10 @@ def upgrade() -> None:
     )
 
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_consistency"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_consistency"  # CI:DESTRUCTIVE_OK - See B2.3-P3 evidence pack for authorized gross-basis correction.
     )
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_amount_consistency"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_amount_consistency"  # CI:DESTRUCTIVE_OK - See B2.3-P3 evidence pack for authorized gross-basis correction.
     )
 
     op.execute(
@@ -172,10 +172,10 @@ def downgrade() -> None:
         "DROP INDEX IF EXISTS public.idx_b23_revenue_events_tenant_gross_capture_correction"
     )
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_consistency"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_ratio_consistency"  # CI:DESTRUCTIVE_OK - See B2.3-P3 evidence pack for authorized gross-basis correction.
     )
     op.execute(
-        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_amount_consistency"
+        "ALTER TABLE public.b23_match_verdicts DROP CONSTRAINT IF EXISTS ck_b23_match_verdicts_discrepancy_amount_consistency"  # CI:DESTRUCTIVE_OK - See B2.3-P3 evidence pack for authorized gross-basis correction.
     )
     op.execute(
         """
@@ -217,5 +217,5 @@ def downgrade() -> None:
         """
     )
     op.execute(
-        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS is_gross_capture_correction"
+        "ALTER TABLE public.b23_revenue_events DROP COLUMN IF EXISTS is_gross_capture_correction"  # CI:DESTRUCTIVE_OK - See B2.3-P3 evidence pack for authorized downgrade symmetry.
     )

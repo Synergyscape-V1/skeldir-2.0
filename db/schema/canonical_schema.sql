@@ -2444,8 +2444,6 @@ CREATE INDEX idx_b23_exception_records_tenant_provider_reference ON public.b23_e
 
 CREATE INDEX idx_b23_exception_records_tenant_status_severity ON public.b23_exception_records USING btree (tenant_id, status, severity, raised_at DESC);
 
-CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
-
 CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_band ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_band, last_transition_at DESC);
 
 CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_ratio_bps ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_ratio_bps, last_transition_at DESC);
@@ -2677,6 +2675,8 @@ CREATE INDEX ix_public_celery_task_failures_task_id ON public.worker_failed_jobs
 CREATE INDEX ix_public_celery_task_failures_task_name ON public.worker_failed_jobs USING btree (task_name);
 
 CREATE INDEX ix_public_celery_task_failures_tenant_id ON public.worker_failed_jobs USING btree (tenant_id);
+
+CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
 CREATE UNIQUE INDEX uq_platform_connections_tenant_platform_account ON public.platform_connections USING btree (tenant_id, platform, platform_account_id);
 
