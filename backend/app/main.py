@@ -43,6 +43,7 @@ from app.api import (
     platform_oauth,
     platforms,
     reconciliation,
+    revenue_verification,
     revenue,
     webhooks,
 )
@@ -88,6 +89,11 @@ app.include_router(platform_oauth.router, prefix="/api/attribution", tags=["Prov
 app.include_router(revenue.router, prefix="/api/v1", tags=["Revenue"])
 app.include_router(privacy.router, prefix="/api/v1", tags=["Privacy"])
 app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["Reconciliation"])
+app.include_router(
+    revenue_verification.router,
+    prefix="/api/reconciliation",
+    tags=["Revenue Verification"],
+)
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(health.router, tags=["Health"])
 app.include_router(webhooks.router, prefix="/api", tags=["Webhooks"])

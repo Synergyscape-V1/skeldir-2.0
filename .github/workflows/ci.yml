@@ -426,6 +426,75 @@ jobs:
           print("B2.3-P2 runtime proofs executed with zero skips.")
           PY
 
+      - name: Enforce B2.3-P3 verdict persistence authority
+        run: |
+          python scripts/ci/enforce_b23_p3_verdict_persistence.py
+
+      - name: Run B2.3-P3 verdict persistence negative controls
+        run: |
+          pytest backend/tests/test_b23_p3_verdict_persistence_enforcer.py -q
+
+      - name: Verify B2.3-P3 runtime DB proof-lock prerequisites
+        env:
+          SKELDIR_B23_P3_REQUIRE_DB_PROOFS: "1"
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          if os.environ.get("SKELDIR_B23_P3_REQUIRE_DB_PROOFS") != "1":
+              raise SystemExit("B2.3-P3 runtime DB proof-lock requires SKELDIR_B23_P3_REQUIRE_DB_PROOFS=1.")
+          dsn = os.environ.get("DATABASE_URL")
+          if not dsn:
+              raise SystemExit("B2.3-P3 runtime DB proof-lock requires DATABASE_URL.")
+
+          engine = create_engine(dsn)
+          with engine.connect() as conn:
+              conn.execute(text("SELECT 1"))
+              for table_name in (
+                  "b23_match_verdicts",
+                  "b23_exception_records",
+                  "b23_revenue_events",
+                  "b23_webhook_ingestion_logs",
+              ):
+                  regclass = conn.execute(
+                      text("SELECT to_regclass(:qualified_name)"),
+                      {"qualified_name": f"public.{table_name}"},
+                  ).scalar_one()
+                  if regclass is None:
+                      raise SystemExit(f"B2.3-P3 runtime DB proof-lock missing required table: {table_name}")
+              correction_column = conn.execute(
+                  text(
+                      """
+                      SELECT 1
+                      FROM information_schema.columns
+                      WHERE table_schema = 'public'
+                        AND table_name = 'b23_revenue_events'
+                        AND column_name = 'is_gross_capture_correction'
+                      """
+                  )
+              ).scalar_one_or_none()
+              if correction_column is None:
+                  raise SystemExit("B2.3-P3 missing is_gross_capture_correction column.")
+          print("B2.3-P3 runtime DB proof-lock preflight passed")
+          PY
+
+      - name: Run B2.3-P3 verdict persistence runtime proofs
+        env:
+          SKELDIR_B23_P3_REQUIRE_DB_PROOFS: "1"
+        run: |
+          mkdir -p artifacts
+          pytest backend/tests/test_b23_p3_verdict_persistence.py -q -rA --junitxml=artifacts/b23_p3_runtime_proofs.junit.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          report = ET.parse("artifacts/b23_p3_runtime_proofs.junit.xml")
+          skipped = sum(1 for testcase in report.iter("testcase") if testcase.find("skipped") is not None)
+          if skipped > 0:
+              raise SystemExit(f"B2.3-P3 runtime proofs reported skipped tests: {skipped}")
+          print("B2.3-P3 runtime proofs executed with zero skips.")
+          PY
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q

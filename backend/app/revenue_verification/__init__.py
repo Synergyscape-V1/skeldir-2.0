@@ -27,6 +27,7 @@ from .match_engine_kernel import (
     classify_stale_pending_as_unmatched,
     discrepancy_ratio_percent,
     process_b23_capture_match,
+    reconcile_b23_attribution_exception_lifecycle,
     register_b23_post_capture_event,
     seed_pending_match_verdict,
 )
@@ -53,6 +54,13 @@ from .semantic_authority import (
     validate_delayed_arrival_strategy,
     validate_delayed_arrival_topology,
     validate_downstream_projection_payload,
+)
+from .state_transitions import (
+    B23_P3_TRANSITION_BATCH_SIZE,
+    B23_P3_TRANSITION_SWEEP_CADENCE,
+    B23TransitionResult,
+    transition_stale_pending_to_unmatched,
+    transition_stale_provisional_to_confirmed,
 )
 from .timing_constants import (
     PROVISIONAL_MATCH_WINDOW,
@@ -83,6 +91,7 @@ __all__ = [
     "classify_stale_pending_as_unmatched",
     "classify_b23_match_quality",
     "classify_b23_discrepancy",
+    "reconcile_b23_attribution_exception_lifecycle",
     "build_persisted_ingress_revenue_input",
     "discrepancy_ratio_percent",
     "ALLOWED_DELAYED_ARRIVAL_FORBIDDEN_COLUMNS",
@@ -105,6 +114,11 @@ __all__ = [
     "WEBHOOK_ARRIVAL_WINDOW",
     "PROVISIONAL_MATCH_WINDOW",
     "REFUND_REOPENING_WINDOW",
+    "B23_P3_TRANSITION_BATCH_SIZE",
+    "B23_P3_TRANSITION_SWEEP_CADENCE",
+    "B23TransitionResult",
+    "transition_stale_pending_to_unmatched",
+    "transition_stale_provisional_to_confirmed",
     "validate_delayed_arrival_topology_binding",
     "validate_delayed_arrival_lifecycle_binding",
     "validate_delayed_arrival_strategy",

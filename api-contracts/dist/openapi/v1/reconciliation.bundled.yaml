@@ -57,10 +57,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: &ref_10
+                required: &ref_16
                   - platforms
                   - overall_status
-                properties: &ref_11
+                properties: &ref_17
                   platforms:
                     type: array
                     items:
@@ -230,12 +230,12 @@ paths:
                 properties: *ref_1
         '500':
           description: Internal server error
-          headers: &ref_12
+          headers: &ref_27
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_13
+          content: &ref_28
             application/problem+json:
               schema:
                 type: object
@@ -300,12 +300,12 @@ paths:
           content: *ref_9
         '404':
           description: Resource not found
-          headers: &ref_14
+          headers: &ref_10
             X-Correlation-ID:
               schema:
                 type: string
                 format: uuid
-          content: &ref_15
+          content: &ref_11
             application/problem+json:
               schema:
                 type: object
@@ -389,16 +389,411 @@ paths:
           description: Forbidden - authenticated but insufficient permissions
           headers: *ref_8
           content: *ref_9
+  /api/reconciliation/match-verdicts/{verdict_id}:
+    get:
+      summary: Get B2.3 match verdict detail
+      description: Returns one row-level B2.3 match verdict with gross/net/discrepancy truth.
+      operationId: getB23MatchVerdict
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth:
+            - viewer
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: verdict_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: B2.3 match verdict detail
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: &ref_23
+                  - id
+                  - tenant_id
+                  - attribution_event_id
+                  - webhook_ingress_identity_id
+                  - provider
+                  - canonical_commerce_reference
+                  - provider_native_event_reference
+                  - provider_native_commerce_reference
+                  - status
+                  - match_quality
+                  - canonical_gross_expected_amount_minor
+                  - canonical_gross_captured_amount_minor
+                  - canonical_net_verified_amount_minor
+                  - discrepancy
+                  - adjustments_applied
+                  - pending_since
+                  - provisional_expires_at
+                  - confirmed_at
+                  - adjusted_at
+                  - unmatched_marked_at
+                  - last_transition_at
+                  - created_at
+                  - updated_at
+                properties: &ref_24
+                  id:
+                    type: string
+                    format: uuid
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  attribution_event_id:
+                    type:
+                      - string
+                      - 'null'
+                    format: uuid
+                  webhook_ingress_identity_id:
+                    type:
+                      - string
+                      - 'null'
+                    format: uuid
+                  provider:
+                    type: string
+                  canonical_commerce_reference:
+                    type: string
+                  provider_native_event_reference:
+                    type: string
+                  provider_native_commerce_reference:
+                    type: string
+                  status:
+                    type: string
+                    enum: &ref_18
+                      - pending
+                      - matched_provisional
+                      - matched_confirmed
+                      - adjusted
+                      - unmatched
+                  match_quality:
+                    type: string
+                    enum: &ref_19
+                      - high
+                      - medium
+                      - low
+                  canonical_gross_expected_amount_minor:
+                    type: integer
+                    minimum: 0
+                  canonical_gross_captured_amount_minor:
+                    type: integer
+                    minimum: 0
+                  canonical_net_verified_amount_minor:
+                    type: integer
+                    minimum: 0
+                  discrepancy:
+                    type: object
+                    additionalProperties: false
+                    required: &ref_12
+                      - discrepancy_amount_minor
+                      - discrepancy_ratio_bps
+                      - discrepancy_band
+                      - discrepancy_basis
+                    properties: &ref_13
+                      discrepancy_amount_minor:
+                        type: integer
+                        minimum: 0
+                      discrepancy_ratio_bps:
+                        type: integer
+                        minimum: 0
+                      discrepancy_band:
+                        type: string
+                        enum: &ref_20
+                          - exact
+                          - within_tolerance
+                          - over_tolerance
+                          - severe_gap
+                      discrepancy_basis:
+                        type: string
+                        enum:
+                          - gross_expected_vs_gross_captured
+                  adjustments_applied:
+                    type: boolean
+                  pending_since:
+                    type: string
+                    format: date-time
+                  provisional_expires_at:
+                    type:
+                      - string
+                      - 'null'
+                    format: date-time
+                  confirmed_at:
+                    type:
+                      - string
+                      - 'null'
+                    format: date-time
+                  adjusted_at:
+                    type:
+                      - string
+                      - 'null'
+                    format: date-time
+                  unmatched_marked_at:
+                    type:
+                      - string
+                      - 'null'
+                    format: date-time
+                  last_transition_at:
+                    type: string
+                    format: date-time
+                  created_at:
+                    type: string
+                    format: date-time
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_6
+          content: *ref_7
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_8
+          content: *ref_9
+        '404':
+          description: Resource not found
+          headers: *ref_10
+          content: *ref_11
+  /api/reconciliation/exceptions:
+    get:
+      summary: List B2.3 exception records
+      description: Returns row-level first-class B2.3 exception records for the authenticated tenant.
+      operationId: listB23ExceptionRecords
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth:
+            - viewer
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+      responses:
+        '200':
+          description: B2.3 exception records
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: &ref_25
+                  - exceptions
+                properties: &ref_26
+                  exceptions:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: &ref_14
+                        - id
+                        - tenant_id
+                        - match_verdict_id
+                        - provider
+                        - canonical_commerce_reference
+                        - severity
+                        - workflow_state
+                        - resolution_code
+                        - discrepancy_reason
+                        - discrepancy_context
+                        - raised_at
+                        - resolved_at
+                        - dismissed_at
+                        - created_at
+                        - updated_at
+                      properties: &ref_15
+                        id:
+                          type: string
+                          format: uuid
+                        tenant_id:
+                          type: string
+                          format: uuid
+                        match_verdict_id:
+                          type: string
+                          format: uuid
+                        provider:
+                          type: string
+                        canonical_commerce_reference:
+                          type: string
+                        severity:
+                          type: string
+                          enum: &ref_21
+                            - flagged
+                            - alert
+                        workflow_state:
+                          type: string
+                          enum: &ref_22
+                            - open
+                            - acknowledged
+                            - resolved
+                            - dismissed
+                        resolution_code:
+                          type:
+                            - string
+                            - 'null'
+                        discrepancy_reason:
+                          type: string
+                        discrepancy_context:
+                          type: object
+                          additionalProperties: false
+                          required: *ref_12
+                          properties: *ref_13
+                        raised_at:
+                          type: string
+                          format: date-time
+                        resolved_at:
+                          type:
+                            - string
+                            - 'null'
+                          format: date-time
+                        dismissed_at:
+                          type:
+                            - string
+                            - 'null'
+                          format: date-time
+                        created_at:
+                          type: string
+                          format: date-time
+                        updated_at:
+                          type: string
+                          format: date-time
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_6
+          content: *ref_7
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_8
+          content: *ref_9
+  /api/reconciliation/exceptions/{exception_id}:
+    get:
+      summary: Get B2.3 exception record
+      description: Returns one row-level first-class B2.3 exception record.
+      operationId: getB23ExceptionRecord
+      tags:
+        - Reconciliation
+      security:
+        - accessBearerAuth:
+            - viewer
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          schema: *ref_2
+          description: Unique request correlation ID for distributed tracing
+        - name: Authorization
+          in: header
+          required: true
+          schema: *ref_3
+          description: Bearer token for authentication (format - Bearer <token>)
+        - name: exception_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: B2.3 exception record
+          headers:
+            X-Correlation-ID:
+              schema:
+                type: string
+                format: uuid
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: *ref_14
+                properties: *ref_15
+        '401':
+          description: Unauthorized - invalid or missing authentication
+          headers: *ref_6
+          content: *ref_7
+        '403':
+          description: Forbidden - authenticated but insufficient permissions
+          headers: *ref_8
+          content: *ref_9
+        '404':
+          description: Resource not found
+          headers: *ref_10
+          content: *ref_11
 components:
   schemas:
     ReconciliationStatusResponse:
       type: object
-      required: *ref_10
-      properties: *ref_11
+      required: *ref_16
+      properties: *ref_17
     PlatformStatus:
       type: object
       required: *ref_4
       properties: *ref_5
+    B23VerdictStatus:
+      type: string
+      enum: *ref_18
+    B23MatchQuality:
+      type: string
+      enum: *ref_19
+    B23DiscrepancyBand:
+      type: string
+      enum: *ref_20
+    B23ExceptionSeverity:
+      type: string
+      enum: *ref_21
+    B23ExceptionWorkflowState:
+      type: string
+      enum: *ref_22
+    B23DiscrepancyContext:
+      type: object
+      additionalProperties: false
+      required: *ref_12
+      properties: *ref_13
+    B23MatchVerdictDetailResponse:
+      type: object
+      additionalProperties: false
+      required: *ref_23
+      properties: *ref_24
+    B23ExceptionRecordResponse:
+      type: object
+      additionalProperties: false
+      required: *ref_14
+      properties: *ref_15
+    B23ExceptionListResponse:
+      type: object
+      additionalProperties: false
+      required: *ref_25
+      properties: *ref_26
     ProblemDetails:
       type: object
       description: RFC7807 Problem Details for HTTP APIs with Skeldir extensions
@@ -439,9 +834,9 @@ components:
       content: *ref_9
     ServerError:
       description: Internal server error
-      headers: *ref_12
-      content: *ref_13
+      headers: *ref_27
+      content: *ref_28
     NotFoundError:
       description: Resource not found
-      headers: *ref_14
-      content: *ref_15
+      headers: *ref_10
+      content: *ref_11

@@ -1,0 +1,126 @@
+{
+  "contract_id": "b23.p3.verdict_persistence.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P3",
+  "description": "B2.3-P3 verdict persistence, transition registration, gross/net basis separation, strict read contract parity, and phase-boundary governance.",
+  "inherits_from": {
+    "b23_p0_semantic_authority_freeze_contract": "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json",
+    "b23_p1_schema_authority_lock_contract": "contracts-internal/governance/b23_p1_schema_authority_lock.main.json",
+    "b23_p2_match_engine_kernel_contract": "contracts-internal/governance/b23_p2_match_engine_kernel.main.json"
+  },
+  "authoritative_surfaces": {
+    "phase_exception_migration": "alembic/versions/007_skeldir_foundation/202605051200_b23_p3_verdict_persistence_authority.py",
+    "canonical_schema": "db/schema/canonical_schema.sql",
+    "kernel_module": "backend/app/revenue_verification/match_engine_kernel.py",
+    "state_transition_module": "backend/app/revenue_verification/state_transitions.py",
+    "task_module": "backend/app/tasks/revenue_verification.py",
+    "beat_schedule_module": "backend/app/tasks/beat_schedule.py",
+    "celery_app_module": "backend/app/celery_app.py",
+    "api_module": "backend/app/api/revenue_verification.py",
+    "schema_module": "backend/app/schemas/revenue_verification.py",
+    "openapi_contract": "api-contracts/openapi/v1/reconciliation.yaml",
+    "frontend_generated_types": "frontend/src/types/api/reconciliation.ts",
+    "runtime_tests": "backend/tests/test_b23_p3_verdict_persistence.py",
+    "enforcer_tests": "backend/tests/test_b23_p3_verdict_persistence_enforcer.py"
+  },
+  "state_transition_registration": {
+    "cadence_seconds": 300,
+    "required_task_names": [
+      "app.tasks.revenue_verification.transition_stale_pending_to_unmatched_all_tenants",
+      "app.tasks.revenue_verification.transition_stale_provisional_to_confirmed_all_tenants",
+      "app.tasks.revenue_verification.transition_stale_pending_to_unmatched",
+      "app.tasks.revenue_verification.transition_stale_provisional_to_confirmed"
+    ],
+    "required_beat_schedule_keys": [
+      "b23-p3-pending-to-unmatched-transition",
+      "b23-p3-provisional-to-confirmed-transition"
+    ],
+    "required_transition_functions": [
+      "transition_stale_pending_to_unmatched",
+      "transition_stale_provisional_to_confirmed"
+    ],
+    "required_timing_constants": [
+      "WEBHOOK_ARRIVAL_WINDOW",
+      "PROVISIONAL_MATCH_WINDOW",
+      "B23_P3_TRANSITION_SWEEP_CADENCE"
+    ],
+    "required_postgres_concurrency_tokens": [
+      "FOR UPDATE SKIP LOCKED",
+      "status = 'pending'",
+      "status = 'matched_provisional'"
+    ]
+  },
+  "basis_separation": {
+    "discrepancy_amount_constraint_expression": "canonical_expected_gross_amount_minor - canonical_captured_gross_amount_minor",
+    "forbidden_discrepancy_constraint_operand": "canonical_net_verified_amount_minor",
+    "gross_capture_correction_column": "is_gross_capture_correction",
+    "normal_adjustment_must_not_reconcile_exception": true,
+    "required_kernel_tokens": [
+      "canonical_expected_gross_amount_minor - canonical_captured_gross_amount_minor",
+      "canonical_net_verified_amount_minor = :net_verified_amount",
+      "is_gross_capture_correction",
+      "gross_capture_correction_requires_payment_capture_event",
+      "reconcile_b23_attribution_exception_lifecycle"
+    ]
+  },
+  "exception_persistence": {
+    "base_table": "b23_exception_records",
+    "one_open_exception_index": "uq_b23_exception_records_one_open_per_verdict",
+    "duplicate_resolution_code": "system_duplicate_exception_closed",
+    "required_resolution_constraint": "ck_b23_exception_records_resolution_code_required"
+  },
+  "read_surface": {
+    "required_paths": {
+      "/api/reconciliation/match-verdicts/{verdict_id}": "getB23MatchVerdict",
+      "/api/reconciliation/exceptions": "listB23ExceptionRecords",
+      "/api/reconciliation/exceptions/{exception_id}": "getB23ExceptionRecord"
+    },
+    "required_response_models": [
+      "B23MatchVerdictDetailResponse",
+      "B23ExceptionRecordResponse",
+      "B23ExceptionListResponse"
+    ],
+    "required_status_enum_values": [
+      "pending",
+      "matched_provisional",
+      "matched_confirmed",
+      "adjusted",
+      "unmatched"
+    ],
+    "required_match_fields": [
+      "canonical_gross_expected_amount_minor",
+      "canonical_gross_captured_amount_minor",
+      "canonical_net_verified_amount_minor",
+      "adjustments_applied",
+      "discrepancy"
+    ],
+    "required_exception_fields": [
+      "match_verdict_id",
+      "severity",
+      "workflow_state",
+      "resolution_code",
+      "discrepancy_reason",
+      "discrepancy_context"
+    ]
+  },
+  "strict_backend_contract_parity": {
+    "response_models_must_forbid_extra": true,
+    "authoritative_response_any_or_dict_forbidden": true,
+    "recursive_schema_compare_required": true,
+    "additional_properties_false_required": true
+  },
+  "phase_boundary_forbidden_tokens": [
+    "benchmark_1000_orders",
+    "queue_isolation",
+    "Bayesian",
+    "llm_explanation",
+    "dashboard"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b23_p3_verdict_persistence.py",
+    "pytest backend/tests/test_b23_p3_verdict_persistence_enforcer.py -q",
+    "pytest backend/tests/test_b23_p3_verdict_persistence.py -q"
+  ]
+}
