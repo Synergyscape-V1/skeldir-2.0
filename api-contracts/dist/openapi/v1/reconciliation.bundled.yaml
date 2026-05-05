@@ -561,6 +561,34 @@ paths:
                   updated_at:
                     type: string
                     format: date-time
+              example:
+                id: 11111111-1111-4111-8111-111111111111
+                tenant_id: 22222222-2222-4222-8222-222222222222
+                attribution_event_id: 33333333-3333-4333-8333-333333333333
+                webhook_ingress_identity_id: 44444444-4444-4444-8444-444444444444
+                provider: stripe
+                canonical_commerce_reference: checkout:sk_order_1001
+                provider_native_event_reference: evt_1P3example
+                provider_native_commerce_reference: pi_3P3example
+                status: matched_provisional
+                match_quality: high
+                canonical_gross_expected_amount_minor: 12500
+                canonical_gross_captured_amount_minor: 12500
+                canonical_net_verified_amount_minor: 7500
+                discrepancy:
+                  discrepancy_amount_minor: 0
+                  discrepancy_ratio_bps: 0
+                  discrepancy_band: exact
+                  discrepancy_basis: gross_expected_vs_gross_captured
+                adjustments_applied: true
+                pending_since: '2026-05-05T17:00:00Z'
+                provisional_expires_at: '2026-05-05T18:00:00Z'
+                confirmed_at: null
+                adjusted_at: '2026-05-05T17:30:00Z'
+                unmatched_marked_at: null
+                last_transition_at: '2026-05-05T17:30:00Z'
+                created_at: '2026-05-05T17:00:00Z'
+                updated_at: '2026-05-05T17:30:00Z'
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_6
@@ -687,6 +715,27 @@ paths:
                         updated_at:
                           type: string
                           format: date-time
+              example:
+                exceptions:
+                  - id: 55555555-5555-4555-8555-555555555555
+                    tenant_id: 22222222-2222-4222-8222-222222222222
+                    match_verdict_id: 11111111-1111-4111-8111-111111111111
+                    provider: stripe
+                    canonical_commerce_reference: checkout:sk_order_1001
+                    severity: flagged
+                    workflow_state: open
+                    resolution_code: null
+                    discrepancy_reason: gross_capture_correction_entered_flagged_band
+                    discrepancy_context:
+                      discrepancy_amount_minor: 300
+                      discrepancy_ratio_bps: 240
+                      discrepancy_band: over_tolerance
+                      discrepancy_basis: gross_expected_vs_gross_captured
+                    raised_at: '2026-05-05T18:10:00Z'
+                    resolved_at: null
+                    dismissed_at: null
+                    created_at: '2026-05-05T18:10:00Z'
+                    updated_at: '2026-05-05T18:10:00Z'
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_6
@@ -737,6 +786,26 @@ paths:
                 additionalProperties: false
                 required: *ref_14
                 properties: *ref_15
+              example:
+                id: 55555555-5555-4555-8555-555555555555
+                tenant_id: 22222222-2222-4222-8222-222222222222
+                match_verdict_id: 11111111-1111-4111-8111-111111111111
+                provider: stripe
+                canonical_commerce_reference: checkout:sk_order_1001
+                severity: alert
+                workflow_state: open
+                resolution_code: null
+                discrepancy_reason: gross_capture_correction_entered_alert_band
+                discrepancy_context:
+                  discrepancy_amount_minor: 1500
+                  discrepancy_ratio_bps: 1200
+                  discrepancy_band: severe_gap
+                  discrepancy_basis: gross_expected_vs_gross_captured
+                raised_at: '2026-05-05T18:15:00Z'
+                resolved_at: null
+                dismissed_at: null
+                created_at: '2026-05-05T18:15:00Z'
+                updated_at: '2026-05-05T18:15:00Z'
         '401':
           description: Unauthorized - invalid or missing authentication
           headers: *ref_6
