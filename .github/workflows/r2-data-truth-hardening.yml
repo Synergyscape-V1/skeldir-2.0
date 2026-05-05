@@ -188,7 +188,7 @@ jobs:
       - name: "Apply canonical schema"
         run: |
           set -euo pipefail
-          # Reorder webhook resolver creation so tenants exists before SQL body validation.
+          # Reorder SECURITY DEFINER lookup functions so referenced tables exist before SQL body validation.
           python - <<'PY'
           import re
           from pathlib import Path
@@ -196,16 +196,38 @@ jobs:
           source = Path("db/schema/canonical_schema.sql")
           target = Path("/tmp/canonical_schema_r2_bootstrap.sql")
           text = source.read_text(encoding="utf-8")
-          pattern = re.compile(
-              r"\nCREATE FUNCTION security\.resolve_tenant_webhook_secrets\(api_key_hash text\).*?\n\s*\$_\$;\n",
-              re.DOTALL,
-          )
-          match = pattern.search(text)
-          if not match:
-              raise SystemExit("unable to locate resolve_tenant_webhook_secrets function block in canonical schema")
-          function_block = match.group(0)
-          reordered = text[:match.start()] + "\n" + text[match.end():] + function_block
-          target.write_text(reordered, encoding="utf-8")
+          function_patterns = [
+              (
+                  "lookup_user_auth_by_login_hash",
+                  re.compile(
+                      r"\n?CREATE FUNCTION auth\.lookup_user_auth_by_login_hash\(p_login_identifier_hash text\).*?\n\s*\$\$;\n",
+                      re.DOTALL,
+                  ),
+              ),
+              (
+                  "lookup_user_by_login_hash",
+                  re.compile(
+                      r"\n?CREATE FUNCTION auth\.lookup_user_by_login_hash\(p_login_identifier_hash text\).*?\n\s*\$\$;\n",
+                      re.DOTALL,
+                  ),
+              ),
+              (
+                  "resolve_tenant_webhook_secrets",
+                  re.compile(
+                      r"\n?CREATE FUNCTION security\.resolve_tenant_webhook_secrets\(api_key_hash text\).*?\n\s*\$_\$;\n",
+                      re.DOTALL,
+                  ),
+              ),
+          ]
+          reordered = text
+          deferred_blocks = []
+          for label, pattern in function_patterns:
+              match = pattern.search(reordered)
+              if not match:
+                  raise SystemExit(f"unable to locate {label} function block in canonical schema")
+              deferred_blocks.append(match.group(0).strip() + "\n")
+              reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
+          target.write_text(reordered.rstrip() + "\n\n" + "\n".join(deferred_blocks), encoding="utf-8")
           PY
           podman exec -i skeldir-r2-postgres psql -v ON_ERROR_STOP=1 -U $POSTGRES_USER -d $POSTGRES_DB < /tmp/canonical_schema_r2_bootstrap.sql
 
