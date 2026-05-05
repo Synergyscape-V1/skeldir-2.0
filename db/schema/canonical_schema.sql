@@ -1012,7 +1012,7 @@ CREATE TABLE public.b23_match_verdicts (
     CONSTRAINT ck_b23_match_verdicts_captured_amount_non_negative CHECK ((canonical_captured_gross_amount_minor >= 0)),
     CONSTRAINT ck_b23_match_verdicts_captured_matches_legacy CHECK ((canonical_captured_gross_amount_minor = verified_amount_minor)),
     CONSTRAINT ck_b23_match_verdicts_currency_code_len CHECK ((char_length(TRIM(BOTH FROM currency_code)) = 3)),
-    CONSTRAINT ck_b23_match_verdicts_discrepancy_amount_consistency CHECK ((discrepancy_amount_minor = (canonical_expected_gross_amount_minor - canonical_net_verified_amount_minor))),
+    CONSTRAINT ck_b23_match_verdicts_discrepancy_amount_consistency CHECK ((discrepancy_amount_minor = abs((canonical_expected_gross_amount_minor - canonical_captured_gross_amount_minor)))),
     CONSTRAINT ck_b23_match_verdicts_discrepancy_band CHECK (((discrepancy_band)::text = ANY ((ARRAY['exact'::character varying, 'within_tolerance'::character varying, 'over_tolerance'::character varying, 'severe_gap'::character varying])::text[]))),
     CONSTRAINT ck_b23_match_verdicts_discrepancy_ratio_consistency CHECK ((discrepancy_ratio_bps =
 CASE
@@ -1053,6 +1053,7 @@ CREATE TABLE public.b23_revenue_events (
     chargeback_amount_minor integer,
     reversal_amount_minor integer,
     net_effect_sign smallint NOT NULL,
+    is_gross_capture_correction boolean DEFAULT false NOT NULL,
     CONSTRAINT ck_b23_revenue_events_canonical_reference_not_blank CHECK ((char_length((canonical_commerce_reference)::text) > 0)),
     CONSTRAINT ck_b23_revenue_events_captured_amount_non_negative CHECK (((captured_amount_minor IS NULL) OR (captured_amount_minor >= 0))),
     CONSTRAINT ck_b23_revenue_events_chargeback_amount_non_negative CHECK (((chargeback_amount_minor IS NULL) OR (chargeback_amount_minor >= 0))),
@@ -2459,6 +2460,8 @@ CREATE INDEX idx_b23_revenue_events_tenant_event_effect_sign ON public.b23_reven
 
 CREATE INDEX idx_b23_revenue_events_tenant_event_type_recorded ON public.b23_revenue_events USING btree (tenant_id, event_type, recorded_at DESC);
 
+CREATE INDEX idx_b23_revenue_events_tenant_gross_capture_correction ON public.b23_revenue_events USING btree (tenant_id, match_verdict_id, is_gross_capture_correction, event_occurred_at DESC);
+
 CREATE INDEX idx_b23_revenue_events_tenant_provider_commerce_native ON public.b23_revenue_events USING btree (tenant_id, provider, provider_native_commerce_reference);
 
 CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_revenue_events USING btree (tenant_id, provider, canonical_commerce_reference, event_occurred_at DESC);
@@ -2672,6 +2675,8 @@ CREATE INDEX ix_public_celery_task_failures_task_id ON public.worker_failed_jobs
 CREATE INDEX ix_public_celery_task_failures_task_name ON public.worker_failed_jobs USING btree (task_name);
 
 CREATE INDEX ix_public_celery_task_failures_tenant_id ON public.worker_failed_jobs USING btree (tenant_id);
+
+CREATE UNIQUE INDEX uq_b23_exception_records_one_open_per_verdict ON public.b23_exception_records USING btree (tenant_id, match_verdict_id) WHERE ((status)::text = ANY ((ARRAY['open'::character varying, 'acknowledged'::character varying])::text[]));
 
 CREATE UNIQUE INDEX uq_platform_connections_tenant_platform_account ON public.platform_connections USING btree (tenant_id, platform, platform_account_id);
 

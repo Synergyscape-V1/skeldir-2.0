@@ -24,15 +24,17 @@ from .semantic_authority import (
     CanonicalizationStatus,
     resolve_canonical_match_key,
 )
-from .timing_constants import WEBHOOK_ARRIVAL_WINDOW
+from .timing_constants import PROVISIONAL_MATCH_WINDOW, WEBHOOK_ARRIVAL_WINDOW
 
 
 B23_POST_CAPTURE_EVENT_TYPE = Literal[
+    "payment_capture",
     "partial_refund",
     "full_refund",
     "chargeback_opened",
     "chargeback_won",
     "chargeback_lost",
+    "reversal",
 ]
 
 _B23_PERCENT_DENOMINATOR = Decimal("100")
@@ -43,32 +45,40 @@ B23_POST_CAPTURE_HANDLER_REGISTRY: Mapping[
     B23ProviderKey, tuple[B23_POST_CAPTURE_EVENT_TYPE, ...]
 ] = {
     "stripe": (
+        "payment_capture",
         "partial_refund",
         "full_refund",
         "chargeback_opened",
         "chargeback_won",
         "chargeback_lost",
+        "reversal",
     ),
     "paypal": (
+        "payment_capture",
         "partial_refund",
         "full_refund",
         "chargeback_opened",
         "chargeback_won",
         "chargeback_lost",
+        "reversal",
     ),
     "shopify": (
+        "payment_capture",
         "partial_refund",
         "full_refund",
         "chargeback_opened",
         "chargeback_won",
         "chargeback_lost",
+        "reversal",
     ),
     "woocommerce": (
+        "payment_capture",
         "partial_refund",
         "full_refund",
         "chargeback_opened",
         "chargeback_won",
         "chargeback_lost",
+        "reversal",
     ),
 }
 
@@ -105,6 +115,7 @@ class B23PostCaptureInput(BaseModel):
     match_verdict_id: UUID | None = None
     canonical_commerce_reference: str | None = None
     failure_reason: str | None = None
+    is_gross_capture_correction: bool = False
 
 
 @dataclass(frozen=True)
@@ -148,11 +159,24 @@ def _canonical_discrepancy_ratio_bps(
     return int(ratio_bps)
 
 
+def _discrepancy_band_from_bps(discrepancy_ratio_bps: int) -> B23DiscrepancyClass:
+    absolute_bps = abs(int(discrepancy_ratio_bps))
+    if absolute_bps == 0:
+        return B23DiscrepancyClass.EXACT
+    if absolute_bps <= 200:
+        return B23DiscrepancyClass.WITHIN_TOLERANCE
+    if absolute_bps <= 1000:
+        return B23DiscrepancyClass.OVER_TOLERANCE
+    return B23DiscrepancyClass.SEVERE_GAP
+
+
 def _post_capture_revenue_operands(
     *,
     event_type: B23_POST_CAPTURE_EVENT_TYPE,
     amount_minor: int,
 ) -> tuple[int | None, int | None, int | None, int | None, int]:
+    if event_type == "payment_capture":
+        return amount_minor, None, None, None, 1
     if event_type in {"partial_refund", "full_refund"}:
         return None, amount_minor, None, None, -1
     if event_type == "chargeback_opened":
@@ -161,6 +185,8 @@ def _post_capture_revenue_operands(
         return None, None, amount_minor, None, -1
     if event_type == "chargeback_won":
         return None, None, amount_minor, None, 1
+    if event_type == "reversal":
+        return None, None, None, amount_minor, 1
     raise ValueError("unsupported_post_capture_event_type")
 
 
@@ -201,6 +227,172 @@ def classify_b23_match_quality(
     ):
         return "medium"
     return "low"
+
+
+async def reconcile_b23_attribution_exception_lifecycle(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    match_verdict_id: UUID,
+    provider: str,
+    canonical_commerce_reference: str,
+    discrepancy_band: str | B23DiscrepancyClass,
+    now_utc: datetime,
+) -> None:
+    band_value = (
+        discrepancy_band.value
+        if isinstance(discrepancy_band, B23DiscrepancyClass)
+        else str(discrepancy_band)
+    )
+    target_severity: Literal["flagged", "alert"] | None
+    if band_value == B23DiscrepancyClass.OVER_TOLERANCE.value:
+        target_severity = "flagged"
+    elif band_value == B23DiscrepancyClass.SEVERE_GAP.value:
+        target_severity = "alert"
+    else:
+        target_severity = None
+
+    timestamp = _normalize_utc(now_utc)
+    existing_result = await session.execute(
+        text(
+            """
+            SELECT id
+            FROM b23_exception_records
+            WHERE tenant_id = :tenant_id
+              AND match_verdict_id = :match_verdict_id
+              AND status IN ('open', 'acknowledged')
+            ORDER BY raised_at DESC, id DESC
+            FOR UPDATE
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "match_verdict_id": str(match_verdict_id),
+        },
+    )
+    existing_ids = [UUID(str(row[0])) for row in existing_result.fetchall()]
+
+    if target_severity is None:
+        if existing_ids:
+            await session.execute(
+                text(
+                    """
+                    UPDATE b23_exception_records
+                    SET
+                        status = 'resolved',
+                        resolution_code = 'system_gross_discrepancy_clean',
+                        resolution_notes = 'Gross expected and gross captured discrepancy returned to clean band.',
+                        resolved_at = :resolved_at,
+                        updated_at = :updated_at
+                    WHERE tenant_id = :tenant_id
+                      AND match_verdict_id = :match_verdict_id
+                      AND status IN ('open', 'acknowledged')
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "match_verdict_id": str(match_verdict_id),
+                    "resolved_at": timestamp,
+                    "updated_at": timestamp,
+                },
+            )
+        return
+
+    if existing_ids:
+        primary_id = existing_ids[0]
+        await session.execute(
+            text(
+                """
+                UPDATE b23_exception_records
+                SET
+                    status = 'open',
+                    severity = :severity,
+                    resolution_code = NULL,
+                    resolution_notes = :resolution_notes,
+                    resolved_at = NULL,
+                    dismissed_at = NULL,
+                    updated_at = :updated_at
+                WHERE tenant_id = :tenant_id AND id = :exception_id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "exception_id": str(primary_id),
+                "severity": target_severity,
+                "resolution_notes": f"gross_discrepancy_band:{band_value}",
+                "updated_at": timestamp,
+            },
+        )
+        if len(existing_ids) > 1:
+            await session.execute(
+                text(
+                    """
+                    UPDATE b23_exception_records
+                    SET
+                        status = 'resolved',
+                        resolution_code = 'system_duplicate_exception_closed',
+                        resolution_notes = 'Duplicate open exception closed by deterministic lifecycle reconciliation.',
+                        resolved_at = :resolved_at,
+                        updated_at = :updated_at
+                    WHERE tenant_id = :tenant_id
+                      AND match_verdict_id = :match_verdict_id
+                      AND id <> :primary_id
+                      AND status IN ('open', 'acknowledged')
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "match_verdict_id": str(match_verdict_id),
+                    "primary_id": str(primary_id),
+                    "resolved_at": timestamp,
+                    "updated_at": timestamp,
+                },
+            )
+        return
+
+    await session.execute(
+        text(
+            """
+            INSERT INTO b23_exception_records (
+                tenant_id,
+                match_verdict_id,
+                provider,
+                canonical_commerce_reference,
+                status,
+                severity,
+                resolution_code,
+                resolution_notes,
+                raised_at,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                :tenant_id,
+                :match_verdict_id,
+                :provider,
+                :canonical_commerce_reference,
+                'open',
+                :severity,
+                NULL,
+                :resolution_notes,
+                :raised_at,
+                :created_at,
+                :updated_at
+            )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "match_verdict_id": str(match_verdict_id),
+            "provider": provider,
+            "canonical_commerce_reference": canonical_commerce_reference,
+            "severity": target_severity,
+            "resolution_notes": f"gross_discrepancy_band:{band_value}",
+            "raised_at": timestamp,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        },
+    )
 
 
 async def _acquire_match_lock(
@@ -259,8 +451,8 @@ async def process_b23_capture_match(
     canonical_expected_gross_amount_minor = match_input.attributed_amount_minor
     canonical_captured_gross_amount_minor = extracted.amount_minor
     canonical_net_verified_amount_minor = extracted.amount_minor
-    discrepancy_amount_minor = (
-        canonical_expected_gross_amount_minor - canonical_net_verified_amount_minor
+    discrepancy_amount_minor = abs(
+        canonical_expected_gross_amount_minor - canonical_captured_gross_amount_minor
     )
     discrepancy_ratio_bps = _canonical_discrepancy_ratio_bps(
         canonical_expected_gross_amount_minor=canonical_expected_gross_amount_minor,
@@ -360,7 +552,7 @@ async def process_b23_capture_match(
             "verified_amount_minor": extracted.amount_minor,
             "currency_code": verified_currency,
             "pending_since": conversion_occurred_at,
-            "provisional_expires_at": conversion_occurred_at + WEBHOOK_ARRIVAL_WINDOW,
+            "provisional_expires_at": event_occurred_at + PROVISIONAL_MATCH_WINDOW,
             "last_transition_at": event_occurred_at,
             "created_at": event_occurred_at,
             "updated_at": event_occurred_at,
@@ -373,6 +565,16 @@ async def process_b23_capture_match(
         },
     )
     verdict_id = UUID(str(verdict_result.scalar_one()))
+
+    await reconcile_b23_attribution_exception_lifecycle(
+        session,
+        tenant_id=match_input.tenant_id,
+        match_verdict_id=verdict_id,
+        provider=match_input.provider,
+        canonical_commerce_reference=precedence.canonical_reference,
+        discrepancy_band=discrepancy_class,
+        now_utc=event_occurred_at,
+    )
 
     revenue_event_result = await session.execute(
         text(
@@ -658,6 +860,150 @@ async def _insert_unsupported_post_capture_failure(
     )
 
 
+async def _recompute_b23_net_verified_amount(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    match_verdict_id: UUID,
+) -> int:
+    result = await session.execute(
+        text(
+            """
+            SELECT
+                v.canonical_captured_gross_amount_minor
+                + COALESCE(
+                    SUM(
+                        CASE
+                            WHEN e.is_gross_capture_correction THEN 0
+                            WHEN e.event_type IN ('partial_refund', 'full_refund')
+                                THEN -COALESCE(e.refund_amount_minor, 0)
+                            WHEN e.event_type = 'chargeback_lost'
+                                THEN -COALESCE(e.chargeback_amount_minor, 0)
+                            WHEN e.event_type = 'chargeback_won'
+                                THEN COALESCE(e.chargeback_amount_minor, 0)
+                            WHEN e.event_type = 'reversal'
+                                THEN COALESCE(e.reversal_amount_minor, 0)
+                            ELSE 0
+                        END
+                    ),
+                    0
+                ) AS net_verified_amount_minor
+            FROM b23_match_verdicts v
+            LEFT JOIN b23_revenue_events e
+                ON e.tenant_id = v.tenant_id
+               AND e.match_verdict_id = v.id
+            WHERE v.tenant_id = :tenant_id
+              AND v.id = :match_verdict_id
+            GROUP BY v.id, v.canonical_captured_gross_amount_minor
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "match_verdict_id": str(match_verdict_id),
+        },
+    )
+    return max(0, int(result.scalar_one()))
+
+
+async def _apply_gross_capture_correction(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    match_verdict_id: UUID,
+    corrected_captured_gross_amount_minor: int,
+    timestamp: datetime,
+) -> tuple[str, int]:
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    provider,
+                    canonical_commerce_reference,
+                    canonical_expected_gross_amount_minor
+                FROM b23_match_verdicts
+                WHERE tenant_id = :tenant_id AND id = :match_verdict_id
+                FOR UPDATE
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "match_verdict_id": str(match_verdict_id),
+            },
+        )
+    ).mappings().one()
+    expected_gross = int(row["canonical_expected_gross_amount_minor"])
+    discrepancy_amount_minor = abs(
+        expected_gross - corrected_captured_gross_amount_minor
+    )
+    discrepancy_ratio_bps = _canonical_discrepancy_ratio_bps(
+        canonical_expected_gross_amount_minor=expected_gross,
+        discrepancy_amount_minor=discrepancy_amount_minor,
+    )
+    discrepancy_band = _discrepancy_band_from_bps(discrepancy_ratio_bps)
+
+    await session.execute(
+        text(
+            """
+            UPDATE b23_match_verdicts
+            SET
+                canonical_captured_gross_amount_minor = :captured_gross,
+                verified_amount_minor = :captured_gross,
+                discrepancy_amount_minor = :discrepancy_amount_minor,
+                discrepancy_ratio_bps = :discrepancy_ratio_bps,
+                discrepancy_band = :discrepancy_band,
+                last_transition_at = :last_transition_at,
+                updated_at = :updated_at
+            WHERE tenant_id = :tenant_id
+              AND id = :match_verdict_id
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "match_verdict_id": str(match_verdict_id),
+            "captured_gross": corrected_captured_gross_amount_minor,
+            "discrepancy_amount_minor": discrepancy_amount_minor,
+            "discrepancy_ratio_bps": discrepancy_ratio_bps,
+            "discrepancy_band": discrepancy_band.value,
+            "last_transition_at": timestamp,
+            "updated_at": timestamp,
+        },
+    )
+    net_verified_amount = await _recompute_b23_net_verified_amount(
+        session,
+        tenant_id=tenant_id,
+        match_verdict_id=match_verdict_id,
+    )
+    await session.execute(
+        text(
+            """
+            UPDATE b23_match_verdicts
+            SET
+                canonical_net_verified_amount_minor = :net_verified_amount,
+                updated_at = :updated_at
+            WHERE tenant_id = :tenant_id
+              AND id = :match_verdict_id
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "match_verdict_id": str(match_verdict_id),
+            "net_verified_amount": net_verified_amount,
+            "updated_at": timestamp,
+        },
+    )
+    await reconcile_b23_attribution_exception_lifecycle(
+        session,
+        tenant_id=tenant_id,
+        match_verdict_id=match_verdict_id,
+        provider=str(row["provider"]),
+        canonical_commerce_reference=str(row["canonical_commerce_reference"]),
+        discrepancy_band=discrepancy_band,
+        now_utc=timestamp,
+    )
+    return discrepancy_band.value, net_verified_amount
+
+
 async def register_b23_post_capture_event(
     session: AsyncSession,
     post_capture_input: B23PostCaptureInput,
@@ -674,6 +1020,16 @@ async def register_b23_post_capture_event(
     ):
         await _insert_unsupported_post_capture_failure(session, post_capture_input)
         raise ValueError("post_capture_event_type_not_registered")
+    if (
+        post_capture_input.is_gross_capture_correction
+        and post_capture_input.event_type != "payment_capture"
+    ):
+        raise ValueError("gross_capture_correction_requires_payment_capture_event")
+    if (
+        not post_capture_input.is_gross_capture_correction
+        and post_capture_input.event_type == "payment_capture"
+    ):
+        raise ValueError("payment_capture_post_capture_event_requires_gross_correction")
     timestamp = _normalize_utc(post_capture_input.event_occurred_at)
     if post_capture_input.match_verdict_id is None:
         await _insert_unresolved_post_capture_failure(session, post_capture_input)
@@ -729,7 +1085,8 @@ async def register_b23_post_capture_event(
                 event_occurred_at,
                 recorded_at,
                 created_at,
-                updated_at
+                updated_at,
+                is_gross_capture_correction
             )
             VALUES (
                 :tenant_id,
@@ -748,7 +1105,8 @@ async def register_b23_post_capture_event(
                 :event_occurred_at,
                 :recorded_at,
                 :created_at,
-                :updated_at
+                :updated_at,
+                :is_gross_capture_correction
             )
             ON CONFLICT (tenant_id, provider, provider_native_event_reference)
             DO NOTHING
@@ -772,7 +1130,25 @@ async def register_b23_post_capture_event(
             "recorded_at": timestamp,
             "created_at": timestamp,
             "updated_at": timestamp,
+            "is_gross_capture_correction": bool(
+                post_capture_input.is_gross_capture_correction
+            ),
         },
+    )
+    if post_capture_input.is_gross_capture_correction:
+        await _apply_gross_capture_correction(
+            session,
+            tenant_id=post_capture_input.tenant_id,
+            match_verdict_id=post_capture_input.match_verdict_id,
+            corrected_captured_gross_amount_minor=post_capture_input.amount_minor,
+            timestamp=timestamp,
+        )
+        return True
+
+    net_verified_amount = await _recompute_b23_net_verified_amount(
+        session,
+        tenant_id=post_capture_input.tenant_id,
+        match_verdict_id=post_capture_input.match_verdict_id,
     )
     await session.execute(
         text(
@@ -780,6 +1156,7 @@ async def register_b23_post_capture_event(
             UPDATE b23_match_verdicts
             SET
                 status = 'adjusted',
+                canonical_net_verified_amount_minor = :net_verified_amount,
                 adjusted_at = :adjusted_at,
                 last_transition_at = :last_transition_at,
                 updated_at = :updated_at
@@ -789,6 +1166,7 @@ async def register_b23_post_capture_event(
         {
             "tenant_id": str(post_capture_input.tenant_id),
             "match_verdict_id": str(post_capture_input.match_verdict_id),
+            "net_verified_amount": net_verified_amount,
             "adjusted_at": timestamp,
             "last_transition_at": timestamp,
             "updated_at": timestamp,

@@ -54,6 +54,16 @@ def build_beat_schedule() -> Dict[str, Dict[str, Any]]:
             "schedule": crontab(hour=3, minute=0),
             "options": {"expires": 3600},
         },
+        "b23-p3-pending-to-unmatched-transition": {
+            "task": "app.tasks.revenue_verification.transition_stale_pending_to_unmatched_all_tenants",
+            "schedule": crontab(minute="*/5"),
+            "options": {"expires": 600},
+        },
+        "b23-p3-provisional-to-confirmed-transition": {
+            "task": "app.tasks.revenue_verification.transition_stale_provisional_to_confirmed_all_tenants",
+            "schedule": crontab(minute="*/5"),
+            "options": {"expires": 600},
+        },
     }
     if os.getenv("SKELDIR_B12_P5_DISABLE_DENYLIST_GC_JOB") != "1":
         schedule["auth-denylist-gc"] = {

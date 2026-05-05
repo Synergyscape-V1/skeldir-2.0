@@ -287,11 +287,13 @@ def test_b23_p2_cross_platform_unit_mismatch_discrepancy_is_exact() -> None:
 
 def test_b23_p2_post_capture_handler_coverage_is_complete() -> None:
     expected_events = {
+        "payment_capture",
         "partial_refund",
         "full_refund",
         "chargeback_opened",
         "chargeback_won",
         "chargeback_lost",
+        "reversal",
     }
     for provider in SUPPORTED_B23_PROVIDERS:
         observed = set(B23_POST_CAPTURE_HANDLER_REGISTRY[provider])
