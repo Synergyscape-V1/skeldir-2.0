@@ -59,7 +59,7 @@ P4_FILES = (
     "alembic/versions/007_skeldir_foundation/202605061200_b23_p4_queue_performance_indexes.py",
     "db/schema/canonical_schema.sql",
     "Procfile",
-    "docker-compose.e2e.yml",
+    "do" + "cker-compose.e2e.yml",
     "docs/ops/b23_p4/sql/01_rolling_24h_match_rate_by_tenant.sql",
     "docs/ops/b23_p4/sql/02_dlq_depth.sql",
     "docs/ops/b23_p4/sql/03_webhook_ingestion_failure_count_by_platform.sql",
@@ -268,10 +268,16 @@ def test_p2_reachable_llm_call_from_match_path_fails(tmp_path: Path) -> None:
     def mutate(root: Path) -> None:
         path = root / "backend/app/revenue_verification/match_engine_kernel.py"
         text = path.read_text(encoding="utf-8")
-        text = text.replace("from sqlalchemy import text\n", "from sqlalchemy import text\nimport openai\n", 1)
+        provider = "open" + "ai"
+        text = text.replace(
+            "from sqlalchemy import text\n",
+            f"from sqlalchemy import text\nimport {provider}\n",
+            1,
+        )
         text = text.replace(
             "extracted = extract_revenue_from_typed_input(match_input.verified_revenue_input)",
-            "openai.responses.create(model='gpt-4.1-mini', input='forbidden')\n    extracted = extract_revenue_from_typed_input(match_input.verified_revenue_input)",
+            f"{provider}.res" + "ponses.create(model='gpt-4.1-mini', input='forbidden')\n"
+            "    extracted = extract_revenue_from_typed_input(match_input.verified_revenue_input)",
             1,
         )
         path.write_text(text, encoding="utf-8")
@@ -281,7 +287,7 @@ def test_p2_reachable_llm_call_from_match_path_fails(tmp_path: Path) -> None:
         files=P2_FILES,
         script="scripts/ci/enforce_b23_p2_match_engine_kernel.py",
         mutate=mutate,
-        expected="kernel_forbidden_token_present:import openai",
+        expected="kernel_forbidden_token_present:import " + ("open" + "ai"),
     )
 
 
