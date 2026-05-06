@@ -1,0 +1,75 @@
+{
+  "contract_id": "b23.p5.pytest_suite.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P5",
+  "description": "Full B2.3 pytest suite manifest mapping required P0-P4/P5 proof classes to concrete tests.",
+  "required_test_files": [
+    {
+      "path": "backend/tests/test_b23_p0_semantic_authority.py",
+      "gate_classes": ["p0_semantic_authority_freeze", "p0_delayed_arrival_lifecycle", "p0_false_authority_exclusion"]
+    },
+    {
+      "path": "backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py",
+      "gate_classes": ["p0_preservation_negative_controls"]
+    },
+    {
+      "path": "backend/tests/test_b23_p0_typed_boundary_source_alignment_enforcer.py",
+      "gate_classes": ["p0_typed_boundary_alignment"]
+    },
+    {
+      "path": "backend/tests/test_b23_p1_schema_authority_enforcer.py",
+      "gate_classes": ["schema_completeness", "canonical_schema_migration_authority", "negative_controls"]
+    },
+    {
+      "path": "backend/tests/test_b23_p1_schema_authority_runtime.py",
+      "gate_classes": ["schema_runtime", "real_postgres_runtime_proof"]
+    },
+    {
+      "path": "backend/tests/test_b23_p2_match_engine_kernel_enforcer.py",
+      "gate_classes": ["extraction_map_completeness", "llm_exclusion", "refund_chargeback_registration", "anti_spoof_db_proofs"]
+    },
+    {
+      "path": "backend/tests/test_b23_p2_match_engine_kernel.py",
+      "gate_classes": ["extraction_correctness_by_platform", "arrival_window_guard", "match_quality_high_medium_low", "refund_chargeback_adjustment", "unresolved_refund_failure_routing"]
+    },
+    {
+      "path": "backend/tests/test_b23_p3_verdict_persistence_enforcer.py",
+      "gate_classes": ["transition_task_registration", "read_surface_contract_parity", "five_state_semantics"]
+    },
+    {
+      "path": "backend/tests/test_b23_p3_verdict_persistence.py",
+      "gate_classes": ["transition_timing_boundaries", "flagged_alert_exception_creation", "exception_persistence_lifecycle", "refund_chargeback_adjustment"]
+    },
+    {
+      "path": "backend/tests/test_b23_p4_queue_performance_enforcer.py",
+      "gate_classes": ["queue_isolation", "worker_isolation", "db_pool_isolation", "telemetry_sql", "planner_index_proof"]
+    },
+    {
+      "path": "backend/tests/test_b23_p4_queue_performance.py",
+      "gate_classes": ["p4_benchmark", "performance_processed_count_proof", "db_pool_isolation", "runtime_proof_lock"]
+    },
+    {
+      "path": "backend/tests/test_b23_p5_composite_proof_negative_controls.py",
+      "gate_classes": ["fixture_root_negative_controls", "frontend_typegen_drift", "no_self_exemption", "branch_protection_required_check"]
+    }
+  ],
+  "required_gate_classes": [
+    "extraction_correctness_by_platform",
+    "arrival_window_guard",
+    "match_quality_high_medium_low",
+    "transition_timing_boundaries",
+    "flagged_alert_exception_creation",
+    "refund_chargeback_adjustment",
+    "p4_benchmark",
+    "queue_isolation",
+    "db_pool_isolation",
+    "telemetry_sql",
+    "fixture_root_negative_controls",
+    "frontend_typegen_drift",
+    "branch_protection_required_check"
+  ],
+  "deselection_forbidden_for_required_files": true,
+  "required_proof_skips_allowed": false
+}

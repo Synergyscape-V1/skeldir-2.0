@@ -1,0 +1,236 @@
+{
+  "contract_id": "b23.p5.composite_proof.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P5",
+  "description": "Composite non-vacuous B2.3 proof harness and merge-blocking CI adjudication for P0-P4 revenue verification authority.",
+  "composite_check": {
+    "workflow_file": ".github/workflows/ci.yml",
+    "job_id": "b23-p5-composite-proof",
+    "check_name": "B2.3 Composite Proof Harness",
+    "required_on_branch": "main"
+  },
+  "proof_summary": {
+    "artifact_path": "artifacts/b23_p5_composite_proof_summary.json",
+    "machine_readable": true,
+    "fail_on_partial_proof": true
+  },
+  "required_phase_enforcers": [
+    {
+      "phase": "B2.3-P0",
+      "gate_id": "b23_p0_typed_boundary_source_alignment",
+      "command": ["python", "scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py"],
+      "required_proof_class": "p0_typed_boundary_alignment"
+    },
+    {
+      "phase": "B2.3-P0",
+      "gate_id": "b23_p0_semantic_authority_freeze",
+      "command": ["python", "scripts/ci/enforce_b23_p0_semantic_authority_freeze.py"],
+      "required_proof_class": "p0_semantic_authority_freeze"
+    },
+    {
+      "phase": "B2.3-P1",
+      "gate_id": "b23_p1_schema_authority_lock",
+      "command": ["python", "scripts/ci/enforce_b23_p1_schema_authority_lock.py"],
+      "required_proof_class": "p1_schema_authority"
+    },
+    {
+      "phase": "B2.3-P1",
+      "gate_id": "b23_p1_migration_reversibility",
+      "command": ["python", "scripts/ci/verify_b23_p1_migration_reversibility.py"],
+      "required_proof_class": "p1_canonical_schema_migration_authority",
+      "env": {"B23_P1_MIGRATION_DSN": "${MIGRATION_DATABASE_URL}"}
+    },
+    {
+      "phase": "B2.3-P2",
+      "gate_id": "b23_p2_match_engine_kernel",
+      "command": ["python", "scripts/ci/enforce_b23_p2_match_engine_kernel.py"],
+      "required_proof_class": "p2_match_engine_kernel"
+    },
+    {
+      "phase": "B2.3-P3",
+      "gate_id": "b23_p3_verdict_persistence",
+      "command": ["python", "scripts/ci/enforce_b23_p3_verdict_persistence.py"],
+      "required_proof_class": "p3_verdict_persistence_read_surface"
+    },
+    {
+      "phase": "B2.3-P4",
+      "gate_id": "b23_p4_queue_performance",
+      "command": ["python", "scripts/ci/enforce_b23_p4_queue_performance.py"],
+      "required_proof_class": "p4_queue_performance_runtime_lock"
+    }
+  ],
+  "required_pytest_suites": [
+    {
+      "phase": "B2.3-P0",
+      "gate_id": "b23_p0_semantic_authority_runtime",
+      "path": "backend/tests/test_b23_p0_semantic_authority.py",
+      "required_proof_class": "p0_semantic_authority_freeze"
+    },
+    {
+      "phase": "B2.3-P0",
+      "gate_id": "b23_p0_semantic_authority_enforcer_negative_controls",
+      "path": "backend/tests/test_b23_p0_semantic_authority_freeze_enforcer.py",
+      "required_proof_class": "p0_preservation_negative_controls"
+    },
+    {
+      "phase": "B2.3-P0",
+      "gate_id": "b23_p0_typed_boundary_negative_controls",
+      "path": "backend/tests/test_b23_p0_typed_boundary_source_alignment_enforcer.py",
+      "required_proof_class": "p0_typed_boundary_alignment"
+    },
+    {
+      "phase": "B2.3-P1",
+      "gate_id": "b23_p1_schema_authority_negative_controls",
+      "path": "backend/tests/test_b23_p1_schema_authority_enforcer.py",
+      "required_proof_class": "p1_schema_authority"
+    },
+    {
+      "phase": "B2.3-P1",
+      "gate_id": "b23_p1_schema_authority_runtime",
+      "path": "backend/tests/test_b23_p1_schema_authority_runtime.py",
+      "required_proof_class": "p1_runtime_schema_authority",
+      "required_proof_mode_env": "SKELDIR_B23_P1_REQUIRE_DB_PROOFS"
+    },
+    {
+      "phase": "B2.3-P2",
+      "gate_id": "b23_p2_match_engine_kernel_negative_controls",
+      "path": "backend/tests/test_b23_p2_match_engine_kernel_enforcer.py",
+      "required_proof_class": "p2_match_engine_kernel"
+    },
+    {
+      "phase": "B2.3-P2",
+      "gate_id": "b23_p2_match_engine_kernel_runtime",
+      "path": "backend/tests/test_b23_p2_match_engine_kernel.py",
+      "required_proof_class": "p2_runtime_match_engine",
+      "required_proof_mode_env": "SKELDIR_B23_P2_REQUIRE_DB_PROOFS"
+    },
+    {
+      "phase": "B2.3-P3",
+      "gate_id": "b23_p3_verdict_persistence_negative_controls",
+      "path": "backend/tests/test_b23_p3_verdict_persistence_enforcer.py",
+      "required_proof_class": "p3_verdict_persistence_read_surface"
+    },
+    {
+      "phase": "B2.3-P3",
+      "gate_id": "b23_p3_verdict_persistence_runtime",
+      "path": "backend/tests/test_b23_p3_verdict_persistence.py",
+      "required_proof_class": "p3_runtime_verdict_persistence",
+      "required_proof_mode_env": "SKELDIR_B23_P3_REQUIRE_DB_PROOFS"
+    },
+    {
+      "phase": "B2.3-P4",
+      "gate_id": "b23_p4_queue_performance_negative_controls",
+      "path": "backend/tests/test_b23_p4_queue_performance_enforcer.py",
+      "required_proof_class": "p4_queue_performance_runtime_lock"
+    },
+    {
+      "phase": "B2.3-P4",
+      "gate_id": "b23_p4_queue_performance_runtime",
+      "path": "backend/tests/test_b23_p4_queue_performance.py",
+      "required_proof_class": "p4_runtime_benchmark",
+      "required_proof_mode_env": "SKELDIR_B23_P4_REQUIRE_DB_PROOFS"
+    },
+    {
+      "phase": "B2.3-P5",
+      "gate_id": "b23_p5_composite_negative_controls",
+      "path": "backend/tests/test_b23_p5_composite_proof_negative_controls.py",
+      "required_proof_class": "p5_fixture_root_negative_controls"
+    }
+  ],
+  "required_negative_controls": [
+    "test_p1_remove_match_verdict_status_value_fails",
+    "test_p1_remove_exception_resolution_code_constraint_fails",
+    "test_p1_remove_revenue_event_type_fails",
+    "test_p2_add_unsupported_platform_without_extractor_fails",
+    "test_p2_change_stripe_extraction_to_net_amount_fails",
+    "test_p2_hardcode_arrival_window_literal_fails",
+    "test_p2_arrival_guard_runtime_negative_control_is_manifested",
+    "test_p2_reachable_llm_call_from_match_path_fails",
+    "test_p2_remove_refund_chargeback_handler_registration_fails",
+    "test_p3_remove_transition_task_registration_fails",
+    "test_p3_remove_flagged_alert_exception_creation_fails",
+    "test_p3_collapse_provisional_confirmed_statuses_fails",
+    "test_p4_route_b23_task_to_default_queue_fails",
+    "test_p4_worker_consumes_llm_queue_fails",
+    "test_p4_remove_dedicated_db_pool_fails",
+    "test_p4_benchmark_scope_fixture_insert_inside_timed_region_fails",
+    "test_p4_replace_microbatch_with_n_plus_one_loop_fails",
+    "test_p4_remove_telemetry_sql_index_fails",
+    "test_frontend_generated_type_drift_fails",
+    "test_manifest_required_runtime_proof_self_exemption_fails",
+    "test_branch_protection_missing_composite_check_fails"
+    ,
+    "test_p0_contract_version_regression_fails"
+  ],
+  "p0_preservation": {
+    "semantic_authority_contract": "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json",
+    "required_contract_version": "1.2.0"
+  },
+  "frontend_typegen_drift_gate": {
+    "gate_id": "frontend_typegen_drift",
+    "commands": [
+      ["bash", "scripts/contracts/bundle.sh"],
+      ["bash", "scripts/contracts/generate_frontend_types.sh"],
+      ["git", "diff", "--exit-code", "--", "frontend/src/types/api"]
+    ],
+    "required_proof_class": "frontend_typed_boundary_drift"
+  },
+  "branch_protection": {
+    "gate_id": "branch_protection_required_check",
+    "verifier": "scripts/ci/verify_b23_p5_branch_protection.py",
+    "required_check_name": "B2.3 Composite Proof Harness",
+    "repository": "Synergyscape-V1/skeldir-2.0",
+    "branch": "main",
+    "fail_closed_on_missing_token": true,
+    "fail_closed_on_api_error": true
+  },
+  "runtime_proof_modes": {
+    "require_real_postgres": true,
+    "required_env": [
+      "DATABASE_URL",
+      "MIGRATION_DATABASE_URL",
+      "SKELDIR_B23_P1_REQUIRE_DB_PROOFS",
+      "SKELDIR_B23_P2_REQUIRE_DB_PROOFS",
+      "SKELDIR_B23_P3_REQUIRE_DB_PROOFS",
+      "SKELDIR_B23_P4_REQUIRE_DB_PROOFS"
+    ],
+    "forbidden_substrates": ["sqlite", "sqlite://", "sqlite:///:memory:", "fake_engine", "mock_session"]
+  },
+  "skip_policy": {
+    "zero_unannotated_skips": true,
+    "required_proof_skips_allowed": false,
+    "allowed_non_required_skip_requires": [
+      "phase_id",
+      "gate_id",
+      "blocker_reference",
+      "non_required_classification",
+      "external_deferral_record"
+    ],
+    "exempt_from_skip_failure": [],
+    "required_proof_classes_forbidden_from_skip_exemption": [
+      "p0_semantic_authority_freeze",
+      "p0_typed_boundary_alignment",
+      "p1_schema_authority",
+      "p1_runtime_schema_authority",
+      "p2_match_engine_kernel",
+      "p2_runtime_match_engine",
+      "p3_verdict_persistence_read_surface",
+      "p3_runtime_verdict_persistence",
+      "p4_queue_performance_runtime_lock",
+      "p4_runtime_benchmark",
+      "frontend_typed_boundary_drift",
+      "branch_protection_required_check"
+    ]
+  },
+  "forbidden_scope": [
+    "B2.3-P6 full webhook-to-verdict-to-API E2E closure",
+    "B2.4 Bayesian convergence diagnostics",
+    "B2.6 reconciliation workflow",
+    "verification coverage callable implementation",
+    "dashboard/frontend product UI",
+    "LLM explanation surface",
+    "downstream readiness document"
+  ]
+}
