@@ -6,7 +6,7 @@
     "dev",
     "local"
   ],
-  "keys_total": 67,
+  "keys_total": 74,
   "records": [
     {
       "aws_path_template": "/skeldir/{env}/config/attribution/deterministic-default-lookback-days",
@@ -144,6 +144,133 @@
       "key": "AUTH_LOGIN_IDENTIFIER_PEPPER",
       "owner": "platform-security",
       "rotation_criticality": "high"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b23/database/lock-timeout-ms",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B23_DATABASE_LOCK_TIMEOUT_MS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b23/database/max-overflow",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B23_DATABASE_MAX_OVERFLOW",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b23/database/pool-size",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B23_DATABASE_POOL_SIZE",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b23/database/pool-timeout-seconds",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B23_DATABASE_POOL_TIMEOUT_SECONDS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b23/database/statement-timeout-ms",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/db/session.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B23_DATABASE_STATEMENT_TIMEOUT_MS",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b23/worker/concurrency",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "Procfile",
+        "compose.e2e worker fixture"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B23_WORKER_CONCURRENCY",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
+    },
+    {
+      "aws_path_template": "/skeldir/{env}/config/b23/worker/prefetch-multiplier",
+      "call_sites": [
+        "backend/app/core/config.py",
+        "backend/app/celery_app.py"
+      ],
+      "classification": "config",
+      "env_scopes": [
+        "prod",
+        "stage",
+        "ci",
+        "dev",
+        "local"
+      ],
+      "key": "B23_WORKER_PREFETCH_MULTIPLIER",
+      "owner": "backend-platform",
+      "rotation_criticality": "none"
     },
     {
       "aws_path_template": "/skeldir/{env}/config/celery/bayesian-task-soft-time-limit-s",

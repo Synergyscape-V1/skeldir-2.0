@@ -2456,6 +2456,20 @@ CREATE INDEX idx_b23_match_verdicts_tenant_state_timestamps ON public.b23_match_
 
 CREATE INDEX idx_b23_match_verdicts_tenant_status_transition ON public.b23_match_verdicts USING btree (tenant_id, status, last_transition_at DESC);
 
+CREATE INDEX idx_b23_p4_attribution_event_tenant_id ON public.attribution_events USING btree (tenant_id, id);
+
+CREATE INDEX idx_b23_p4_attribution_order_ref_expr ON public.attribution_events USING btree (tenant_id, ((raw_payload ->> 'order_id'::text)), occurred_at DESC) WHERE (raw_payload ? 'order_id'::text);
+
+CREATE INDEX idx_b23_p4_match_rate_tenant_transition_status ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at DESC, status) WHERE ((status)::text = ANY ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying, 'unmatched'::character varying])::text[]));
+
+CREATE INDEX idx_b23_p4_verdict_webhook_identity ON public.b23_match_verdicts USING btree (tenant_id, webhook_ingress_identity_id) WHERE (webhook_ingress_identity_id IS NOT NULL);
+
+CREATE INDEX idx_b23_p4_webhook_failure_tenant_platform_time ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC) WHERE ((ingestion_status)::text = 'failed'::text);
+
+CREATE INDEX idx_b23_p4_webhook_identity_claim ON public.webhook_ingress_identities USING btree (tenant_id, verified_commerce_ingress_state, event_timestamp, id) WHERE ((verified_commerce_ingress_state)::text = 'authenticity_verified'::text);
+
+CREATE INDEX idx_b23_p4_worker_dlq_open_status_failed_at ON public.worker_failed_jobs USING btree (status, tenant_id, failed_at DESC) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying])::text[]));
+
 CREATE INDEX idx_b23_revenue_events_tenant_event_effect_sign ON public.b23_revenue_events USING btree (tenant_id, event_type, net_effect_sign, event_occurred_at DESC);
 
 CREATE INDEX idx_b23_revenue_events_tenant_event_type_recorded ON public.b23_revenue_events USING btree (tenant_id, event_type, recorded_at DESC);

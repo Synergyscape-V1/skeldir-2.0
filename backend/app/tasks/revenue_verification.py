@@ -10,8 +10,10 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.celery_app import celery_app
-from app.db.session import engine, get_session
+from app.core.queues import QUEUE_B23_MATCH_ENGINE
+from app.db.session import engine, get_b23_session
 from app.observability.context import set_request_correlation_id
+from app.revenue_verification.batch_engine import execute_b23_batch_match_engine
 from app.revenue_verification.state_transitions import (
     B23_P3_TRANSITION_BATCH_SIZE,
     B23_P3_TRANSITION_SWEEP_CADENCE,
@@ -31,7 +33,7 @@ async def _run_pending_to_unmatched_for_tenant(
     *, tenant_id: str, correlation_id: str
 ) -> Dict[str, int | str]:
     tenant_uuid = UUID(tenant_id)
-    async with get_session(tenant_uuid) as session:
+    async with get_b23_session(tenant_uuid) as session:
         result = await transition_stale_pending_to_unmatched(
             session,
             tenant_id=tenant_uuid,
@@ -50,7 +52,7 @@ async def _run_provisional_to_confirmed_for_tenant(
     *, tenant_id: str, correlation_id: str
 ) -> Dict[str, int | str]:
     tenant_uuid = UUID(tenant_id)
-    async with get_session(tenant_uuid) as session:
+    async with get_b23_session(tenant_uuid) as session:
         result = await transition_stale_provisional_to_confirmed(
             session,
             tenant_id=tenant_uuid,
@@ -68,7 +70,7 @@ async def _run_provisional_to_confirmed_for_tenant(
 @celery_app.task(
     bind=True,
     name="app.tasks.revenue_verification.transition_stale_pending_to_unmatched",
-    routing_key="maintenance.task",
+    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
     max_retries=3,
     default_retry_delay=60,
 )
@@ -88,7 +90,7 @@ def transition_stale_pending_to_unmatched_task(
 @celery_app.task(
     bind=True,
     name="app.tasks.revenue_verification.transition_stale_provisional_to_confirmed",
-    routing_key="maintenance.task",
+    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
     max_retries=3,
     default_retry_delay=60,
 )
@@ -108,7 +110,7 @@ def transition_stale_provisional_to_confirmed_task(
 @celery_app.task(
     bind=True,
     name="app.tasks.revenue_verification.transition_stale_pending_to_unmatched_all_tenants",
-    routing_key="maintenance.task",
+    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
     max_retries=3,
     default_retry_delay=60,
 )
@@ -135,7 +137,7 @@ def transition_stale_pending_to_unmatched_all_tenants(self) -> Dict[str, int]:
 @celery_app.task(
     bind=True,
     name="app.tasks.revenue_verification.transition_stale_provisional_to_confirmed_all_tenants",
-    routing_key="maintenance.task",
+    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
     max_retries=3,
     default_retry_delay=60,
 )
@@ -156,4 +158,39 @@ def transition_stale_provisional_to_confirmed_all_tenants(self) -> Dict[str, int
         "tenant_count": len(tenant_ids),
         "transitioned_count": transitioned,
         "cadence_seconds": int(B23_P3_TRANSITION_SWEEP_CADENCE.total_seconds()),
+    }
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.revenue_verification.execute_b23_batch_match_engine",
+    routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+    max_retries=2,
+    default_retry_delay=30,
+)
+def execute_b23_batch_match_engine_task(
+    self,
+    tenant_id: str,
+    window_start_iso: str,
+    window_end_iso: str,
+    chunk_size: int = 100,
+    correlation_id: str | None = None,
+) -> Dict[str, int | str | float]:
+    correlation_id = correlation_id or str(uuid4())
+    set_request_correlation_id(correlation_id)
+    result = run_in_worker_loop(
+        execute_b23_batch_match_engine(
+            tenant_id=UUID(tenant_id),
+            window_start=datetime.fromisoformat(window_start_iso),
+            window_end=datetime.fromisoformat(window_end_iso),
+            chunk_size=chunk_size,
+        )
+    )
+    return {
+        "tenant_id": tenant_id,
+        "processed_count": result.processed_count,
+        "chunk_count": result.chunk_count,
+        "chunk_size": result.chunk_size,
+        "duration_seconds": result.duration_seconds,
+        "correlation_id": correlation_id,
     }

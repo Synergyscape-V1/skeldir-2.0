@@ -34,6 +34,7 @@ from app.observability.context import get_tenant_id, get_user_id
 
 _SESSION_INFO_TENANT_ID = "_skeldir_tenant_id"
 _SESSION_INFO_USER_ID = "_skeldir_user_id"
+_SESSION_INFO_B23_TIMEOUTS = "_skeldir_b23_timeouts"
 
 # Mutation toggles used by CI negative controls.
 _MUTATION_FORCE_SESSION_SCOPED = "SKELDIR_B12_FORCE_SESSION_SCOPED_GUC"
@@ -88,6 +89,7 @@ if _USE_NULL_POOL:
 else:
     engine_kwargs["pool_size"] = settings.DATABASE_POOL_SIZE
     engine_kwargs["max_overflow"] = settings.DATABASE_MAX_OVERFLOW
+    engine_kwargs["pool_timeout"] = settings.DATABASE_POOL_TIMEOUT_SECONDS
 
 # Engine is configured for asyncpg with explicit pool sizing controls.
 engine = create_async_engine(
@@ -95,9 +97,25 @@ engine = create_async_engine(
     **engine_kwargs,
 )
 
+b23_engine = create_async_engine(
+    _ASYNC_DATABASE_URL,
+    connect_args=_CONNECT_ARGS,
+    pool_pre_ping=True,
+    echo=False,
+    pool_size=settings.B23_DATABASE_POOL_SIZE,
+    max_overflow=settings.B23_DATABASE_MAX_OVERFLOW,
+    pool_timeout=settings.B23_DATABASE_POOL_TIMEOUT_SECONDS,
+)
+
 # Factory for tenant-scoped async sessions.
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+B23AsyncSessionLocal = async_sessionmaker(
+    bind=b23_engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
@@ -133,6 +151,15 @@ def _bind_rls_context_after_begin(session: SyncSession, transaction, connection)
             text("SELECT set_config('app.current_user_id', :user_id, :is_local)"),
             {"user_id": user_id, "is_local": is_local},
         )
+    if session.info.get(_SESSION_INFO_B23_TIMEOUTS) is True:
+        connection.execute(
+            text(
+                f"SET LOCAL statement_timeout = '{int(settings.B23_DATABASE_STATEMENT_TIMEOUT_MS)}ms'"
+            ),
+        )
+        connection.execute(
+            text(f"SET LOCAL lock_timeout = '{int(settings.B23_DATABASE_LOCK_TIMEOUT_MS)}ms'"),
+        )
 
 
 @asynccontextmanager
@@ -150,6 +177,35 @@ async def get_session(
         resolved_user_id = resolve_user_id(user_id)
         session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)
         session.info[_SESSION_INFO_USER_ID] = str(resolved_user_id)
+
+        if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) != "1":
+            await session.begin()
+        try:
+            yield session
+            if session.in_transaction():
+                await session.commit()
+        except Exception:
+            if session.in_transaction():
+                await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_b23_session(
+    tenant_id: UUID,
+    user_id: UUID | None = None,
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Yield a tenant-scoped B2.3 session backed by the dedicated B2.3 DB pool.
+
+    Batch and transition workers use this pool so adjacent app workloads cannot
+    consume every application DB connection before B2.3 can fail fast or proceed.
+    """
+    async with B23AsyncSessionLocal() as session:
+        resolved_user_id = resolve_user_id(user_id)
+        session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)
+        session.info[_SESSION_INFO_USER_ID] = str(resolved_user_id)
+        session.info[_SESSION_INFO_B23_TIMEOUTS] = True
 
         if os.getenv(_MUTATION_DISABLE_TX_ENVELOPE) != "1":
             await session.begin()

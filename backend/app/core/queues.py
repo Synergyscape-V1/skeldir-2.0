@@ -11,6 +11,7 @@ QUEUE_MAINTENANCE = "maintenance"
 QUEUE_LLM = "llm"
 QUEUE_ATTRIBUTION = "attribution"
 QUEUE_BAYESIAN = "bayesian"
+QUEUE_B23_MATCH_ENGINE = "b23_match_engine"
 
 # Frozen set of all allowed queues for metrics policy enforcement
 ALLOWED_QUEUES: frozenset[str] = frozenset({
@@ -19,4 +20,5 @@ ALLOWED_QUEUES: frozenset[str] = frozenset({
     QUEUE_LLM,
     QUEUE_ATTRIBUTION,
     QUEUE_BAYESIAN,
+    QUEUE_B23_MATCH_ENGINE,
 })
