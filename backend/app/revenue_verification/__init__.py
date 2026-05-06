@@ -16,6 +16,14 @@ from .failure_boundary import (
     B23FailureBoundaryDecision,
     classify_b23_failure_boundary,
 )
+from .batch_engine import (
+    B23_BATCH_MATCH_BACKGROUND_CARDINALITY,
+    B23_BATCH_MATCH_CHUNK_SIZE,
+    B23_BATCH_MATCH_PERFORMANCE_THRESHOLD_SECONDS,
+    B23_BATCH_MATCH_QUERY_COUNT_PER_CHUNK_CEILING,
+    B23BatchMatchResult,
+    execute_b23_batch_match_engine,
+)
 from .match_engine_kernel import (
     B23CaptureMatchInput,
     B23MatchKernelOutcome,
@@ -81,6 +89,12 @@ __all__ = [
     "B23FailureBoundaryClass",
     "B23FailureBoundaryDecision",
     "classify_b23_failure_boundary",
+    "B23_BATCH_MATCH_BACKGROUND_CARDINALITY",
+    "B23_BATCH_MATCH_CHUNK_SIZE",
+    "B23_BATCH_MATCH_PERFORMANCE_THRESHOLD_SECONDS",
+    "B23_BATCH_MATCH_QUERY_COUNT_PER_CHUNK_CEILING",
+    "B23BatchMatchResult",
+    "execute_b23_batch_match_engine",
     "B23CaptureMatchInput",
     "B23PostCaptureInput",
     "B23MatchKernelOutcome",

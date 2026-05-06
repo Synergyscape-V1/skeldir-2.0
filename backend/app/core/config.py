@@ -61,6 +61,34 @@ class Settings(BaseSettings):
             "Prevents DB listener swamping under burst."
         ),
     )
+    B23_DATABASE_POOL_SIZE: int = Field(
+        4,
+        description="Dedicated B2.3 match-worker SQLAlchemy pool size per process.",
+    )
+    B23_DATABASE_MAX_OVERFLOW: int = Field(
+        0,
+        description="Dedicated B2.3 match-worker SQLAlchemy max_overflow per process.",
+    )
+    B23_DATABASE_POOL_TIMEOUT_SECONDS: float = Field(
+        1.0,
+        description="Fail-fast B2.3 DB connection acquisition timeout under adjacent pressure.",
+    )
+    B23_DATABASE_STATEMENT_TIMEOUT_MS: int = Field(
+        10000,
+        description="Transaction-local statement_timeout for B2.3 batch and transition SQL.",
+    )
+    B23_DATABASE_LOCK_TIMEOUT_MS: int = Field(
+        250,
+        description="Transaction-local lock_timeout for B2.3 batch and transition SQL.",
+    )
+    B23_WORKER_CONCURRENCY: int = Field(
+        2,
+        description="Declared B2.3 worker concurrency cap used for DB budget math.",
+    )
+    B23_WORKER_PREFETCH_MULTIPLIER: int = Field(
+        1,
+        description="B2.3 worker prefetch cap; one prevents queue starvation and hidden lock buildup.",
+    )
 
     # Tenant Authentication
     TENANT_API_KEY_HEADER: str = Field(
@@ -366,11 +394,11 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_POOL_SIZE must be >= 1")
         return value
 
-    @field_validator("DATABASE_POOL_TIMEOUT_SECONDS")
+    @field_validator("DATABASE_POOL_TIMEOUT_SECONDS", "B23_DATABASE_POOL_TIMEOUT_SECONDS")
     @classmethod
     def validate_pool_timeout(cls, value: float) -> float:
         if value <= 0:
-            raise ValueError("DATABASE_POOL_TIMEOUT_SECONDS must be > 0")
+            raise ValueError("database pool timeout values must be > 0")
         return value
 
     @field_validator("TENANT_API_KEY_HEADER")
@@ -499,11 +527,32 @@ class Settings(BaseSettings):
             raise ValueError(f"{info.field_name} must be >= 0")
         return value
 
-    @field_validator("CELERY_WORKER_PREFETCH_MULTIPLIER")
+    @field_validator("CELERY_WORKER_PREFETCH_MULTIPLIER", "B23_WORKER_PREFETCH_MULTIPLIER")
     @classmethod
     def validate_celery_prefetch_multiplier(cls, value: int) -> int:
         if value < 1:
-            raise ValueError("CELERY_WORKER_PREFETCH_MULTIPLIER must be >= 1")
+            raise ValueError("Celery prefetch multipliers must be >= 1")
+        return value
+
+    @field_validator("B23_WORKER_CONCURRENCY", "B23_DATABASE_POOL_SIZE")
+    @classmethod
+    def validate_b23_positive_pool_controls(cls, value: int, info) -> int:
+        if value < 1:
+            raise ValueError(f"{info.field_name} must be >= 1")
+        return value
+
+    @field_validator("B23_DATABASE_MAX_OVERFLOW")
+    @classmethod
+    def validate_b23_max_overflow(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("B23_DATABASE_MAX_OVERFLOW must be >= 0")
+        return value
+
+    @field_validator("B23_DATABASE_STATEMENT_TIMEOUT_MS", "B23_DATABASE_LOCK_TIMEOUT_MS")
+    @classmethod
+    def validate_b23_db_timeouts(cls, value: int, info) -> int:
+        if value < 1:
+            raise ValueError(f"{info.field_name} must be >= 1")
         return value
 
     @field_validator("CELERY_TASK_SOFT_TIME_LIMIT_S", "CELERY_TASK_TIME_LIMIT_S")
@@ -575,6 +624,13 @@ class Settings(BaseSettings):
         if self.BAYESIAN_TASK_TIME_LIMIT_S <= self.BAYESIAN_TASK_SOFT_TIME_LIMIT_S:
             raise ValueError(
                 "BAYESIAN_TASK_TIME_LIMIT_S must be greater than BAYESIAN_TASK_SOFT_TIME_LIMIT_S"
+            )
+        b23_pool_capacity = self.B23_DATABASE_POOL_SIZE + self.B23_DATABASE_MAX_OVERFLOW
+        b23_worker_demand = self.B23_WORKER_CONCURRENCY * self.B23_WORKER_PREFETCH_MULTIPLIER
+        if b23_worker_demand > b23_pool_capacity:
+            raise ValueError(
+                "B2.3 worker demand exceeds the dedicated B2.3 DB pool budget "
+                f"({b23_worker_demand} > {b23_pool_capacity})"
             )
         return self
 

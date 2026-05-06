@@ -495,6 +495,30 @@ jobs:
           print("B2.3-P3 runtime proofs executed with zero skips.")
           PY
 
+      - name: Enforce B2.3-P4 queue performance semantics
+        run: |
+          python scripts/ci/enforce_b23_p4_queue_performance.py
+
+      - name: Run B2.3-P4 queue performance negative controls
+        run: |
+          pytest backend/tests/test_b23_p4_queue_performance_enforcer.py -q
+
+      - name: Run B2.3-P4 queue performance runtime proofs
+        env:
+          SKELDIR_B23_P4_REQUIRE_DB_PROOFS: "1"
+        run: |
+          mkdir -p artifacts
+          pytest backend/tests/test_b23_p4_queue_performance.py -q -rA --junitxml=artifacts/b23_p4_runtime_proofs.junit.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          report = ET.parse("artifacts/b23_p4_runtime_proofs.junit.xml")
+          skipped = sum(1 for testcase in report.iter("testcase") if testcase.find("skipped") is not None)
+          if skipped > 0:
+              raise SystemExit(f"B2.3-P4 runtime proofs reported skipped tests: {skipped}")
+          print("B2.3-P4 runtime proofs executed with zero skips.")
+          PY
+
       - name: Enforce contract semantic drift gate
         run: |
           pytest tests/contract/test_contract_semantics.py tests/contract/test_b15_p2_contract_addendum.py -q

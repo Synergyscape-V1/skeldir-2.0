@@ -1,0 +1,118 @@
+{
+  "contract_id": "b23.p4.queue_performance.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P4",
+  "description": "B2.3-P4 queue isolation, protected DB pool budget, set-based micro-batch execution, benchmark semantics, planner evidence, and canonical SQL telemetry.",
+  "inherits_from": {
+    "b23_p0_semantic_authority_freeze_contract": "contracts-internal/governance/b23_p0_semantic_authority_freeze.main.json",
+    "b23_p1_schema_authority_lock_contract": "contracts-internal/governance/b23_p1_schema_authority_lock.main.json",
+    "b23_p2_match_engine_kernel_contract": "contracts-internal/governance/b23_p2_match_engine_kernel.main.json",
+    "b23_p3_verdict_persistence_contract": "contracts-internal/governance/b23_p3_verdict_persistence.main.json"
+  },
+  "authoritative_surfaces": {
+    "queue_module": "backend/app/core/queues.py",
+    "celery_app_module": "backend/app/celery_app.py",
+    "task_module": "backend/app/tasks/revenue_verification.py",
+    "beat_schedule_module": "backend/app/tasks/beat_schedule.py",
+    "db_session_module": "backend/app/db/session.py",
+    "config_module": "backend/app/core/config.py",
+    "batch_engine_module": "backend/app/revenue_verification/batch_engine.py",
+    "p4_migration": "alembic/versions/007_skeldir_foundation/202605061200_b23_p4_queue_performance_indexes.py",
+    "canonical_schema": "db/schema/canonical_schema.sql",
+    "procfile": "Procfile",
+    "e2e_compose": "docker-compose.e2e.yml",
+    "match_rate_sql": "docs/ops/b23_p4/sql/01_rolling_24h_match_rate_by_tenant.sql",
+    "dlq_depth_sql": "docs/ops/b23_p4/sql/02_dlq_depth.sql",
+    "webhook_failure_sql": "docs/ops/b23_p4/sql/03_webhook_ingestion_failure_count_by_platform.sql",
+    "runtime_tests": "backend/tests/test_b23_p4_queue_performance.py",
+    "enforcer_tests": "backend/tests/test_b23_p4_queue_performance_enforcer.py"
+  },
+  "queue_isolation": {
+    "canonical_queue_constant": "QUEUE_B23_MATCH_ENGINE",
+    "canonical_queue_name": "b23_match_engine",
+    "required_b23_task_names": [
+      "app.tasks.revenue_verification.execute_b23_batch_match_engine",
+      "app.tasks.revenue_verification.transition_stale_pending_to_unmatched",
+      "app.tasks.revenue_verification.transition_stale_provisional_to_confirmed",
+      "app.tasks.revenue_verification.transition_stale_pending_to_unmatched_all_tenants",
+      "app.tasks.revenue_verification.transition_stale_provisional_to_confirmed_all_tenants"
+    ],
+    "forbidden_adjacent_queues": [
+      "housekeeping",
+      "maintenance",
+      "llm",
+      "attribution",
+      "bayesian",
+      "default",
+      "*"
+    ]
+  },
+  "db_pool_budget": {
+    "dedicated_engine_name": "b23_engine",
+    "dedicated_session_name": "get_b23_session",
+    "required_settings": [
+      "B23_DATABASE_POOL_SIZE",
+      "B23_DATABASE_MAX_OVERFLOW",
+      "B23_DATABASE_POOL_TIMEOUT_SECONDS",
+      "B23_DATABASE_STATEMENT_TIMEOUT_MS",
+      "B23_DATABASE_LOCK_TIMEOUT_MS",
+      "B23_WORKER_CONCURRENCY",
+      "B23_WORKER_PREFETCH_MULTIPLIER"
+    ],
+    "max_acquisition_latency_seconds": 1.0,
+    "worker_demand_must_not_exceed_pool_capacity": true
+  },
+  "micro_batch": {
+    "entrypoint": "execute_b23_batch_match_engine",
+    "chunk_size_constant": "B23_BATCH_MATCH_CHUNK_SIZE",
+    "chunk_size": 500,
+    "benchmark_record_count": 1000,
+    "performance_threshold_seconds": 10,
+    "background_cardinality_constant": "B23_BATCH_MATCH_BACKGROUND_CARDINALITY",
+    "background_cardinality": 10000,
+    "required_tokens": [
+      "FOR UPDATE OF wi SKIP LOCKED",
+      "LIMIT :chunk_size",
+      "ON CONFLICT (tenant_id, provider, provider_native_event_reference)",
+      "while True",
+      "get_b23_session"
+    ],
+    "forbidden_tokens": [
+      "for match_input in",
+      "process_b23_capture_match(",
+      "time.sleep(",
+      "celery_app.send_task("
+    ]
+  },
+  "telemetry": {
+    "sql_files": [
+      "docs/ops/b23_p4/sql/01_rolling_24h_match_rate_by_tenant.sql",
+      "docs/ops/b23_p4/sql/02_dlq_depth.sql",
+      "docs/ops/b23_p4/sql/03_webhook_ingestion_failure_count_by_platform.sql"
+    ],
+    "required_indexes": [
+      "idx_b23_p4_match_rate_tenant_transition_status",
+      "idx_b23_p4_webhook_failure_tenant_platform_time",
+      "idx_b23_p4_worker_dlq_open_status_failed_at",
+      "idx_b23_p4_attribution_order_ref_expr",
+      "idx_b23_p4_attribution_event_tenant_id",
+      "idx_b23_p4_webhook_identity_claim",
+      "idx_b23_p4_verdict_webhook_identity"
+    ],
+    "write_aware_strategy": "partial predicate indexes for telemetry statuses plus expression index only for attribution rows that carry order_id and a partial claim-order index only for authenticity-verified webhook identities"
+  },
+  "phase_boundary_forbidden_tokens": [
+    "verification_coverage",
+    "bayesian convergence",
+    "dashboard",
+    "frontend product UI",
+    "llm explanation"
+  ],
+  "required_ci_wiring": [
+    "python scripts/ci/enforce_b23_p4_queue_performance.py",
+    "pytest backend/tests/test_b23_p4_queue_performance_enforcer.py -q",
+    "pytest backend/tests/test_b23_p4_queue_performance.py -q"
+  ]
+}
