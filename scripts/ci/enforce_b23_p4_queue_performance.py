@@ -142,6 +142,51 @@ def run_enforcement(
         if token in batch_text:
             violations.append(f"batch_forbidden_token_present:{token}")
 
+    runtime_text = texts["runtime_tests"]
+    benchmark_name = "test_b23_p4_batch_processes_1000_prearrived_records_with_bounded_queries"
+    benchmark_start = runtime_text.find(f"async def {benchmark_name}")
+    next_test = runtime_text.find("\n\n@pytest", benchmark_start + 1) if benchmark_start >= 0 else -1
+    benchmark_block = (
+        runtime_text[benchmark_start:next_test]
+        if benchmark_start >= 0 and next_test >= 0
+        else runtime_text[benchmark_start:]
+        if benchmark_start >= 0
+        else ""
+    )
+    if not benchmark_block:
+        violations.append("benchmark_runtime_test_missing")
+    else:
+        seed_token = "window_start, window_end = await _seed_b23_p4_benchmark_data(tenant_a)"
+        counter_token = "statement_count = 0"
+        event_listen_token = "event.listen("
+        event_remove_token = "event.remove("
+        result_token = "result = await execute_b23_batch_match_engine("
+        required_benchmark_tokens = (
+            seed_token,
+            "max_records=1000",
+            "assert result.processed_count == 1000",
+            "assert result.chunk_count == 2",
+            "assert int(verdict_count) == 1000",
+            "assert second.processed_count == 0",
+        )
+        for token in required_benchmark_tokens:
+            if token not in benchmark_block:
+                violations.append(f"benchmark_runtime_required_token_missing:{token}")
+        seed_index = benchmark_block.find(seed_token)
+        counter_index = benchmark_block.find(counter_token)
+        if seed_index < 0 or counter_index < 0 or seed_index > counter_index:
+            violations.append("benchmark_fixture_seed_not_before_timed_region")
+        listen_index = benchmark_block.find(event_listen_token)
+        remove_index = benchmark_block.find(event_remove_token)
+        result_index = benchmark_block.find(result_token)
+        if listen_index < 0 or remove_index < 0 or result_index < 0:
+            violations.append("benchmark_timed_region_markers_missing")
+        elif not (listen_index < result_index < remove_index):
+            violations.append("benchmark_execution_not_inside_timed_region")
+        timed_region = benchmark_block[listen_index:remove_index] if listen_index >= 0 and remove_index > listen_index else ""
+        if "_seed_b23_p4_benchmark_data(" in timed_region:
+            violations.append("benchmark_seed_inside_timed_region")
+
     schema_text = texts["canonical_schema"]
     migration_text = texts["p4_migration"]
     for index_name in contract["telemetry"]["required_indexes"]:
