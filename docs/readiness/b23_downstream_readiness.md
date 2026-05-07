@@ -6,9 +6,9 @@ B2.4 may consume the match verdict table (`b23_match_verdicts`), attribution-eve
 B2.4 may join `b23_match_verdicts` to `attribution_events` only by `(tenant_id, attribution_event_id)`. Cross-tenant joins are outside contract and must return zero rows under correct predicates.
 
 ## B2.6 May Consume
-B2.6 may consume the `VERIFICATION_COVERAGE` callable/spec, matched webhook revenue, connected-platform denominator inputs, exception records (`b23_exception_records`), B2.3 SQL telemetry, and webhook failure telemetry.
+B2.6 may consume the `VERIFICATION_COVERAGE` callable/spec, the canonical Postgres aggregate query `fetch_verification_coverage_aggregate(...)`, matched webhook revenue, connected-platform denominator inputs, exception records (`b23_exception_records`), B2.3 SQL telemetry, and webhook failure telemetry.
 
-The coverage primitive is a metric precondition only. It does not normalize vendors, reconcile bank transactions, or decide workflow state.
+The coverage primitive is a metric precondition only. Postgres performs the bounded aggregate over tenant/window/platform/currency scope, and the compute callable only turns those aggregate facts into an exact percentage. It does not normalize vendors, reconcile bank transactions, or decide workflow state.
 
 ## Out Of Scope
 The following remain explicitly out of B2.3-P6 scope: Bayesian fitting/convergence diagnostics, vendor normalization workflow, deterministic reconciliation stored procedures beyond the verification coverage primitive, dashboards, LLM explanation, frontend product UI, customer reporting expansion, and budget optimization.
