@@ -75,6 +75,16 @@ from .timing_constants import (
     REFUND_REOPENING_WINDOW,
     WEBHOOK_ARRIVAL_WINDOW,
 )
+from .verification_coverage import (
+    SUPPORTED_VERIFICATION_COVERAGE_CURRENCIES,
+    SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS,
+    VERIFICATION_COVERAGE,
+    VERIFICATION_COVERAGE_ZERO_DENOMINATOR_PERCENT,
+    VerificationCoverageMetric,
+    VerificationCoverageResult,
+    VerificationCoverageRevenue,
+    compute_verification_coverage,
+)
 
 __all__ = [
     "B23ProviderKey",
@@ -138,4 +148,12 @@ __all__ = [
     "validate_delayed_arrival_strategy",
     "validate_delayed_arrival_topology",
     "validate_downstream_projection_payload",
+    "SUPPORTED_VERIFICATION_COVERAGE_CURRENCIES",
+    "SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS",
+    "VERIFICATION_COVERAGE",
+    "VERIFICATION_COVERAGE_ZERO_DENOMINATOR_PERCENT",
+    "VerificationCoverageMetric",
+    "VerificationCoverageResult",
+    "VerificationCoverageRevenue",
+    "compute_verification_coverage",
 ]

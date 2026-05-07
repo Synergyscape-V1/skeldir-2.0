@@ -71,6 +71,77 @@ async def _assert_required_tables() -> None:
         await _assert_table_exists(table_name)
 
 
+async def _seed_attribution_event_for_match(
+    *,
+    tenant_id: UUID,
+    commerce_reference: str,
+    amount_minor: int,
+    occurred_at: datetime,
+) -> UUID:
+    async with get_session(tenant_id) as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO channel_taxonomy (
+                    code,
+                    family,
+                    is_paid,
+                    display_name,
+                    is_active,
+                    state
+                )
+                VALUES ('paid_search', 'paid', true, 'Paid Search', true, 'active')
+                ON CONFLICT (code) DO NOTHING
+                """
+            )
+        )
+        result = await session.execute(
+            text(
+                """
+                -- RAW_SQL_ALLOWLIST: P6 preservation seed for upstream attribution prerequisite.
+                INSERT INTO attribution_events (
+                    tenant_id,
+                    occurred_at,
+                    session_id,
+                    revenue_cents,
+                    raw_payload,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    conversion_value_cents,
+                    currency,
+                    event_timestamp,
+                    processing_status
+                )
+                VALUES (
+                    CAST(:tenant_id AS uuid),
+                    CAST(:occurred_at AS timestamptz),
+                    gen_random_uuid(),
+                    :amount_minor,
+                    jsonb_build_object('order_id', CAST(:commerce_reference AS text)),
+                    :idempotency_key,
+                    'conversion',
+                    'paid_search',
+                    :amount_minor,
+                    'USD',
+                    CAST(:occurred_at AS timestamptz),
+                    'processed'
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "occurred_at": occurred_at,
+                "amount_minor": amount_minor,
+                "commerce_reference": commerce_reference,
+                "idempotency_key": f"b23-p3-attribution-{uuid4()}",
+            },
+        )
+        value = result.scalar_one()
+        return value if isinstance(value, UUID) else UUID(str(value))
+
+
 async def _create_match(
     *,
     tenant_id: UUID,
@@ -81,6 +152,12 @@ async def _create_match(
     now = occurred_at or datetime.now(timezone.utc)
     event_ref = f"evt-{uuid4()}"
     commerce_ref = f"order-{uuid4()}"
+    attribution_event_id = await _seed_attribution_event_for_match(
+        tenant_id=tenant_id,
+        commerce_reference=commerce_ref,
+        amount_minor=expected_minor,
+        occurred_at=now - timedelta(minutes=1),
+    )
     async with get_session(tenant_id) as session:
         outcome = await process_b23_capture_match(
             session,
@@ -91,6 +168,7 @@ async def _create_match(
                 provider_native_commerce_reference=commerce_ref,
                 normalized_commerce_reference=commerce_ref,
                 strict_order_id=commerce_ref,
+                attribution_event_id=attribution_event_id,
                 attributed_amount_minor=expected_minor,
                 attributed_currency_code="USD",
                 verified_revenue_input=PersistedIngressExtractionInput(
@@ -108,45 +186,54 @@ async def _create_match(
 async def _verdict_row(tenant_id: UUID, verdict_id: UUID):
     async with get_session(tenant_id) as session:
         return (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT *
                     FROM b23_match_verdicts
                     WHERE tenant_id = :tenant_id AND id = :verdict_id
                     """
-                ),
-                {"tenant_id": str(tenant_id), "verdict_id": str(verdict_id)},
+                    ),
+                    {"tenant_id": str(tenant_id), "verdict_id": str(verdict_id)},
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
 
 async def _verdict_row_by_reference(tenant_id: UUID, event_reference: str):
     async with get_session(tenant_id) as session:
         return (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT *
                     FROM b23_match_verdicts
                     WHERE tenant_id = :tenant_id
                       AND provider_native_event_reference = :event_reference
                     """
-                ),
-                {
-                    "tenant_id": str(tenant_id),
-                    "event_reference": event_reference,
-                },
+                    ),
+                    {
+                        "tenant_id": str(tenant_id),
+                        "event_reference": event_reference,
+                    },
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
 
 async def _open_exception_rows(tenant_id: UUID, verdict_id: UUID):
     async with get_session(tenant_id) as session:
         return (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT *
                     FROM b23_exception_records
                     WHERE tenant_id = :tenant_id
@@ -154,10 +241,13 @@ async def _open_exception_rows(tenant_id: UUID, verdict_id: UUID):
                       AND status IN ('open', 'acknowledged')
                     ORDER BY raised_at DESC
                     """
-                ),
-                {"tenant_id": str(tenant_id), "verdict_id": str(verdict_id)},
+                    ),
+                    {"tenant_id": str(tenant_id), "verdict_id": str(verdict_id)},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
 
 
 def test_b23_p3_transition_jobs_are_registered_in_beat_schedule() -> None:
@@ -243,22 +333,26 @@ async def test_b23_p3_pending_to_unmatched_transition_uses_arrival_window(
     assert result.transitioned_count >= 1
     async with get_session(tenant_a) as session:
         rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT provider_native_event_reference, status
                     FROM b23_match_verdicts
                     WHERE tenant_id = :tenant_id
                       AND provider_native_event_reference IN (:stale_ref, :young_ref)
                     """
-                ),
-                {
-                    "tenant_id": str(tenant_a),
-                    "stale_ref": stale_ref,
-                    "young_ref": young_ref,
-                },
+                    ),
+                    {
+                        "tenant_id": str(tenant_a),
+                        "stale_ref": stale_ref,
+                        "young_ref": young_ref,
+                    },
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
     statuses = {row["provider_native_event_reference"]: row["status"] for row in rows}
     assert statuses[stale_ref] == "unmatched"
     assert statuses[young_ref] == "pending"
@@ -313,7 +407,9 @@ async def test_b23_p3_pending_transition_retries_locked_row_on_next_sweep(
             batch_size=1,
         )
     assert transitioned.transitioned_count == 1
-    assert (await _verdict_row_by_reference(tenant_a, locked_ref))["status"] == "unmatched"
+    assert (await _verdict_row_by_reference(tenant_a, locked_ref))[
+        "status"
+    ] == "unmatched"
 
 
 @pytest.mark.asyncio
@@ -351,8 +447,12 @@ async def test_b23_p3_transition_jobs_are_tenant_scoped(test_tenant_pair) -> Non
             now_utc=now,
         )
     assert result.transitioned_count >= 1
-    assert (await _verdict_row_by_reference(tenant_a, tenant_a_ref))["status"] == "unmatched"
-    assert (await _verdict_row_by_reference(tenant_b, tenant_b_ref))["status"] == "pending"
+    assert (await _verdict_row_by_reference(tenant_a, tenant_a_ref))[
+        "status"
+    ] == "unmatched"
+    assert (await _verdict_row_by_reference(tenant_b, tenant_b_ref))[
+        "status"
+    ] == "pending"
 
 
 @pytest.mark.asyncio

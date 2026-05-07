@@ -1,0 +1,83 @@
+{
+  "contract_id": "b23.p6.end_to_end_closure.main",
+  "contract_version": "1.0.0",
+  "repository": "Synergyscape-V1/skeldir-2.0",
+  "branch": "main",
+  "phase": "B2.3-P6",
+  "description": "Full B2.3 signed-webhook-to-verdict-to-API closure and downstream-readiness proof.",
+  "runtime_proof": {
+    "test_path": "backend/tests/test_b23_p6_end_to_end_closure.py",
+    "require_real_postgres": true,
+    "required_env": "SKELDIR_B23_P6_REQUIRE_DB_PROOFS",
+    "forbidden_substrates": ["sqlite", "sqlite://", "sqlite:///:memory:", "fake_engine", "mock_session"],
+    "required_tokens": [
+      "AsyncClient",
+      "ASGITransport(app=app)",
+      "/api/webhooks/shopify/order_create",
+      "X-Shopify-Hmac-Sha256",
+      "invalid.status_code == 401",
+      "duplicate.status_code == 200",
+      "execute_b23_batch_match_engine",
+      "/api/reconciliation/match-verdicts/",
+      "transition_stale_provisional_to_confirmed",
+      "matched_provisional",
+      "matched_confirmed",
+      "cross_tenant_count",
+      "information_schema.tables",
+      "BASE TABLE"
+    ],
+    "forbidden_tokens": [
+      "mock.patch",
+      "MagicMock",
+      "sqlite",
+      "direct_status_update_satisfies_transition",
+      "datetime.now =",
+      "monkeypatch.setattr(datetime"
+    ]
+  },
+  "database_constraints": {
+    "canonical_schema": "db/schema/canonical_schema.sql",
+    "migration": "alembic/versions/007_skeldir_foundation/202605071200_b23_p6_downstream_readiness.py",
+    "matched_attribution_fk_constraint": "ck_b23_match_verdicts_matched_requires_attribution_event",
+    "matched_states": ["matched_provisional", "matched_confirmed", "adjusted"]
+  },
+  "verification_coverage": {
+    "spec_path": "docs/specs/b23_p6_verification_coverage.md",
+    "callable_module": "app.revenue_verification.verification_coverage",
+    "callable_name": "compute_verification_coverage",
+    "governed_object_name": "VERIFICATION_COVERAGE",
+    "example_numerator_minor": 76000,
+    "example_denominator_minor": 80000,
+    "example_expected_percent": "95.00",
+    "forbidden_denominators": ["total business revenue", "ad-attributed order", "unsupported rail"]
+  },
+  "downstream_readiness": {
+    "doc_path": "docs/readiness/b23_downstream_readiness.md",
+    "required_b24_terms": ["match verdict table", "attribution-event FK", "match-to-attribution join", "match quality", "verified revenue"],
+    "required_b26_terms": ["VERIFICATION_COVERAGE", "matched webhook revenue", "connected-platform denominator", "exception records", "SQL telemetry", "webhook failure telemetry"],
+    "required_out_of_scope_terms": ["Bayesian", "vendor normalization", "reconciliation stored procedures", "dashboards", "LLM explanation", "frontend product UI"],
+    "requires_deferral_register": true
+  },
+  "preservation": {
+    "p5_manifest": "contracts-internal/governance/b23_p5_composite_proof.main.json",
+    "p0_to_p5_enforcer": "scripts/ci/enforce_b23_p5_composite_proof.py",
+    "branch_protection_verifier": "scripts/ci/verify_b23_p5_branch_protection.py",
+    "required_check_name": "B2.3 Composite Proof Harness"
+  },
+  "workflow": {
+    "workflow_file": ".github/workflows/ci.yml",
+    "required_job_name": "B2.3 Composite Proof Harness",
+    "required_command": "python scripts/ci/enforce_b23_p6_end_to_end_closure.py",
+    "required_runtime_test_command": "pytest backend/tests/test_b23_p6_end_to_end_closure.py"
+  },
+  "forbidden_scope": [
+    "PyMC",
+    "Bayesian convergence",
+    "vendor normalization engine",
+    "B2.6 reconciliation workflow",
+    "dashboard",
+    "frontend product UI",
+    "LLM explanation",
+    "budget optimization"
+  ]
+}

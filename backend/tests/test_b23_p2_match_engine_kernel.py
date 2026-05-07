@@ -4,7 +4,7 @@ import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from pydantic import ValidationError
@@ -88,6 +88,77 @@ async def _assert_table_exists(table_name: str) -> None:
 async def _assert_required_b23_tables_exist() -> None:
     for table_name in REQUIRED_B23_P2_TABLES:
         await _assert_table_exists(table_name)
+
+
+async def _seed_attribution_event_for_match(
+    *,
+    tenant_id: UUID,
+    commerce_reference: str,
+    amount_minor: int,
+    occurred_at: datetime,
+) -> UUID:
+    async with get_session(tenant_id) as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO channel_taxonomy (
+                    code,
+                    family,
+                    is_paid,
+                    display_name,
+                    is_active,
+                    state
+                )
+                VALUES ('paid_search', 'paid', true, 'Paid Search', true, 'active')
+                ON CONFLICT (code) DO NOTHING
+                """
+            )
+        )
+        result = await session.execute(
+            text(
+                """
+                -- RAW_SQL_ALLOWLIST: P6 preservation seed for upstream attribution prerequisite.
+                INSERT INTO attribution_events (
+                    tenant_id,
+                    occurred_at,
+                    session_id,
+                    revenue_cents,
+                    raw_payload,
+                    idempotency_key,
+                    event_type,
+                    channel,
+                    conversion_value_cents,
+                    currency,
+                    event_timestamp,
+                    processing_status
+                )
+                VALUES (
+                    CAST(:tenant_id AS uuid),
+                    CAST(:occurred_at AS timestamptz),
+                    gen_random_uuid(),
+                    :amount_minor,
+                    jsonb_build_object('order_id', CAST(:commerce_reference AS text)),
+                    :idempotency_key,
+                    'conversion',
+                    'paid_search',
+                    :amount_minor,
+                    'USD',
+                    CAST(:occurred_at AS timestamptz),
+                    'processed'
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "occurred_at": occurred_at,
+                "amount_minor": amount_minor,
+                "commerce_reference": commerce_reference,
+                "idempotency_key": f"b23-p2-attribution-{uuid4()}",
+            },
+        )
+        value = result.scalar_one()
+        return value if isinstance(value, UUID) else UUID(str(value))
 
 
 @pytest.mark.asyncio
@@ -391,6 +462,12 @@ async def test_b23_p2_duplicate_same_event_concurrency_writes_one_effect(
     event_ref = f"evt-{uuid4()}"
     commerce_ref = f"pi-{uuid4()}"
     now = datetime.now(timezone.utc)
+    attribution_event_id = await _seed_attribution_event_for_match(
+        tenant_id=tenant_a,
+        commerce_reference=commerce_ref,
+        amount_minor=5000,
+        occurred_at=now - timedelta(minutes=1),
+    )
 
     async def _run_once() -> None:
         async with get_session(tenant_a) as session:
@@ -403,6 +480,7 @@ async def test_b23_p2_duplicate_same_event_concurrency_writes_one_effect(
                     provider_native_commerce_reference=commerce_ref,
                     normalized_commerce_reference=commerce_ref,
                     strict_order_id=commerce_ref,
+                    attribution_event_id=attribution_event_id,
                     attributed_amount_minor=5000,
                     attributed_currency_code="USD",
                     verified_revenue_input=PersistedIngressExtractionInput(
@@ -452,8 +530,22 @@ async def test_b23_p2_distinct_concurrent_events_same_order_persist_once_each(
     commerce_ref = f"order-{uuid4()}"
     now = datetime.now(timezone.utc)
     event_refs = [f"evt-{uuid4()}", f"evt-{uuid4()}"]
+    attribution_event_ids = [
+        await _seed_attribution_event_for_match(
+            tenant_id=tenant_a,
+            commerce_reference=commerce_ref,
+            amount_minor=3300,
+            occurred_at=now - timedelta(minutes=3),
+        ),
+        await _seed_attribution_event_for_match(
+            tenant_id=tenant_a,
+            commerce_reference=commerce_ref,
+            amount_minor=3300,
+            occurred_at=now - timedelta(minutes=3),
+        ),
+    ]
 
-    async def _run_once(event_ref: str) -> None:
+    async def _run_once(event_ref: str, attribution_event_id: UUID) -> None:
         async with get_session(tenant_a) as session:
             await process_b23_capture_match(
                 session,
@@ -464,6 +556,7 @@ async def test_b23_p2_distinct_concurrent_events_same_order_persist_once_each(
                     provider_native_commerce_reference=commerce_ref,
                     normalized_commerce_reference=commerce_ref,
                     strict_order_id=commerce_ref,
+                    attribution_event_id=attribution_event_id,
                     attributed_amount_minor=3300,
                     attributed_currency_code="USD",
                     verified_revenue_input=PersistedIngressExtractionInput(
@@ -476,7 +569,10 @@ async def test_b23_p2_distinct_concurrent_events_same_order_persist_once_each(
                 ),
             )
 
-    await asyncio.gather(_run_once(event_refs[0]), _run_once(event_refs[1]))
+    await asyncio.gather(
+        _run_once(event_refs[0], attribution_event_ids[0]),
+        _run_once(event_refs[1], attribution_event_ids[1]),
+    )
 
     async with get_session(tenant_a) as session:
         verdict_count = await session.execute(

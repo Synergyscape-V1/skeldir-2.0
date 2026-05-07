@@ -2168,6 +2168,9 @@ ALTER TABLE ONLY public.channel_state_transitions
 ALTER TABLE ONLY public.channel_taxonomy
     ADD CONSTRAINT channel_taxonomy_pkey PRIMARY KEY (code);
 
+ALTER TABLE public.b23_match_verdicts
+    ADD CONSTRAINT ck_b23_match_verdicts_matched_requires_attribution_event CHECK ((((status)::text <> ALL ((ARRAY['matched_provisional'::character varying, 'matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) OR (attribution_event_id IS NOT NULL))) NOT VALID;
+
 ALTER TABLE ONLY public.compliance_audit_ledger
     ADD CONSTRAINT compliance_audit_ledger_pkey PRIMARY KEY (id);
 
