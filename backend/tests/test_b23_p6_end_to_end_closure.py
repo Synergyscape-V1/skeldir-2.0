@@ -1,32 +1,41 @@
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 import hashlib
 import hmac
+import asyncio
 import json
 import os
+import tempfile
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from celery.contrib.testing.worker import start_worker
+from celery.exceptions import TimeoutError as CeleryTimeoutError
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from app.db.session import engine, get_b23_session, get_session
+from app.celery_app import celery_app
+from app.core.queues import QUEUE_B23_MATCH_ENGINE
+from app.db.session import b23_engine, engine, get_b23_session, get_session
 from app.main import app
 from app.revenue_verification import (
     PROVISIONAL_MATCH_WINDOW,
     VERIFICATION_COVERAGE,
-    VerificationCoverageRevenue,
+    VerificationCoverageAggregate,
     compute_verification_coverage,
-    execute_b23_batch_match_engine,
+    fetch_verification_coverage_aggregate,
 )
 from app.revenue_verification.state_transitions import (
     transition_stale_provisional_to_confirmed,
 )
 from app.security.auth import AuthContext, get_auth_context
+from app.tasks.context import run_in_worker_loop
+from app.tasks.revenue_verification import execute_b23_batch_match_engine_task
 from tests.helpers.webhook_secret_seed import (
     webhook_secret_insert_columns,
     webhook_secret_insert_params,
@@ -125,6 +134,124 @@ async def _create_tenant_with_webhook_secrets() -> tuple[UUID, str, dict[str, st
 def _sign_shopify(body: bytes, secret: str) -> str:
     digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
     return base64.b64encode(digest).decode("utf-8")
+
+
+def _shopify_order_body(
+    *, order_id: str, amount_minor: int, occurred_at: datetime
+) -> bytes:
+    return json.dumps(
+        {
+            "id": int(order_id),
+            "total_price": f"{Decimal(amount_minor) / Decimal(100):.2f}",
+            "currency": "USD",
+            "created_at": occurred_at.isoformat(),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+async def _post_shopify_webhook(
+    *,
+    api_key: str,
+    body: bytes,
+    signature: str | None,
+) -> tuple[int, dict[str, object]]:
+    headers = {
+        "Content-Type": "application/json",
+        "X-Skeldir-Tenant-Key": api_key,
+    }
+    if signature is not None:
+        headers["X-Shopify-Hmac-Sha256"] = signature
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/webhooks/shopify/order_create",
+            content=body,
+            headers=headers,
+        )
+    return response.status_code, response.json()
+
+
+async def _clear_b23_match_engine_queue() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                DELETE FROM public.kombu_message
+                WHERE queue_id = (
+                    SELECT id
+                    FROM public.kombu_queue
+                    WHERE name = :queue_name
+                )
+                """
+            ),
+            {"queue_name": QUEUE_B23_MATCH_ENGINE},
+        )
+
+
+@contextmanager
+def _start_b23_match_worker():
+    previous_prometheus_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
+    os.environ["PROMETHEUS_MULTIPROC_DIR"] = (
+        previous_prometheus_dir or tempfile.mkdtemp(prefix="b23_p6_prom_")
+    )
+    try:
+        with start_worker(
+            celery_app,
+            queues=[QUEUE_B23_MATCH_ENGINE],
+            perform_ping_check=False,
+            pool="solo",
+            concurrency=1,
+            loglevel="INFO",
+        ):
+            yield
+    finally:
+        if previous_prometheus_dir is None:
+            os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
+
+
+def _dispatch_b23_match_task_sync(
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    chunk_size: int,
+) -> tuple[str, dict[str, object]]:
+    route = celery_app.conf.task_routes["app.tasks.revenue_verification.*"]
+    assert route["queue"] == QUEUE_B23_MATCH_ENGINE
+    assert route["routing_key"] == f"{QUEUE_B23_MATCH_ENGINE}.task"
+
+    previous_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = False
+    assert celery_app.conf.task_always_eager is False
+    try:
+        with _start_b23_match_worker():
+            async_result = execute_b23_batch_match_engine_task.apply_async(
+                args=[
+                    str(tenant_id),
+                    window_start.isoformat(),
+                    window_end.isoformat(),
+                    chunk_size,
+                    str(uuid4()),
+                ],
+                queue=QUEUE_B23_MATCH_ENGINE,
+                routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+            )
+            assert async_result.id
+            try:
+                payload = async_result.get(timeout=90, propagate=True)
+            except CeleryTimeoutError as exc:
+                raise AssertionError(
+                    "B2.3 match task timed out without bounded completion"
+                ) from exc
+            assert async_result.state == "SUCCESS"
+            assert isinstance(payload, dict)
+            run_in_worker_loop(b23_engine.dispose())
+            run_in_worker_loop(engine.dispose())
+            return async_result.id, payload
+    finally:
+        celery_app.conf.task_always_eager = previous_eager
 
 
 def _auth_context(tenant_id: UUID) -> AuthContext:
@@ -253,28 +380,14 @@ async def _send_signed_shopify_webhook(
     amount_minor: int,
     occurred_at: datetime,
 ) -> tuple[int, dict[str, object]]:
-    body = json.dumps(
-        {
-            "id": int(order_id),
-            "total_price": f"{Decimal(amount_minor) / Decimal(100):.2f}",
-            "currency": "USD",
-            "created_at": occurred_at.isoformat(),
-        },
-        separators=(",", ":"),
-    ).encode("utf-8")
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/api/webhooks/shopify/order_create",
-            content=body,
-            headers={
-                "Content-Type": "application/json",
-                "X-Skeldir-Tenant-Key": api_key,
-                "X-Shopify-Hmac-Sha256": _sign_shopify(body, secret),
-            },
-        )
-    return response.status_code, response.json()
+    body = _shopify_order_body(
+        order_id=order_id, amount_minor=amount_minor, occurred_at=occurred_at
+    )
+    return await _post_shopify_webhook(
+        api_key=api_key,
+        body=body,
+        signature=_sign_shopify(body, secret),
+    )
 
 
 async def _create_verdict_from_signed_webhook(
@@ -326,13 +439,21 @@ async def _create_verdict_from_signed_webhook(
             },
         )
 
-    result = await execute_b23_batch_match_engine(
+    await _clear_b23_match_engine_queue()
+    await b23_engine.dispose()
+    await engine.dispose()
+    task_id, task_payload = await asyncio.to_thread(
+        _dispatch_b23_match_task_sync,
         tenant_id=tenant_id,
         window_start=occurred_at - timedelta(minutes=5),
         window_end=occurred_at + timedelta(minutes=5),
         chunk_size=10,
     )
-    assert result.processed_count == 1
+    assert task_id
+    assert task_payload["task_name"] == execute_b23_batch_match_engine_task.name
+    assert task_payload["queue"] == QUEUE_B23_MATCH_ENGINE
+    assert task_payload["db_session_pool"] == "b23"
+    assert task_payload["processed_count"] == 1
 
     async with get_b23_session(tenant_id) as session:
         row = (
@@ -402,40 +523,40 @@ async def test_b23_p6_signed_webhook_to_confirmed_api_downstream_closure() -> No
         occurred_at=now,
     )
 
-    body = json.dumps(
-        {
-            "id": int(order_id),
-            "total_price": "760.00",
-            "currency": "USD",
-            "created_at": now.isoformat(),
-        },
-        separators=(",", ":"),
-    ).encode("utf-8")
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        invalid = await client.post(
-            "/api/webhooks/shopify/order_create",
-            content=body,
-            headers={
-                "Content-Type": "application/json",
-                "X-Skeldir-Tenant-Key": api_key,
-                "X-Shopify-Hmac-Sha256": "invalid",
-            },
-        )
-        duplicate = await client.post(
-            "/api/webhooks/shopify/order_create",
-            content=body,
-            headers={
-                "Content-Type": "application/json",
-                "X-Skeldir-Tenant-Key": api_key,
-                "X-Shopify-Hmac-Sha256": _sign_shopify(
-                    body, secrets["shopify_webhook_secret"]
-                ),
-            },
-        )
-    assert invalid.status_code == 401
-    assert duplicate.status_code == 200
+    body = _shopify_order_body(order_id=order_id, amount_minor=76000, occurred_at=now)
+    mutated_body = _shopify_order_body(
+        order_id=order_id, amount_minor=76001, occurred_at=now
+    )
+    invalid_status, _ = await _post_shopify_webhook(
+        api_key=api_key,
+        body=body,
+        signature="invalid",
+    )
+    mutated_status, _ = await _post_shopify_webhook(
+        api_key=api_key,
+        body=mutated_body,
+        signature=_sign_shopify(body, secrets["shopify_webhook_secret"]),
+    )
+    wrong_secret_status, _ = await _post_shopify_webhook(
+        api_key=api_key,
+        body=body,
+        signature=_sign_shopify(body, "b23_p6_wrong_secret"),
+    )
+    missing_hmac_status, _ = await _post_shopify_webhook(
+        api_key=api_key,
+        body=body,
+        signature=None,
+    )
+    duplicate_status, _ = await _post_shopify_webhook(
+        api_key=api_key,
+        body=body,
+        signature=_sign_shopify(body, secrets["shopify_webhook_secret"]),
+    )
+    assert invalid_status == 401
+    assert mutated_status == 401
+    assert wrong_secret_status == 401
+    assert missing_hmac_status == 401
+    assert duplicate_status == 200
 
     async with get_session(tenant_a) as session:
         identity_count = (
@@ -748,70 +869,363 @@ async def test_b23_p6_exception_records_remain_base_table() -> None:
     assert table_type == "BASE TABLE"
 
 
-def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounded() -> None:
-    tenant_a = uuid4()
-    tenant_b = uuid4()
-    now = datetime.now(timezone.utc)
-    rows = [
-        VerificationCoverageRevenue(
+@pytest.mark.asyncio(loop_scope="module")
+async def test_b23_p6_verification_coverage_callable_is_deterministic_and_bounded() -> (
+    None
+):
+    tenant_a, _, _ = await _create_tenant_with_webhook_secrets()
+    tenant_b, _, _ = await _create_tenant_with_webhook_secrets()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    window_start = now - timedelta(hours=1)
+    window_end = now + timedelta(hours=1)
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO public.channel_taxonomy (
+                    code,
+                    family,
+                    is_paid,
+                    display_name,
+                    is_active,
+                    state
+                )
+                VALUES ('paid_search', 'paid', true, 'Paid Search', true, 'active')
+                ON CONFLICT (code) DO NOTHING
+                """
+            )
+        )
+
+        async def insert_verified_webhook(
+            *,
+            tenant_id: UUID,
+            provider: str,
+            reference: str,
+            amount_minor: int,
+            currency: str,
+            occurred_at: datetime,
+        ) -> tuple[UUID, UUID]:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            attribution_event_id = UUID(
+                str(
+                    (
+                        await conn.execute(
+                            text(
+                                """
+                                INSERT INTO public.attribution_events (
+                                    tenant_id,
+                                    occurred_at,
+                                    session_id,
+                                    revenue_cents,
+                                    raw_payload,
+                                    idempotency_key,
+                                    event_type,
+                                    channel,
+                                    conversion_value_cents,
+                                    currency,
+                                    event_timestamp,
+                                    processing_status
+                                )
+                                VALUES (
+                                    :tenant_id,
+                                    :occurred_at,
+                                    gen_random_uuid(),
+                                    :amount_minor,
+                                    jsonb_build_object('order_id', CAST(:reference AS text)),
+                                    :idempotency_key,
+                                    'conversion',
+                                    'paid_search',
+                                    :amount_minor,
+                                    :currency,
+                                    :occurred_at,
+                                    'processed'
+                                )
+                                RETURNING id
+                                """
+                            ),
+                            {
+                                "tenant_id": str(tenant_id),
+                                "occurred_at": occurred_at,
+                                "amount_minor": amount_minor,
+                                "reference": reference,
+                                "currency": currency,
+                                "idempotency_key": (
+                                    f"b23-p6-coverage-attribution-{tenant_id}-{reference}"
+                                ),
+                            },
+                        )
+                    ).scalar_one()
+                )
+            )
+            webhook_id = UUID(
+                str(
+                    (
+                        await conn.execute(
+                            text(
+                                """
+                                INSERT INTO public.webhook_ingress_identities (
+                                    tenant_id,
+                                    event_id,
+                                    provider,
+                                    provider_native_event_reference,
+                                    provider_native_commerce_reference,
+                                    normalized_commerce_reference_kind,
+                                    normalized_commerce_reference_value,
+                                    verified_amount_minor,
+                                    verified_amount_currency,
+                                    verified_amount_scale,
+                                    event_timestamp,
+                                    idempotency_key,
+                                    verified_commerce_ingress_state,
+                                    verified_at
+                                )
+                                VALUES (
+                                    :tenant_id,
+                                    :event_id,
+                                    :provider,
+                                    :event_reference,
+                                    :commerce_reference,
+                                    'order_id',
+                                    :commerce_reference,
+                                    :amount_minor,
+                                    :currency,
+                                    2,
+                                    :occurred_at,
+                                    :idempotency_key,
+                                    'authenticity_verified',
+                                    :occurred_at
+                                )
+                                RETURNING id
+                                """
+                            ),
+                            {
+                                "tenant_id": str(tenant_id),
+                                "event_id": str(attribution_event_id),
+                                "provider": provider,
+                                "event_reference": f"coverage-event-{reference}",
+                                "commerce_reference": reference,
+                                "amount_minor": amount_minor,
+                                "currency": currency,
+                                "occurred_at": occurred_at,
+                                "idempotency_key": (
+                                    f"b23-p6-coverage-{tenant_id}-{reference}"
+                                ),
+                            },
+                        )
+                    ).scalar_one()
+                )
+            )
+            return webhook_id, attribution_event_id
+
+        matched_webhook_id, matched_attribution_id = await insert_verified_webhook(
             tenant_id=tenant_a,
-            platform="stripe",
-            revenue_minor=76000,
-            currency_code="USD",
+            provider="stripe",
+            reference=f"coverage-a-matched-{uuid4().hex[:8]}",
+            amount_minor=76000,
+            currency="USD",
             occurred_at=now,
-            rail="connected_platform",
-            matched_webhook=True,
-        ),
-        VerificationCoverageRevenue(
+        )
+        await insert_verified_webhook(
             tenant_id=tenant_a,
-            platform="stripe",
-            revenue_minor=4000,
-            currency_code="USD",
+            provider="stripe",
+            reference=f"coverage-a-unmatched-{uuid4().hex[:8]}",
+            amount_minor=4000,
+            currency="USD",
             occurred_at=now,
-            rail="connected_platform",
-            matched_webhook=False,
-        ),
-        VerificationCoverageRevenue(
+        )
+        await insert_verified_webhook(
             tenant_id=tenant_a,
-            platform="bank_wire",
-            revenue_minor=20000,
-            currency_code="USD",
+            provider="bank_wire",
+            reference=f"coverage-a-unsupported-{uuid4().hex[:8]}",
+            amount_minor=20000,
+            currency="USD",
             occurred_at=now,
-            rail="unsupported",
-            matched_webhook=True,
-        ),
-        VerificationCoverageRevenue(
+        )
+        await insert_verified_webhook(
+            tenant_id=tenant_a,
+            provider="stripe",
+            reference=f"coverage-a-window-{uuid4().hex[:8]}",
+            amount_minor=50000,
+            currency="USD",
+            occurred_at=window_end + timedelta(seconds=1),
+        )
+        await insert_verified_webhook(
+            tenant_id=tenant_a,
+            provider="stripe",
+            reference=f"coverage-a-eur-{uuid4().hex[:8]}",
+            amount_minor=60000,
+            currency="EUR",
+            occurred_at=now,
+        )
+        (
+            tenant_b_matched_webhook_id,
+            tenant_b_attribution_id,
+        ) = await insert_verified_webhook(
             tenant_id=tenant_b,
-            platform="stripe",
-            revenue_minor=99000,
-            currency_code="USD",
+            provider="stripe",
+            reference=f"coverage-b-matched-{uuid4().hex[:8]}",
+            amount_minor=900000,
+            currency="USD",
             occurred_at=now,
-            rail="connected_platform",
-            matched_webhook=True,
-        ),
-    ]
-    result = compute_verification_coverage(
-        rows,
-        tenant_id=tenant_a,
-        window_start=now - timedelta(hours=1),
-        window_end=now + timedelta(hours=1),
-    )
+        )
+        await insert_verified_webhook(
+            tenant_id=tenant_b,
+            provider="stripe",
+            reference=f"coverage-b-unmatched-{uuid4().hex[:8]}",
+            amount_minor=100000,
+            currency="USD",
+            occurred_at=now,
+        )
+
+        async def insert_matched_verdict(
+            *,
+            tenant_id: UUID,
+            attribution_event_id: UUID,
+            webhook_ingress_identity_id: UUID,
+            reference: str,
+            amount_minor: int,
+        ) -> None:
+            await conn.execute(
+                text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO public.b23_match_verdicts (
+                        tenant_id,
+                        attribution_event_id,
+                        webhook_ingress_identity_id,
+                        provider,
+                        canonical_commerce_reference,
+                        provider_native_event_reference,
+                        provider_native_commerce_reference,
+                        status,
+                        match_quality,
+                        attributed_amount_minor,
+                        verified_amount_minor,
+                        currency_code,
+                        pending_since,
+                        provisional_expires_at,
+                        last_transition_at,
+                        created_at,
+                        updated_at,
+                        canonical_expected_gross_amount_minor,
+                        canonical_captured_gross_amount_minor,
+                        canonical_net_verified_amount_minor,
+                        discrepancy_amount_minor,
+                        discrepancy_ratio_bps,
+                        discrepancy_band
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :attribution_event_id,
+                        :webhook_ingress_identity_id,
+                        'stripe',
+                        :reference,
+                        :event_reference,
+                        :reference,
+                        'matched_confirmed',
+                        'high',
+                        :amount_minor,
+                        :amount_minor,
+                        'USD',
+                        :now_utc,
+                        :now_utc,
+                        :now_utc,
+                        :now_utc,
+                        :now_utc,
+                        :amount_minor,
+                        :amount_minor,
+                        :amount_minor,
+                        0,
+                        0,
+                        'exact'
+                    )
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant_id),
+                    "attribution_event_id": str(attribution_event_id),
+                    "webhook_ingress_identity_id": str(webhook_ingress_identity_id),
+                    "reference": reference,
+                    "event_reference": f"{reference}-event",
+                    "amount_minor": amount_minor,
+                    "now_utc": now,
+                },
+            )
+
+        await insert_matched_verdict(
+            tenant_id=tenant_a,
+            attribution_event_id=matched_attribution_id,
+            webhook_ingress_identity_id=matched_webhook_id,
+            reference="coverage-a-matched",
+            amount_minor=76000,
+        )
+        await insert_matched_verdict(
+            tenant_id=tenant_b,
+            attribution_event_id=tenant_b_attribution_id,
+            webhook_ingress_identity_id=tenant_b_matched_webhook_id,
+            reference="coverage-b-matched",
+            amount_minor=900000,
+        )
+
+    async with get_b23_session(tenant_a) as session:
+        aggregate = await fetch_verification_coverage_aggregate(
+            session,
+            tenant_id=tenant_a,
+            window_start=window_start,
+            window_end=window_end,
+            supported_platforms=("stripe",),
+            currency_code="USD",
+        )
+
+    assert aggregate.matched_webhook_revenue_minor == 76000
+    assert aggregate.connected_platform_revenue_minor == 80000
+    result = compute_verification_coverage(aggregate)
     assert result.coverage_percent == Decimal("95.00")
     assert result.numerator_matched_webhook_revenue_minor == 76000
     assert result.denominator_connected_platform_revenue_minor == 80000
     assert result.zero_denominator is False
-    assert VERIFICATION_COVERAGE.compute(
-        rows,
-        tenant_id=tenant_a,
-        window_start=now - timedelta(hours=1),
-        window_end=now + timedelta(hours=1),
-    ).coverage_percent == Decimal("95.00")
+
+    assert VERIFICATION_COVERAGE.compute(aggregate).coverage_percent == Decimal("95.00")
 
     zero = compute_verification_coverage(
-        [],
-        tenant_id=tenant_a,
-        window_start=now - timedelta(hours=1),
-        window_end=now + timedelta(hours=1),
+        VerificationCoverageAggregate(
+            tenant_id=tenant_a,
+            currency_code="USD",
+            window_start=window_start,
+            window_end=window_end,
+            matched_webhook_revenue_minor=0,
+            connected_platform_revenue_minor=0,
+        )
     )
     assert zero.coverage_percent == Decimal("0.00")
     assert zero.zero_denominator is True
+
+    tenant_b_result = compute_verification_coverage(
+        VerificationCoverageAggregate(
+            tenant_id=tenant_b,
+            currency_code="USD",
+            window_start=window_start,
+            window_end=window_end,
+            matched_webhook_revenue_minor=900000,
+            connected_platform_revenue_minor=1000000,
+        )
+    )
+    assert tenant_b_result.coverage_percent == Decimal("90.00")
+
+    async with get_b23_session(tenant_a) as session:
+        empty_aggregate = await fetch_verification_coverage_aggregate(
+            session,
+            tenant_id=tenant_a,
+            window_start=window_end + timedelta(days=1),
+            window_end=window_end + timedelta(days=2),
+            supported_platforms=("stripe",),
+            currency_code="USD",
+        )
+    assert empty_aggregate.connected_platform_revenue_minor == 0

@@ -188,6 +188,9 @@ def execute_b23_batch_match_engine_task(
     )
     return {
         "tenant_id": tenant_id,
+        "task_name": self.name,
+        "queue": QUEUE_B23_MATCH_ENGINE,
+        "db_session_pool": "b23",
         "processed_count": result.processed_count,
         "chunk_count": result.chunk_count,
         "chunk_size": result.chunk_size,

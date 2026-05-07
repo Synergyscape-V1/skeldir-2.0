@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import importlib
 import json
 import os
@@ -56,6 +57,10 @@ def _validate_runtime_proof(
         violations.append("runtime_direct_status_update_detected")
     if "monkeypatch" in test_text and "datetime" in test_text:
         violations.append("runtime_python_time_monkeypatch_detected")
+    if "time.sleep(" in test_text:
+        violations.append("runtime_blind_sleep_detected")
+    if "await execute_b23_batch_match_engine(" in test_text:
+        violations.append("runtime_direct_match_call_detected")
 
     required_test_names = (
         "test_b23_p6_signed_webhook_to_confirmed_api_downstream_closure",
@@ -114,6 +119,42 @@ def _validate_verification_coverage(
         if token not in spec_text:
             violations.append(f"verification_coverage_spec_token_missing:{token}")
 
+    coverage_path = (
+        repo_root
+        / "backend"
+        / "app"
+        / "revenue_verification"
+        / "verification_coverage.py"
+    )
+    coverage_text = _read_text(coverage_path)
+    aggregate_tokens = (
+        "VerificationCoverageAggregate",
+        "fetch_verification_coverage_aggregate",
+        "SUM(",
+        "tenant_id = :tenant_id",
+        "occurred_at >= :window_start",
+        "occurred_at < :window_end",
+        "provider IN :supported_platforms",
+        "currency_code = :currency_code",
+        "matched_webhook_revenue_minor",
+        "connected_platform_revenue_minor",
+    )
+    for token in aggregate_tokens:
+        if token not in coverage_text:
+            violations.append(f"verification_coverage_aggregate_token_missing:{token}")
+    forbidden_query_tokens = (
+        "SELECT *",
+        "fetch_matched_webhook_revenue_rows",
+        "for row in rows",
+        "Iterable[VerificationCoverageRevenue]",
+        "VerificationCoverageRevenue",
+        "external_api",
+        "llm",
+    )
+    for token in forbidden_query_tokens:
+        if token in coverage_text:
+            violations.append(f"verification_coverage_forbidden_token_present:{token}")
+
     backend_path = str(repo_root / "backend")
     if backend_path not in sys.path:
         sys.path.insert(0, backend_path)
@@ -135,43 +176,29 @@ def _validate_verification_coverage(
             f"verification_coverage_governed_object_missing:{governed_name}.compute"
         )
         return
+    aggregate_fetcher = getattr(
+        module, contract["verification_coverage"]["aggregate_fetcher_name"], None
+    )
+    if not callable(aggregate_fetcher):
+        violations.append("verification_coverage_aggregate_fetcher_missing")
+        return
+    aggregate_source = inspect.getsource(aggregate_fetcher)
+    for token in aggregate_tokens:
+        if token not in aggregate_source and token != "VerificationCoverageAggregate":
+            violations.append(f"verification_coverage_fetcher_token_missing:{token}")
 
     tenant_id = uuid4()
     now = datetime.now(timezone.utc)
-    row_type = getattr(module, "VerificationCoverageRevenue")
+    aggregate_type = getattr(module, "VerificationCoverageAggregate")
     result = getattr(module, callable_name)(
-        [
-            row_type(
-                tenant_id=tenant_id,
-                platform="stripe",
-                revenue_minor=76000,
-                currency_code="USD",
-                occurred_at=now,
-                rail="connected_platform",
-                matched_webhook=True,
-            ),
-            row_type(
-                tenant_id=tenant_id,
-                platform="stripe",
-                revenue_minor=4000,
-                currency_code="USD",
-                occurred_at=now,
-                rail="connected_platform",
-                matched_webhook=False,
-            ),
-            row_type(
-                tenant_id=tenant_id,
-                platform="bank_wire",
-                revenue_minor=20000,
-                currency_code="USD",
-                occurred_at=now,
-                rail="unsupported",
-                matched_webhook=True,
-            ),
-        ],
-        tenant_id=tenant_id,
-        window_start=now - timedelta(minutes=1),
-        window_end=now + timedelta(minutes=1),
+        aggregate_type(
+            tenant_id=tenant_id,
+            currency_code="USD",
+            window_start=now - timedelta(minutes=1),
+            window_end=now + timedelta(minutes=1),
+            matched_webhook_revenue_minor=76000,
+            connected_platform_revenue_minor=80000,
+        )
     )
     expected = Decimal(contract["verification_coverage"]["example_expected_percent"])
     if result.coverage_percent != expected:
@@ -185,10 +212,14 @@ def _validate_verification_coverage(
     if result.numerator_matched_webhook_revenue_minor != 76000:
         violations.append("verification_coverage_numerator_not_matched_webhook_only")
     zero = governed.compute(
-        [],
-        tenant_id=tenant_id,
-        window_start=now - timedelta(minutes=1),
-        window_end=now + timedelta(minutes=1),
+        aggregate_type(
+            tenant_id=tenant_id,
+            currency_code="USD",
+            window_start=now - timedelta(minutes=1),
+            window_end=now + timedelta(minutes=1),
+            matched_webhook_revenue_minor=0,
+            connected_platform_revenue_minor=0,
+        )
     )
     if zero.coverage_percent != Decimal("0.00") or not zero.zero_denominator:
         violations.append("verification_coverage_zero_denominator_contract_failed")
@@ -309,7 +340,7 @@ def run_enforcement(
         workflow_text = _read_text(workflow_file)
         if simulate_regression:
             runtime_text = runtime_text.replace(
-                "invalid.status_code == 401", "invalid.status_code == 200"
+                "invalid_status == 401", "invalid_status == 200"
             )
             spec_text = spec_text.replace("95.00%", "76.00%")
 

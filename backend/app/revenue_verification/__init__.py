@@ -80,10 +80,11 @@ from .verification_coverage import (
     SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS,
     VERIFICATION_COVERAGE,
     VERIFICATION_COVERAGE_ZERO_DENOMINATOR_PERCENT,
+    VerificationCoverageAggregate,
     VerificationCoverageMetric,
     VerificationCoverageResult,
-    VerificationCoverageRevenue,
     compute_verification_coverage,
+    fetch_verification_coverage_aggregate,
 )
 
 __all__ = [
@@ -152,8 +153,9 @@ __all__ = [
     "SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS",
     "VERIFICATION_COVERAGE",
     "VERIFICATION_COVERAGE_ZERO_DENOMINATOR_PERCENT",
+    "VerificationCoverageAggregate",
     "VerificationCoverageMetric",
     "VerificationCoverageResult",
-    "VerificationCoverageRevenue",
     "compute_verification_coverage",
+    "fetch_verification_coverage_aggregate",
 ]
