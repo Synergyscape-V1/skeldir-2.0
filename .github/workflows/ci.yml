@@ -551,6 +551,7 @@ jobs:
       SKELDIR_B23_P2_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B23_P3_REQUIRE_DB_PROOFS: "1"
       SKELDIR_B23_P4_REQUIRE_DB_PROOFS: "1"
+      SKELDIR_B23_P6_REQUIRE_DB_PROOFS: "1"
       TESTING: "1"
       CI: "true"
       PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
@@ -607,12 +608,32 @@ jobs:
           mkdir -p artifacts
           python scripts/ci/enforce_b23_p5_composite_proof.py
 
+      - name: Execute B2.3-P6 end-to-end closure runtime proofs
+        run: |
+          mkdir -p artifacts
+          pytest backend/tests/test_b23_p6_end_to_end_closure.py -q -rA --junitxml=artifacts/b23_p6_end_to_end_closure.junit.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          report = ET.parse("artifacts/b23_p6_end_to_end_closure.junit.xml")
+          skipped = sum(1 for testcase in report.iter("testcase") if testcase.find("skipped") is not None)
+          if skipped > 0:
+              raise SystemExit(f"B2.3-P6 runtime proofs reported skipped tests: {skipped}")
+          print("B2.3-P6 runtime proofs executed with zero skips.")
+          PY
+
+      - name: Enforce B2.3-P6 end-to-end closure governance
+        run: |
+          python scripts/ci/enforce_b23_p6_end_to_end_closure.py
+
       - name: Upload B2.3-P5 proof summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: b23-p5-composite-proof-summary
-          path: artifacts/b23_p5_composite_proof_summary.json
+          path: |
+            artifacts/b23_p5_composite_proof_summary.json
+            artifacts/b23_p6_end_to_end_closure.junit.xml
 
   b21-p0-runtime-authority-closeout:
     name: B2.1-P0 Runtime Authority Closeout

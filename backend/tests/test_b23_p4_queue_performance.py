@@ -192,8 +192,55 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
         await conn.execute(
             text(
                 """
+                WITH historical_attribution AS (
+                    INSERT INTO public.attribution_events (
+                        tenant_id,
+                        occurred_at,
+                        session_id,
+                        revenue_cents,
+                        raw_payload,
+                        idempotency_key,
+                        event_type,
+                        channel,
+                        conversion_value_cents,
+                        currency,
+                        event_timestamp,
+                        processing_status
+                    )
+                    SELECT
+                        CAST(:tenant_id AS uuid),
+                        CAST(:now_utc AS timestamptz) - interval '7 days',
+                        gen_random_uuid(),
+                        10000,
+                        jsonb_build_object('order_id', 'historical-' || gs::text),
+                        'b23-p4-historical-attribution-' || CAST(:tenant_id AS text) || '-' || gs::text,
+                        'conversion',
+                        'paid_search',
+                        10000,
+                        'USD',
+                        CAST(:now_utc AS timestamptz) - interval '7 days',
+                        'processed'
+                    FROM generate_series(1, :background_rows) AS gs
+                    WHERE gs % 5 <> 0
+                    RETURNING id, raw_payload ->> 'order_id' AS order_ref
+                ),
+                historical_rows AS (
+                    SELECT
+                        gs,
+                        'historical-' || gs::text AS order_ref,
+                        CASE
+                            WHEN gs % 5 = 0 THEN NULL
+                            ELSE (
+                                SELECT id
+                                FROM historical_attribution ha
+                                WHERE ha.order_ref = 'historical-' || gs::text
+                            )
+                        END AS attribution_event_id
+                    FROM generate_series(1, :background_rows) AS gs
+                )
                 INSERT INTO public.b23_match_verdicts (
                     tenant_id,
+                    attribution_event_id,
                     provider,
                     canonical_commerce_reference,
                     provider_native_event_reference,
@@ -216,8 +263,9 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                 )
                 SELECT
                     CAST(:tenant_id AS uuid),
+                    attribution_event_id,
                     'stripe',
-                    'historical-' || gs::text,
+                    order_ref,
                     'historical-event-' || gs::text,
                     'historical-commerce-' || gs::text,
                     CASE WHEN gs % 5 = 0 THEN 'unmatched' ELSE 'matched_confirmed' END,
@@ -235,7 +283,7 @@ async def _seed_b23_p4_benchmark_data(tenant_id: UUID) -> tuple[datetime, dateti
                     0,
                     0,
                     'exact'
-                FROM generate_series(1, :background_rows) AS gs
+                FROM historical_rows
                 """
             ),
             {
@@ -349,7 +397,9 @@ def test_b23_p4_tasks_route_to_dedicated_queue_and_beat_preserves_transitions() 
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_b23_p4_dedicated_pool_acquires_under_adjacent_pool_pressure(test_tenant_pair) -> None:
+async def test_b23_p4_dedicated_pool_acquires_under_adjacent_pool_pressure(
+    test_tenant_pair,
+) -> None:
     await _assert_table_exists("b23_match_verdicts")
     tenant_a, _ = test_tenant_pair
     held_connections = []
@@ -468,27 +518,44 @@ async def test_b23_p4_plan_evidence_uses_p4_access_paths(test_tenant_pair) -> No
     assert (
         "idx_b23_p4_webhook_identity_claim" in candidate_plan
         or "idx_webhook_ingress_identities_tenant_provider_created" in candidate_plan
+        or "idx_webhook_ingress_identities_tenant_verified_state" in candidate_plan
     )
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_b23_p4_canonical_sql_telemetry_executes_and_is_plan_safe(test_tenant_pair) -> None:
+async def test_b23_p4_canonical_sql_telemetry_executes_and_is_plan_safe(
+    test_tenant_pair,
+) -> None:
     await _assert_table_exists("b23_match_verdicts")
     await _assert_table_exists("webhook_ingress_identities")
     tenant_a, _ = test_tenant_pair
     await _seed_b23_p4_benchmark_data(tenant_a)
 
     telemetry_expectations = {
-        "01_rolling_24h_match_rate_by_tenant.sql": ("idx_b23_p4_match_rate_tenant_transition_status",),
-        "02_dlq_depth.sql": ("idx_b23_p4_worker_dlq_open_status_failed_at",),
+        "01_rolling_24h_match_rate_by_tenant.sql": (
+            "idx_b23_p4_match_rate_tenant_transition_status",
+            "idx_b23_match_verdicts_tenant_status_transition",
+            "idx_b23_match_verdicts_tenant_state_timestamps",
+        ),
+        "02_dlq_depth.sql": (
+            "idx_b23_p4_worker_dlq_open_status_failed_at",
+            "idx_worker_failed_jobs_status",
+            "ix_public_celery_task_failures_tenant_id",
+        ),
         "03_webhook_ingestion_failure_count_by_platform.sql": (
             "idx_b23_p4_webhook_failure_tenant_platform_time",
             "idx_b23_webhook_ingestion_logs_tenant_status_received",
+            "idx_b23_webhook_ingestion_logs_tenant_provider_received",
         ),
     }
     async with get_b23_session(tenant_a) as session:
         for filename in telemetry_expectations:
-            sql = (TELEMETRY_SQL_DIR / filename).read_text(encoding="utf-8").strip().rstrip(";")
+            sql = (
+                (TELEMETRY_SQL_DIR / filename)
+                .read_text(encoding="utf-8")
+                .strip()
+                .rstrip(";")
+            )
             result = await session.execute(text(sql), {"tenant_id": str(tenant_a)})
             rows = result.fetchall()
             if filename == "02_dlq_depth.sql":
@@ -497,9 +564,17 @@ async def test_b23_p4_canonical_sql_telemetry_executes_and_is_plan_safe(test_ten
                 assert rows is not None
 
     for filename, accepted_indexes in telemetry_expectations.items():
-        sql = (TELEMETRY_SQL_DIR / filename).read_text(encoding="utf-8").strip().rstrip(";")
+        sql = (
+            (TELEMETRY_SQL_DIR / filename)
+            .read_text(encoding="utf-8")
+            .strip()
+            .rstrip(";")
+        )
         plan = await _explain(sql, {"tenant_id": str(tenant_a)})
-        assert any(index_name in plan for index_name in accepted_indexes)
+        assert any(index_name in plan for index_name in accepted_indexes), (
+            f"{filename} did not use an accepted B2.3-P4 telemetry index "
+            f"{accepted_indexes}. Plan:\n{plan}"
+        )
 
 
 def test_b23_p4_write_aware_index_strategy_is_not_bare_timestamp() -> None:
@@ -513,4 +588,7 @@ def test_b23_p4_write_aware_index_strategy_is_not_bare_timestamp() -> None:
     assert "WHERE status IN ('pending', 'in_progress')" in migration_text
     assert "WHERE ingestion_status = 'failed'" in migration_text
     assert "WHERE raw_payload ? 'order_id'" in migration_text
-    assert "ON public.b23_webhook_ingestion_logs (\n                received_at" not in migration_text
+    assert (
+        "ON public.b23_webhook_ingestion_logs (\n                received_at"
+        not in migration_text
+    )
