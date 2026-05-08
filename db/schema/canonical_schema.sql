@@ -91,7 +91,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
-                        AND recompute_job_id IS NULL
+                        AND aa.recompute_job_id IS NULL
                         AND model_version = model_version
                     )
                   )
@@ -144,7 +144,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
-                        AND recompute_job_id IS NULL
+                        AND aa.recompute_job_id IS NULL
                         AND model_version = model_version
                     )
                   )
@@ -201,7 +201,7 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
-                        AND recompute_job_id IS NULL
+                        AND aa.recompute_job_id IS NULL
                         AND model_version = model_version
                     )
                   )
@@ -264,14 +264,14 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
         BEGIN
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_webhook_ingestion_logs
+                FROM b23_webhook_ingestion_logs
                 WHERE received_at < (now() - interval '365 days')
                 ORDER BY received_at
                 LIMIT effective_limit
             )
             DELETE FROM public.b23_webhook_ingestion_logs target
             USING doomed
-            WHERE target.id = doomed.id;
+            WHERE id = id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_webhook_ingestion_logs';
             deleted_rows := removed;
@@ -279,14 +279,14 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_exception_records
+                FROM b23_exception_records
                 WHERE raised_at < (now() - interval '1825 days')
                 ORDER BY raised_at
                 LIMIT effective_limit
             )
             DELETE FROM public.b23_exception_records target
             USING doomed
-            WHERE target.id = doomed.id;
+            WHERE id = id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_exception_records';
             deleted_rows := removed;
@@ -294,14 +294,14 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_match_verdicts
+                FROM b23_match_verdicts
                 WHERE created_at < (now() - interval '1825 days')
                 ORDER BY created_at
                 LIMIT effective_limit
             )
             DELETE FROM public.b23_match_verdicts target
             USING doomed
-            WHERE target.id = doomed.id;
+            WHERE id = id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_match_verdicts';
             deleted_rows := removed;
@@ -309,14 +309,14 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
 
             WITH doomed AS (
                 SELECT id
-                FROM public.b23_revenue_events
+                FROM b23_revenue_events
                 WHERE event_occurred_at < (now() - interval '2555 days')
                 ORDER BY event_occurred_at
                 LIMIT effective_limit
             )
             DELETE FROM public.b23_revenue_events target
             USING doomed
-            WHERE target.id = doomed.id;
+            WHERE id = id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_revenue_events';
             deleted_rows := removed;
@@ -978,6 +978,29 @@ CREATE TABLE public.b23_exception_records (
 );
 
 ALTER TABLE ONLY public.b23_exception_records FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b23_match_task_dispatches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    webhook_ingress_identity_id uuid NOT NULL,
+    task_id character varying(155) NOT NULL,
+    task_name character varying(255) NOT NULL,
+    queue character varying(100) NOT NULL,
+    routing_key character varying(255) NOT NULL,
+    correlation_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    provider_native_event_reference character varying(255) NOT NULL,
+    provider_native_commerce_reference character varying(255) NOT NULL,
+    normalized_commerce_reference_value character varying(255) NOT NULL,
+    status character varying(32) DEFAULT 'dispatched'::character varying NOT NULL,
+    dispatched_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b23_match_task_dispatches_queue CHECK (((queue)::text = 'b23_match_engine'::text)),
+    CONSTRAINT ck_b23_match_task_dispatches_status CHECK (((status)::text = 'dispatched'::text))
+);
+
+ALTER TABLE ONLY public.b23_match_task_dispatches FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.b23_match_verdicts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -2129,6 +2152,9 @@ ALTER TABLE ONLY public.auth_refresh_tokens
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.b23_match_task_dispatches
+    ADD CONSTRAINT b23_match_task_dispatches_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_pkey PRIMARY KEY (id);
 
@@ -2321,6 +2347,12 @@ ALTER TABLE ONLY public.attribution_commerce_identities
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT uq_attribution_events_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key);
 
+ALTER TABLE ONLY public.b23_match_task_dispatches
+    ADD CONSTRAINT uq_b23_match_task_dispatches_task_id UNIQUE (task_id);
+
+ALTER TABLE ONLY public.b23_match_task_dispatches
+    ADD CONSTRAINT uq_b23_match_task_dispatches_tenant_ingress UNIQUE (tenant_id, webhook_ingress_identity_id);
+
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT uq_b23_match_verdicts_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
 
@@ -2446,6 +2478,10 @@ CREATE INDEX idx_auth_user_token_cutoffs_tenant_user ON public.auth_user_token_c
 CREATE INDEX idx_b23_exception_records_tenant_provider_reference ON public.b23_exception_records USING btree (tenant_id, provider, canonical_commerce_reference);
 
 CREATE INDEX idx_b23_exception_records_tenant_status_severity ON public.b23_exception_records USING btree (tenant_id, status, severity, raised_at DESC);
+
+CREATE INDEX idx_b23_match_task_dispatches_ingress ON public.b23_match_task_dispatches USING btree (webhook_ingress_identity_id);
+
+CREATE INDEX idx_b23_match_task_dispatches_tenant_reference ON public.b23_match_task_dispatches USING btree (tenant_id, provider, provider_native_event_reference, normalized_commerce_reference_value);
 
 CREATE INDEX idx_b23_match_verdicts_tenant_discrepancy_band ON public.b23_match_verdicts USING btree (tenant_id, discrepancy_band, last_transition_at DESC);
 
@@ -2780,6 +2816,12 @@ ALTER TABLE ONLY public.b23_exception_records
 ALTER TABLE ONLY public.b23_exception_records
     ADD CONSTRAINT b23_exception_records_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.b23_match_task_dispatches
+    ADD CONSTRAINT b23_match_task_dispatches_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b23_match_task_dispatches
+    ADD CONSTRAINT b23_match_task_dispatches_webhook_ingress_identity_id_fkey FOREIGN KEY (webhook_ingress_identity_id) REFERENCES public.webhook_ingress_identities(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.b23_match_verdicts
     ADD CONSTRAINT b23_match_verdicts_attribution_event_id_fkey FOREIGN KEY (attribution_event_id) REFERENCES public.attribution_events(id) ON DELETE SET NULL;
 
@@ -2984,6 +3026,8 @@ ALTER TABLE public.auth_user_token_cutoffs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b23_exception_records ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.b23_match_task_dispatches ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.b23_match_verdicts ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b23_revenue_events ENABLE ROW LEVEL SECURITY;
@@ -3134,6 +3178,8 @@ CREATE POLICY tenant_isolation_policy_attribution_commerce_identities ON public.
 
 CREATE POLICY tenant_isolation_policy_b23_exception_records ON public.b23_exception_records USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy_b23_match_task_dispatches ON public.b23_match_task_dispatches USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_verdicts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
@@ -3171,6 +3217,3 @@ ALTER TABLE public.webhook_ingress_identities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.worker_failed_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.worker_side_effects ENABLE ROW LEVEL SECURITY;
-
-
--- b21_p3_guard_token: aa.recompute_job_id IS NULL

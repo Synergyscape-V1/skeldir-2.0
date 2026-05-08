@@ -35,7 +35,6 @@ from app.revenue_verification.state_transitions import (
 )
 from app.security.auth import AuthContext, get_auth_context
 from app.tasks.context import run_in_worker_loop
-from app.tasks.revenue_verification import execute_b23_batch_match_engine_task
 from tests.helpers.webhook_secret_seed import (
     webhook_secret_insert_columns,
     webhook_secret_insert_params,
@@ -211,49 +210,6 @@ def _start_b23_match_worker():
             os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
 
 
-def _dispatch_b23_match_task_sync(
-    *,
-    tenant_id: UUID,
-    window_start: datetime,
-    window_end: datetime,
-    chunk_size: int,
-) -> tuple[str, dict[str, object]]:
-    route = celery_app.conf.task_routes["app.tasks.revenue_verification.*"]
-    assert route["queue"] == QUEUE_B23_MATCH_ENGINE
-    assert route["routing_key"] == f"{QUEUE_B23_MATCH_ENGINE}.task"
-
-    previous_eager = celery_app.conf.task_always_eager
-    celery_app.conf.task_always_eager = False
-    assert celery_app.conf.task_always_eager is False
-    try:
-        with _start_b23_match_worker():
-            async_result = execute_b23_batch_match_engine_task.apply_async(
-                args=[
-                    str(tenant_id),
-                    window_start.isoformat(),
-                    window_end.isoformat(),
-                    chunk_size,
-                    str(uuid4()),
-                ],
-                queue=QUEUE_B23_MATCH_ENGINE,
-                routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
-            )
-            assert async_result.id
-            try:
-                payload = async_result.get(timeout=90, propagate=True)
-            except CeleryTimeoutError as exc:
-                raise AssertionError(
-                    "B2.3 match task timed out without bounded completion"
-                ) from exc
-            assert async_result.state == "SUCCESS"
-            assert isinstance(payload, dict)
-            run_in_worker_loop(b23_engine.dispose())
-            run_in_worker_loop(engine.dispose())
-            return async_result.id, payload
-    finally:
-        celery_app.conf.task_always_eager = previous_eager
-
-
 def _auth_context(tenant_id: UUID) -> AuthContext:
     return AuthContext(
         tenant_id=tenant_id,
@@ -390,6 +346,127 @@ async def _send_signed_shopify_webhook(
     )
 
 
+async def _fetch_natural_dispatch_trace(
+    *, tenant_id: UUID, order_id: str
+) -> dict[str, object] | None:
+    async with get_session(tenant_id) as session:
+        row = (
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                            d.task_id,
+                            d.task_name,
+                            d.queue,
+                            d.routing_key,
+                            d.correlation_id,
+                            d.provider,
+                            d.provider_native_event_reference,
+                            d.provider_native_commerce_reference,
+                            d.normalized_commerce_reference_value,
+                            d.webhook_ingress_identity_id,
+                            wi.event_id AS webhook_event_id,
+                            wi.idempotency_key,
+                            wi.event_timestamp
+                        FROM public.b23_match_task_dispatches d
+                        JOIN public.webhook_ingress_identities wi
+                          ON wi.tenant_id = d.tenant_id
+                         AND wi.id = d.webhook_ingress_identity_id
+                        WHERE d.tenant_id = :tenant_id
+                          AND d.provider = 'shopify'
+                          AND d.provider_native_event_reference = :order_id
+                          AND d.normalized_commerce_reference_value = :order_id
+                        """
+                    ),
+                    {"tenant_id": str(tenant_id), "order_id": order_id},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    return dict(row) if row is not None else None
+
+
+async def _wait_for_natural_dispatch_trace(
+    *, tenant_id: UUID, order_id: str, timeout_seconds: float = 30.0
+) -> dict[str, object]:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        row = await _fetch_natural_dispatch_trace(tenant_id=tenant_id, order_id=order_id)
+        if row is not None:
+            return row
+        await asyncio.sleep(0.25)
+    raise AssertionError("B2.3 natural dispatch trace did not appear before deadline")
+
+
+async def _wait_for_b23_task_result(task_id: str) -> dict[str, object]:
+    async_result = celery_app.AsyncResult(task_id)
+    try:
+        payload = await asyncio.to_thread(
+            async_result.get, timeout=90, propagate=True
+        )
+    except CeleryTimeoutError as exc:
+        raise AssertionError(
+            "B2.3 naturally emitted match task timed out without bounded completion"
+        ) from exc
+    assert async_result.state == "SUCCESS"
+    assert isinstance(payload, dict)
+    return payload
+
+
+async def _fetch_verdict_by_reference(
+    *, tenant_id: UUID, order_id: str
+) -> dict[str, object] | None:
+    async with get_b23_session(tenant_id) as session:
+        row = (
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                            id,
+                            attribution_event_id,
+                            webhook_ingress_identity_id,
+                            provider_native_event_reference,
+                            canonical_commerce_reference
+                        FROM public.b23_match_verdicts
+                        WHERE tenant_id = :tenant_id
+                          AND provider = 'shopify'
+                          AND provider_native_event_reference = :order_id
+                        """
+                    ),
+                    {"tenant_id": str(tenant_id), "order_id": order_id},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+    return dict(row) if row is not None else None
+
+
+async def _wait_for_verdict_by_reference(
+    *, tenant_id: UUID, order_id: str, timeout_seconds: float = 30.0
+) -> dict[str, object]:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        row = await _fetch_verdict_by_reference(tenant_id=tenant_id, order_id=order_id)
+        if row is not None:
+            return row
+        await asyncio.sleep(0.25)
+    raise AssertionError("B2.3 verdict did not appear before deadline")
+
+
+async def _assert_no_verdict_before_deadline(
+    *, tenant_id: UUID, order_id: str, timeout_seconds: float = 2.0
+) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        row = await _fetch_verdict_by_reference(tenant_id=tenant_id, order_id=order_id)
+        assert row is None
+        await asyncio.sleep(0.25)
+
+
 async def _create_verdict_from_signed_webhook(
     *,
     tenant_id: UUID,
@@ -405,75 +482,63 @@ async def _create_verdict_from_signed_webhook(
         amount_minor=amount_minor,
         occurred_at=occurred_at - timedelta(seconds=30),
     )
-    status_code, payload = await _send_signed_shopify_webhook(
-        api_key=api_key,
-        secret=secret,
-        order_id=order_id,
-        amount_minor=amount_minor,
-        occurred_at=occurred_at,
-    )
-    assert status_code == 200, payload
-    assert payload["status"] == "success"
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
-            {"tenant_id": str(tenant_id)},
-        )
-        await conn.execute(
-            text(
-                """
-                UPDATE public.attribution_commerce_identities
-                SET
-                    attribution_event_id = :attribution_event_id,
-                    source = 'b23_p6_e2e_fixture',
-                    updated_at = now()
-                WHERE tenant_id = :tenant_id
-                  AND provider = 'shopify'
-                  AND canonical_commerce_reference = :order_id
-                """
-            ),
-            {
-                "tenant_id": str(tenant_id),
-                "attribution_event_id": str(attribution_event_id),
-                "order_id": order_id,
-            },
-        )
-
+    previous_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = False
+    assert celery_app.conf.task_always_eager is False
     await _clear_b23_match_engine_queue()
     await b23_engine.dispose()
     await engine.dispose()
-    task_id, task_payload = await asyncio.to_thread(
-        _dispatch_b23_match_task_sync,
-        tenant_id=tenant_id,
-        window_start=occurred_at - timedelta(minutes=5),
-        window_end=occurred_at + timedelta(minutes=5),
-        chunk_size=10,
+    try:
+        with _start_b23_match_worker():
+            status_code, payload = await _send_signed_shopify_webhook(
+                api_key=api_key,
+                secret=secret,
+                order_id=order_id,
+                amount_minor=amount_minor,
+                occurred_at=occurred_at,
+            )
+            assert status_code == 200, payload
+            assert payload["status"] == "success"
+            leaked_fields = {
+                "task_id",
+                "queue",
+                "routing_key",
+                "outbox_id",
+                "dispatch_trace_id",
+                "worker",
+                "worker_name",
+                "b23_match_task_id",
+            }
+            assert leaked_fields.isdisjoint(payload.keys())
+            trace = await _wait_for_natural_dispatch_trace(
+                tenant_id=tenant_id, order_id=order_id
+            )
+            assert trace["task_id"]
+            assert trace["task_name"] == (
+                "app.tasks.revenue_verification.execute_b23_batch_match_engine"
+            )
+            assert trace["queue"] == QUEUE_B23_MATCH_ENGINE
+            assert trace["routing_key"] == f"{QUEUE_B23_MATCH_ENGINE}.task"
+            assert trace["provider"] == "shopify"
+            assert trace["provider_native_event_reference"] == order_id
+            assert trace["provider_native_commerce_reference"] == order_id
+            assert trace["normalized_commerce_reference_value"] == order_id
+            task_payload = await _wait_for_b23_task_result(str(trace["task_id"]))
+            run_in_worker_loop(b23_engine.dispose())
+            run_in_worker_loop(engine.dispose())
+    finally:
+        celery_app.conf.task_always_eager = previous_eager
+    assert task_payload["task_name"] == (
+        "app.tasks.revenue_verification.execute_b23_batch_match_engine"
     )
-    assert task_id
-    assert task_payload["task_name"] == execute_b23_batch_match_engine_task.name
     assert task_payload["queue"] == QUEUE_B23_MATCH_ENGINE
     assert task_payload["db_session_pool"] == "b23"
     assert task_payload["processed_count"] == 1
 
-    async with get_b23_session(tenant_id) as session:
-        row = (
-            (
-                await session.execute(
-                    text(
-                        """
-                    SELECT id, attribution_event_id
-                    FROM public.b23_match_verdicts
-                    WHERE tenant_id = :tenant_id
-                      AND provider = 'shopify'
-                      AND provider_native_event_reference = :order_id
-                    """
-                    ),
-                    {"tenant_id": str(tenant_id), "order_id": order_id},
-                )
-            )
-            .mappings()
-            .one()
-        )
+    row = await _wait_for_verdict_by_reference(tenant_id=tenant_id, order_id=order_id)
+    assert str(row["webhook_ingress_identity_id"]) == str(
+        trace["webhook_ingress_identity_id"]
+    )
     assert UUID(str(row["attribution_event_id"])) == attribution_event_id
     return UUID(str(row["id"])), attribution_event_id
 
@@ -499,12 +564,85 @@ async def _read_verdict_api(
 
 
 @pytest.mark.asyncio(loop_scope="module")
+async def test_b23_p6_natural_dispatch_requires_worker_for_verdict_creation() -> None:
+    await _assert_table_exists("b23_match_task_dispatches")
+    tenant_id, api_key, secrets = await _create_tenant_with_webhook_secrets()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    order_id = str(uuid4().int % 1_000_000_000)
+    await _seed_attribution_side_event(
+        tenant_id=tenant_id,
+        order_id=order_id,
+        amount_minor=76000,
+        occurred_at=now - timedelta(seconds=30),
+    )
+    previous_eager = celery_app.conf.task_always_eager
+    celery_app.conf.task_always_eager = False
+    try:
+        await _clear_b23_match_engine_queue()
+        status_code, payload = await _send_signed_shopify_webhook(
+            api_key=api_key,
+            secret=secrets["shopify_webhook_secret"],
+            order_id=order_id,
+            amount_minor=76000,
+            occurred_at=now,
+        )
+        assert status_code == 200, payload
+        trace = await _wait_for_natural_dispatch_trace(
+            tenant_id=tenant_id, order_id=order_id
+        )
+        assert trace["queue"] == QUEUE_B23_MATCH_ENGINE
+        await _assert_no_verdict_before_deadline(
+            tenant_id=tenant_id, order_id=order_id
+        )
+    finally:
+        await _clear_b23_match_engine_queue()
+        celery_app.conf.task_always_eager = previous_eager
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_b23_p6_disabling_production_enqueue_prevents_verdict_creation() -> None:
+    await _assert_table_exists("b23_match_task_dispatches")
+    tenant_id, api_key, secrets = await _create_tenant_with_webhook_secrets()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    order_id = str(uuid4().int % 1_000_000_000)
+    await _seed_attribution_side_event(
+        tenant_id=tenant_id,
+        order_id=order_id,
+        amount_minor=76000,
+        occurred_at=now - timedelta(seconds=30),
+    )
+    previous_disable = os.environ.get("SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH")
+    os.environ["SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH"] = "1"
+    try:
+        status_code, payload = await _send_signed_shopify_webhook(
+            api_key=api_key,
+            secret=secrets["shopify_webhook_secret"],
+            order_id=order_id,
+            amount_minor=76000,
+            occurred_at=now,
+        )
+        assert status_code == 200, payload
+        await _assert_no_verdict_before_deadline(
+            tenant_id=tenant_id, order_id=order_id
+        )
+        assert (
+            await _fetch_natural_dispatch_trace(tenant_id=tenant_id, order_id=order_id)
+        ) is None
+    finally:
+        if previous_disable is None:
+            os.environ.pop("SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH", None)
+        else:
+            os.environ["SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH"] = previous_disable
+
+
+@pytest.mark.asyncio(loop_scope="module")
 async def test_b23_p6_signed_webhook_to_confirmed_api_downstream_closure() -> None:
     for table_name in (
         "webhook_ingress_identities",
         "attribution_events",
         "attribution_commerce_identities",
         "b23_match_verdicts",
+        "b23_match_task_dispatches",
         "b23_exception_records",
     ):
         await _assert_table_exists(table_name)
@@ -574,6 +712,13 @@ async def test_b23_p6_signed_webhook_to_confirmed_api_downstream_closure() -> No
             )
         ).scalar_one()
     assert int(identity_count) == 1
+    assert await _fetch_natural_dispatch_trace(tenant_id=tenant_b, order_id=order_id) is None
+    assert (
+        await _fetch_natural_dispatch_trace(
+            tenant_id=tenant_a, order_id=f"mismatched-{order_id}"
+        )
+        is None
+    )
 
     status_code, provisional_payload = await _read_verdict_api(verdict_id, tenant_a)
     assert status_code == 200

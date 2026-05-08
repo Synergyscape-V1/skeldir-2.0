@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import case
 
 from app.models import AttributionCommerceIdentity
 
@@ -46,9 +47,9 @@ async def upsert_durable_commerce_identity_link(
     now_utc = observed_at.astimezone(timezone.utc) if observed_at else _utc_now()
     normalized_provider = _normalize_provider(provider)
 
+    stmt = insert(AttributionCommerceIdentity)
     await session.execute(
-        insert(AttributionCommerceIdentity)
-        .values(
+        stmt.values(
             tenant_id=tenant_id,
             attribution_event_id=attribution_event_id,
             provider=normalized_provider,
@@ -66,9 +67,25 @@ async def upsert_durable_commerce_identity_link(
                 "canonical_commerce_reference",
             ],
             set_={
-                "attribution_event_id": attribution_event_id,
+                "attribution_event_id": case(
+                    (
+                        AttributionCommerceIdentity.source.in_(
+                            ("shopify", "stripe", "paypal", "woocommerce", "webhook")
+                        ),
+                        stmt.excluded.attribution_event_id,
+                    ),
+                    else_=AttributionCommerceIdentity.attribution_event_id,
+                ),
                 "last_observed_at": now_utc,
-                "source": str(source or "ingestion_runtime").strip() or "ingestion_runtime",
+                "source": case(
+                    (
+                        AttributionCommerceIdentity.source.in_(
+                            ("shopify", "stripe", "paypal", "woocommerce", "webhook")
+                        ),
+                        stmt.excluded.source,
+                    ),
+                    else_=AttributionCommerceIdentity.source,
+                ),
                 "updated_at": now_utc,
             },
         )

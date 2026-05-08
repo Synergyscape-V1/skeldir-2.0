@@ -11,6 +11,7 @@ Responsibilities:
 import logging
 import hashlib
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from collections.abc import Callable
@@ -21,6 +22,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import text
 from typing import Any, Mapping, Optional
 
 from app.api.problem_details import ProblemDetails
@@ -41,6 +43,8 @@ from app.observability.context import (
 )
 from app.tasks.authority import SystemAuthorityEnvelope
 from app.tasks.enqueue import tenant_task_signature
+from app.tasks.revenue_verification import execute_b23_batch_match_engine_task
+from app.core.queues import QUEUE_B23_MATCH_ENGINE
 from app.security.auth import AuthError, unauthorized_auth_error
 from app.privacy.authority import generate_privacy_session_id
 from app.revenue_verification.failure_boundary import (
@@ -85,6 +89,7 @@ WEBHOOK_DUMMY_SECRET = "skeldir_webhook_dummy_secret_constant_work"
 WEBHOOK_PAYLOAD_TOO_LARGE_DETAIL = "Request payload too large."
 WEBHOOK_INVALID_PAYLOAD_DETAIL = "Invalid request payload."
 WEBHOOK_UNSUPPORTED_EVENT_FAMILY_STATUS = "unsupported_event_family_ignored"
+B23_NATURAL_DISPATCH_DISABLE_ENV = "SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH"
 
 WebhookVerifier = Callable[[bytes, Optional[str], Optional[str]], bool]
 WEBHOOK_VERIFIERS: dict[str, tuple[str, WebhookVerifier]] = {
@@ -628,6 +633,149 @@ def _schedule_downstream_tasks(
         )
 
 
+async def _dispatch_b23_match_task_from_persisted_ingress(
+    *,
+    tenant_id,
+    event_id: str,
+    event_timestamp: str,
+    correlation_id: str,
+) -> None:
+    if os.getenv(B23_NATURAL_DISPATCH_DISABLE_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        logger.info(
+            "b23_match_task_natural_dispatch_disabled",
+            extra={"tenant_id": str(tenant_id), "event_id": event_id},
+        )
+        return
+
+    window_start, window_end = _compute_recompute_window(event_timestamp)
+    async with get_session(tenant_id=tenant_id) as session:
+        ingress = (
+            (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                            id,
+                            provider,
+                            provider_native_event_reference,
+                            provider_native_commerce_reference,
+                            normalized_commerce_reference_value
+                        FROM public.webhook_ingress_identities
+                        WHERE tenant_id = :tenant_id
+                          AND event_id = :event_id
+                          AND verified_commerce_ingress_state = 'authenticity_verified'
+                        """
+                    ),
+                    {"tenant_id": str(tenant_id), "event_id": event_id},
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if ingress is None:
+            logger.info(
+                "b23_match_task_natural_dispatch_skipped_no_ingress_identity",
+                extra={"tenant_id": str(tenant_id), "event_id": event_id},
+            )
+            return
+
+        async_result = execute_b23_batch_match_engine_task.apply_async(
+            args=[
+                str(tenant_id),
+                window_start,
+                window_end,
+                100,
+                str(correlation_id),
+            ],
+            queue=QUEUE_B23_MATCH_ENGINE,
+            routing_key=f"{QUEUE_B23_MATCH_ENGINE}.task",
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO public.b23_match_task_dispatches (
+                    tenant_id,
+                    webhook_ingress_identity_id,
+                    task_id,
+                    task_name,
+                    queue,
+                    routing_key,
+                    correlation_id,
+                    provider,
+                    provider_native_event_reference,
+                    provider_native_commerce_reference,
+                    normalized_commerce_reference_value,
+                    status,
+                    dispatched_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :tenant_id,
+                    :webhook_ingress_identity_id,
+                    :task_id,
+                    :task_name,
+                    :queue,
+                    :routing_key,
+                    :correlation_id,
+                    :provider,
+                    :provider_native_event_reference,
+                    :provider_native_commerce_reference,
+                    :normalized_commerce_reference_value,
+                    'dispatched',
+                    now(),
+                    now(),
+                    now()
+                )
+                ON CONFLICT (tenant_id, webhook_ingress_identity_id)
+                DO UPDATE SET
+                    task_id = EXCLUDED.task_id,
+                    task_name = EXCLUDED.task_name,
+                    queue = EXCLUDED.queue,
+                    routing_key = EXCLUDED.routing_key,
+                    correlation_id = EXCLUDED.correlation_id,
+                    status = 'dispatched',
+                    dispatched_at = EXCLUDED.dispatched_at,
+                    updated_at = now()
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "webhook_ingress_identity_id": str(ingress["id"]),
+                "task_id": str(async_result.id),
+                "task_name": execute_b23_batch_match_engine_task.name,
+                "queue": QUEUE_B23_MATCH_ENGINE,
+                "routing_key": f"{QUEUE_B23_MATCH_ENGINE}.task",
+                "correlation_id": str(correlation_id),
+                "provider": ingress["provider"],
+                "provider_native_event_reference": ingress[
+                    "provider_native_event_reference"
+                ],
+                "provider_native_commerce_reference": ingress[
+                    "provider_native_commerce_reference"
+                ],
+                "normalized_commerce_reference_value": ingress[
+                    "normalized_commerce_reference_value"
+                ],
+            },
+        )
+    logger.info(
+        "b23_match_task_naturally_dispatched",
+        extra={
+            "tenant_id": str(tenant_id),
+            "event_id": event_id,
+            "task_id": str(async_result.id),
+            "queue": QUEUE_B23_MATCH_ENGINE,
+            "correlation_id": str(correlation_id),
+        },
+    )
+
+
 async def _route_to_dlq_direct(
     tenant_id,
     source: str,
@@ -697,6 +845,13 @@ async def _handle_ingestion(
                 tenant_id=tenant_id,
                 event_timestamp=str(event_timestamp),
                 session_id=str(session_id),
+                correlation_id=str(correlation_id),
+            )
+        if event_timestamp and result.event_id and not result.is_duplicate:
+            await _dispatch_b23_match_task_from_persisted_ingress(
+                tenant_id=tenant_id,
+                event_id=str(result.event_id),
+                event_timestamp=str(event_timestamp),
                 correlation_id=str(correlation_id),
             )
         return {
