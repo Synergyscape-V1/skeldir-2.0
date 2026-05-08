@@ -61,6 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN != '' && secrets.GH_TOKEN || github.token }}
           REQUIRED_STATUS_CHECKS_CONTRACT: contracts-internal/governance/b03_phase2_required_status_checks.main.json
+          SKELDIR_REQUIRED_CHECKS_ALLOW_WORKFLOW_TOKEN_FALLBACK: "1"
         run: |
           python scripts/ci/enforce_required_status_checks.py
 
