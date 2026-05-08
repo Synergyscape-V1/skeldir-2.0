@@ -58,6 +58,19 @@ def _context_declared(context: str, workflow_text: str) -> bool:
     return False
 
 
+def _workflow_fallback_passes(expected: list[str]) -> bool:
+    workflow_text = _workflow_text()
+    missing_in_workflows = [ctx for ctx in expected if not _context_declared(ctx, workflow_text)]
+    if missing_in_workflows:
+        print("required status checks fallback failed: expected contexts missing from workflow definitions")
+        for context in missing_in_workflows:
+            print(f"  - {context}")
+        return False
+
+    print("required status checks fallback passed (branch protection API unavailable in this context).")
+    return True
+
+
 def main() -> int:
     contract_path = Path(
         os.environ.get(
@@ -95,6 +108,12 @@ def main() -> int:
                 deferred_contexts = [ctx for ctx in raw_deferred if isinstance(ctx, str)]
 
     require_live_on_main_push = hardware_status == "enforced" and _is_main_push(branch)
+    allow_workflow_token_fallback = (
+        os.environ.get("SKELDIR_REQUIRED_CHECKS_ALLOW_WORKFLOW_TOKEN_FALLBACK", "")
+        .strip()
+        .lower()
+        in {"1", "true", "yes"}
+    )
     unexpected_deferred = [ctx for ctx in deferred_contexts if ctx not in expected]
     if unexpected_deferred:
         print("required status checks contract invalid: deferred contexts must be part of required_contexts")
@@ -108,6 +127,17 @@ def main() -> int:
         payload = _fetch_required_status_checks(repo=repo, branch=branch, token=token)
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        if require_live_on_main_push and exc.code == 401 and allow_workflow_token_fallback:
+            # GitHub's default Actions token cannot be granted repository
+            # Administration read access, which the branch-protection endpoint
+            # requires. Preserve CI coverage by proving the required contexts
+            # remain declared, while out-of-band closure evidence records the
+            # live branch-protection API result with an admin-capable token.
+            print(
+                "required status checks live API returned HTTP 401 for the workflow token; "
+                "using explicit workflow-declaration fallback."
+            )
+            return 0 if _workflow_fallback_passes(expected) else 1
         if require_live_on_main_push:
             print(
                 "required status checks enforcement failed: "
@@ -121,18 +151,7 @@ def main() -> int:
 
         # PR-scoped GitHub tokens commonly cannot access branch-protection APIs.
         # Fallback proves required check names are declared in workflow sources.
-        workflow_text = _workflow_text()
-        missing_in_workflows = [ctx for ctx in expected if not _context_declared(ctx, workflow_text)]
-        if missing_in_workflows:
-            print("required status checks fallback failed: expected contexts missing from workflow definitions")
-            for context in missing_in_workflows:
-                print(f"  - {context}")
-            return 1
-
-        print(
-            "required status checks fallback passed (branch protection API unavailable in this context)."
-        )
-        return 0
+        return 0 if _workflow_fallback_passes(expected) else 1
     except Exception as exc:  # pragma: no cover - defensive runtime path
         if require_live_on_main_push:
             print(
