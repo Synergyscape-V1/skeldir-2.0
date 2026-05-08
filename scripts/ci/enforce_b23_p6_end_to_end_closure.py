@@ -61,6 +61,18 @@ def _validate_runtime_proof(
         violations.append("runtime_blind_sleep_detected")
     if "await execute_b23_batch_match_engine(" in test_text:
         violations.append("runtime_direct_match_call_detected")
+    if "execute_b23_batch_match_engine_task.apply_async" in test_text:
+        violations.append("runtime_test_body_manual_b23_apply_async_detected")
+    if ".delay(" in test_text:
+        violations.append("runtime_test_body_manual_delay_detected")
+    for token in (
+        "run_outbox_dispatcher",
+        "run_outbox_dispatcher_once",
+        "_schedule_downstream_tasks(",
+        "_dispatch_b23_match_task_from_persisted_ingress(",
+    ):
+        if token in test_text:
+            violations.append(f"runtime_manual_intermediate_cranking_detected:{token}")
 
     required_test_names = (
         "test_b23_p6_signed_webhook_to_confirmed_api_downstream_closure",
@@ -71,6 +83,28 @@ def _validate_runtime_proof(
     for test_name in required_test_names:
         if f"def {test_name}" not in test_text:
             violations.append(f"runtime_required_test_missing:{test_name}")
+
+
+def _validate_production_dispatch(
+    *,
+    contract: dict[str, Any],
+    runtime_text: str,
+    production_text: str,
+    violations: list[str],
+) -> None:
+    dispatch = contract["production_dispatch"]
+    for token in dispatch["required_tokens"]:
+        if token not in production_text:
+            violations.append(f"production_dispatch_token_missing:{token}")
+    for token in dispatch["forbidden_test_origin_tokens"]:
+        if token in runtime_text:
+            violations.append(f"production_dispatch_forbidden_test_origin:{token}")
+    response_start = production_text.find("class WebhookResponse")
+    response_end = production_text.find("UNAUTHORIZED_PROBLEM_RESPONSE")
+    response_text = production_text[response_start:response_end]
+    for field in dispatch["webhook_response_forbidden_fields"]:
+        if f"{field}:" in response_text or f'"{field}"' in response_text:
+            violations.append(f"webhook_response_infrastructure_leak_field:{field}")
 
 
 def _validate_database_constraint(
@@ -96,6 +130,21 @@ def _validate_database_constraint(
             )
     if "attribution_event_id IS NOT NULL" not in canonical_text:
         violations.append("matched_attribution_fk_not_database_enforced")
+    trace_table = contract["database_constraints"].get("natural_dispatch_trace_table")
+    if trace_table:
+        for token in (
+            f"CREATE TABLE public.{trace_table}",
+            "webhook_ingress_identity_id",
+            "task_id character varying(155) NOT NULL",
+            "provider_native_event_reference",
+            "normalized_commerce_reference_value",
+            "ck_b23_match_task_dispatches_queue",
+            "tenant_isolation_policy_b23_match_task_dispatches",
+        ):
+            if token not in canonical_text:
+                violations.append(f"natural_dispatch_trace_schema_missing:{token}")
+            if token not in migration_text:
+                violations.append(f"natural_dispatch_trace_migration_missing:{token}")
 
 
 def _validate_verification_coverage(
@@ -317,13 +366,21 @@ def run_enforcement(
         repo_root, contract["database_constraints"]["canonical_schema"]
     )
     migration_path = _resolve(repo_root, contract["database_constraints"]["migration"])
+    natural_dispatch_migration_path = _resolve(
+        repo_root, contract["database_constraints"]["natural_dispatch_migration"]
+    )
     spec_path = _resolve(repo_root, contract["verification_coverage"]["spec_path"])
     readiness_path = _resolve(repo_root, contract["downstream_readiness"]["doc_path"])
+    production_dispatch_path = _resolve(
+        repo_root, contract["production_dispatch"]["source_path"]
+    )
 
     for path_name, path in (
         ("runtime_test", runtime_path),
         ("canonical_schema", canonical_path),
         ("migration", migration_path),
+        ("natural_dispatch_migration", natural_dispatch_migration_path),
+        ("production_dispatch_source", production_dispatch_path),
         ("verification_coverage_spec", spec_path),
         ("downstream_readiness_doc", readiness_path),
         ("workflow", workflow_file),
@@ -333,8 +390,11 @@ def run_enforcement(
 
     if not violations:
         runtime_text = _read_text(runtime_path)
+        production_dispatch_text = _read_text(production_dispatch_path)
         canonical_text = _read_text(canonical_path)
-        migration_text = _read_text(migration_path)
+        migration_text = (
+            _read_text(migration_path) + "\n" + _read_text(natural_dispatch_migration_path)
+        )
         spec_text = _read_text(spec_path)
         readiness_text = _read_text(readiness_path)
         workflow_text = _read_text(workflow_file)
@@ -346,6 +406,12 @@ def run_enforcement(
 
         _validate_runtime_proof(
             contract=contract, test_text=runtime_text, violations=violations
+        )
+        _validate_production_dispatch(
+            contract=contract,
+            runtime_text=runtime_text,
+            production_text=production_dispatch_text,
+            violations=violations,
         )
         _validate_database_constraint(
             contract=contract,

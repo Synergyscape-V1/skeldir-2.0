@@ -88,6 +88,159 @@ def test_negative_control_direct_match_call_fails(monkeypatch) -> None:
     assert "runtime_direct_match_call_detected" in violations
 
 
+def test_negative_control_test_body_manual_apply_async_fails(monkeypatch) -> None:
+    original_read_text = _MODULE._read_text
+    runtime_path = REPO_ROOT / "backend" / "tests" / "test_b23_p6_end_to_end_closure.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == runtime_path:
+            return text + "\n# regression: execute_b23_batch_match_engine_task.apply_async\n"
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert "runtime_test_body_manual_b23_apply_async_detected" in violations
+
+
+def test_negative_control_manual_dispatcher_cranking_fails(monkeypatch) -> None:
+    original_read_text = _MODULE._read_text
+    runtime_path = REPO_ROOT / "backend" / "tests" / "test_b23_p6_end_to_end_closure.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == runtime_path:
+            return text + "\n# regression: run_outbox_dispatcher_once()\n"
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert any(
+        item == "runtime_manual_intermediate_cranking_detected:run_outbox_dispatcher"
+        or item == "runtime_manual_intermediate_cranking_detected:run_outbox_dispatcher_once"
+        for item in violations
+    )
+
+
+def test_negative_control_missing_production_enqueue_fails(monkeypatch) -> None:
+    original_read_text = _MODULE._read_text
+    production_path = REPO_ROOT / "backend" / "app" / "api" / "webhooks.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == production_path:
+            return text.replace(
+                "execute_b23_batch_match_engine_task.apply_async",
+                "execute_b23_batch_match_engine_task.not_enqueued",
+            )
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert any(
+        item.startswith("production_dispatch_token_missing:")
+        for item in violations
+    )
+
+
+def test_negative_control_production_enqueue_without_lineage_fails(monkeypatch) -> None:
+    original_read_text = _MODULE._read_text
+    production_path = REPO_ROOT / "backend" / "app" / "api" / "webhooks.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == production_path:
+            return text.replace("provider_native_event_reference", "provider_event_removed")
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert any(
+        "production_dispatch_token_missing:provider_native_event_reference" in item
+        for item in violations
+    )
+
+
+def test_negative_control_webhook_response_infrastructure_leak_fails(
+    monkeypatch,
+) -> None:
+    original_read_text = _MODULE._read_text
+    production_path = REPO_ROOT / "backend" / "app" / "api" / "webhooks.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == production_path:
+            return text.replace(
+                "class WebhookResponse(BaseModel):\n    status: str",
+                "class WebhookResponse(BaseModel):\n    status: str\n    task_id: str | None = None",
+            )
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert "webhook_response_infrastructure_leak_field:task_id" in violations
+
+
+def test_negative_control_fake_orchestrator_dependency_override_fails(
+    monkeypatch,
+) -> None:
+    original_read_text = _MODULE._read_text
+    runtime_path = REPO_ROOT / "backend" / "tests" / "test_b23_p6_end_to_end_closure.py"
+
+    def mutated_read_text(path: Path) -> str:
+        text = original_read_text(path)
+        if Path(path) == runtime_path:
+            return (
+                text
+                + "\n# regression: app.dependency_overrides[_dispatch_b23_match_task_from_persisted_ingress] = fake\n"
+            )
+        return text
+
+    monkeypatch.setattr(_MODULE, "_read_text", mutated_read_text)
+    status, violations = _MODULE.run_enforcement(
+        repo_root=REPO_ROOT,
+        contract_file=CONTRACT,
+        workflow_file=WORKFLOW,
+        simulate_regression=False,
+    )
+    assert status != 0
+    assert any(
+        item.startswith("production_dispatch_forbidden_test_origin:")
+        or item.startswith("runtime_manual_intermediate_cranking_detected:")
+        for item in violations
+    )
+
+
 def test_negative_control_eager_mode_only_proof_fails(monkeypatch) -> None:
     original_read_text = _MODULE._read_text
     runtime_path = REPO_ROOT / "backend" / "tests" / "test_b23_p6_end_to_end_closure.py"

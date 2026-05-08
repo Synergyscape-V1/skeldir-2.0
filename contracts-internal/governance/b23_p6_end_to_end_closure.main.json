@@ -1,6 +1,6 @@
 {
   "contract_id": "b23.p6.end_to_end_closure.main",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "phase": "B2.3-P6",
@@ -20,11 +20,15 @@
       "wrong_secret_status == 401",
       "missing_hmac_status == 401",
       "duplicate_status == 200",
-      "execute_b23_batch_match_engine_task.apply_async",
+      "_wait_for_natural_dispatch_trace",
+      "celery_app.AsyncResult",
+      "test_b23_p6_natural_dispatch_requires_worker_for_verdict_creation",
+      "test_b23_p6_disabling_production_enqueue_prevents_verdict_creation",
+      "SKELDIR_B23_P6_DISABLE_NATURAL_DISPATCH",
       "_start_b23_match_worker",
       "QUEUE_B23_MATCH_ENGINE",
       "celery_app.conf.task_always_eager = False",
-      "async_result.get(timeout=90, propagate=True)",
+      "async_result.get, timeout=90, propagate=True",
       "async_result.state == \"SUCCESS\"",
       "db_session_pool",
       "processed_count",
@@ -40,6 +44,11 @@
       "mock.patch",
       "MagicMock",
       "sqlite",
+      "execute_b23_batch_match_engine_task.apply_async",
+      ".delay(",
+      "run_outbox_dispatcher",
+      "run_outbox_dispatcher_once",
+      "_schedule_downstream_tasks(",
       "await execute_b23_batch_match_engine(",
       "time.sleep(",
       "direct_status_update_satisfies_transition",
@@ -47,9 +56,47 @@
       "monkeypatch.setattr(datetime"
     ]
   },
+  "production_dispatch": {
+    "source_path": "backend/app/api/webhooks.py",
+    "trace_table": "b23_match_task_dispatches",
+    "required_tokens": [
+      "_dispatch_b23_match_task_from_persisted_ingress",
+      "execute_b23_batch_match_engine_task.apply_async",
+      "INSERT INTO public.b23_match_task_dispatches",
+      "webhook_ingress_identity_id",
+      "provider_native_event_reference",
+      "provider_native_commerce_reference",
+      "normalized_commerce_reference_value",
+      "QUEUE_B23_MATCH_ENGINE",
+      "routing_key=f\"{QUEUE_B23_MATCH_ENGINE}.task\"",
+      "B23_NATURAL_DISPATCH_DISABLE_ENV"
+    ],
+    "webhook_response_forbidden_fields": [
+      "task_id",
+      "queue",
+      "routing_key",
+      "outbox_id",
+      "dispatch_trace_id",
+      "worker",
+      "worker_name",
+      "b23_match_task_id"
+    ],
+    "forbidden_test_origin_tokens": [
+      "execute_b23_batch_match_engine_task.apply_async",
+      ".delay(",
+      "run_outbox_dispatcher",
+      "run_outbox_dispatcher_once",
+      "_schedule_downstream_tasks(",
+      "dependency_overrides[_dispatch_b23_match_task_from_persisted_ingress",
+      "mock.patch",
+      "MagicMock"
+    ]
+  },
   "database_constraints": {
     "canonical_schema": "db/schema/canonical_schema.sql",
     "migration": "alembic/versions/007_skeldir_foundation/202605071200_b23_p6_downstream_readiness.py",
+    "natural_dispatch_migration": "alembic/versions/007_skeldir_foundation/202605081000_b23_p6_natural_dispatch_trace.py",
+    "natural_dispatch_trace_table": "b23_match_task_dispatches",
     "matched_attribution_fk_constraint": "ck_b23_match_verdicts_matched_requires_attribution_event",
     "matched_states": ["matched_provisional", "matched_confirmed", "adjusted"]
   },
