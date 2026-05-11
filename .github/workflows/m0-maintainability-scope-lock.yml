@@ -1,0 +1,44 @@
+name: M0 Maintainability Scope Lock
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  m0-maintainability-scope-lock:
+    name: m0-maintainability-scope-lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine baseline SHA
+        id: baseline
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR context: compare against merge base with main
+            BASELINE_SHA=$(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          else
+            # Push context: compare against parent commit
+            BASELINE_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          fi
+          echo "sha=${BASELINE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Baseline SHA: ${BASELINE_SHA}"
+
+      - name: Run M0 scope lock validator
+        run: |
+          python scripts/ci/validate_m0_scope_lock.py \
+            --baseline-sha "${{ steps.baseline.outputs.sha }}"
