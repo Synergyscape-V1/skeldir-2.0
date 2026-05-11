@@ -1,0 +1,621 @@
+# Maintainability Issue Register
+# Post-B2.3 Stabilization — Normalized from Nicholas, Trey, George audits
+# Generated: 2026-05-11T19:42:00Z
+# Baseline SHA: a70dc9a4529d6ee8b6ab5cfc64f04069086f6549
+
+issues:
+
+  # ──────────────────────────────────────────────
+  # LOCAL DEVELOPMENT
+  # ──────────────────────────────────────────────
+
+  - id: MIR-001
+    source: Nicholas
+    title: "No local development compose or onboarding path"
+    evidence: "No docker-compose.yml at repository root; docker-compose.yml.deprecated exists; no Getting Started guide; scripts/bootstrap_local_db.ps1 is Windows-only"
+    severity: high
+    phase_disposition: M1
+    b24_entry_blocking: true
+    affected_substrate: local_development
+    rationale: "All three auditors agree: a new engineer cannot start the system locally without tribal knowledge. B2.4 requires local worker execution for Bayesian task validation."
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "Clean clone reaches /health endpoint via documented commands"
+
+  - id: MIR-002
+    source: Trey
+    title: "Backend README claims code is not yet migrated"
+    evidence: "backend/README.md states 'Backend application code is not yet migrated' — factually false as of B2.3 with ~20 modules and 100+ test files"
+    severity: high
+    phase_disposition: M1
+    b24_entry_blocking: true
+    affected_substrate: local_development
+    rationale: "First documentation a new engineer encounters is materially false. Blocks successor onboarding."
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "Grep confirms no claim that backend code is not migrated or placeholder-only"
+
+  - id: MIR-003
+    source: Nicholas
+    title: "No cross-platform bootstrap scripts"
+    evidence: "scripts/bootstrap_local_db.ps1 is Windows-only; no Linux/macOS equivalent"
+    severity: medium
+    phase_disposition: M1
+    b24_entry_blocking: false
+    affected_substrate: local_development
+    rationale: "Limits onboarding to Windows engineers only"
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "Cross-platform support defined or differences explicitly documented"
+
+  - id: MIR-004
+    source: Trey
+    title: "No make migrate or make dev targets"
+    evidence: "Makefile has install, backend-test targets but no migrate, dev, or worker targets; migration via PowerShell scripts only"
+    severity: medium
+    phase_disposition: M1
+    b24_entry_blocking: true
+    affected_substrate: local_development
+    rationale: "Standard make commands must exist for successor productivity"
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "make migrate applies Alembic head; make dev starts API"
+
+  # ──────────────────────────────────────────────
+  # STALE DOCUMENTATION
+  # ──────────────────────────────────────────────
+
+  - id: MIR-005
+    source: George
+    title: "CHANGELOG frozen at v1.0.0 — B1.x through B2.3 undocumented"
+    evidence: "CHANGELOG.md last entry is monorepo migration (2025-11-12); B1.x, B2.1, B2.2, B2.3 not reflected"
+    severity: high
+    phase_disposition: M1
+    b24_entry_blocking: true
+    affected_substrate: stale_documentation
+    rationale: "New engineer reading changelog believes system is at monorepo migration stage. Misleads successor about system maturity."
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "CHANGELOG includes B1.x through B2.3 entries"
+
+  - id: MIR-006
+    source: Synthesized
+    title: "178 untracked temporary files pollute repository root"
+    evidence: "git status shows 178 untracked items: CI artifacts, PR body drafts, forensic evidence dirs, schema dumps"
+    severity: medium
+    phase_disposition: M1
+    b24_entry_blocking: false
+    affected_substrate: repo_hygiene
+    rationale: "Pollutes git operations, grep, and source discovery. Not a blocker but degrades developer experience."
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "tmp_* patterns in .gitignore; untracked count significantly reduced"
+
+  - id: MIR-007
+    source: George
+    title: "417 documentation files without navigation index"
+    evidence: "417 markdown files in docs/; no INDEX.md or navigation guide"
+    severity: medium
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: stale_documentation
+    rationale: "Volume becomes liability without indexing. Not B2.4-blocking because successor-critical docs are addressed in M1/M4."
+    owner_phase: M4
+    deferred_reason: "Only successor-critical docs block B2.4; full corpus indexing is post-B2.4"
+    validation_expectation: "docs/INDEX.md exists mapping doc files by relevance"
+
+  - id: MIR-008
+    source: Nicholas
+    title: "Root README does not mention B2.3, revenue verification, or match engine"
+    evidence: "README.md describes contract-first approach but omits B2.3 features representing significant codebase portion"
+    severity: medium
+    phase_disposition: M1
+    b24_entry_blocking: false
+    affected_substrate: stale_documentation
+    rationale: "README should reflect current system capabilities"
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "README references revenue verification and match engine"
+
+  # ──────────────────────────────────────────────
+  # CI SPRAWL
+  # ──────────────────────────────────────────────
+
+  - id: MIR-009
+    source: George
+    title: "ci.yml is 6,080 lines — unmaintainable monolith"
+    evidence: "Single YAML file defines entire CI pipeline; no engineer can reason about full dependency graph"
+    severity: critical
+    phase_disposition: M3
+    b24_entry_blocking: true
+    affected_substrate: ci_sprawl
+    rationale: "B2.4 will require convergence gates. Adding gates to 6,080-line monolith compounds maintainability crisis."
+    owner_phase: M3
+    deferred_reason: null
+    validation_expectation: "At least one structural reduction completed; B2.4 gate insertion does not expand monolith"
+
+  - id: MIR-010
+    source: George
+    title: "87 CI enforcer scripts with no registry or documented purpose"
+    evidence: "87 Python files in scripts/ci/; no manifest mapping enforcer to purpose, owning phase, or deprecation status"
+    severity: high
+    phase_disposition: M3
+    b24_entry_blocking: true
+    affected_substrate: ci_sprawl
+    rationale: "New enforcers cannot be safely added without understanding all existing enforcers"
+    owner_phase: M3
+    deferred_reason: null
+    validation_expectation: "Enforcer registry exists with purpose, command, failure interpretation per gate"
+
+  - id: MIR-011
+    source: George
+    title: "Duplicated DB setup patterns across 6+ CI jobs"
+    evidence: "Every DB-requiring CI job repeats ~20-line postgres setup block"
+    severity: medium
+    phase_disposition: M3
+    b24_entry_blocking: false
+    affected_substrate: ci_sprawl
+    rationale: "Duplication increases drift risk but does not block B2.4 if insertion policy exists"
+    owner_phase: M3
+    deferred_reason: null
+    validation_expectation: "DB setup extracted or bounded with documented follow-up"
+
+  - id: MIR-012
+    source: George
+    title: "Implicit CI job dependency chains with fragile always() patterns"
+    evidence: "contract-semantic-drift-gate uses if: always() with needs: on 5 jobs then manually re-checks results"
+    severity: medium
+    phase_disposition: M3
+    b24_entry_blocking: false
+    affected_substrate: ci_sprawl
+    rationale: "Upstream job name changes silently break gate enforcement"
+    owner_phase: M3
+    deferred_reason: null
+    validation_expectation: "Fragile dependency chains documented in enforcer registry"
+
+  # ──────────────────────────────────────────────
+  # CI ENFORCEMENT INSERTION RISK
+  # ──────────────────────────────────────────────
+
+  - id: MIR-013
+    source: Synthesized
+    title: "No B2.4 CI gate insertion policy"
+    evidence: "No documented strategy for adding convergence gates without expanding 6,080-line monolith"
+    severity: high
+    phase_disposition: M3
+    b24_entry_blocking: true
+    affected_substrate: ci_enforcement_insertion_risk
+    rationale: "Without insertion policy, B2.4 gates will be added ad hoc to the monolith, compounding MIR-009"
+    owner_phase: M3
+    deferred_reason: null
+    validation_expectation: "B2.4 gate insertion policy exists; dry-run proves gate can be added without monolith expansion"
+
+  # ──────────────────────────────────────────────
+  # HARDCODED EXTERNAL DB / TEST SAFETY
+  # ──────────────────────────────────────────────
+
+  - id: MIR-014
+    source: Trey
+    title: "Hardcoded Neon production-adjacent DB URLs in test files"
+    evidence: "test_db_tenant_guc.py and test_b045_webhooks.py hardcode Neon cloud database URL via os.environ.setdefault"
+    severity: high
+    phase_disposition: M2
+    b24_entry_blocking: true
+    affected_substrate: hardcoded_external_db
+    rationale: "Tests may silently connect to cloud database; new engineer cannot verify test suite is self-contained"
+    owner_phase: M2
+    deferred_reason: null
+    validation_expectation: "No unapproved external DB URLs; default test path rejects external production-adjacent DB"
+
+  - id: MIR-015
+    source: Trey
+    title: "Skeleton test test_rls_e2e.py passes vacuously"
+    evidence: "Contains TODO comments and commented-out imports; appears in CI counts but asserts nothing about RLS behavior"
+    severity: high
+    phase_disposition: M2
+    b24_entry_blocking: true
+    affected_substrate: hardcoded_external_db
+    rationale: "Vacuous test provides false confidence in RLS coverage"
+    owner_phase: M2
+    deferred_reason: null
+    validation_expectation: "Skeleton tests completed, xfailed with reason, or excluded from default path"
+
+  # ──────────────────────────────────────────────
+  # DB TOPOLOGY
+  # ──────────────────────────────────────────────
+
+  - id: MIR-016
+    source: Synthesized
+    title: "No explicit DB topology profiles for testing"
+    evidence: "No documented distinction between direct Postgres, transaction-pooler, and external DB smoke testing"
+    severity: high
+    phase_disposition: M2
+    b24_entry_blocking: true
+    affected_substrate: db_topology
+    rationale: "RLS/GUC behavior differs between direct and pooler connections; B2.4 diagnostics must know which topology they test against"
+    owner_phase: M2
+    deferred_reason: null
+    validation_expectation: "docs/testing_db_topology.md defines direct, pooler, and external-smoke profiles"
+
+  # ──────────────────────────────────────────────
+  # APPEND-ONLY TEST ISOLATION
+  # ──────────────────────────────────────────────
+
+  - id: MIR-017
+    source: George
+    title: "Test tenant cleanup broken by append-only triggers"
+    evidence: "conftest.py comments out tenant deletion because attribution_events has trg_events_prevent_mutation"
+    severity: high
+    phase_disposition: M2
+    b24_entry_blocking: true
+    affected_substrate: append_only_test_isolation
+    rationale: "Test tenants accumulate indefinitely; no safe cleanup path exists that respects financial truth constraints"
+    owner_phase: M2
+    deferred_reason: null
+    validation_expectation: "Append-only-safe test isolation strategy defined; cleanup does not mutate protected truth tables"
+
+  - id: MIR-018
+    source: Synthesized
+    title: "No pytest marker strategy for test categorization"
+    evidence: "No @pytest.mark.slow, requires_db, integration, governance markers visible; impossible to run meaningful test subsets"
+    severity: medium
+    phase_disposition: M2
+    b24_entry_blocking: true
+    affected_substrate: append_only_test_isolation
+    rationale: "B2.4 will add new test categories; without markers, test taxonomy cannot be enforced"
+    owner_phase: M2
+    deferred_reason: null
+    validation_expectation: "pytest --markers includes unit, integration, governance, e2e, slow"
+
+  # ──────────────────────────────────────────────
+  # OPS RUNBOOKS
+  # ──────────────────────────────────────────────
+
+  - id: MIR-019
+    source: Nicholas
+    title: "No DLQ inspection or replay runbook"
+    evidence: "DLQ writes to worker_failed_jobs table but no documented procedure to query, diagnose, or replay failed tasks"
+    severity: medium
+    phase_disposition: M4
+    b24_entry_blocking: false
+    affected_substrate: ops_runbooks
+    rationale: "Operational knowledge exists in code but not in docs; successor cannot diagnose failed tasks from documentation"
+    owner_phase: M4
+    deferred_reason: null
+    validation_expectation: "docs/ops/dlq_inspection_and_replay.md exists with query, interpretation, replay safety rules"
+
+  - id: MIR-020
+    source: Trey
+    title: "No RLS/GUC verification runbook"
+    evidence: "No documented SQL for verifying current_setting('app.current_tenant_id') in running session"
+    severity: medium
+    phase_disposition: M4
+    b24_entry_blocking: false
+    affected_substrate: ops_runbooks
+    rationale: "RLS mechanism is sound but has no interactive verification path"
+    owner_phase: M4
+    deferred_reason: null
+    validation_expectation: "docs/ops/rls_guc_verification.md exists with valid/invalid examples"
+
+  - id: MIR-021
+    source: Nicholas
+    title: "No webhook replay or diagnosis runbook"
+    evidence: "No documented procedure for replaying a failed webhook or diagnosing signature failures"
+    severity: medium
+    phase_disposition: M4
+    b24_entry_blocking: false
+    affected_substrate: ops_runbooks
+    rationale: "Operational procedure requires reading celery_app.py and webhooks.py source"
+    owner_phase: M4
+    deferred_reason: null
+    validation_expectation: "docs/ops/webhook_replay.md exists"
+
+  - id: MIR-022
+    source: Trey
+    title: "No Celery worker diagnosis runbook"
+    evidence: "No documented procedure for queue inspection, task ID correlation, or restart guidance"
+    severity: medium
+    phase_disposition: M4
+    b24_entry_blocking: false
+    affected_substrate: ops_runbooks
+    rationale: "Worker operations require reading celery_app.py (800+ lines)"
+    owner_phase: M4
+    deferred_reason: null
+    validation_expectation: "docs/ops/celery_worker_diagnosis.md exists"
+
+  # ──────────────────────────────────────────────
+  # B2.4 SUBSTRATE
+  # ──────────────────────────────────────────────
+
+  - id: MIR-023
+    source: Nicholas
+    title: "Bayesian task module is a resource-simulation stub — no statistical computation"
+    evidence: "app/tasks/bayesian.py contains only CPU/DB resource simulation; no convergence diagnostics, no MCMC, no R-hat/ESS"
+    severity: high
+    phase_disposition: M5
+    b24_entry_blocking: true
+    affected_substrate: b24_substrate
+    rationale: "B2.4 requires building from scratch, not extending existing infrastructure. Module home, protocol, persistence must be designed before implementation."
+    owner_phase: M5
+    deferred_reason: null
+    validation_expectation: "B2.4 module home, diagnostic protocol, persistence requirements designed (not implemented)"
+
+  - id: MIR-024
+    source: George
+    title: "No model artifact persistence schema"
+    evidence: "No tables for model parameters, diagnostics, versioning metadata; current schema has no B2.4-ready persistence"
+    severity: high
+    phase_disposition: M5
+    b24_entry_blocking: true
+    affected_substrate: b24_substrate
+    rationale: "B2.4 needs to persist model artifacts; schema design must precede implementation"
+    owner_phase: M5
+    deferred_reason: null
+    validation_expectation: "Persistence requirements documented at design level"
+
+  - id: MIR-025
+    source: Trey
+    title: "Attribution module is structurally thin for B2.4"
+    evidence: "app/attribution/ contains only strategy_kernel.py and semantics.py; no Bayesian diagnostic abstraction, no extension registry"
+    severity: medium
+    phase_disposition: M5
+    b24_entry_blocking: true
+    affected_substrate: b24_substrate
+    rationale: "B2.4 has no clear module home in current structure"
+    owner_phase: M5
+    deferred_reason: null
+    validation_expectation: "Target package/module and responsibilities documented"
+
+  - id: MIR-026
+    source: Synthesized
+    title: "No pymc-marketing in dependency files"
+    evidence: "requirements.txt contains no PyMC, PyMC-Marketing, or ArviZ entries"
+    severity: low
+    phase_disposition: M5
+    b24_entry_blocking: false
+    affected_substrate: b24_substrate
+    rationale: "Expected — dependency should only be added during B2.4 implementation, not during stabilization"
+    owner_phase: M5
+    deferred_reason: "Intentionally absent; dependency plan is M5 design scope"
+    validation_expectation: "Dependency decision record documents stack choice criteria"
+
+  # ──────────────────────────────────────────────
+  # LLM PROVIDER BOUNDARY
+  # ──────────────────────────────────────────────
+
+  - id: MIR-027
+    source: George
+    title: "provider_boundary.py is 2,574 lines — god-object risk"
+    evidence: "Single file handles budget reservation, circuit breaker, cache, distillation persistence, output validation, and provider calls"
+    severity: high
+    phase_disposition: M6
+    b24_entry_blocking: false
+    affected_substrate: llm_provider_boundary
+    rationale: "Architecturally correct but physically too large. Not B2.4-blocking unless B2.4 touches explanation behavior."
+    owner_phase: M6
+    deferred_reason: "Full decomposition deferred to pre-B2.7 unless B2.4 touches LLM"
+    validation_expectation: "Path A (decompose) or Path B (guardrail) decision documented"
+
+  # ──────────────────────────────────────────────
+  # REPO HYGIENE
+  # ──────────────────────────────────────────────
+
+  - id: MIR-028
+    source: Trey
+    title: "Seven tmp_*.py debugging scripts committed to repository root"
+    evidence: "tmp_asyncpg_check.py, tmp_celery_schema.py, and 5 others committed to repo root"
+    severity: low
+    phase_disposition: M1
+    b24_entry_blocking: false
+    affected_substrate: repo_hygiene
+    rationale: "Signal undisciplined commit hygiene; cosmetic but degrades developer experience"
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: "Temporary files added to .gitignore or removed from tracking"
+
+  - id: MIR-029
+    source: Nicholas
+    title: "Dual contract directories — contracts/ and api-contracts/"
+    evidence: "Both directories exist; api-contracts/ is legacy; authority split unclear without reading contracts/README"
+    severity: medium
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: repo_hygiene
+    rationale: "Confusion risk but contracts/ README clarifies; not B2.4-blocking"
+    owner_phase: deferred
+    deferred_reason: "contracts/ README clarifies authority; full cleanup is post-B2.4 scope"
+    validation_expectation: "api-contracts/ deprecated notice or removed"
+
+  # ──────────────────────────────────────────────
+  # DEPENDENCY DRIFT
+  # ──────────────────────────────────────────────
+
+  - id: MIR-030
+    source: George
+    title: "B2.3 environment variables undocumented in .env.example"
+    evidence: "B23_DATABASE_POOL_SIZE, B23_DATABASE_POOL_TIMEOUT_SECONDS, B23_DATABASE_STATEMENT_TIMEOUT_MS, B23_DATABASE_LOCK_TIMEOUT_MS not in .env.example"
+    severity: medium
+    phase_disposition: M1
+    b24_entry_blocking: false
+    affected_substrate: dependency_drift
+    rationale: "Workers misconfigured in new environments"
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: ".env.example includes all B2.3 and Celery variables"
+
+  - id: MIR-031
+    source: George
+    title: "CELERY_BROKER_URL and CELERY_RESULT_BACKEND missing from .env.example"
+    evidence: "Required for any worker operation but not documented in template"
+    severity: medium
+    phase_disposition: M1
+    b24_entry_blocking: false
+    affected_substrate: dependency_drift
+    rationale: "Critical runtime dependencies undocumented"
+    owner_phase: M1
+    deferred_reason: null
+    validation_expectation: ".env.example includes Celery broker and backend entries"
+
+  # ──────────────────────────────────────────────
+  # M0 POLICY ENFORCEMENT
+  # ──────────────────────────────────────────────
+
+  - id: MIR-032
+    source: Synthesized
+    title: "No required CI merge gate consumes maintainability governance artifacts"
+    evidence: "Audit prose exists but no CI validator checks artifacts or enforces scope lock"
+    severity: critical
+    phase_disposition: M0
+    b24_entry_blocking: true
+    affected_substrate: m0_policy_enforcement
+    rationale: "Without CI-enforced scope lock, stabilization is advisory documentation — H02 Passive Governance Drift"
+    owner_phase: M0
+    deferred_reason: null
+    validation_expectation: "validate_m0_scope_lock.py runs as required CI status check"
+
+  - id: MIR-033
+    source: Synthesized
+    title: "No enforceable record of post-B2.3 baseline"
+    evidence: "Repository lacks committed artifact recording authoritative branch, commit, remote, and clean state"
+    severity: high
+    phase_disposition: M0
+    b24_entry_blocking: true
+    affected_substrate: m0_policy_enforcement
+    rationale: "Without baseline freeze, stabilization has no reference point — H01 Baseline Authority Ambiguity"
+    owner_phase: M0
+    deferred_reason: null
+    validation_expectation: "m0_baseline.md exists with branch, SHA, remote, CI enforcement fields"
+
+  # ──────────────────────────────────────────────
+  # MISCELLANEOUS
+  # ──────────────────────────────────────────────
+
+  - id: MIR-034
+    source: Nicholas
+    title: "CORS allow_origins=['*'] in main.py"
+    evidence: "Privacy-first platform has wildcard CORS in plain sight"
+    severity: medium
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: repo_hygiene
+    rationale: "Important but not B2.4 maintainability substrate. Deferred to B3 security hardening."
+    owner_phase: deferred
+    deferred_reason: "CORS hardening is B3 scope (trust infrastructure)"
+    validation_expectation: "CORS restricted to known origins"
+
+  - id: MIR-035
+    source: Nicholas
+    title: "Workers/ directory contains only LLM stub — naming inconsistency with tasks/"
+    evidence: "app/workers/ has only llm.py; actual worker task execution lives in app/tasks/; naming misleads discovery"
+    severity: low
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: repo_hygiene
+    rationale: "Naming inconsistency but not functionally blocking"
+    owner_phase: deferred
+    deferred_reason: "Structural reorganization is post-stabilization scope"
+    validation_expectation: "Directory naming clarified or documented"
+
+  - id: MIR-036
+    source: George
+    title: "Alembic uses non-standard directory-per-phase migration structure"
+    evidence: "7 directories (001_core_schema through 007_skeldir_foundation) with multiple files per directory instead of flat versions/"
+    severity: medium
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: db_topology
+    rationale: "Non-standard but functional; documented structure is sufficient"
+    owner_phase: deferred
+    deferred_reason: "Manageable if documented; standardization is post-B2.4"
+    validation_expectation: "Migration structure documented or standardized"
+
+  - id: MIR-037
+    source: Nicholas
+    title: "Celery execution mode in tests unclear — eager vs real-worker"
+    evidence: "conftest.py calls _ensure_celery_configured() but task_always_eager not confirmed; worker crash/retry/queue behavior untested"
+    severity: medium
+    phase_disposition: M2
+    b24_entry_blocking: false
+    affected_substrate: append_only_test_isolation
+    rationale: "Tests using eager mode cannot prove worker-level behavior"
+    owner_phase: M2
+    deferred_reason: null
+    validation_expectation: "Celery execution mode documented; real-worker tests explicitly marked"
+
+  - id: MIR-038
+    source: Nicholas
+    title: "Missing state-transition sweep tests under concurrent load"
+    evidence: "No visible tests for transition_stale_pending_to_unmatched and transition_stale_provisional_to_confirmed under concurrency"
+    severity: medium
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: append_only_test_isolation
+    rationale: "Safety-critical but concurrency testing is specialized scope beyond stabilization"
+    owner_phase: deferred
+    deferred_reason: "Concurrency testing requires dedicated workstream post-stabilization"
+    validation_expectation: "Concurrent state-transition tests exist"
+
+  - id: MIR-039
+    source: Trey
+    title: "35+ workflow YAML files with no active/legacy classification"
+    evidence: "Many workflows represent closed phases; no audit trail distinguishing active from legacy"
+    severity: medium
+    phase_disposition: M3
+    b24_entry_blocking: false
+    affected_substrate: ci_sprawl
+    rationale: "Workflow sprawl mirrors enforcer sprawl; registry must cover workflows too"
+    owner_phase: M3
+    deferred_reason: null
+    validation_expectation: "Enforcer registry includes workflow classification"
+
+  - id: MIR-040
+    source: Nicholas
+    title: "Discrepancy thresholds not centralized with timing constants"
+    evidence: "_B23_HIGH_RATIO_MAX and _B23_MEDIUM_RATIO_MAX in match_engine_kernel.py; timing_constants.py exists for timing but not numeric thresholds"
+    severity: low
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: repo_hygiene
+    rationale: "Design choice — constants are in the kernel where they are consumed. Not a defect."
+    owner_phase: deferred
+    deferred_reason: "Intentional design; centralization is optional future improvement"
+    validation_expectation: "Either centralized or documented as intentional"
+
+  - id: MIR-041
+    source: Trey
+    title: "event_service.py crosses multiple domain seams via wide import fan"
+    evidence: "Imports from privacy.authority, privacy.durable_commerce_identity, privacy.ephemeral_resolution, privacy.session_authority, AND revenue_verification.semantic_authority"
+    severity: medium
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: repo_hygiene
+    rationale: "Wide import fan but functionally correct; refactoring is post-B2.4 scope"
+    owner_phase: deferred
+    deferred_reason: "Seam crossing is inherent to ingestion service responsibility; refactor post-B2.4"
+    validation_expectation: "Import fan reduced or documented as intentional"
+
+  - id: MIR-042
+    source: George
+    title: "conftest.py performs credential validation at import time with opaque error"
+    evidence: "Lines 34-76 crash pytest at import with 'B0.5.3.3 Gate C' message a new engineer won't understand"
+    severity: medium
+    phase_disposition: M2
+    b24_entry_blocking: false
+    affected_substrate: hardcoded_external_db
+    rationale: "Side-effecting import blocks test discovery with opaque error"
+    owner_phase: M2
+    deferred_reason: null
+    validation_expectation: "Error message includes human-readable diagnostic guidance"
+
+  - id: MIR-043
+    source: Trey
+    title: "Dual SUPPORTED_* provider lists in extraction_registry and verification_coverage"
+    evidence: "SUPPORTED_B23_PROVIDERS in extraction_registry.py and SUPPORTED_VERIFICATION_COVERAGE_PLATFORMS in verification_coverage.py — adding provider requires updating both"
+    severity: low
+    phase_disposition: deferred
+    b24_entry_blocking: false
+    affected_substrate: dependency_drift
+    rationale: "Hidden coupling risk but manageable; unification is post-B2.4 scope"
+    owner_phase: deferred
+    deferred_reason: "Coupling is bounded and manageable; unification is optional"
+    validation_expectation: "Unified into single SSOT or documented as intentional"
