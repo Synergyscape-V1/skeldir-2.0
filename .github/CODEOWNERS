@@ -13,7 +13,12 @@ api-contracts/openapi/v1/**/*.yaml @Muk223
 # CI/governance ownership.
 .github/workflows/ @Muk223
 .github/workflows/ci.yml @Muk223
+.github/workflows/m0-maintainability-scope-lock.yml @Muk223
 contracts-internal/governance/ @Muk223
+contracts-internal/governance/b03_phase2_required_status_checks.main.json @Muk223
+scripts/ci/validate_m0_scope_lock.py @Muk223
+docs/maintainability/m0_scope_lock.md @Muk223
+docs/maintainability/maintainability_issue_register.yaml @Muk223
 
 # Security-sensitive backend paths.
 backend/app/security/ @Muk223

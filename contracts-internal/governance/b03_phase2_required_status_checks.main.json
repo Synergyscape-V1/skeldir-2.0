@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.8.0",
+  "contract_version": "1.8.1",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -57,7 +57,8 @@
     "B2.2-P6 Merge-Blocking Closure + Downstream Readiness",
     "B2.3 Composite Proof Harness",
     "B1.7 Explanation Runtime Adjudication",
-    "B1.7 P4 Mixed Workload Benchmark"
+    "B1.7 P4 Mixed Workload Benchmark",
+    "m0-maintainability-scope-lock"
   ],
   "hardware_enforcement": {
     "status": "enforced",
