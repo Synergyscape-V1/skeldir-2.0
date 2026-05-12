@@ -5,7 +5,8 @@
 **Corrective date:** 2026-05-12
 **Canonical topology:** `docker-compose.local.yml`
 **Execution context:** container-first; host-native Python is noncanonical
-**Final verdict:** `M1_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN` until merged to `main` and main CI is green.
+**Implementation main merge commit:** `9593db12188a76d0f95c915e9b5f1a15eadc3cd2`
+**Final verdict:** `M1_PASS`
 
 ## Initial Findings
 
@@ -92,23 +93,37 @@ make health
 make smoke
 ```
 
-Final `main` commit SHA, CI onboarding run URL, compose config validation result,
-migration proof, API health proof, worker/broker proof, Celery task round-trip
-proof, worker DB access proof, external DB/broker rejection proof, and smoke
-proof result must be populated from the protected-branch run before this record
-can declare `M1_PASS`.
+Protected-branch `main` evidence for merge commit
+`9593db12188a76d0f95c915e9b5f1a15eadc3cd2`:
+
+- M1 workflow run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25763147876`
+- M1 job: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25763147876/job/75669163832`
+- M0 scope-lock run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25763147818`
+- Primary CI run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25763147868`
+- Post-merge `main` push workflows observed: 24 runs, 0 active, 0 failed.
+
+The M1 job succeeded on `main` and executed:
+
+```text
+Validate M1 static authority
+Validate compose syntax
+Execute documented onboarding bootstrap
+```
+
+The bootstrap step ran the documented `make dev`, `make migrate`, `make api`,
+`make worker`, `make health`, and `make smoke` sequence.
 
 ## Proof Mapping
 
 | Proof | Mechanism |
 |---|---|
-| Compose config validation result | `docker compose --env-file .env.local -f docker-compose.local.yml config` in CI. |
-| Migration proof | `make migrate` runs `alembic upgrade head` in container. |
-| API health proof | `make health` requires `/health/ready` HTTP 200. |
-| Worker/broker proof | `make smoke` requires `/health/worker` HTTP 200 with `broker=ok` and `worker=ok`. |
-| Celery task round-trip proof | `/health/worker` dispatches `app.tasks.health.probe` and observes result backend output. |
-| Worker DB access proof | `app.tasks.health.probe` performs safe `SELECT current_user`. |
-| External DB/broker rejection proof | `m1_runtime_smoke.py` rejects Neon/RDS/Supabase/non-local DB and broker hosts. |
+| Compose config validation result | PASS in M1 `main` job step `Validate compose syntax`. |
+| Migration proof | PASS in M1 `main` job step `Execute documented onboarding bootstrap`; `make migrate` runs `alembic upgrade head` in container. |
+| API health proof | PASS in M1 `main` job step `Execute documented onboarding bootstrap`; `make health` requires `/health/ready` HTTP 200. |
+| Worker/broker proof | PASS in M1 `main` job step `Execute documented onboarding bootstrap`; `make smoke` requires `/health/worker` HTTP 200 with `broker=ok` and `worker=ok`. |
+| Celery task round-trip proof | PASS in M1 `main` job step `Execute documented onboarding bootstrap`; `/health/worker` dispatches `app.tasks.health.probe` and observes result backend output. |
+| Worker DB access proof | PASS in M1 `main` job step `Execute documented onboarding bootstrap`; `app.tasks.health.probe` performs safe `SELECT current_user`. |
+| External DB/broker rejection proof | PASS in M1 `main` job step `Execute documented onboarding bootstrap`; `m1_runtime_smoke.py` rejects Neon/RDS/Supabase/non-local DB and broker hosts. |
 | Protected truth table safety | Smoke reads `alembic_version` and RLS metadata; it does not mutate financial/event truth tables. |
 
 ## OS Prerequisite Notes
@@ -155,22 +170,22 @@ forbidden bypass allowances remain enforced.
 
 | Gate | Status | Evidence |
 |---|---|---|
-| Container-first onboarding authority | PASS pending CI | `DEVELOPMENT.md`, Makefile, Compose. |
-| README fidelity | PASS pending CI | Stale backend-placeholder text removed. |
-| Canonical local topology | PASS pending CI | `docker-compose.local.yml` declared canonical. |
-| Environment authority | PASS pending CI | `.env.local.example` and `.env.example` local-safe defaults. |
-| Machine-executed bootstrap | PENDING | M1 workflow must pass on PR and `main`. |
-| Migration proof | PENDING | `make migrate` in M1 workflow. |
-| API health proof | PENDING | `make health` in M1 workflow. |
-| Worker/broker proof | PENDING | `make smoke` in M1 workflow. |
-| Worker DB access proof | PENDING | `/health/worker` probe result. |
-| Non-vacuous smoke proof | PENDING | `scripts/smoke/m1_runtime_smoke.py`. |
-| M1 validator proof | PASS pending CI | `scripts/ci/validate_m1_local_dev_authority.py`. |
-| Phase boundary integrity | PASS pending CI | Validator diff-scope checks. |
-| Primary branch green | PENDING | Requires merge to `main` and green required checks. |
+| Container-first onboarding authority | PASS | `DEVELOPMENT.md`, Makefile, Compose, M1 `main` job. |
+| README fidelity | PASS | Stale backend-placeholder text removed. |
+| Canonical local topology | PASS | `docker-compose.local.yml` declared canonical. |
+| Environment authority | PASS | `.env.local.example` and `.env.example` local-safe defaults. |
+| Machine-executed bootstrap | PASS | M1 workflow passed on PR and `main`. |
+| Migration proof | PASS | `make migrate` in M1 workflow. |
+| API health proof | PASS | `make health` in M1 workflow. |
+| Worker/broker proof | PASS | `make smoke` in M1 workflow. |
+| Worker DB access proof | PASS | `/health/worker` probe result. |
+| Non-vacuous smoke proof | PASS | `scripts/smoke/m1_runtime_smoke.py` executed by M1 workflow. |
+| M1 validator proof | PASS | `scripts/ci/validate_m1_local_dev_authority.py`. |
+| Phase boundary integrity | PASS | Validator diff-scope checks. |
+| Primary branch green | PASS | Merge commit `9593db12188a76d0f95c915e9b5f1a15eadc3cd2`; post-merge main CI green. |
 
 ## Final Verdict
 
 ```text
-M1_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN
+M1_PASS
 ```
