@@ -259,14 +259,16 @@ def check_baseline_fields(result: ValidationResult) -> None:
         result.add(f"Baseline field: {field}", field in content)
 
     stale_markers = [
-        "final clean-state confirmation\n\n**status:** pending",
-        "final clean-state confirmation\r\n\r\n**status:** pending",
         "**status:** pending",
         "pending admin action",
     ]
+    stale_clean_state = re.search(
+        r"final clean-state confirmation\s*:?\s*(?:\*\*status:\*\*\s*)?pending",
+        content,
+    )
     result.add(
         "Baseline has no stale pending/admin language",
-        not any(marker in content for marker in stale_markers),
+        stale_clean_state is None and not any(marker in content for marker in stale_markers),
     )
     result.add(
         "Baseline references canonical validation artifact",
