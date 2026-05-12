@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: skeldir-postgres-local
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skeldir}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skeldir_local}
+      POSTGRES_DB: ${POSTGRES_DB:-skeldir_local}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - skeldir_postgres_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skeldir} -d ${POSTGRES_DB:-skeldir_local}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.local
+    working_dir: /app
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: skeldir-api-local
+    env_file:
+      - .env.local
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=5)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: skeldir-worker-local
+    env_file:
+      - .env.local
+    environment:
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus_multiproc
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=INFO
+      --pool=solo
+      --concurrency=1
+      --queues=housekeeping,maintenance,llm,attribution,b23_match_engine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    tmpfs:
+      - /tmp/prometheus_multiproc
+
+  smoke:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.local
+    environment:
+      API_BASE_URL: http://api:8000
+    command: python /app/scripts/smoke/m1_runtime_smoke.py
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  validator:
+    image: python:3.12-slim
+    working_dir: /workspace
+    command: >
+      sh -c "python scripts/ci/validate_m0_scope_lock.py --local-dev &&
+             python scripts/ci/validate_m1_local_dev_authority.py --local-dev"
+    volumes:
+      - .:/workspace:ro
+
+volumes:
+  skeldir_postgres_local:

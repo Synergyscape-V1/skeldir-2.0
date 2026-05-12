@@ -1,0 +1,74 @@
+name: M1 Local Development Authority
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  m1-local-dev-authority:
+    name: m1-local-dev-authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine baseline SHA
+        id: baseline
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASELINE_SHA=$(git merge-base "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")
+          else
+            BASELINE_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          fi
+          echo "sha=${BASELINE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Baseline SHA: ${BASELINE_SHA}"
+
+      - name: Generate canonical local env file
+        shell: bash
+        run: cp .env.local.example .env.local
+
+      - name: Validate M1 static authority
+        shell: bash
+        run: python scripts/ci/validate_m1_local_dev_authority.py --baseline-sha "${{ steps.baseline.outputs.sha }}"
+
+      - name: Validate compose syntax
+        shell: bash
+        run: docker compose --env-file .env.local -f docker-compose.local.yml config
+
+      - name: Execute documented onboarding bootstrap
+        shell: bash
+        run: bash scripts/ci/run_m1_onboarding_bootstrap.sh
+
+      - name: Upload M1 local runtime logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-local-dev-authority-logs
+          path: |
+            /tmp/skeldir-m1-compose-config.yml
+          if-no-files-found: ignore
+
+      - name: Print compose logs on failure
+        if: failure()
+        shell: bash
+        run: docker compose --env-file .env.local -f docker-compose.local.yml logs --no-color || true
+
+      - name: Tear down local topology
+        if: always()
+        shell: bash
+        run: docker compose --env-file .env.local -f docker-compose.local.yml down --remove-orphans -v || true
