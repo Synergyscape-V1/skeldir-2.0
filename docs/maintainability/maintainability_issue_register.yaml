@@ -463,7 +463,7 @@ issues:
   - id: MIR-032
     source: Synthesized
     title: "No required CI merge gate consumes maintainability governance artifacts"
-    evidence: "Audit prose exists but no CI validator checks artifacts or enforces scope lock"
+    evidence: "Initial M0 state had audit prose and a passing validator, but m0-maintainability-scope-lock was not configured as a required status check for main"
     severity: critical
     phase_disposition: M0
     b24_entry_blocking: true
@@ -471,7 +471,7 @@ issues:
     rationale: "Without CI-enforced scope lock, stabilization is advisory documentation — H02 Passive Governance Drift"
     owner_phase: M0
     deferred_reason: null
-    validation_expectation: "validate_m0_scope_lock.py runs as required CI status check"
+    validation_expectation: "m0-maintainability-scope-lock runs as a required CI status check for main and consumes validate_m0_scope_lock.py"
 
   - id: MIR-033
     source: Synthesized
