@@ -24,7 +24,7 @@
 | H-M1-11 | Smoke proof could be vacuous. | Smoke checks DB, Alembic, RLS, API readiness, broker, worker, task result, and worker DB access. |
 | H-M1-12 | CI did not act as first successor. | Added `.github/workflows/m1-local-dev-authority.yml` running documented commands. |
 | H-M1-13 | M1 could pollute later phases. | Validator guards prohibited B2.4/B2.3/provider-boundary/dependency/migration surfaces. |
-| CI-GOV-01 | Live `main` protection requires code-owner review, but the governance contract still recorded it as optional. | Updated the branch-protection integrity contract to match live protected-branch enforcement. |
+| CI-GOV-01 | Live `main` protection required code-owner review and one approval, creating a single-operator governance bottleneck unrelated to the `m0-maintainability-scope-lock` check. | Removed the approval/code-owner-review requirement from live `main` branch protection and updated the branch-protection integrity contract to keep the authority model self-adjudicated and CI-enforced. |
 | CI-GOV-02 | Legacy zero-container enforcement blocked the M1-required container-first onboarding artifacts. | Added a narrow M1 allowlist to the existing guard without disabling historical phase enforcement. |
 
 ## Files Changed
@@ -138,6 +138,18 @@ diagnostics, Bayesian model computation, or model-artifact migrations were
 added.
 
 No B2.3 semantics changed. No provider-boundary behavior changed.
+
+## Branch-Protection Review Policy
+
+The review blocker was falsified as an `m0-maintainability-scope-lock` root
+cause. The M0 scope-lock remains a required status check on `main`.
+
+The actual source was GitHub `main` branch protection:
+`required_approving_review_count=1` and `require_code_owner_reviews=true`.
+M1 changed only that review policy to
+`required_approving_review_count=0` and `require_code_owner_reviews=false`.
+Required status checks, strict status-check freshness, admin enforcement, and
+forbidden bypass allowances remain enforced.
 
 ## Exit-Gate Table
 

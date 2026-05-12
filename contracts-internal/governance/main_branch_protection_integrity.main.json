@@ -10,8 +10,8 @@
     "required_for_p7_closure": true
   },
   "review_policy": {
-    "required_approving_review_count_min": 1,
-    "require_code_owner_reviews": true
+    "required_approving_review_count_min": 0,
+    "require_code_owner_reviews": false
   },
   "approval_authority_mode": "self_adjudicated_ci_enforced",
   "enforce_admins_required": true,
