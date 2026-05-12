@@ -1,9 +1,53 @@
-.PHONY: help contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
+COMPOSE_FILE ?= docker-compose.local.yml
+ENV_FILE ?= .env.local
+HEALTH_RETRIES ?= 30
+COMPOSE = docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
+
+.PHONY: help dev migrate api worker health smoke test down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
 
 help: ## Show this help message
 	@echo "SKELDIR 2.0 Monorepo - Available Commands"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+$(ENV_FILE):
+	@cp .env.local.example $(ENV_FILE)
+	@echo "Created $(ENV_FILE) from .env.local.example"
+
+dev: $(ENV_FILE) ## Start canonical local Postgres dependency; the Celery broker/result backend is Postgres-backed
+	@$(COMPOSE) up -d postgres
+
+migrate: $(ENV_FILE) ## Apply Alembic head inside the backend container against local Postgres
+	@$(COMPOSE) run --rm migrate
+
+api: $(ENV_FILE) ## Start the FastAPI service through Docker Compose
+	@$(COMPOSE) up -d api
+
+worker: $(ENV_FILE) ## Start the Celery worker through Docker Compose
+	@$(COMPOSE) up -d worker
+
+health: $(ENV_FILE) ## Check canonical API readiness endpoint from inside the API container
+	@i=1; while [ $$i -le $(HEALTH_RETRIES) ]; do \
+		if $(COMPOSE) exec -T api python -c "import json, urllib.request; r=urllib.request.urlopen('http://localhost:8000/health/ready', timeout=10); body=json.loads(r.read().decode()); assert r.status == 200 and body.get('status') == 'ok', body; print(json.dumps(body, sort_keys=True))"; then \
+			exit 0; \
+		fi; \
+		i=$$((i + 1)); \
+		sleep 2; \
+	done; \
+	echo "API readiness check failed after $(HEALTH_RETRIES) attempts"; \
+	exit 1
+
+smoke: $(ENV_FILE) ## Run the non-vacuous M1 runtime smoke proof inside the canonical topology
+	@$(COMPOSE) run --rm smoke
+
+test: $(ENV_FILE) ## Run M0/M1 maintainability validators only; full test-loop authority is deferred to M2
+	@$(COMPOSE) run --rm validator
+
+down: $(ENV_FILE) ## Stop the canonical local topology
+	@$(COMPOSE) down --remove-orphans
+
+logs: $(ENV_FILE) ## Show API and worker logs from the canonical local topology
+	@$(COMPOSE) logs --tail=200 api worker
 
 contracts-check: ## Bundle and validate all OpenAPI contracts (recommended)
 	@echo "Running contract validation pipeline..."
@@ -123,4 +167,3 @@ docs-validate: ## Validate built documentation
 docs-view: ## Open documentation index in browser
 	@echo "Opening documentation..."
 	@open api-contracts/dist/docs/v1/index.html || xdg-open api-contracts/dist/docs/v1/index.html || start api-contracts/dist/docs/v1/index.html
-

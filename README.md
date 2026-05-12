@@ -44,11 +44,31 @@ This monorepo contains the complete Skeldir 2.0 Attribution Intelligence platfor
 
 ## Quick Start
 
-### Prerequisites
+### Canonical Local Backend Runtime
+
+The authoritative successor onboarding path is documented in
+[DEVELOPMENT.md](DEVELOPMENT.md). It is container-first and uses
+`docker-compose.local.yml` plus Makefile targets for local Postgres, Alembic
+migrations, FastAPI, the Postgres-backed Celery broker/result backend, a real
+worker, and the M1 smoke proof.
+
+```bash
+cp .env.local.example .env.local
+make dev
+make migrate
+make api
+make worker
+make health
+make smoke
+```
+
+Host-native Python backend execution is noncanonical for first-time onboarding.
+
+### Other Prerequisites
 
 - Node.js 20+ (for OpenAPI validation, documentation, and frontend)
-- Python 3.11+ (for backend and Pydantic model generation)
-- Docker & Docker Compose (for mock servers)
+- Python 3.11+ (for optional noncanonical backend and Pydantic model generation)
+- Docker & Docker Compose (required for canonical backend local development)
 - Git
 
 ### Contract Validation
@@ -97,17 +117,10 @@ npm test
 
 ### Backend Development
 
-```bash
-cd backend
-# Install dependencies
-pip install -r requirements.txt
-
-# Run migrations
-alembic upgrade head
-
-# Run backend tests
-pytest
-```
+Use [DEVELOPMENT.md](DEVELOPMENT.md) for the supported local backend path.
+The backend is a FastAPI modular monolith with Postgres-backed Celery workers,
+B2.3 revenue verification/match-engine surfaces, and migration-managed local
+Postgres. Host-native Python commands are an advanced, noncanonical path.
 
 ### Frontend Development
 

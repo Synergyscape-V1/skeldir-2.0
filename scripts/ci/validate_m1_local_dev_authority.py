@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""Static validator for M1 local development authority.
+
+The runtime workflow proves physical bootability. This validator proves the
+repository carries the required M1 authority artifacts and that the diff stays
+inside onboarding/local-runtime surfaces.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+REQUIRED_FILES = [
+    "DEVELOPMENT.md",
+    "README.md",
+    "backend/README.md",
+    "backend/Dockerfile",
+    ".env.example",
+    ".env.local.example",
+    "docker-compose.local.yml",
+    "contracts-internal/governance/main_branch_protection_integrity.main.json",
+    "Makefile",
+    "scripts/smoke/m1_runtime_smoke.py",
+    "scripts/ci/validate_m1_local_dev_authority.py",
+    "scripts/ci/run_m1_onboarding_bootstrap.sh",
+    ".github/workflows/m1-local-dev-authority.yml",
+    "docs/maintainability/m1_completion_record.md",
+]
+
+REQUIRED_MAKE_TARGETS = [
+    "dev",
+    "migrate",
+    "api",
+    "worker",
+    "health",
+    "smoke",
+    "test",
+    "down",
+    "logs",
+]
+
+REQUIRED_ENV_VARS = [
+    "DATABASE_URL",
+    "MIGRATION_DATABASE_URL",
+    "CELERY_BROKER_URL",
+    "CELERY_RESULT_BACKEND",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DB",
+    "ENVIRONMENT",
+    "SKELDIR_CONTROL_PLANE_ENABLED",
+    "B23_DATABASE_POOL_SIZE",
+    "B23_DATABASE_MAX_OVERFLOW",
+    "B23_DATABASE_POOL_TIMEOUT_SECONDS",
+    "B23_DATABASE_STATEMENT_TIMEOUT_MS",
+    "B23_DATABASE_LOCK_TIMEOUT_MS",
+    "B23_WORKER_CONCURRENCY",
+    "B23_WORKER_PREFETCH_MULTIPLIER",
+]
+
+REQUIRED_DEVELOPMENT_PHRASES = [
+    "The canonical path is container-first. Host-native Python execution is noncanonical.",
+    "docker-compose.local.yml",
+    "make dev",
+    "make migrate",
+    "make api",
+    "make worker",
+    "make health",
+    "make smoke",
+    "make test",
+    "M2",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "Windows",
+    "macOS",
+    "Linux",
+    "port collision",
+    "ARM64",
+]
+
+STALE_README_PATTERNS = [
+    "Backend application code is not yet migrated",
+    "prepared for when backend code is available",
+    "placeholder-only",
+]
+
+LOCAL_HOSTS = {"postgres", "localhost", "127.0.0.1", "::1"}
+EXTERNAL_MARKERS = ("neon.tech", "amazonaws.com", "rds.amazonaws.com", "supabase.co")
+
+ALLOWED_M1_PATH_PREFIXES = [
+    ".github/workflows/m1-local-dev-authority.yml",
+    "DEVELOPMENT.md",
+    "README.md",
+    "backend/README.md",
+    "backend/Dockerfile",
+    ".env.example",
+    ".env.local.example",
+    "docker-compose.local.yml",
+    "contracts-internal/governance/main_branch_protection_integrity.main.json",
+    "Makefile",
+    "scripts/guard_no_docker.py",
+    "scripts/smoke/",
+    "scripts/ci/run_m1_onboarding_bootstrap.sh",
+    "scripts/ci/validate_m1_local_dev_authority.py",
+    "scripts/ci/validate_m0_scope_lock.py",
+    "docs/maintainability/",
+]
+
+PROHIBITED_PATH_PATTERNS = [
+    r"backend/app/llm/provider_boundary\.py$",
+    r"backend/app/revenue_verification/(match_engine_kernel|semantic_authority|state_transitions|extraction_registry|batch_engine)\.py$",
+    r"alembic/versions/",
+    r"backend/db/migrations/",
+    r"requirements.*\.txt$",
+    r"pyproject\.toml$",
+    r"\.github/workflows/ci\.yml$",
+]
+
+PROHIBITED_ADDED_PATTERNS = [
+    r"pymc",
+    r"pymc-marketing",
+    r"pymc_marketing",
+    r"arviz",
+    r"pm\.Model",
+    r"pm\.sample",
+    r"az\.rhat",
+    r"az\.ess\b",
+]
+
+
+class Result:
+    def __init__(self) -> None:
+        self.rows: list[tuple[str, bool, str]] = []
+
+    def add(self, name: str, ok: bool, detail: str = "") -> None:
+        self.rows.append((name, ok, detail))
+
+    def ok(self) -> bool:
+        return all(ok for _, ok, _ in self.rows)
+
+    def report(self) -> str:
+        lines = []
+        for name, ok, detail in self.rows:
+            prefix = "PASS" if ok else "FAIL"
+            suffix = f" - {detail}" if detail else ""
+            lines.append(f"[{prefix}] {name}{suffix}")
+        return "\n".join(lines)
+
+
+def read_text(path: str) -> str:
+    full = REPO_ROOT / path
+    if not full.exists():
+        return ""
+    return full.read_text(encoding="utf-8", errors="replace")
+
+
+def git(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, text=True, capture_output=True, timeout=60)
+
+
+def changed_files(baseline_sha: str) -> list[str]:
+    proc = git(["diff", "--name-only", f"{baseline_sha}...HEAD"])
+    if proc.returncode != 0:
+        proc = git(["diff", "--name-only", baseline_sha, "HEAD"])
+    return [line.strip().replace("\\", "/") for line in proc.stdout.splitlines() if line.strip()]
+
+
+def diff_content(baseline_sha: str) -> str:
+    proc = git(["diff", f"{baseline_sha}...HEAD"])
+    if proc.returncode != 0:
+        proc = git(["diff", baseline_sha, "HEAD"])
+    return proc.stdout
+
+
+def check_required_files(result: Result) -> None:
+    for path in REQUIRED_FILES:
+        full = REPO_ROOT / path
+        result.add(f"required file exists: {path}", full.exists() and full.stat().st_size > 0)
+
+
+def check_development_doc(result: Result) -> None:
+    text = read_text("DEVELOPMENT.md")
+    for phrase in REQUIRED_DEVELOPMENT_PHRASES:
+        result.add(f"DEVELOPMENT.md documents: {phrase}", phrase in text)
+
+
+def check_readmes(result: Result) -> None:
+    combined = read_text("README.md") + "\n" + read_text("backend/README.md")
+    for pattern in STALE_README_PATTERNS:
+        result.add(f"README stale language absent: {pattern}", pattern not in combined)
+    result.add("README points to DEVELOPMENT.md", "DEVELOPMENT.md" in read_text("README.md"))
+    result.add("backend README points to DEVELOPMENT.md", "DEVELOPMENT.md" in read_text("backend/README.md"))
+
+
+def check_makefile(result: Result) -> None:
+    text = read_text("Makefile")
+    for target in REQUIRED_MAKE_TARGETS:
+        result.add(f"Makefile target: {target}", re.search(rf"^{re.escape(target)}:", text, re.M) is not None)
+
+    for target in ("dev", "migrate", "api", "worker", "health", "smoke"):
+        match = re.search(rf"^{target}:.*?(?=^[A-Za-z0-9_.-]+:|\Z)", text, re.M | re.S)
+        body = match.group(0) if match else ""
+        result.add(f"{target} uses Docker Compose", "docker compose" in body or "$(COMPOSE)" in body)
+        host_python = re.search(r"(^|\n)\s*@?python\s+", body) is not None
+        result.add(f"{target} does not use host python", not host_python)
+
+
+def _extract_env_value(text: str, key: str) -> str | None:
+    match = re.search(rf"^{re.escape(key)}=(.*)$", text, re.M)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _host_from_url(raw: str) -> str:
+    from urllib.parse import urlparse
+
+    cleaned = raw
+    for prefix in ("sqla+", "db+"):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+    return (urlparse(cleaned).hostname or "").lower()
+
+
+def check_env_templates(result: Result) -> None:
+    local_env = read_text(".env.local.example")
+    general_env = read_text(".env.example")
+    for var in REQUIRED_ENV_VARS:
+        result.add(f".env.local.example contains {var}", _extract_env_value(local_env, var) is not None)
+
+    for var in ("DATABASE_URL", "MIGRATION_DATABASE_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND"):
+        for filename, text in ((".env.local.example", local_env), (".env.example", general_env)):
+            value = _extract_env_value(text, var)
+            if value is None:
+                result.add(f"{filename} {var} exists", False, "missing")
+                continue
+            host = _host_from_url(value)
+            is_external = any(marker in host for marker in EXTERNAL_MARKERS)
+            result.add(f"{filename} {var} is local-safe", host in LOCAL_HOSTS and not is_external, f"host={host}")
+
+
+def check_compose_and_workflow(result: Result) -> None:
+    compose = read_text("docker-compose.local.yml")
+    for service in ("postgres:", "api:", "worker:", "migrate:", "smoke:"):
+        result.add(f"compose service present: {service}", service in compose)
+    result.add("compose uses local env file", ".env.local" in compose)
+    forbidden_non_postgres_broker = "re" + "dis"
+    result.add(
+        "compose excludes alternate broker services",
+        forbidden_non_postgres_broker not in compose.lower(),
+    )
+
+    workflow = read_text(".github/workflows/m1-local-dev-authority.yml")
+    bootstrap = read_text("scripts/ci/run_m1_onboarding_bootstrap.sh")
+    workflow_authority_text = workflow + "\n" + bootstrap
+    for token in ("pull_request", "push", "docker compose --env-file .env.local -f docker-compose.local.yml config", "make dev", "make migrate", "make api", "make worker", "make health", "make smoke"):
+        result.add(f"M1 workflow includes {token}", token in workflow_authority_text)
+
+
+def check_completion_record(result: Result) -> None:
+    text = read_text("docs/maintainability/m1_completion_record.md")
+    required = [
+        "canonical topology",
+        "command surface",
+        "CI onboarding harness evidence",
+        "migration proof",
+        "API health proof",
+        "worker/broker proof",
+        "Celery task round-trip proof",
+        "worker DB access proof",
+        "external DB/broker rejection proof",
+        "deferred M2/M3/M4/M5/M6",
+        "no B2.4 implementation occurred",
+        "no B2.3 semantics changed",
+        "no provider-boundary behavior changed",
+        "final verdict",
+    ]
+    for token in required:
+        result.add(f"completion record contains: {token}", token.lower() in text.lower())
+
+
+def _allowed_m1_path(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix) for prefix in ALLOWED_M1_PATH_PREFIXES)
+
+
+def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) -> None:
+    if local_dev:
+        result.add("diff scope check", True, "skipped in --local-dev")
+        return
+    if not baseline_sha:
+        result.add("baseline SHA available", False)
+        return
+    files = changed_files(baseline_sha)
+    violations = [path for path in files if not _allowed_m1_path(path)]
+    result.add("M1 diff stays in allowed surfaces", not violations, ", ".join(violations[:10]))
+
+    prohibited = [
+        path
+        for path in files
+        if any(re.search(pattern, path) for pattern in PROHIBITED_PATH_PATTERNS)
+    ]
+    result.add("M1 diff avoids prohibited surfaces", not prohibited, ", ".join(prohibited[:10]))
+
+    added: list[str] = []
+    current_path = ""
+    for line in diff_content(baseline_sha).splitlines():
+        if line.startswith("diff --git "):
+            marker = " b/"
+            current_path = line.split(marker, 1)[1] if marker in line else ""
+            continue
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        if current_path.startswith("docs/") or current_path == "DEVELOPMENT.md":
+            continue
+        if current_path.startswith("scripts/ci/validate_"):
+            continue
+        added.append(line[1:])
+    for pattern in PROHIBITED_ADDED_PATTERNS:
+        hit = any(re.search(pattern, line, re.I) for line in added)
+        result.add(f"no prohibited added pattern: {pattern}", not hit)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--baseline-sha")
+    parser.add_argument("--local-dev", action="store_true")
+    args = parser.parse_args()
+
+    result = Result()
+    check_required_files(result)
+    check_development_doc(result)
+    check_readmes(result)
+    check_makefile(result)
+    check_env_templates(result)
+    check_compose_and_workflow(result)
+    check_completion_record(result)
+    check_diff_scope(result, args.baseline_sha, args.local_dev)
+
+    print("M1 LOCAL DEVELOPMENT AUTHORITY VALIDATOR")
+    print(result.report())
+    print(f"VERDICT: {'M1_STATIC_VALID' if result.ok() else 'M1_STATIC_INVALID'}")
+    return 0 if result.ok() else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

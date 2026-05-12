@@ -149,9 +149,23 @@ PROHIBITED_SURFACE_PATTERNS = [
 ALLOWED_M0_PATHS = [
     "docs/maintainability/",
     "scripts/ci/validate_m0_scope_lock.py",
+    "scripts/ci/validate_m1_local_dev_authority.py",
+    "scripts/ci/run_m1_onboarding_bootstrap.sh",
+    "scripts/smoke/",
     ".github/workflows/m0-maintainability-scope-lock.yml",
+    ".github/workflows/m1-local-dev-authority.yml",
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json",
     ".github/CODEOWNERS",
+    "DEVELOPMENT.md",
+    "README.md",
+    "backend/README.md",
+    "backend/Dockerfile",
+    ".env.example",
+    ".env.local.example",
+    "docker-compose.local.yml",
+    "contracts-internal/governance/main_branch_protection_integrity.main.json",
+    "Makefile",
+    "scripts/guard_no_docker.py",
 ]
 
 

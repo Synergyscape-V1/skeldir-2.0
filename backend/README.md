@@ -22,22 +22,28 @@ backend/
 
 ## Status
 
-**Note:** Backend application code is not yet migrated. This directory structure is prepared for when backend code is available.
+The backend is an active FastAPI modular monolith implementing Skeldir API,
+ingestion, attribution, auth, webhook, revenue verification, reconciliation,
+LLM governance, privacy, and Celery task surfaces.
 
 ## Development
 
-### Setup
+### Canonical Setup
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run migrations
-alembic upgrade head
-
-# Run tests
-pytest
+cp ../.env.local.example ../.env.local
+make -C .. dev
+make -C .. migrate
+make -C .. api
+make -C .. worker
+make -C .. health
+make -C .. smoke
 ```
+
+The supported successor path is container-first and documented in
+[../DEVELOPMENT.md](../DEVELOPMENT.md). Host-native Python execution may be used
+for targeted debugging by experienced maintainers, but it is noncanonical for
+first-time onboarding and is not the M1 authority path.
 
 ### Architecture
 
@@ -104,4 +110,3 @@ pytest --cov=backend/app --cov-report=html
 - [Architecture Guide](../.cursor/rules)
 - [Database Documentation](../docs/database/)
 - [Development Workflow](../docs/DEVELOPMENT_WORKFLOW.md)
-
