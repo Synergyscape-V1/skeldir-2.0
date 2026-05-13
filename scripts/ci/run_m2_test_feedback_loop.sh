@@ -3,6 +3,7 @@ set -euo pipefail
 
 TARGET="${1:-default}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
+M2_TEST_PATHS="${M2_TEST_PATHS:-backend/tests}"
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN=python3
@@ -50,58 +51,58 @@ case "${TARGET}" in
     run_timed validate "${PYTHON_BIN}" scripts/ci/validate_m2_test_feedback_loop.py --local-dev
     ;;
   unit-pure)
-    run_timed unit-pure "${PYTHON_BIN}" -m pytest -q -m unit_pure
+    run_timed unit-pure "${PYTHON_BIN}" -m pytest -q -m unit_pure ${M2_TEST_PATHS}
     ;;
   db-invariant)
-    run_timed db-invariant "${PYTHON_BIN}" -m pytest -q -m "db_invariant"
+    run_timed db-invariant "${PYTHON_BIN}" -m pytest -q -m "db_invariant" ${M2_TEST_PATHS}
     ;;
   db-direct)
-    run_timed db-direct "${PYTHON_BIN}" -m pytest -q -m "integration_db_direct"
+    run_timed db-direct "${PYTHON_BIN}" -m pytest -q -m "integration_db_direct" ${M2_TEST_PATHS}
     ;;
   db-pooler)
-    run_timed db-pooler "${PYTHON_BIN}" -m pytest -q -m "integration_db_pooler"
+    run_timed db-pooler "${PYTHON_BIN}" -m pytest -q -m "integration_db_pooler" ${M2_TEST_PATHS}
     ;;
   fail-visible-tenant-context)
-    run_timed fail-visible-tenant-context "${PYTHON_BIN}" -m pytest -q -m "fail_visible_tenant_context"
+    run_timed fail-visible-tenant-context "${PYTHON_BIN}" -m pytest -q -m "fail_visible_tenant_context" ${M2_TEST_PATHS}
     ;;
   celery-eager)
-    run_timed celery-eager "${PYTHON_BIN}" -m pytest -q -m "celery_eager"
+    run_timed celery-eager "${PYTHON_BIN}" -m pytest -q -m "celery_eager" ${M2_TEST_PATHS}
     ;;
   celery-worker)
-    run_timed celery-worker "${PYTHON_BIN}" -m pytest -q -m "celery_worker"
+    run_timed celery-worker "${PYTHON_BIN}" -m pytest -q -m "celery_worker" ${M2_TEST_PATHS}
     ;;
   broker-topology)
     run_timed broker-topology "${PYTHON_BIN}" scripts/testing/assert_topology_urls.py
     run_timed broker-negative "${PYTHON_BIN}" scripts/testing/assert_topology_urls.py --expect-rejection
     ;;
   b23-representative)
-    run_timed b23-representative "${PYTHON_BIN}" -m pytest -q -m "b23_representative"
+    run_timed b23-representative "${PYTHON_BIN}" -m pytest -q -m "b23_representative" ${M2_TEST_PATHS}
     ;;
   b24-persistence-readiness)
-    run_timed b24-persistence-readiness "${PYTHON_BIN}" -m pytest -q -m "b24_persistence_readiness"
+    run_timed b24-persistence-readiness "${PYTHON_BIN}" -m pytest -q -m "b24_persistence_readiness" ${M2_TEST_PATHS}
     ;;
   governance)
-    run_timed governance "${PYTHON_BIN}" -m pytest -q -m "governance"
+    run_timed governance "${PYTHON_BIN}" -m pytest -q -m "governance" ${M2_TEST_PATHS}
     run_timed m2-validator "${PYTHON_BIN}" scripts/ci/validate_m2_test_feedback_loop.py --local-dev
     ;;
   e2e)
-    run_timed e2e "${PYTHON_BIN}" -m pytest -q -m "e2e"
+    run_timed e2e "${PYTHON_BIN}" -m pytest -q -m "e2e" ${M2_TEST_PATHS}
     ;;
   external-db-smoke)
     run_timed external-db-smoke "${PYTHON_BIN}" scripts/testing/assert_topology_urls.py --external-smoke
     ;;
   append-only-isolation)
-    run_timed append-only-isolation "${PYTHON_BIN}" -m pytest -q -m "append_only_sensitive"
+    run_timed append-only-isolation "${PYTHON_BIN}" -m pytest -q -m "append_only_sensitive" ${M2_TEST_PATHS}
     ;;
   skeleton-quarantine)
     run_timed skeleton-quarantine "${PYTHON_BIN}" scripts/ci/validate_m2_test_feedback_loop.py --check-skeletons-only --local-dev
     ;;
   celery-mode-classification)
-    run_timed celery-mode-classification "${PYTHON_BIN}" -m pytest -q -m "celery_eager or celery_worker"
+    run_timed celery-mode-classification "${PYTHON_BIN}" -m pytest -q -m "celery_eager or celery_worker" ${M2_TEST_PATHS}
     ;;
   default)
     run_timed validate "${PYTHON_BIN}" scripts/ci/validate_m2_test_feedback_loop.py --local-dev
-    run_timed unit-pure "${PYTHON_BIN}" -m pytest -q -m unit_pure
+    run_timed unit-pure "${PYTHON_BIN}" -m pytest -q -m unit_pure ${M2_TEST_PATHS}
     ;;
   *)
     echo "unknown M2 target: ${TARGET}" >&2
