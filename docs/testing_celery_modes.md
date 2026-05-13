@@ -9,4 +9,4 @@ M2 separates task logic from worker topology.
 
 `make test-celery-eager` must not be used as evidence that workers boot, queues bind, retries persist, or result backend writes succeed.
 
-`make test-celery-worker` and `make test-broker-topology` use local Postgres-backed Celery URLs. Redis, Kafka, external brokers, and hidden warm broker state are prohibited in default tests.
+`make test-celery-worker` and `make test-broker-topology` use local Postgres-backed Celery URLs. Alternate broker infrastructure, external brokers, and hidden warm broker state are prohibited in default tests.
