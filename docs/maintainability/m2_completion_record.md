@@ -2,7 +2,7 @@
 
 Final verdict: `M2_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN`
 
-This record is updated by the M2 remediation branch. It may not be changed to `M2_PASS` until the remediation lands on `main` and required checks are green.
+This record is updated by the M2 remediation branch. Branch validation is green on PR #458, but this record may not be changed to `M2_PASS` until the remediation lands on `main` and required checks are green.
 
 ## Summary
 
@@ -10,7 +10,7 @@ M2 installed the marker taxonomy, command surface, topology URL authority matrix
 
 ## Files Changed
 
-See git diff for the authoritative file list.
+Primary artifacts are listed in `M2 Remediation Evidence Pack.md`; `git diff origin/main...HEAD --name-only` remains the authoritative changed-file list for the branch.
 
 ## Marker Taxonomy
 
@@ -41,15 +41,17 @@ Documented in `docs/testing_topology_url_authority.md`; enforced by `scripts/tes
 | B2.3 representative path | `b23_match_verdicts` local schema proof installed |
 | B2.4 persistence readiness | Blocked by enforced readiness guard until schema exists |
 | Phase boundary | Validator blocks B2.4 dependencies and B2.3/provider-boundary semantic surfaces |
-| Primary branch green | Pending |
+| Primary branch green | Pending until PR #458 is merged and post-merge `main` checks pass |
 
 ## Latency Measurements
 
-Runtime measurements are written to `artifacts/m2/runtime_durations.ndjson` by `scripts/ci/run_m2_test_feedback_loop.sh`.
+Runtime measurements are written to `artifacts/m2/runtime_durations.ndjson` by `scripts/ci/run_m2_test_feedback_loop.sh`. The branch M2 workflow completed in 1m33s on GitHub Actions, within the M2 CI target.
 
 ## CI Workflow URL
 
-Pending until pushed and executed on GitHub Actions.
+Branch M2 workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25799064649/job/75783807377
+
+Branch PR validation run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25799064387
 
 ## No-Contamination Statement
 
