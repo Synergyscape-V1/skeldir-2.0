@@ -73,6 +73,8 @@ def _build_async_database_url_and_args() -> tuple[str, dict]:
         connect_args["ssl"] = ssl.create_default_context()
     if channel_binding:
         connect_args.setdefault("server_settings", {})["channel_binding"] = channel_binding
+    if os.getenv("SKELDIR_ASYNCPG_DISABLE_STATEMENT_CACHE", "0") == "1":
+        connect_args["statement_cache_size"] = 0
 
     return sanitized, connect_args
 

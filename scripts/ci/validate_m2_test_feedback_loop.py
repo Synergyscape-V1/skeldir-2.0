@@ -20,6 +20,8 @@ REQUIRED_DOCS = [
     "docs/testing_celery_modes.md",
     "docs/testing_topology_url_authority.md",
     "docs/testing_b24_persistence_readiness.md",
+    "docs/testing_b24_persistence_entry_gate.md",
+    "docs/testing_parallel_isolation.md",
     "docs/maintainability/m2_completion_record.md",
 ]
 
@@ -33,11 +35,15 @@ REQUIRED_MARKERS = [
     "slow",
     "celery_eager",
     "celery_worker",
+    "celery_worker_concurrent",
+    "pooler_worker_concurrent",
+    "parallel_isolation",
     "append_only_sensitive",
     "rls_guc_sensitive",
     "fail_visible_tenant_context",
     "b23_representative",
     "b24_persistence_readiness",
+    "b24_persistence_entry_gate",
     "requires_external_db",
 ]
 
@@ -49,9 +55,13 @@ REQUIRED_MAKE_TARGETS = [
     "test-fail-visible-tenant-context",
     "test-celery-eager",
     "test-celery-worker",
+    "test-celery-worker-concurrent",
+    "test-pooler-worker-concurrent",
     "test-broker-topology",
+    "test-parallel-isolation",
     "test-b23-representative",
     "test-b24-persistence-readiness",
+    "test-b24-persistence-entry-gate",
     "test-governance",
     "test-e2e",
     "test-external-db-smoke",
@@ -209,16 +219,39 @@ def check_docs(result: Result) -> None:
     ]:
         result.add(f"topology matrix documents {token}", token in authority)
     result.add("B2.4 readiness doc records explicit blocker or table", "bayesian_model_fits" in read("docs/testing_b24_persistence_readiness.md"))
+    entry_gate = read("docs/testing_b24_persistence_entry_gate.md")
+    result.add("canonical B2.4 entry-gate doc records marker", "b24_persistence_entry_gate" in entry_gate)
+    result.add("canonical B2.4 entry-gate blocks Bayesian runtime", "Bayesian runtime dependency" in entry_gate and "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in entry_gate)
+    parallel = read("docs/testing_parallel_isolation.md")
+    result.add("parallel isolation doc records serial-only guard", "SKELDIR_TEST_PARALLEL_MODE=serial-only" in parallel and "PYTEST_XDIST_WORKER" in parallel)
     result.add("append-only isolation doc forbids protected deletion", "DELETE FROM attribution_events" in read("docs/testing_append_only_isolation.md"))
     result.add("celery modes doc distinguishes eager/worker", "celery_eager" in read("docs/testing_celery_modes.md") and "celery_worker" in read("docs/testing_celery_modes.md"))
 
 
 def check_pooler_and_broker(result: Result) -> None:
     compose = read("docker-compose.test.yml")
+    runner = read("scripts/ci/run_m2_test_feedback_loop.sh")
+    corrective_tests = read("backend/tests/test_m2_corrective_runtime_proofs.py")
     result.add("pooler profile present", "pgbouncer" in compose.lower() and "transaction" in compose.lower())
     result.add("pooler exposes local port", "6432" in compose)
-    result.add("broker remains Postgres-backed", "CELERY_BROKER_URL" in read("scripts/ci/run_m2_test_feedback_loop.sh") and "sqla+" in read("scripts/ci/run_m2_test_feedback_loop.sh"))
-    result.add("broker negative control exists", "--expect-rejection" in read("scripts/ci/run_m2_test_feedback_loop.sh"))
+    result.add("broker remains Postgres-backed", "CELERY_BROKER_URL" in runner and "sqla+" in runner)
+    result.add("broker URL negative control exists", "--expect-rejection" in runner)
+    result.add("real broker absent negative control exists", "broker_absent_negative_control" in corrective_tests and "kombu" in corrective_tests)
+    result.add("real worker subprocess proof exists", "subprocess.Popen" in corrective_tests and "-P" in corrective_tests and "threads" in corrective_tests)
+    result.add("worker concurrency greater than one is enforced", "concurrency: int = 4" in corrective_tests and "barrier_timeout_seconds" in corrective_tests)
+    result.add("pooler worker concurrency proof exists", "test_m2_pooler_worker_concurrent_tenant_isolation" in corrective_tests and "TEST_POOLED_DATABASE_URL" in corrective_tests)
+    result.add("pooler RLS/GUC control coverage exists", all(token in corrective_tests for token in [
+        "cross_visible",
+        "current_setting('app.current_tenant_id', true)",
+        "ThreadPoolExecutor",
+        "pooler_rls_guc_negative_controls",
+        "authority_envelope header is required",
+    ]))
+    result.add("test namespace authority exists", all(token in runner + corrective_tests + read("backend/tests/conftest.py") for token in [
+        "SKELDIR_TEST_RUN_ID",
+        "PYTEST_XDIST_WORKER",
+        "SKELDIR_TEST_PARALLEL_MODE",
+    ]))
 
 
 def check_append_only_static(result: Result) -> None:
@@ -258,10 +291,12 @@ def check_b24_guard(result: Result) -> None:
     ]
     result.add("B2.4 implementation dependencies/markers absent from runtime paths", not implementation_violations, ", ".join(implementation_violations))
     readiness = read("docs/testing_b24_persistence_readiness.md")
+    entry_gate = read("docs/testing_b24_persistence_entry_gate.md")
     result.add(
         "B2.4 absent substrate is explicitly blocked",
-        "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in readiness or "bayesian_model_fits exists" in readiness,
+        "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in entry_gate or "bayesian_model_fits exists" in entry_gate,
     )
+    result.add("canonical B2.4 entry-gate replaces stale readiness as required gate", "b24_persistence_entry_gate" in entry_gate and "b24-persistence-entry-gate" in read("scripts/ci/run_m2_test_feedback_loop.sh"))
 
 
 def check_workflow(result: Result) -> None:
@@ -277,10 +312,16 @@ def check_workflow(result: Result) -> None:
         "test-db-pooler",
         "test-fail-visible-tenant-context",
         "test-broker-topology",
+        "test-celery-worker-concurrent",
+        "test-pooler-worker-concurrent",
+        "test-parallel-isolation",
         "test-b23-representative",
         "test-b24-persistence-readiness",
+        "test-b24-persistence-entry-gate",
     ]:
         result.add(f"M2 workflow includes {token}", token in workflow)
+    result.add("M2 workflow enables run-scoped namespace", "SKELDIR_TEST_RUN_ID" in workflow)
+    result.add("M2 workflow disables asyncpg statement cache for pooler", "SKELDIR_ASYNCPG_DISABLE_STATEMENT_CACHE" in workflow)
 
 
 def check_phase_diff(result: Result, baseline_sha: str | None, local_dev: bool) -> None:

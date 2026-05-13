@@ -3,7 +3,7 @@ set -euo pipefail
 
 TARGET="${1:-default}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
-M2_TEST_PATHS="${M2_TEST_PATHS:-backend/tests/test_m2_test_feedback_loop.py backend/tests/test_channel_normalization.py backend/tests/test_money_primitives.py}"
+M2_TEST_PATHS="${M2_TEST_PATHS:-backend/tests/test_m2_test_feedback_loop.py backend/tests/test_m2_corrective_runtime_proofs.py backend/tests/test_channel_normalization.py backend/tests/test_money_primitives.py}"
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN=python3
@@ -23,6 +23,10 @@ export CELERY_BROKER_URL="${CELERY_BROKER_URL:-sqla+${TEST_DIRECT_DATABASE_URL}}
 export CELERY_RESULT_BACKEND="${CELERY_RESULT_BACKEND:-db+${TEST_DIRECT_DATABASE_URL}}"
 export ENVIRONMENT="${ENVIRONMENT:-ci}"
 export TESTING=1
+export SKELDIR_TEST_TASKS="${SKELDIR_TEST_TASKS:-1}"
+export SKELDIR_TEST_RUN_ID="${SKELDIR_TEST_RUN_ID:-m2-$(date +%s)-$$}"
+export SKELDIR_TEST_PARALLEL_MODE="${SKELDIR_TEST_PARALLEL_MODE:-serial-only}"
+export SKELDIR_TEST_WORKER_ID="${PYTEST_XDIST_WORKER:-master}"
 export SKELDIR_CONTROL_PLANE_ENABLED="${SKELDIR_CONTROL_PLANE_ENABLED:-0}"
 export SKELDIR_REQUIRE_AUTH_SECRETS="${SKELDIR_REQUIRE_AUTH_SECRETS:-0}"
 export SKELDIR_REQUIRE_PLATFORM_TOKEN_KEY="${SKELDIR_REQUIRE_PLATFORM_TOKEN_KEY:-0}"
@@ -60,7 +64,7 @@ case "${TARGET}" in
     run_timed db-direct "${PYTHON_BIN}" -m pytest -q -m "integration_db_direct" ${M2_TEST_PATHS}
     ;;
   db-pooler)
-    run_timed db-pooler "${PYTHON_BIN}" -m pytest -q -m "integration_db_pooler" ${M2_TEST_PATHS}
+    run_timed db-pooler "${PYTHON_BIN}" -m pytest -q -m "integration_db_pooler and not pooler_worker_concurrent" ${M2_TEST_PATHS}
     ;;
   fail-visible-tenant-context)
     run_timed fail-visible-tenant-context "${PYTHON_BIN}" -m pytest -q -m "fail_visible_tenant_context" ${M2_TEST_PATHS}
@@ -69,17 +73,32 @@ case "${TARGET}" in
     run_timed celery-eager "${PYTHON_BIN}" -m pytest -q -m "celery_eager" ${M2_TEST_PATHS}
     ;;
   celery-worker)
-    run_timed celery-worker "${PYTHON_BIN}" -m pytest -q -m "celery_worker" ${M2_TEST_PATHS}
+    run_timed celery-worker "${PYTHON_BIN}" -m pytest -q -m "celery_worker and not celery_worker_concurrent" ${M2_TEST_PATHS}
+    ;;
+  celery-worker-concurrent)
+    run_timed celery-worker-concurrent "${PYTHON_BIN}" -m pytest -q -m "celery_worker_concurrent" ${M2_TEST_PATHS}
+    ;;
+  pooler-worker-concurrent)
+    export DATABASE_URL="${TEST_POOLED_DATABASE_URL}"
+    export SKELDIR_ASYNCPG_DISABLE_STATEMENT_CACHE=1
+    run_timed pooler-worker-concurrent "${PYTHON_BIN}" -m pytest -q -m "pooler_worker_concurrent" ${M2_TEST_PATHS}
     ;;
   broker-topology)
     run_timed broker-topology "${PYTHON_BIN}" scripts/testing/assert_topology_urls.py
     run_timed broker-negative "${PYTHON_BIN}" scripts/testing/assert_topology_urls.py --expect-rejection
+    run_timed broker-runtime "${PYTHON_BIN}" -m pytest -q backend/tests/test_m2_corrective_runtime_proofs.py -k "broker_absent_negative_control or pooler_worker_concurrent_tenant_isolation"
+    ;;
+  parallel-isolation)
+    run_timed parallel-isolation "${PYTHON_BIN}" -m pytest -q -m "parallel_isolation" ${M2_TEST_PATHS}
     ;;
   b23-representative)
     run_timed b23-representative "${PYTHON_BIN}" -m pytest -q -m "b23_representative" ${M2_TEST_PATHS}
     ;;
   b24-persistence-readiness)
     run_timed b24-persistence-readiness "${PYTHON_BIN}" -m pytest -q -m "b24_persistence_readiness" ${M2_TEST_PATHS}
+    ;;
+  b24-persistence-entry-gate)
+    run_timed b24-persistence-entry-gate "${PYTHON_BIN}" -m pytest -q -m "b24_persistence_entry_gate" ${M2_TEST_PATHS}
     ;;
   governance)
     run_timed governance "${PYTHON_BIN}" -m pytest -q -m "governance" ${M2_TEST_PATHS}

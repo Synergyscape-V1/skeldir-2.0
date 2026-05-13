@@ -1,68 +1,68 @@
 # M2 Completion Record
 
-Final verdict: `M2_PASS`
+Final verdict: `M2_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN`
 
-This record is finalized after PR #458 landed on `main` and the post-merge `main` workflow set completed green.
+This corrective record supersedes the earlier M2 pass claim until the
+concurrent-worker, pooler-worker, broker, parallel-isolation, namespace, and
+B2.4 entry-gate proof surface lands on `main` and the post-merge workflow set is
+green.
 
-## Summary
+## Corrected Marker Taxonomy
 
-M2 installed the marker taxonomy, command surface, topology URL authority matrix, transaction-pooler compose profile, static validator, runtime harness, fast disposable DB scripts, append-only isolation rules, skeleton quarantine, fail-visible tenant-context boundary, B2.3 representative path, and B2.4 persistence readiness guard.
+Configured in `pytest.ini`: `unit_pure`, `db_invariant`,
+`integration_db_direct`, `integration_db_pooler`, `governance`, `e2e`, `slow`,
+`celery_eager`, `celery_worker`, `celery_worker_concurrent`,
+`pooler_worker_concurrent`, `parallel_isolation`, `append_only_sensitive`,
+`rls_guc_sensitive`, `fail_visible_tenant_context`, `b23_representative`,
+`b24_persistence_entry_gate`, `b24_persistence_readiness`, and
+`requires_external_db`.
 
-## Files Changed
+## Corrected Command Surface
 
-Primary artifacts are listed in `M2 Remediation Evidence Pack.md`; `git diff origin/main...HEAD --name-only` remains the authoritative changed-file list for the branch.
+M2 now includes `make test-celery-worker-concurrent`,
+`make test-pooler-worker-concurrent`, `make test-parallel-isolation`, and
+`make test-b24-persistence-entry-gate` in addition to the original M2 targets.
 
-## Marker Taxonomy
+## Corrective Proofs Installed
 
-Configured in `pytest.ini`: `unit_pure`, `db_invariant`, `integration_db_direct`, `integration_db_pooler`, `governance`, `e2e`, `slow`, `celery_eager`, `celery_worker`, `append_only_sensitive`, `rls_guc_sensitive`, `fail_visible_tenant_context`, `b23_representative`, `b24_persistence_readiness`, `requires_external_db`.
-
-## Command Surface
-
-`make test` is the safe default. M2-specific targets cover pure unit, DB invariant, direct DB, pooler DB, fail-visible tenant context, Celery eager, Celery worker, broker topology, B2.3 representative, B2.4 persistence readiness, governance, E2E, and opt-in external DB smoke.
-
-## Topology URL Authority
-
-Documented in `docs/testing_topology_url_authority.md`; enforced by `scripts/testing/assert_topology_urls.py` and `scripts/ci/validate_m2_test_feedback_loop.py`.
-
-## Proof Status
-
-| Gate | Status |
+| Gate | Corrective proof |
 | --- | --- |
-| M1 dependency closure | Superseded by M2 workflow prerequisite that runs M1 bootstrap |
-| External DB elimination | Static validator installed; hardcoded default-test Neon DSNs removed |
-| Direct Postgres proof | `integration_db_direct` subset installed |
-| Transaction-pooler proof | PgBouncer transaction profile and `integration_db_pooler` subset installed |
-| Fail-visible tenant context | `MissingTenantContextError` boundary installed and tested |
-| Broker topology | Local Postgres broker/result backend validation installed |
-| Fast disposable isolation | Template/disposable DB scripts installed with duration artifacts |
-| Append-only isolation | Trigger/RLS proof and static protected-deletion classifier installed |
-| Skeleton closure | Legacy skeletons quarantined with M2 issue IDs |
-| Celery mode clarity | `celery_eager` and `celery_worker` markers documented and tested |
-| B2.3 representative path | `b23_match_verdicts` local schema proof installed |
-| B2.4 persistence readiness | Blocked by enforced readiness guard until schema exists |
-| Phase boundary | Validator blocks B2.4 dependencies and B2.3/provider-boundary semantic surfaces |
-| Primary branch green | Pass: PR #458 merged at `9656025f911517c6b4702e6e474ea92f282fe64d`; post-merge main workflow sweep completed with non_green=0 |
+| Concurrent worker tenant isolation | Real subprocess Celery workers with threaded pools and concurrency greater than one dispatch tenant A/B tasks through local Postgres broker/result backend. A committed disposable DB barrier makes serial execution fail instead of pass. |
+| Pooler worker concurrency | Worker DB sessions use `TEST_POOLED_DATABASE_URL` through PgBouncer while broker/result remain direct local Postgres. |
+| Broker cold/warm-start | Broker-absent negative control plus subprocess worker dispatch/result retrieval. |
+| Pooler RLS/GUC coverage | Tenant bleed, missing context, concurrent tenant query, transaction reset, and worker-path pooler controls. |
+| Serial/parallel isolation | M2 is serial-only, enforced through `SKELDIR_TEST_PARALLEL_MODE=serial-only` and `PYTEST_XDIST_WORKER == master`. |
+| Test namespace authority | `SKELDIR_TEST_RUN_ID` scopes queues, probe tables, and runtime test markers. |
+| B2.4 persistence entry gate | Canonical `b24_persistence_entry_gate` doc/marker/target blocks Bayesian runtime behavior until schema substrate exists. |
+| Validator adequacy | Validator fails if corrected markers, targets, workflow steps, runtime tests, namespace authority, pooler controls, or B2.4 entry gate are absent. |
+| Runtime harness adequacy | M2 workflow runs the corrected proof commands on PR and push/main. |
+| Phase boundary | No B2.4 Bayesian execution/model code, no B2.3 semantic changes, and no provider-boundary behavior changes are intended. |
 
-## Latency Measurements
+## Local Docker Runtime Evidence
 
-Runtime measurements are written to `artifacts/m2/runtime_durations.ndjson` by `scripts/ci/run_m2_test_feedback_loop.sh`. The branch M2 workflow completed in 1m33s on GitHub Actions, within the M2 CI target.
+Docker Desktop and Docker Compose are available locally as of 2026-05-13. The
+local topology was started with `docker-compose.local.yml` plus
+`docker-compose.test.yml`, migrations were applied, and the corrective M2
+runtime subset passed against local Docker Postgres and PgBouncer.
 
-## CI Workflow URL
+Because this workstation has another local listener on `127.0.0.1:5432`, the
+Docker Postgres host port was remapped to `55432` for local validation.
+PgBouncer remained on `6432`.
 
-Branch M2 workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25800183619/job/75787768480
+Validated command:
 
-Branch PR validation run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25800183583
+```text
+python -m pytest -q -m "integration_db_pooler or celery_worker_concurrent or pooler_worker_concurrent or parallel_isolation or b24_persistence_entry_gate or celery_worker" backend/tests/test_m2_test_feedback_loop.py backend/tests/test_m2_corrective_runtime_proofs.py
+```
 
-Post-merge main M2 workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300938
+Result:
 
-Post-merge main CI workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300937
+```text
+7 passed, 9 deselected
+```
 
-Post-merge main R7 final-winning-state workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300916
+## Pending Main Evidence
 
-## No-Contamination Statement
-
-No B2.4 Bayesian implementation was added. No Bayesian runtime dependency was added. B2.3 semantic production files and `provider_boundary.py` are not part of the intended M2 surface.
-
-## Deferred Items
-
-M3: broad CI rationalization. M4: operational runbooks. M5/M6: later-phase non-test-substrate work.
+The final `main` commit SHA, PR URL, post-merge `main` M2 workflow URL, and full
+main workflow sweep will be recorded after protected-branch merge and
+post-merge validation.
