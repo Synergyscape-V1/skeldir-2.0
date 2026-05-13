@@ -2,7 +2,8 @@
 
 **Phase:** M2 - Test Feedback Loop and Database Topology Stabilization
 **Corrective branch:** `codex/m2-corrective-runtime-proof`
-**Current corrective status:** `M2_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN`
+**Current corrective status:** `M2_PASS`
+**Protected-main runtime proof SHA:** `6a40a4f53fe729ddeb7647fae6c160652c79c1c0`
 
 ## Corrective Initial Findings
 
@@ -39,6 +40,8 @@ finding is accepted: it did not physically prove the hardest runtime invariants.
 
 ## Corrective Files Changed
 
+PR #460 M2 runtime proof files:
+
 - `.github/workflows/m2-test-feedback-loop.yml`
 - `Makefile`
 - `pytest.ini`
@@ -56,6 +59,13 @@ finding is accepted: it did not physically prove the hardest runtime invariants.
 - `docs/testing_parallel_isolation.md`
 - `scripts/ci/run_m2_test_feedback_loop.sh`
 - `scripts/ci/validate_m2_test_feedback_loop.py`
+
+PR #461 primary-branch closure files:
+
+- `.github/workflows/r7-final-winning-state.yml`
+- `scripts/r3/ingestion_under_fire.py`
+- `scripts/ci/validate_m0_scope_lock.py`
+- `scripts/ci/validate_m1_local_dev_authority.py`
 
 ## Local Validation
 
@@ -95,16 +105,36 @@ Result:
 7 passed, 9 deselected
 ```
 
-## Pending Authoritative Evidence
+## Authoritative Main Evidence
 
-This corrective evidence pack is not final until:
+Corrective M2 landed on `main` through protected-branch PR flow in two PRs:
 
-1. The corrective PR is merged to `main`.
-2. The post-merge `main` M2 workflow is green.
-3. The full post-merge `main` workflow set is green.
-4. This document and `docs/maintainability/m2_completion_record.md` are updated
-   with the final `main` SHA and workflow URLs.
+- Corrective runtime proof PR: https://github.com/Synergyscape-V1/skeldir-2.0/pull/460
+- Main-CI stabilization PR: https://github.com/Synergyscape-V1/skeldir-2.0/pull/461
+
+Authoritative `main` proof at
+`6a40a4f53fe729ddeb7647fae6c160652c79c1c0`:
+
+| Workflow | Result | URL |
+| --- | --- | --- |
+| M0 Maintainability Scope Lock | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892847 |
+| M1 Local Development Authority | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892843 |
+| M2 Test Feedback Loop | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892851 |
+| R7: Final Winning State | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892886 |
+
+The complete post-merge `main` workflow set for that SHA completed with no
+failed runs.
+
+## Main-CI Stabilization Follow-Up
+
+After PR #460 merged, the first post-merge `main` sweep reached the physical
+transition condition but exposed a separate primary-branch blocker:
+`R7: Final Winning State` failed twice in `R7 Phase R3c: Ingestion harness`
+during `S4_PIIStorm_N1000` with a single transient 5xx/request transport
+failure. PR #461 made the R3 harness more resilient to transient transport
+failures and ensured failed R3 runs preserve `/tmp/r7_results/r3.json` plus
+uvicorn diagnostics instead of exiting before evidence capture.
 
 ## Current Verdict
 
-`M2_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN`
+`M2_PASS`
