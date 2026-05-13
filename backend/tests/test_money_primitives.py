@@ -21,6 +21,8 @@ from app.core.money import (
     subtract_cents,
 )
 
+pytestmark = pytest.mark.unit_pure
+
 
 class TestToCents:
     """Tests for to_cents() conversion function."""

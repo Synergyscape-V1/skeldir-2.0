@@ -1,3 +1,4 @@
+# M2_APPEND_ONLY_DISPOSABLE_CONTEXT: legacy append-only cleanup tests require disposable DB/schema isolation.
 """
 B0.4.3 Quality Gate Validation Tests - Core Ingestion Service
 
@@ -14,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 # Set DATABASE_URL before imports
-os.environ["DATABASE_URL"] = "postgresql://neondb_owner:npg_ETLZ7UxM3obe@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+os.environ["DATABASE_URL"] = "postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir"
 
 from app.db.session import get_session
 from app.ingestion.event_service import (

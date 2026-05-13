@@ -25,7 +25,7 @@ os.environ["TESTING"] = "1"
 # Use local test database if available, fallback to CI database
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    "postgresql://app_user:app_user@127.0.0.1:5432/skeldir"
 )
 
 from app.main import app  # noqa: E402

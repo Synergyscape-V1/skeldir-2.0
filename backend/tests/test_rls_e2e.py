@@ -20,6 +20,11 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+pytestmark = pytest.mark.xfail(
+    reason="M2-SKELETON-002: legacy API-level RLS skeleton is quarantined; M2 uses real db/pooler RLS tests",
+    strict=False,
+)
+
 # TODO: Import actual app and fixtures when FastAPI app is implemented
 # from app.main import app
 # from app.core.database import get_db_session
@@ -143,6 +148,5 @@ async def test_cross_tenant_query_blocked_at_db_level(tenant_a_id, tenant_b_id, 
     # count = result.scalar()
     # assert count == 0, "RLS should block cross-tenant queries"
     pass
-
 
 

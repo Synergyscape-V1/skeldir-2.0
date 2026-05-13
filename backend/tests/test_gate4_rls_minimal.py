@@ -1,3 +1,4 @@
+# M2_APPEND_ONLY_DISPOSABLE_CONTEXT: legacy append-only cleanup tests require disposable DB/schema isolation.
 """
 Gate 4 - H4.1: Minimal RLS Test (No Celery)
 

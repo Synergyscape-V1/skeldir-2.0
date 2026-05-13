@@ -1,0 +1,22 @@
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.1-p1
+    container_name: skeldir-pgbouncer-test
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-skeldir}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-skeldir_local}
+      DB_NAME: ${POSTGRES_DB:-skeldir_local}
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      ADMIN_USERS: ${POSTGRES_USER:-skeldir}
+    ports:
+      - "${PGBOUNCER_PORT:-6432}:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
