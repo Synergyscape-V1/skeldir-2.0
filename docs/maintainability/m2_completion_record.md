@@ -1,8 +1,8 @@
 # M2 Completion Record
 
-Final verdict: `M2_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN`
+Final verdict: `M2_PASS`
 
-This record is updated by the M2 remediation branch. Branch validation is green on PR #458, but this record may not be changed to `M2_PASS` until the remediation lands on `main` and required checks are green.
+This record is finalized after PR #458 landed on `main` and the post-merge `main` workflow set completed green.
 
 ## Summary
 
@@ -41,7 +41,7 @@ Documented in `docs/testing_topology_url_authority.md`; enforced by `scripts/tes
 | B2.3 representative path | `b23_match_verdicts` local schema proof installed |
 | B2.4 persistence readiness | Blocked by enforced readiness guard until schema exists |
 | Phase boundary | Validator blocks B2.4 dependencies and B2.3/provider-boundary semantic surfaces |
-| Primary branch green | Pending until PR #458 is merged and post-merge `main` checks pass |
+| Primary branch green | Pass: PR #458 merged at `9656025f911517c6b4702e6e474ea92f282fe64d`; post-merge main workflow sweep completed with non_green=0 |
 
 ## Latency Measurements
 
@@ -49,9 +49,15 @@ Runtime measurements are written to `artifacts/m2/runtime_durations.ndjson` by `
 
 ## CI Workflow URL
 
-Branch M2 workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25799064649/job/75783807377
+Branch M2 workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25800183619/job/75787768480
 
-Branch PR validation run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25799064387
+Branch PR validation run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25800183583
+
+Post-merge main M2 workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300938
+
+Post-merge main CI workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300937
+
+Post-merge main R7 final-winning-state workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300916
 
 ## No-Contamination Statement
 

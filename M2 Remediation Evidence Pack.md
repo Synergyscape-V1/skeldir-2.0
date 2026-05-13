@@ -3,8 +3,9 @@
 **Phase:** M2 - Test Feedback Loop and Database Topology Stabilization  
 **Branch:** `codex/m2-test-feedback-loop-stabilization`  
 **PR:** https://github.com/Synergyscape-V1/skeldir-2.0/pull/458  
-**Validated branch head before this evidence update:** `2bed1d9bcf909ab53f4cdbfbb33acf8fb79cd12c`  
-**Current status:** branch remediation green; protected-branch merge and post-merge `main` validation still required before `M2_PASS`.
+**Validated remediation branch head:** `7894b5a2c9866800367c5feee88d8e61617469fd`  
+**Implementation main merge commit:** `9656025f911517c6b4702e6e474ea92f282fe64d`  
+**Current status:** `M2_PASS`.
 
 ## Initial Findings
 
@@ -88,18 +89,23 @@ Authoritative PR validation:
 
 ```text
 PR: https://github.com/Synergyscape-V1/skeldir-2.0/pull/458
-Branch head: 2bed1d9bcf909ab53f4cdbfbb33acf8fb79cd12c
+Branch head: 7894b5a2c9866800367c5feee88d8e61617469fd
+Main merge commit: 9656025f911517c6b4702e6e474ea92f282fe64d
 m0-maintainability-scope-lock: pass
 m1-local-dev-authority: pass
 m2-test-feedback-loop: pass
 Broad PR check matrix: pass
-M2 workflow run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25799064649/job/75783807377
-Main CI run for PR head: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25799064387
+M2 workflow run for final branch head: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25800183619/job/75787768480
+Main CI run for final branch head: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25800183583
+Post-merge main M2 workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300938
+Post-merge main CI workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300937
+Post-merge main R7 final-winning-state workflow: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25801300916
+Post-merge main validation sweep: 31 push-triggered workflows for 9656025f911517c6b4702e6e474ea92f282fe64d completed successfully; non_green=0.
 ```
 
 ## Exit Gate Status
 
-| Gate | Status before protected merge |
+| Gate | Status |
 | --- | --- |
 | M1 enforcement dependency | Pass: M2 workflow executes M1 bootstrap prerequisite and M1 check is green. |
 | External DB elimination | Pass on branch: default paths reject unapproved external DB URLs. |
@@ -119,10 +125,10 @@ Main CI run for PR head: https://github.com/Synergyscape-V1/skeldir-2.0/actions/
 | M2 validator | Pass. |
 | Runtime proof harness | Pass. |
 | Phase boundary integrity | Pass: no B2.4 implementation, no provider-boundary behavior change, no B2.3 semantic reopening. |
-| Primary branch green | Pending until PR merge and post-merge `main` run complete. |
+| Primary branch green | Pass: PR #458 merged to `main` at `9656025f911517c6b4702e6e474ea92f282fe64d`; post-merge main workflows completed successfully. |
 
 ## Current Verdict
 
-`M2_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN`
+`M2_PASS`
 
-This is not a technical remediation failure. It is the remaining protected-branch exit condition: PR #458 must be made ready, merged through the protected workflow, and the resulting `main` checks must pass before this can be changed to `M2_PASS`.
+M2 landed on `main` through PR #458, and the resulting `main` workflow set for merge commit `9656025f911517c6b4702e6e474ea92f282fe64d` completed green.
