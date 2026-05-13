@@ -167,6 +167,8 @@ ALLOWED_M0_PATHS = [
     ".github/workflows/m0-maintainability-scope-lock.yml",
     ".github/workflows/m1-local-dev-authority.yml",
     ".github/workflows/m2-test-feedback-loop.yml",
+    ".github/workflows/r7-final-winning-state.yml",
+    "scripts/r3/ingestion_under_fire.py",
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json",
     ".github/CODEOWNERS",
     "DEVELOPMENT.md",

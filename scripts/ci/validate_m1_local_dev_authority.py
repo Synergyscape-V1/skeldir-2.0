@@ -99,6 +99,7 @@ EXTERNAL_MARKERS = ("neon.tech", "amazonaws.com", "rds.amazonaws.com", "supabase
 ALLOWED_M1_PATH_PREFIXES = [
     ".github/workflows/m1-local-dev-authority.yml",
     ".github/workflows/m2-test-feedback-loop.yml",
+    ".github/workflows/r7-final-winning-state.yml",
     "DEVELOPMENT.md",
     "README.md",
     "backend/README.md",
@@ -134,6 +135,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_m0_scope_lock.py",
     "scripts/ci/run_m2_test_feedback_loop.sh",
     "scripts/ci/validate_m2_test_feedback_loop.py",
+    "scripts/r3/ingestion_under_fire.py",
     "scripts/testing/",
     "docs/testing.md",
     "docs/testing_db_topology.md",
