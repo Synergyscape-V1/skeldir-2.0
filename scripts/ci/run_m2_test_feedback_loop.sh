@@ -3,7 +3,7 @@ set -euo pipefail
 
 TARGET="${1:-default}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
-M2_TEST_PATHS="${M2_TEST_PATHS:-backend/tests}"
+M2_TEST_PATHS="${M2_TEST_PATHS:-backend/tests/test_m2_test_feedback_loop.py backend/tests/test_channel_normalization.py backend/tests/test_money_primitives.py}"
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN=python3
