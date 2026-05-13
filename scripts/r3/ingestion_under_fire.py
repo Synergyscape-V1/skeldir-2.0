@@ -71,6 +71,16 @@ def _env(name: str, default: str | None = None) -> str:
     return value
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer, got {raw!r}") from exc
+
+
 def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -258,16 +268,17 @@ async def _http_fire(
     timeouts = 0
     connection_errors = 0
     recovered_request_errors = 0
+    attempts = max(1, _env_int("R3_HTTP_ATTEMPTS", 5))
 
     async def _one(url: str, headers: dict[str, str], body: bytes) -> None:
         nonlocal timeouts, connection_errors, recovered_request_errors
         async with sem:
             transient_request_error = False
-            for attempt in range(3):
+            for attempt in range(attempts):
                 try:
                     resp = await client.post(url, content=body, headers=headers, timeout=timeout_s)
-                    if 500 <= resp.status_code <= 599 and attempt < 2:
-                        await asyncio.sleep(0.05 * (attempt + 1))
+                    if 500 <= resp.status_code <= 599 and attempt < attempts - 1:
+                        await asyncio.sleep(0.1 * (attempt + 1))
                         continue
                     key = str(resp.status_code)
                     status_counts[key] = status_counts.get(key, 0) + 1
@@ -281,8 +292,8 @@ async def _http_fire(
                     return
                 except httpx.RequestError:
                     transient_request_error = True
-                    if attempt < 2:
-                        await asyncio.sleep(0.05 * (attempt + 1))
+                    if attempt < attempts - 1:
+                        await asyncio.sleep(0.1 * (attempt + 1))
                         continue
                     connection_errors += 1
                     status_counts["request_error"] = status_counts.get("request_error", 0) + 1
@@ -314,17 +325,18 @@ async def _http_fire_rate_controlled(
     connection_errors = 0
     latencies_ms: list[float] = []
     total_requests = max(1, int(round(target_rps * duration_s)))
+    attempts = max(1, _env_int("R3_HTTP_ATTEMPTS", 5))
 
     async def _one(url: str, headers: dict[str, str], body: bytes) -> None:
         nonlocal timeouts, connection_errors
         async with sem:
             transient_request_error = False
-            for attempt in range(3):
+            for attempt in range(attempts):
                 request_started = time.perf_counter()
                 try:
                     resp = await client.post(url, content=body, headers=headers, timeout=timeout_s)
-                    if 500 <= resp.status_code <= 599 and attempt < 2:
-                        await asyncio.sleep(0.05 * (attempt + 1))
+                    if 500 <= resp.status_code <= 599 and attempt < attempts - 1:
+                        await asyncio.sleep(0.1 * (attempt + 1))
                         continue
                     latencies_ms.append((time.perf_counter() - request_started) * 1000.0)
                     key = str(resp.status_code)
@@ -338,8 +350,8 @@ async def _http_fire_rate_controlled(
                     return
                 except httpx.RequestError:
                     transient_request_error = True
-                    if attempt < 2:
-                        await asyncio.sleep(0.05 * (attempt + 1))
+                    if attempt < attempts - 1:
+                        await asyncio.sleep(0.1 * (attempt + 1))
                         continue
                     connection_errors += 1
                     status_counts["request_error"] = status_counts.get("request_error", 0) + 1

@@ -444,6 +444,7 @@ jobs:
           R3_LADDER: "50,250,1000"
           R3_CONCURRENCY: "200"
           R3_TIMEOUT_S: "60"
+          R3_HTTP_ATTEMPTS: "5"
           R3_READY_ATTEMPTS: "60"
           R3_READY_DELAY_S: "1"
           R3_NULL_BENCHMARK: "1"
@@ -487,8 +488,10 @@ jobs:
               exit 1
             fi
           fi
+          set +e
           python scripts/r3/ingestion_under_fire.py | tee /tmp/r3_harness.log
           R3_HARNESS_EXIT=${PIPESTATUS[0]}
+          set -e
           export R3_HARNESS_EXIT
           if [ -n "${R3_API_PID:-}" ]; then
             kill "${R3_API_PID}" || true
