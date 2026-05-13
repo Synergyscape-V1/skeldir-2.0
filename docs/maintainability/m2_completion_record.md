@@ -1,11 +1,31 @@
 # M2 Completion Record
 
-Final verdict: `M2_BLOCKED_BY_PRIMARY_BRANCH_NOT_GREEN`
+Final verdict: `M2_PASS`
 
-This corrective record supersedes the earlier M2 pass claim until the
-concurrent-worker, pooler-worker, broker, parallel-isolation, namespace, and
-B2.4 entry-gate proof surface lands on `main` and the post-merge workflow set is
-green.
+Corrective M2 is landed on `main` with the concurrent-worker, pooler-worker,
+broker, parallel-isolation, namespace, and B2.4 entry-gate proof surface
+executing in protected-branch CI.
+
+## Main Commit and Workflow Evidence
+
+Runtime proof `main` SHA:
+`6a40a4f53fe729ddeb7647fae6c160652c79c1c0`
+
+Pull requests:
+
+- https://github.com/Synergyscape-V1/skeldir-2.0/pull/460
+- https://github.com/Synergyscape-V1/skeldir-2.0/pull/461
+
+Post-merge `main` workflow evidence at the runtime proof SHA:
+
+| Workflow | Result | URL |
+| --- | --- | --- |
+| M0 Maintainability Scope Lock | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892847 |
+| M1 Local Development Authority | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892843 |
+| M2 Test Feedback Loop | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892851 |
+| R7: Final Winning State | success | https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25829892886 |
+
+The full workflow set for that `main` SHA completed with no failed runs.
 
 ## Corrected Marker Taxonomy
 
@@ -61,8 +81,20 @@ Result:
 7 passed, 9 deselected
 ```
 
-## Pending Main Evidence
+## Main-CI Stabilization Follow-Up
 
-The final `main` commit SHA, PR URL, post-merge `main` M2 workflow URL, and full
-main workflow sweep will be recorded after protected-branch merge and
-post-merge validation.
+The first post-PR #460 `main` sweep proved the corrective branch had physically
+transitioned to `main`, but `R7: Final Winning State` failed twice in
+`R7 Phase R3c: Ingestion harness` during `S4_PIIStorm_N1000` with a single
+transient 5xx/request transport failure. PR #461 made the R3 harness retry
+transient HTTP failures more robustly and preserve failed-run diagnostics before
+exit. The subsequent `main` run at
+`6a40a4f53fe729ddeb7647fae6c160652c79c1c0` passed M0, M1, M2, R7, and the
+remaining workflow set.
+
+## No-Contamination Statement
+
+No B2.4 Bayesian execution/model code was introduced. No B2.3 production
+semantics were changed to make M2 pass. No provider-boundary behavior was
+modified. The PR #461 follow-up touched only R7/R3 CI harness behavior and the
+M0/M1 validator allowlists needed to permit that narrow primary-CI repair.
