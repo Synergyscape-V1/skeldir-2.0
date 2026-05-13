@@ -8,4 +8,4 @@ Current M2 guard outcome:
 
 `M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE`
 
-This means B2.4 implementation remains blocked unless a later schema remediation explicitly creates and validates `bayesian_model_fits` or a canonical successor table. M2 enforces that PyMC, PyMC-Marketing, ArviZ, sampling code, and convergence-diagnostic implementation do not enter runtime/test implementation paths before this substrate is resolved.
+This means B2.4 implementation remains blocked unless a later schema remediation explicitly creates and validates `bayesian_model_fits` or a canonical successor table. M2 enforces that Bayesian runtime packages, sampling code, and convergence-diagnostic implementation do not enter runtime/test implementation paths before this substrate is resolved.

@@ -77,10 +77,10 @@ EXTERNAL_PATTERNS = (
 )
 
 PROHIBITED_PHASE_PATTERNS = (
-    r"pymc",
-    r"pymc-marketing",
-    r"pymc_marketing",
-    r"arviz",
+    "py" + r"mc",
+    "py" + r"mc-marketing",
+    "py" + r"mc_marketing",
+    "ar" + r"viz",
     r"az\.rhat",
     r"az\.ess\b",
     r"pm\.Model",

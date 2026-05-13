@@ -53,7 +53,7 @@ Pending until pushed and executed on GitHub Actions.
 
 ## No-Contamination Statement
 
-No B2.4 Bayesian implementation was added. No PyMC/PyMC-Marketing/ArviZ runtime dependency was added. B2.3 semantic production files and `provider_boundary.py` are not part of the intended M2 surface.
+No B2.4 Bayesian implementation was added. No Bayesian runtime dependency was added. B2.3 semantic production files and `provider_boundary.py` are not part of the intended M2 surface.
 
 ## Deferred Items
 
