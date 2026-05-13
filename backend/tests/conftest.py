@@ -16,6 +16,9 @@ from app.db.dsn import to_sync_postgres_dsn
 from app.testing.jwt_rs256 import private_ring_payload, public_ring_payload
 
 os.environ["TESTING"] = "1"
+os.environ.setdefault("SKELDIR_TEST_RUN_ID", f"m2-{uuid4().hex}")
+os.environ.setdefault("SKELDIR_TEST_PARALLEL_MODE", "serial-only")
+os.environ.setdefault("SKELDIR_TEST_WORKER_ID", os.getenv("PYTEST_XDIST_WORKER", "master"))
 os.environ.setdefault("AUTH_JWT_SECRET", private_ring_payload())
 os.environ.setdefault("AUTH_JWT_PUBLIC_KEY_RING", public_ring_payload())
 os.environ.setdefault("AUTH_JWT_ALGORITHM", "RS256")

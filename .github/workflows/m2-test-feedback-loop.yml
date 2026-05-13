@@ -60,6 +60,10 @@ jobs:
             echo "CELERY_RESULT_BACKEND=db+postgresql://skeldir:skeldir_local@127.0.0.1:5432/skeldir_local"
             echo "ENVIRONMENT=ci"
             echo "TESTING=1"
+            echo "SKELDIR_TEST_TASKS=1"
+            echo "SKELDIR_TEST_RUN_ID=m2-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            echo "SKELDIR_TEST_PARALLEL_MODE=serial-only"
+            echo "SKELDIR_ASYNCPG_DISABLE_STATEMENT_CACHE=1"
           } >> "$GITHUB_ENV"
 
       - name: Build test template DB measurement
@@ -97,13 +101,29 @@ jobs:
         shell: bash
         run: make test-broker-topology
 
+      - name: Run concurrent Celery tenant-isolation proof
+        shell: bash
+        run: make test-celery-worker-concurrent
+
+      - name: Run pooler worker concurrency proof
+        shell: bash
+        run: make test-pooler-worker-concurrent
+
+      - name: Run serial/parallel isolation authority proof
+        shell: bash
+        run: make test-parallel-isolation
+
       - name: Run B2.3 representative proof
         shell: bash
         run: make test-b23-representative
 
-      - name: Run B2.4 persistence-readiness proof
+      - name: Run B2.4 persistence-readiness compatibility proof
         shell: bash
         run: make test-b24-persistence-readiness
+
+      - name: Run B2.4 persistence entry-gate proof
+        shell: bash
+        run: make test-b24-persistence-entry-gate
 
       - name: Run append-only-safe isolation proof
         shell: bash

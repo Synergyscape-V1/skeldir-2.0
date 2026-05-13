@@ -55,6 +55,8 @@ def test_m2_required_static_artifacts_exist() -> None:
         "docs/testing_celery_modes.md",
         "docs/testing_topology_url_authority.md",
         "docs/testing_b24_persistence_readiness.md",
+        "docs/testing_b24_persistence_entry_gate.md",
+        "docs/testing_parallel_isolation.md",
         "docs/maintainability/m2_completion_record.md",
         "scripts/ci/validate_m2_test_feedback_loop.py",
         "scripts/ci/run_m2_test_feedback_loop.sh",
@@ -190,6 +192,20 @@ def test_m2_b23_representative_schema_path_exists() -> None:
 def test_m2_b24_persistence_readiness_is_confirmed_or_blocked() -> None:
     guard = REPO_ROOT / "docs" / "testing_b24_persistence_readiness.md"
     text = guard.read_text(encoding="utf-8")
+    with _connect("TEST_DIRECT_DATABASE_URL") as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.bayesian_model_fits')")
+            table = cur.fetchone()[0]
+    assert table == "bayesian_model_fits" or "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in text
+
+
+@pytest.mark.b24_persistence_entry_gate
+def test_m2_b24_persistence_entry_gate_is_canonical_and_blocking() -> None:
+    guard = REPO_ROOT / "docs" / "testing_b24_persistence_entry_gate.md"
+    text = guard.read_text(encoding="utf-8")
+    assert "b24_persistence_entry_gate" in text
+    assert "B2.4-P0 schema-substrate" in text
+    assert "Bayesian runtime dependency" in text and "convergence-diagnostic runtime behavior" in text
     with _connect("TEST_DIRECT_DATABASE_URL") as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT to_regclass('public.bayesian_model_fits')")

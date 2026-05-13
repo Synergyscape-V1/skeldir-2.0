@@ -3,7 +3,7 @@ ENV_FILE ?= .env.local
 HEALTH_RETRIES ?= 30
 COMPOSE = docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 
-.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-broker-topology test-b23-representative test-b24-persistence-readiness test-governance test-e2e test-external-db-smoke down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
+.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-celery-worker-concurrent test-pooler-worker-concurrent test-broker-topology test-parallel-isolation test-b23-representative test-b24-persistence-readiness test-b24-persistence-entry-gate test-governance test-e2e test-external-db-smoke down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
 
 help: ## Show this help message
 	@echo "SKELDIR 2.0 Monorepo - Available Commands"
@@ -64,14 +64,26 @@ test-celery-eager: ## Run Celery eager task-logic classification tests only
 test-celery-worker: ## Run real broker/worker topology classification tests
 	@bash scripts/ci/run_m2_test_feedback_loop.sh celery-worker
 
+test-celery-worker-concurrent: ## Prove real concurrent Celery tenant isolation
+	@bash scripts/ci/run_m2_test_feedback_loop.sh celery-worker-concurrent
+
+test-pooler-worker-concurrent: ## Prove concurrent worker tenant isolation through transaction pooler
+	@bash scripts/ci/run_m2_test_feedback_loop.sh pooler-worker-concurrent
+
 test-broker-topology: ## Prove local broker topology and external broker rejection
 	@bash scripts/ci/run_m2_test_feedback_loop.sh broker-topology
+
+test-parallel-isolation: ## Prove serial/parallel isolation and test namespace authority
+	@bash scripts/ci/run_m2_test_feedback_loop.sh parallel-isolation
 
 test-b23-representative: ## Run representative local B2.3 schema/path proof
 	@bash scripts/ci/run_m2_test_feedback_loop.sh b23-representative
 
 test-b24-persistence-readiness: ## Audit or block B2.4 persistence substrate readiness
 	@bash scripts/ci/run_m2_test_feedback_loop.sh b24-persistence-readiness
+
+test-b24-persistence-entry-gate: ## Run canonical B2.4 persistence entry-gate guard
+	@bash scripts/ci/run_m2_test_feedback_loop.sh b24-persistence-entry-gate
 
 test-governance: ## Run M2 governance/static validator
 	@bash scripts/ci/run_m2_test_feedback_loop.sh governance

@@ -13,19 +13,23 @@ M2 defines the developer feedback loop as layered topology proof, not a single `
 | `make test-fail-visible-tenant-context` | `fail_visible_tenant_context` | local or pure boundary tests |
 | `make test-celery-eager` | `celery_eager` | no worker proof claimed |
 | `make test-celery-worker` | `celery_worker` | local Postgres broker/result backend |
-| `make test-broker-topology` | broker URL and rejection controls | local Postgres only |
+| `make test-celery-worker-concurrent` | `celery_worker_concurrent` | real threaded worker, local Postgres broker/result backend |
+| `make test-pooler-worker-concurrent` | `pooler_worker_concurrent` | real threaded worker with PgBouncer-backed DB sessions |
+| `make test-broker-topology` | broker rejection plus real dispatch | local Postgres only |
+| `make test-parallel-isolation` | `parallel_isolation` | serial-only guard and run namespace authority |
 | `make test-b23-representative` | `b23_representative` | local direct Postgres |
 | `make test-b24-persistence-readiness` | `b24_persistence_readiness` | schema audit/blocker |
+| `make test-b24-persistence-entry-gate` | `b24_persistence_entry_gate` | canonical B2.4 entry gate |
 | `make test-governance` | `governance` | static validator |
 | `make test-external-db-smoke` | `requires_external_db` | opt-in only |
 | `make test` | safe default | M2 validator plus pure unit loop |
 
 ## Marker Taxonomy
 
-The canonical markers are `unit_pure`, `db_invariant`, `integration_db_direct`, `integration_db_pooler`, `governance`, `e2e`, `slow`, `celery_eager`, `celery_worker`, `append_only_sensitive`, `rls_guc_sensitive`, `fail_visible_tenant_context`, `b23_representative`, `b24_persistence_readiness`, and `requires_external_db`.
+The canonical markers are `unit_pure`, `db_invariant`, `integration_db_direct`, `integration_db_pooler`, `governance`, `e2e`, `slow`, `celery_eager`, `celery_worker`, `celery_worker_concurrent`, `pooler_worker_concurrent`, `parallel_isolation`, `append_only_sensitive`, `rls_guc_sensitive`, `fail_visible_tenant_context`, `b23_representative`, `b24_persistence_entry_gate`, `b24_persistence_readiness`, and `requires_external_db`.
 
 Default tests must not infer external infrastructure. External DB smoke requires `SKELDIR_ALLOW_EXTERNAL_DB_TESTS=true` and is never part of `make test`.
 
 ## Latency Budgets
 
-Targets are: pure unit <= 60s, DB invariant <= 3m, direct DB representative <= 5m, pooler representative <= 5m, B2.4 readiness <= 60s, and M2 CI <= 10m. Runtime durations are written to `artifacts/m2/runtime_durations.ndjson`.
+Targets are: pure unit <= 60s, DB invariant <= 3m, direct DB representative <= 5m, pooler representative <= 5m, B2.4 entry gate <= 60s, and M2 CI should remain bounded while physically running worker/pooler concurrency proofs. Runtime durations are written to `artifacts/m2/runtime_durations.ndjson`.
