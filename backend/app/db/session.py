@@ -42,6 +42,16 @@ _MUTATION_DISABLE_TX_ENVELOPE = "SKELDIR_B12_DISABLE_TRANSACTION_ENVELOPE"
 _MUTATION_DISABLE_AFTER_BEGIN_BINDING = "SKELDIR_B12_DISABLE_AFTER_BEGIN_GUC_BINDING"
 
 
+class MissingTenantContextError(RuntimeError):
+    """Raised when domain DB access is attempted without tenant RLS context."""
+
+
+def assert_tenant_context_present(tenant_id: UUID | str | None) -> None:
+    """Fail visibly before tenant-scoped domain logic can consume raw RLS zero rows."""
+    if tenant_id is None or str(tenant_id).strip() == "":
+        raise MissingTenantContextError("tenant context is required for tenant-scoped database access")
+
+
 # Normalize DSN to ensure asyncpg driver is used and map unsupported parameters to connect_args.
 def _build_async_database_url_and_args() -> tuple[str, dict]:
     raw_url = get_database_url()
@@ -173,6 +183,7 @@ async def get_session(
     Tenant/user GUC binding is event-driven and executes after BEGIN on the same
     connection that runs subsequent SQL. This guarantees transaction-local scope.
     """
+    assert_tenant_context_present(tenant_id)
     async with AsyncSessionLocal() as session:
         resolved_user_id = resolve_user_id(user_id)
         session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)
@@ -201,6 +212,7 @@ async def get_b23_session(
     Batch and transition workers use this pool so adjacent app workloads cannot
     consume every application DB connection before B2.3 can fail fast or proceed.
     """
+    assert_tenant_context_present(tenant_id)
     async with B23AsyncSessionLocal() as session:
         resolved_user_id = resolve_user_id(user_id)
         session.info[_SESSION_INFO_TENANT_ID] = str(tenant_id)

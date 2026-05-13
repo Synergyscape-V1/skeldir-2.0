@@ -17,7 +17,7 @@ from app.core.secrets import get_database_url  # noqa: E402
 from tests.helpers.webhook_secret_seed import webhook_secret_insert_params  # noqa: E402
 
 os.environ["TESTING"] = "1"
-os.environ["DATABASE_URL"] = "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+os.environ["DATABASE_URL"] = "postgresql://app_user:app_user@127.0.0.1:5432/skeldir"
 
 
 pytestmark = pytest.mark.asyncio

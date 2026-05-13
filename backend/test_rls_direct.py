@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
-os.environ["DATABASE_URL"] = "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+os.environ["DATABASE_URL"] = "postgresql://app_user:app_user@127.0.0.1:5432/skeldir"
 
 from sqlalchemy import text
 from app.db.session import engine, get_session

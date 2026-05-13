@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+asyncpg://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+    "postgresql+asyncpg://app_user:app_user@127.0.0.1:5432/skeldir",
 )
 
 from app.db.session import engine, set_tenant_guc, set_user_guc  # noqa: E402

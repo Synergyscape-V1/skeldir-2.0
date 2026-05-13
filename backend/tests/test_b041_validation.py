@@ -10,7 +10,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 # Set DATABASE_URL before importing config
-os.environ["DATABASE_URL"] = "postgresql://neondb_owner:npg_ETLZ7UxM3obe@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+os.environ["DATABASE_URL"] = "postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir"
 
 from app.core.config import settings
 from app.core.secrets import get_database_url

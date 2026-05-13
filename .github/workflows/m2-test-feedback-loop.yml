@@ -1,0 +1,140 @@
+name: M2 Test Feedback Loop
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  m2-test-feedback-loop:
+    name: m2-test-feedback-loop
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Generate canonical local env
+        shell: bash
+        run: cp .env.local.example .env.local
+
+      - name: Validate M2 static authority
+        shell: bash
+        run: python scripts/ci/validate_m2_test_feedback_loop.py --local-dev
+
+      - name: Execute M1 bootstrap prerequisite
+        shell: bash
+        run: bash scripts/ci/run_m1_onboarding_bootstrap.sh
+
+      - name: Start M2 transaction-pooler profile
+        shell: bash
+        run: docker compose --env-file .env.local -f docker-compose.local.yml -f docker-compose.test.yml up -d postgres pgbouncer
+
+      - name: Configure M2 direct and pooled URLs
+        shell: bash
+        run: |
+          {
+            echo "TEST_DIRECT_DATABASE_URL=postgresql://skeldir:skeldir_local@127.0.0.1:5432/skeldir_local"
+            echo "TEST_POOLED_DATABASE_URL=postgresql://skeldir:skeldir_local@127.0.0.1:6432/skeldir_local"
+            echo "DATABASE_URL=postgresql://skeldir:skeldir_local@127.0.0.1:5432/skeldir_local"
+            echo "MIGRATION_DATABASE_URL=postgresql://skeldir:skeldir_local@127.0.0.1:5432/skeldir_local"
+            echo "CELERY_BROKER_URL=sqla+postgresql://skeldir:skeldir_local@127.0.0.1:5432/skeldir_local"
+            echo "CELERY_RESULT_BACKEND=db+postgresql://skeldir:skeldir_local@127.0.0.1:5432/skeldir_local"
+            echo "ENVIRONMENT=ci"
+            echo "TESTING=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Build test template DB measurement
+        shell: bash
+        run: bash scripts/testing/create_test_template_db.sh
+        env:
+          ADMIN_DATABASE_URL: postgresql://skeldir:skeldir_local@127.0.0.1:5432/postgres
+          TEMPLATE_OWNER: skeldir
+
+      - name: Run M2 validator
+        shell: bash
+        run: make test-governance
+
+      - name: Run pure unit loop
+        shell: bash
+        run: make test-unit-pure
+
+      - name: Run direct DB invariant loop
+        shell: bash
+        run: make test-db-invariant
+
+      - name: Run direct Postgres integration loop
+        shell: bash
+        run: make test-db-direct
+
+      - name: Run transaction-pooler loop
+        shell: bash
+        run: make test-db-pooler
+
+      - name: Run fail-visible tenant-context proof
+        shell: bash
+        run: make test-fail-visible-tenant-context
+
+      - name: Run broker topology proof
+        shell: bash
+        run: make test-broker-topology
+
+      - name: Run B2.3 representative proof
+        shell: bash
+        run: make test-b23-representative
+
+      - name: Run B2.4 persistence-readiness proof
+        shell: bash
+        run: make test-b24-persistence-readiness
+
+      - name: Run append-only-safe isolation proof
+        shell: bash
+        run: bash scripts/ci/run_m2_test_feedback_loop.sh append-only-isolation
+
+      - name: Run skeleton quarantine validation
+        shell: bash
+        run: bash scripts/ci/run_m2_test_feedback_loop.sh skeleton-quarantine
+
+      - name: Run Celery mode classification proof
+        shell: bash
+        run: bash scripts/ci/run_m2_test_feedback_loop.sh celery-mode-classification
+
+      - name: Run external DB rejection negative control
+        shell: bash
+        run: python scripts/testing/assert_topology_urls.py --expect-rejection
+
+      - name: Upload M2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m2-test-feedback-loop-evidence
+          path: artifacts/m2/
+          if-no-files-found: ignore
+
+      - name: Print compose logs on failure
+        if: failure()
+        shell: bash
+        run: docker compose --env-file .env.local -f docker-compose.local.yml -f docker-compose.test.yml logs --no-color || true
+
+      - name: Tear down topology
+        if: always()
+        shell: bash
+        run: docker compose --env-file .env.local -f docker-compose.local.yml -f docker-compose.test.yml down --remove-orphans -v || true

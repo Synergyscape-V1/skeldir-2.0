@@ -16,7 +16,7 @@ from httpx import AsyncClient, ASGITransport
 os.environ["TESTING"] = "1"
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql://app_user:Sk3ld1r_App_Pr0d_2025!@ep-lucky-base-aedv3gwo-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+    "postgresql://app_user:app_user@127.0.0.1:5432/skeldir",
 )
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))

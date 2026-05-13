@@ -57,13 +57,16 @@ EXCLUDED_PREFIXES = [
 ALLOWED_DOCKER_PATHS = {
     Path(".github/workflows/ci.yml"),
     Path(".github/workflows/m1-local-dev-authority.yml"),
+    Path(".github/workflows/m2-test-feedback-loop.yml"),
     Path(".github/workflows/b07-p4-e2e-operational-readiness.yml"),
     Path("backend/Dockerfile"),
     Path("backend/mock_platform/Dockerfile"),
+    Path("backend/tests/test_m2_test_feedback_loop.py"),
     Path("Makefile"),
     Path("scripts/ci/run_m1_onboarding_bootstrap.sh"),
     Path("scripts/ci/validate_m0_scope_lock.py"),
     Path("scripts/ci/validate_m1_local_dev_authority.py"),
+    Path("scripts/ci/validate_m2_test_feedback_loop.py"),
     Path("scripts/phase8/run_phase8_closure_pack.py"),
     Path("scripts/smoke/m1_runtime_smoke.py"),
 }
@@ -88,7 +91,7 @@ def is_excluded(path: Path) -> bool:
     for prefix in EXCLUDED_PREFIXES:
         if len(parts) >= len(prefix) and parts[: len(prefix)] == prefix:
             return True
-    if "__pycache__" in parts:
+    if "__pycache__" in parts or "node_modules" in parts:
         return True
     return False
 

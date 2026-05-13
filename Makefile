@@ -3,7 +3,7 @@ ENV_FILE ?= .env.local
 HEALTH_RETRIES ?= 30
 COMPOSE = docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 
-.PHONY: help dev migrate api worker health smoke test down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
+.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-broker-topology test-b23-representative test-b24-persistence-readiness test-governance test-e2e test-external-db-smoke down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
 
 help: ## Show this help message
 	@echo "SKELDIR 2.0 Monorepo - Available Commands"
@@ -40,8 +40,47 @@ health: $(ENV_FILE) ## Check canonical API readiness endpoint from inside the AP
 smoke: $(ENV_FILE) ## Run the non-vacuous M1 runtime smoke proof inside the canonical topology
 	@$(COMPOSE) run --rm smoke
 
-test: $(ENV_FILE) ## Run M0/M1 maintainability validators only; full test-loop authority is deferred to M2
-	@$(COMPOSE) run --rm validator
+test: $(ENV_FILE) ## Run safe default M2 feedback loop subset; no external DB/broker
+	@bash scripts/ci/run_m2_test_feedback_loop.sh default
+
+test-unit-pure: ## Run pure Python tests with no DB, broker, or network dependency
+	@bash scripts/ci/run_m2_test_feedback_loop.sh unit-pure
+
+test-db-invariant: ## Run real local Postgres invariant tests for RLS/GUC/triggers/constraints
+	@bash scripts/ci/run_m2_test_feedback_loop.sh db-invariant
+
+test-db-direct: ## Run local direct Postgres integration profile
+	@bash scripts/ci/run_m2_test_feedback_loop.sh db-direct
+
+test-db-pooler: ## Run local transaction-pooler profile
+	@bash scripts/ci/run_m2_test_feedback_loop.sh db-pooler
+
+test-fail-visible-tenant-context: ## Prove missing tenant context fails visibly
+	@bash scripts/ci/run_m2_test_feedback_loop.sh fail-visible-tenant-context
+
+test-celery-eager: ## Run Celery eager task-logic classification tests only
+	@bash scripts/ci/run_m2_test_feedback_loop.sh celery-eager
+
+test-celery-worker: ## Run real broker/worker topology classification tests
+	@bash scripts/ci/run_m2_test_feedback_loop.sh celery-worker
+
+test-broker-topology: ## Prove local broker topology and external broker rejection
+	@bash scripts/ci/run_m2_test_feedback_loop.sh broker-topology
+
+test-b23-representative: ## Run representative local B2.3 schema/path proof
+	@bash scripts/ci/run_m2_test_feedback_loop.sh b23-representative
+
+test-b24-persistence-readiness: ## Audit or block B2.4 persistence substrate readiness
+	@bash scripts/ci/run_m2_test_feedback_loop.sh b24-persistence-readiness
+
+test-governance: ## Run M2 governance/static validator
+	@bash scripts/ci/run_m2_test_feedback_loop.sh governance
+
+test-e2e: ## Run explicitly marked e2e tests
+	@bash scripts/ci/run_m2_test_feedback_loop.sh e2e
+
+test-external-db-smoke: ## Opt-in external DB smoke only; requires SKELDIR_ALLOW_EXTERNAL_DB_TESTS=true
+	@bash scripts/ci/run_m2_test_feedback_loop.sh external-db-smoke
 
 down: $(ENV_FILE) ## Stop the canonical local topology
 	@$(COMPOSE) down --remove-orphans

@@ -19,6 +19,8 @@ Related Documents:
 import pytest
 from unittest.mock import patch, MagicMock
 
+pytestmark = pytest.mark.unit_pure
+
 # Adjust import based on actual module structure
 import sys
 from pathlib import Path
@@ -321,7 +323,6 @@ class TestCIIntegration:
 # Pytest configuration
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-
 
 
 
