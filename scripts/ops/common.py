@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg2
 import psycopg2.extras
+
+BACKEND_DIR = Path(__file__).resolve().parents[2] / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 
 FIXTURE_DIR = Path(".tmp/m4_ops")
@@ -33,16 +38,11 @@ def _normalize_database_url(raw: str) -> str:
 
 
 def database_url() -> str:
-    raw = (
-        os.getenv("OPS_DATABASE_URL")
-        or os.getenv("MIGRATION_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    ).strip()
+    from app.core.secrets import get_migration_database_url
+
+    raw = (os.getenv("OPS_DATABASE_URL") or get_migration_database_url() or "").strip()
     if not raw:
-        raise SystemExit(
-            "OPS_DATABASE_URL, MIGRATION_DATABASE_URL, or DATABASE_URL is required"
-        )
+        raise SystemExit("OPS_DATABASE_URL or sanctioned migration database URL is required")
     parsed = urlsplit(_normalize_database_url(raw))
     query = "&".join(
         part

@@ -1,3 +1,24 @@
+- id: validate-m4-ops-runbooks
+  path: scripts/ci/validate_m4_ops_runbooks.py
+  status: required
+  owning_phase: M4
+  protected_invariant: M4 operational runbooks, command metadata, fixture references, queue/task/table references, and replay-safety doctrine remain aligned with source and runtime surfaces.
+  command: python scripts/ci/validate_m4_ops_runbooks.py
+  workflow_references:
+  - .github/workflows/m4-operational-runbooks.yml
+  local_reproduction_command: python scripts/ci/validate_m4_ops_runbooks.py
+  expected_failure_meaning: M4 ops documentation or diagnostic command authority drifted from source/runtime surfaces, or a replay/RLS/DLQ/B2.3 safety proof is missing.
+  first_diagnostic_command: python scripts/ci/validate_m4_ops_runbooks.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: operational-runbooks
+  ci_visibility: standalone_workflow
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: enforce-b17-p0-explanation-surface-lock
   path: scripts/ci/enforce_b17_p0_explanation_surface_lock.py
   status: required
