@@ -1,3 +1,18 @@
+- gate_id: validate-m4-ops-runbooks
+  workflow: .github/workflows/m4-operational-runbooks.yml
+  job: validate-ops-runbooks
+  script: scripts/ci/validate_m4_ops_runbooks.py
+  owning_phase: M4
+  protected_invariant: M4 operational runbooks, command metadata, fixture references, queue/task/table references, and replay-safety doctrine remain aligned with source and runtime surfaces.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: M4 introduces a new operational-runbook authority surface; no earlier M0-M3 validator checks command metadata, fixture-backed ops probes, or webhook replay safety doctrine.
+  negative_control_preserved_by: python scripts/ci/validate_m4_ops_runbooks.py
+  local_reproduction_command: python scripts/ci/validate_m4_ops_runbooks.py
+  risk_if_removed: Loss of drift enforcement for successor-safe operational diagnostics and replay safety.
+  decision: keep_required
 - gate_id: enforce-b17-p0-explanation-surface-lock
   workflow: .github/workflows/ci.yml
   job: not_executed

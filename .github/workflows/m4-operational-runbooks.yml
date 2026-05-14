@@ -1,0 +1,40 @@
+name: M4 Operational Runbooks
+
+on:
+  pull_request:
+    paths:
+      - "docs/ops/**"
+      - "docs/maintainability/m4_completion_record.md"
+      - "M4 Remediation Evidence Pack.md"
+      - "scripts/ops/**"
+      - "scripts/ci/validate_m4_ops_runbooks.py"
+      - "Makefile"
+      - ".github/workflows/m4-operational-runbooks.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/ops/**"
+      - "docs/maintainability/m4_completion_record.md"
+      - "M4 Remediation Evidence Pack.md"
+      - "scripts/ops/**"
+      - "scripts/ci/validate_m4_ops_runbooks.py"
+      - "Makefile"
+      - ".github/workflows/m4-operational-runbooks.yml"
+  workflow_dispatch:
+
+jobs:
+  validate-ops-runbooks:
+    name: validate-ops-runbooks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate M4 ops runbooks
+        run: make validate-ops-runbooks
