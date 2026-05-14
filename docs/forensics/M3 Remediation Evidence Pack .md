@@ -1,6 +1,6 @@
 # M3 Remediation Evidence Pack
 
-Final verdict: `M3_PENDING_MAIN_MERGE`
+Final verdict: `M3_PASS`
 
 ## Initial Findings
 
@@ -8,6 +8,10 @@ Final verdict: `M3_PENDING_MAIN_MERGE`
 - `scripts/ci` had no executable registry tying gates to protected invariants, local reproduction commands, or dispositions.
 - B2.4 had no isolated insertion lane; adding a future convergence gate would have encouraged monolith expansion.
 - Branch protection required contexts were numerous and coupled to existing job names, so required job names were preserved.
+
+## Final Main Commit SHA
+
+`7d93812365083a625468ed72d495d9e799267ee8`
 
 ## Files Changed
 
@@ -133,7 +137,14 @@ M3 did not edit `.github/workflows/m0-maintainability-scope-lock.yml`, `.github/
 
 ## CI Workflow URLs
 
-Pending post-merge main validation.
+- PR #463: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/463`
+- Main CI: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25871682483`
+- M0 Maintainability Scope Lock: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25871682355`
+- M1 Local Development Authority: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25871682432`
+- M2 Test Feedback Loop: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25871682413`
+- M3 CI Governance: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25871682418`
+- B2.4 Gate Dry Run: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25871682496`
+- Current-main run sweep for `7d93812365083a625468ed72d495d9e799267ee8`: 25 workflow runs, 25 success, 0 pending, 0 failed.
 
 ## No-Adjudication-Weakening Statement
 
@@ -147,18 +158,21 @@ No B2.4 Bayesian implementation, statistical runtime, provider-boundary behavior
 
 | Gate | Status |
 | --- | --- |
-| CI topology inventory | PASS locally; pending main CI |
-| Enforcer registry completeness | PASS locally; pending main CI |
-| Executable registry | PASS locally; pending main CI |
-| Failure visibility | PASS locally; pending main CI |
-| Efficient topology-aware execution | PASS locally; pending main CI |
-| Gate classification/disposition | PASS locally; pending main CI |
-| Active complexity reduction | PASS locally; pending main CI |
-| DB setup rationalization | PASS locally; pending main CI |
-| B2.4 insertion safety | PASS locally; pending main CI |
-| Branch protection context consistency | PASS locally; pending main CI |
-| Primary branch green | PENDING |
+| CI topology inventory | PASS |
+| Enforcer registry completeness | PASS |
+| Executable registry | PASS |
+| Failure visibility | PASS |
+| Efficient topology-aware execution | PASS |
+| Gate classification/disposition | PASS |
+| Active complexity reduction | PASS |
+| DB setup rationalization | PASS |
+| B2.4 insertion safety | PASS |
+| Branch protection context consistency | PASS |
+| M0 preservation | PASS |
+| M1 preservation | PASS |
+| M2 preservation | PASS |
+| Primary branch green | PASS |
 
 ## Final Verdict
 
-`M3_PENDING_MAIN_MERGE`
+`M3_PASS`
