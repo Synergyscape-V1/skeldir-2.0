@@ -137,62 +137,70 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.2-P2 runtime proof authority boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b22_p2_ci" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner"
-
-      - name: Run migrations for B2.2-P2 authoritative runtime proofs
+      - name: Set up B2.2-P2 runtime proof authority CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b22_p2_ci"
+          revoke-alembic-version: "false"
+      - name: Run contract governance enforcer cohort
         env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p2_ci
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p2_ci
+          CONTRACT_GOVERNANCE_COHORT_TOKEN_MANIFEST: |
+            python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
+            python scripts/ci/enforce_b21_p0_authority_convergence.py
+            python scripts/ci/enforce_b21_p1_semantic_replay_lock.py
+            python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
+            python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
+            python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
+            python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
+            python scripts/ci/enforce_b21_p6_full_chain_closure.py
+            python scripts/ci/enforce_b17_p4_strategy_closure.py
+            python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
+            python scripts/ci/enforce_b17_p6_adjudication_plane.py
+            python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
+            python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
+            python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
+            python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
+            python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
+            python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
+            python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
+            python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
+            python scripts/ci/enforce_b23_pre_p1_spec_gate.py
+            python scripts/ci/enforce_b23_p1_schema_authority_lock.py
+            python scripts/ci/verify_b23_p1_migration_reversibility.py
+            python scripts/ci/enforce_b23_p2_match_engine_kernel.py
+            python scripts/ci/enforce_b23_p3_verdict_persistence.py
+            python scripts/ci/enforce_b23_p4_queue_performance.py
+            Prepare B2.1-P0 runtime closeout authority boundary
+            python scripts/database/prepare_migration_authority_boundary.py
+            REVOKE ALL ON TABLE public.alembic_version FROM app_user
+            Enforce B2.1-P1 semantic replay lock
+            Enforce B2.1-P2 strategy kernel lock
+            Enforce B2.1-P3 persistence read-surface lock
+            Enforce B2.1-P4 queue isolation and performance semantics lock
+            Enforce B2.1-P5 non-vacuous proof harness adjudication lock
+            Prepare B2.2-P2 runtime proof authority boundary
+            Run migrations for B2.2-P2 authoritative runtime proofs
+            --database-name "skeldir_b22_p2_ci"
+            Enforce B2.2-P5 performance semantics + negative-control lock
+            Enforce B2.3-P0 semantic authority freeze
         run: |
-          alembic upgrade head
-
-      - name: Enforce B1.7-P1 explanation authority lock
-        run: |
-          python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
-
-      - name: Enforce B2.1-P0 authority convergence lock
-        run: |
-          python scripts/ci/enforce_b21_p0_authority_convergence.py
+          python scripts/ci/run_ci_governance_cohort.py --cohort contract-governance --summary-path artifacts/contract_governance_cohort_summary.json
 
       - name: Run B2.1-P0 authority convergence negative controls
         run: |
           pytest backend/tests/test_b21_p0_authority_convergence_enforcer.py -q
 
-      - name: Enforce B2.1-P1 semantic replay lock
-        run: |
-          python scripts/ci/enforce_b21_p1_semantic_replay_lock.py
-
       - name: Run B2.1-P1 semantic replay lock negative controls
         run: |
           pytest backend/tests/test_b21_p1_semantic_replay_lock_enforcer.py -q
-
-      - name: Enforce B2.1-P2 strategy kernel lock
-        run: |
-          python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
 
       - name: Run B2.1-P2 strategy kernel lock negative controls
         run: |
           pytest backend/tests/test_b21_p2_strategy_kernel_lock_enforcer.py -q
 
-      - name: Enforce B2.1-P3 persistence read-surface lock
-        run: |
-          python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
-
       - name: Run B2.1-P3 persistence read-surface negative controls
         run: |
           pytest backend/tests/test_b21_p3_persistence_read_surface_lock_enforcer.py -q
-
-      - name: Enforce B2.1-P4 queue isolation and performance semantics lock
-        run: |
-          python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
 
       - name: Run B2.1-P4 queue isolation negative controls
         run: |
@@ -202,17 +210,9 @@ jobs:
         run: |
           pytest backend/tests/test_b21_p4_benchmark_adjudication_enforcer.py -q
 
-      - name: Enforce B2.1-P5 non-vacuous proof harness adjudication lock
-        run: |
-          python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
-
       - name: Run B2.1-P5 non-vacuous adjudication negative controls
         run: |
           pytest backend/tests/test_b21_p5_nonvacuous_adjudication_enforcer.py -q
-
-      - name: Enforce B2.1-P6 full-chain closure and downstream-readiness lock
-        run: |
-          python scripts/ci/enforce_b21_p6_full_chain_closure.py
 
       - name: Run B2.1-P6 closure negative controls
         run: |
@@ -222,42 +222,22 @@ jobs:
         run: |
           pytest backend/tests/test_b17_p0_explanation_surface_lock_enforcer.py -q
 
-      - name: Enforce B1.7-P4 strategy closure lock
-        run: |
-          python scripts/ci/enforce_b17_p4_strategy_closure.py
-
       - name: Run B1.7-P4 negative controls
         run: |
           pytest backend/tests/test_b17_p4_strategy_closure_enforcer.py -q
 
-      - name: Enforce B1.7-P5 merge-blocking adjudication lock
-        run: |
-          python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
-
       - name: Run B1.7-P5 negative controls
         run: |
           pytest backend/tests/test_b17_p5_merge_blocking_adjudication_enforcer.py -q
-
-      - name: Enforce B1.7-P6 adjudication plane lock
-        run: |
-          python scripts/ci/enforce_b17_p6_adjudication_plane.py
 
       - name: Run B1.7-P6 adjudication plane negative controls
         run: |
           pytest backend/tests/test_b17_p6_adjudication_plane_enforcer.py -q
           pytest backend/tests/test_b17_p6_benchmark_adjudication_enforcer.py -q
 
-      - name: Enforce B2.2-P0 webhook declared surface lock
-        run: |
-          python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
-
       - name: Run B2.2-P0 webhook declared surface negative controls
         run: |
           pytest backend/tests/test_b22_p0_webhook_surface_lock_enforcer.py -q
-
-      - name: Enforce B2.2-P1 authenticity semantics lock
-        run: |
-          python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
 
       - name: Run B2.2-P1 authenticity semantics negative controls
         run: |
@@ -268,10 +248,6 @@ jobs:
           pytest backend/tests/test_b22_p1_authenticity_semantics.py -q
           pytest backend/tests/test_b12_p8_error_contract_normalization.py::test_eg83_paypal_hmac_failure_variants_share_non_leaky_problem_contract backend/tests/test_b12_p8_error_contract_normalization.py::test_eg8cf_paypal_constant_work_unknown_key_and_known_bad_signature_both_invoke_compute backend/tests/test_b12_p8_error_contract_normalization.py::test_eg8route_stripe_alias_and_canonical_auth_failures_are_equivalent -q
 
-      - name: Enforce B2.2-P2 post-auth privacy boundary lock
-        run: |
-          python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
-
       - name: Run B2.2-P2 post-auth privacy boundary negative controls
         run: |
           pytest backend/tests/test_b22_p2_post_auth_privacy_boundary_enforcer.py -q
@@ -279,10 +255,6 @@ jobs:
       - name: Run B2.2-P2 post-auth privacy boundary runtime proofs
         run: |
           pytest backend/tests/test_b22_p2_post_auth_privacy_boundary.py -q
-
-      - name: Enforce B2.2-P3 canonical identity envelope lock
-        run: |
-          python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
 
       - name: Run B2.2-P3 canonical identity envelope negative controls
         run: |
@@ -292,10 +264,6 @@ jobs:
         run: |
           pytest backend/tests/test_b22_p3_canonical_identity_envelope.py -q
 
-      - name: Enforce B2.2-P4 idempotent ACK + orchestration lock
-        run: |
-          python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
-
       - name: Run B2.2-P4 idempotent ACK + orchestration negative controls
         run: |
           pytest backend/tests/test_b22_p4_idempotent_ack_orchestration_enforcer.py -q
@@ -303,10 +271,6 @@ jobs:
       - name: Run B2.2-P4 idempotent ACK + orchestration runtime proofs
         run: |
           pytest backend/tests/test_b22_p4_idempotent_ack_orchestration.py -q
-
-      - name: Enforce B2.2-P5 performance semantics + negative-control lock
-        run: |
-          python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
 
       - name: Run B2.2-P5 structural negative controls
         run: |
@@ -320,17 +284,9 @@ jobs:
         run: |
           pytest backend/tests/test_b22_p5_webhook_benchmark_adjudication_enforcer.py -q
 
-      - name: Enforce B2.3-P0 typed-boundary source alignment
-        run: |
-          python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
-
       - name: Run B2.3-P0 typed-boundary source alignment negative controls
         run: |
           pytest backend/tests/test_b23_p0_typed_boundary_source_alignment_enforcer.py -q
-
-      - name: Enforce B2.3-P0 semantic authority freeze
-        run: |
-          python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
 
       - name: Run B2.3-P0 semantic authority freeze negative controls
         run: |
@@ -340,17 +296,9 @@ jobs:
         run: |
           pytest backend/tests/test_b23_p0_semantic_authority.py -q
 
-      - name: Enforce B2.3 Pre-P1 specification closure
-        run: |
-          python scripts/ci/enforce_b23_pre_p1_spec_gate.py
-
       - name: Run B2.3 Pre-P1 specification closure negative controls
         run: |
           pytest backend/tests/test_b23_pre_p1_spec_gate_enforcer.py -q
-
-      - name: Enforce B2.3-P1 schema authority lock
-        run: |
-          python scripts/ci/enforce_b23_p1_schema_authority_lock.py
 
       - name: Run B2.3-P1 schema authority negative controls
         run: |
@@ -365,10 +313,6 @@ jobs:
           B23_P1_MIGRATION_DSN: ${{ env.MIGRATION_DATABASE_URL }}
         run: |
           python scripts/ci/verify_b23_p1_migration_reversibility.py
-
-      - name: Enforce B2.3-P2 match-engine kernel lock
-        run: |
-          python scripts/ci/enforce_b23_p2_match_engine_kernel.py
 
       - name: Run B2.3-P2 match-engine kernel negative controls
         run: |
@@ -426,10 +370,6 @@ jobs:
               raise SystemExit(f"B2.3-P2 runtime proofs reported skipped tests: {skipped}")
           print("B2.3-P2 runtime proofs executed with zero skips.")
           PY
-
-      - name: Enforce B2.3-P3 verdict persistence authority
-        run: |
-          python scripts/ci/enforce_b23_p3_verdict_persistence.py
 
       - name: Run B2.3-P3 verdict persistence negative controls
         run: |
@@ -495,10 +435,6 @@ jobs:
               raise SystemExit(f"B2.3-P3 runtime proofs reported skipped tests: {skipped}")
           print("B2.3-P3 runtime proofs executed with zero skips.")
           PY
-
-      - name: Enforce B2.3-P4 queue performance semantics
-        run: |
-          python scripts/ci/enforce_b23_p4_queue_performance.py
 
       - name: Run B2.3-P4 queue performance negative controls
         run: |
@@ -587,23 +523,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.3-P5 runtime proof database
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b23_p5_ci" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner"
-
-      - name: Run migrations for B2.3-P5 runtime proofs
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b23_p5_ci
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b23_p5_ci
-        run: |
-          alembic upgrade head
-
+      - name: Set up B2.3-P5 runtime proof CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b23_p5_ci"
+          revoke-alembic-version: "false"
       - name: Execute composite B2.3 proof harness
         run: |
           mkdir -p artifacts
@@ -680,31 +604,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P0 runtime closeout authority boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b21_p0" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p0
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p0
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b21_p0 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.1-P0 runtime closeout authority CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b21_p0"
+          revoke-alembic-version: "true"
       - name: Run B2.1-P0 closeout runtime authority proofs
         run: |
           pytest backend/tests/integration/test_b21_p0_runtime_authority_closeout.py -q
@@ -753,31 +657,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P1 runtime semantic replay boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b21_p1" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p1
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p1
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b21_p1 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.1-P1 runtime semantic replay CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b21_p1"
+          revoke-alembic-version: "true"
       - name: Run B2.1-P1 runtime semantic replay proofs
         run: |
           pytest backend/tests/integration/test_b21_p1_semantic_replay_runtime.py -q
@@ -826,31 +710,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P2 strategy and session boundary proof DB
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b21_p2" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p2
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p2
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b21_p2 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.1-P2 strategy and session boundary proof CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b21_p2"
+          revoke-alembic-version: "true"
       - name: Run B2.1-P2 strategy runtime proofs
         run: |
           pytest backend/tests/test_b21_p2_strategy_kernel.py -q
@@ -899,31 +763,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P3 runtime persisted projection boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b21_p3" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p3
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p3
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b21_p3 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.1-P3 runtime persisted projection CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b21_p3"
+          revoke-alembic-version: "true"
       - name: Run B2.1-P3 persisted projection runtime proofs
         run: |
           pytest backend/tests/integration/test_b21_p3_persistence_read_surface_runtime.py -q
@@ -974,31 +818,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P4 runtime queue-isolation benchmark boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b21_p4" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p4
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p4
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b21_p4 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.1-P4 runtime queue-isolation benchmark CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b21_p4"
+          revoke-alembic-version: "true"
       - name: Run B2.1-P4 benchmark harness integrity
         run: |
           mkdir -p artifacts/b21_p4_benchmark
@@ -1091,31 +915,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.2-P5 benchmark authority boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b22_p5_benchmark" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p5_benchmark
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p5_benchmark
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b22_p5_benchmark -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.2-P5 benchmark authority CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b22_p5_benchmark"
+          revoke-alembic-version: "true"
       - name: Run B2.2-P5 benchmark harness integrity
         run: |
           mkdir -p artifacts/b22_p5_benchmark
@@ -1203,31 +1007,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.2-P6 runtime closure boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b22_p6" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p6
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b22_p6
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b22_p6 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.2-P6 runtime closure CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b22_p6"
+          revoke-alembic-version: "true"
       - name: Enforce B2.2-P6 merge-blocking closure and downstream-readiness lock
         run: |
           python scripts/ci/enforce_b22_p6_merge_blocking_closure.py
@@ -1288,31 +1072,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P5 proof adjudication DB
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b21_p5" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p5
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p5
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b21_p5 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.1-P5 proof adjudication CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b21_p5"
+          revoke-alembic-version: "true"
       - name: Run B2.1-P5 replay, boundary, and precision runtime proofs
         run: |
           pytest backend/tests/integration/test_b21_p1_semantic_replay_runtime.py::test_b21_p1_runtime_replay_identity_freezes_late_arriving_historical_events -q
@@ -1379,31 +1143,11 @@ jobs:
           pip install -r backend/requirements.txt
           pip install -r backend/requirements-dev.txt
 
-      - name: Prepare B2.1-P6 runtime closure boundary
-        run: |
-          python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn "postgresql://postgres:postgres@127.0.0.1:5432/postgres" \
-            --database-name "skeldir_b21_p6" \
-            --runtime-user "app_user" \
-            --runtime-password "app_user" \
-            --migration-user "migration_owner" \
-            --migration-password "migration_owner" \
-            --app-rw-role "app_rw" \
-            --app-ro-role "app_ro"
-
-      - name: Apply migrations using formal migration authority
-        env:
-          DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p6
-          MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b21_p6
-        run: |
-          alembic upgrade head
-
-      - name: Enforce migration metadata least privilege boundary
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d skeldir_b21_p6 -c "REVOKE ALL ON TABLE public.alembic_version FROM app_user;"
-
+      - name: Set up B2.1-P6 runtime closure CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b21_p6"
+          revoke-alembic-version: "true"
       - name: Run B2.1-P6 composed runtime chain proofs
         run: |
           pytest backend/tests/integration/test_b21_p6_end_to_end_runtime.py -q

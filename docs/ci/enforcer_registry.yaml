@@ -1,0 +1,2133 @@
+- id: enforce-b17-p0-explanation-surface-lock
+  path: scripts/ci/enforce_b17_p0_explanation_surface_lock.py
+  status: required
+  owning_phase: B17-P0
+  protected_invariant: Utility support script enforce_b17_p0_explanation_surface_lock; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
+  expected_failure_meaning: enforce_b17_p0_explanation_surface_lock detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b17_p0_explanation_surface_lock.py --help || python scripts/ci/enforce_b17_p0_explanation_surface_lock.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p0-authority-convergence
+  path: scripts/ci/enforce_b21_p0_authority_convergence.py
+  status: required
+  owning_phase: B21-P0
+  protected_invariant: Utility support script enforce_b21_p0_authority_convergence; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b21_p0_authority_convergence.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p0_authority_convergence.py
+  expected_failure_meaning: enforce_b21_p0_authority_convergence detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p0_authority_convergence.py --help || python scripts/ci/enforce_b21_p0_authority_convergence.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p1-semantic-replay-lock
+  path: scripts/ci/enforce_b21_p1_semantic_replay_lock.py
+  status: required
+  owning_phase: B21-P1
+  protected_invariant: Utility support script enforce_b21_p1_semantic_replay_lock; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b21_p1_semantic_replay_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p1_semantic_replay_lock.py
+  expected_failure_meaning: enforce_b21_p1_semantic_replay_lock detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p1_semantic_replay_lock.py --help || python scripts/ci/enforce_b21_p1_semantic_replay_lock.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p2-strategy-kernel-lock
+  path: scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
+  status: required
+  owning_phase: B21-P2
+  protected_invariant: Utility support script enforce_b21_p2_strategy_kernel_lock; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
+  expected_failure_meaning: enforce_b21_p2_strategy_kernel_lock detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py --help || python scripts/ci/enforce_b21_p2_strategy_kernel_lock.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p3-persistence-read-surface-lock
+  path: scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
+  status: required
+  owning_phase: B21-P3
+  protected_invariant: Utility support script enforce_b21_p3_persistence_read_surface_lock; not a default adjudication gate
+    unless called by a registered workflow.
+  command: python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
+  expected_failure_meaning: enforce_b21_p3_persistence_read_surface_lock detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py --help || python scripts/ci/enforce_b21_p3_persistence_read_surface_lock.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p4-queue-isolation-semantics-lock
+  path: scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
+  status: required
+  owning_phase: B21-P4
+  protected_invariant: Utility support script enforce_b21_p4_queue_isolation_semantics_lock; not a default adjudication gate
+    unless called by a registered workflow.
+  command: python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
+  expected_failure_meaning: enforce_b21_p4_queue_isolation_semantics_lock detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py --help || python scripts/ci/enforce_b21_p4_queue_isolation_semantics_lock.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p5-nonvacuous-adjudication
+  path: scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
+  status: required
+  owning_phase: B21-P5
+  protected_invariant: B21-P5 invariant enforced by enforce_b21_p5_nonvacuous_adjudication; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
+  expected_failure_meaning: enforce_b21_p5_nonvacuous_adjudication detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py --help || python scripts/ci/enforce_b21_p5_nonvacuous_adjudication.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p6-full-chain-closure
+  path: scripts/ci/enforce_b21_p6_full_chain_closure.py
+  status: required
+  owning_phase: B21-P6
+  protected_invariant: B21-P6 invariant enforced by enforce_b21_p6_full_chain_closure; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b21_p6_full_chain_closure.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p6_full_chain_closure.py
+  expected_failure_meaning: enforce_b21_p6_full_chain_closure detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p6_full_chain_closure.py --help || python scripts/ci/enforce_b21_p6_full_chain_closure.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b17-p4-strategy-closure
+  path: scripts/ci/enforce_b17_p4_strategy_closure.py
+  status: required
+  owning_phase: B17-P4
+  protected_invariant: Utility support script enforce_b17_p4_strategy_closure; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/enforce_b17_p4_strategy_closure.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b17_p4_strategy_closure.py
+  expected_failure_meaning: enforce_b17_p4_strategy_closure detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b17_p4_strategy_closure.py --help || python scripts/ci/enforce_b17_p4_strategy_closure.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b17-p5-merge-blocking-adjudication
+  path: scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
+  status: required
+  owning_phase: B17-P5
+  protected_invariant: Utility support script enforce_b17_p5_merge_blocking_adjudication; not a default adjudication gate
+    unless called by a registered workflow.
+  command: python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
+  expected_failure_meaning: enforce_b17_p5_merge_blocking_adjudication detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py --help || python scripts/ci/enforce_b17_p5_merge_blocking_adjudication.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b17-p6-adjudication-plane
+  path: scripts/ci/enforce_b17_p6_adjudication_plane.py
+  status: required
+  owning_phase: B17-P6
+  protected_invariant: B17-P6 invariant enforced by enforce_b17_p6_adjudication_plane; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b17_p6_adjudication_plane.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b17_p6_adjudication_plane.py
+  expected_failure_meaning: enforce_b17_p6_adjudication_plane detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b17_p6_adjudication_plane.py --help || python scripts/ci/enforce_b17_p6_adjudication_plane.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p0-webhook-surface-lock
+  path: scripts/ci/enforce_b22_p0_webhook_surface_lock.py
+  status: required
+  owning_phase: B22-P0
+  protected_invariant: Utility support script enforce_b22_p0_webhook_surface_lock; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
+  expected_failure_meaning: enforce_b22_p0_webhook_surface_lock detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p0_webhook_surface_lock.py --help || python scripts/ci/enforce_b22_p0_webhook_surface_lock.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p1-authenticity-semantics-lock
+  path: scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
+  status: required
+  owning_phase: B22-P1
+  protected_invariant: Utility support script enforce_b22_p1_authenticity_semantics_lock; not a default adjudication gate
+    unless called by a registered workflow.
+  command: python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
+  expected_failure_meaning: enforce_b22_p1_authenticity_semantics_lock detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py --help || python scripts/ci/enforce_b22_p1_authenticity_semantics_lock.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p2-post-auth-privacy-boundary
+  path: scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
+  status: required
+  owning_phase: B22-P2
+  protected_invariant: Utility support script enforce_b22_p2_post_auth_privacy_boundary; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
+  expected_failure_meaning: enforce_b22_p2_post_auth_privacy_boundary detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py --help || python scripts/ci/enforce_b22_p2_post_auth_privacy_boundary.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p3-canonical-commerce-identity-envelope
+  path: scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
+  status: required
+  owning_phase: B22-P3
+  protected_invariant: Utility support script enforce_b22_p3_canonical_commerce_identity_envelope; not a default adjudication
+    gate unless called by a registered workflow.
+  command: python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
+  expected_failure_meaning: enforce_b22_p3_canonical_commerce_identity_envelope detected drift in its protected invariant;
+    inspect the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py --help || python scripts/ci/enforce_b22_p3_canonical_commerce_identity_envelope.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p4-idempotent-ack-orchestration
+  path: scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
+  status: required
+  owning_phase: B22-P4
+  protected_invariant: Utility support script enforce_b22_p4_idempotent_ack_orchestration; not a default adjudication gate
+    unless called by a registered workflow.
+  command: python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
+  expected_failure_meaning: enforce_b22_p4_idempotent_ack_orchestration detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py --help || python scripts/ci/enforce_b22_p4_idempotent_ack_orchestration.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p5-performance-negative-control-lock
+  path: scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
+  status: required
+  owning_phase: B22-P5
+  protected_invariant: Utility support script enforce_b22_p5_performance_negative_control_lock; not a default adjudication
+    gate unless called by a registered workflow.
+  command: python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
+  expected_failure_meaning: enforce_b22_p5_performance_negative_control_lock detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py --help || python scripts/ci/enforce_b22_p5_performance_negative_control_lock.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p0-typed-boundary-source-alignment
+  path: scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
+  status: required
+  owning_phase: B23-P0
+  protected_invariant: Utility support script enforce_b23_p0_typed_boundary_source_alignment; not a default adjudication gate
+    unless called by a registered workflow.
+  command: python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
+  expected_failure_meaning: enforce_b23_p0_typed_boundary_source_alignment detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py --help || python scripts/ci/enforce_b23_p0_typed_boundary_source_alignment.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p0-semantic-authority-freeze
+  path: scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
+  status: required
+  owning_phase: B23-P0
+  protected_invariant: Utility support script enforce_b23_p0_semantic_authority_freeze; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
+  expected_failure_meaning: enforce_b23_p0_semantic_authority_freeze detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py --help || python scripts/ci/enforce_b23_p0_semantic_authority_freeze.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-pre-p1-spec-gate
+  path: scripts/ci/enforce_b23_pre_p1_spec_gate.py
+  status: required
+  owning_phase: B23
+  protected_invariant: Utility support script enforce_b23_pre_p1_spec_gate; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/enforce_b23_pre_p1_spec_gate.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_pre_p1_spec_gate.py
+  expected_failure_meaning: enforce_b23_pre_p1_spec_gate detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_pre_p1_spec_gate.py --help || python scripts/ci/enforce_b23_pre_p1_spec_gate.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p1-schema-authority-lock
+  path: scripts/ci/enforce_b23_p1_schema_authority_lock.py
+  status: required
+  owning_phase: B23-P1
+  protected_invariant: Utility support script enforce_b23_p1_schema_authority_lock; not a default adjudication gate unless
+    called by a registered workflow.
+  command: python scripts/ci/enforce_b23_p1_schema_authority_lock.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p1_schema_authority_lock.py
+  expected_failure_meaning: enforce_b23_p1_schema_authority_lock detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p1_schema_authority_lock.py --help || python scripts/ci/enforce_b23_p1_schema_authority_lock.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: verify-b23-p1-migration-reversibility
+  path: scripts/ci/verify_b23_p1_migration_reversibility.py
+  status: required
+  owning_phase: B23-P1
+  protected_invariant: B23-P1 invariant enforced by verify_b23_p1_migration_reversibility; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/verify_b23_p1_migration_reversibility.py
+  env:
+    B23_P1_MIGRATION_DSN: ${MIGRATION_DATABASE_URL}
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/verify_b23_p1_migration_reversibility.py
+  expected_failure_meaning: verify_b23_p1_migration_reversibility detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/verify_b23_p1_migration_reversibility.py --help || python scripts/ci/verify_b23_p1_migration_reversibility.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p2-match-engine-kernel
+  path: scripts/ci/enforce_b23_p2_match_engine_kernel.py
+  status: required
+  owning_phase: B23-P2
+  protected_invariant: Utility support script enforce_b23_p2_match_engine_kernel; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/enforce_b23_p2_match_engine_kernel.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p2_match_engine_kernel.py
+  expected_failure_meaning: enforce_b23_p2_match_engine_kernel detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p2_match_engine_kernel.py --help || python scripts/ci/enforce_b23_p2_match_engine_kernel.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p3-verdict-persistence
+  path: scripts/ci/enforce_b23_p3_verdict_persistence.py
+  status: required
+  owning_phase: B23-P3
+  protected_invariant: Utility support script enforce_b23_p3_verdict_persistence; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/enforce_b23_p3_verdict_persistence.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p3_verdict_persistence.py
+  expected_failure_meaning: enforce_b23_p3_verdict_persistence detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p3_verdict_persistence.py --help || python scripts/ci/enforce_b23_p3_verdict_persistence.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p4-queue-performance
+  path: scripts/ci/enforce_b23_p4_queue_performance.py
+  status: required
+  owning_phase: B23-P4
+  protected_invariant: Utility support script enforce_b23_p4_queue_performance; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/enforce_b23_p4_queue_performance.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p4_queue_performance.py
+  expected_failure_meaning: enforce_b23_p4_queue_performance detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p4_queue_performance.py --help || python scripts/ci/enforce_b23_p4_queue_performance.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: contract-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: assert-b15-p7-playwright-execution
+  path: scripts/ci/assert_b15_p7_playwright_execution.py
+  status: active
+  owning_phase: B15-P7
+  protected_invariant: B15-P7 invariant enforced by assert_b15_p7_playwright_execution; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/assert_b15_p7_playwright_execution.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/assert_b15_p7_playwright_execution.py
+  expected_failure_meaning: assert_b15_p7_playwright_execution detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/assert_b15_p7_playwright_execution.py --help || python scripts/ci/assert_b15_p7_playwright_execution.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: b055-evidence-bundle
+  path: scripts/ci/b055_evidence_bundle.py
+  status: required
+  owning_phase: B055
+  protected_invariant: B055 invariant enforced by b055_evidence_bundle; keeps its documented negative-control and proof surface
+    visible in CI.
+  command: python scripts/ci/b055_evidence_bundle.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/b055_evidence_bundle.py
+  expected_failure_meaning: b055_evidence_bundle detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/b055_evidence_bundle.py --help || python scripts/ci/b055_evidence_bundle.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: b15-p7-phase-closure-gate
+  path: scripts/ci/b15_p7_phase_closure_gate.py
+  status: active
+  owning_phase: B15-P7
+  protected_invariant: B15-P7 invariant enforced by b15_p7_phase_closure_gate; keeps its documented negative-control and proof
+    surface visible in CI.
+  command: python scripts/ci/b15_p7_phase_closure_gate.py
+  workflow_references:
+  - .github/workflows/schema-deploy-production.yml
+  local_reproduction_command: python scripts/ci/b15_p7_phase_closure_gate.py
+  expected_failure_meaning: b15_p7_phase_closure_gate detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/b15_p7_phase_closure_gate.py --help || python scripts/ci/b15_p7_phase_closure_gate.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: capture-b13-p11-branch-protection-evidence
+  path: scripts/ci/capture_b13_p11_branch_protection_evidence.py
+  status: required
+  owning_phase: B13-P11
+  protected_invariant: B13-P11 invariant enforced by capture_b13_p11_branch_protection_evidence; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/capture_b13_p11_branch_protection_evidence.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/capture_b13_p11_branch_protection_evidence.py
+  expected_failure_meaning: capture_b13_p11_branch_protection_evidence detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/capture_b13_p11_branch_protection_evidence.py --help || python scripts/ci/capture_b13_p11_branch_protection_evidence.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: capture-b14-p7-branch-protection-evidence
+  path: scripts/ci/capture_b14_p7_branch_protection_evidence.py
+  status: required
+  owning_phase: B14-P7
+  protected_invariant: B14-P7 invariant enforced by capture_b14_p7_branch_protection_evidence; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/capture_b14_p7_branch_protection_evidence.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/capture_b14_p7_branch_protection_evidence.py
+  expected_failure_meaning: capture_b14_p7_branch_protection_evidence detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/capture_b14_p7_branch_protection_evidence.py --help || python scripts/ci/capture_b14_p7_branch_protection_evidence.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: eg5-cache-validation
+  path: scripts/ci/eg5_cache_validation.py
+  status: required
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: CI-GOVERNANCE invariant enforced by eg5_cache_validation; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/eg5_cache_validation.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/eg5_cache_validation.py
+  expected_failure_meaning: eg5_cache_validation detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/eg5_cache_validation.py --help || python scripts/ci/eg5_cache_validation.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p0-codeowners
+  path: scripts/ci/enforce_b13_p0_codeowners.py
+  status: required
+  owning_phase: B13-P0
+  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_codeowners; keeps its documented negative-control and proof
+    surface visible in CI.
+  command: python scripts/ci/enforce_b13_p0_codeowners.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p0_codeowners.py
+  expected_failure_meaning: enforce_b13_p0_codeowners detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p0_codeowners.py --help || python scripts/ci/enforce_b13_p0_codeowners.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p0-evidence-pack
+  path: scripts/ci/enforce_b13_p0_evidence_pack.py
+  status: required
+  owning_phase: B13-P0
+  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_evidence_pack; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p0_evidence_pack.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p0_evidence_pack.py
+  expected_failure_meaning: enforce_b13_p0_evidence_pack detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p0_evidence_pack.py --help || python scripts/ci/enforce_b13_p0_evidence_pack.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p0-scope-truth
+  path: scripts/ci/enforce_b13_p0_scope_truth.py
+  status: required
+  owning_phase: B13-P0
+  protected_invariant: B13-P0 invariant enforced by enforce_b13_p0_scope_truth; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p0_scope_truth.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p0_scope_truth.py
+  expected_failure_meaning: enforce_b13_p0_scope_truth detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p0_scope_truth.py --help || python scripts/ci/enforce_b13_p0_scope_truth.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p1-contract-authority
+  path: scripts/ci/enforce_b13_p1_contract_authority.py
+  status: required
+  owning_phase: B13-P1
+  protected_invariant: B13-P1 invariant enforced by enforce_b13_p1_contract_authority; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p1_contract_authority.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p1_contract_authority.py
+  expected_failure_meaning: enforce_b13_p1_contract_authority detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p1_contract_authority.py --help || python scripts/ci/enforce_b13_p1_contract_authority.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p10-provider-tranche-proofs
+  path: scripts/ci/enforce_b13_p10_provider_tranche_proofs.py
+  status: required
+  owning_phase: B13-P10
+  protected_invariant: B13-P10 invariant enforced by enforce_b13_p10_provider_tranche_proofs; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p10_provider_tranche_proofs.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p10_provider_tranche_proofs.py
+  expected_failure_meaning: enforce_b13_p10_provider_tranche_proofs detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p10_provider_tranche_proofs.py --help || python scripts/ci/enforce_b13_p10_provider_tranche_proofs.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p11-e2e-system-proofs
+  path: scripts/ci/enforce_b13_p11_e2e_system_proofs.py
+  status: required
+  owning_phase: B13-P11
+  protected_invariant: B13-P11 invariant enforced by enforce_b13_p11_e2e_system_proofs; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p11_e2e_system_proofs.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p11_e2e_system_proofs.py
+  expected_failure_meaning: enforce_b13_p11_e2e_system_proofs detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p11_e2e_system_proofs.py --help || python scripts/ci/enforce_b13_p11_e2e_system_proofs.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p2-evidence-pack
+  path: scripts/ci/enforce_b13_p2_evidence_pack.py
+  status: required
+  owning_phase: B13-P2
+  protected_invariant: B13-P2 invariant enforced by enforce_b13_p2_evidence_pack; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p2_evidence_pack.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p2_evidence_pack.py
+  expected_failure_meaning: enforce_b13_p2_evidence_pack detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p2_evidence_pack.py --help || python scripts/ci/enforce_b13_p2_evidence_pack.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p2-handshake-state
+  path: scripts/ci/enforce_b13_p2_handshake_state.py
+  status: required
+  owning_phase: B13-P2
+  protected_invariant: B13-P2 invariant enforced by enforce_b13_p2_handshake_state; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p2_handshake_state.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p2_handshake_state.py
+  expected_failure_meaning: enforce_b13_p2_handshake_state detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p2_handshake_state.py --help || python scripts/ci/enforce_b13_p2_handshake_state.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p3-durable-lifecycle
+  path: scripts/ci/enforce_b13_p3_durable_lifecycle.py
+  status: required
+  owning_phase: B13-P3
+  protected_invariant: B13-P3 invariant enforced by enforce_b13_p3_durable_lifecycle; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p3_durable_lifecycle.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p3_durable_lifecycle.py
+  expected_failure_meaning: enforce_b13_p3_durable_lifecycle detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p3_durable_lifecycle.py --help || python scripts/ci/enforce_b13_p3_durable_lifecycle.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p4-boundary-hardening
+  path: scripts/ci/enforce_b13_p4_boundary_hardening.py
+  status: required
+  owning_phase: B13-P4
+  protected_invariant: B13-P4 invariant enforced by enforce_b13_p4_boundary_hardening; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p4_boundary_hardening.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p4_boundary_hardening.py
+  expected_failure_meaning: enforce_b13_p4_boundary_hardening detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p4_boundary_hardening.py --help || python scripts/ci/enforce_b13_p4_boundary_hardening.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p5-adapter-layer
+  path: scripts/ci/enforce_b13_p5_adapter_layer.py
+  status: required
+  owning_phase: B13-P5
+  protected_invariant: B13-P5 invariant enforced by enforce_b13_p5_adapter_layer; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p5_adapter_layer.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p5_adapter_layer.py
+  expected_failure_meaning: enforce_b13_p5_adapter_layer detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p5_adapter_layer.py --help || python scripts/ci/enforce_b13_p5_adapter_layer.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p6-runtime-lifecycle
+  path: scripts/ci/enforce_b13_p6_runtime_lifecycle.py
+  status: required
+  owning_phase: B13-P6
+  protected_invariant: B13-P6 invariant enforced by enforce_b13_p6_runtime_lifecycle; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p6_runtime_lifecycle.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p6_runtime_lifecycle.py
+  expected_failure_meaning: enforce_b13_p6_runtime_lifecycle detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p6_runtime_lifecycle.py --help || python scripts/ci/enforce_b13_p6_runtime_lifecycle.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p7-refresh-orchestration
+  path: scripts/ci/enforce_b13_p7_refresh_orchestration.py
+  status: required
+  owning_phase: B13-P7
+  protected_invariant: B13-P7 invariant enforced by enforce_b13_p7_refresh_orchestration; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p7_refresh_orchestration.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p7_refresh_orchestration.py
+  expected_failure_meaning: enforce_b13_p7_refresh_orchestration detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p7_refresh_orchestration.py --help || python scripts/ci/enforce_b13_p7_refresh_orchestration.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p8-failure-baseline
+  path: scripts/ci/enforce_b13_p8_failure_baseline.py
+  status: required
+  owning_phase: B13-P8
+  protected_invariant: B13-P8 invariant enforced by enforce_b13_p8_failure_baseline; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p8_failure_baseline.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p8_failure_baseline.py
+  expected_failure_meaning: enforce_b13_p8_failure_baseline detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p8_failure_baseline.py --help || python scripts/ci/enforce_b13_p8_failure_baseline.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b13-p9-core-substrate-closure
+  path: scripts/ci/enforce_b13_p9_core_substrate_closure.py
+  status: required
+  owning_phase: B13-P9
+  protected_invariant: B13-P9 invariant enforced by enforce_b13_p9_core_substrate_closure; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b13_p9_core_substrate_closure.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b13_p9_core_substrate_closure.py
+  expected_failure_meaning: enforce_b13_p9_core_substrate_closure detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b13_p9_core_substrate_closure.py --help || python scripts/ci/enforce_b13_p9_core_substrate_closure.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p0-privacy-authority
+  path: scripts/ci/enforce_b14_p0_privacy_authority.py
+  status: required
+  owning_phase: B14-P0
+  protected_invariant: B14-P0 invariant enforced by enforce_b14_p0_privacy_authority; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p0_privacy_authority.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p0_privacy_authority.py
+  expected_failure_meaning: enforce_b14_p0_privacy_authority detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p0_privacy_authority.py --help || python scripts/ci/enforce_b14_p0_privacy_authority.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p1-ingress-privacy
+  path: scripts/ci/enforce_b14_p1_ingress_privacy.py
+  status: required
+  owning_phase: B14-P1
+  protected_invariant: B14-P1 invariant enforced by enforce_b14_p1_ingress_privacy; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p1_ingress_privacy.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p1_ingress_privacy.py
+  expected_failure_meaning: enforce_b14_p1_ingress_privacy detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p1_ingress_privacy.py --help || python scripts/ci/enforce_b14_p1_ingress_privacy.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p2-session-authority
+  path: scripts/ci/enforce_b14_p2_session_authority.py
+  status: required
+  owning_phase: B14-P2
+  protected_invariant: B14-P2 invariant enforced by enforce_b14_p2_session_authority; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p2_session_authority.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p2_session_authority.py
+  expected_failure_meaning: enforce_b14_p2_session_authority detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p2_session_authority.py --help || python scripts/ci/enforce_b14_p2_session_authority.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p3-attribution-locality
+  path: scripts/ci/enforce_b14_p3_attribution_locality.py
+  status: required
+  owning_phase: B14-P3
+  protected_invariant: B14-P3 invariant enforced by enforce_b14_p3_attribution_locality; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p3_attribution_locality.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p3_attribution_locality.py
+  expected_failure_meaning: enforce_b14_p3_attribution_locality detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p3_attribution_locality.py --help || python scripts/ci/enforce_b14_p3_attribution_locality.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p4-retention-deletion
+  path: scripts/ci/enforce_b14_p4_retention_deletion.py
+  status: required
+  owning_phase: B14-P4
+  protected_invariant: B14-P4 invariant enforced by enforce_b14_p4_retention_deletion; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p4_retention_deletion.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p4_retention_deletion.py
+  expected_failure_meaning: enforce_b14_p4_retention_deletion detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p4_retention_deletion.py --help || python scripts/ci/enforce_b14_p4_retention_deletion.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p5-export-log-artifact-no-leak
+  path: scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
+  status: required
+  owning_phase: B14-P5
+  protected_invariant: B14-P5 invariant enforced by enforce_b14_p5_export_log_artifact_no_leak; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
+  expected_failure_meaning: enforce_b14_p5_export_log_artifact_no_leak detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py --help || python scripts/ci/enforce_b14_p5_export_log_artifact_no_leak.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p6-proof-plane-binding
+  path: scripts/ci/enforce_b14_p6_proof_plane_binding.py
+  status: required
+  owning_phase: B14-P6
+  protected_invariant: B14-P6 invariant enforced by enforce_b14_p6_proof_plane_binding; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p6_proof_plane_binding.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p6_proof_plane_binding.py
+  expected_failure_meaning: enforce_b14_p6_proof_plane_binding detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p6_proof_plane_binding.py --help || python scripts/ci/enforce_b14_p6_proof_plane_binding.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b14-p7-e2e-privacy-system-proofs
+  path: scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
+  status: required
+  owning_phase: B14-P7
+  protected_invariant: B14-P7 invariant enforced by enforce_b14_p7_e2e_privacy_system_proofs; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
+  expected_failure_meaning: enforce_b14_p7_e2e_privacy_system_proofs detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py --help || python scripts/ci/enforce_b14_p7_e2e_privacy_system_proofs.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b15-p0-authority-scope-invariants
+  path: scripts/ci/enforce_b15_p0_authority_scope_invariants.py
+  status: active
+  owning_phase: B15-P0
+  protected_invariant: B15-P0 invariant enforced by enforce_b15_p0_authority_scope_invariants; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b15_p0_authority_scope_invariants.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b15_p0_authority_scope_invariants.py
+  expected_failure_meaning: enforce_b15_p0_authority_scope_invariants detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b15_p0_authority_scope_invariants.py --help || python scripts/ci/enforce_b15_p0_authority_scope_invariants.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b15-p1-lifecycle-authority
+  path: scripts/ci/enforce_b15_p1_lifecycle_authority.py
+  status: active
+  owning_phase: B15-P1
+  protected_invariant: B15-P1 invariant enforced by enforce_b15_p1_lifecycle_authority; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b15_p1_lifecycle_authority.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b15_p1_lifecycle_authority.py
+  expected_failure_meaning: enforce_b15_p1_lifecycle_authority detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b15_p1_lifecycle_authority.py --help || python scripts/ci/enforce_b15_p1_lifecycle_authority.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b15-p3-runtime-route-binding
+  path: scripts/ci/enforce_b15_p3_runtime_route_binding.py
+  status: active
+  owning_phase: B15-P3
+  protected_invariant: B15-P3 invariant enforced by enforce_b15_p3_runtime_route_binding; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b15_p3_runtime_route_binding.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b15_p3_runtime_route_binding.py
+  expected_failure_meaning: enforce_b15_p3_runtime_route_binding detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b15_p3_runtime_route_binding.py --help || python scripts/ci/enforce_b15_p3_runtime_route_binding.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b15-p4-mock-sdk-boundary
+  path: scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
+  status: active
+  owning_phase: B15-P4
+  protected_invariant: B15-P4 invariant enforced by enforce_b15_p4_mock_sdk_boundary; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
+  expected_failure_meaning: enforce_b15_p4_mock_sdk_boundary detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py --help || python scripts/ci/enforce_b15_p4_mock_sdk_boundary.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b15-p5-frontend-control-grammar
+  path: scripts/ci/enforce_b15_p5_frontend_control_grammar.py
+  status: active
+  owning_phase: B15-P5
+  protected_invariant: B15-P5 invariant enforced by enforce_b15_p5_frontend_control_grammar; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b15_p5_frontend_control_grammar.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b15_p5_frontend_control_grammar.py
+  expected_failure_meaning: enforce_b15_p5_frontend_control_grammar detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b15_p5_frontend_control_grammar.py --help || python scripts/ci/enforce_b15_p5_frontend_control_grammar.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b15-p6-anti-cyborg-governance
+  path: scripts/ci/enforce_b15_p6_anti_cyborg_governance.py
+  status: active
+  owning_phase: B15-P6
+  protected_invariant: B15-P6 invariant enforced by enforce_b15_p6_anti_cyborg_governance; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b15_p6_anti_cyborg_governance.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b15_p6_anti_cyborg_governance.py
+  expected_failure_meaning: enforce_b15_p6_anti_cyborg_governance detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b15_p6_anti_cyborg_governance.py --help || python scripts/ci/enforce_b15_p6_anti_cyborg_governance.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b15-p7-ci-adjudication-closure
+  path: scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
+  status: active
+  owning_phase: B15-P7
+  protected_invariant: B15-P7 invariant enforced by enforce_b15_p7_ci_adjudication_closure; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
+  expected_failure_meaning: enforce_b15_p7_ci_adjudication_closure detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py --help || python scripts/ci/enforce_b15_p7_ci_adjudication_closure.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b16-p1-provider-boundary-domain-sql
+  path: scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py
+  status: required
+  owning_phase: B16-P1
+  protected_invariant: B16-P1 invariant enforced by enforce_b16_p1_provider_boundary_domain_sql; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py
+  expected_failure_meaning: enforce_b16_p1_provider_boundary_domain_sql detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py --help || python scripts/ci/enforce_b16_p1_provider_boundary_domain_sql.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b16-p7-operational-closure
+  path: scripts/ci/enforce_b16_p7_operational_closure.py
+  status: utility
+  owning_phase: B16-P7
+  protected_invariant: Utility support script enforce_b16_p7_operational_closure; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/enforce_b16_p7_operational_closure.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/enforce_b16_p7_operational_closure.py
+  expected_failure_meaning: enforce_b16_p7_operational_closure detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b16_p7_operational_closure.py --help || python scripts/ci/enforce_b16_p7_operational_closure.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: not_executed
+  replacement: ''
+  deprecation_reason: Utility-only until a workflow references it through the registry.
+  subsumed_by: ''
+  registry_action: utility
+- id: enforce-b17-p6-benchmark-adjudication
+  path: scripts/ci/enforce_b17_p6_benchmark_adjudication.py
+  status: required
+  owning_phase: B17-P6
+  protected_invariant: B17-P6 invariant enforced by enforce_b17_p6_benchmark_adjudication; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b17_p6_benchmark_adjudication.py
+  workflow_references:
+  - .github/workflows/b17-p4-mixed-workload-benchmark.yml
+  local_reproduction_command: python scripts/ci/enforce_b17_p6_benchmark_adjudication.py
+  expected_failure_meaning: enforce_b17_p6_benchmark_adjudication detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b17_p6_benchmark_adjudication.py --help || python scripts/ci/enforce_b17_p6_benchmark_adjudication.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b21-p4-benchmark-adjudication
+  path: scripts/ci/enforce_b21_p4_benchmark_adjudication.py
+  status: required
+  owning_phase: B21-P4
+  protected_invariant: B21-P4 invariant enforced by enforce_b21_p4_benchmark_adjudication; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b21_p4_benchmark_adjudication.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b21_p4_benchmark_adjudication.py
+  expected_failure_meaning: enforce_b21_p4_benchmark_adjudication detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b21_p4_benchmark_adjudication.py --help || python scripts/ci/enforce_b21_p4_benchmark_adjudication.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p5-webhook-benchmark-adjudication
+  path: scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py
+  status: required
+  owning_phase: B22-P5
+  protected_invariant: B22-P5 invariant enforced by enforce_b22_p5_webhook_benchmark_adjudication; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py
+  expected_failure_meaning: enforce_b22_p5_webhook_benchmark_adjudication detected drift in its protected invariant; inspect
+    the gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py --help || python scripts/ci/enforce_b22_p5_webhook_benchmark_adjudication.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b22-p6-merge-blocking-closure
+  path: scripts/ci/enforce_b22_p6_merge_blocking_closure.py
+  status: required
+  owning_phase: B22-P6
+  protected_invariant: B22-P6 invariant enforced by enforce_b22_p6_merge_blocking_closure; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b22_p6_merge_blocking_closure.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b22_p6_merge_blocking_closure.py
+  expected_failure_meaning: enforce_b22_p6_merge_blocking_closure detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b22_p6_merge_blocking_closure.py --help || python scripts/ci/enforce_b22_p6_merge_blocking_closure.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p5-composite-proof
+  path: scripts/ci/enforce_b23_p5_composite_proof.py
+  status: required
+  owning_phase: B23-P5
+  protected_invariant: B23-P5 invariant enforced by enforce_b23_p5_composite_proof; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b23_p5_composite_proof.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p5_composite_proof.py
+  expected_failure_meaning: enforce_b23_p5_composite_proof detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p5_composite_proof.py --help || python scripts/ci/enforce_b23_p5_composite_proof.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-b23-p6-end-to-end-closure
+  path: scripts/ci/enforce_b23_p6_end_to_end_closure.py
+  status: required
+  owning_phase: B23-P6
+  protected_invariant: B23-P6 invariant enforced by enforce_b23_p6_end_to_end_closure; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_b23_p6_end_to_end_closure.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_b23_p6_end_to_end_closure.py
+  expected_failure_meaning: enforce_b23_p6_end_to_end_closure detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_b23_p6_end_to_end_closure.py --help || python scripts/ci/enforce_b23_p6_end_to_end_closure.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-branch-protection-integrity
+  path: scripts/ci/enforce_branch_protection_integrity.py
+  status: active
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_branch_protection_integrity; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_branch_protection_integrity.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_branch_protection_integrity.py
+  expected_failure_meaning: enforce_branch_protection_integrity detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_branch_protection_integrity.py --help || python scripts/ci/enforce_branch_protection_integrity.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-forensics-index
+  path: scripts/ci/enforce_forensics_index.py
+  status: active
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_forensics_index; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_forensics_index.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_forensics_index.py
+  expected_failure_meaning: enforce_forensics_index detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_forensics_index.py --help || python scripts/ci/enforce_forensics_index.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-llm-api-call-single-write-path
+  path: scripts/ci/enforce_llm_api_call_single_write_path.py
+  status: required
+  owning_phase: LLM-GOVERNANCE
+  protected_invariant: LLM-GOVERNANCE invariant enforced by enforce_llm_api_call_single_write_path; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_llm_api_call_single_write_path.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_llm_api_call_single_write_path.py
+  expected_failure_meaning: enforce_llm_api_call_single_write_path detected drift in its protected invariant; inspect the
+    gate output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_llm_api_call_single_write_path.py --help || python scripts/ci/enforce_llm_api_call_single_write_path.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-llm-provider-boundary
+  path: scripts/ci/enforce_llm_provider_boundary.py
+  status: utility
+  owning_phase: LLM-GOVERNANCE
+  protected_invariant: Utility support script enforce_llm_provider_boundary; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/enforce_llm_provider_boundary.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/enforce_llm_provider_boundary.py
+  expected_failure_meaning: enforce_llm_provider_boundary detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_llm_provider_boundary.py --help || python scripts/ci/enforce_llm_provider_boundary.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: not_executed
+  replacement: ''
+  deprecation_reason: Utility-only until a workflow references it through the registry.
+  subsumed_by: ''
+  registry_action: utility
+- id: enforce-no-worker-http-server
+  path: scripts/ci/enforce_no_worker_http_server.py
+  status: required
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_no_worker_http_server; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_no_worker_http_server.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_no_worker_http_server.py
+  expected_failure_meaning: enforce_no_worker_http_server detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_no_worker_http_server.py --help || python scripts/ci/enforce_no_worker_http_server.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-postgres-only
+  path: scripts/ci/enforce_postgres_only.py
+  status: active
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_postgres_only; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/enforce_postgres_only.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_postgres_only.py
+  expected_failure_meaning: enforce_postgres_only detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_postgres_only.py --help || python scripts/ci/enforce_postgres_only.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-required-status-checks
+  path: scripts/ci/enforce_required_status_checks.py
+  status: active
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: CI-GOVERNANCE invariant enforced by enforce_required_status_checks; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_required_status_checks.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_required_status_checks.py
+  expected_failure_meaning: enforce_required_status_checks detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_required_status_checks.py --help || python scripts/ci/enforce_required_status_checks.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-runtime-determinism
+  path: scripts/ci/enforce_runtime_determinism.py
+  status: required
+  owning_phase: RUNTIME-GOVERNANCE
+  protected_invariant: RUNTIME-GOVERNANCE invariant enforced by enforce_runtime_determinism; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_runtime_determinism.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_runtime_determinism.py
+  expected_failure_meaning: enforce_runtime_determinism detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_runtime_determinism.py --help || python scripts/ci/enforce_runtime_determinism.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: enforce-runtime-hermeticity
+  path: scripts/ci/enforce_runtime_hermeticity.py
+  status: required
+  owning_phase: RUNTIME-GOVERNANCE
+  protected_invariant: RUNTIME-GOVERNANCE invariant enforced by enforce_runtime_hermeticity; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/enforce_runtime_hermeticity.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/enforce_runtime_hermeticity.py
+  expected_failure_meaning: enforce_runtime_hermeticity detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/enforce_runtime_hermeticity.py --help || python scripts/ci/enforce_runtime_hermeticity.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: health-worker-probe
+  path: scripts/ci/health_worker_probe.py
+  status: required
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: CI-GOVERNANCE invariant enforced by health_worker_probe; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/health_worker_probe.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/health_worker_probe.py
+  expected_failure_meaning: health_worker_probe detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/health_worker_probe.py --help || python scripts/ci/health_worker_probe.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: llm-contract-db-parity
+  path: scripts/ci/llm_contract_db_parity.py
+  status: active
+  owning_phase: LLM-GOVERNANCE
+  protected_invariant: LLM-GOVERNANCE invariant enforced by llm_contract_db_parity; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/llm_contract_db_parity.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/llm_contract_db_parity.py
+  expected_failure_meaning: llm_contract_db_parity detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/llm_contract_db_parity.py --help || python scripts/ci/llm_contract_db_parity.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: m3_b24_gate_dry_run
+  path: .github/workflows/b2_4-gate-dry-run.yml
+  status: active
+  owning_phase: M3/B2.4-INSERTION
+  protected_invariant: B2.4 can attach a metadata-only gate through an isolated workflow without expanding ci.yml, mutating
+    M0/M1/M2, or installing statistical runtime dependencies.
+  command: python scripts/ci/validate_m3_ci_governance.py --b24-dry-run
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make ci-b24-gate-dry-run
+  expected_failure_meaning: The B2.4 insertion lane is unsafe, missing, or contaminated by feature implementation.
+  first_diagnostic_command: python scripts/ci/validate_m3_ci_governance.py --b24-dry-run
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: phase2-schema-closure-gate
+  path: scripts/ci/phase2_schema_closure_gate.py
+  status: utility
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: Utility support script phase2_schema_closure_gate; not a default adjudication gate unless called by
+    a registered workflow.
+  command: python scripts/ci/phase2_schema_closure_gate.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/phase2_schema_closure_gate.py
+  expected_failure_meaning: phase2_schema_closure_gate detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/phase2_schema_closure_gate.py --help || python scripts/ci/phase2_schema_closure_gate.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: db-backed-governance
+  ci_visibility: not_executed
+  replacement: ''
+  deprecation_reason: Utility-only until a workflow references it through the registry.
+  subsumed_by: ''
+  registry_action: utility
+- id: prepare-b15-p7-browser-runtime
+  path: scripts/ci/prepare_b15_p7_browser_runtime.py
+  status: active
+  owning_phase: B15-P7
+  protected_invariant: B15-P7 invariant enforced by prepare_b15_p7_browser_runtime; keeps its documented negative-control
+    and proof surface visible in CI.
+  command: python scripts/ci/prepare_b15_p7_browser_runtime.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/prepare_b15_p7_browser_runtime.py
+  expected_failure_meaning: prepare_b15_p7_browser_runtime detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/prepare_b15_p7_browser_runtime.py --help || python scripts/ci/prepare_b15_p7_browser_runtime.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: db-backed-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: run-ci-governance-cohort
+  path: scripts/ci/run_ci_governance_cohort.py
+  status: active
+  owning_phase: CI-GOVERNANCE
+  protected_invariant: M3 registry-backed cohort runner and failure-summary generator.
+  command: python scripts/ci/run_ci_governance_cohort.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  - .github/workflows/m3-ci-governance.yml
+  local_reproduction_command: python scripts/ci/run_ci_governance_cohort.py
+  expected_failure_meaning: M3 registry-backed cohort runner and failure-summary generator. failed; inspect registry, topology,
+    and cohort output.
+  first_diagnostic_command: python scripts/ci/run_ci_governance_cohort.py --help || python scripts/ci/run_ci_governance_cohort.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: cohort_summary
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: scan-b14-p5-artifacts
+  path: scripts/ci/scan_b14_p5_artifacts.py
+  status: required
+  owning_phase: B14-P5
+  protected_invariant: B14-P5 invariant enforced by scan_b14_p5_artifacts; keeps its documented negative-control and proof
+    surface visible in CI.
+  command: python scripts/ci/scan_b14_p5_artifacts.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/scan_b14_p5_artifacts.py
+  expected_failure_meaning: scan_b14_p5_artifacts detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/scan_b14_p5_artifacts.py --help || python scripts/ci/scan_b14_p5_artifacts.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: scan-b14-p7-artifacts
+  path: scripts/ci/scan_b14_p7_artifacts.py
+  status: required
+  owning_phase: B14-P7
+  protected_invariant: B14-P7 invariant enforced by scan_b14_p7_artifacts; keeps its documented negative-control and proof
+    surface visible in CI.
+  command: python scripts/ci/scan_b14_p7_artifacts.py
+  workflow_references:
+  - .github/workflows/ci.yml
+  local_reproduction_command: python scripts/ci/scan_b14_p7_artifacts.py
+  expected_failure_meaning: scan_b14_p7_artifacts detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/scan_b14_p7_artifacts.py --help || python scripts/ci/scan_b14_p7_artifacts.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-b23-pre-p1-spec-contract
+  path: scripts/ci/validate_b23_pre_p1_spec_contract.py
+  status: utility
+  owning_phase: B23
+  protected_invariant: Utility support script validate_b23_pre_p1_spec_contract; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/validate_b23_pre_p1_spec_contract.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/validate_b23_pre_p1_spec_contract.py
+  expected_failure_meaning: validate_b23_pre_p1_spec_contract detected drift in its protected invariant; inspect the gate
+    output before changing production semantics.
+  first_diagnostic_command: python scripts/ci/validate_b23_pre_p1_spec_contract.py --help || python scripts/ci/validate_b23_pre_p1_spec_contract.py
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: db-backed-governance
+  ci_visibility: not_executed
+  replacement: ''
+  deprecation_reason: Utility-only until a workflow references it through the registry.
+  subsumed_by: ''
+  registry_action: utility
+- id: validate-llm-write-contract
+  path: scripts/ci/validate_llm_write_contract.py
+  status: utility
+  owning_phase: LLM-GOVERNANCE
+  protected_invariant: Utility support script validate_llm_write_contract; not a default adjudication gate unless called by
+    a registered workflow.
+  command: python scripts/ci/validate_llm_write_contract.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/validate_llm_write_contract.py
+  expected_failure_meaning: validate_llm_write_contract detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/validate_llm_write_contract.py --help || python scripts/ci/validate_llm_write_contract.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: static-governance
+  ci_visibility: not_executed
+  replacement: ''
+  deprecation_reason: Utility-only until a workflow references it through the registry.
+  subsumed_by: ''
+  registry_action: utility
+- id: validate-m0-scope-lock
+  path: scripts/ci/validate_m0_scope_lock.py
+  status: required
+  owning_phase: M0
+  protected_invariant: M0 invariant enforced by validate_m0_scope_lock; keeps its documented negative-control and proof surface
+    visible in CI.
+  command: python scripts/ci/validate_m0_scope_lock.py
+  workflow_references:
+  - .github/workflows/m0-maintainability-scope-lock.yml
+  local_reproduction_command: python scripts/ci/validate_m0_scope_lock.py
+  expected_failure_meaning: validate_m0_scope_lock detected drift in its protected invariant; inspect the gate output before
+    changing production semantics.
+  first_diagnostic_command: python scripts/ci/validate_m0_scope_lock.py --help || python scripts/ci/validate_m0_scope_lock.py
+  depends_on_db: false
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: m0-m1-m2-preservation
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-m1-local-dev-authority
+  path: scripts/ci/validate_m1_local_dev_authority.py
+  status: active
+  owning_phase: M1
+  protected_invariant: M1 invariant enforced by validate_m1_local_dev_authority; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/validate_m1_local_dev_authority.py
+  workflow_references:
+  - .github/workflows/m1-local-dev-authority.yml
+  local_reproduction_command: python scripts/ci/validate_m1_local_dev_authority.py
+  expected_failure_meaning: validate_m1_local_dev_authority detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/validate_m1_local_dev_authority.py --help || python scripts/ci/validate_m1_local_dev_authority.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: m0-m1-m2-preservation
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-m2-test-feedback-loop
+  path: scripts/ci/validate_m2_test_feedback_loop.py
+  status: active
+  owning_phase: M2
+  protected_invariant: M2 invariant enforced by validate_m2_test_feedback_loop; keeps its documented negative-control and
+    proof surface visible in CI.
+  command: python scripts/ci/validate_m2_test_feedback_loop.py
+  workflow_references:
+  - .github/workflows/m2-test-feedback-loop.yml
+  local_reproduction_command: python scripts/ci/validate_m2_test_feedback_loop.py
+  expected_failure_meaning: validate_m2_test_feedback_loop detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/validate_m2_test_feedback_loop.py --help || python scripts/ci/validate_m2_test_feedback_loop.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: true
+  default_execution: true
+  execution_cohort: m0-m1-m2-preservation
+  ci_visibility: named_step
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-m3-ci-governance
+  path: scripts/ci/validate_m3_ci_governance.py
+  status: active
+  owning_phase: M3
+  protected_invariant: M3 executable registry drift validator.
+  command: python scripts/ci/validate_m3_ci_governance.py
+  workflow_references:
+  - .github/workflows/m3-ci-governance.yml
+  local_reproduction_command: python scripts/ci/validate_m3_ci_governance.py
+  expected_failure_meaning: M3 executable registry drift validator. failed; inspect registry, topology, and cohort output.
+  first_diagnostic_command: python scripts/ci/validate_m3_ci_governance.py --help || python scripts/ci/validate_m3_ci_governance.py
+  depends_on_db: true
+  depends_on_celery: true
+  depends_on_pooler: true
+  default_execution: true
+  execution_cohort: static-governance
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: verify-b23-p5-branch-protection
+  path: scripts/ci/verify_b23_p5_branch_protection.py
+  status: utility
+  owning_phase: B23-P5
+  protected_invariant: Utility support script verify_b23_p5_branch_protection; not a default adjudication gate unless called
+    by a registered workflow.
+  command: python scripts/ci/verify_b23_p5_branch_protection.py
+  workflow_references: []
+  local_reproduction_command: python scripts/ci/verify_b23_p5_branch_protection.py
+  expected_failure_meaning: verify_b23_p5_branch_protection detected drift in its protected invariant; inspect the gate output
+    before changing production semantics.
+  first_diagnostic_command: python scripts/ci/verify_b23_p5_branch_protection.py --help || python scripts/ci/verify_b23_p5_branch_protection.py
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: false
+  execution_cohort: utility-only
+  ci_visibility: not_executed
+  replacement: ''
+  deprecation_reason: Utility-only until a workflow references it through the registry.
+  subsumed_by: ''
+  registry_action: utility

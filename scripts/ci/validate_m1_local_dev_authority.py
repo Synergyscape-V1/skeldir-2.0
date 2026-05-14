@@ -135,8 +135,17 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_m0_scope_lock.py",
     "scripts/ci/run_m2_test_feedback_loop.sh",
     "scripts/ci/validate_m2_test_feedback_loop.py",
+    "scripts/ci/run_ci_governance_cohort.py",
+    "scripts/ci/validate_m3_ci_governance.py",
     "scripts/r3/ingestion_under_fire.py",
     "scripts/testing/",
+    ".github/actions/setup-postgres-ci/",
+    ".github/workflows/b2_4-gate-dry-run.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/m3-ci-governance.yml",
+    "docs/ci/",
+    "docs/forensics/INDEX.md",
+    "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/testing.md",
     "docs/testing_db_topology.md",
     "docs/testing_append_only_isolation.md",
@@ -157,7 +166,6 @@ PROHIBITED_PATH_PATTERNS = [
     r"backend/db/migrations/",
     r"requirements.*\.txt$",
     r"pyproject\.toml$",
-    r"\.github/workflows/ci\.yml$",
 ]
 
 PROHIBITED_ADDED_PATTERNS = [

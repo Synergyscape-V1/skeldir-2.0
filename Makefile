@@ -3,7 +3,7 @@ ENV_FILE ?= .env.local
 HEALTH_RETRIES ?= 30
 COMPOSE = docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 
-.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-celery-worker-concurrent test-pooler-worker-concurrent test-broker-topology test-parallel-isolation test-b23-representative test-b24-persistence-readiness test-b24-persistence-entry-gate test-governance test-e2e test-external-db-smoke down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
+.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-celery-worker-concurrent test-pooler-worker-concurrent test-broker-topology test-parallel-isolation test-b23-representative test-b24-persistence-readiness test-b24-persistence-entry-gate test-governance test-e2e test-external-db-smoke validate-ci-governance ci-topology ci-enforcer-registry-check ci-gate-subsumption-check ci-b24-gate-dry-run ci-metrics ci-cohort-summary down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
 
 help: ## Show this help message
 	@echo "SKELDIR 2.0 Monorepo - Available Commands"
@@ -93,6 +93,28 @@ test-e2e: ## Run explicitly marked e2e tests
 
 test-external-db-smoke: ## Opt-in external DB smoke only; requires SKELDIR_ALLOW_EXTERNAL_DB_TESTS=true
 	@bash scripts/ci/run_m2_test_feedback_loop.sh external-db-smoke
+
+validate-ci-governance: ## Run full M3 CI governance validator
+	@python scripts/ci/validate_m3_ci_governance.py --all
+
+ci-topology: ## Validate indexed CI topology and required-context mapping
+	@python scripts/ci/validate_m3_ci_governance.py --topology
+
+ci-enforcer-registry-check: ## Validate executable enforcer registry completeness
+	@python scripts/ci/validate_m3_ci_governance.py --registry
+
+ci-gate-subsumption-check: ## Validate gate disposition and subsumption matrix
+	@python scripts/ci/validate_m3_ci_governance.py --subsumption
+
+ci-b24-gate-dry-run: ## Validate isolated metadata-only B2.4 gate insertion lane
+	@python scripts/ci/validate_m3_ci_governance.py --b24-dry-run
+	@python scripts/ci/run_ci_governance_cohort.py --cohort b2-4-dry-run --dry-run --summary-path artifacts/b24_gate_dry_run_summary.json
+
+ci-metrics: ## Emit M3 CI complexity metrics as JSON
+	@python scripts/ci/validate_m3_ci_governance.py --metrics
+
+ci-cohort-summary: ## Dry-run registry cohort summary generation
+	@python scripts/ci/run_ci_governance_cohort.py --cohort contract-governance --dry-run --summary-path artifacts/contract_governance_cohort_dry_run_summary.json
 
 down: $(ENV_FILE) ## Stop the canonical local topology
 	@$(COMPOSE) down --remove-orphans
