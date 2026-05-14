@@ -1,0 +1,54 @@
+name: M3 CI Governance
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  m3-ci-governance:
+    name: M3 CI Governance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validator dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install "pyyaml>=6.0"
+
+      - name: Validate M3 governance
+        run: make validate-ci-governance
+
+      - name: Validate enforcer registry
+        run: make ci-enforcer-registry-check
+
+      - name: Validate gate subsumption matrix
+        run: make ci-gate-subsumption-check
+
+      - name: Validate B2.4 dry-run insertion lane
+        run: make ci-b24-gate-dry-run
+
+      - name: Emit CI metrics
+        run: make ci-metrics
+
+      - name: Emit cohort summary dry run
+        run: make ci-cohort-summary
+
+      - name: Upload M3 summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m3-ci-governance-summaries
+          path: artifacts/*.json

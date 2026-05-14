@@ -1,0 +1,76 @@
+name: Setup Postgres CI Database
+description: Prepare the least-privilege CI database boundary and run Alembic migrations.
+
+inputs:
+  admin-dsn:
+    description: Superuser/admin PostgreSQL DSN.
+    required: false
+    default: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+  database-name:
+    description: Database name to create or normalize.
+    required: true
+  runtime-user:
+    description: Runtime database principal.
+    required: false
+    default: app_user
+  runtime-password:
+    description: Runtime database password.
+    required: false
+    default: app_user
+  migration-user:
+    description: Migration database principal.
+    required: false
+    default: migration_owner
+  migration-password:
+    description: Migration database password.
+    required: false
+    default: migration_owner
+  app-rw-role:
+    description: Application read/write role.
+    required: false
+    default: app_rw
+  app-ro-role:
+    description: Application read-only role.
+    required: false
+    default: app_ro
+  migration-command:
+    description: Alembic migration command.
+    required: false
+    default: alembic upgrade head
+  revoke-alembic-version:
+    description: Revoke runtime access to alembic_version after migration.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare migration authority boundary
+      shell: bash
+      run: |
+        python scripts/database/prepare_migration_authority_boundary.py \
+          --admin-dsn "${{ inputs.admin-dsn }}" \
+          --database-name "${{ inputs.database-name }}" \
+          --runtime-user "${{ inputs.runtime-user }}" \
+          --runtime-password "${{ inputs.runtime-password }}" \
+          --migration-user "${{ inputs.migration-user }}" \
+          --migration-password "${{ inputs.migration-password }}" \
+          --app-rw-role "${{ inputs.app-rw-role }}" \
+          --app-ro-role "${{ inputs.app-ro-role }}"
+
+    - name: Run Alembic migrations
+      shell: bash
+      env:
+        DATABASE_URL: postgresql://${{ inputs.migration-user }}:${{ inputs.migration-password }}@127.0.0.1:5432/${{ inputs.database-name }}
+        MIGRATION_DATABASE_URL: postgresql://${{ inputs.migration-user }}:${{ inputs.migration-password }}@127.0.0.1:5432/${{ inputs.database-name }}
+      run: |
+        ${{ inputs.migration-command }}
+
+    - name: Enforce migration metadata least privilege
+      if: ${{ inputs.revoke-alembic-version == 'true' }}
+      shell: bash
+      env:
+        PGPASSWORD: postgres
+      run: |
+        psql -h 127.0.0.1 -U postgres -d "${{ inputs.database-name }}" \
+          -c "REVOKE ALL ON TABLE public.alembic_version FROM ${{ inputs.runtime-user }};"
