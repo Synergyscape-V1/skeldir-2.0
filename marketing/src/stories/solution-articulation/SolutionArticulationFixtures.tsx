@@ -1,4 +1,4 @@
-﻿import type { CSSProperties } from "react";
+import type { CSSProperties } from "react";
 
 export type AgentKey = "agent-a" | "agent-b" | "agent-c" | "agent-d" | "agent-e";
 

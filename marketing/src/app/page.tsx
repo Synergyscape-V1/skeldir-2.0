@@ -103,11 +103,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Problem Statement Section */}
-      <ProblemStatement />
-
-      {/* Solution Overview Section */}
+      {/* Solution Overview — placed before problem articulation */}
       <SolutionOverview />
+
+      {/* Problem Statement */}
+      <ProblemStatement />
 
       {/* Interactive Product Demo Section */}
       <InteractiveDemo />

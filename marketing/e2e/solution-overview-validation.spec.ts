@@ -9,7 +9,7 @@ test.describe("Solution Overview Section Validation", () => {
     await page.waitForLoadState("networkidle");
     
     // Find the Solution Overview section
-    const solutionSection = page.locator('section').filter({ hasText: /Solution Overview|Decision Intelligence/ }).first();
+    const solutionSection = page.locator("section.solution-overview-section").first();
     
     // Scroll to the section
     await solutionSection.scrollIntoViewIfNeeded();
@@ -17,8 +17,7 @@ test.describe("Solution Overview Section Validation", () => {
     // Wait a moment for any lazy loading
     await page.waitForTimeout(1000);
     
-    // Find the image in the section
-    const solutionImage = solutionSection.locator('img').first();
+    const solutionImage = solutionSection.locator("img.solution-overview-full");
     
     // 1. Validate image is visible and fully rendered
     await expect(solutionImage).toBeVisible();
@@ -38,27 +37,23 @@ test.describe("Solution Overview Section Validation", () => {
     expect(imageLoaded.naturalWidth).toBeGreaterThan(0);
     expect(imageLoaded.naturalHeight).toBeGreaterThan(0);
     
-    // 2. Validate section position (between Problem Statement and Interactive Demo)
-    const allSections = await page.locator('section').all();
+    // 2. Validate section order: Solution Overview → Problem articulation → Interactive Demo
     const sectionIndex = await page.evaluate(() => {
-      const sections = Array.from(document.querySelectorAll('section'));
-      const solutionIndex = sections.findIndex(s => 
-        s.textContent?.includes('Solution Overview') || 
-        s.textContent?.includes('Decision Intelligence')
+      const sections = Array.from(document.querySelectorAll("section"));
+      const solutionIndex = sections.findIndex((s) => s.classList.contains("solution-overview-section"));
+      const problemIndex = sections.findIndex((s) =>
+        s.textContent?.includes("Why Your Current Attribution"),
       );
-      const problemIndex = sections.findIndex(s => 
-        s.textContent?.includes('Problem Statement')
-      );
-      const demoIndex = sections.findIndex(s => 
-        s.textContent?.includes('Interactive Demo')
-      );
-      
+      const demoIndex = sections.findIndex((s) => s.textContent?.includes("Interactive Demo"));
+
       return { solutionIndex, problemIndex, demoIndex };
     });
-    
+
     console.log("Section indices:", sectionIndex);
-    expect(sectionIndex.solutionIndex).toBeGreaterThan(sectionIndex.problemIndex);
-    expect(sectionIndex.solutionIndex).toBeLessThan(sectionIndex.demoIndex);
+    expect(sectionIndex.solutionIndex).toBeGreaterThan(-1);
+    expect(sectionIndex.problemIndex).toBeGreaterThan(-1);
+    expect(sectionIndex.solutionIndex).toBeLessThan(sectionIndex.problemIndex);
+    expect(sectionIndex.problemIndex).toBeLessThan(sectionIndex.demoIndex);
     
     // 3. Validate image is not clipped (check if image width matches container or is appropriately sized)
     const imageBox = await solutionImage.boundingBox();
@@ -95,7 +90,7 @@ test.describe("Solution Overview Section Validation", () => {
     await page.waitForLoadState("networkidle");
     
     // Find the Solution Overview section
-    const solutionSection = page.locator('section').filter({ hasText: /Solution Overview|Decision Intelligence/ }).first();
+    const solutionSection = page.locator("section.solution-overview-section").first();
     
     // Scroll to the section
     await solutionSection.scrollIntoViewIfNeeded();
@@ -103,12 +98,13 @@ test.describe("Solution Overview Section Validation", () => {
     // Wait a moment for any lazy loading
     await page.waitForTimeout(1000);
     
-    // Find the image in the section
-    const solutionImage = solutionSection.locator('img').first();
-    
-    // 5. Verify the image scales down properly without clipping
+    const mobilePipeline = solutionSection.locator(".solution-overview-mobile-pipeline");
+    await expect(mobilePipeline).toBeVisible();
+    const solutionImage = mobilePipeline.locator("img").first();
+
+    // 5. Vertical pipeline: first stage (sources) visible and sized within viewport
     await expect(solutionImage).toBeVisible();
-    
+
     const imageBox = await solutionImage.boundingBox();
     const containerBox = await solutionSection.boundingBox();
     const viewportWidth = 375;

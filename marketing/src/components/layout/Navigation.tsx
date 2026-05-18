@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { NavTextLink } from "@/components/layout/NavTextLink";
+import { navLinkAppearanceFromVisible } from "@/components/layout/navLinkPhysics";
 
 const navLinks = [
   { href: "/product", label: "Product" },
@@ -84,10 +86,12 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
   }, [mobileMenuOpen]);
 
   const isVisible = shouldForceVisible || scrolled;
+  const navAppearance = navLinkAppearanceFromVisible(isVisible);
 
   return (
     <header
-      className="fixed top-0 z-[9999] w-full transition-all duration-300"
+      className="site-header-nav fixed top-0 z-[9999] w-full transition-all duration-300"
+      data-nav-appearance={navAppearance}
       style={{
         // Visible state (scrolled or forceVisible): solid white to prevent overlap with content
         backgroundColor: isVisible ? "#FFFFFF" : "transparent",
@@ -117,58 +121,15 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
         {/* Desktop Navigation Links */}
         <div className="hidden md:flex items-center gap-8">
           {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-[15px] font-semibold transition-all px-3 py-2 rounded-lg"
-              style={{
-                color: isVisible ? '#1E293B' : '#FFFFFF',
-                backgroundColor: 'transparent',
-                transform: 'translateY(0px)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = isVisible ? '#2563EB' : '#93C5FD';
-                e.currentTarget.style.backgroundColor = isVisible
-                  ? 'rgba(37, 99, 235, 0.08)'
-                  : 'rgba(255, 255, 255, 0.12)';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = isVisible ? '#1E293B' : '#FFFFFF';
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.transform = 'translateY(0px)';
-              }}
-            >
+            <NavTextLink key={link.href} href={link.href}>
               {link.label}
-            </Link>
+            </NavTextLink>
           ))}
         </div>
 
         {/* Desktop Actions */}
         <div className="hidden md:flex items-center gap-4">
-          <Link
-            href="/Login"
-            className="text-[15px] font-semibold transition-all px-3 py-2 rounded-lg"
-            style={{
-              color: isVisible ? '#1E293B' : '#FFFFFF',
-              backgroundColor: 'transparent',
-              transform: 'translateY(0px)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = isVisible ? '#2563EB' : '#93C5FD';
-              e.currentTarget.style.backgroundColor = isVisible
-                ? 'rgba(37, 99, 235, 0.08)'
-                : 'rgba(255, 255, 255, 0.12)';
-              e.currentTarget.style.transform = 'translateY(-1px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = isVisible ? '#1E293B' : '#FFFFFF';
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.transform = 'translateY(0px)';
-            }}
-          >
-            Login
-          </Link>
+          <NavTextLink href="/Login">Login</NavTextLink>
           {/* Animated CTA Button with Border and Sweep Effects */}
           <div
             className="cta-button-wrapper"
@@ -374,7 +335,7 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
                     <Link
                       key={link.href}
                       href={link.href}
-                      className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors hover:text-blue-600"
+                      className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors duration-200 hover:text-[#2563EB] focus-visible:text-[#2563EB] focus-visible:outline-none"
                       style={{
                         minHeight: '44px',
                         display: 'flex',
@@ -389,7 +350,7 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
                   <div className="pt-4 border-t border-gray-200 space-y-3 mt-4">
                     <Link
                       href="/Login"
-                      className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors hover:text-blue-600"
+                      className="mobile-menu-link block text-sm font-medium text-gray-700 transition-colors duration-200 hover:text-[#2563EB] focus-visible:text-[#2563EB] focus-visible:outline-none"
                       style={{
                         minHeight: '44px',
                         display: 'flex',
@@ -650,7 +611,7 @@ export function Navigation({ forceVisible = false }: { forceVisible?: boolean })
           }
 
           .mobile-menu-link:active {
-            background-color: rgba(37, 99, 235, 0.1);
+            color: #2563eb;
           }
 
           .mobile-cta-button {

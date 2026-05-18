@@ -1,5 +1,7 @@
 "use client";
 
+import { SECTION_DISPLAY_TITLE_CLASS } from "@/components/layout/sectionDisplayFont";
+
 // ============================================================================
 // FINAL CTA SECTION
 // Reference: Final CTA (Expected State).png - Homepage Conversion Finale
@@ -47,8 +49,8 @@ export function FinalCTA() {
         {/* Color: #FFFFFF (pure white) for WCAG AAA contrast               */}
         {/* ================================================================ */}
         <h1
+          className={SECTION_DISPLAY_TITLE_CLASS}
           style={{
-            fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             fontSize: "60px",
             fontWeight: 700,
             lineHeight: 1.15,
