@@ -1,5 +1,7 @@
 "use client";
 
+import { SECTION_DISPLAY_TITLE_CLASS } from "@/components/layout/sectionDisplayFont";
+
 import { useState, useCallback, useEffect } from "react";
 
 // ============================================================================
@@ -100,9 +102,9 @@ function AdobeLogo() {
 function SalesforceLogo() {
   return (
     <div style={{ backgroundColor: "#FFFFFF", display: "inline-block", lineHeight: 0 }}>
-      <img 
-        src="/images/2-catalyst.png" 
-        alt="CATALYST" 
+      <img
+        src="/images/2-catalyst.png"
+        alt="Catalyst"
         style={{
           width: "200px",
           height: "auto",
@@ -569,7 +571,7 @@ export function TestimonialCarousel() {
   // Map testimonial companies to header company names
   const companyNameMap: Record<string, string> = {
     "Adobe": "Vantage",
-    "Salesforce": "CATALYST",
+    "Salesforce": "Catalyst",
     "HubSpot": "Apex Analytics",
     "Shopify": "Meridian",
     "Stripe": "Novus"
@@ -618,9 +620,8 @@ export function TestimonialCarousel() {
           {/* Title Section */}
           <div className="testimonials-title-wrapper" style={{ flexShrink: 0 }}>
             <h2
-              className="testimonials-title"
+              className={`testimonials-title ${SECTION_DISPLAY_TITLE_CLASS}`}
               style={{
-                fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
                 fontSize: "56px",
                 fontWeight: 600,
                 lineHeight: 1.1,
@@ -659,8 +660,8 @@ export function TestimonialCarousel() {
             <span style={{ color: activeHeaderCompany === "Vantage" ? "#2563EB" : "#1E293B" }}>
               Vantage
             </span>
-            <span style={{ color: activeHeaderCompany === "CATALYST" ? "#2563EB" : "#1E293B" }}>
-              CATALYST
+            <span style={{ color: activeHeaderCompany === "Catalyst" ? "#2563EB" : "#1E293B" }}>
+              Catalyst
             </span>
             <span style={{ color: activeHeaderCompany === "Apex Analytics" ? "#2563EB" : "#1E293B" }}>
               Apex Analytics

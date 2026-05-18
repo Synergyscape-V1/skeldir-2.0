@@ -141,6 +141,140 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Section display headings — single stack with hero + product demo (IBM Plex Sans Condensed) */
+  .section-display-title {
+    font-family: var(--font-hero-display), var(--font-dm-sans), ui-sans-serif, system-ui,
+      sans-serif;
+  }
+}
+
+/* Site header nav — color-only hover (no background pill or lift) */
+.site-header-nav {
+  --nav-link-transition: 200ms;
+}
+
+.site-header-nav .nav-text-link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: transparent;
+  text-decoration: none;
+  transition: color var(--nav-link-transition) ease;
+}
+
+.site-header-nav[data-nav-appearance="solid"] .nav-text-link {
+  color: #1e293b;
+}
+
+.site-header-nav[data-nav-appearance="solid"] .nav-text-link:hover,
+.site-header-nav[data-nav-appearance="solid"] .nav-text-link:focus-visible {
+  color: #2563eb;
+  outline: none;
+}
+
+.site-header-nav[data-nav-appearance="overlay"] .nav-text-link {
+  color: #ffffff;
+}
+
+.site-header-nav[data-nav-appearance="overlay"] .nav-text-link:hover,
+.site-header-nav[data-nav-appearance="overlay"] .nav-text-link:focus-visible {
+  color: #93c5fd;
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-header-nav .nav-text-link {
+    transition: none;
+  }
+}
+
+/* Pricing tier cards — display font at readable body sizes */
+.pricing-tier-card {
+  letter-spacing: 0.01em;
+}
+
+.pricing-tier-card .pricing-tier-tier-name {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: #111827;
+  margin: 0;
+}
+
+.pricing-tier-card .pricing-tier-audience {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #111827;
+  margin: 20px 0 0;
+}
+
+.pricing-tier-card .pricing-tier-body-text {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #374151;
+}
+
+.pricing-tier-card .pricing-tier-subheading {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: #111827;
+  margin: 0 0 12px;
+}
+
+.pricing-tier-card .pricing-tier-plus-heading {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: #374151;
+  margin: 28px 0 0;
+}
+
+.pricing-tier-card .pricing-tier-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.pricing-tier-card .pricing-tier-plus-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.pricing-tier-card .pricing-tier-feature-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pricing-tier-card .pricing-tier-feature-row svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+
+.pricing-tier-card .pricing-tier-replaces-block {
+  margin-top: 28px;
+}
+
+.pricing-tier-card .pricing-tier-replaces-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* Image fade-in animation - safer approach with opacity starting at 0.7 */

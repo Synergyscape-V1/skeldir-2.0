@@ -1,5 +1,7 @@
 "use client";
 
+import { SECTION_DISPLAY_TITLE_CLASS } from "@/components/layout/sectionDisplayFont";
+
 // ============================================================================
 // HOW IT WORKS TIMELINE SECTION
 // Reference: HIW-TIMELINE-001 Directive v1.1 (CORRECTED)
@@ -515,9 +517,8 @@ export function HowItWorks() {
       >
         {/* Section Title */}
         <h2
-          className="how-it-works-title"
+          className={`how-it-works-title ${SECTION_DISPLAY_TITLE_CLASS}`}
           style={{
-            fontFamily: "'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             fontSize: "44px",
             fontWeight: 700,
             lineHeight: 1.2,
