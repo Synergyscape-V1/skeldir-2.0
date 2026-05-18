@@ -2,10 +2,11 @@
 
 ## Workflow Inventory
 
-- Total workflow files: `48`.
-- Default-path workflow files: `43`.
+- Total workflow files: `49`.
+- Default-path workflow files: `44`.
 - Primary monolith: `.github/workflows/ci.yml` with `5784` lines and `69` jobs after M3 reduction.
 - M3 governance workflow: `.github/workflows/m3-ci-governance.yml`.
+- M4 operational runbook workflow: `.github/workflows/m4-operational-runbooks.yml`.
 - B2.4 insertion lane: `.github/workflows/b2_4-gate-dry-run.yml`.
 
 ## Major Jobs
@@ -72,6 +73,8 @@
 - `B1.7 Explanation Runtime Adjudication`
 - `B1.7 P4 Mixed Workload Benchmark`
 - `m0-maintainability-scope-lock`
+- `validate-ops-runbooks`
+- `runtime-ops-proofs`
 
 ## Jobs That Call scripts/ci Enforcers
 
@@ -86,6 +89,7 @@ M3 removed repeated direct `prepare_migration_authority_boundary.py` blocks from
 - M0 Maintainability Scope Lock: `.github/workflows/m0-maintainability-scope-lock.yml`, required context `m0-maintainability-scope-lock`.
 - M1 Local Development Authority: `.github/workflows/m1-local-dev-authority.yml`, preservation workflow remains unchanged by M3.
 - M2 Test Feedback Loop: `.github/workflows/m2-test-feedback-loop.yml`, preservation workflow remains unchanged by M3.
+- M4 Operational Runbooks: `.github/workflows/m4-operational-runbooks.yml`, required contexts `validate-ops-runbooks` and `runtime-ops-proofs`.
 
 ## Active Gates
 
