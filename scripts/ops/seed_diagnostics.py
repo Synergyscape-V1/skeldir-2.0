@@ -291,7 +291,7 @@ def main() -> None:
                     "canonical_net_verified_amount_minor": 12500,
                     "discrepancy_amount_minor": 0,
                     "discrepancy_ratio_bps": 0,
-                    "discrepancy_band": "none",
+                    "discrepancy_band": "exact",
                     "currency_code": "USD",
                     "confirmed_at": now,
                     "pending_since": now,
