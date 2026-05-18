@@ -30,12 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": [
-    "node_modules",
-    "playwright.config.ts",
-    "e2e",
-    "src/stories",
-    "**/*.stories.ts",
-    "**/*.stories.tsx"
-  ]
+  "exclude": ["node_modules"]
 }

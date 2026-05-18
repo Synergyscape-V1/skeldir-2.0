@@ -5,6 +5,9 @@ import { Footer } from "@/components/layout/Footer";
 import { MarketingDefense } from "@/components/layout/MarketingDefense";
 import { ReconciliationNetwork } from "@/components/layout/ReconciliationNetwork";
 import { IntegrationsShowcase } from "@/components/layout/IntegrationsShowcase";
+import { DashboardStage } from "@/components/layout/DashboardStage";
+import { ProductDemoAiLogos } from "@/components/layout/ProductDemoAiLogos";
+import { PRODUCT_HERO_ANALYZE_ASSET } from "@/components/layout/dashboardStagePhysics";
 
 export default function ProductPage() {
   const router = useRouter();
@@ -94,24 +97,47 @@ export default function ProductPage() {
           margin: 0 auto;
         }
 
-        /* Card positioning - EXACT absolute coordinates aligned to frame box
-           Frame in 2208px background: left 1148px, top 162px, width 905px, height 723px
-           Centered on 1920px viewport: frame left = 1148 - 144 = 1004px
-           Card aspect ratio matches Command Center image (1619×1080 = 1.499:1) */
+        /* Dashboard stage + AI logos — same physics as InteractiveDemo */
         .product-hero__mockup-card {
           position: absolute;
           left: 1241px;
-          top: 233px;
+          top: 248px;
           width: 700px;
-          aspect-ratio: 1619 / 1080;
-          background: #FFFFFF;
-          border-radius: 16px;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          box-shadow:
-            0 20px 60px rgba(15, 23, 42, 0.15),
-            0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 20px;
+          background: transparent;
+          border: none;
+          box-shadow: none;
           z-index: 5;
-          overflow: hidden;
+          overflow: visible;
+        }
+
+        .product-hero__mockup-stage {
+          width: 100%;
+        }
+
+        .product-hero__mockup-card .demo-dashboard-image {
+          max-height: none;
+        }
+
+        .product-hero__mockup-card .product-demo-ai-logos {
+          max-width: 100%;
+          margin: 0;
+          padding: 0;
+        }
+
+        @media (min-width: 1025px) {
+          .product-hero__mockup-card .product-hero__ai-logos {
+            margin-top: 8px;
+          }
+        }
+
+        @media (max-width: 1024px) {
+          .product-hero__mockup-card .demo-image-float-wrapper::after {
+            display: none !important;
+          }
         }
 
         /* Mobile: Reset absolute positioning */
@@ -122,36 +148,16 @@ export default function ProductPage() {
             top: auto !important;
             width: 100% !important;
             max-width: 680px !important;
-            aspect-ratio: 16 / 10 !important;
+            aspect-ratio: auto !important;
           }
         }
 
-        /* Additional mobile fix to prevent any clipping */
         @media (max-width: 767px) {
           .product-hero__mockup-card {
             width: calc(100% - 40px) !important;
             max-width: calc(100% - 40px) !important;
             margin: 0 auto !important;
-            overflow: hidden !important;
           }
-          
-          .product-hero__mockup-card img {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: cover !important;
-            object-position: 45% center !important;
-          }
-        }
-        
-        .product-hero__mockup-card img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          object-position: center;
-          display: block;
-          margin: 0;
-          image-rendering: -webkit-optimize-contrast;
-          image-rendering: crisp-edges;
         }
 
         /* Text column positioning */
@@ -160,9 +166,23 @@ export default function ProductPage() {
           left: 0;
           top: 50%;
           transform: translateY(-50%);
-          max-width: 620px;
+          max-width: 720px;
           padding: 0 0 0 120px;
           z-index: 10;
+        }
+
+        .product-hero__headline--mobile {
+          display: none;
+        }
+
+        .product-hero__headline--desktop {
+          display: block;
+        }
+
+        @media (min-width: 1025px) {
+          .product-hero__text-column h1 {
+            text-wrap: balance;
+          }
         }
 
         /* Responsive Styles - Scaled proportionally from 1920px base
@@ -181,13 +201,16 @@ export default function ProductPage() {
           }
           .product-hero__text-column {
             padding-left: 100px;
-            max-width: 500px;
+            max-width: 620px;
+          }
+          .product-hero__text-column h1 {
+            font-size: 46px !important;
+            line-height: 1.14 !important;
           }
           .product-hero__mockup-card {
             left: 1034px;
             top: 194px;
             width: 583px;
-            aspect-ratio: 1619 / 1080;
           }
         }
 
@@ -204,16 +227,16 @@ export default function ProductPage() {
           }
           .product-hero__text-column {
             padding-left: 80px;
-            max-width: 460px;
+            max-width: 560px;
           }
           .product-hero__text-column h1 {
             font-size: 44px !important;
+            line-height: 1.14 !important;
           }
           .product-hero__mockup-card {
             left: 930px;
             top: 175px;
             width: 525px;
-            aspect-ratio: 1619 / 1080;
           }
         }
 
@@ -230,16 +253,16 @@ export default function ProductPage() {
           }
           .product-hero__text-column {
             padding-left: 60px;
-            max-width: 420px;
+            max-width: 500px;
           }
           .product-hero__text-column h1 {
             font-size: 40px !important;
+            line-height: 1.14 !important;
           }
           .product-hero__mockup-card {
             left: 827px;
             top: 155px;
             width: 467px;
-            aspect-ratio: 1619 / 1080;
           }
         }
 
@@ -274,6 +297,14 @@ export default function ProductPage() {
           .product-hero__text-column h1 {
             font-size: 38px !important;
             max-width: 100% !important;
+            line-height: 1.12 !important;
+            text-wrap: wrap;
+          }
+          .product-hero__headline--desktop {
+            display: none;
+          }
+          .product-hero__headline--mobile {
+            display: block;
           }
           .product-hero__mockup-card {
             position: relative;
@@ -282,13 +313,48 @@ export default function ProductPage() {
             width: 100%;
             max-width: 680px;
             height: auto;
-            min-height: 400px;
           }
           .product-hero__ctas {
             justify-content: center !important;
           }
           .product-hero__bullets {
             align-items: center !important;
+          }
+        }
+
+        /* Mobile — flatten 3D stage bleed; keep logo row on gradient canvas */
+        @media (max-width: 767px) {
+          .product-hero-content::after {
+            display: none;
+          }
+
+          .product-hero__mockup-card {
+            gap: 10px;
+          }
+
+          .product-hero__mockup-stage {
+            overflow: hidden;
+            border-radius: 20px;
+          }
+
+          .product-hero__mockup-stage .demo-image-float-wrapper {
+            animation: none;
+            will-change: auto;
+          }
+
+          .product-hero__mockup-stage .demo-image-float-wrapper::after {
+            display: none !important;
+          }
+
+          .product-hero__mockup-stage .demo-image-glass {
+            transform: none !important;
+            isolation: auto;
+          }
+
+          .product-hero__mockup-card .product-hero__ai-logos {
+            margin-top: -6px;
+            position: relative;
+            z-index: 2;
           }
         }
 
@@ -331,7 +397,6 @@ export default function ProductPage() {
           .product-hero__mockup-card {
             width: 100% !important;
             max-width: 100% !important;
-            min-height: 300px !important;
             margin-top: 32px !important;
           }
         }
@@ -345,6 +410,7 @@ export default function ProductPage() {
           <div className="product-hero__text-column" style={{ display: "flex", flexDirection: "column" }}>
             {/* Headline */}
             <h1
+              aria-label="The Revenue Verification Infrastructure Your Ad Stack Has Always Been Missing"
               style={{
                 fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                 fontSize: "52px",
@@ -356,7 +422,14 @@ export default function ProductPage() {
                 margin: "0 0 24px 0",
               }}
             >
-              Verify Every Dollar of Ad Spend with Automated Attribution
+              <span className="product-hero__headline--desktop" aria-hidden="true">
+                The Revenue Verification Infrastructure
+                <br />
+                Your Ad Stack Has Always Been Missing
+              </span>
+              <span className="product-hero__headline--mobile" aria-hidden="true">
+                The Revenue Verification Infrastructure Your Ad Stack Has Always Been Missing
+              </span>
             </h1>
 
             {/* Body Paragraph */}
@@ -507,12 +580,10 @@ export default function ProductPage() {
 
           {/* Right Column: Product Card Mockup - Positioned within frame box */}
           <div className="product-hero__mockup-card">
-            <img
-              src="/images/4. Command Center .png"
-              alt="Skeldir Command Center"
-              loading="lazy"
-              decoding="async"
-            />
+            <div className="product-hero__mockup-stage">
+              <DashboardStage asset={PRODUCT_HERO_ANALYZE_ASSET} loading="eager" fetchPriority="high" />
+            </div>
+            <ProductDemoAiLogos className="product-hero__ai-logos" />
           </div>
         </div>
       </section>
