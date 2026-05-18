@@ -7,8 +7,8 @@ Working branches:
 - `codex/m4-operational-runbooks`
 - `codex/m4-1-operational-proof`
 
-Protected-main evidence: recorded by GitHub after each protected merge and
-reported in the final remediation response.
+Protected-main M4.1 implementation merge commit:
+`7c7f02130e2d158878cd0a52f7cac8a8fdbe1389`
 
 Final verdict: `M4_PASS`
 
@@ -206,5 +206,12 @@ M4 initial protected merge:
 - Main status: green after merge.
 
 M4.1 protected merge evidence is recorded in
-`M4.1_Remediation_Completion_Record.md` and in the final response after GitHub
-creates the protected main commit and all required checks finish green.
+`M4.1_Remediation_Completion_Record.md`.
+
+- PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/470`
+- Main implementation commit:
+  `7c7f02130e2d158878cd0a52f7cac8a8fdbe1389`
+- M4 workflow on main:
+  `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26049190343`
+- Repository CI on main:
+  `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26049190293`
