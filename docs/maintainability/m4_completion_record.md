@@ -8,6 +8,19 @@ M4 initial CI workflow URL: `https://github.com/Synergyscape-V1/skeldir-2.0/acti
 
 M4.1 corrective evidence: `M4.1_Remediation_Completion_Record.md`
 
+M4.1 protected-main implementation merge commit SHA:
+`7c7f02130e2d158878cd0a52f7cac8a8fdbe1389`
+
+M4.1 protected merge PR:
+`https://github.com/Synergyscape-V1/skeldir-2.0/pull/470`
+
+M4.1 main workflow URLs:
+
+- M4 Operational Runbooks:
+  `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26049190343`
+- Repository CI:
+  `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26049190293`
+
 ## Files Changed
 
 Runbooks:
