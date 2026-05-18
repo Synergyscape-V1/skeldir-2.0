@@ -127,8 +127,10 @@ signature_sensitive: true
 `make ops-seed-diagnostics` creates a run-scoped synthetic tenant, a
 two tenant-scoped `worker_failed_jobs` rows, a B2.3 ingress/dispatch/verdict
 chain, an RLS/GUC positive control, and local signed webhook replay material.
-The material is stored under `.tmp/m4_ops/` and is removed by
-`make ops-clear-diagnostics`.
+The material is stored under `.tmp/m4_ops/`. `make ops-clear-diagnostics`
+removes the mutable M4 diagnostic rows and the local fixture state file while
+preserving append-only truth rows in `attribution_events`, `session_authority`,
+and `tenants`.
 
 Required fixture IDs:
 
@@ -155,4 +157,5 @@ this repository surface.
 
 `make ops-runtime-proof` is the one-shot non-vacuous proof chain. Run it only
 after `make api` and `make health`; it seeds scoped fixtures, executes positive
-and negative controls, and clears only the scoped fixture tenants.
+and negative controls, then clears mutable fixture rows without deleting
+append-only truth tables.

@@ -42,7 +42,7 @@ Command and validation surfaces:
 | --- | --- | --- |
 | `validate-ops-runbooks` | `ci_static` | Run drift validator. |
 | `ops-seed-diagnostics` | `container_api` | Seed local synthetic diagnostic fixtures. |
-| `ops-clear-diagnostics` | `container_api` | Clear local synthetic diagnostic fixtures. |
+| `ops-clear-diagnostics` | `container_api` | Clear mutable local synthetic diagnostic rows while preserving append-only truth rows. |
 | `ops-dlq-inspect` | `container_api` | Inspect seeded `worker_failed_jobs`. |
 | `ops-queues` | `container_api` | Print queue topology from `backend/app/core/queues.py`. |
 | `ops-worker-inspect` | `container_celery` | Inspect active/reserved/scheduled tasks through worker container. |
@@ -62,7 +62,7 @@ Command and validation surfaces:
 | `make ops-b23-trace` | `read_only_inspection` | `false` | `m4-b23-trace-positive`, `m4-b23-unknown-control` |
 | `make ops-webhook-replay-local` | `local_fixture_replay` | `local_fixture_only` | `m4-webhook-valid`, `m4-webhook-tampered`, `m4-webhook-duplicate` |
 | `make ops-seed-diagnostics` | `local_fixture_replay` | `local_fixture_only` | creates run-scoped fixtures |
-| `make ops-clear-diagnostics` | `local_fixture_replay` | `local_fixture_only` | clears run-scoped fixtures |
+| `make ops-clear-diagnostics` | `local_fixture_replay` | `local_fixture_only` | clears mutable run-scoped fixtures and preserves append-only truth rows |
 
 ## Fixture-Backed Proof Matrix
 

@@ -12,7 +12,11 @@ TABLE_ORDER = (
     "b23_match_verdicts",
     "webhook_ingress_identities",
     "worker_failed_jobs",
+)
+
+PRESERVED_TRUTH_TABLES = (
     "attribution_events",
+    "session_authority",
     "tenants",
 )
 
@@ -28,13 +32,8 @@ def main() -> None:
             for tenant_id in tenant_ids:
                 set_tenant(cur, tenant_id)
                 for table in TABLE_ORDER:
-                    if table == "tenants":
-                        continue
                     cur.execute(f"DELETE FROM public.{table} WHERE tenant_id = %s", (tenant_id,))
                     deleted[table] = deleted.get(table, 0) + int(cur.rowcount)
-
-            cur.execute("DELETE FROM public.tenants WHERE id = ANY(%s::uuid[])", (tenant_ids,))
-            deleted["tenants"] = int(cur.rowcount)
     FIXTURE_STATE_PATH.unlink(missing_ok=True)
     emit(
         {
@@ -42,6 +41,7 @@ def main() -> None:
             "fixture_class": "local_fixture_only",
             "tenant_ids": tenant_ids,
             "deleted": deleted,
+            "preserved_truth_tables": list(PRESERVED_TRUTH_TABLES),
         }
     )
 
