@@ -1,5 +1,11 @@
 import type { CSSProperties, ReactNode } from "react";
-import { bottomBullets, platformRows, type PlatformRow } from "./problemArticulationData";
+import { SECTION_DISPLAY_TITLE_CLASS } from "@/components/layout/sectionDisplayFont";
+import {
+  bottomBulletRows,
+  platformRows,
+  PROBLEM_STATEMENT_CALLOUT_CITATION,
+  type PlatformRow,
+} from "./problemArticulationData";
 
 type CandidateTheme = {
   pageBg: string;
@@ -52,21 +58,27 @@ export function ProblemStatementCandidate({ theme }: CandidateProps) {
     >
       <div
         className="problem-statement-inner"
-        style={{
-          width: "100%",
-          maxWidth: theme.maxWidth,
-          margin: "0 auto",
-          color: theme.bodyColor,
-          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-        }}
+        style={
+          {
+            width: "100%",
+            maxWidth: theme.maxWidth,
+            margin: "0 auto",
+            color: theme.bodyColor,
+            fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+            /* Desktop ring expands the outer box so content width matches pre-chassis layout */
+            "--ps-content-max": theme.maxWidth,
+          } as CSSProperties
+        }
       >
         <div style={{ textAlign: "center", marginBottom: "20px" }}>
           <h2
+            className={SECTION_DISPLAY_TITLE_CLASS}
             style={{
               margin: "0 0 12px",
               fontSize: theme.titleSize,
               lineHeight: 1.08,
               fontWeight: 900,
+              letterSpacing: "-0.02em",
               color: theme.headingColor,
             }}
           >
@@ -239,29 +251,56 @@ export function ProblemStatementCandidate({ theme }: CandidateProps) {
             Platform discrepancies don&apos;t discriminate by budget
           </h4>
           <ul
+            className="problem-statement-callout-bullets"
             style={{
-              listStyle: "disc",
-              paddingLeft: "24px",
+              listStyle: "none",
+              paddingLeft: 0,
               margin: "0 auto",
               fontSize: "15px",
               lineHeight: 1.45,
               color: theme.headingColor,
-              display: "inline-block",
-              textAlign: "left",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              maxWidth: "560px",
+              width: "100%",
             }}
           >
-            {bottomBullets.map((bullet) => (
-              <li key={bullet}>{bullet}</li>
+            {bottomBulletRows.map((row) => (
+              <li
+                key={row.spendPhrase}
+                className="problem-statement-callout-bullet"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "12px",
+                  width: "100%",
+                }}
+              >
+                <span style={{ flex: "1 1 0", minWidth: 0, textAlign: "end", lineHeight: 1.35 }}>
+                  {row.spendPhrase}
+                </span>
+                <span className="sr-only"> leads to </span>
+                <RightArrowConnector color="#475569" />
+                <span style={{ flex: "1 1 0", minWidth: 0, textAlign: "start", lineHeight: 1.35 }}>
+                  {row.misallocatePhrase}
+                </span>
+              </li>
             ))}
           </ul>
           <p
+            className="problem-statement-callout-citation"
             style={{
-              margin: "12px 0 0",
+              margin: "14px auto 0",
+              maxWidth: "640px",
               fontSize: "12px",
+              lineHeight: 1.5,
+              textAlign: "center",
               color: theme.subduedText,
             }}
           >
-            [Source: Skeldir analysis of 200+ ecommerce brands]
+            {PROBLEM_STATEMENT_CALLOUT_CITATION}
           </p>
         </div>
       </div>
@@ -332,6 +371,32 @@ function InlineAnnotation({
       </span>
       <CurvedDownArrow color={color} />
     </span>
+  );
+}
+
+/** Horizontal flow connector for callout bullets (spend → misallocation). */
+function RightArrowConnector({ color }: { color: string }) {
+  return (
+    <svg
+      className="problem-statement-callout-arrow"
+      width="36"
+      height="16"
+      viewBox="0 0 36 16"
+      fill="none"
+      aria-hidden
+      style={{ flexShrink: 0, display: "block" }}
+    >
+      <line
+        x1="2"
+        y1="8"
+        x2="24"
+        y2="8"
+        stroke={color}
+        strokeWidth="2.75"
+        strokeLinecap="round"
+      />
+      <polygon points="36,8 22,2 22,14" fill={color} />
+    </svg>
   );
 }
 
@@ -453,7 +518,8 @@ function BarLine({
     barStyle.background = theme.greenBar;
   }
   if (styleKey === "blueWithRedHatch") {
-    barStyle.background = `linear-gradient(to right, ${theme.budgetBar} 0%, ${theme.budgetBar} ${splitPercent}%, transparent ${splitPercent}%), repeating-linear-gradient(135deg, ${theme.redHatch}, ${theme.redHatch} 8px, #fca5a5 8px, #fca5a5 16px)`;
+    /* Misallocated tail: flat translucent red (no hatch); left segment stays budget blue */
+    barStyle.background = `linear-gradient(to right, ${theme.budgetBar} 0%, ${theme.budgetBar} ${splitPercent}%, rgba(220, 38, 38, 0.32) ${splitPercent}%, rgba(220, 38, 38, 0.32) 100%)`;
   }
   if (styleKey === "greenWithWhiteHatch") {
     barStyle.background = `repeating-linear-gradient(135deg, ${theme.greenBar}, ${theme.greenBar} 9px, ${theme.greenStripe} 9px, ${theme.greenStripe} 18px)`;
@@ -523,6 +589,21 @@ function BarLine({
 }
 
 const responsiveStyles = `
+  @media (min-width: 768px) {
+    .problem-statement-inner {
+      box-sizing: border-box;
+      /* 24px horizontal padding ×2 + 1px border ×2 added to content max so the chart is not squeezed */
+      max-width: min(100%, calc(var(--ps-content-max, 1200px) + 48px + 2px)) !important;
+      padding: 22px 24px 28px;
+      border-radius: 14px;
+      background: #ffffff;
+      border: 1px solid rgba(15, 23, 42, 0.09);
+      box-shadow:
+        0 2px 12px rgba(15, 23, 42, 0.055),
+        0 0 0 1px rgba(15, 23, 42, 0.045);
+    }
+  }
+
   @media (max-width: 1024px) {
     h2 { font-size: 34px !important; }
     h3 { font-size: 21px !important; }
@@ -542,6 +623,10 @@ const responsiveStyles = `
     .problem-statement-inner {
       transform: none !important;
       margin-bottom: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      padding: 0 !important;
     }
 
     h2 { font-size: 24px !important; }
@@ -554,6 +639,57 @@ const responsiveStyles = `
       max-width: 100% !important;
       border-radius: 10px !important;
       padding: 14px 12px !important;
+    }
+
+    .problem-statement-callout-citation {
+      max-width: 100% !important;
+      font-size: 11px !important;
+      line-height: 1.45 !important;
+      text-align: left !important;
+    }
+
+    .problem-statement-callout-bullets {
+      gap: 10px !important;
+      max-width: 100% !important;
+      align-items: center !important;
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch !important;
+      overscroll-behavior-x: contain !important;
+    }
+
+    /* Mobile: one horizontal line per bullet — SVG arrow reads left-to-right toward misallocation */
+    .problem-statement-callout-bullet {
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 8px !important;
+      width: max-content !important;
+      max-width: none !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      white-space: nowrap !important;
+    }
+
+    .problem-statement-callout-bullet > span:first-of-type,
+    .problem-statement-callout-bullet > span:last-of-type {
+      flex: 0 0 auto !important;
+      width: auto !important;
+      white-space: nowrap !important;
+    }
+
+    .problem-statement-callout-bullet > span:first-of-type {
+      text-align: right !important;
+    }
+
+    .problem-statement-callout-bullet > span:last-of-type {
+      text-align: left !important;
+    }
+
+    .problem-statement-callout-arrow {
+      width: 28px !important;
+      height: 12px !important;
+      flex-shrink: 0 !important;
     }
 
     .problem-statement-chart {

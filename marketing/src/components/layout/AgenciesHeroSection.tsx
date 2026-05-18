@@ -1,6 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import {
+  AGENCIES_HERO_HEADLINE_ACCENT,
+  AGENCIES_HERO_HEADLINE_ARIA_LABEL,
+  AGENCIES_HERO_HEADLINE_LEAD,
+} from "@/components/layout/agenciesHeroCopy";
+import {
+  DISPLAY_HEADLINE_FONT_SIZE,
+  DISPLAY_HEADLINE_FONT_SIZE_MOBILE,
+  DISPLAY_HEADLINE_FONT_WEIGHT,
+  DISPLAY_HEADLINE_LETTER_SPACING,
+  DISPLAY_HEADLINE_LINE_HEIGHT,
+  DISPLAY_HEADLINE_LINE_HEIGHT_MOBILE,
+  SECTION_DISPLAY_FONT_FAMILY,
+} from "@/components/layout/sectionDisplayFont";
 
 export function AgenciesHeroSection() {
   return (
@@ -83,18 +97,17 @@ export function AgenciesHeroSection() {
           >
           <h1
             id="agencies-hero-heading"
-            className="agencies-hero-headline"
+            className="agencies-hero-headline section-display-title"
+            aria-label={AGENCIES_HERO_HEADLINE_ARIA_LABEL}
             style={{
-              fontFamily: "'DM Sans', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-              fontSize: '56px',
-              fontWeight: 700,
-              lineHeight: 1.15,
-              letterSpacing: '-0.025em',
-              color: '#111827',
-              margin: '0 0 32px 0',
+              color: "#111827",
+              margin: "0 0 32px 0",
             }}
           >
-            <span style={{ color: '#FFFFFF' }}>Enterprise Attribution Intelligence Without</span> Enterprise Complexity
+            <span className="agencies-hero-headline-lead" style={{ color: "#FFFFFF" }}>
+              {AGENCIES_HERO_HEADLINE_LEAD}
+            </span>{" "}
+            <span className="agencies-hero-headline-accent">{AGENCIES_HERO_HEADLINE_ACCENT}</span>
           </h1>
 
           <p
@@ -347,6 +360,31 @@ export function AgenciesHeroSection() {
           animation: agencies-hero-reveal 0.55s ease-out 0.1s both;
         }
 
+        /* Display headline — identical physics to home .hero-headline */
+        .agencies-hero-text {
+          container-type: inline-size;
+          container-name: agencies-hero-text;
+        }
+
+        .agencies-hero-headline {
+          font-family: ${SECTION_DISPLAY_FONT_FAMILY};
+          font-size: ${DISPLAY_HEADLINE_FONT_SIZE};
+          line-height: ${DISPLAY_HEADLINE_LINE_HEIGHT};
+          letter-spacing: ${DISPLAY_HEADLINE_LETTER_SPACING};
+          font-weight: ${DISPLAY_HEADLINE_FONT_WEIGHT};
+        }
+
+        .agencies-hero-headline-lead,
+        .agencies-hero-headline-accent {
+          display: inline;
+          white-space: normal;
+          font-family: inherit;
+          font-size: inherit;
+          line-height: inherit;
+          letter-spacing: inherit;
+          font-weight: inherit;
+        }
+
         /* Desktop: 1024px+ — align hero text/image vertical position with homepage hero */
         @media (min-width: 1024px) {
           .agencies-hero {
@@ -424,7 +462,6 @@ export function AgenciesHeroSection() {
             order: 1 !important;
           }
           .agencies-hero-headline {
-            font-size: 42px !important;
             margin-bottom: 20px !important;
           }
           .agencies-hero-subheadline {
@@ -470,16 +507,12 @@ export function AgenciesHeroSection() {
             padding: 0 !important;
           }
           .agencies-hero-headline {
-            font-size: 36px !important;
-            line-height: 1.25 !important;
-            letter-spacing: -0.03em !important;
-            font-weight: 700 !important;
+            font-size: ${DISPLAY_HEADLINE_FONT_SIZE_MOBILE} !important;
+            line-height: ${DISPLAY_HEADLINE_LINE_HEIGHT_MOBILE} !important;
+            letter-spacing: ${DISPLAY_HEADLINE_LETTER_SPACING} !important;
+            font-weight: ${DISPLAY_HEADLINE_FONT_WEIGHT} !important;
             margin-bottom: 20px !important;
             padding: 0 4px !important;
-          }
-          .agencies-hero-headline span {
-            white-space: normal !important;
-            display: inline !important;
           }
           .agencies-hero-subheadline {
             font-size: 16px !important;
@@ -549,8 +582,6 @@ export function AgenciesHeroSection() {
             padding: 0 16px !important;
           }
           .agencies-hero-headline {
-            font-size: 32px !important;
-            line-height: 1.2 !important;
             margin-bottom: 16px !important;
           }
           .agencies-hero-subheadline {
