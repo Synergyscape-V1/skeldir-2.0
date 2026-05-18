@@ -4,7 +4,7 @@ HEALTH_RETRIES ?= 30
 COMPOSE = docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 OPS_RUN = $(COMPOSE) run --rm -v "$$(pwd):/workspace" -w /workspace api python
 
-.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-celery-worker-concurrent test-pooler-worker-concurrent test-broker-topology test-parallel-isolation test-b23-representative test-b24-persistence-readiness test-b24-persistence-entry-gate test-governance test-e2e test-external-db-smoke validate-ci-governance validate-ops-runbooks ops-dlq-inspect ops-queues ops-worker-inspect ops-rls-check ops-b23-trace ops-webhook-replay-local ops-seed-diagnostics ops-clear-diagnostics ci-topology ci-enforcer-registry-check ci-gate-subsumption-check ci-b24-gate-dry-run ci-metrics ci-cohort-summary down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
+.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-celery-worker-concurrent test-pooler-worker-concurrent test-broker-topology test-parallel-isolation test-b23-representative test-b24-persistence-readiness test-b24-persistence-entry-gate test-governance test-e2e test-external-db-smoke validate-ci-governance validate-ops-runbooks ops-dlq-inspect ops-queues ops-worker-inspect ops-rls-check ops-b23-trace ops-webhook-replay-local ops-seed-diagnostics ops-clear-diagnostics ops-runtime-proof ci-topology ci-enforcer-registry-check ci-gate-subsumption-check ci-b24-gate-dry-run ci-metrics ci-cohort-summary down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
 
 help: ## Show this help message
 	@echo "SKELDIR 2.0 Monorepo - Available Commands"
@@ -124,6 +124,9 @@ ops-b23-trace: $(ENV_FILE) ## Trace seeded B2.3 ingress/dispatch/verdict spine t
 
 ops-webhook-replay-local: $(ENV_FILE) ## Run local signed/tampered/duplicate webhook replay controls through the API container image
 	@$(OPS_RUN) scripts/ops/webhook_replay_local.py --mode all
+
+ops-runtime-proof: $(ENV_FILE) ## Run the full fixture-backed M4 operational proof chain; requires API service running
+	@$(OPS_RUN) scripts/ops/runtime_proof_harness.py
 
 ci-topology: ## Validate indexed CI topology and required-context mapping
 	@python scripts/ci/validate_m3_ci_governance.py --topology

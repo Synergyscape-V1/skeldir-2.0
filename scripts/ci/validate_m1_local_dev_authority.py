@@ -151,6 +151,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/INDEX.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "M4 Remediation Evidence Pack.md",
+    "M4.1_Remediation_Completion_Record.md",
     "docs/testing.md",
     "docs/testing_db_topology.md",
     "docs/testing_append_only_isolation.md",

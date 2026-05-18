@@ -181,6 +181,7 @@ ALLOWED_M0_PATHS = [
     "docs/forensics/INDEX.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "M4 Remediation Evidence Pack.md",
+    "M4.1_Remediation_Completion_Record.md",
     ".github/workflows/r7-final-winning-state.yml",
     "scripts/r3/ingestion_under_fire.py",
     "contracts-internal/governance/b03_phase2_required_status_checks.main.json",

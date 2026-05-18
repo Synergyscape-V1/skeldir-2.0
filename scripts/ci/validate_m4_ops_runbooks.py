@@ -30,6 +30,7 @@ REQUIRED_MAKE_TARGETS = [
     "ops-webhook-replay-local",
     "ops-seed-diagnostics",
     "ops-clear-diagnostics",
+    "ops-runtime-proof",
 ]
 
 REQUIRED_SCRIPTS = [
@@ -41,6 +42,7 @@ REQUIRED_SCRIPTS = [
     "scripts/ops/webhook_replay_local.py",
     "scripts/ops/seed_diagnostics.py",
     "scripts/ops/clear_diagnostics.py",
+    "scripts/ops/runtime_proof_harness.py",
 ]
 
 ALLOWED_CONTEXTS = {
@@ -80,6 +82,7 @@ FIXTURE_TOKENS = [
     "m4-b23-unknown-control",
     "m4-rls-positive",
     "m4-rls-missing-context",
+    "m4-rls-bare-select-isolation",
     "m4-webhook-valid",
     "m4-webhook-tampered",
     "m4-webhook-duplicate",
@@ -143,6 +146,7 @@ def validate_paths() -> None:
     for script in REQUIRED_SCRIPTS:
         read(script)
     read(".github/workflows/m4-operational-runbooks.yml")
+    read("M4.1_Remediation_Completion_Record.md")
 
 
 def validate_make_targets() -> None:
@@ -258,6 +262,29 @@ def validate_scripts_for_secret_and_replay_risk() -> None:
     if "authenticity" not in scripts_text and "signature" not in scripts_text:
         fail("scripts do not expose signature/authenticity-sensitive handling")
 
+    replay_script = read("scripts/ops/webhook_replay_local.py")
+    for token in (
+        "UNSAFE_REPLAY_TARGET_MESSAGE",
+        "validate_local_api_base_url",
+        "ALLOWED_LOCAL_REPLAY_HOSTS",
+        "parsed.scheme != \"http\"",
+        "rejected host",
+    ):
+        if token not in replay_script:
+            fail(f"webhook replay target guard missing token: {token}")
+
+    rls_script = read("scripts/ops/rls_check.py")
+    for token in (
+        "physical_rls_enforcement_proof",
+        "m4-rls-bare-select-isolation",
+        "role_bypasses_rls",
+        "table_rls_enabled",
+        "no tenant_id predicate",
+        "connect_runtime",
+    ):
+        if token not in rls_script:
+            fail(f"RLS physical proof missing token: {token}")
+
     api_text = "\n".join(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in (ROOT / "backend/app").rglob("*.py")
@@ -273,6 +300,46 @@ def validate_readme_symptoms() -> None:
             fail(f"README missing symptom mapping: {symptom}")
 
 
+def validate_runtime_harness_and_workflow() -> None:
+    workflow = read(".github/workflows/m4-operational-runbooks.yml")
+    if "paths:" in workflow:
+        fail("M4 workflow must not use path filters once validate-ops-runbooks is required")
+    for token in (
+        "runtime-ops-proofs",
+        "make ops-runtime-proof",
+        "prepare_migration_authority_boundary.py",
+        "DATABASE_URL=postgresql+asyncpg://app_user:app_user@postgres",
+        "MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@postgres",
+    ):
+        if token not in workflow:
+            fail(f"M4 runtime workflow missing token: {token}")
+
+    harness = read("scripts/ops/runtime_proof_harness.py")
+    for token in (
+        "dlq_missing_negative",
+        "rls_physical_boundary",
+        "b23_unknown_negative",
+        "webhook_valid_tampered_duplicate",
+        "webhook_unsafe_target_negative",
+        "clear_diagnostics.py",
+    ):
+        if token not in harness:
+            fail(f"M4 runtime proof harness missing step: {token}")
+
+    record = read("M4.1_Remediation_Completion_Record.md")
+    if "PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION" in record:
+        fail("M4.1 completion record contains stale protected-branch placeholder")
+    for token in (
+        "Physical Trust-Boundary Proof",
+        "Non-Vacuous Runtime Proof Harness",
+        "Merge-Blocking Governance",
+        "Scope Preservation",
+        "Final Evidence Closure",
+    ):
+        if token not in record:
+            fail(f"M4.1 completion record missing exit gate: {token}")
+
+
 def main() -> None:
     validate_paths()
     validate_make_targets()
@@ -282,6 +349,7 @@ def main() -> None:
     validate_fixtures_and_safety()
     validate_scripts_for_secret_and_replay_risk()
     validate_readme_symptoms()
+    validate_runtime_harness_and_workflow()
     print("M4_OPS_RUNBOOK_VALIDATION_PASS")
 
 

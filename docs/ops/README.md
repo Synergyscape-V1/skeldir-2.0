@@ -16,7 +16,7 @@ them `manual_local_host_debug` or `manual_production_diagnostic`.
 | webhook accepted but no downstream task | `make ops-b23-trace` | [Webhook replay](webhook_replay.md) and [B2.3 match diagnosis](b23_match_diagnosis.md) | Check webhook ingress identity before Celery dispatch. |
 | webhook rejected | `make ops-webhook-replay-local` | [Webhook replay](webhook_replay.md) | Separate auth failure from payload failure. |
 | tenant isolation concern | `make ops-rls-check` | [RLS/GUC verification](rls_guc_verification.md) | Compare current_setting with fixture row visibility. |
-| RLS/GUC missing context | `make ops-rls-check` | [RLS/GUC verification](rls_guc_verification.md) | Missing context must be reported beside zero-row behavior. |
+| RLS/GUC missing context | `make ops-rls-check` | [RLS/GUC verification](rls_guc_verification.md) | Missing context must be reported beside zero-row behavior from an RLS-applicable role. |
 | duplicate idempotency issue | `make ops-webhook-replay-local` | [Webhook replay](webhook_replay.md) | Confirm duplicate replay does not create another canonical event. |
 | DLQ row present | `make ops-dlq-inspect` | [DLQ inspection and replay safety](dlq_inspection_and_replay.md) | Interpret task args/kwargs and protected truth impact. |
 | pooler/transaction context issue | `make ops-rls-check` | [RLS/GUC verification](rls_guc_verification.md) | Treat transaction-local GUC scope as the first suspect. |
@@ -111,12 +111,24 @@ idempotency_sensitive: true
 signature_sensitive: true
 ```
 
+```yaml
+command: make ops-runtime-proof
+execution_context: container_api
+command_class: local_fixture_replay
+requires_seeded_fixture: false
+mutates_state: local_fixture_only
+tenant_scope_required: true
+idempotency_sensitive: true
+signature_sensitive: true
+```
+
 ## Fixture Contract
 
 `make ops-seed-diagnostics` creates a run-scoped synthetic tenant, a
-`worker_failed_jobs` row, a B2.3 ingress/dispatch/verdict chain, an RLS/GUC
-positive control, and local signed webhook replay material. The material is
-stored under `.tmp/m4_ops/` and is removed by `make ops-clear-diagnostics`.
+two tenant-scoped `worker_failed_jobs` rows, a B2.3 ingress/dispatch/verdict
+chain, an RLS/GUC positive control, and local signed webhook replay material.
+The material is stored under `.tmp/m4_ops/` and is removed by
+`make ops-clear-diagnostics`.
 
 Required fixture IDs:
 
@@ -128,6 +140,7 @@ Required fixture IDs:
 | `m4-b23-unknown-control` | Explicit no linked task/verdict diagnostic. |
 | `m4-rls-positive` | `current_setting('app.current_tenant_id', true)` equals the fixture tenant and row is visible. |
 | `m4-rls-missing-context` | Missing context is reported beside defensive zero-row behavior. |
+| `m4-rls-bare-select-isolation` | A tenant-unfiltered `worker_failed_jobs` query over two tenant fixtures returns only the row allowed by PostgreSQL RLS. |
 | `m4-webhook-valid` | Existing Stripe HMAC verifier accepts a local signed fixture. |
 | `m4-webhook-tampered` | Tampered signature returns unauthorized. |
 | `m4-webhook-duplicate` | Reusing the run-scoped idempotency key does not create another canonical event. |
@@ -139,3 +152,7 @@ replay commands may mutate only rows owned by the synthetic M4 tenant. Productio
 payload replay is forbidden in M4; a production incident may use these runbooks
 for diagnosis, but replay requires a separate operational approval path outside
 this repository surface.
+
+`make ops-runtime-proof` is the one-shot non-vacuous proof chain. Run it only
+after `make api` and `make health`; it seeds scoped fixtures, executes positive
+and negative controls, and clears only the scoped fixture tenants.

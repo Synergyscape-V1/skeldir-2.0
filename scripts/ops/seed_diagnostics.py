@@ -96,7 +96,9 @@ def main() -> None:
     run_id = secrets.token_hex(6)
     now = datetime.now(timezone.utc)
     tenant_id = str(uuid4())
+    rls_peer_tenant_id = str(uuid4())
     tenant_name = f"{TENANT_NAME_PREFIX} {run_id}"
+    rls_peer_tenant_name = f"{TENANT_NAME_PREFIX} RLS Peer {run_id}"
     api_key = f"m4-local-api-key-{secrets.token_urlsafe(18)}"
     webhook_secret = secrets.token_urlsafe(32)
     correlation_id = str(uuid5(NAMESPACE_URL, f"m4-ops-correlation-{run_id}"))
@@ -105,6 +107,7 @@ def main() -> None:
     verdict_id = str(uuid4())
     b23_revenue_event_id = str(uuid4())
     dlq_task_id = f"{DLQ_TASK_ID_PREFIX}-{run_id}"
+    rls_peer_dlq_task_id = f"{DLQ_TASK_ID_PREFIX}-rls-peer-{run_id}"
     b23_task_id = f"{B23_TASK_ID_PREFIX}-{run_id}"
     webhook_idempotency_key = f"{WEBHOOK_IDEMPOTENCY_PREFIX}-{run_id}"
     commerce_ref = f"pi_m4diag{run_id}"
@@ -118,6 +121,13 @@ def main() -> None:
                 tenant_name=tenant_name,
                 api_key=api_key,
                 webhook_secret=webhook_secret,
+            )
+            _tenant_insert(
+                cur,
+                tenant_id=rls_peer_tenant_id,
+                tenant_name=rls_peer_tenant_name,
+                api_key=f"m4-local-peer-api-key-{secrets.token_urlsafe(18)}",
+                webhook_secret=secrets.token_urlsafe(32),
             )
             set_tenant(cur, tenant_id)
 
@@ -170,6 +180,36 @@ def main() -> None:
                     "error_message": "m4 synthetic failed task fixture",
                     "traceback": "synthetic traceback for local diagnostic fixture only",
                     "retry_count": 2,
+                    "status": "pending",
+                    "correlation_id": correlation_id,
+                    "failed_at": now,
+                },
+                conflict="ON CONFLICT DO NOTHING",
+            )
+
+            insert_dynamic(
+                cur,
+                "worker_failed_jobs",
+                {
+                    "id": str(uuid4()),
+                    "task_id": rls_peer_dlq_task_id,
+                    "task_name": "app.tasks.revenue_verification.execute_b23_batch_match_engine",
+                    "queue": "b23_match_engine",
+                    "worker": "m4-local-fixture",
+                    "task_args": psycopg2.extras.Json([rls_peer_tenant_id]),
+                    "task_kwargs": psycopg2.extras.Json(
+                        {
+                            "tenant_id": rls_peer_tenant_id,
+                            "correlation_id": correlation_id,
+                            "fixture": "m4_rls_peer_positive",
+                        }
+                    ),
+                    "tenant_id": rls_peer_tenant_id,
+                    "error_type": "validation_error",
+                    "exception_class": "M4SyntheticDiagnosticError",
+                    "error_message": "m4 synthetic peer failed task fixture",
+                    "traceback": "synthetic traceback for local RLS diagnostic fixture only",
+                    "retry_count": 1,
                     "status": "pending",
                     "correlation_id": correlation_id,
                     "failed_at": now,
@@ -288,11 +328,14 @@ def main() -> None:
         "run_id": run_id,
         "created_epoch": int(time.time()),
         "tenant_id": tenant_id,
+        "rls_peer_tenant_id": rls_peer_tenant_id,
         "tenant_name": tenant_name,
+        "rls_peer_tenant_name": rls_peer_tenant_name,
         "api_key": api_key,
         "stripe_webhook_secret": webhook_secret,
         "correlation_id": correlation_id,
         "dlq_task_id": dlq_task_id,
+        "rls_peer_dlq_task_id": rls_peer_dlq_task_id,
         "b23_task_id": b23_task_id,
         "attribution_event_id": attribution_event_id,
         "webhook_ingress_identity_id": webhook_ingress_identity_id,
