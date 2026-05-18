@@ -125,6 +125,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     ".env.local.example",
     "docker-compose.local.yml",
     "docker-compose.test.yml",
+    "contracts-internal/governance/b03_phase2_required_status_checks.main.json",
     "contracts-internal/governance/main_branch_protection_integrity.main.json",
     "Makefile",
     "pytest.ini",
