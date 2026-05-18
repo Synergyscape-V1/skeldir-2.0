@@ -315,6 +315,7 @@ def main() -> None:
                     "provider_native_commerce_reference": commerce_ref,
                     "canonical_commerce_reference": commerce_ref,
                     "event_type": "payment_capture",
+                    "net_effect_sign": 1,
                     "amount_minor": 12500,
                     "captured_amount_minor": 12500,
                     "currency_code": "USD",
