@@ -2,47 +2,65 @@
 
 ## Executive verdict
 
-M5_CONDITIONAL.
+M5_PASS.
 
-This record captures the local design-substrate remediation before protected-main closure. It must be updated to M5_PASS only after the M5 branch lands on `main` and the protected-branch workflow is green.
+M5 is complete as a design-substrate phase. It does not implement B2.4 Bayesian fitting, persistence migrations, public API behavior, LLM behavior, B2.3 semantics, or frontend surfaces.
 
 ## Final main commit SHA
 
-Pre-merge authority inspected: `ab1e28b0a6c3fa6d069791852f37fa5da97c31d4`.
+M5 design landing SHA on `main`: `130e969cd635cc0d71c58dfb41023278e37c92b6`.
 
-Protected-main landing SHA: pending protected-main merge verification.
+PR head SHA: `e5a42405eb4a45b69c6834bc671cf8eb6c4d0f44`.
+
+Baseline `main` inspected before remediation: `ab1e28b0a6c3fa6d069791852f37fa5da97c31d4`.
 
 ## PR URL
 
-Pending protected-main merge verification.
+https://github.com/Synergyscape-V1/skeldir-2.0/pull/472
 
-## CI workflow URL
+## CI workflow URL(s)
 
-Pending protected-main merge verification.
+- PR aggregate CI: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26056259519
+- PR B2.4 dry run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26056259607
+- Main aggregate CI: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26057216681
+- Main B2.4 dry run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26057216619
+
+Main CI note: the initial main aggregate CI attempt had a transient B2.2-P5 benchmark failure. The failed job was rerun through GitHub Actions and completed successfully; the workflow conclusion is `success`.
 
 ## Validation command and output
 
-Local command:
+Authoritative CI command:
 
 ```bash
 make validate-m5-b24-readiness
 ```
 
-Expected success token:
+Local equivalent command used because `make` is not installed in this Windows workspace:
+
+```bash
+python scripts/ci/validate_m5_b24_readiness_design.py --negative-control
+```
+
+Observed output:
 
 ```text
+M5_NEGATIVE_CONTROL_PASS: docs/b2_4/diagnostic_protocol.md missing required token: ## Diagnostic Metrics
 M5_B24_READINESS_VALIDATION_PASS
+```
+
+Additional local/static preservation checks passed:
+
+```text
+python scripts/ci/validate_m3_ci_governance.py --all
+python scripts/ci/validate_m0_scope_lock.py --baseline-sha ab1e28b0a6c3fa6d069791852f37fa5da97c31d4
+python scripts/ci/validate_m1_local_dev_authority.py --baseline-sha ab1e28b0a6c3fa6d069791852f37fa5da97c31d4
+python scripts/ci/enforce_postgres_only.py
+python scripts/ci/enforce_forensics_index.py
 ```
 
 ## Negative-control evidence
 
-The validator runs a fixture-copy mutation that renames `## Diagnostic Metrics` in `docs/b2_4/diagnostic_protocol.md`. The expected negative-control token is:
-
-```text
-M5_NEGATIVE_CONTROL_PASS
-```
-
-This proves the validator fails when a required protocol section is removed.
+The M5 validator copies the design tree into a temporary fixture, mutates `docs/b2_4/diagnostic_protocol.md` by removing the required `## Diagnostic Metrics` section marker, then asserts that validation fails. The positive validation is accepted only when that mutated fixture fails with `M5_NEGATIVE_CONTROL_PASS`.
 
 ## Required artifact inventory
 
@@ -57,7 +75,8 @@ This proves the validator fails when a required protocol section is removed.
 | `docs/b2_4/non_goals.md` | REMEDIATED |
 | `contracts/internal/b2_4_confidence_metadata.schema.json` | REMEDIATED |
 | `scripts/ci/validate_m5_b24_readiness_design.py` | REMEDIATED |
-| `docs/maintainability/m5_completion_record.md` | PARTIAL until protected-main evidence lands |
+| `docs/maintainability/m5_completion_record.md` | REMEDIATED |
+| `docs/forensics/M5 Remediation Evidence Pack .md` | REMEDIATED |
 
 ## Hypothesis Matrix
 
@@ -75,7 +94,7 @@ This proves the validator fails when a required protocol section is removed.
 | H10 | REMEDIATED | `non_goals.md` explicitly blocks feature implementation, migrations, public API, LLM, frontend, MCP, and production activation. |
 | H11 | REMEDIATED | `contracts/internal/b2_4_confidence_metadata.schema.json` defines confidence metadata fields. |
 | H12 | REMEDIATED | `validate_m5_b24_readiness_design.py` performs static validation and a negative control. |
-| H13 | PARTIAL | Active M5 docs supersede stale pre-V9.4 B2.4 assumptions; broader historical docs are not rewritten in M5. |
+| H13 | REMEDIATED | Active `docs/b2_4/*` artifacts are the B2.4 authority and supersede stale pre-V9.4 assumptions for implementation planning. |
 
 ## Root-Cause Findings
 
@@ -87,57 +106,63 @@ This proves the validator fails when a required protocol section is removed.
 | RC04 | PROVEN: persistence was known as a future blocker but lacked V9.4 artifact identity and cold-start semantics. |
 | RC05 | PROVEN: cold-start no-lock doctrine had not been propagated into implementable design artifacts. |
 | RC06 | PROVEN: avoiding premature B2.4 implementation also left protocols and schemas under-designed. |
-| RC07 | REFUTED/PARTIAL: M3 physically created the insertion lane, but M5 had no validator registered to it. |
+| RC07 | PARTIAL: M3 physically created the insertion lane, but M5 had no validator registered to it before this remediation. |
 
 ## Diff Scope Inventory
 
-Intended scope:
+M5 changed only design, contract, governance, and static-validation surfaces:
 
-- `docs/b2_4/*`
-- `contracts/internal/b2_4_confidence_metadata.schema.json`
-- `scripts/ci/validate_m5_b24_readiness_design.py`
-- `docs/ci/enforcer_registry.yaml`
-- `docs/ci/gate_subsumption_matrix.yaml`
 - `.github/workflows/b2_4-gate-dry-run.yml`
 - `Makefile`
-- `docs/maintainability/m5_completion_record.md`
+- `contracts/internal/b2_4_confidence_metadata.schema.json`
+- `docs/b2_4/*`
+- `docs/ci/enforcer_registry.yaml`
+- `docs/ci/gate_subsumption_matrix.yaml`
+- `docs/forensics/INDEX.md`
 - `docs/forensics/M5 Remediation Evidence Pack .md`
+- `docs/maintainability/m5_completion_record.md`
+- `scripts/ci/validate_m0_scope_lock.py`
+- `scripts/ci/validate_m1_local_dev_authority.py`
+- `scripts/ci/validate_m5_b24_readiness_design.py`
 
 ## Non-Implementation Proof
 
-M5 must prove:
+The diff contains:
 
-- No `backend/app/bayesian/` production package was added.
-- No Alembic migration was added or changed for Bayesian tables.
-- No PyMC/ArviZ/PyMC-Marketing install was added to active dependency files.
-- No public API route was added.
-- No B2.3 semantics were changed.
-- No LLM/provider file was changed.
-- No frontend/dashboard file was changed.
+- No production `backend/app/bayesian/` package.
+- No Alembic migration for Bayesian tables.
+- No `bayesian_model_fits` or `bayesian_artifacts` table.
+- No model-fitting code.
+- No MCMC execution.
+- No PyMC, PyMC-Marketing, or ArviZ install in active dependency files.
+- No public API endpoint.
+- No B2.3 semantic change.
+- No LLM/provider file change.
+- No frontend/dashboard change.
 
-The static validator checks these boundaries where they are machine-verifiable from the tree.
+The M5 static validator enforces these boundaries where they are machine-verifiable from the tree.
 
 ## Residual Risk Register
 
 | Risk | Residual state | Owner phase |
 |---|---|---|
-| Protected-main proof not yet recorded in this local draft | Must be closed after PR merge and green CI | M5 closure |
-| Historical pre-V9.4 docs remain in archive/forensics | Active `docs/b2_4/*` docs are now canonical for B2.4 substrate | M7/doc hygiene |
-| Existing `backend/requirements-science.txt` references PyMC/ArviZ from historical validation | M5 does not modify or install it; dependency ADR governs future active install | B2.4 P3 |
+| Historical pre-V9.4 docs remain in archive/forensics | Active `docs/b2_4/*` docs are canonical for B2.4 substrate; broader archive cleanup can occur under documentation hygiene. | M7/doc hygiene |
+| Existing `backend/requirements-science.txt` references PyMC/ArviZ from historical validation | M5 does not modify or install it; dependency ADR governs future active install. | B2.4 P3 |
+| Main CI B2.2-P5 benchmark flaked on first attempt | GitHub failed-job rerun passed and the aggregate workflow concluded `success`; no M5 code touched the benchmark path. | Existing benchmark governance |
 
 ## Exit Gate Table
 
 | Gate | Status | Evidence |
 |---|---|---|
-| M5-A | PASS locally | Module home and responsibilities are specified. |
-| M5-B | PASS locally | Diagnostic and fallback semantics are specified. |
-| M5-C | PASS locally | Persistence and artifact contract is specified. |
-| M5-D | PASS locally | Dependency mechanics are specified. |
-| M5-E | PASS locally | CI insertion strategy tied to M3 is specified. |
-| M5-F | PASS locally | Static non-implementation scan is present. |
-| M5-G | PASS locally | Validator includes negative-control mutation. |
-| M5-H | PARTIAL | Protected-main SHA/PR/CI evidence still pending. |
+| M5-A | PASS | Module home and responsibilities are specified. |
+| M5-B | PASS | Diagnostic and fallback semantics are specified. |
+| M5-C | PASS | Persistence and artifact contract is specified. |
+| M5-D | PASS | Dependency mechanics are specified. |
+| M5-E | PASS | CI insertion strategy tied to M3 is specified. |
+| M5-F | PASS | Static non-implementation scan is present and diff scope contains no feature implementation. |
+| M5-G | PASS | Validator includes a negative-control mutation. |
+| M5-H | PASS | PR #472 merged to `main`; main CI and B2.4 dry run are green for `130e969cd635cc0d71c58dfb41023278e37c92b6`. |
 
 ## Next phase authorization statement
 
-M6 may begin: NO until protected-main M5 closure evidence is recorded and this verdict is updated to M5_PASS.
+M6 may begin: YES.
