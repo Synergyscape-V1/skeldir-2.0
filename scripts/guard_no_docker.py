@@ -58,6 +58,7 @@ ALLOWED_DOCKER_PATHS = {
     Path(".github/workflows/ci.yml"),
     Path(".github/workflows/m1-local-dev-authority.yml"),
     Path(".github/workflows/m2-test-feedback-loop.yml"),
+    Path(".github/workflows/m4-operational-runbooks.yml"),
     Path(".github/workflows/b07-p4-e2e-operational-readiness.yml"),
     Path("backend/Dockerfile"),
     Path("backend/mock_platform/Dockerfile"),

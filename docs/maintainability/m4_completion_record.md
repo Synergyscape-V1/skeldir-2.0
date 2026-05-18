@@ -2,9 +2,11 @@
 
 Final verdict: `M4_PASS`
 
-Final main commit SHA: `PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION`
+M4 initial protected main commit SHA: `709ba0b6438507fb62987f34fbadcfb5ae53aba6`
 
-CI workflow URL: `PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION`
+M4 initial CI workflow URL: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25884393587`
+
+M4.1 corrective evidence: `M4.1_Remediation_Completion_Record.md`
 
 ## Files Changed
 
@@ -40,13 +42,14 @@ Command and validation surfaces:
 | --- | --- | --- |
 | `validate-ops-runbooks` | `ci_static` | Run drift validator. |
 | `ops-seed-diagnostics` | `container_api` | Seed local synthetic diagnostic fixtures. |
-| `ops-clear-diagnostics` | `container_api` | Clear local synthetic diagnostic fixtures. |
+| `ops-clear-diagnostics` | `container_api` | Clear mutable local synthetic diagnostic rows while preserving append-only truth rows. |
 | `ops-dlq-inspect` | `container_api` | Inspect seeded `worker_failed_jobs`. |
 | `ops-queues` | `container_api` | Print queue topology from `backend/app/core/queues.py`. |
 | `ops-worker-inspect` | `container_celery` | Inspect active/reserved/scheduled tasks through worker container. |
 | `ops-rls-check` | `container_api` | Prove RLS/GUC positive and missing-context controls. |
 | `ops-b23-trace` | `container_api` | Trace seeded B2.3 ingress/dispatch/verdict chain. |
 | `ops-webhook-replay-local` | `container_network_curl` | Run signed/tampered/duplicate local webhook controls. |
+| `ops-runtime-proof` | `container_api` | Run full fixture-backed M4 proof chain after API readiness. |
 
 ## Command Metadata Matrix
 
@@ -55,11 +58,11 @@ Command and validation surfaces:
 | `make ops-dlq-inspect` | `read_only_inspection` | `false` | `m4-dlq-positive` |
 | `make ops-queues` | `read_only_inspection` | `false` | queue source |
 | `make ops-worker-inspect` | `read_only_inspection` | `false` | none |
-| `make ops-rls-check` | `read_only_inspection` | `false` | `m4-rls-positive`, `m4-rls-missing-context` |
+| `make ops-rls-check` | `read_only_inspection` | `false` | `m4-rls-positive`, `m4-rls-missing-context`, `m4-rls-bare-select-isolation` |
 | `make ops-b23-trace` | `read_only_inspection` | `false` | `m4-b23-trace-positive`, `m4-b23-unknown-control` |
 | `make ops-webhook-replay-local` | `local_fixture_replay` | `local_fixture_only` | `m4-webhook-valid`, `m4-webhook-tampered`, `m4-webhook-duplicate` |
 | `make ops-seed-diagnostics` | `local_fixture_replay` | `local_fixture_only` | creates run-scoped fixtures |
-| `make ops-clear-diagnostics` | `local_fixture_replay` | `local_fixture_only` | clears run-scoped fixtures |
+| `make ops-clear-diagnostics` | `local_fixture_replay` | `local_fixture_only` | clears mutable run-scoped fixtures and preserves append-only truth rows |
 
 ## Fixture-Backed Proof Matrix
 
@@ -67,7 +70,7 @@ Command and validation surfaces:
 | --- | --- | --- |
 | DLQ | `worker_failed_jobs` row with task ID, queue, error type, retry count, timestamp. | Missing task ID returns explicit not-found diagnostic. |
 | B2.3 | Linked `webhook_ingress_identities` -> `b23_match_task_dispatches` -> task -> `b23_match_verdicts`. | Unknown reference returns `no linked task/verdict found`. |
-| RLS/GUC | Current tenant setting equals seeded tenant and seeded row is visible. | Missing context reports unset setting and zero-row behavior. |
+| RLS/GUC | Runtime role binds tenant context and a tenant-unfiltered query sees only the bound tenant fixture row. | Missing context reports unset setting and zero rows under an RLS-applicable role. |
 | Webhook | Valid Stripe HMAC fixture uses existing endpoint and verifier. | Tampered signature returns unauthorized; duplicate idempotency does not create another canonical event. |
 | Queue | `ops-queues` reads `backend/app/core/queues.py`. | Validator fails when runbook queue names drift from canonical source. |
 
@@ -100,15 +103,15 @@ python -m py_compile scripts/ops/*.py scripts/ci/validate_m4_ops_runbooks.py
 git diff --check
 ```
 
-Local host limitation:
+Historical local host limitation from the initial M4 pass:
 
 ```text
 make: command not found
 Docker Desktop engine unavailable: dockerDesktopLinuxEngine pipe not found
 ```
 
-The GitHub workflow runs `make validate-ops-runbooks` on Ubuntu, where GNU Make
-is available.
+The GitHub workflow runs `make validate-ops-runbooks` and `make ops-runtime-proof`
+on Ubuntu, where GNU Make and Docker Compose are available.
 
 ## Prior Phase Preservation
 
@@ -134,7 +137,7 @@ endpoints, or B2.4 functionality.
 | Failure signatures | PASS |
 | Ops drift validator | PASS |
 | Prior phase preservation | PASS |
-| Primary branch green | PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION |
+| Primary branch green | PASS for initial M4 merge; M4.1 proof recorded separately. |
 | Phase boundary integrity | PASS |
 
 ## No-Feature-Contamination Statement

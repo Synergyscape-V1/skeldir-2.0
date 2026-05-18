@@ -8,10 +8,29 @@ import hmac
 import json
 import os
 import time
+from urllib.parse import urlsplit
 
 import httpx
 
 from common import connect, emit, read_fixture_state, set_tenant
+
+UNSAFE_REPLAY_TARGET_MESSAGE = (
+    "production payload replay is forbidden in M4; --api-base-url/OPS_API_BASE_URL "
+    "must resolve to a local or Docker-network HTTP target before any request is sent"
+)
+ALLOWED_LOCAL_REPLAY_HOSTS = frozenset({"api", "localhost", "127.0.0.1", "::1"})
+
+
+def validate_local_api_base_url(api_base_url: str) -> str:
+    parsed = urlsplit(api_base_url)
+    host = parsed.hostname or ""
+    if parsed.scheme != "http":
+        raise SystemExit(f"{UNSAFE_REPLAY_TARGET_MESSAGE}: rejected scheme {parsed.scheme!r}")
+    if host.lower() not in ALLOWED_LOCAL_REPLAY_HOSTS:
+        raise SystemExit(f"{UNSAFE_REPLAY_TARGET_MESSAGE}: rejected host {host!r}")
+    if not parsed.port:
+        raise SystemExit(f"{UNSAFE_REPLAY_TARGET_MESSAGE}: explicit local port is required")
+    return api_base_url.rstrip("/")
 
 
 def _stripe_signature(raw_body: bytes, secret: str, *, tampered: bool = False) -> str:
@@ -99,21 +118,24 @@ def main() -> None:
     parser.add_argument("--api-base-url", default=os.getenv("OPS_API_BASE_URL", "http://api:8000"))
     args = parser.parse_args()
 
+    api_base_url = validate_local_api_base_url(args.api_base_url)
     state = read_fixture_state()
     result: dict[str, object] = {
         "command_class": "local_fixture_replay",
         "signature_sensitive": True,
         "idempotency_sensitive": True,
+        "api_base_url": api_base_url,
+        "replay_target_guard": "local_http_only",
     }
     if args.mode in {"valid", "all"}:
-        result["valid_signature"] = _post(args.api_base_url, state)
+        result["valid_signature"] = _post(api_base_url, state)
     if args.mode in {"tampered", "all"}:
-        result["tampered_signature"] = _post(args.api_base_url, state, tampered=True)
+        result["tampered_signature"] = _post(api_base_url, state, tampered=True)
     if args.mode in {"duplicate", "all"}:
         before = _event_count(state)
-        first = _post(args.api_base_url, state)
+        first = _post(api_base_url, state)
         after_first = _event_count(state)
-        second = _post(args.api_base_url, state, duplicate=True)
+        second = _post(api_base_url, state, duplicate=True)
         after_second = _event_count(state)
         result["duplicate_idempotency"] = {
             "before_count": before,

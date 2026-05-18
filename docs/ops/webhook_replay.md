@@ -32,6 +32,12 @@ idempotency_sensitive: true
 signature_sensitive: true
 ```
 
+The executable replay script validates `--api-base-url` and `OPS_API_BASE_URL`
+before sending any request. It allows only local HTTP targets such as
+`http://api:8000`, `http://localhost:<port>`, or `http://127.0.0.1:<port>`.
+It hard-fails on `https://*`, production/staging domains, and arbitrary external
+hosts with the message that production payload replay is forbidden in M4.
+
 Trace downstream B2.3 dispatch after successful ingress.
 
 ```yaml
@@ -98,4 +104,5 @@ is unknown.
 M4 replay is not a production incident mechanism. It is a local signed fixture
 that proves the existing authenticity and idempotency path remains diagnosable.
 Do not disable auth checks, do not alter signature verification, do not commit
-secrets, and do not reuse production idempotency keys.
+secrets, do not reuse production idempotency keys, and do not override the local
+API base URL to a non-local target.

@@ -12,33 +12,36 @@ TABLE_ORDER = (
     "b23_match_verdicts",
     "webhook_ingress_identities",
     "worker_failed_jobs",
+)
+
+PRESERVED_TRUTH_TABLES = (
     "attribution_events",
+    "session_authority",
     "tenants",
 )
 
 
 def main() -> None:
     state = read_fixture_state()
-    tenant_id = state["tenant_id"]
+    tenant_ids = [state["tenant_id"]]
+    if state.get("rls_peer_tenant_id"):
+        tenant_ids.append(state["rls_peer_tenant_id"])
     deleted: dict[str, int] = {}
     with connect() as conn:
         with conn.cursor() as cur:
-            set_tenant(cur, tenant_id)
-            for table in TABLE_ORDER:
-                cur.execute(
-                    f"DELETE FROM public.{table} WHERE tenant_id = %s"
-                    if table != "tenants"
-                    else "DELETE FROM public.tenants WHERE id = %s",
-                    (tenant_id,),
-                )
-                deleted[table] = int(cur.rowcount)
+            for tenant_id in tenant_ids:
+                set_tenant(cur, tenant_id)
+                for table in TABLE_ORDER:
+                    cur.execute(f"DELETE FROM public.{table} WHERE tenant_id = %s", (tenant_id,))
+                    deleted[table] = deleted.get(table, 0) + int(cur.rowcount)
     FIXTURE_STATE_PATH.unlink(missing_ok=True)
     emit(
         {
             "status": "cleared",
             "fixture_class": "local_fixture_only",
-            "tenant_id": tenant_id,
+            "tenant_ids": tenant_ids,
             "deleted": deleted,
+            "preserved_truth_tables": list(PRESERVED_TRUTH_TABLES),
         }
     )
 

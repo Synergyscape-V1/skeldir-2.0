@@ -48,7 +48,15 @@ The required diagnostic signal is:
 `current_setting('app.current_tenant_id', true)`
 
 The runbook command prints this value beside seeded row visibility. A zero-row
-query without this setting is not a valid health proof.
+query without this setting is not a valid health proof unless the same output
+also proves the database role is RLS-applicable.
+
+M4.1 separates two signals:
+
+1. GUC binding: `current_setting('app.current_tenant_id', true)` changes as
+   expected for tenant A, tenant B, and missing context.
+2. Physical PostgreSQL RLS enforcement: a tenant-unfiltered query against
+   `worker_failed_jobs` returns only the row visible to the bound tenant.
 
 ## Positive Control
 
@@ -61,6 +69,33 @@ Expected healthy output:
 | `tenant_context` | The seeded tenant UUID. |
 | `visible_seeded_dlq_rows` | `1` for the seeded `worker_failed_jobs` row. |
 | `status` | `ok`. |
+
+## Physical RLS Enforcement Control
+
+Fixture: `m4-rls-bare-select-isolation`.
+
+The diagnostic seeds two tenants and two tenant-scoped `worker_failed_jobs`
+rows. It then connects through the runtime database URL, not the migration URL,
+and runs this query shape:
+
+```sql
+SELECT task_id, tenant_id
+FROM public.worker_failed_jobs
+WHERE task_id IN (<tenant_a_task>, <tenant_b_task>);
+```
+
+There is intentionally no `tenant_id = ...` predicate. Expected output:
+
+| Bound context | Expected rows |
+| --- | --- |
+| tenant A | Exactly the tenant A fixture row. |
+| tenant B | Exactly the tenant B fixture row. |
+| missing context | Zero fixture rows. |
+
+The command also reports `current_user`, `rolsuper`, `rolbypassrls`,
+`relrowsecurity`, `relforcerowsecurity`, and table owner. The proof fails if the
+runtime role is superuser, has `BYPASSRLS`, owns the table without forced RLS, or
+the table does not have RLS enabled.
 
 ## Missing-Context Negative Control
 
@@ -91,7 +126,6 @@ output as the data query.
 
 ## Do Not Bypass RLS
 
-Do not disable RLS, use superuser bypass behavior, or query tenant tables without
-tenant context to "prove" isolation. Missing tenant context can produce defensive
-zero rows, but that is only useful when the diagnostic reports the missing GUC
-explicitly.
+Do not disable RLS or use superuser bypass behavior. M4's diagnostic does query
+without a tenant predicate, but only against synthetic fixture task IDs and only
+to prove that PostgreSQL RLS is the physical isolation boundary.

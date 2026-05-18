@@ -52,8 +52,27 @@ def database_url() -> str:
     return urlunsplit(parsed._replace(query=query))
 
 
+def runtime_database_url() -> str:
+    from app.core.secrets import get_database_url
+
+    raw = (os.getenv("OPS_RUNTIME_DATABASE_URL") or get_database_url() or "").strip()
+    if not raw:
+        raise SystemExit("OPS_RUNTIME_DATABASE_URL or sanctioned runtime database URL is required")
+    parsed = urlsplit(_normalize_database_url(raw))
+    query = "&".join(
+        part
+        for part in parsed.query.split("&")
+        if part and not part.startswith("sslmode=") and not part.startswith("channel_binding=")
+    )
+    return urlunsplit(parsed._replace(query=query))
+
+
 def connect():
     return psycopg2.connect(database_url(), cursor_factory=psycopg2.extras.RealDictCursor)
+
+
+def connect_runtime():
+    return psycopg2.connect(runtime_database_url(), cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 def emit(payload: dict[str, Any]) -> None:

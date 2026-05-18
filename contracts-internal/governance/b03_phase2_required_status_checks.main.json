@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.8.1",
+  "contract_version": "1.9.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -58,7 +58,9 @@
     "B2.3 Composite Proof Harness",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark",
-    "m0-maintainability-scope-lock"
+    "m0-maintainability-scope-lock",
+    "validate-ops-runbooks",
+    "runtime-ops-proofs"
   ],
   "hardware_enforcement": {
     "status": "enforced",

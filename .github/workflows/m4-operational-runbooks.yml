@@ -2,25 +2,9 @@ name: M4 Operational Runbooks
 
 on:
   pull_request:
-    paths:
-      - "docs/ops/**"
-      - "docs/maintainability/m4_completion_record.md"
-      - "M4 Remediation Evidence Pack.md"
-      - "scripts/ops/**"
-      - "scripts/ci/validate_m4_ops_runbooks.py"
-      - "Makefile"
-      - ".github/workflows/m4-operational-runbooks.yml"
   push:
     branches:
       - main
-    paths:
-      - "docs/ops/**"
-      - "docs/maintainability/m4_completion_record.md"
-      - "M4 Remediation Evidence Pack.md"
-      - "scripts/ops/**"
-      - "scripts/ci/validate_m4_ops_runbooks.py"
-      - "Makefile"
-      - ".github/workflows/m4-operational-runbooks.yml"
   workflow_dispatch:
 
 jobs:
@@ -38,3 +22,89 @@ jobs:
 
       - name: Validate M4 ops runbooks
         run: make validate-ops-runbooks
+
+  runtime-ops-proofs:
+    name: runtime-ops-proofs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install host bootstrap dependency
+        run: python -m pip install psycopg2-binary
+
+      - name: Write M4 least-privilege local env
+        shell: bash
+        run: |
+          cat > .env.local <<'EOF'
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=postgres
+          POSTGRES_DB=skeldir_local
+          POSTGRES_PORT=55432
+          API_PORT=8000
+          DATABASE_URL=postgresql+asyncpg://app_user:app_user@postgres:5432/skeldir_local
+          MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@postgres:5432/skeldir_local
+          CELERY_BROKER_URL=sqla+postgresql://app_user:app_user@postgres:5432/skeldir_local
+          CELERY_RESULT_BACKEND=db+postgresql://app_user:app_user@postgres:5432/skeldir_local
+          AUTH_JWT_SECRET=local-m4-jwt-secret
+          AUTH_JWT_ALGORITHM=RS256
+          AUTH_JWT_ISSUER=https://issuer.skeldir.test
+          AUTH_JWT_AUDIENCE=skeldir-api
+          PLATFORM_TOKEN_ENCRYPTION_KEY=local-m4-platform-key
+          PLATFORM_TOKEN_KEY_ID=local-m4
+          ENVIRONMENT=ci
+          SKELDIR_CONTROL_PLANE_ENABLED=0
+          SKELDIR_REQUIRE_AUTH_SECRETS=0
+          SKELDIR_REQUIRE_PLATFORM_TOKEN_KEY=0
+          EOF
+
+      - name: Start local Postgres
+        run: make dev
+
+      - name: Wait for local Postgres
+        run: |
+          for i in {1..60}; do
+            if docker compose --env-file .env.local -f docker-compose.local.yml exec -T postgres pg_isready -U postgres -d skeldir_local; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose --env-file .env.local -f docker-compose.local.yml ps
+          docker compose --env-file .env.local -f docker-compose.local.yml logs --no-color postgres || true
+          exit 1
+
+      - name: Prepare least-privilege database roles
+        run: |
+          python scripts/database/prepare_migration_authority_boundary.py \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:55432/postgres \
+            --database-name skeldir_local \
+            --runtime-user app_user \
+            --runtime-password app_user \
+            --migration-user migration_owner \
+            --migration-password migration_owner
+
+      - name: Migrate schema
+        run: make migrate
+
+      - name: Start API
+        run: make api
+
+      - name: Wait for API readiness
+        run: make health
+
+      - name: Run fixture-backed M4 runtime proof chain
+        run: make ops-runtime-proof
+
+      - name: Print compose logs on failure
+        if: failure()
+        run: docker compose --env-file .env.local -f docker-compose.local.yml logs --no-color || true
+
+      - name: Tear down local topology
+        if: always()
+        run: make down || true

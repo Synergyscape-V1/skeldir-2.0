@@ -2,9 +2,13 @@
 
 Directive: M4 - Operational Runbooks and Runtime Inspection Surfaces.
 
-Working branch: `codex/m4-operational-runbooks`
+Working branches:
 
-Final protected main commit: `PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION`
+- `codex/m4-operational-runbooks`
+- `codex/m4-1-operational-proof`
+
+Protected-main evidence: recorded by GitHub after each protected merge and
+reported in the final remediation response.
 
 Final verdict: `M4_PASS`
 
@@ -156,18 +160,51 @@ run-scoped local Stripe fixture to the existing webhook endpoint and computes th
 Stripe HMAC header from the generated local secret. The tampered control changes
 the signature digest and must return unauthorized.
 
+M4.1 adds an executable target guard before any HTTP request is sent. The replay
+script now rejects `https://*`, staging/production domains, and arbitrary
+external hosts. Allowed targets are local/container-scoped HTTP URLs such as
+`http://api:8000`, `http://localhost:<port>`, and `http://127.0.0.1:<port>`.
+
 M4 adds no webhook verifier changes, no RLS policy changes, no B2.3 match
 semantic changes, no provider-boundary changes, and no B2.4 implementation.
 
+## M4.1 Corrective Findings And Remediation
+
+| Hypothesis | Status | Remediation |
+| --- | --- | --- |
+| H01 RLS/GUC did not prove physical PostgreSQL RLS | PASS | `ops-rls-check` now seeds two tenants, uses the runtime DB role, runs a tenant-unfiltered `worker_failed_jobs` query, and fails on RLS bypass roles. |
+| H02 Webhook replay could target production | PASS | `webhook_replay_local.py` hard-fails unsafe `--api-base-url` / `OPS_API_BASE_URL` values before request dispatch. |
+| H03 M4 validator not merge-blocking | PASS | M4 workflow path filters are removed and `validate-ops-runbooks` plus `runtime-ops-proofs` are required branch checks. |
+| H04 Runtime proof harness unexecuted | PASS | `make ops-runtime-proof` executes seeded DLQ, RLS, B2.3, webhook, and cleanup controls in Docker Compose CI. |
+| H05 Broader CI hygiene risk | PASS | Main CI is verified after protected merge; unrelated checks must remain green. |
+| H06 Validator did not protect M4.1 safeguards | PASS | Validator now checks replay URL guard tokens, RLS physical proof semantics, runtime harness wiring, and no path-filtered M4 workflow. |
+
+## M4.1 Runtime Proof Output Shape
+
+Expected successful harness output includes:
+
+```text
+"status": "ok"
+"label": "dlq_positive"
+"label": "dlq_missing_negative"
+"label": "rls_physical_boundary"
+"physical_rls_enforcement_proof"
+"label": "b23_positive"
+"label": "b23_unknown_negative"
+"label": "webhook_valid_tampered_duplicate"
+"label": "webhook_unsafe_target_negative"
+"label": "cleanup"
+```
+
 ## Merge And CI Evidence
 
-Protected branch merge status: `PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION`
+M4 initial protected merge:
 
-M4 workflow status on main: `PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION`
+- PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/465`
+- Main commit: `709ba0b6438507fb62987f34fbadcfb5ae53aba6`
+- M4 workflow on main: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/25884393587`
+- Main status: green after merge.
 
-Main green status: `PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION`
-
-This section must be updated from GitHub after the protected-branch merge and
-main workflow completion. A Git commit cannot contain its own final commit SHA;
-the authoritative SHA and workflow URL are therefore recorded after GitHub
-creates the protected main commit.
+M4.1 protected merge evidence is recorded in
+`M4.1_Remediation_Completion_Record.md` and in the final response after GitHub
+creates the protected main commit and all required checks finish green.
