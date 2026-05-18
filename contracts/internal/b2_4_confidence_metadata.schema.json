@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skeldir.local/contracts/internal/b2_4_confidence_metadata.schema.json",
+  "title": "B2.4 Internal Confidence Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant_id",
+    "model_type",
+    "model_version",
+    "source_window_start",
+    "source_window_end",
+    "source_snapshot_hash",
+    "bayesian_convergence_status",
+    "credible_interval_status",
+    "data_completeness_status",
+    "fallback_applied",
+    "action_authority",
+    "confidence_available"
+  ],
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "model_type": {
+      "type": "string",
+      "enum": [
+        "bayesian_attribution_confidence"
+      ]
+    },
+    "model_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_window_start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_window_end": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_snapshot_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "bayesian_convergence_status": {
+      "type": "string",
+      "enum": [
+        "not_started",
+        "eligible",
+        "queued",
+        "running",
+        "converged",
+        "fallback_only",
+        "failed",
+        "aborted",
+        "not_implemented"
+      ]
+    },
+    "credible_interval_status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "unavailable",
+        "failed_diagnostics",
+        "not_applicable",
+        "suppressed"
+      ]
+    },
+    "data_completeness_status": {
+      "type": "string",
+      "enum": [
+        "sufficient",
+        "insufficient_data",
+        "source_window_empty",
+        "source_snapshot_unstable",
+        "unknown"
+      ]
+    },
+    "fallback_applied": {
+      "type": "boolean"
+    },
+    "fallback_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "insufficient_data",
+        "timeout",
+        "no_convergence",
+        "insufficient_ess",
+        "divergence",
+        "worker_failure",
+        "artifact_persistence_failure",
+        "source_snapshot_changed",
+        "refit_locked",
+        "unsupported_model_type",
+        "bayesian_not_implemented",
+        null
+      ]
+    },
+    "confidence_available": {
+      "type": "boolean"
+    },
+    "action_authority": {
+      "type": "string",
+      "enum": [
+        "read_only",
+        "blocked",
+        "review_required"
+      ]
+    },
+    "r_hat_max": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMaximum": 1.01
+    },
+    "ess_min": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "exclusiveMinimum": 400
+    },
+    "divergences": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "hdi_probability": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "artifact_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^b24://"
+    },
+    "artifact_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "last_fit_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "eligibility_retry_after": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "fallback_applied": {
+            "const": true
+          }
+        },
+        "required": [
+          "fallback_applied"
+        ]
+      },
+      "then": {
+        "required": [
+          "fallback_reason"
+        ],
+        "properties": {
+          "fallback_reason": {
+            "not": {
+              "type": "null"
+            }
+          },
+          "confidence_available": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "bayesian_convergence_status": {
+            "const": "converged"
+          }
+        },
+        "required": [
+          "bayesian_convergence_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "r_hat_max",
+          "ess_min",
+          "divergences",
+          "artifact_ref",
+          "artifact_hash"
+        ],
+        "properties": {
+          "confidence_available": {
+            "const": true
+          },
+          "fallback_applied": {
+            "const": false
+          },
+          "credible_interval_status": {
+            "const": "available"
+          },
+          "divergences": {
+            "const": 0
+          }
+        }
+      }
+    }
+  ]
+}

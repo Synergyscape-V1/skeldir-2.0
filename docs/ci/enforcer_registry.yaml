@@ -1,3 +1,24 @@
+- id: validate-m5-b24-readiness-design
+  path: scripts/ci/validate_m5_b24_readiness_design.py
+  status: required
+  owning_phase: M5
+  protected_invariant: M5 B2.4 readiness design artifacts, internal confidence metadata schema, cold-start fallback doctrine, dependency no-install rule, and static non-implementation boundary remain complete and machine-falsifiable.
+  command: python scripts/ci/validate_m5_b24_readiness_design.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-m5-b24-readiness
+  expected_failure_meaning: M5 B2.4 design substrate is incomplete, stale, contaminated by implementation, missing governance registration, or the negative control no longer proves validator falsifiability.
+  first_diagnostic_command: python scripts/ci/validate_m5_b24_readiness_design.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m4-ops-runbooks
   path: scripts/ci/validate_m4_ops_runbooks.py
   status: required

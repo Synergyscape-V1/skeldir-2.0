@@ -4,7 +4,7 @@ HEALTH_RETRIES ?= 30
 COMPOSE = docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 OPS_RUN = $(COMPOSE) run --rm -v "$$(pwd):/workspace" -w /workspace api python
 
-.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-celery-worker-concurrent test-pooler-worker-concurrent test-broker-topology test-parallel-isolation test-b23-representative test-b24-persistence-readiness test-b24-persistence-entry-gate test-governance test-e2e test-external-db-smoke validate-ci-governance validate-ops-runbooks ops-dlq-inspect ops-queues ops-worker-inspect ops-rls-check ops-b23-trace ops-webhook-replay-local ops-seed-diagnostics ops-clear-diagnostics ops-runtime-proof ci-topology ci-enforcer-registry-check ci-gate-subsumption-check ci-b24-gate-dry-run ci-metrics ci-cohort-summary down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
+.PHONY: help dev migrate api worker health smoke test test-unit-pure test-db-invariant test-db-direct test-db-pooler test-fail-visible-tenant-context test-celery-eager test-celery-worker test-celery-worker-concurrent test-pooler-worker-concurrent test-broker-topology test-parallel-isolation test-b23-representative test-b24-persistence-readiness test-b24-persistence-entry-gate test-governance test-e2e test-external-db-smoke validate-ci-governance validate-ops-runbooks validate-m5-b24-readiness ops-dlq-inspect ops-queues ops-worker-inspect ops-rls-check ops-b23-trace ops-webhook-replay-local ops-seed-diagnostics ops-clear-diagnostics ops-runtime-proof ci-topology ci-enforcer-registry-check ci-gate-subsumption-check ci-b24-gate-dry-run ci-metrics ci-cohort-summary down logs contracts-check contracts-validate contracts-check-auth contracts-check-attribution models-generate mocks-start mocks-stop mocks-restart tests-integration backend-test frontend-test
 
 help: ## Show this help message
 	@echo "SKELDIR 2.0 Monorepo - Available Commands"
@@ -100,6 +100,9 @@ validate-ci-governance: ## Run full M3 CI governance validator
 
 validate-ops-runbooks: ## Run M4 ops runbook drift validator
 	@python scripts/ci/validate_m4_ops_runbooks.py
+
+validate-m5-b24-readiness: ## Run M5 B2.4 readiness design validator with negative control
+	@python scripts/ci/validate_m5_b24_readiness_design.py --negative-control
 
 ops-seed-diagnostics: $(ENV_FILE) ## Seed local-only M4 diagnostic fixtures through the API container image
 	@$(OPS_RUN) scripts/ops/seed_diagnostics.py
