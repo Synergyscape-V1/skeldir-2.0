@@ -25,15 +25,16 @@ def main() -> None:
     deleted: dict[str, int] = {}
     with connect() as conn:
         with conn.cursor() as cur:
-            set_tenant(cur, tenant_ids[0])
-            for table in TABLE_ORDER:
-                cur.execute(
-                    f"DELETE FROM public.{table} WHERE tenant_id = ANY(%s)"
-                    if table != "tenants"
-                    else "DELETE FROM public.tenants WHERE id = ANY(%s)",
-                    (tenant_ids,),
-                )
-                deleted[table] = int(cur.rowcount)
+            for tenant_id in tenant_ids:
+                set_tenant(cur, tenant_id)
+                for table in TABLE_ORDER:
+                    if table == "tenants":
+                        continue
+                    cur.execute(f"DELETE FROM public.{table} WHERE tenant_id = %s", (tenant_id,))
+                    deleted[table] = deleted.get(table, 0) + int(cur.rowcount)
+
+            cur.execute("DELETE FROM public.tenants WHERE id = ANY(%s::uuid[])", (tenant_ids,))
+            deleted["tenants"] = int(cur.rowcount)
     FIXTURE_STATE_PATH.unlink(missing_ok=True)
     emit(
         {
