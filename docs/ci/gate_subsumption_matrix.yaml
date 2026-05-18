@@ -1,3 +1,18 @@
+- gate_id: validate-m5-b24-readiness-design
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_m5_b24_readiness_design.py
+  owning_phase: M5
+  protected_invariant: M5 B2.4 readiness design artifacts, internal confidence metadata schema, cold-start fallback doctrine, dependency no-install rule, and static non-implementation boundary remain complete and machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: M5 introduces a new design-substrate authority surface for B2.4; no M0-M4 validator checks B2.4 module home, diagnostic protocol, artifact persistence doctrine, dependency decision, fallback doctrine, internal confidence schema, and M5 non-implementation contamination together.
+  negative_control_preserved_by: python scripts/ci/validate_m5_b24_readiness_design.py --negative-control
+  local_reproduction_command: make validate-m5-b24-readiness
+  risk_if_removed: B2.4 implementation could begin without machine-falsifiable module, persistence, fallback, dependency, confidence, and CI insertion contracts.
+  decision: keep_required
 - gate_id: validate-m4-ops-runbooks
   workflow: .github/workflows/m4-operational-runbooks.yml
   job: validate-ops-runbooks

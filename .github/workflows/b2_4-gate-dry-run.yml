@@ -29,3 +29,6 @@ jobs:
 
       - name: Validate metadata-only insertion policy
         run: make ci-b24-gate-dry-run
+
+      - name: Validate M5 B2.4 readiness design
+        run: make validate-m5-b24-readiness
