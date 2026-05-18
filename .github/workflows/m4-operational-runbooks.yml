@@ -46,7 +46,7 @@ jobs:
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD=postgres
           POSTGRES_DB=skeldir_local
-          POSTGRES_PORT=5432
+          POSTGRES_PORT=55432
           API_PORT=8000
           DATABASE_URL=postgresql+asyncpg://app_user:app_user@postgres:5432/skeldir_local
           MIGRATION_DATABASE_URL=postgresql://migration_owner:migration_owner@postgres:5432/skeldir_local
@@ -67,10 +67,22 @@ jobs:
       - name: Start local Postgres
         run: make dev
 
+      - name: Wait for local Postgres
+        run: |
+          for i in {1..60}; do
+            if docker compose --env-file .env.local -f docker-compose.local.yml exec -T postgres pg_isready -U postgres -d skeldir_local; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose --env-file .env.local -f docker-compose.local.yml ps
+          docker compose --env-file .env.local -f docker-compose.local.yml logs --no-color postgres || true
+          exit 1
+
       - name: Prepare least-privilege database roles
         run: |
           python scripts/database/prepare_migration_authority_boundary.py \
-            --admin-dsn postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --admin-dsn postgresql://postgres:postgres@127.0.0.1:55432/postgres \
             --database-name skeldir_local \
             --runtime-user app_user \
             --runtime-password app_user \
