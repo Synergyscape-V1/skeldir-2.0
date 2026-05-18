@@ -157,7 +157,6 @@ def main() -> None:
                 conflict="ON CONFLICT DO NOTHING",
             )
 
-            set_tenant(cur, rls_peer_tenant_id)
             insert_dynamic(
                 cur,
                 "worker_failed_jobs",
@@ -187,8 +186,8 @@ def main() -> None:
                 },
                 conflict="ON CONFLICT DO NOTHING",
             )
-            set_tenant(cur, tenant_id)
 
+            set_tenant(cur, rls_peer_tenant_id)
             insert_dynamic(
                 cur,
                 "worker_failed_jobs",
@@ -218,6 +217,7 @@ def main() -> None:
                 },
                 conflict="ON CONFLICT DO NOTHING",
             )
+            set_tenant(cur, tenant_id)
 
             insert_dynamic(
                 cur,
