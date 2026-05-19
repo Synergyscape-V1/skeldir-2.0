@@ -46,6 +46,29 @@ docs/ci/gate_subsumption_matrix.yaml
 
 No production runtime, migrations, public API routes, dependency activation, LLM provider behavior, B2.3 semantic paths, or frontend code were changed.
 
+The first protected-main run for landed commit
+`4ff1c19dbb0ec7297298841be4e679a8db0cd709` exposed one additional
+non-product defect in the M4 runtime proof harness:
+
+```text
+workflow: M4 Operational Runbooks
+run: https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26115539633
+failed step: webhook_valid_tampered_duplicate
+cause: the valid replay and tampered-signature negative control reused the
+same fixture idempotency key, allowing duplicate replay handling to mask the
+tampered signature assertion.
+```
+
+The follow-up remediation changed only the local ops proof harness:
+
+```text
+scripts/ops/webhook_replay_local.py
+```
+
+The tampered-signature negative control now derives a separate local-only
+idempotency key and payload identifiers, so it proves signature rejection
+without relying on or changing production webhook behavior.
+
 ## Validation Commands
 
 Executed locally:

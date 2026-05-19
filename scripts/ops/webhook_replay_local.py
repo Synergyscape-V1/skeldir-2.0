@@ -42,10 +42,21 @@ def _stripe_signature(raw_body: bytes, secret: str, *, tampered: bool = False) -
     return f"t={timestamp},v1={digest}"
 
 
-def _payload(state: dict, *, duplicate: bool = False) -> tuple[bytes, str]:
+def _payload(
+    state: dict,
+    *,
+    duplicate: bool = False,
+    replay_variant: str = "primary",
+) -> tuple[bytes, str]:
     idempotency_key = state["webhook_idempotency_key"]
     pi_id = state["stripe_payment_intent_id"]
     event_id = state["stripe_event_id"]
+    if replay_variant == "tampered-negative-control":
+        # Keep the signature negative control independent from the successful
+        # replay so idempotency cannot mask a failed signature check.
+        idempotency_key = f"{idempotency_key}:tampered"
+        pi_id = f"{pi_id}-tampered"
+        event_id = f"{event_id}-tampered"
     if not duplicate:
         # The fresh replay and duplicate replay intentionally use the same
         # key within one run. Freshness is provided by the run-scoped seed.
@@ -71,7 +82,12 @@ def _payload(state: dict, *, duplicate: bool = False) -> tuple[bytes, str]:
 
 
 def _post(api_base_url: str, state: dict, *, tampered: bool = False, duplicate: bool = False) -> dict:
-    raw_body, idempotency_key = _payload(state, duplicate=duplicate)
+    replay_variant = "tampered-negative-control" if tampered else "primary"
+    raw_body, idempotency_key = _payload(
+        state,
+        duplicate=duplicate,
+        replay_variant=replay_variant,
+    )
     headers = {
         "content-type": "application/json",
         "X-Skeldir-Tenant-Key": state["api_key"],
