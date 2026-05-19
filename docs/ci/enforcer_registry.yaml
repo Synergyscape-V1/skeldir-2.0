@@ -1,3 +1,24 @@
+- id: validate-m6-llm-boundary
+  path: scripts/ci/validate_m6_llm_boundary.py
+  status: required
+  owning_phase: M6
+  protected_invariant: M6 LLM provider-boundary decision, B2.4 no-LLM guardrail, B2.7 decomposition precondition, provider SDK import policy, and truth-path LLM exclusion remain complete and machine-falsifiable.
+  command: python scripts/ci/validate_m6_llm_boundary.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-m6-llm-boundary
+  expected_failure_meaning: M6 LLM boundary guardrail is incomplete, stale, missing B2.7 preconditions, contaminated by implementation, or no longer rejects forbidden B2.4/truth-path LLM imports.
+  first_diagnostic_command: python scripts/ci/validate_m6_llm_boundary.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m5-b24-readiness-design
   path: scripts/ci/validate_m5_b24_readiness_design.py
   status: required

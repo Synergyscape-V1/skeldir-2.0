@@ -1,3 +1,18 @@
+- gate_id: validate-m6-llm-boundary
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_m6_llm_boundary.py
+  owning_phase: M6
+  protected_invariant: M6 LLM provider-boundary decision, B2.4 no-LLM guardrail, B2.7 decomposition precondition, provider SDK import policy, and truth-path LLM exclusion remain complete and machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: M6 protects B2.4 from silently expanding the LLM provider boundary; no M5 or prior governance gate checks B2.4 touchpoint classification, Path B invalidation, B2.7 decomposition precondition, provider SDK location policy, and forbidden truth-path LLM imports together.
+  negative_control_preserved_by: python scripts/ci/validate_m6_llm_boundary.py --negative-control
+  local_reproduction_command: make validate-m6-llm-boundary
+  risk_if_removed: B2.4 Bayesian diagnostics, Trust API paths, MCP trust tools, or envelope-generation paths could import LLM provider modules or provider SDKs without machine-falsifiable failure.
+  decision: keep_required
 - gate_id: validate-m5-b24-readiness-design
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run

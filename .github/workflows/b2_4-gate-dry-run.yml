@@ -32,3 +32,6 @@ jobs:
 
       - name: Validate M5 B2.4 readiness design
         run: make validate-m5-b24-readiness
+
+      - name: Validate M6 LLM boundary guardrail
+        run: make validate-m6-llm-boundary
