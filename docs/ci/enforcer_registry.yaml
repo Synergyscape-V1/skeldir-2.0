@@ -1,3 +1,24 @@
+- id: validate-m7-b24-readiness
+  path: scripts/ci/validate_m7_b24_readiness.py
+  status: required
+  owning_phase: M7
+  protected_invariant: M7 final B2.4 readiness verdict, H01-H15 hypothesis adjudication, M7-A through M7-M gate statuses, final debt classification, no-feature-contamination scan, and B2.4 authorization remain machine-readable and non-narrative.
+  command: python scripts/ci/validate_m7_b24_readiness.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-m7-b24-readiness
+  expected_failure_meaning: M7 readiness adjudication is missing, stale, contaminated by implementation, lacks an allowed verdict, lacks bounded debt classification, or is no longer wired into the B2.4 governance lane.
+  first_diagnostic_command: python scripts/ci/validate_m7_b24_readiness.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m6-llm-boundary
   path: scripts/ci/validate_m6_llm_boundary.py
   status: required

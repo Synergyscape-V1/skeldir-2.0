@@ -35,3 +35,6 @@ jobs:
 
       - name: Validate M6 LLM boundary guardrail
         run: make validate-m6-llm-boundary
+
+      - name: Validate M7 B2.4 readiness adjudication
+        run: make validate-m7-b24-readiness
