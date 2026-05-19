@@ -148,7 +148,7 @@ The corrective action is authorized to change only:
 - `docs/maintainability/m6_completion_record.md`
 - `docs/maintainability/M6 Remediation Evidence Pack .md`
 - `scripts/phase_gates/generate_value_trace_proof_pack.py` for a CI evidence-generation API fallback after GitHub returned repeated `HTTP 502` from the run-jobs endpoint.
-- `scripts/ci/validate_m0_scope_lock.py` and `docs/maintainability/m0_scope_lock.md` to register that exact proof-pack generator as a governance-visible allowed evidence surface.
+- `scripts/ci/validate_m0_scope_lock.py`, `scripts/ci/validate_m1_local_dev_authority.py`, and `docs/maintainability/m0_scope_lock.md` to register that exact proof-pack generator as a governance-visible allowed evidence surface.
 
 No Makefile, workflow, governance, or B2.7 precondition change is required unless validation proves drift.
 
