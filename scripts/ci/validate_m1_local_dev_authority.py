@@ -141,6 +141,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_m4_ops_runbooks.py",
     "scripts/ci/validate_m5_b24_readiness_design.py",
     "scripts/ci/validate_m6_llm_boundary.py",
+    "scripts/phase_gates/generate_value_trace_proof_pack.py",
     "scripts/r3/ingestion_under_fire.py",
     "scripts/testing/",
     "scripts/ops/",
