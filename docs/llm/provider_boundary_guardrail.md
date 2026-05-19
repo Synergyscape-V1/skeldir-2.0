@@ -19,7 +19,9 @@ B2.4 is allowed to proceed only as LLM-free Bayesian confidence work. During B2.
 
 `scripts/ci/validate_m6_llm_boundary.py --negative-control` enforces the guardrail. It validates the decision record, B2.7 precondition, provider SDK import policy, forbidden `app.llm` import paths, CI/governance registration, and PR diff non-implementation constraints when a GitHub merge base is available.
 
-The negative control creates a temporary fake B2.4 module importing `SkeldirLLMProvider` and requires validation to fail before positive validation may pass.
+The validator resolves package-relative imports using repo-relative package context and uses OS-neutral path normalization. It fail-closes unresolved relative imports in protected truth paths, bans `importlib.import_module`, `__import__`, `eval`, and `exec` in protected truth paths, rejects provider SDK imports outside the approved provider boundary, and rejects reverse-flow imports from `backend/app/llm/**` into B2.4, Bayesian, Trust, reconciliation, revenue-verification, policy, solver, envelope, MCP, or Bayesian task internals.
+
+The negative control suite creates temporary bad fixtures and requires each class to fail before positive validation may pass. It covers absolute imports, package imports, aliased imports, relative imports, dynamic imports, built-in dynamic imports, `eval`, `exec`, provider SDK truth-path imports, forbidden symbol references, reverse-flow imports, and decision-record mutation.
 
 ## Invalidation
 

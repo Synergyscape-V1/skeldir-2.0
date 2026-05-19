@@ -2,25 +2,27 @@
 
 ## Executive Verdict
 
-M6_CONDITIONAL.
+M6_FAIL.
 
-This record is the branch evidence state for the M6 implementation. The final verdict becomes M6_PASS only after the M6 branch is merged to `main`, protected-branch CI is green on `main`, and this record is updated with final main closure evidence.
+This record reflects the corrective-action branch state after the independent audit rejection. M6 remains failed until the hardened validator, expanded negative controls, final PR URL, final main SHA, and green protected-main CI evidence are landed back on `main`.
 
 ## Selected Path
 
 Path B - Guardrail before B2.4; decomposition before B2.7.
 
+Path B remains valid because current B2.4 design artifacts are LLM-free. Path B is invalid if B2.4 introduces explanation, summary, narrative fallback, provider calls, prompts, LLM cache, LLM validation, LLM audit, provider SDK imports, or `provider_boundary.py` behavior changes.
+
 ## Final Main Commit SHA
 
-Final main SHA is recorded in `docs/maintainability/M6 Remediation Evidence Pack .md` after protected-branch merge closure.
+Not established for the corrective action yet. Current inspected main baseline before this follow-up branch: `ddea968e57a5b426cf893bca30377e7db749d1e3`.
 
 ## PR URL
 
-The PR URL is recorded in `docs/maintainability/M6 Remediation Evidence Pack .md` after publication.
+Corrective-action PR has not been opened yet. Prior rejected M6 PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/474`.
 
-## CI Workflow URLs
+## CI Workflow URL
 
-CI workflow URLs are recorded in `docs/maintainability/M6 Remediation Evidence Pack .md` after GitHub Actions completes.
+Authoritative corrective-action CI is not established yet. Prior rejected main B2.4 dry-run evidence: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26091153852`.
 
 ## Validation Command And Output
 
@@ -30,63 +32,112 @@ Command:
 python scripts/ci/validate_m6_llm_boundary.py --negative-control
 ```
 
-Expected output:
+Expected corrective validator output:
 
 ```text
-M6_NEGATIVE_CONTROL_PASS: forbidden LLM import in B2.4/truth path
+M6_ENVIRONMENT: python=<version> platform=<platform>
+M6_NC_ABSOLUTE_IMPORT_PASS
+M6_NC_PACKAGE_IMPORT_PASS
+M6_NC_ALIAS_IMPORT_PASS
+M6_NC_RELATIVE_IMPORT_PASS
+M6_NC_DYNAMIC_IMPORTLIB_PASS
+M6_NC_DYNAMIC_BUILTIN_IMPORT_PASS
+M6_NC_DYNAMIC_EVAL_PASS
+M6_NC_DYNAMIC_EXEC_PASS
+M6_NC_PROVIDER_SDK_TRUTH_PATH_PASS
+M6_NC_FORBIDDEN_SYMBOL_PASS
+M6_NC_REVERSE_FLOW_IMPORT_PASS
+M6_NC_DECISION_MUTATION_PASS
+M6_NEGATIVE_CONTROL_PASS
 M6_LLM_BOUNDARY_VALIDATION_PASS
 ```
 
-## Negative-Control Evidence
+## Expanded Negative-Control Evidence
 
-The validator creates a temporary fixture under `backend/app/bayesian/m6_bad_import.py` containing:
+The hardened validator now requires each bad fixture to fail:
 
-```python
-from app.llm.provider_boundary import SkeldirLLMProvider
-```
+| Control | Violation proved |
+|---|---|
+| M6_NC_ABSOLUTE_IMPORT_PASS | `from app.llm.provider_boundary import SkeldirLLMProvider` from B2.4/Bayesian truth path |
+| M6_NC_PACKAGE_IMPORT_PASS | `from app import llm` package import from protected truth path |
+| M6_NC_ALIAS_IMPORT_PASS | `import app.llm.provider_boundary as provider_boundary` |
+| M6_NC_RELATIVE_IMPORT_PASS | `from ..llm import provider_boundary` resolved to `app.llm.provider_boundary` |
+| M6_NC_DYNAMIC_IMPORTLIB_PASS | `importlib.import_module("app.llm.provider_boundary")` |
+| M6_NC_DYNAMIC_BUILTIN_IMPORT_PASS | `__import__("app.llm.provider_boundary")` |
+| M6_NC_DYNAMIC_EVAL_PASS | `eval(...)` fail-closed in protected truth paths |
+| M6_NC_DYNAMIC_EXEC_PASS | `exec(...)` fail-closed in protected truth paths |
+| M6_NC_PROVIDER_SDK_TRUTH_PATH_PASS | direct provider SDK import in protected truth path |
+| M6_NC_FORBIDDEN_SYMBOL_PASS | direct high-risk boundary symbol reference in protected truth path |
+| M6_NC_REVERSE_FLOW_IMPORT_PASS | `backend/app/llm/**` importing Bayesian/truth internals |
+| M6_NC_DECISION_MUTATION_PASS | decision record losing the Path B invalidation rule |
 
-It then runs the import-boundary scan against the fixture root and requires failure before the real repository can pass.
+## Import-Resolution Hardening Summary
 
-## B2.4 LLM Touchpoint Matrix
+The validator no longer reads only `ast.Import` and absolute `ast.ImportFrom.module`. It resolves `ast.ImportFrom.level` against the repo-relative package name for `backend/app/**`, so relative imports such as `from ..llm import provider_boundary` and `from ...llm.provider_boundary import SkeldirLLMProvider` are treated as `app.llm.*` imports. Unresolved relative imports in protected truth paths fail closed.
 
-| Surface | LLM touchpoint | Status |
-|---|---:|---|
-| B2.4 diagnostics | NO | REFUTED as LLM-touching |
-| B2.4 fit worker | NO | REFUTED as LLM-touching |
-| B2.4 artifact store | NO | REFUTED as LLM-touching |
-| B2.4 fallback | NO | REFUTED as LLM-touching |
-| B2.4 confidence projection | NO | REFUTED as LLM-touching |
-| B2.4 CI gates | NO | REFUTED as LLM-touching |
-| B2.4 API exposure, if any later | NO during B2.4 | REFUTED as current B2.4 surface |
+Package and alias imports are also expanded. For example, `from app import llm` produces an `app.llm` import target, and `from app.llm import provider_boundary` produces both `app.llm` and `app.llm.provider_boundary`.
 
-## Provider Import Boundary Policy
+## Dynamic Import Detection Summary
 
-Provider SDK imports are approved only in `backend/app/llm/provider_boundary.py` during M6. `app.llm.*` imports are forbidden from Bayesian, Trust API, MCP trust-tool, reconciliation, revenue-verification, policy, solver, and envelope-generation paths.
+Protected truth paths fail validation if they call:
 
-## B2.7 Precondition Evidence
+- `importlib.import_module`
+- `__import__`
+- `eval`
+- `exec`
 
-`docs/b2_7/preconditions.md` blocks B2.7 until provider-boundary decomposition is completed or formally waived with owner, reason, expiry/review date, allowed changes, CI guardrails, and LLM-free truth-path proof.
+This is intentionally fail-closed. There is no accepted B2.4, Bayesian diagnostic, Trust, reconciliation, revenue-verification, policy, solver, envelope, or MCP truth-path reason to use dynamic import or dynamic code execution during M6.
+
+## Bidirectional Flow Guardrail Summary
+
+The guardrail checks both directions:
+
+- Truth/B2.4 paths -> `app.llm.*`, `provider_boundary.py`, provider SDKs, and high-risk LLM/provider symbols.
+- `backend/app/llm/**` -> B2.4, Bayesian, Trust, reconciliation, revenue-verification, policy, solver, envelope, MCP, and `app.tasks.bayesian` internals.
+
+No reverse-flow exceptions are approved during M6.
+
+## Provider SDK Allowlist Summary
+
+Provider SDK imports remain approved only in `backend/app/llm/provider_boundary.py` during M6:
+
+- `aisuite`
+- `openai`
+- `anthropic`
+- `groq`
+- `google.generativeai`
+- `google.genai`
+- `vertexai`
+- `cohere`
+- `mistralai`
+
+Protected truth paths fail if they import provider SDKs directly.
+
+## Execution Environment Determinism Summary
+
+Host-native execution is advisory. CI on main is authoritative for phase closure.
+
+The validator prints Python version and platform on every run and uses `Path(...).as_posix()` normalization for repo-relative paths. The relative-import negative-control fixture runs in the same CI invocation as the positive validator.
+
+## Decision And Precondition Preservation
+
+`docs/llm/provider_boundary_decision.md` still selects Path B only because B2.4 is LLM-free and still states the automatic Path B invalidation rule. `docs/b2_7/preconditions.md` still blocks B2.7 until provider-boundary decomposition is completed or formally waived.
 
 ## Diff Scope Inventory
 
-M6 changes are limited to:
+The corrective action is authorized to change only:
 
-- `.github/workflows/b2_4-gate-dry-run.yml`
-- `Makefile`
-- `docs/b2_7/preconditions.md`
-- `docs/ci/enforcer_registry.yaml`
-- `docs/ci/gate_subsumption_matrix.yaml`
+- `scripts/ci/validate_m6_llm_boundary.py`
 - `docs/llm/provider_boundary_decision.md`
 - `docs/llm/provider_boundary_guardrail.md`
 - `docs/maintainability/m6_completion_record.md`
 - `docs/maintainability/M6 Remediation Evidence Pack .md`
-- `scripts/ci/validate_m0_scope_lock.py`
-- `scripts/ci/validate_m1_local_dev_authority.py`
-- `scripts/ci/validate_m6_llm_boundary.py`
+
+No Makefile, workflow, governance, or B2.7 precondition change is required unless validation proves drift.
 
 ## Non-Implementation Proof
 
-M6 does not modify:
+This corrective action must not modify:
 
 - `backend/app/llm/provider_boundary.py`
 - `backend/app/bayesian/**`
@@ -98,56 +149,56 @@ M6 does not modify:
 - public API routes
 - dependency manifests
 - frontend/dashboard code
+- migrations
 
-The validator checks these constraints in PR diff mode when a merge base is available.
+The validator continues to reject unauthorized PR diff surfaces when a merge base exists.
 
 ## Hypothesis Matrix
 
 | ID | Status | Finding |
 |---|---|---|
-| H01 | REFUTED | Current B2.4 artifacts contain no explanation, summary, narrative fallback, prompt, provider call, LLM cache, LLM validation, or provider-boundary behavior. |
-| H02 | REMEDIATED | Path B selected and guarded because B2.4 is LLM-free. |
-| H03 | PARTIAL | `provider_boundary.py` remains physically overloaded, but B2.4 does not depend on extending it. |
-| H04 | REMEDIATED | M6 validator adds active import-boundary protection for B2.4/truth paths and provider SDK imports. |
-| H05 | REMEDIATED | `docs/b2_7/preconditions.md` blocks B2.7 until decomposition or waiver. |
-| H06 | REMEDIATED | Decision record includes Path B invalidation rule. |
-| H07 | REMEDIATED | `make validate-m6-llm-boundary` provides machine-falsifiable validation with a negative control. |
-| H08 | REMEDIATED | M6 avoids provider-boundary decomposition implementation and provider behavior changes. |
-| H09 | REMEDIATED | Validator is registered in CI governance and wired into the B2.4 dry-run lane. |
-| H10 | PARTIAL | Main closure evidence awaits protected-branch merge and final CI completion. |
+| H01 | REMEDIATED | Relative imports are resolved using package context and fail closed when unresolved. |
+| H02 | REMEDIATED | Dynamic import/code execution mechanisms are banned in protected truth paths. |
+| H03 | REMEDIATED | Reverse-flow imports from `backend/app/llm/**` into truth internals are scanned. |
+| H04 | REMEDIATED | Negative controls now cover absolute, package, alias, relative, dynamic, provider SDK, symbol, reverse-flow, and decision-mutation violations. |
+| H05 | REMEDIATED | Provider SDK imports are treated as an independent protected-truth-path violation. |
+| H06 | REMEDIATED | High-risk boundary/provider symbol references are rejected in protected truth paths. |
+| H07 | REMEDIATED | Host-native output is advisory; CI on main is authoritative; environment metadata is printed. |
+| H08 | PROVEN_BLOCKER | The current main record is not final and must be updated to `M6_PASS` only after corrective merge and green protected-main CI. |
 
 ## Root-Cause Findings
 
 | ID | Finding |
 |---|---|
-| RC01 | PROVEN: `provider_boundary.py` is architecturally correct but physically overloaded. |
-| RC02 | PROVEN: B2.4 is LLM-free by design but lacked a hard M6 guard before this remediation. |
-| RC03 | PARTIAL: Forward Trust API/MCP plans create pressure to route explanation through truth paths, so M6 blocks those imports. |
-| RC04 | PROVEN: Decomposition is valuable but premature for B2.4 while B2.4 stays LLM-free. |
-| RC05 | PROVEN: M5 had a validator, but there was no M6 LLM-boundary validator in the B2.4 dry-run lane. |
-| RC06 | REMEDIATED: M6 explicitly treats narrative fallback, explanation confidence, summary, insight, assistant, prompts, and provider behavior as Path B invalidators in B2.4 contexts. |
+| RC01 | PROVEN: The original validator encoded one example rather than the invariant. |
+| RC02 | PROVEN: The original AST scan ignored `ImportFrom.level`, dynamic imports, and dynamic code execution. |
+| RC03 | PROVEN: The original boundary check was unidirectional. |
+| RC04 | PROVEN: The original negative-control success was too narrow to prove evasion resistance. |
+| RC05 | REMEDIATED: Execution authority is now documented as CI-on-main, with local host execution advisory only. |
+| RC06 | PROVEN_BLOCKER: Final completion evidence remains open until the corrective PR lands and protected-main CI is green. |
 
 ## Residual Risk Register
 
 | Risk | Residual state | Owner phase |
 |---|---|---|
-| `provider_boundary.py` remains large | Accepted under Path B because B2.4 is LLM-free; blocked before B2.7 unless waived. | B2.7 |
-| Existing non-B2.4 explanation API imports LLM modules | Allowed as pre-existing explanation surfaces; not authority for Trust API or Bayesian paths. | LLM governance |
-| Final main evidence not present in this branch record | Must be closed after protected-branch CI passes on `main`. | M6 closure |
+| `provider_boundary.py` remains physically large | Accepted under Path B because B2.4 is LLM-free; blocked before B2.7 unless formally waived. | B2.7 |
+| Future DTO/schema reverse-flow exception may be needed | No exception is approved during M6; any future exception needs decision-record and validator allowlist updates. | Future LLM governance |
+| External protected-main CI can fail before repo code executes | M6 cannot pass until authoritative protected-main workflows are green. | M6 closure |
 
 ## Exit Gate Table
 
 | Gate | Status | Evidence |
 |---|---|---|
-| M6-A | PASS | Decision selects Path B with evidence from B2.4 docs. |
-| M6-B | PASS | Touchpoint matrix classifies B2.4 surfaces as LLM-free. |
-| M6-C | PASS | Static validator rejects bad B2.4 `app.llm.provider_boundary` import. |
-| M6-D | PASS | Path B invalidation rule exists. |
-| M6-E | PASS | B2.7 precondition exists. |
-| M6-F | PASS | Diff scope excludes provider, B2.4 implementation, API, dependency, frontend, RLS, webhook, and B2.3 behavior changes. |
-| M6-G | PASS | Validator has negative control and CI wiring. |
-| M6-H | CONDITIONAL | Final main SHA, PR URL, and main CI URL require post-merge closure update. |
+| M6-A | REMEDIATED | Relative, package, alias, and absolute imports are detected. |
+| M6-B | REMEDIATED | Dynamic import/code execution calls fail closed in protected truth paths. |
+| M6-C | REMEDIATED | Guardrail is bidirectional: truth-to-LLM and LLM-to-truth. |
+| M6-D | REMEDIATED | Expanded negative controls are listed and implemented. |
+| M6-E | REMEDIATED | Path B decision and B2.7 precondition remain intact. |
+| M6-F | REMEDIATED | Validator prints Python/platform and states CI on main is authoritative. |
+| M6-G | REMEDIATED | Corrective diff remains guardrail/docs-only. |
+| M6-H | NOT_CLOSED | Updated validator must run in the B2.4 dry-run lane and protected-main CI must be green. |
+| M6-I | NOT_CLOSED | Final record must be updated to `M6_PASS` with final SHA, PR URL, CI URL, and M7 authorization after main CI is green. |
 
 ## Next Phase Authorization
 
-M7 may begin: NO until M6-H is closed on `main`.
+M7 may begin: NO.

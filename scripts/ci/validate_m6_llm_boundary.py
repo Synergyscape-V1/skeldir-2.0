@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -70,6 +73,46 @@ ALLOWED_APP_LLM_IMPORT_PATHS = {
     Path("backend/app/workers/llm.py"),
 }
 
+REVERSE_FLOW_ROOT = Path("backend/app/llm")
+REVERSE_FLOW_FORBIDDEN_MODULES = (
+    "app.bayesian",
+    "backend.app.bayesian",
+    "app.trust",
+    "backend.app.trust",
+    "app.reconciliation",
+    "backend.app.reconciliation",
+    "app.revenue_verification",
+    "backend.app.revenue_verification",
+    "app.policy",
+    "backend.app.policy",
+    "app.policies",
+    "backend.app.policies",
+    "app.solver",
+    "backend.app.solver",
+    "app.envelope",
+    "backend.app.envelope",
+    "app.mcp",
+    "backend.app.mcp",
+    "app.tasks.bayesian",
+    "backend.app.tasks.bayesian",
+)
+
+REVERSE_FLOW_ALLOWED_IMPORTS: set[str] = set()
+
+FORBIDDEN_SYMBOL_REFERENCES = {
+    "SkeldirLLMProvider",
+    "LLMProvider",
+    "provider_boundary",
+    "OpenAI",
+    "AsyncOpenAI",
+    "Anthropic",
+    "AsyncAnthropic",
+    "Groq",
+    "Mistral",
+    "Cohere",
+    "GenerativeModel",
+}
+
 PR_DIFF_FORBIDDEN_EXACT = {
     Path("backend/app/llm/provider_boundary.py"),
     Path("backend/app/tasks/bayesian.py"),
@@ -101,11 +144,29 @@ class ValidationError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class ImportRef:
+    lineno: int
+    module: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class DynamicCall:
+    lineno: int
+    name: str
+    argument: str | None
+
+
+def _normalize_rel(path: Path) -> Path:
+    return Path(path.as_posix())
+
+
 def _rel(path: Path, root: Path = ROOT) -> Path:
     try:
-        return path.resolve().relative_to(root.resolve())
+        return _normalize_rel(path.resolve().relative_to(root.resolve()))
     except ValueError:
-        return path
+        return _normalize_rel(path)
 
 
 def _read_text(path: Path, root: Path = ROOT) -> str:
@@ -140,18 +201,115 @@ def _parse_ast(path: Path) -> ast.Module:
         raise ValidationError(f"could not parse Python file {path}: {exc}") from exc
 
 
-def _imported_modules(tree: ast.Module) -> list[tuple[int, str]]:
-    modules: list[tuple[int, str]] = []
+def _module_name_for_path(path: Path, root: Path) -> str | None:
+    rel_path = _rel(path, root)
+    if rel_path.parts[:2] == ("backend", "app"):
+        module_parts = ("app",) + rel_path.parts[2:]
+    elif rel_path.parts[:1] in {("scripts",), ("tests",)}:
+        module_parts = rel_path.parts
+    else:
+        return None
+    last = module_parts[-1]
+    if not last.endswith(".py"):
+        return None
+    stem = last[:-3]
+    if stem == "__init__":
+        return ".".join(module_parts[:-1])
+    return ".".join(module_parts[:-1] + (stem,))
+
+
+def _package_name_for_path(path: Path, root: Path) -> str | None:
+    module_name = _module_name_for_path(path, root)
+    if not module_name:
+        return None
+    if path.name == "__init__.py":
+        return module_name
+    return module_name.rpartition(".")[0]
+
+
+def _resolve_relative_module(path: Path, root: Path, level: int, module: str | None) -> str | None:
+    package_name = _package_name_for_path(path, root)
+    if not package_name:
+        return None
+    package_parts = package_name.split(".")
+    if level <= 0:
+        return module
+    keep = len(package_parts) - (level - 1)
+    if keep <= 0:
+        return None
+    base_parts = package_parts[:keep]
+    if module:
+        base_parts.extend(module.split("."))
+    return ".".join(base_parts)
+
+
+def _imported_modules(tree: ast.Module, path: Path, root: Path) -> list[ImportRef]:
+    imports: list[ImportRef] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                modules.append((node.lineno, alias.name))
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            modules.append((node.lineno, node.module))
-    return modules
+                imports.append(ImportRef(node.lineno, alias.name, "import"))
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                resolved = _resolve_relative_module(path, root, node.level, node.module)
+                if resolved is None:
+                    imports.append(ImportRef(node.lineno, f"<unresolved-relative:{node.level}:{node.module or ''}>", "relative"))
+                    continue
+                imports.append(ImportRef(node.lineno, resolved, "relative"))
+                for alias in node.names:
+                    if alias.name != "*":
+                        imports.append(ImportRef(node.lineno, f"{resolved}.{alias.name}", "relative"))
+            elif node.module:
+                imports.append(ImportRef(node.lineno, node.module, "from"))
+                for alias in node.names:
+                    if alias.name != "*":
+                        imports.append(ImportRef(node.lineno, f"{node.module}.{alias.name}", "from"))
+    return imports
+
+
+def _call_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _call_name(node.value)
+        if prefix:
+            return f"{prefix}.{node.attr}"
+        return node.attr
+    return None
+
+
+def _literal_first_arg(node: ast.Call) -> str | None:
+    if not node.args:
+        return None
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value
+    return None
+
+
+def _dynamic_calls(tree: ast.Module) -> list[DynamicCall]:
+    calls: list[DynamicCall] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func)
+        if name in {"importlib.import_module", "__import__", "eval", "exec"}:
+            calls.append(DynamicCall(node.lineno, name, _literal_first_arg(node)))
+    return calls
+
+
+def _forbidden_symbol_refs(tree: ast.Module) -> list[tuple[int, str]]:
+    refs: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in FORBIDDEN_SYMBOL_REFERENCES:
+            refs.append((node.lineno, node.id))
+        elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_SYMBOL_REFERENCES:
+            refs.append((node.lineno, node.attr))
+    return refs
 
 
 def _is_forbidden_truth_path(rel_path: Path) -> bool:
+    rel_path = _normalize_rel(rel_path)
     if rel_path in ALLOWED_APP_LLM_IMPORT_PATHS:
         return False
     if rel_path.parts[:3] == ("backend", "app", "llm"):
@@ -165,14 +323,27 @@ def _is_forbidden_truth_path(rel_path: Path) -> bool:
     return any(token in name for token in FORBIDDEN_LLM_IMPORT_COMPONENTS)
 
 
+def _is_llm_path(rel_path: Path) -> bool:
+    return _normalize_rel(rel_path).parts[:3] == ("backend", "app", "llm")
+
+
 def _scan_provider_sdk_imports(root: Path = ROOT) -> None:
     violations: list[str] = []
+    truth_path_violations: list[str] = []
     for path in _iter_python_files(root):
         rel_path = _rel(path, root)
         tree = _parse_ast(path)
-        for lineno, module in _imported_modules(tree):
-            if _contains_import(module, PROVIDER_SDK_MODULES) and rel_path not in ALLOWED_PROVIDER_SDK_IMPORT_PATHS:
-                violations.append(f"{rel_path.as_posix()}:{lineno}: {module}")
+        for import_ref in _imported_modules(tree, path, root):
+            if _contains_import(import_ref.module, PROVIDER_SDK_MODULES):
+                item = f"{rel_path.as_posix()}:{import_ref.lineno}: {import_ref.module}"
+                if rel_path not in ALLOWED_PROVIDER_SDK_IMPORT_PATHS:
+                    violations.append(item)
+                if _is_forbidden_truth_path(rel_path):
+                    truth_path_violations.append(item)
+    _require(
+        not truth_path_violations,
+        "provider SDK import in protected truth path: " + "; ".join(truth_path_violations),
+    )
     _require(
         not violations,
         "provider SDK imports outside approved locations: " + "; ".join(violations),
@@ -186,12 +357,66 @@ def _scan_forbidden_llm_imports(root: Path = ROOT) -> None:
         if not _is_forbidden_truth_path(rel_path):
             continue
         tree = _parse_ast(path)
-        for lineno, module in _imported_modules(tree):
-            if _contains_import(module, APP_LLM_MODULES):
-                violations.append(f"{rel_path.as_posix()}:{lineno}: {module}")
+        for import_ref in _imported_modules(tree, path, root):
+            if import_ref.module.startswith("<unresolved-relative:") or _contains_import(import_ref.module, APP_LLM_MODULES):
+                violations.append(f"{rel_path.as_posix()}:{import_ref.lineno}: {import_ref.module}")
     _require(
         not violations,
         "forbidden LLM import in B2.4/truth path: " + "; ".join(violations),
+    )
+
+
+def _scan_dynamic_imports(root: Path = ROOT) -> None:
+    violations: list[str] = []
+    for path in _iter_python_files(root):
+        rel_path = _rel(path, root)
+        if not _is_forbidden_truth_path(rel_path):
+            continue
+        tree = _parse_ast(path)
+        for call in _dynamic_calls(tree):
+            detail = f"{call.name}({call.argument})" if call.argument is not None else call.name
+            violations.append(f"{rel_path.as_posix()}:{call.lineno}: {detail}")
+    _require(
+        not violations,
+        "dynamic import/code execution in protected truth path: " + "; ".join(violations),
+    )
+
+
+def _scan_forbidden_symbols(root: Path = ROOT) -> None:
+    violations: list[str] = []
+    for path in _iter_python_files(root):
+        rel_path = _rel(path, root)
+        if not _is_forbidden_truth_path(rel_path):
+            continue
+        tree = _parse_ast(path)
+        for lineno, symbol in _forbidden_symbol_refs(tree):
+            violations.append(f"{rel_path.as_posix()}:{lineno}: {symbol}")
+    _require(
+        not violations,
+        "forbidden LLM/provider symbol reference in protected truth path: " + "; ".join(violations),
+    )
+
+
+def _scan_reverse_flow_imports(root: Path = ROOT) -> None:
+    violations: list[str] = []
+    for path in _iter_python_files(root):
+        rel_path = _rel(path, root)
+        if not _is_llm_path(rel_path):
+            continue
+        tree = _parse_ast(path)
+        for import_ref in _imported_modules(tree, path, root):
+            if (
+                _contains_import(import_ref.module, REVERSE_FLOW_FORBIDDEN_MODULES)
+                and import_ref.module not in REVERSE_FLOW_ALLOWED_IMPORTS
+            ):
+                violations.append(f"{rel_path.as_posix()}:{import_ref.lineno}: {import_ref.module}")
+        for call in _dynamic_calls(tree):
+            if call.name in {"importlib.import_module", "__import__"} and call.argument:
+                if _contains_import(call.argument, REVERSE_FLOW_FORBIDDEN_MODULES):
+                    violations.append(f"{rel_path.as_posix()}:{call.lineno}: {call.name}({call.argument})")
+    _require(
+        not violations,
+        "forbidden reverse-flow import from LLM into truth internals: " + "; ".join(violations),
     )
 
 
@@ -219,6 +444,7 @@ def _validate_decision_docs(root: Path = ROOT) -> None:
         "Allowed LLM Import Locations",
         "Forbidden Import Locations",
         "Provider SDK Import Policy",
+        "Reverse-Flow Import Policy",
         "Effect on B2.4",
         "Effect on B2.7",
         "Effect on Trust API and MCP Paths",
@@ -235,6 +461,7 @@ def _validate_decision_docs(root: Path = ROOT) -> None:
     )
     for module in PROVIDER_SDK_MODULES:
         _require(module in decision, f"decision record missing provider SDK policy token: {module}")
+    _require("No reverse-flow exceptions are approved during M6" in decision, "decision record must list reverse-flow exceptions")
 
     if "Selected path: Path A" in decision:
         plan = root / "docs/llm/provider_boundary_decomposition_plan.md"
@@ -247,6 +474,9 @@ def _validate_decision_docs(root: Path = ROOT) -> None:
         "Path B Guardrail",
         "Machine Enforcement",
         "negative control",
+        "relative imports",
+        "dynamic imports",
+        "reverse-flow",
         "Path B is invalid",
     ):
         _require(token in guardrail, f"{GUARDRAIL_PATH.as_posix()} missing token: {token}")
@@ -261,6 +491,16 @@ def _validate_decision_docs(root: Path = ROOT) -> None:
         "If B2.4 introduces explanation/provider behavior",
     ):
         _require(token in preconditions, f"{B27_PRECONDITION_PATH.as_posix()} missing token: {token}")
+
+    for token in (
+        "Host-native execution is advisory",
+        "CI on main is authoritative",
+        "M6_NC_RELATIVE_IMPORT_PASS",
+        "M6_NC_DYNAMIC_IMPORTLIB_PASS",
+        "M6_NC_REVERSE_FLOW_IMPORT_PASS",
+        "M6_NC_DECISION_MUTATION_PASS",
+    ):
+        _require(token in completion, f"{COMPLETION_RECORD_PATH.as_posix()} missing token: {token}")
 
     for path, text in (
         (COMPLETION_RECORD_PATH, completion),
@@ -318,7 +558,7 @@ def _validate_pr_diff_scope() -> None:
 
     violations: list[str] = []
     for path in changed:
-        normalized = Path(path.as_posix())
+        normalized = _normalize_rel(path)
         if normalized in PR_DIFF_FORBIDDEN_EXACT or normalized in PR_DIFF_FORBIDDEN_DEPENDENCIES:
             violations.append(normalized.as_posix())
             continue
@@ -333,21 +573,135 @@ def _validate_pr_diff_scope() -> None:
     )
 
 
-def _run_negative_control() -> None:
-    with tempfile.TemporaryDirectory(prefix="m6_bad_import_") as tmp:
+def _write_fixture(root: Path, rel_path: str, content: str) -> Path:
+    path = root / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _expect_failure(label: str, func, expected: str) -> None:
+    try:
+        func()
+    except ValidationError as exc:
+        message = str(exc)
+        _require(expected in message, f"{label} failed for unexpected reason: {message}")
+        print(f"{label}: {message}")
+        return
+    raise ValidationError(f"{label} did not fail")
+
+
+def _negative_control_scan(label: str, rel_path: str, content: str, scan_func, expected: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="m6_negative_control_") as tmp:
         tmp_root = Path(tmp)
-        bad_file = tmp_root / "backend/app/bayesian/m6_bad_import.py"
-        bad_file.parent.mkdir(parents=True, exist_ok=True)
-        bad_file.write_text(
-            "from app.llm.provider_boundary import SkeldirLLMProvider\n",
-            encoding="utf-8",
+        _write_fixture(tmp_root, rel_path, content)
+        _expect_failure(label, lambda: scan_func(tmp_root), expected)
+
+
+def _negative_control_decision_mutation() -> None:
+    with tempfile.TemporaryDirectory(prefix="m6_decision_mutation_") as tmp:
+        tmp_root = Path(tmp)
+        for path in (
+            DECISION_PATH,
+            GUARDRAIL_PATH,
+            B27_PRECONDITION_PATH,
+            COMPLETION_RECORD_PATH,
+            EVIDENCE_PACK_PATH,
+        ):
+            destination = tmp_root / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / path, destination)
+        decision_path = tmp_root / DECISION_PATH
+        decision = decision_path.read_text(encoding="utf-8")
+        decision = decision.replace("Path B is invalid", "Path B drift is handled later")
+        decision_path.write_text(decision, encoding="utf-8")
+        _expect_failure(
+            "M6_NC_DECISION_MUTATION_PASS",
+            lambda: _validate_decision_docs(tmp_root),
+            "missing token: Path B is invalid",
         )
-        try:
-            _scan_forbidden_llm_imports(tmp_root)
-        except ValidationError as exc:
-            print(f"M6_NEGATIVE_CONTROL_PASS: {exc}")
-            return
-        raise ValidationError("negative control failed to detect forbidden B2.4 LLM import")
+
+
+def _run_negative_controls() -> None:
+    _negative_control_scan(
+        "M6_NC_ABSOLUTE_IMPORT_PASS",
+        "backend/app/bayesian/m6_bad_absolute.py",
+        "from app.llm.provider_boundary import SkeldirLLMProvider\n",
+        _scan_forbidden_llm_imports,
+        "forbidden LLM import",
+    )
+    _negative_control_scan(
+        "M6_NC_PACKAGE_IMPORT_PASS",
+        "backend/app/bayesian/m6_bad_package.py",
+        "from app import llm\n",
+        _scan_forbidden_llm_imports,
+        "forbidden LLM import",
+    )
+    _negative_control_scan(
+        "M6_NC_ALIAS_IMPORT_PASS",
+        "backend/app/bayesian/m6_bad_alias.py",
+        "import app.llm.provider_boundary as provider_boundary\n",
+        _scan_forbidden_llm_imports,
+        "forbidden LLM import",
+    )
+    _negative_control_scan(
+        "M6_NC_RELATIVE_IMPORT_PASS",
+        "backend/app/bayesian/m6_bad_relative.py",
+        "from ..llm import provider_boundary\n",
+        _scan_forbidden_llm_imports,
+        "forbidden LLM import",
+    )
+    _negative_control_scan(
+        "M6_NC_DYNAMIC_IMPORTLIB_PASS",
+        "backend/app/bayesian/m6_bad_importlib.py",
+        "import importlib\nprovider = importlib.import_module('app.llm.provider_boundary')\n",
+        _scan_dynamic_imports,
+        "dynamic import/code execution",
+    )
+    _negative_control_scan(
+        "M6_NC_DYNAMIC_BUILTIN_IMPORT_PASS",
+        "backend/app/bayesian/m6_bad_builtin_import.py",
+        "provider = __import__('app.llm.provider_boundary')\n",
+        _scan_dynamic_imports,
+        "dynamic import/code execution",
+    )
+    _negative_control_scan(
+        "M6_NC_DYNAMIC_EVAL_PASS",
+        "backend/app/bayesian/m6_bad_eval.py",
+        "value = eval('1 + 1')\n",
+        _scan_dynamic_imports,
+        "dynamic import/code execution",
+    )
+    _negative_control_scan(
+        "M6_NC_DYNAMIC_EXEC_PASS",
+        "backend/app/bayesian/m6_bad_exec.py",
+        "exec('value = 1')\n",
+        _scan_dynamic_imports,
+        "dynamic import/code execution",
+    )
+    _negative_control_scan(
+        "M6_NC_PROVIDER_SDK_TRUTH_PATH_PASS",
+        "backend/app/bayesian/m6_bad_provider_sdk.py",
+        "from openai import OpenAI\n",
+        _scan_provider_sdk_imports,
+        "provider SDK import in protected truth path",
+    )
+    _negative_control_scan(
+        "M6_NC_FORBIDDEN_SYMBOL_PASS",
+        "backend/app/bayesian/m6_bad_symbol.py",
+        "def build():\n    return SkeldirLLMProvider\n",
+        _scan_forbidden_symbols,
+        "forbidden LLM/provider symbol reference",
+    )
+    _negative_control_scan(
+        "M6_NC_REVERSE_FLOW_IMPORT_PASS",
+        "backend/app/llm/m6_bad_reverse_flow.py",
+        "from app.bayesian import diagnostics\n",
+        _scan_reverse_flow_imports,
+        "forbidden reverse-flow import",
+    )
+    _negative_control_decision_mutation()
+    print("M6_NEGATIVE_CONTROL_PASS")
 
 
 def validate_all(args: argparse.Namespace) -> None:
@@ -355,9 +709,12 @@ def validate_all(args: argparse.Namespace) -> None:
     _validate_governance()
     _scan_provider_sdk_imports()
     _scan_forbidden_llm_imports()
+    _scan_dynamic_imports()
+    _scan_forbidden_symbols()
+    _scan_reverse_flow_imports()
     _validate_pr_diff_scope()
     if args.negative_control:
-        _run_negative_control()
+        _run_negative_controls()
 
 
 def main() -> int:
@@ -365,9 +722,10 @@ def main() -> int:
     parser.add_argument(
         "--negative-control",
         action="store_true",
-        help="Run a bad B2.4 import fixture proving the validator fails.",
+        help="Run bad fixtures proving the validator fails across static, dynamic, reverse-flow, and doc-drift cases.",
     )
     args = parser.parse_args()
+    print(f"M6_ENVIRONMENT: python={platform.python_version()} platform={platform.platform()}")
     try:
         validate_all(args)
     except ValidationError as exc:
