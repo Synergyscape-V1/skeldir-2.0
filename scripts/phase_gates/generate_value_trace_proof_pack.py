@@ -22,11 +22,13 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 VALUE_GATES: List[str] = ["VALUE_01", "VALUE_02", "VALUE_03", "VALUE_04", "VALUE_05"]
@@ -52,9 +54,22 @@ def _api_get_json(url: str, *, token: str) -> Dict[str, Any]:
     req.add_header("Accept", "application/vnd.github+json")
     req.add_header("User-Agent", "skeldir-eg5-proof-pack")
     req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = resp.read().decode("utf-8")
-        return json.loads(data)
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read().decode("utf-8")
+                return json.loads(data)
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code < 500 or attempt == 3:
+                raise
+        except urllib.error.URLError as exc:
+            last_error = exc
+            if attempt == 3:
+                raise
+        time.sleep(2 * attempt)
+    raise RuntimeError(f"GitHub API request failed after retries: {last_error}")
 
 
 def _collect_run_artifacts(api_url: str, repo: str, run_id: str, token: str) -> Dict[str, int]:
@@ -81,6 +96,40 @@ def _collect_run_jobs(api_url: str, repo: str, run_id: str, token: str) -> Dict[
         if isinstance(name, str) and isinstance(html_url, str):
             mapping[name] = html_url
     return mapping
+
+
+def _collect_commit_check_runs(api_url: str, repo: str, sha: str, token: str) -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    page = 1
+    while True:
+        url = f"{api_url}/repos/{repo}/commits/{sha}/check-runs?per_page=100&page={page}"
+        payload = _api_get_json(url, token=token)
+        runs = payload.get("check_runs", [])
+        if not isinstance(runs, list):
+            break
+        for run in runs:
+            name = run.get("name")
+            details_url = run.get("details_url") or run.get("html_url")
+            if isinstance(name, str) and isinstance(details_url, str):
+                mapping.setdefault(name, details_url)
+        if len(runs) < 100:
+            break
+        page += 1
+    return mapping
+
+
+def _collect_job_urls(api_url: str, repo: str, run_id: str, sha: str, token: str) -> Dict[str, str]:
+    try:
+        return _collect_run_jobs(api_url, repo, run_id, token)
+    except urllib.error.HTTPError as exc:
+        if exc.code < 500:
+            raise
+        print(
+            f"EG-5 INFO: run jobs endpoint returned HTTP {exc.code}; "
+            "falling back to commit check-runs",
+            file=sys.stderr,
+        )
+    return _collect_commit_check_runs(api_url, repo, sha, token)
 
 
 def _render_md(
@@ -120,7 +169,7 @@ def main() -> int:
         run_url = f"{server_url}/{repo}/actions/runs/{run_id}"
 
         artifacts_by_name = _collect_run_artifacts(api_url, repo, run_id, token)
-        jobs_by_name = _collect_run_jobs(api_url, repo, run_id, token)
+        jobs_by_name = _collect_job_urls(api_url, repo, run_id, candidate_sha, token)
 
         records: List[GateRecord] = []
         missing: List[str] = []
@@ -205,5 +254,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 

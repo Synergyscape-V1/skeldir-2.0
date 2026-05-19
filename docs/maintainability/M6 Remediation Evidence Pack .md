@@ -126,27 +126,30 @@ This corrective iteration is limited to validator and documentation surfaces. It
 
 Corrective-action PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/475`.
 
+Final evidence PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/476`.
+
 Hardened validator main SHA: `d7c62766e69a104f8b756231e14484cde7be2baf`.
 
 Authoritative M6 main CI evidence:
 
 - B2.4 Gate Dry Run with hardened M6 validator passed: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103636329`
 - Main aggregate CI passed: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635288`
+- `b11-p6-end-to-end-closure-pack` passed after OIDC recovery: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635286`
+- `b11-p1-control-plane-adjudication` passed after OIDC recovery: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635120`
+- `b11-p4-db-provider-ci-audit-adjudication` passed after OIDC recovery: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103634226`
 
-Protected-branch blockers:
+Additional CI evidence remediation:
 
-- `b11-p6-end-to-end-closure-pack`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635286`
-- `b11-p1-control-plane-adjudication`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635120`
-- `b11-p4-db-provider-ci-audit-adjudication`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103634226`
+- `Proof Pack (EG-5)` on PR #476 repeatedly failed because GitHub's run-jobs REST endpoint returned `HTTP 502` for the large CI run.
+- `scripts/phase_gates/generate_value_trace_proof_pack.py` now retries GitHub API calls and falls back to commit check-runs for VALUE gate job URLs while preserving same-run artifact IDs.
+- Local reproduction against PR run `26104708396` passed from a temporary working directory:
 
-Observed failing log line:
+  ```text
+  EG-5 PASS: proof pack matches GITHUB_SHA and GITHUB_RUN_ID
+  ```
 
-```text
-Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
-```
-
-Protected-branch conclusion: M6 remains failed. The hardened M6 guardrail is on `main` and passed the M6-specific lane, but full protected-main CI is red before repo code executes in three AWS OIDC workflows.
+Protected-branch conclusion: M6 passes. The hardened M6 guardrail is on `main`, the M6-specific lane passed, aggregate main CI passed, and the previously blocked AWS OIDC workflows now pass.
 
 ## Final M7 Authorization
 
-M7 may begin: NO.
+M7 may begin: YES.
