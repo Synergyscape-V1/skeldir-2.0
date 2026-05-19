@@ -4,7 +4,7 @@
 
 M6_FAIL.
 
-This record reflects the corrective-action branch state after the independent audit rejection. M6 remains failed until the hardened validator, expanded negative controls, final PR URL, final main SHA, and green protected-main CI evidence are landed back on `main`.
+This record reflects the corrective-action state after PR #475 landed. The hardened validator and expanded negative controls are on `main`, and the M6-specific B2.4 dry-run gate passed on `main`. M6 still fails because protected-main CI is not fully green: three AWS OIDC workflows fail before repo code executes.
 
 ## Selected Path
 
@@ -14,15 +14,30 @@ Path B remains valid because current B2.4 design artifacts are LLM-free. Path B 
 
 ## Final Main Commit SHA
 
-Not established for the corrective action yet. Current inspected main baseline before this follow-up branch: `ddea968e57a5b426cf893bca30377e7db749d1e3`.
+Hardened validator landing SHA on `main`: `d7c62766e69a104f8b756231e14484cde7be2baf`.
+
+This is not an M6_PASS closure SHA because protected-main CI is red.
 
 ## PR URL
 
-Corrective-action PR has not been opened yet. Prior rejected M6 PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/474`.
+Corrective-action PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/475`.
+
+Prior rejected M6 PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/474`.
 
 ## CI Workflow URL
 
-Authoritative corrective-action CI is not established yet. Prior rejected main B2.4 dry-run evidence: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26091153852`.
+Passing M6-specific main evidence:
+
+- B2.4 Gate Dry Run with hardened M6 validator: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103636329`
+- Main aggregate CI: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635288`
+
+Failing protected-main workflows blocking M6_PASS:
+
+- `b11-p6-end-to-end-closure-pack`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635286`
+- `b11-p1-control-plane-adjudication`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635120`
+- `b11-p4-db-provider-ci-audit-adjudication`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103634226`
+
+Failure class: `Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity`.
 
 ## Validation Command And Output
 
@@ -164,7 +179,7 @@ The validator continues to reject unauthorized PR diff surfaces when a merge bas
 | H05 | REMEDIATED | Provider SDK imports are treated as an independent protected-truth-path violation. |
 | H06 | REMEDIATED | High-risk boundary/provider symbol references are rejected in protected truth paths. |
 | H07 | REMEDIATED | Host-native output is advisory; CI on main is authoritative; environment metadata is printed. |
-| H08 | PROVEN_BLOCKER | The current main record is not final and must be updated to `M6_PASS` only after corrective merge and green protected-main CI. |
+| H08 | PROVEN_BLOCKER | The hardened validator is on `main`, but the record cannot be updated to `M6_PASS` because protected-main CI remains red on AWS OIDC workflows. |
 
 ## Root-Cause Findings
 
@@ -175,7 +190,7 @@ The validator continues to reject unauthorized PR diff surfaces when a merge bas
 | RC03 | PROVEN: The original boundary check was unidirectional. |
 | RC04 | PROVEN: The original negative-control success was too narrow to prove evasion resistance. |
 | RC05 | REMEDIATED: Execution authority is now documented as CI-on-main, with local host execution advisory only. |
-| RC06 | PROVEN_BLOCKER: Final completion evidence remains open until the corrective PR lands and protected-main CI is green. |
+| RC06 | PROVEN_BLOCKER: Final completion evidence remains open until protected-main CI is green. |
 
 ## Residual Risk Register
 
@@ -183,7 +198,7 @@ The validator continues to reject unauthorized PR diff surfaces when a merge bas
 |---|---|---|
 | `provider_boundary.py` remains physically large | Accepted under Path B because B2.4 is LLM-free; blocked before B2.7 unless formally waived. | B2.7 |
 | Future DTO/schema reverse-flow exception may be needed | No exception is approved during M6; any future exception needs decision-record and validator allowlist updates. | Future LLM governance |
-| External protected-main CI can fail before repo code executes | M6 cannot pass until authoritative protected-main workflows are green. | M6 closure |
+| External protected-main CI fails before repo code executes | AWS OIDC role assumption fails in B11 main-only workflows; M6 cannot pass until authoritative protected-main workflows are green. | M6 closure |
 
 ## Exit Gate Table
 
@@ -196,8 +211,8 @@ The validator continues to reject unauthorized PR diff surfaces when a merge bas
 | M6-E | REMEDIATED | Path B decision and B2.7 precondition remain intact. |
 | M6-F | REMEDIATED | Validator prints Python/platform and states CI on main is authoritative. |
 | M6-G | REMEDIATED | Corrective diff remains guardrail/docs-only. |
-| M6-H | NOT_CLOSED | Updated validator must run in the B2.4 dry-run lane and protected-main CI must be green. |
-| M6-I | NOT_CLOSED | Final record must be updated to `M6_PASS` with final SHA, PR URL, CI URL, and M7 authorization after main CI is green. |
+| M6-H | FAIL | Updated validator ran in the B2.4 dry-run lane on `main`, but protected-main CI is not green because three AWS OIDC workflows fail. |
+| M6-I | FAIL | Record cannot say `M6_PASS`; M7 remains blocked. |
 
 ## Next Phase Authorization
 

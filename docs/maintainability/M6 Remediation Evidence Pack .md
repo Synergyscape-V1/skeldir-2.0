@@ -11,8 +11,10 @@ This iteration hardens the guardrail without reopening the accepted Path B decis
 Current inspected `main` baseline:
 
 - Branch: `main`
-- SHA: `ddea968e57a5b426cf893bca30377e7db749d1e3`
-- Prior PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/474`
+- Rejected M6 baseline SHA before corrective hardening: `ddea968e57a5b426cf893bca30377e7db749d1e3`
+- Hardened validator landing SHA: `d7c62766e69a104f8b756231e14484cde7be2baf`
+- Corrective PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/475`
+- Prior rejected M6 PR: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/474`
 - Prior status: `M6_REJECT`
 
 Accepted facts retained:
@@ -122,13 +124,28 @@ This corrective iteration is limited to validator and documentation surfaces. It
 
 ## CI And Merge Closure
 
-Corrective-action PR URL: not opened yet.
+Corrective-action PR URL: `https://github.com/Synergyscape-V1/skeldir-2.0/pull/475`.
 
-Final main commit SHA: not established yet.
+Hardened validator main SHA: `d7c62766e69a104f8b756231e14484cde7be2baf`.
 
-Authoritative main CI URL: not established yet.
+Authoritative M6 main CI evidence:
 
-Protected-branch conclusion: M6 remains failed until the corrective action lands on `main`, the B2.4 dry-run lane executes the hardened validator, and protected-main CI is green.
+- B2.4 Gate Dry Run with hardened M6 validator passed: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103636329`
+- Main aggregate CI passed: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635288`
+
+Protected-branch blockers:
+
+- `b11-p6-end-to-end-closure-pack`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635286`
+- `b11-p1-control-plane-adjudication`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103635120`
+- `b11-p4-db-provider-ci-audit-adjudication`: `https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26103634226`
+
+Observed failing log line:
+
+```text
+Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+```
+
+Protected-branch conclusion: M6 remains failed. The hardened M6 guardrail is on `main` and passed the M6-specific lane, but full protected-main CI is red before repo code executes in three AWS OIDC workflows.
 
 ## Final M7 Authorization
 
