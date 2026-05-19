@@ -80,6 +80,8 @@ M6 changes are limited to:
 - `docs/llm/provider_boundary_guardrail.md`
 - `docs/maintainability/m6_completion_record.md`
 - `docs/maintainability/M6 Remediation Evidence Pack .md`
+- `scripts/ci/validate_m0_scope_lock.py`
+- `scripts/ci/validate_m1_local_dev_authority.py`
 - `scripts/ci/validate_m6_llm_boundary.py`
 
 ## Non-Implementation Proof

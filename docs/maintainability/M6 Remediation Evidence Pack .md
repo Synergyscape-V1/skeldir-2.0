@@ -32,6 +32,7 @@ External context reviewed:
 - Registered `validate-m6-llm-boundary` in `docs/ci/enforcer_registry.yaml`.
 - Registered the gate in `docs/ci/gate_subsumption_matrix.yaml`.
 - Wired `make validate-m6-llm-boundary` into `.github/workflows/b2_4-gate-dry-run.yml`.
+- Updated M0/M1 maintainability validators to recognize M6 docs and the M6 validator as allowed maintainability surfaces.
 - Added `docs/maintainability/m6_completion_record.md`.
 
 ## Decision Evidence
