@@ -75,9 +75,19 @@ Provider SDK imports are allowed only inside `backend/app/llm/provider_boundary.
 - `cohere`
 - `mistralai`
 
+Provider SDK imports are also a forbidden truth-path channel. Bayesian, Trust, reconciliation, revenue-verification, policy, solver, envelope, and MCP truth paths may not import provider SDKs directly even if they avoid `app.llm.*`.
+
+## Reverse-Flow Import Policy
+
+`backend/app/llm/**` must not import B2.4, Bayesian diagnostic, Trust, reconciliation, revenue-verification, policy, solver, envelope-generation, MCP, or `app.tasks.bayesian` implementation internals. The LLM layer is downstream explanation infrastructure; it must not become structurally coupled back into deterministic or statistical truth construction.
+
+No reverse-flow exceptions are approved during M6. Stable read-only DTO/schema exceptions require an explicit future decision-record update and validator allowlist entry.
+
 ## Effect on B2.4
 
 B2.4 remains blocked from importing LLM provider modules, adding provider SDK imports, adding prompts, adding LLM cache/budget/breaker behavior, adding fallback narration, or modifying `provider_boundary.py`. The M6 static validator is wired into the B2.4 dry-run lane to reject drift before implementation begins.
+
+The guardrail rejects absolute imports, package imports, aliased imports, relative imports, dynamic import mechanisms, provider SDK imports, and high-risk provider-boundary symbol references in protected truth paths.
 
 ## Effect on B2.7
 
