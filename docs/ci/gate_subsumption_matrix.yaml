@@ -1,3 +1,18 @@
+- gate_id: validate-m7-b24-readiness
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_m7_b24_readiness.py
+  owning_phase: M7
+  protected_invariant: M7 final B2.4 readiness verdict, H01-H15 hypothesis adjudication, M7-A through M7-M gate statuses, final debt classification, no-feature-contamination scan, and B2.4 authorization remain machine-readable and non-narrative.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: M7 is the first gate that adjudicates the complete pre-B2.4 maintainability chain across M0-M6 closure, clean-clone authority, migration authority, test topology, append-only isolation, CI insertion safety, ops readiness, B2.4 substrate design, LLM boundary, feature contamination, and debt classification.
+  negative_control_preserved_by: python scripts/ci/validate_m7_b24_readiness.py --negative-control
+  local_reproduction_command: make validate-m7-b24-readiness
+  risk_if_removed: B2.4 could start from narrative readiness claims without a machine-readable final verdict or bounded debt register.
+  decision: keep_required
 - gate_id: validate-m6-llm-boundary
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run

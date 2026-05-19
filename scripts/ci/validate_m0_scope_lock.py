@@ -169,6 +169,7 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_m4_ops_runbooks.py",
     "scripts/ci/validate_m5_b24_readiness_design.py",
     "scripts/ci/validate_m6_llm_boundary.py",
+    "scripts/ci/validate_m7_b24_readiness.py",
     "scripts/ci/run_ci_governance_cohort.py",
     "scripts/phase_gates/generate_value_trace_proof_pack.py",
     "scripts/smoke/",
@@ -447,10 +448,27 @@ def check_issue_register(result: ValidationResult) -> None:
     )
 
 
+def _added_lines_for_dependency_files(diff_content: str) -> list[str]:
+    added_lines: list[str] = []
+    current_path = ""
+    dependency_path_pattern = re.compile(
+        r"(^|/)(requirements.*\.txt|pyproject\.toml|setup\.(py|cfg)|Pipfile)$",
+        re.IGNORECASE,
+    )
+    for line in diff_content.splitlines():
+        if line.startswith("diff --git "):
+            marker = " b/"
+            current_path = line.split(marker, 1)[1] if marker in line else ""
+            continue
+        if not current_path or not dependency_path_pattern.search(current_path):
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            added_lines.append(line)
+    return added_lines
+
+
 def check_b24_contamination_dependencies(result: ValidationResult, diff_content: str) -> None:
-    added_lines = [
-        line for line in diff_content.splitlines() if line.startswith("+") and not line.startswith("+++")
-    ]
+    added_lines = _added_lines_for_dependency_files(diff_content)
     for pattern in B24_DEPENDENCY_PATTERNS:
         found = any(re.search(pattern, line.lower()) for line in added_lines)
         result.add(f"No B2.4 dependency addition: {pattern}", not found)

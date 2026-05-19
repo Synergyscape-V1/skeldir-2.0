@@ -1,0 +1,34 @@
+verdict: B2.4_READY_WITH_EXPLICIT_DEBT
+generated_at: "2026-05-19T12:21:07-05:00"
+repository: Synergyscape-V1/skeldir-2.0
+source_branch: codex/m7-b24-readiness
+source_sha: 668fb9867ab973023b8ed4b417a5dcf51489146e
+residual_debt:
+  - id: M7-DEBT-001
+    status: B2.4_NONBLOCKING
+    severity: medium
+    b24_impact: B2.4 may start because direct Postgres is the required Bayesian implementation substrate; transaction-pooler behavior remains explicitly governed by M2 and becomes blocking if B2.4 adds pooler-dependent worker semantics.
+    owner_phase: B3
+    reopen_trigger: Any B2.4 implementation that runs Bayesian fit workers through transaction-pooled DB sessions, or any CI failure in the M2 pooler workflow.
+    rationale: M2 defines direct, pooler, and external-smoke profiles and wires pooler-sensitive checks. Local Windows validation could not start Docker because Docker Desktop was not running, so M7 relies on CI and existing M2 governance for pooler proof rather than treating pooler as the B2.4 entry substrate.
+  - id: M7-DEBT-002
+    status: B2.4_NONBLOCKING
+    severity: medium
+    b24_impact: B2.4 may start only while it remains LLM-free; any explanation, provider, prompt, cache, validation, or provider-boundary change invalidates M6 Path B and blocks B2.4 until decomposition or waiver.
+    owner_phase: B2.7
+    reopen_trigger: Any B2.4 diff touching backend/app/llm/provider_boundary.py, importing app.llm from Bayesian/truth paths, adding provider SDK imports, or adding explanation behavior.
+    rationale: M6 selected Path B and validate_m6_llm_boundary.py rejects relative, dynamic, reverse-flow, provider-SDK, and forbidden-symbol LLM boundary violations. Physical provider boundary decomposition remains deferred to B2.7.
+  - id: M7-DEBT-003
+    status: B2.4_NONBLOCKING
+    severity: low
+    b24_impact: B2.4 may start because active runtime dependency files do not install PyMC, PyMC-Marketing, or ArviZ; historical science/evidence files remain documentation debt and cannot activate runtime behavior.
+    owner_phase: B2.4-P1
+    reopen_trigger: Any addition of PyMC, PyMC-Marketing, ArviZ, or sampling code to active dependency/runtime paths before the B2.4 dependency authorization point.
+    rationale: The feature-contamination scan found historical requirements-science and archived evidence references, but M5 and M7 validators scan active dependency files and runtime paths and reject active Bayesian dependency activation.
+  - id: M7-DEBT-004
+    status: DEFERRED_OPERATIONAL
+    severity: low
+    b24_impact: B2.4 may start because Linux CI executes the Make targets; this Windows host lacks make, so local validation used direct Python and Docker Compose command equivalents.
+    owner_phase: Developer-environment hygiene
+    reopen_trigger: Any CI failure caused by Make target drift, or any new onboarding path that requires host-native make on Windows.
+    rationale: The canonical developer path remains container-first and Make-targeted for CI. M7 records the host-local make absence as an environment gap, not repository behavior.
