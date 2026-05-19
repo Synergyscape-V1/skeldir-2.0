@@ -142,6 +142,7 @@ Additional CI evidence remediation:
 
 - `Proof Pack (EG-5)` on PR #476 repeatedly failed because GitHub's run-jobs REST endpoint returned `HTTP 502` for the large CI run.
 - `scripts/phase_gates/generate_value_trace_proof_pack.py` now retries GitHub API calls and falls back to commit check-runs for VALUE gate job URLs while preserving same-run artifact IDs.
+- M0 scope-lock governance now explicitly allows that exact proof-pack generator path as an evidence-generation surface.
 - Local reproduction against PR run `26104708396` passed from a temporary working directory:
 
   ```text

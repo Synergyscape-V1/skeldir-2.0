@@ -79,6 +79,7 @@ Changes during M0 corrective closure are restricted to these paths:
 ```text
 docs/maintainability/**
 scripts/ci/validate_m0_scope_lock.py
+scripts/phase_gates/generate_value_trace_proof_pack.py
 .github/workflows/m0-maintainability-scope-lock.yml
 .github/CODEOWNERS
 contracts-internal/governance/b03_phase2_required_status_checks.main.json

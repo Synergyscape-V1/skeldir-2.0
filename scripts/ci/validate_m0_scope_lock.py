@@ -170,6 +170,7 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_m5_b24_readiness_design.py",
     "scripts/ci/validate_m6_llm_boundary.py",
     "scripts/ci/run_ci_governance_cohort.py",
+    "scripts/phase_gates/generate_value_trace_proof_pack.py",
     "scripts/smoke/",
     "scripts/ops/",
     "scripts/testing/",
