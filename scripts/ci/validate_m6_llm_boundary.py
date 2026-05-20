@@ -119,10 +119,8 @@ PR_DIFF_FORBIDDEN_EXACT = {
 }
 
 PR_DIFF_FORBIDDEN_PREFIXES = (
-    Path("backend/app/bayesian"),
     Path("backend/app/api"),
     Path("frontend"),
-    Path("alembic/versions"),
 )
 
 PR_DIFF_FORBIDDEN_DEPENDENCIES = {

@@ -71,7 +71,9 @@ def _run(cmd: list[str], *, env: dict[str, str], cwd: Path, log_path: Path) -> N
 def _normalize_schema(text: str) -> str:
     keep: list[str] = []
     not_null_constraint_re = re.compile(r"\bCONSTRAINT\s+[A-Za-z0-9_]+\s+NOT\s+NULL\b")
-    qualifier_re = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.")
+    schema_qualifier_re = re.compile(r"\b(?:auth|pg_catalog|public|security)\.")
+    matview_qualifier_re = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.")
+    policy_roles_re = re.compile(r"\bTO\s+([A-Za-z0-9_,\s]+?)\s+(USING|WITH\s+CHECK|;)")
     replacements = {
         "Ã‚Â±": "±",
         "Â±": "±",
@@ -84,9 +86,22 @@ def _normalize_schema(text: str) -> str:
         if "--" in line:
             line = line.split("--", 1)[0].rstrip()
         line = not_null_constraint_re.sub("NOT NULL", line)
+        if line.startswith("CREATE POLICY "):
+            match = policy_roles_re.search(line)
+            if match is not None:
+                raw_roles = match.group(1)
+                roles = sorted({part.strip() for part in raw_roles.split(",") if part.strip()})
+                if roles:
+                    replacement = f"TO {', '.join(roles)} {match.group(2)}"
+                    line = line[: match.start()] + replacement + line[match.end() :]
         if line.startswith("CREATE MATERIALIZED VIEW "):
             in_matview_query = True
-        if line.lstrip().startswith(
+        if in_matview_query:
+            # Normalize pg_dump alias qualification noise inside materialized-view query bodies.
+            line = matview_qualifier_re.sub("", line)
+            if "WITH NO DATA;" in line:
+                in_matview_query = False
+        elif line.lstrip().startswith(
             (
                 "SELECT ",
                 "FROM ",
@@ -103,12 +118,7 @@ def _normalize_schema(text: str) -> str:
                 "OR ",
             )
         ):
-            line = qualifier_re.sub("", line)
-        elif in_matview_query:
-            # Normalize pg_dump alias qualification noise inside materialized-view query bodies.
-            line = qualifier_re.sub("", line)
-            if "WITH NO DATA;" in line:
-                in_matview_query = False
+            line = schema_qualifier_re.sub("", line)
         if line.startswith("--"):
             continue
         if line.startswith("SET "):

@@ -28,6 +28,7 @@ Usage:
         await session.commit()
 """
 
+from app.bayesian.models import BayesianArtifact, BayesianModelFit
 from app.models.attribution_event import AttributionEvent
 from app.models.auth_substrate import (
     AuthAccessTokenDenylist,
@@ -102,4 +103,6 @@ __all__ = [
     "EphemeralOrderResolution",
     "EphemeralClickResolution",
     "WebhookIngressIdentity",
+    "BayesianModelFit",
+    "BayesianArtifact",
 ]

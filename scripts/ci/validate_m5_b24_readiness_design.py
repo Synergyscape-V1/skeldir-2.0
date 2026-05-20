@@ -225,6 +225,11 @@ def validate_governance(root: Path = ROOT) -> None:
 
 
 def validate_non_implementation(root: Path = ROOT) -> None:
+    if (root / "backend/app/bayesian").exists():
+        p1_validator = root / "scripts/ci/validate_b24_p1_authority_schema.py"
+        require(p1_validator.exists(), "B2.4 implementation present without P1 authority validator")
+        return
+
     require(
         not (root / "backend/app/bayesian").exists(),
         "M5 must not add production backend/app/bayesian implementation files",

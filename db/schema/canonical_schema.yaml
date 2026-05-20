@@ -697,6 +697,98 @@ tables:
       using: "tenant_id = current_setting('app.current_tenant_id')::UUID"
       with_check: "tenant_id = current_setting('app.current_tenant_id')::UUID"
 
+  bayesian_model_fits:
+    purpose: "B2.4-P1 tenant-scoped Bayesian fit authority records; persistence only"
+    rls_enabled: true
+    primary_key_strategy:
+      type: UUID
+      default: "gen_random_uuid()"
+      rationale: "Retains existing Skeldir UUID convention; tenant-prefixed indexes provide query locality and future partitioning or ordered IDs remain available if volume grows."
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      model_type: {type: VARCHAR(64), nullable: false}
+      model_version: {type: VARCHAR(64), nullable: false}
+      source_window_start: {type: TIMESTAMPTZ, nullable: false}
+      source_window_end: {type: TIMESTAMPTZ, nullable: false}
+      source_snapshot_hash: {type: VARCHAR(64), nullable: false, format: lowercase_sha256_hex}
+      status: {type: VARCHAR(32), nullable: false, default: pending, values: [pending, queued, running, succeeded, failed, fallback_only, cancelled]}
+      eligibility_status: {type: VARCHAR(32), nullable: false, default: unknown, values: [unknown, eligible, ineligible, fallback_only]}
+      data_completeness_status: {type: VARCHAR(32), nullable: false, default: unknown, values: [unknown, complete, partial, insufficient, stale]}
+      fallback_applied: {type: BOOLEAN, nullable: false, default: false}
+      fallback_reason: {type: VARCHAR(64), nullable: true, values: [insufficient_data, timeout, worker_failure, no_convergence, resource_bound_exceeded, source_unavailable, duplicate_fit_suppressed, artifact_unavailable, storage_quota_exceeded]}
+      sampling_started_at: {type: TIMESTAMPTZ, nullable: true}
+      last_eligibility_check_at: {type: TIMESTAMPTZ, nullable: true}
+      last_fit_at: {type: TIMESTAMPTZ, nullable: true}
+      completed_at: {type: TIMESTAMPTZ, nullable: true}
+      runtime_seconds: {type: INTEGER, nullable: true}
+      max_runtime_seconds: {type: INTEGER, nullable: false, default: 60}
+      max_samples: {type: INTEGER, nullable: false, default: 0}
+      max_cores: {type: INTEGER, nullable: false, default: 1}
+      n_chains: {type: INTEGER, nullable: true}
+      n_samples_actual: {type: INTEGER, nullable: true}
+      r_hat_max: {type: DOUBLE PRECISION, nullable: true}
+      ess_min: {type: DOUBLE PRECISION, nullable: true}
+      divergence_count: {type: INTEGER, nullable: true}
+      credible_interval_status: {type: VARCHAR(32), nullable: false, default: not_available, values: [not_available, available, suppressed, invalid, pending]}
+      confidence_bucket: {type: VARCHAR(32), nullable: true, values: [unavailable, low, medium, high, fallback, needs_review]}
+      confidence_bucket_reason: {type: VARCHAR(255), nullable: true}
+      confidence_policy_version: {type: VARCHAR(64), nullable: true}
+      artifact_ref: {type: VARCHAR(255), nullable: true}
+      artifact_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: ck_bayesian_model_fits_source_snapshot_hash_sha256, type: CHECK, definition: "source_snapshot_hash matches ^[a-f0-9]{64}$"}
+      - {name: ck_bayesian_model_fits_artifact_hash_sha256, type: CHECK, definition: "artifact_hash is null or matches ^[a-f0-9]{64}$"}
+      - {name: ck_bayesian_model_fits_source_window_order, type: CHECK, definition: "source_window_end > source_window_start"}
+    indexes:
+      - {name: idx_bayesian_model_fits_tenant_id, columns: [tenant_id]}
+      - {name: idx_bayesian_model_fits_tenant_model_window, columns: [tenant_id, model_type, source_window_start, source_window_end]}
+      - {name: idx_bayesian_model_fits_tenant_source_snapshot_hash, columns: [tenant_id, source_snapshot_hash]}
+      - {name: idx_bayesian_model_fits_tenant_status, columns: [tenant_id, status]}
+      - {name: idx_bayesian_model_fits_tenant_model_eligibility, columns: [tenant_id, model_type, eligibility_status, "last_eligibility_check_at DESC"]}
+      - {name: idx_bayesian_model_fits_tenant_model_fallback, columns: [tenant_id, model_type, fallback_reason, "last_eligibility_check_at DESC"], where: "fallback_applied = true"}
+      - {name: idx_bayesian_model_fits_tenant_model_window_latest, columns: [tenant_id, model_type, source_window_start, source_window_end, "created_at DESC"]}
+    rls_policy:
+      name: tenant_isolation_policy_bayesian_model_fits
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  bayesian_artifacts:
+    purpose: "B2.4-P1 tenant-scoped Bayesian artifact authority records; lifecycle jobs out of scope"
+    rls_enabled: true
+    primary_key_strategy:
+      type: UUID
+      default: "gen_random_uuid()"
+      rationale: "Retains existing Skeldir UUID convention and uses tenant-prefixed artifact lookup indexes for access locality."
+    columns:
+      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      fit_id: {type: UUID, nullable: false, foreign_key: "bayesian_model_fits(id) ON DELETE RESTRICT"}
+      artifact_ref: {type: VARCHAR(255), nullable: false}
+      artifact_hash: {type: VARCHAR(64), nullable: false, format: lowercase_sha256_hex}
+      artifact_type: {type: VARCHAR(32), nullable: false, values: [posterior_trace, diagnostics, summary, source_manifest, fit_metadata]}
+      storage_backend: {type: VARCHAR(32), nullable: false, values: [postgres, object_storage, local_fs]}
+      artifact_uri_internal: {type: VARCHAR(1024), nullable: false}
+      artifact_size_bytes: {type: BIGINT, nullable: false}
+      compression: {type: VARCHAR(32), nullable: true, values: [none, gzip, zstd]}
+      retention_class: {type: VARCHAR(32), nullable: false, values: [ephemeral, standard, audit]}
+      expires_at: {type: TIMESTAMPTZ, nullable: true}
+      pruned_at: {type: TIMESTAMPTZ, nullable: true}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: ck_bayesian_artifacts_artifact_hash_sha256, type: CHECK, definition: "artifact_hash matches ^[a-f0-9]{64}$"}
+      - {name: ck_bayesian_artifacts_size_non_negative, type: CHECK, definition: "artifact_size_bytes >= 0"}
+    indexes:
+      - {name: idx_bayesian_artifacts_tenant_id, columns: [tenant_id]}
+      - {name: idx_bayesian_artifacts_tenant_fit, columns: [tenant_id, fit_id]}
+      - {name: idx_bayesian_artifacts_tenant_artifact_ref, columns: [tenant_id, artifact_ref]}
+      - {name: idx_bayesian_artifacts_tenant_artifact_hash, columns: [tenant_id, artifact_hash]}
+    rls_policy:
+      name: tenant_isolation_policy_bayesian_artifacts
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
 # Validation Rules
 validation_rules:
   critical_columns_required:
