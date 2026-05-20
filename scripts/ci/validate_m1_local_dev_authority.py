@@ -152,6 +152,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     ".github/actions/setup-postgres-ci/",
     ".github/workflows/b2_4-gate-dry-run.yml",
     ".github/workflows/ci.yml",
+    ".github/workflows/r2-data-truth-hardening.yml",
     ".github/workflows/m3-ci-governance.yml",
     ".github/workflows/m4-operational-runbooks.yml",
     "alembic/versions/007_skeldir_foundation/202605201200_b24_p1_authority_schema.py",
