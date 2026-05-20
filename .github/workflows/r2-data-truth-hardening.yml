@@ -228,26 +228,16 @@ jobs:
                   raise SystemExit(f"unable to locate {label} function block in canonical schema")
               deferred_blocks.append(match.group(0).strip() + "\n")
               reordered = reordered[: match.start()] + "\n" + reordered[match.end() :]
-          allocation_summary_view = textwrap.dedent("""\
-              CREATE MATERIALIZED VIEW mv_allocation_summary AS
-               SELECT tenant_id,
-                  event_id,
-                  model_version,
-                  sum(allocated_revenue_cents) AS total_allocated_cents,
-                  revenue_cents AS event_revenue_cents,
-                      CASE
-                          WHEN (revenue_cents IS NULL) THEN NULL::boolean
-                          ELSE (sum(allocated_revenue_cents) = revenue_cents)
-                      END AS is_balanced,
-                      CASE
-                          WHEN (revenue_cents IS NULL) THEN NULL::bigint
-                          ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
-                      END AS drift_cents
-                 FROM (attribution_allocations aa
-                   LEFT JOIN attribution_events e ON ((event_id = id)))
-                GROUP BY tenant_id, event_id, model_version, revenue_cents
-                WITH NO DATA;"""
-          ).strip()
+          def replace_matview_block(schema_text: str, view_name: str, replacement: str) -> str:
+              pattern = re.compile(
+                  rf"CREATE MATERIALIZED VIEW {re.escape(view_name)} AS\n.*?\n\s*WITH NO DATA;",
+                  re.DOTALL,
+              )
+              updated, count = pattern.subn(replacement.strip(), schema_text, count=1)
+              if count != 1:
+                  raise SystemExit(f"unable to locate {view_name} block in canonical schema")
+              return updated
+
           allocation_summary_view_bootstrap = textwrap.dedent("""\
               CREATE MATERIALIZED VIEW mv_allocation_summary AS
                SELECT aa.tenant_id,
@@ -268,22 +258,11 @@ jobs:
                 GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
                 WITH NO DATA;"""
           ).strip()
-          if allocation_summary_view not in reordered:
-              raise SystemExit("unable to locate mv_allocation_summary block in canonical schema")
-          reordered = reordered.replace(allocation_summary_view, allocation_summary_view_bootstrap, 1)
-          reconciliation_status_view = textwrap.dedent("""\
-              CREATE MATERIALIZED VIEW mv_reconciliation_status AS
-               SELECT tenant_id,
-                  state,
-                  last_run_at,
-                  id AS reconciliation_run_id
-                 FROM (reconciliation_runs rr
-                   JOIN ( SELECT tenant_id,
-                          max(last_run_at) AS max_last_run_at
-                         FROM reconciliation_runs
-                        GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
-                WITH NO DATA;"""
-          ).strip()
+          reordered = replace_matview_block(
+              reordered,
+              "mv_allocation_summary",
+              allocation_summary_view_bootstrap,
+          )
           reconciliation_status_view_bootstrap = textwrap.dedent("""\
               CREATE MATERIALIZED VIEW mv_reconciliation_status AS
                SELECT rr.tenant_id,
@@ -294,12 +273,14 @@ jobs:
                    JOIN ( SELECT reconciliation_runs.tenant_id,
                           max(reconciliation_runs.last_run_at) AS max_last_run_at
                          FROM reconciliation_runs
-                        GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+                GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
                 WITH NO DATA;"""
           ).strip()
-          if reconciliation_status_view not in reordered:
-              raise SystemExit("unable to locate mv_reconciliation_status block in canonical schema")
-          reordered = reordered.replace(reconciliation_status_view, reconciliation_status_view_bootstrap, 1)
+          reordered = replace_matview_block(
+              reordered,
+              "mv_reconciliation_status",
+              reconciliation_status_view_bootstrap,
+          )
           target.write_text(reordered.rstrip() + "\n\n" + "\n".join(deferred_blocks), encoding="utf-8")
           PY
           podman exec -i skeldir-r2-postgres psql -v ON_ERROR_STOP=1 -U $POSTGRES_USER -d $POSTGRES_DB < /tmp/canonical_schema_r2_bootstrap.sql
