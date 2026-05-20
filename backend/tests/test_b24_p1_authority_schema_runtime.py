@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,6 +13,10 @@ from app.db.session import engine, get_session
 
 VALID_HASH = "a" * 64
 OTHER_HASH = "b" * 64
+
+
+def _dt(value: str) -> datetime:
+    return datetime.fromisoformat(value)
 
 
 def _require_db_proofs() -> bool:
@@ -36,8 +41,19 @@ async def _assert_table_exists(table_name: str) -> None:
         pytest.skip(message)
 
 
-async def _insert_fit(tenant_id: UUID, *, snapshot_hash: str = VALID_HASH, status: str = "pending") -> UUID:
+async def _insert_fit(
+    tenant_id: UUID,
+    *,
+    snapshot_hash: str = VALID_HASH,
+    status: str = "pending",
+    model_type: str = "mmm",
+    model_version: str = "2026.05.p1",
+    source_window_start: datetime | None = None,
+    source_window_end: datetime | None = None,
+) -> UUID:
     fit_id = uuid4()
+    window_start = source_window_start or _dt("2026-04-01T00:00:00+00:00")
+    window_end = source_window_end or _dt("2026-05-01T00:00:00+00:00")
     async with get_session(tenant_id) as session:
         await session.execute(
             text(
@@ -61,10 +77,10 @@ async def _insert_fit(tenant_id: UUID, *, snapshot_hash: str = VALID_HASH, statu
                 VALUES (
                     :id,
                     :tenant_id,
-                    'mmm',
-                    '2026.05.p1',
-                    now() - interval '30 days',
-                    now(),
+                    :model_type,
+                    :model_version,
+                    :source_window_start,
+                    :source_window_end,
                     :source_snapshot_hash,
                     :status,
                     'eligible',
@@ -81,6 +97,10 @@ async def _insert_fit(tenant_id: UUID, *, snapshot_hash: str = VALID_HASH, statu
                 "tenant_id": str(tenant_id),
                 "source_snapshot_hash": snapshot_hash,
                 "status": status,
+                "model_type": model_type,
+                "model_version": model_version,
+                "source_window_start": window_start,
+                "source_window_end": window_end,
             },
         )
     return fit_id
@@ -167,8 +187,8 @@ async def test_b24_p1_hash_state_and_numeric_constraints_fail(test_tenant_pair) 
                         )
                         """
                     ),
-                {"tenant_id": str(tenant_a), **payload},
-            )
+                    {"tenant_id": str(tenant_a), **payload},
+                )
 
     async with get_session(tenant_a) as session:
         with pytest.raises((IntegrityError, DBAPIError)):
@@ -283,9 +303,27 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair)
             )
 
     bad_artifacts = [
-        {"artifact_ref": "b24://fit/bad-type", "artifact_hash": VALID_HASH, "artifact_type": "invalid", "storage_backend": "postgres", "artifact_size_bytes": 0},
-        {"artifact_ref": "b24://fit/bad-storage", "artifact_hash": VALID_HASH, "artifact_type": "diagnostics", "storage_backend": "s3_public", "artifact_size_bytes": 0},
-        {"artifact_ref": "b24://fit/bad-hash", "artifact_hash": "c" * 63, "artifact_type": "diagnostics", "storage_backend": "postgres", "artifact_size_bytes": 0},
+        {
+            "artifact_ref": "b24://fit/bad-type",
+            "artifact_hash": VALID_HASH,
+            "artifact_type": "invalid",
+            "storage_backend": "postgres",
+            "artifact_size_bytes": 0,
+        },
+        {
+            "artifact_ref": "b24://fit/bad-storage",
+            "artifact_hash": VALID_HASH,
+            "artifact_type": "diagnostics",
+            "storage_backend": "s3_public",
+            "artifact_size_bytes": 0,
+        },
+        {
+            "artifact_ref": "b24://fit/bad-hash",
+            "artifact_hash": "c" * 63,
+            "artifact_type": "diagnostics",
+            "storage_backend": "postgres",
+            "artifact_size_bytes": 0,
+        },
     ]
     for artifact in bad_artifacts:
         async with get_session(tenant_a) as session:
@@ -322,7 +360,109 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair)
 
 
 @pytest.mark.asyncio
-async def test_b24_p1_required_indexes_and_rls_policy_exist() -> None:
+async def test_b24_p1_artifact_fk_is_tenant_bound(test_tenant_pair) -> None:
+    await _assert_table_exists("bayesian_artifacts")
+    tenant_a, tenant_b = test_tenant_pair
+    fit_id = await _insert_fit(
+        tenant_a,
+        snapshot_hash="c" * 64,
+        source_window_start=_dt("2026-02-01T00:00:00+00:00"),
+        source_window_end=_dt("2026-03-01T00:00:00+00:00"),
+    )
+
+    async with get_session(tenant_b) as session:
+        with pytest.raises((IntegrityError, DBAPIError)):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO bayesian_artifacts (
+                        tenant_id,
+                        fit_id,
+                        artifact_ref,
+                        artifact_hash,
+                        artifact_type,
+                        storage_backend,
+                        artifact_uri_internal,
+                        artifact_size_bytes,
+                        retention_class
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :fit_id,
+                        'b24://fit/cross-tenant-artifact',
+                        :artifact_hash,
+                        'diagnostics',
+                        'postgres',
+                        'internal://b24/cross-tenant-artifact',
+                        0,
+                        'standard'
+                    )
+                    """
+                ),
+                {"tenant_id": str(tenant_b), "fit_id": str(fit_id), "artifact_hash": "d" * 64},
+            )
+
+    async with get_session(tenant_b) as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM bayesian_artifacts
+                WHERE artifact_ref = 'b24://fit/cross-tenant-artifact'
+                """
+            )
+        )
+        assert int(result.scalar() or 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_b24_p1_fit_identity_is_unique_over_window_and_hash(test_tenant_pair) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    tenant_a, _ = test_tenant_pair
+    await _insert_fit(
+        tenant_a,
+        snapshot_hash="e" * 64,
+        source_window_start=_dt("2026-01-01T00:00:00+00:00"),
+        source_window_end=_dt("2026-02-01T00:00:00+00:00"),
+    )
+
+    with pytest.raises((IntegrityError, DBAPIError)):
+        await _insert_fit(
+            tenant_a,
+            snapshot_hash="e" * 64,
+            source_window_start=_dt("2026-01-01T00:00:00+00:00"),
+            source_window_end=_dt("2026-02-01T00:00:00+00:00"),
+        )
+
+    second_fit_id = await _insert_fit(
+        tenant_a,
+        snapshot_hash="e" * 64,
+        source_window_start=_dt("2026-02-01T00:00:00+00:00"),
+        source_window_end=_dt("2026-03-01T00:00:00+00:00"),
+    )
+    async with get_session(tenant_a) as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM bayesian_model_fits
+                WHERE source_snapshot_hash = :source_snapshot_hash
+                  AND model_type = 'mmm'
+                  AND model_version = '2026.05.p1'
+                """
+            ),
+            {"source_snapshot_hash": "e" * 64},
+        )
+        assert int(result.scalar() or 0) == 2
+        visible = await session.execute(
+            text("SELECT COUNT(*) FROM bayesian_model_fits WHERE id = :fit_id"),
+            {"fit_id": str(second_fit_id)},
+        )
+        assert int(visible.scalar() or 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exist() -> None:
     await _assert_table_exists("bayesian_model_fits")
     required_indexes = {
         "idx_bayesian_model_fits_tenant_id",
@@ -365,3 +505,37 @@ async def test_b24_p1_required_indexes_and_rls_policy_exist() -> None:
         for row in policies:
             assert "app.current_tenant_id" in row["qual"]
             assert "app.current_tenant_id" in row["with_check"]
+
+        constraint_result = await conn.execute(
+            text(
+                """
+                SELECT conname, pg_get_constraintdef(oid) AS definition
+                FROM pg_constraint
+                WHERE conname IN (
+                    'fk_bayesian_artifacts_tenant_fit',
+                    'uq_bayesian_model_fits_tenant_id_id',
+                    'uq_bayesian_model_fits_tenant_model_window_snapshot'
+                )
+                """
+            )
+        )
+        constraints = {row["conname"]: row["definition"] for row in constraint_result.mappings()}
+        assert "FOREIGN KEY (tenant_id, fit_id)" in constraints["fk_bayesian_artifacts_tenant_fit"]
+        assert "REFERENCES bayesian_model_fits(tenant_id, id)" in constraints["fk_bayesian_artifacts_tenant_fit"]
+        assert "UNIQUE (tenant_id, id)" in constraints["uq_bayesian_model_fits_tenant_id_id"]
+        assert (
+            "UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash)"
+            in constraints["uq_bayesian_model_fits_tenant_model_window_snapshot"]
+        )
+
+        reloptions_result = await conn.execute(
+            text(
+                """
+                SELECT reloptions
+                FROM pg_class
+                WHERE oid = 'public.bayesian_model_fits'::regclass
+                """
+            )
+        )
+        reloptions = reloptions_result.scalar() or []
+        assert "fillfactor=90" in reloptions

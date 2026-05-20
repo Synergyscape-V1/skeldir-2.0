@@ -38,7 +38,8 @@ def _stripe_signature(raw_body: bytes, secret: str, *, tampered: bool = False) -
     signed_payload = f"{timestamp}.{raw_body.decode('utf-8')}".encode("utf-8")
     digest = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
     if tampered:
-        digest = "0" + digest[1:]
+        replacement = "0" if digest[0] != "0" else "1"
+        digest = replacement + digest[1:]
     return f"t={timestamp},v1={digest}"
 
 

@@ -1214,7 +1214,8 @@ CREATE TABLE public.bayesian_model_fits (
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
     CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
-);
+)
+WITH (fillfactor='90');
 
 ALTER TABLE ONLY public.bayesian_model_fits FORCE ROW LEVEL SECURITY;
 
@@ -2458,7 +2459,10 @@ ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT uq_bayesian_artifacts_tenant_artifact_ref UNIQUE (tenant_id, artifact_ref);
 
 ALTER TABLE ONLY public.bayesian_model_fits
-    ADD CONSTRAINT uq_bayesian_model_fits_tenant_source_snapshot_model UNIQUE (tenant_id, model_type, model_version, source_snapshot_hash);
+    ADD CONSTRAINT uq_bayesian_model_fits_tenant_id_id UNIQUE (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits
+    ADD CONSTRAINT uq_bayesian_model_fits_tenant_model_window_snapshot UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
@@ -2967,9 +2971,6 @@ ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.bayesian_artifacts
-    ADD CONSTRAINT bayesian_artifacts_fit_id_fkey FOREIGN KEY (fit_id) REFERENCES public.bayesian_model_fits(id) ON DELETE RESTRICT;
-
-ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.bayesian_model_fits
@@ -3022,6 +3023,9 @@ ALTER TABLE ONLY public.attribution_events
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_session_authority FOREIGN KEY (tenant_id, session_id) REFERENCES public.session_authority(tenant_id, session_id) DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.bayesian_artifacts
+    ADD CONSTRAINT fk_bayesian_artifacts_tenant_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.kombu_message
     ADD CONSTRAINT fk_kombu_message_queue FOREIGN KEY (queue_id) REFERENCES public.kombu_queue(id);

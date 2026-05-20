@@ -704,6 +704,9 @@ tables:
       type: UUID
       default: "gen_random_uuid()"
       rationale: "Retains existing Skeldir UUID convention; tenant-prefixed indexes provide query locality and future partitioning or ordered IDs remain available if volume grows."
+    storage:
+      fillfactor: 90
+      partition_readiness: "source window and created_at columns remain present; pre-P3/P5 partition decision required before fit workers or artifact lifecycle volume."
     columns:
       id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
       tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
@@ -742,6 +745,8 @@ tables:
       - {name: ck_bayesian_model_fits_source_snapshot_hash_sha256, type: CHECK, definition: "source_snapshot_hash matches ^[a-f0-9]{64}$"}
       - {name: ck_bayesian_model_fits_artifact_hash_sha256, type: CHECK, definition: "artifact_hash is null or matches ^[a-f0-9]{64}$"}
       - {name: ck_bayesian_model_fits_source_window_order, type: CHECK, definition: "source_window_end > source_window_start"}
+      - {name: uq_bayesian_model_fits_tenant_id_id, type: UNIQUE, columns: [tenant_id, id]}
+      - {name: uq_bayesian_model_fits_tenant_model_window_snapshot, type: UNIQUE, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash]}
     indexes:
       - {name: idx_bayesian_model_fits_tenant_id, columns: [tenant_id]}
       - {name: idx_bayesian_model_fits_tenant_model_window, columns: [tenant_id, model_type, source_window_start, source_window_end]}
@@ -765,7 +770,7 @@ tables:
     columns:
       id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
       tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
-      fit_id: {type: UUID, nullable: false, foreign_key: "bayesian_model_fits(id) ON DELETE RESTRICT"}
+      fit_id: {type: UUID, nullable: false, foreign_key: "bayesian_model_fits(tenant_id, id) via (tenant_id, fit_id) ON DELETE RESTRICT"}
       artifact_ref: {type: VARCHAR(255), nullable: false}
       artifact_hash: {type: VARCHAR(64), nullable: false, format: lowercase_sha256_hex}
       artifact_type: {type: VARCHAR(32), nullable: false, values: [posterior_trace, diagnostics, summary, source_manifest, fit_metadata]}
@@ -780,6 +785,7 @@ tables:
     constraints:
       - {name: ck_bayesian_artifacts_artifact_hash_sha256, type: CHECK, definition: "artifact_hash matches ^[a-f0-9]{64}$"}
       - {name: ck_bayesian_artifacts_size_non_negative, type: CHECK, definition: "artifact_size_bytes >= 0"}
+      - {name: fk_bayesian_artifacts_tenant_fit, type: FOREIGN KEY, columns: [tenant_id, fit_id], references: "bayesian_model_fits(tenant_id, id)", on_delete: RESTRICT}
     indexes:
       - {name: idx_bayesian_artifacts_tenant_id, columns: [tenant_id]}
       - {name: idx_bayesian_artifacts_tenant_fit, columns: [tenant_id, fit_id]}

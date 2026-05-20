@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -89,10 +90,17 @@ class BayesianModelFit(Base, TenantMixin):
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",
+            "id",
+            name="uq_bayesian_model_fits_tenant_id_id",
+        ),
+        UniqueConstraint(
+            "tenant_id",
             "model_type",
             "model_version",
+            "source_window_start",
+            "source_window_end",
             "source_snapshot_hash",
-            name="uq_bayesian_model_fits_tenant_source_snapshot_model",
+            name="uq_bayesian_model_fits_tenant_model_window_snapshot",
         ),
         CheckConstraint("model_type ~ '^[a-z][a-z0-9_]{1,63}$'", name="ck_bayesian_model_fits_model_type_format"),
         CheckConstraint("char_length(trim(model_version)) > 0", name="ck_bayesian_model_fits_model_version_not_blank"),
@@ -172,6 +180,7 @@ class BayesianModelFit(Base, TenantMixin):
             "source_window_end",
             text("created_at DESC"),
         ),
+        {"info": {"storage_parameters": {"fillfactor": 90}}},
     )
 
 
@@ -193,7 +202,6 @@ class BayesianArtifact(Base):
     )
     fit_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("bayesian_model_fits.id", ondelete="RESTRICT"),
         nullable=False,
     )
     artifact_ref: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -214,6 +222,12 @@ class BayesianArtifact(Base):
     )
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "fit_id"],
+            ["bayesian_model_fits.tenant_id", "bayesian_model_fits.id"],
+            name="fk_bayesian_artifacts_tenant_fit",
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("tenant_id", "artifact_ref", name="uq_bayesian_artifacts_tenant_artifact_ref"),
         CheckConstraint("artifact_ref ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'", name="ck_bayesian_artifacts_artifact_ref_format"),
         CheckConstraint("artifact_hash ~ '^[a-f0-9]{64}$'", name="ck_bayesian_artifacts_artifact_hash_sha256"),
