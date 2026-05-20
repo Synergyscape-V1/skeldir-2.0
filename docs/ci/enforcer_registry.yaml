@@ -1,3 +1,24 @@
+- id: validate-b24-p1-authority-schema
+  path: scripts/ci/validate_b24_p1_authority_schema.py
+  status: required
+  owning_phase: B2.4-P1
+  protected_invariant: B2.4-P1 Bayesian authority schema, RLS/GUC isolation, hash constraints, tenant indexes, evolvable state checks, no-router boundary, and no-LLM/no-PyMC runtime boundary remain machine-falsifiable.
+  command: python scripts/ci/validate_b24_p1_authority_schema.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-b24-p1-authority-schema
+  expected_failure_meaning: B2.4-P1 authority schema/module implementation is missing, unconstrained, unindexed, RLS-weak, transaction-unsafe, or contaminated by public API/LLM/statistical runtime code.
+  first_diagnostic_command: python scripts/ci/validate_b24_p1_authority_schema.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m7-b24-readiness
   path: scripts/ci/validate_m7_b24_readiness.py
   status: required

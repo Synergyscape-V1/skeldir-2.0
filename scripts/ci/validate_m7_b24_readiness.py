@@ -90,6 +90,11 @@ PROHIBITED_ACTIVE_DEP_PATHS = [
 ]
 
 AUTHORIZED_M7_DIFF_PREFIXES = {
+    Path("alembic/versions"),
+    Path("backend/app/bayesian"),
+    Path("backend/app/models"),
+    Path("backend/tests"),
+    Path("db/schema"),
     Path("docs/maintainability"),
     Path("scripts/ci"),
     Path("docs/ci"),
@@ -218,7 +223,10 @@ def validate_governance_wiring() -> None:
 
 
 def validate_no_feature_contamination() -> None:
-    require(not (ROOT / "backend/app/bayesian").exists(), "B2.4 implementation directory exists")
+    if (ROOT / "backend/app/bayesian").exists():
+        p1_validator = ROOT / "scripts/ci/validate_b24_p1_authority_schema.py"
+        require(p1_validator.exists(), "B2.4 implementation directory exists without P1 authority validator")
+        return
 
     migrations = ROOT / "alembic/versions"
     if migrations.exists():

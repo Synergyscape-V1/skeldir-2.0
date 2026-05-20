@@ -1,0 +1,367 @@
+from __future__ import annotations
+
+import os
+from uuid import UUID, uuid4
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, IntegrityError
+
+from app.db.session import engine, get_session
+
+
+VALID_HASH = "a" * 64
+OTHER_HASH = "b" * 64
+
+
+def _require_db_proofs() -> bool:
+    return os.getenv("SKELDIR_B24_P1_REQUIRE_DB_PROOFS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+async def _assert_table_exists(table_name: str) -> None:
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text("SELECT to_regclass(:qualified_name)"),
+            {"qualified_name": f"public.{table_name}"},
+        )
+    if result.scalar() is None:
+        message = f"B2.4-P1 runtime proof table is missing: {table_name}"
+        if _require_db_proofs():
+            pytest.fail(message)
+        pytest.skip(message)
+
+
+async def _insert_fit(tenant_id: UUID, *, snapshot_hash: str = VALID_HASH, status: str = "pending") -> UUID:
+    fit_id = uuid4()
+    async with get_session(tenant_id) as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO bayesian_model_fits (
+                    id,
+                    tenant_id,
+                    model_type,
+                    model_version,
+                    source_window_start,
+                    source_window_end,
+                    source_snapshot_hash,
+                    status,
+                    eligibility_status,
+                    data_completeness_status,
+                    fallback_applied,
+                    max_runtime_seconds,
+                    max_samples,
+                    max_cores
+                )
+                VALUES (
+                    :id,
+                    :tenant_id,
+                    'mmm',
+                    '2026.05.p1',
+                    now() - interval '30 days',
+                    now(),
+                    :source_snapshot_hash,
+                    :status,
+                    'eligible',
+                    'complete',
+                    false,
+                    60,
+                    1000,
+                    2
+                )
+                """
+            ),
+            {
+                "id": str(fit_id),
+                "tenant_id": str(tenant_id),
+                "source_snapshot_hash": snapshot_hash,
+                "status": status,
+            },
+        )
+    return fit_id
+
+
+@pytest.mark.asyncio
+async def test_b24_p1_rls_blocks_cross_tenant_and_missing_context(test_tenant_pair) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    tenant_a, tenant_b = test_tenant_pair
+    fit_id = await _insert_fit(tenant_a)
+
+    async with get_session(tenant_b) as session:
+        result = await session.execute(
+            text("SELECT COUNT(*) FROM bayesian_model_fits WHERE id = :fit_id"),
+            {"fit_id": str(fit_id)},
+        )
+        assert int(result.scalar() or 0) == 0
+
+    async with get_session(tenant_a) as session:
+        result = await session.execute(
+            text("SELECT COUNT(*) FROM bayesian_model_fits WHERE id = :fit_id"),
+            {"fit_id": str(fit_id)},
+        )
+        assert int(result.scalar() or 0) == 1
+
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            text("SELECT COUNT(*) FROM bayesian_model_fits WHERE id = :fit_id"),
+            {"fit_id": str(fit_id)},
+        )
+        assert int(result.scalar() or 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_b24_p1_hash_state_and_numeric_constraints_fail(test_tenant_pair) -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    tenant_a, _ = test_tenant_pair
+
+    bad_payloads = [
+        {"source_snapshot_hash": "a" * 63, "status": "pending", "runtime_seconds": None},
+        {"source_snapshot_hash": "a" * 65, "status": "pending", "runtime_seconds": None},
+        {"source_snapshot_hash": ("a" * 63) + "z", "status": "pending", "runtime_seconds": None},
+        {"source_snapshot_hash": "G" * 64, "status": "pending", "runtime_seconds": None},
+        {"source_snapshot_hash": VALID_HASH, "status": "not_a_state", "runtime_seconds": None},
+        {"source_snapshot_hash": VALID_HASH, "status": "pending", "runtime_seconds": -1},
+    ]
+    for payload in bad_payloads:
+        async with get_session(tenant_a) as session:
+            with pytest.raises((IntegrityError, DBAPIError)):
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO bayesian_model_fits (
+                            tenant_id,
+                            model_type,
+                            model_version,
+                            source_window_start,
+                            source_window_end,
+                            source_snapshot_hash,
+                            status,
+                            eligibility_status,
+                            data_completeness_status,
+                            fallback_applied,
+                            runtime_seconds,
+                            max_runtime_seconds,
+                            max_samples,
+                            max_cores
+                        )
+                        VALUES (
+                            :tenant_id,
+                            'mmm',
+                            '2026.05.p1',
+                            now() - interval '1 day',
+                            now(),
+                            :source_snapshot_hash,
+                            :status,
+                            'eligible',
+                            'complete',
+                            false,
+                            :runtime_seconds,
+                            60,
+                            1000,
+                            2
+                        )
+                        """
+                    ),
+                {"tenant_id": str(tenant_a), **payload},
+            )
+
+    async with get_session(tenant_a) as session:
+        with pytest.raises((IntegrityError, DBAPIError)):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO bayesian_model_fits (
+                        tenant_id,
+                        model_type,
+                        model_version,
+                        source_window_start,
+                        source_window_end,
+                        source_snapshot_hash,
+                        status,
+                        eligibility_status,
+                        data_completeness_status,
+                        fallback_applied,
+                        max_runtime_seconds,
+                        max_samples,
+                        max_cores
+                    )
+                    VALUES (
+                        :tenant_id,
+                        'mmm',
+                        '2026.05.p1',
+                        now(),
+                        now() - interval '1 day',
+                        :source_snapshot_hash,
+                        'pending',
+                        'eligible',
+                        'complete',
+                        false,
+                        60,
+                        1000,
+                        2
+                    )
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "source_snapshot_hash": VALID_HASH},
+            )
+
+
+@pytest.mark.asyncio
+async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair) -> None:
+    await _assert_table_exists("bayesian_artifacts")
+    tenant_a, _ = test_tenant_pair
+    fit_id = await _insert_fit(tenant_a, snapshot_hash=OTHER_HASH)
+
+    async with get_session(tenant_a) as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO bayesian_artifacts (
+                    tenant_id,
+                    fit_id,
+                    artifact_ref,
+                    artifact_hash,
+                    artifact_type,
+                    storage_backend,
+                    artifact_uri_internal,
+                    artifact_size_bytes,
+                    compression,
+                    retention_class
+                )
+                VALUES (
+                    :tenant_id,
+                    :fit_id,
+                    'b24://fit/diagnostics-valid',
+                    :artifact_hash,
+                    'diagnostics',
+                    'postgres',
+                    'internal://b24/diagnostics-valid',
+                    0,
+                    'none',
+                    'standard'
+                )
+                """
+            ),
+            {"tenant_id": str(tenant_a), "fit_id": str(fit_id), "artifact_hash": VALID_HASH},
+        )
+
+    async with get_session(tenant_a) as session:
+        with pytest.raises((IntegrityError, DBAPIError)):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO bayesian_artifacts (
+                        tenant_id,
+                        fit_id,
+                        artifact_ref,
+                        artifact_hash,
+                        artifact_type,
+                        storage_backend,
+                        artifact_uri_internal,
+                        artifact_size_bytes,
+                        retention_class
+                    )
+                    VALUES (
+                        :tenant_id,
+                        :fit_id,
+                        'b24://fit/bad-size',
+                        :artifact_hash,
+                        'diagnostics',
+                        'postgres',
+                        'internal://b24/bad-size',
+                        -1,
+                        'standard'
+                    )
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "fit_id": str(fit_id), "artifact_hash": VALID_HASH},
+            )
+
+    bad_artifacts = [
+        {"artifact_ref": "b24://fit/bad-type", "artifact_hash": VALID_HASH, "artifact_type": "invalid", "storage_backend": "postgres", "artifact_size_bytes": 0},
+        {"artifact_ref": "b24://fit/bad-storage", "artifact_hash": VALID_HASH, "artifact_type": "diagnostics", "storage_backend": "s3_public", "artifact_size_bytes": 0},
+        {"artifact_ref": "b24://fit/bad-hash", "artifact_hash": "c" * 63, "artifact_type": "diagnostics", "storage_backend": "postgres", "artifact_size_bytes": 0},
+    ]
+    for artifact in bad_artifacts:
+        async with get_session(tenant_a) as session:
+            with pytest.raises((IntegrityError, DBAPIError)):
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO bayesian_artifacts (
+                            tenant_id,
+                            fit_id,
+                            artifact_ref,
+                            artifact_hash,
+                            artifact_type,
+                            storage_backend,
+                            artifact_uri_internal,
+                            artifact_size_bytes,
+                            retention_class
+                        )
+                        VALUES (
+                            :tenant_id,
+                            :fit_id,
+                            :artifact_ref,
+                            :artifact_hash,
+                            :artifact_type,
+                            :storage_backend,
+                            'internal://b24/bad-artifact',
+                            :artifact_size_bytes,
+                            'standard'
+                        )
+                        """
+                    ),
+                    {"tenant_id": str(tenant_a), "fit_id": str(fit_id), **artifact},
+                )
+
+
+@pytest.mark.asyncio
+async def test_b24_p1_required_indexes_and_rls_policy_exist() -> None:
+    await _assert_table_exists("bayesian_model_fits")
+    required_indexes = {
+        "idx_bayesian_model_fits_tenant_id",
+        "idx_bayesian_artifacts_tenant_id",
+        "idx_bayesian_model_fits_tenant_model_window",
+        "idx_bayesian_model_fits_tenant_source_snapshot_hash",
+        "idx_bayesian_model_fits_tenant_status",
+        "idx_bayesian_model_fits_tenant_model_eligibility",
+        "idx_bayesian_model_fits_tenant_model_fallback",
+        "idx_bayesian_artifacts_tenant_fit",
+        "idx_bayesian_artifacts_tenant_artifact_ref",
+        "idx_bayesian_artifacts_tenant_artifact_hash",
+    }
+    async with engine.begin() as conn:
+        index_result = await conn.execute(
+            text(
+                """
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND tablename IN ('bayesian_model_fits', 'bayesian_artifacts')
+                """
+            )
+        )
+        observed = set(index_result.scalars().all())
+        assert required_indexes <= observed
+
+        policy_result = await conn.execute(
+            text(
+                """
+                SELECT tablename, policyname, qual, with_check
+                FROM pg_policies
+                WHERE schemaname = 'public'
+                  AND tablename IN ('bayesian_model_fits', 'bayesian_artifacts')
+                """
+            )
+        )
+        policies = policy_result.mappings().all()
+        assert {row["tablename"] for row in policies} == {"bayesian_model_fits", "bayesian_artifacts"}
+        for row in policies:
+            assert "app.current_tenant_id" in row["qual"]
+            assert "app.current_tenant_id" in row["with_check"]

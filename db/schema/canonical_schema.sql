@@ -14,7 +14,7 @@ CREATE FUNCTION auth.lookup_user_auth_by_login_hash(p_login_identifier_hash text
                 u.auth_provider,
                 u.password_hash
             FROM users AS u
-            WHERE login_identifier_hash = p_login_identifier_hash
+            WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
 
@@ -27,7 +27,7 @@ CREATE FUNCTION auth.lookup_user_by_login_hash(p_login_identifier_hash text) RET
                 u.is_active,
                 u.auth_provider
             FROM users AS u
-            WHERE login_identifier_hash = p_login_identifier_hash
+            WHERE u.login_identifier_hash = p_login_identifier_hash
             LIMIT 1
         $$;
 
@@ -41,12 +41,12 @@ CREATE FUNCTION public.check_allocation_sum() RETURNS trigger
         BEGIN
             SELECT revenue_cents INTO event_revenue
             FROM attribution_events
-            WHERE id = COALESCE(event_id, event_id);
+            WHERE id = COALESCE(NEW.event_id, OLD.event_id);
 
             SELECT COALESCE(SUM(allocated_revenue_cents), 0) INTO allocated_sum
             FROM attribution_allocations
-            WHERE event_id = COALESCE(event_id, event_id)
-              AND model_version = COALESCE(model_version, model_version);
+            WHERE event_id = COALESCE(NEW.event_id, OLD.event_id)
+              AND model_version = COALESCE(NEW.model_version, OLD.model_version);
 
             IF ABS(allocated_sum - event_revenue) > tolerance_cents THEN
                 RAISE EXCEPTION 'Allocation sum mismatch: allocated=% expected=% drift=%',
@@ -80,23 +80,23 @@ CREATE FUNCTION public.check_allocation_sum_stmt_delete() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON tenant_id = tenant_id
-             AND id = event_id
+              ON e.tenant_id = a.tenant_id
+             AND e.id = a.event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE tenant_id = tenant_id
-                  AND event_id = event_id
+                WHERE aa.tenant_id = a.tenant_id
+                  AND aa.event_id = a.event_id
                   AND (
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
                         AND aa.recompute_job_id IS NULL
-                        AND model_version = model_version
+                        AND aa.model_version = a.model_version
                     )
                   )
             ) s
-            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
+            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -133,23 +133,23 @@ CREATE FUNCTION public.check_allocation_sum_stmt_insert() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON tenant_id = tenant_id
-             AND id = event_id
+              ON e.tenant_id = a.tenant_id
+             AND e.id = a.event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE tenant_id = tenant_id
-                  AND event_id = event_id
+                WHERE aa.tenant_id = a.tenant_id
+                  AND aa.event_id = a.event_id
                   AND (
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
                         AND aa.recompute_job_id IS NULL
-                        AND model_version = model_version
+                        AND aa.model_version = a.model_version
                     )
                   )
             ) s
-            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
+            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -190,23 +190,23 @@ CREATE FUNCTION public.check_allocation_sum_stmt_update() RETURNS trigger
             INTO mismatch
             FROM affected a
             JOIN attribution_events e
-              ON tenant_id = tenant_id
-             AND id = event_id
+              ON e.tenant_id = a.tenant_id
+             AND e.id = a.event_id
             CROSS JOIN LATERAL (
-                SELECT COALESCE(SUM(allocated_revenue_cents), 0) AS allocated_sum
+                SELECT COALESCE(SUM(aa.allocated_revenue_cents), 0) AS allocated_sum
                 FROM attribution_allocations aa
-                WHERE tenant_id = tenant_id
-                  AND event_id = event_id
+                WHERE aa.tenant_id = a.tenant_id
+                  AND aa.event_id = a.event_id
                   AND (
                     (a.recompute_job_id IS NOT NULL AND aa.recompute_job_id = a.recompute_job_id)
                     OR (
                         a.recompute_job_id IS NULL
                         AND aa.recompute_job_id IS NULL
-                        AND model_version = model_version
+                        AND aa.model_version = a.model_version
                     )
                   )
             ) s
-            WHERE ABS(allocated_sum - revenue_cents) > tolerance_cents
+            WHERE ABS(s.allocated_sum - e.revenue_cents) > tolerance_cents
             LIMIT 1;
 
             IF FOUND THEN
@@ -237,7 +237,7 @@ CREATE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities(max_delet
                 )
                 DELETE FROM public.attribution_commerce_identities target
                 USING doomed
-                WHERE id = id;
+                WHERE target.id = doomed.id;
 
                 GET DIAGNOSTICS deleted_count = ROW_COUNT;
                 RETURN deleted_count;
@@ -271,7 +271,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
             )
             DELETE FROM public.b23_webhook_ingestion_logs target
             USING doomed
-            WHERE id = id;
+            WHERE target.id = doomed.id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_webhook_ingestion_logs';
             deleted_rows := removed;
@@ -286,7 +286,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
             )
             DELETE FROM public.b23_exception_records target
             USING doomed
-            WHERE id = id;
+            WHERE target.id = doomed.id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_exception_records';
             deleted_rows := removed;
@@ -301,7 +301,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
             )
             DELETE FROM public.b23_match_verdicts target
             USING doomed
-            WHERE id = id;
+            WHERE target.id = doomed.id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_match_verdicts';
             deleted_rows := removed;
@@ -316,7 +316,7 @@ CREATE FUNCTION public.fn_b23_p1_apply_lifecycle(max_delete integer DEFAULT 5000
             )
             DELETE FROM public.b23_revenue_events target
             USING doomed
-            WHERE id = id;
+            WHERE target.id = doomed.id;
             GET DIAGNOSTICS removed = ROW_COUNT;
             table_name := 'b23_revenue_events';
             deleted_rows := removed;
@@ -371,9 +371,9 @@ CREATE FUNCTION public.fn_bind_session_authority_from_event() RETURNS trigger
             IF EXISTS (
                 SELECT 1
                 FROM session_authority sa
-                WHERE tenant_id = tenant_id
-                  AND session_id = session_id
-                  AND (invalidated_at IS NOT NULL OR expires_at <= authority_now)
+                WHERE sa.tenant_id = NEW.tenant_id
+                  AND sa.session_id = NEW.session_id
+                  AND (sa.invalidated_at IS NOT NULL OR sa.expires_at <= authority_now)
             ) THEN
                 RAISE EXCEPTION
                     'session authority violation: stale or invalidated session_id on attribution_events insert';
@@ -691,7 +691,7 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             LOOP
 
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(raw_payload) key
+                FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -727,7 +727,7 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             LOOP
 
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(raw_payload) key
+                FROM jsonb_object_keys(rec.raw_payload) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -763,7 +763,7 @@ CREATE FUNCTION public.fn_scan_pii_contamination() RETURNS integer
             LOOP
 
                 SELECT key INTO detected_key_var
-                FROM jsonb_object_keys(metadata) key
+                FROM jsonb_object_keys(rec.metadata) key
                 WHERE key IN (
                     'email', 'email_address',
                     'phone', 'phone_number',
@@ -812,7 +812,7 @@ CREATE FUNCTION security.resolve_tenant_webhook_secrets(api_key_hash text) RETUR
             t.woocommerce_webhook_secret_ciphertext,
             t.woocommerce_webhook_secret_key_id
           FROM tenants t
-          WHERE api_key_hash = $1
+          WHERE t.api_key_hash = $1
           LIMIT 1
         $_$;
 
@@ -1128,6 +1128,95 @@ CREATE TABLE public.b23_webhook_ingestion_logs (
 );
 
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.bayesian_model_fits FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.budget_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1670,22 +1759,22 @@ CREATE SEQUENCE public.message_id_sequence
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
 CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT tenant_id,
-    event_id,
-    model_version,
-    sum(allocated_revenue_cents) AS total_allocated_cents,
-    revenue_cents AS event_revenue_cents,
+ SELECT aa.tenant_id,
+    aa.event_id,
+    aa.model_version,
+    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
+    e.revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(allocated_revenue_cents) = revenue_cents)
+            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
+            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((event_id = id)))
-  GROUP BY tenant_id, event_id, model_version, revenue_cents
+     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
+  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
   WITH NO DATA;
 
 CREATE MATERIALIZED VIEW mv_channel_performance AS
@@ -1774,15 +1863,15 @@ CREATE TABLE public.reconciliation_runs (
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
 CREATE MATERIALIZED VIEW mv_reconciliation_status AS
- SELECT tenant_id,
-    state,
-    last_run_at,
-    id AS reconciliation_run_id
+ SELECT rr.tenant_id,
+    rr.state,
+    rr.last_run_at,
+    rr.id AS reconciliation_run_id
    FROM (reconciliation_runs rr
-     JOIN ( SELECT tenant_id,
-            max(last_run_at) AS max_last_run_at
+     JOIN ( SELECT reconciliation_runs.tenant_id,
+            max(reconciliation_runs.last_run_at) AS max_last_run_at
            FROM reconciliation_runs
-          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
+          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.oauth_handshake_sessions (
@@ -2164,6 +2253,12 @@ ALTER TABLE ONLY public.b23_revenue_events
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.bayesian_artifacts
+    ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.bayesian_model_fits
+    ADD CONSTRAINT bayesian_model_fits_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_pkey PRIMARY KEY (id);
 
@@ -2359,6 +2454,12 @@ ALTER TABLE ONLY public.b23_match_verdicts
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT uq_b23_revenue_events_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
 
+ALTER TABLE ONLY public.bayesian_artifacts
+    ADD CONSTRAINT uq_bayesian_artifacts_tenant_artifact_ref UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_model_fits
+    ADD CONSTRAINT uq_bayesian_model_fits_tenant_source_snapshot_model UNIQUE (tenant_id, model_type, model_version, source_snapshot_hash);
+
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
 
@@ -2522,6 +2623,28 @@ CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_reve
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_artifact_hash ON public.bayesian_artifacts USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_artifact_ref ON public.bayesian_artifacts USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_fit ON public.bayesian_artifacts USING btree (tenant_id, fit_id);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_id ON public.bayesian_artifacts USING btree (tenant_id);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_id ON public.bayesian_model_fits USING btree (tenant_id);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_eligibility ON public.bayesian_model_fits USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_fallback ON public.bayesian_model_fits USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_window ON public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_window_latest ON public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_source_snapshot_hash ON public.bayesian_model_fits USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_status ON public.bayesian_model_fits USING btree (tenant_id, status);
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
@@ -2843,6 +2966,15 @@ ALTER TABLE ONLY public.b23_revenue_events
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.bayesian_artifacts
+    ADD CONSTRAINT bayesian_artifacts_fit_id_fkey FOREIGN KEY (fit_id) REFERENCES public.bayesian_model_fits(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.bayesian_artifacts
+    ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.bayesian_model_fits
+    ADD CONSTRAINT bayesian_model_fits_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -3034,6 +3166,10 @@ ALTER TABLE public.b23_revenue_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b23_webhook_ingestion_logs ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.bayesian_artifacts ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.budget_jobs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.budget_optimization_jobs ENABLE ROW LEVEL SECURITY;
@@ -3084,7 +3220,7 @@ ALTER TABLE public.platform_connections ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.platform_credentials ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK ((tenant_id IS NULL));
+CREATE POLICY quarantine_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK ((tenant_id IS NULL));
 
 ALTER TABLE public.r4_crash_barriers ENABLE ROW LEVEL SECURITY;
 
@@ -3122,7 +3258,7 @@ CREATE POLICY tenant_isolation_policy ON public.dead_events USING ((tenant_id = 
 
 CREATE POLICY tenant_isolation_policy ON public.explanation_cache USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_user, app_rw, app_ro USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+CREATE POLICY tenant_isolation_policy ON public.investigation_jobs TO app_ro, app_rw, app_user USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy ON public.investigation_tool_calls USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
@@ -3186,6 +3322,10 @@ CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_e
 
 CREATE POLICY tenant_isolation_policy_b23_webhook_ingestion_logs ON public.b23_webhook_ingestion_logs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts ON public.bayesian_artifacts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_ephemeral_click_resolution ON public.ephemeral_click_resolution USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
@@ -3196,9 +3336,9 @@ CREATE POLICY tenant_isolation_policy_raw_event_payloads ON public.raw_event_pay
 
 CREATE POLICY tenant_isolation_policy_webhook_ingress_identities ON public.webhook_ingress_identities USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
-CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_user, app_rw WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_insert ON public.dead_events_quarantine FOR INSERT TO app_rw, app_user WITH CHECK (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
-CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_user, app_rw, app_ro USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
+CREATE POLICY tenant_lane_select ON public.dead_events_quarantine FOR SELECT TO app_ro, app_rw, app_user USING (((tenant_id IS NOT NULL) AND (tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)));
 
 ALTER TABLE public.tenant_membership_roles ENABLE ROW LEVEL SECURITY;
 

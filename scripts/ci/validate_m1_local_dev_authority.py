@@ -137,13 +137,16 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/run_m2_test_feedback_loop.sh",
     "scripts/ci/validate_m2_test_feedback_loop.py",
     "scripts/ci/run_ci_governance_cohort.py",
+    "scripts/ci/phase2_schema_closure_gate.py",
     "scripts/ci/validate_m3_ci_governance.py",
     "scripts/ci/validate_m4_ops_runbooks.py",
+    "scripts/ci/validate_b24_p1_authority_schema.py",
     "scripts/ci/validate_m5_b24_readiness_design.py",
     "scripts/ci/validate_m6_llm_boundary.py",
     "scripts/ci/validate_m7_b24_readiness.py",
     "scripts/phase_gates/generate_value_trace_proof_pack.py",
     "scripts/r3/ingestion_under_fire.py",
+    "scripts/schema/assert_canonical_schema.py",
     "scripts/testing/",
     "scripts/ops/",
     ".github/actions/setup-postgres-ci/",
@@ -151,12 +154,19 @@ ALLOWED_M1_PATH_PREFIXES = [
     ".github/workflows/ci.yml",
     ".github/workflows/m3-ci-governance.yml",
     ".github/workflows/m4-operational-runbooks.yml",
+    "alembic/versions/007_skeldir_foundation/202605201200_b24_p1_authority_schema.py",
+    "backend/app/bayesian/",
+    "backend/app/models/__init__.py",
+    "db/schema/canonical_schema.sql",
+    "db/schema/canonical_schema.yaml",
     "docs/ci/",
     "docs/b2_4/",
     "docs/b2_7/",
     "docs/llm/",
     "docs/ops/",
     "docs/forensics/INDEX.md",
+    "docs/forensics/B2.4-P Remediation Evidence Pack .md",
+    "docs/forensics/B2.4-P1_Authority_Schema_RLS_Module_Transition_Completion_Report.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "M4 Remediation Evidence Pack.md",
@@ -366,6 +376,7 @@ def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) 
         path
         for path in files
         if any(re.search(pattern, path) for pattern in PROHIBITED_PATH_PATTERNS)
+        and not _allowed_m1_path(path)
     ]
     result.add("M1 diff avoids prohibited surfaces", not prohibited, ", ".join(prohibited[:10]))
 

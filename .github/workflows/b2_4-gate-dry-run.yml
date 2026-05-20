@@ -38,3 +38,59 @@ jobs:
 
       - name: Validate M7 B2.4 readiness adjudication
         run: make validate-m7-b24-readiness
+
+      - name: Validate B2.4-P1 authority schema
+        run: make validate-b24-p1-authority-schema
+
+  b2-4-p1-db-proof:
+    name: B2.4-P1 DB Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p1_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p1_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P1_REQUIRE_DB_PROOFS: "1"
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P1 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p1_ci"
+          revoke-alembic-version: "false"
+
+      - name: Run B2.4-P1 DB-backed proofs
+        run: |
+          pytest backend/tests/test_b24_p1_authority_schema_runtime.py -q -rA

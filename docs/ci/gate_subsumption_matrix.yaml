@@ -1,3 +1,18 @@
+- gate_id: validate-b24-p1-authority-schema
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_b24_p1_authority_schema.py
+  owning_phase: B2.4-P1
+  protected_invariant: B2.4-P1 Bayesian authority schema, RLS/GUC isolation, hash constraints, tenant indexes, evolvable state checks, no-router boundary, and no-LLM/no-PyMC runtime boundary remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: P1 is the first authorized implementation gate; M5/M6/M7 readiness gates do not validate concrete fit/artifact persistence, constraints, indexes, RLS, or Alembic transaction-safety.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p1_authority_schema.py --negative-control
+  local_reproduction_command: make validate-b24-p1-authority-schema
+  risk_if_removed: B2.4 could regress to malformed persistence, weak RLS, unconstrained hashes/states, missing access paths, or forbidden runtime/API coupling without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
