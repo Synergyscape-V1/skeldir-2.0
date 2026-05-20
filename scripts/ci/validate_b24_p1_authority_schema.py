@@ -14,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_PATH = Path(
     "alembic/versions/007_skeldir_foundation/202605201200_b24_p1_authority_schema.py"
 )
+CORRECTIVE_MIGRATION_PATH = Path(
+    "alembic/versions/007_skeldir_foundation/202605201430_b24_p1_corrective_authority_closure.py"
+)
 CANONICAL_SCHEMA_PATH = Path("db/schema/canonical_schema.sql")
 CANONICAL_YAML_PATH = Path("db/schema/canonical_schema.yaml")
 BAYESIAN_PACKAGE = Path("backend/app/bayesian")
@@ -97,6 +100,9 @@ REQUIRED_INDEXES = {
 }
 
 REQUIRED_CONSTRAINTS = {
+    "uq_bayesian_model_fits_tenant_id_id",
+    "uq_bayesian_model_fits_tenant_model_window_snapshot",
+    "fk_bayesian_artifacts_tenant_fit",
     "ck_bayesian_model_fits_source_snapshot_hash_sha256",
     "ck_bayesian_model_fits_artifact_hash_sha256",
     "ck_bayesian_artifacts_artifact_hash_sha256",
@@ -126,6 +132,30 @@ FORBIDDEN_IMPORT_ROOTS = {
     "pymc_marketing",
 }
 
+FORBIDDEN_BAYESIAN_FIELD_FRAGMENTS = {
+    "email",
+    "name",
+    "phone",
+    "address",
+    "ip_address",
+    "user_agent",
+    "oauth",
+    "token",
+    "raw_payload",
+}
+
+IDENTITY_BEARING_TABLES = {
+    "attribution_commerce_identities",
+    "webhook_ingress_identities",
+}
+
+IDENTITY_BEARING_IMPORT_TOKENS = {
+    "attribution_commerce_identities",
+    "webhook_ingress_identities",
+    "commerce_identity",
+    "ingress_identity",
+}
+
 
 class ValidationError(RuntimeError):
     pass
@@ -148,12 +178,76 @@ def _table_window(text: str, table: str) -> str:
     return match.group(1) if match else ""
 
 
+def _migration_chain_text(root: Path) -> str:
+    return "\n\n".join(_read(root, path) for path in (MIGRATION_PATH, CORRECTIVE_MIGRATION_PATH))
+
+
 def _column_present(table_sql: str, column: str) -> bool:
     return re.search(rf"(?m)^\s*{re.escape(column)}\s+", table_sql) is not None
 
 
 def _contains_forbidden_import(module: str) -> bool:
     return any(module == root or module.startswith(f"{root}.") for root in FORBIDDEN_IMPORT_ROOTS)
+
+
+def _contains_identity_bearing_import(module: str) -> bool:
+    module_lower = module.lower()
+    return any(token in module_lower for token in IDENTITY_BEARING_IMPORT_TOKENS)
+
+
+def _normalized_sql(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _require_ordered_unique(text: str, name: str, columns: tuple[str, ...]) -> None:
+    pattern = (
+        rf"CONSTRAINT\s+{re.escape(name)}\s+UNIQUE\s*\("
+        + r"\s*"
+        + r"\s*,\s*".join(re.escape(column) for column in columns)
+        + r"\s*\)"
+    )
+    _require(re.search(pattern, text, re.I | re.S) is not None, f"missing required unique constraint: {name}")
+
+
+def _require_tenant_bound_artifact_fk(text: str) -> None:
+    pattern = (
+        r"CONSTRAINT\s+fk_bayesian_artifacts_tenant_fit\s+"
+        r"FOREIGN KEY\s*\(\s*tenant_id\s*,\s*fit_id\s*\)\s*"
+        r"REFERENCES\s+public\.bayesian_model_fits\s*\(\s*tenant_id\s*,\s*id\s*\)\s*"
+        r"ON DELETE RESTRICT"
+    )
+    _require(
+        re.search(pattern, text, re.I | re.S) is not None,
+        "bayesian_artifacts missing tenant-bound FK (tenant_id, fit_id) -> bayesian_model_fits(tenant_id, id)",
+    )
+
+
+def _validate_privacy_boundary_text(text: str) -> None:
+    bayesian_references: list[str] = []
+    for table in ("bayesian_model_fits", "bayesian_artifacts"):
+        table_sql = _table_window(text, table)
+        _require(table_sql, f"could not parse {table} table body")
+        bayesian_references.append(table_sql)
+        for line in table_sql.splitlines():
+            column_match = re.match(r"\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+", line)
+            if not column_match:
+                continue
+            column = column_match.group(1).lower()
+            for fragment in FORBIDDEN_BAYESIAN_FIELD_FRAGMENTS:
+                _require(
+                    fragment not in column,
+                    f"Bayesian authority table {table} contains forbidden privacy/identity field: {column}",
+                )
+    for line in text.splitlines():
+        lowered_line = line.lower()
+        if "bayesian_model_fits" in lowered_line or "bayesian_artifacts" in lowered_line:
+            bayesian_references.append(line)
+    lowered = "\n".join(bayesian_references).lower()
+    for table in IDENTITY_BEARING_TABLES:
+        _require(
+            table not in lowered,
+            f"Bayesian authority schema must not reference identity-bearing table: {table}",
+        )
 
 
 def validate_module_surface(root: Path) -> None:
@@ -178,6 +272,13 @@ def validate_module_surface(root: Path) -> None:
                 continue
             for module in modules:
                 _require(not _contains_forbidden_import(module), f"forbidden import in {rel}: {module}")
+                _require(
+                    not _contains_identity_bearing_import(module),
+                    f"identity-bearing import forbidden in {rel}: {module}",
+                )
+        lowered = text.lower()
+        for token in IDENTITY_BEARING_IMPORT_TOKENS:
+            _require(token not in lowered, f"identity-bearing reference forbidden in {rel}: {token}")
 
     app_model_init = _read(root, MODEL_INIT_PATH)
     _require("BayesianModelFit" in app_model_init, "ORM metadata package missing BayesianModelFit export")
@@ -207,6 +308,34 @@ def validate_migration_text(text: str) -> None:
     _require("fallback_applied = true" in text, "fallback partial index predicate missing")
     _require("last_eligibility_check_at DESC" in text, "eligibility recency index missing DESC timestamp")
     _require("ON DELETE RESTRICT" in text, "artifact fit FK must avoid cascade-delete by default")
+    _require("DROP CONSTRAINT IF EXISTS bayesian_artifacts_fit_id_fkey" in text, "single-column artifact FK must be dropped")
+    _require_tenant_bound_artifact_fk(text)
+    _require_ordered_unique(
+        text,
+        "uq_bayesian_model_fits_tenant_id_id",
+        ("tenant_id", "id"),
+    )
+    _require_ordered_unique(
+        text,
+        "uq_bayesian_model_fits_tenant_model_window_snapshot",
+        (
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "source_snapshot_hash",
+        ),
+    )
+    _require(
+        re.search(r"ALTER TABLE\s+public\.bayesian_model_fits\s+SET\s*\(\s*fillfactor\s*=\s*90\s*\)", text, re.I) is not None,
+        "bayesian_model_fits must set explicit fillfactor=90",
+    )
+    _require(
+        "pre-P3/P5 partition decision" in text,
+        "bayesian_model_fits storage comment must record pre-P3/P5 partition decision gate",
+    )
+    _validate_privacy_boundary_text(text)
 
     for index in REQUIRED_INDEXES:
         _require(
@@ -241,6 +370,32 @@ def validate_canonical_schema(root: Path) -> None:
         _require(index in canonical, f"canonical schema missing index: {index}")
     for constraint in REQUIRED_CONSTRAINTS:
         _require(constraint in canonical, f"canonical schema missing constraint: {constraint}")
+    _require("bayesian_artifacts_fit_id_fkey" not in canonical, "canonical schema retains single-column artifact fit FK")
+    _require_tenant_bound_artifact_fk(canonical)
+    _require_ordered_unique(
+        canonical,
+        "uq_bayesian_model_fits_tenant_model_window_snapshot",
+        (
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "source_snapshot_hash",
+        ),
+    )
+    _require("fillfactor='90'" in canonical or "fillfactor = 90" in canonical, "canonical schema missing bayesian_model_fits fillfactor=90")
+    _validate_privacy_boundary_text(canonical)
+    bayesian_yaml_lines = "\n".join(
+        line
+        for line in yaml_text.splitlines()
+        if "bayesian_model_fits" in line.lower() or "bayesian_artifacts" in line.lower()
+    ).lower()
+    for table in IDENTITY_BEARING_TABLES:
+        _require(
+            table not in bayesian_yaml_lines,
+            f"canonical YAML Bayesian section references identity-bearing table: {table}",
+        )
 
 
 def validate_models(root: Path) -> None:
@@ -251,20 +406,26 @@ def validate_models(root: Path) -> None:
         "PGUUID(as_uuid=True)",
         "server_default=func.gen_random_uuid()",
         "CheckConstraint",
+        "ForeignKeyConstraint",
+        "fk_bayesian_artifacts_tenant_fit",
+        "uq_bayesian_model_fits_tenant_model_window_snapshot",
+        '"storage_parameters": {"fillfactor": 90}',
+        "fillfactor",
         "postgresql_where=text(\"fallback_applied = true\")",
     ):
         _require(token in models_text, f"Bayesian ORM model missing token: {token}")
+    _validate_privacy_boundary_text(_migration_chain_text(root))
 
 
 def validate_all(root: Path) -> None:
     validate_module_surface(root)
-    validate_migration_text(_read(root, MIGRATION_PATH))
+    validate_migration_text(_migration_chain_text(root))
     validate_canonical_schema(root)
     validate_models(root)
 
 
 def run_negative_controls(root: Path) -> None:
-    migration = _read(root, MIGRATION_PATH)
+    migration = _migration_chain_text(root)
     for label, mutated, expected in (
         (
             "B24_P1_NC_REMOVE_FIT_TABLE_PASS",
@@ -285,6 +446,31 @@ def run_negative_controls(root: Path) -> None:
             "B24_P1_NC_NATIVE_ENUM_PASS",
             migration + "\n# regression\nop.execute('CREATE TYPE b24_bad AS ENUM (''x'')')\n",
             "native PostgreSQL enum",
+        ),
+        (
+            "B24_P1_NC_MISSING_TENANT_BOUND_ARTIFACT_FK_PASS",
+            migration.replace("fk_bayesian_artifacts_tenant_fit", "fk_bayesian_artifacts_tenant_fit_removed", 1),
+            "tenant-bound FK",
+        ),
+        (
+            "B24_P1_NC_MISSING_FIT_IDENTITY_WINDOW_PASS",
+            migration.replace("source_window_start,\n            source_window_end,\n            source_snapshot_hash", "source_snapshot_hash", 1),
+            "uq_bayesian_model_fits_tenant_model_window_snapshot",
+        ),
+        (
+            "B24_P1_NC_BAYESIAN_PII_FIELD_PASS",
+            migration.replace("updated_at timestamp with time zone DEFAULT now() NOT NULL,", "email character varying(255),\n            updated_at timestamp with time zone DEFAULT now() NOT NULL,", 1),
+            "forbidden privacy/identity field",
+        ),
+        (
+            "B24_P1_NC_BAYESIAN_IDENTITY_FK_PASS",
+            migration + "\n# regression\nop.execute('ALTER TABLE public.bayesian_artifacts ADD CONSTRAINT fk_bad_identity FOREIGN KEY (fit_id) REFERENCES public.attribution_commerce_identities(id)')\n",
+            "identity-bearing table",
+        ),
+        (
+            "B24_P1_NC_MISSING_FIT_FILLFACTOR_PASS",
+            migration.replace("ALTER TABLE public.bayesian_model_fits SET (fillfactor = 90)", "ALTER TABLE public.bayesian_model_fits RESET (fillfactor)", 1),
+            "fillfactor=90",
         ),
     ):
         try:
@@ -312,6 +498,24 @@ def run_negative_controls(root: Path) -> None:
             print(f"B24_P1_NC_LLM_IMPORT_PASS: {exc}")
         else:
             raise ValidationError("B24_P1_NC_LLM_IMPORT_PASS did not fail")
+
+    with tempfile.TemporaryDirectory(prefix="b24_p1_bad_identity_import_") as tmp:
+        tmp_root = Path(tmp)
+        package = tmp_root / BAYESIAN_PACKAGE
+        package.mkdir(parents=True)
+        for module in REQUIRED_MODULES:
+            (package / module).write_text("", encoding="utf-8")
+        (package / "models.py").write_text("from app.ingestion.webhook_ingress_identities import Loader\n", encoding="utf-8")
+        app_models = tmp_root / MODEL_INIT_PATH
+        app_models.parent.mkdir(parents=True, exist_ok=True)
+        app_models.write_text("BayesianModelFit = object\nBayesianArtifact = object\n", encoding="utf-8")
+        try:
+            validate_module_surface(tmp_root)
+        except ValidationError as exc:
+            _require("identity-bearing import" in str(exc), f"B24_P1_NC_IDENTITY_IMPORT_PASS unexpected reason: {exc}")
+            print(f"B24_P1_NC_IDENTITY_IMPORT_PASS: {exc}")
+        else:
+            raise ValidationError("B24_P1_NC_IDENTITY_IMPORT_PASS did not fail")
 
 
 def main() -> int:
