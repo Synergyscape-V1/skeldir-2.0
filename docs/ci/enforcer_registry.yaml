@@ -19,6 +19,27 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-p2-source-snapshot
+  path: scripts/ci/validate_b24_p2_source_snapshot.py
+  status: required
+  owning_phase: B2.4-P2
+  protected_invariant: B2.4-P2 deterministic input contract, aggregate eligibility preflight, sparse-privacy suppression, repeatable-read source snapshot, total canonical ordering, sentinel hashing, streaming SHA-256 discipline, no-PII source boundary, and no-P3/P4/P5 scope remain machine-falsifiable.
+  command: python scripts/ci/validate_b24_p2_source_snapshot.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-b24-p2-source-snapshot
+  expected_failure_meaning: B2.4-P2 source snapshot authority is missing, nondeterministic, privacy-sparse, identity-bearing, transaction-inconsistent, not streaming, or contaminated by planner/queue/sampler/API/LLM behavior.
+  first_diagnostic_command: python scripts/ci/validate_b24_p2_source_snapshot.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m7-b24-readiness
   path: scripts/ci/validate_m7_b24_readiness.py
   status: required
