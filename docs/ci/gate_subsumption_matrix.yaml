@@ -13,6 +13,25 @@
   local_reproduction_command: make validate-b24-p1-authority-schema
   risk_if_removed: B2.4 could regress to malformed persistence, weak RLS, unconstrained hashes/states, missing access paths, or forbidden runtime/API coupling without a merge-blocking signal.
   decision: keep_required
+- gate_id: validate-b24-p2-source-snapshot
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_b24_p2_source_snapshot.py
+  owning_phase: B2.4-P2
+  protected_invariant: B2.4-P2 deterministic input contract, aggregate eligibility preflight, sparse-privacy suppression, repeatable-read source snapshot, total canonical ordering, sentinel hashing, streaming SHA-256 discipline, no-PII source boundary, and no-P3/P4/P5 scope remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P2 introduces source snapshot authority semantics that P1 and M5/M6/M7 do
+    not validate: eligibility-before-streaming, single repeatable-read snapshot,
+    total ordering, sparse sentinel hashing, and streaming canonical hash
+    discipline.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p2_source_snapshot.py --negative-control
+  local_reproduction_command: make validate-b24-p2-source-snapshot
+  risk_if_removed: B2.4 could hash identity-bearing, sparse, unordered, split-snapshot, or fully materialized source manifests without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run

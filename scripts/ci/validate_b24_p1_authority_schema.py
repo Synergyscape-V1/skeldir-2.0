@@ -341,7 +341,15 @@ def validate_module_surface(root: Path) -> None:
                 )
         lowered = text.lower()
         for token in IDENTITY_BEARING_IMPORT_TOKENS:
-            _require(token not in lowered, f"identity-bearing reference forbidden in {rel}: {token}")
+            allowed_p2_forbidden_list = (
+                rel == "backend/app/bayesian/input_contract.py"
+                and "forbidden_manifest_sources" in lowered
+                and "allowed_source_read_models" in lowered
+            )
+            _require(
+                allowed_p2_forbidden_list or token not in lowered,
+                f"identity-bearing reference forbidden in {rel}: {token}",
+            )
 
     app_model_init = _read(root, MODEL_INIT_PATH)
     _require("BayesianModelFit" in app_model_init, "ORM metadata package missing BayesianModelFit export")

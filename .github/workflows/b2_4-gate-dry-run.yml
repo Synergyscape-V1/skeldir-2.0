@@ -42,6 +42,9 @@ jobs:
       - name: Validate B2.4-P1 authority schema
         run: make validate-b24-p1-authority-schema
 
+      - name: Validate B2.4-P2 source snapshot authority
+        run: make validate-b24-p2-source-snapshot
+
   b2-4-p1-db-proof:
     name: B2.4-P1 DB Proof
     runs-on: ubuntu-latest
