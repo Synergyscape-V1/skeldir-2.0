@@ -17,6 +17,9 @@ MIGRATION_PATH = Path(
 CORRECTIVE_MIGRATION_PATH = Path(
     "alembic/versions/007_skeldir_foundation/202605201430_b24_p1_corrective_authority_closure.py"
 )
+PARTITION_MIGRATION_PATH = Path(
+    "alembic/versions/007_skeldir_foundation/202605211200_b24_p1_partitioned_authority_schema.py"
+)
 CANONICAL_SCHEMA_PATH = Path("db/schema/canonical_schema.sql")
 CANONICAL_YAML_PATH = Path("db/schema/canonical_schema.yaml")
 BAYESIAN_PACKAGE = Path("backend/app/bayesian")
@@ -100,7 +103,8 @@ REQUIRED_INDEXES = {
 }
 
 REQUIRED_CONSTRAINTS = {
-    "uq_bayesian_model_fits_tenant_id_id",
+    "bayesian_model_fits_pkey",
+    "bayesian_artifacts_pkey",
     "uq_bayesian_model_fits_tenant_model_window_snapshot",
     "fk_bayesian_artifacts_tenant_fit",
     "ck_bayesian_model_fits_source_snapshot_hash_sha256",
@@ -174,12 +178,23 @@ def _require(condition: bool, message: str) -> None:
 
 
 def _table_window(text: str, table: str) -> str:
-    match = re.search(rf"CREATE TABLE public\.{re.escape(table)} \((.*?)\n\s*\)", text, re.S)
-    return match.group(1) if match else ""
+    matches = list(re.finditer(rf"CREATE TABLE public\.{re.escape(table)} \((.*?)\n\s*\)", text, re.S))
+    return matches[-1].group(1) if matches else ""
 
 
 def _migration_chain_text(root: Path) -> str:
-    return "\n\n".join(_read(root, path) for path in (MIGRATION_PATH, CORRECTIVE_MIGRATION_PATH))
+    return "\n\n".join(_read(root, path) for path in (MIGRATION_PATH, CORRECTIVE_MIGRATION_PATH, PARTITION_MIGRATION_PATH))
+
+
+def _latest_upgrade_text(text: str) -> str:
+    marker = 'revision: str = "202605211200"'
+    if marker not in text:
+        return text
+    tail = text[text.index(marker) :]
+    downgrade_marker = "def downgrade() -> None:"
+    if downgrade_marker in tail:
+        return tail[: tail.index(downgrade_marker)]
+    return tail
 
 
 def _column_present(table_sql: str, column: str) -> bool:
@@ -207,6 +222,54 @@ def _require_ordered_unique(text: str, name: str, columns: tuple[str, ...]) -> N
         + r"\s*\)"
     )
     _require(re.search(pattern, text, re.I | re.S) is not None, f"missing required unique constraint: {name}")
+
+
+def _require_ordered_primary_key(text: str, table: str, columns: tuple[str, ...]) -> None:
+    pattern = (
+        rf"CONSTRAINT\s+{re.escape(table)}_pkey\s+PRIMARY\s+KEY\s*\("
+        + r"\s*"
+        + r"\s*,\s*".join(re.escape(column) for column in columns)
+        + r"\s*\)"
+    )
+    _require(
+        re.search(pattern, text, re.I | re.S) is not None,
+        f"{table} primary key must include partition key: {columns}",
+    )
+
+
+def _require_hash_partitioned(text: str, table: str) -> None:
+    matches = list(re.finditer(rf"CREATE TABLE public\.{re.escape(table)}\s*\(", text))
+    _require(matches, f"{table} must be physically HASH partitioned by tenant_id")
+    start = matches[-1].start()
+    next_table = text.find("CREATE TABLE public.", start + 1)
+    segment = text[start:] if next_table < 0 else text[start:next_table]
+    helper_name = "_create_model_fits_table" if table == "bayesian_model_fits" else "_create_artifacts_table"
+    dynamic_partition_call = f"{helper_name}(partitioned=True)" in text and "PARTITION BY HASH (tenant_id)" in text
+    _require(
+        re.search(r"PARTITION BY HASH\s*\(\s*tenant_id\s*\)", segment, re.I) is not None
+        or dynamic_partition_call,
+        f"{table} must be physically HASH partitioned by tenant_id",
+    )
+    _require(
+        f'_create_partitions("{table}"' in text or f"CREATE TABLE public.{table}_p00" in text,
+        f"{table} missing initial partition family",
+    )
+
+
+def _require_fit_identity_not_null(table_sql: str) -> None:
+    for column in (
+        "tenant_id",
+        "model_type",
+        "model_version",
+        "source_window_start",
+        "source_window_end",
+        "source_snapshot_hash",
+    ):
+        pattern = rf"(?m)^\s*{re.escape(column)}\s+.+?\bNOT\s+NULL\b"
+        _require(
+            re.search(pattern, table_sql) is not None,
+            f"fit identity column must be NOT NULL under standard UNIQUE: {column}",
+        )
 
 
 def _require_tenant_bound_artifact_fk(text: str) -> None:
@@ -286,37 +349,38 @@ def validate_module_surface(root: Path) -> None:
 
 
 def validate_migration_text(text: str) -> None:
-    _require("CREATE TABLE public.bayesian_model_fits" in text, "migration missing bayesian_model_fits table")
-    _require("CREATE TABLE public.bayesian_artifacts" in text, "migration missing bayesian_artifacts table")
+    schema_text = _latest_upgrade_text(text)
+    _require("CREATE TABLE public.bayesian_model_fits" in schema_text, "migration missing bayesian_model_fits table")
+    _require("CREATE TABLE public.bayesian_artifacts" in schema_text, "migration missing bayesian_artifacts table")
     _require("CREATE TYPE" not in text.upper(), "native PostgreSQL enum DDL is forbidden for B2.4 P1 states")
     _require("CREATE INDEX CONCURRENTLY" not in text.upper(), "CREATE INDEX CONCURRENTLY forbidden in transactional migration")
     _require("postgresql_concurrently=True" not in text, "postgresql_concurrently=True forbidden in transactional migration")
 
-    fit_sql = _table_window(text, "bayesian_model_fits")
-    artifact_sql = _table_window(text, "bayesian_artifacts")
+    fit_sql = _table_window(schema_text, "bayesian_model_fits")
+    artifact_sql = _table_window(schema_text, "bayesian_artifacts")
     _require(fit_sql, "could not parse bayesian_model_fits table body")
     _require(artifact_sql, "could not parse bayesian_artifacts table body")
+    _require_hash_partitioned(schema_text, "bayesian_model_fits")
+    _require_hash_partitioned(schema_text, "bayesian_artifacts")
+    _require_ordered_primary_key(schema_text, "bayesian_model_fits", ("tenant_id", "id"))
+    _require_ordered_primary_key(schema_text, "bayesian_artifacts", ("tenant_id", "id"))
+    _require_fit_identity_not_null(fit_sql)
 
     missing_fit = sorted(column for column in REQUIRED_FIT_COLUMNS if not _column_present(fit_sql, column))
     missing_artifact = sorted(column for column in REQUIRED_ARTIFACT_COLUMNS if not _column_present(artifact_sql, column))
     _require(not missing_fit, f"bayesian_model_fits missing columns: {missing_fit}")
     _require(not missing_artifact, f"bayesian_artifacts missing columns: {missing_artifact}")
 
-    _require("source_snapshot_hash character varying(64) NOT NULL" in text, "source_snapshot_hash must be VARCHAR(64) NOT NULL")
-    _require("artifact_hash character varying(64)" in text, "artifact_hash must be VARCHAR(64)")
-    _require("'^[a-f0-9]{64}$'" in text, "SHA-256 lowercase hex regex check missing")
-    _require("fallback_applied = true" in text, "fallback partial index predicate missing")
-    _require("last_eligibility_check_at DESC" in text, "eligibility recency index missing DESC timestamp")
-    _require("ON DELETE RESTRICT" in text, "artifact fit FK must avoid cascade-delete by default")
+    _require("source_snapshot_hash character varying(64) NOT NULL" in schema_text, "source_snapshot_hash must be VARCHAR(64) NOT NULL")
+    _require("artifact_hash character varying(64)" in schema_text, "artifact_hash must be VARCHAR(64)")
+    _require("'^[a-f0-9]{{64}}$'" in schema_text or "'^[a-f0-9]{64}$'" in schema_text, "SHA-256 lowercase hex regex check missing")
+    _require("fallback_applied = true" in schema_text, "fallback partial index predicate missing")
+    _require("last_eligibility_check_at DESC" in schema_text, "eligibility recency index missing DESC timestamp")
+    _require("ON DELETE RESTRICT" in schema_text, "artifact fit FK must avoid cascade-delete by default")
     _require("DROP CONSTRAINT IF EXISTS bayesian_artifacts_fit_id_fkey" in text, "single-column artifact FK must be dropped")
-    _require_tenant_bound_artifact_fk(text)
+    _require_tenant_bound_artifact_fk(schema_text)
     _require_ordered_unique(
-        text,
-        "uq_bayesian_model_fits_tenant_id_id",
-        ("tenant_id", "id"),
-    )
-    _require_ordered_unique(
-        text,
+        schema_text,
         "uq_bayesian_model_fits_tenant_model_window_snapshot",
         (
             "tenant_id",
@@ -328,35 +392,33 @@ def validate_migration_text(text: str) -> None:
         ),
     )
     _require(
-        re.search(r"ALTER TABLE\s+public\.bayesian_model_fits\s+SET\s*\(\s*fillfactor\s*=\s*90\s*\)", text, re.I) is not None,
-        "bayesian_model_fits must set explicit fillfactor=90",
+        '_create_partitions("bayesian_model_fits", fillfactor=90)' in schema_text
+        or re.search(r"ALTER TABLE\s+public\.bayesian_model_fits_p\d{2}\s+SET\s*\(\s*fillfactor\s*=\s*90\s*\)", schema_text, re.I) is not None,
+        "bayesian_model_fits partitions must set explicit fillfactor=90",
     )
-    _require(
-        "pre-P3/P5 partition decision" in text,
-        "bayesian_model_fits storage comment must record pre-P3/P5 partition decision gate",
-    )
+    _require("Final physical table family: HASH partitioned by tenant_id" in schema_text, "partitioning cannot be deferred")
     _validate_privacy_boundary_text(text)
 
     for index in REQUIRED_INDEXES:
         _require(
-            re.search(rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+{re.escape(index)}\b", text, re.I) is not None,
+            re.search(rf"\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+{re.escape(index)}\b", schema_text, re.I) is not None,
             f"migration missing required index: {index}",
         )
     for constraint in REQUIRED_CONSTRAINTS:
-        _require(constraint in text, f"migration missing required constraint: {constraint}")
+        _require(constraint in schema_text, f"migration missing required constraint: {constraint}")
 
     for table in ("bayesian_model_fits", "bayesian_artifacts"):
         _require(
-            f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY" in text
+            f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY" in schema_text
             or 'ALTER TABLE public.{table_name} ENABLE ROW LEVEL SECURITY' in text,
             f"{table} missing ENABLE RLS",
         )
         _require(
-            f"ALTER TABLE ONLY public.{table} FORCE ROW LEVEL SECURITY" in text
+            f"ALTER TABLE ONLY public.{table} FORCE ROW LEVEL SECURITY" in schema_text
             or 'ALTER TABLE ONLY public.{table_name} FORCE ROW LEVEL SECURITY' in text,
             f"{table} missing FORCE RLS",
         )
-        _require("current_setting('app.current_tenant_id', true)::uuid" in text, f"{table} policy missing tenant GUC")
+        _require("current_setting('app.current_tenant_id', true)::uuid" in schema_text, f"{table} policy missing tenant GUC")
 
 
 def validate_canonical_schema(root: Path) -> None:
@@ -364,6 +426,7 @@ def validate_canonical_schema(root: Path) -> None:
     yaml_text = _read(root, CANONICAL_YAML_PATH)
     for table in ("bayesian_model_fits", "bayesian_artifacts"):
         _require(f"CREATE TABLE public.{table}" in canonical, f"canonical schema missing table: {table}")
+        _require_hash_partitioned(canonical, table)
         _require(f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY" in canonical, f"canonical schema missing RLS: {table}")
         _require(table in yaml_text, f"canonical schema YAML missing table: {table}")
     for index in REQUIRED_INDEXES:
@@ -372,6 +435,8 @@ def validate_canonical_schema(root: Path) -> None:
         _require(constraint in canonical, f"canonical schema missing constraint: {constraint}")
     _require("bayesian_artifacts_fit_id_fkey" not in canonical, "canonical schema retains single-column artifact fit FK")
     _require_tenant_bound_artifact_fk(canonical)
+    _require_ordered_primary_key(canonical, "bayesian_model_fits", ("tenant_id", "id"))
+    _require_ordered_primary_key(canonical, "bayesian_artifacts", ("tenant_id", "id"))
     _require_ordered_unique(
         canonical,
         "uq_bayesian_model_fits_tenant_model_window_snapshot",
@@ -384,8 +449,11 @@ def validate_canonical_schema(root: Path) -> None:
             "source_snapshot_hash",
         ),
     )
+    _require_fit_identity_not_null(_table_window(canonical, "bayesian_model_fits"))
     _require("fillfactor='90'" in canonical or "fillfactor = 90" in canonical, "canonical schema missing bayesian_model_fits fillfactor=90")
     _validate_privacy_boundary_text(canonical)
+    _require("partition_readiness" not in yaml_text, "canonical YAML still defers partitioning")
+    _require("partitioning:" in yaml_text, "canonical YAML missing final partitioning decision")
     bayesian_yaml_lines = "\n".join(
         line
         for line in yaml_text.splitlines()
@@ -407,9 +475,11 @@ def validate_models(root: Path) -> None:
         "server_default=func.gen_random_uuid()",
         "CheckConstraint",
         "ForeignKeyConstraint",
+        "PrimaryKeyConstraint",
         "fk_bayesian_artifacts_tenant_fit",
         "uq_bayesian_model_fits_tenant_model_window_snapshot",
-        '"storage_parameters": {"fillfactor": 90}',
+        '"fit_partition_fillfactor": 90',
+        '"partitioning": {"strategy": "hash", "key": ["tenant_id"], "partitions": 16}',
         "fillfactor",
         "postgresql_where=text(\"fallback_applied = true\")",
     ):
@@ -429,12 +499,12 @@ def run_negative_controls(root: Path) -> None:
     for label, mutated, expected in (
         (
             "B24_P1_NC_REMOVE_FIT_TABLE_PASS",
-            migration.replace("CREATE TABLE public.bayesian_model_fits", "CREATE TABLE public.bayesian_model_fits_removed", 1),
+            migration.replace("CREATE TABLE public.bayesian_model_fits", "CREATE TABLE public.bayesian_model_fits_removed"),
             "bayesian_model_fits",
         ),
         (
             "B24_P1_NC_REMOVE_HASH_CHECK_PASS",
-            migration.replace("ck_bayesian_model_fits_source_snapshot_hash_sha256", "ck_bayesian_model_fits_source_snapshot_hash_removed", 1),
+            migration.replace("ck_bayesian_model_fits_source_snapshot_hash_sha256", "ck_bayesian_model_fits_source_snapshot_hash_removed"),
             "ck_bayesian_model_fits_source_snapshot_hash_sha256",
         ),
         (
@@ -449,17 +519,17 @@ def run_negative_controls(root: Path) -> None:
         ),
         (
             "B24_P1_NC_MISSING_TENANT_BOUND_ARTIFACT_FK_PASS",
-            migration.replace("fk_bayesian_artifacts_tenant_fit", "fk_bayesian_artifacts_tenant_fit_removed", 1),
+            migration.replace("fk_bayesian_artifacts_tenant_fit", "fk_bayesian_artifacts_tenant_fit_removed"),
             "tenant-bound FK",
         ),
         (
             "B24_P1_NC_MISSING_FIT_IDENTITY_WINDOW_PASS",
-            migration.replace("source_window_start,\n            source_window_end,\n            source_snapshot_hash", "source_snapshot_hash", 1),
+            migration.replace("source_window_start,\n                    source_window_end,\n                    source_snapshot_hash", "source_snapshot_hash", 1),
             "uq_bayesian_model_fits_tenant_model_window_snapshot",
         ),
         (
             "B24_P1_NC_BAYESIAN_PII_FIELD_PASS",
-            migration.replace("updated_at timestamp with time zone DEFAULT now() NOT NULL,", "email character varying(255),\n            updated_at timestamp with time zone DEFAULT now() NOT NULL,", 1),
+            migration.replace("updated_at timestamp with time zone DEFAULT now() NOT NULL,", "email character varying(255),\n            updated_at timestamp with time zone DEFAULT now() NOT NULL,"),
             "forbidden privacy/identity field",
         ),
         (
@@ -469,8 +539,28 @@ def run_negative_controls(root: Path) -> None:
         ),
         (
             "B24_P1_NC_MISSING_FIT_FILLFACTOR_PASS",
-            migration.replace("ALTER TABLE public.bayesian_model_fits SET (fillfactor = 90)", "ALTER TABLE public.bayesian_model_fits RESET (fillfactor)", 1),
+            migration.replace('_create_partitions("bayesian_model_fits", fillfactor=90)', '_create_partitions("bayesian_model_fits")', 1),
             "fillfactor=90",
+        ),
+        (
+            "B24_P1_NC_PARTITION_DEFERRAL_PASS",
+            migration.replace("PARTITION BY HASH (tenant_id)", "WITH (fillfactor = 90)"),
+            "HASH partitioned",
+        ),
+        (
+            "B24_P1_NC_PARTITION_INCOMPATIBLE_PK_PASS",
+            migration.replace("CONSTRAINT bayesian_model_fits_pkey PRIMARY KEY (tenant_id, id)", "CONSTRAINT bayesian_model_fits_pkey PRIMARY KEY (id)", 1),
+            "primary key must include partition key",
+        ),
+        (
+            "B24_P1_NC_PARTITION_INCOMPATIBLE_UNIQUE_PASS",
+            migration.replace("tenant_id,\n                    model_type,", "model_type,", 1),
+            "uq_bayesian_model_fits_tenant_model_window_snapshot",
+        ),
+        (
+            "B24_P1_NC_NULLABLE_FIT_IDENTITY_PASS",
+            migration.replace("source_window_end timestamp with time zone NOT NULL", "source_window_end timestamp with time zone"),
+            "fit identity column must be NOT NULL",
         ),
     ):
         try:
