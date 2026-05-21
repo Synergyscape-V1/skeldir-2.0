@@ -1153,9 +1153,458 @@ CREATE TABLE public.bayesian_artifacts (
     CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
     CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
     CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
-);
+)
+PARTITION BY HASH (tenant_id);
 
 ALTER TABLE ONLY public.bayesian_artifacts FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p00 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p00 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p01 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p01 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p02 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p02 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p03 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p03 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p04 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p04 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p05 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p05 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p06 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p06 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p07 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p07 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p08 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p08 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p09 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p09 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p10 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p10 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p11 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p11 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p12 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p12 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p13 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p13 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p14 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p14 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_artifacts_p15 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    artifact_ref character varying(255) NOT NULL,
+    artifact_hash character varying(64) NOT NULL,
+    artifact_type character varying(32) NOT NULL,
+    storage_backend character varying(32) NOT NULL,
+    artifact_uri_internal character varying(1024) NOT NULL,
+    artifact_size_bytes bigint NOT NULL,
+    compression character varying(32),
+    retention_class character varying(32) NOT NULL,
+    expires_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_artifacts_artifact_hash_sha256 CHECK (((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_ref_format CHECK (((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text)),
+    CONSTRAINT ck_bayesian_artifacts_artifact_type CHECK (((artifact_type)::text = ANY ((ARRAY['posterior_trace'::character varying, 'diagnostics'::character varying, 'summary'::character varying, 'source_manifest'::character varying, 'fit_metadata'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_compression CHECK (((compression IS NULL) OR ((compression)::text = ANY ((ARRAY['none'::character varying, 'gzip'::character varying, 'zstd'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_artifacts_pruned_requires_expiry CHECK (((pruned_at IS NULL) OR (expires_at IS NOT NULL))),
+    CONSTRAINT ck_bayesian_artifacts_retention_class CHECK (((retention_class)::text = ANY ((ARRAY['ephemeral'::character varying, 'standard'::character varying, 'audit'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_size_non_negative CHECK ((artifact_size_bytes >= 0)),
+    CONSTRAINT ck_bayesian_artifacts_storage_backend CHECK (((storage_backend)::text = ANY ((ARRAY['postgres'::character varying, 'object_storage'::character varying, 'local_fs'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_artifacts_uri_not_blank CHECK ((char_length(TRIM(BOTH FROM artifact_uri_internal)) > 0))
+);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p15 FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.bayesian_model_fits (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1215,9 +1664,1001 @@ CREATE TABLE public.bayesian_model_fits (
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
     CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
-WITH (fillfactor='90');
+PARTITION BY HASH (tenant_id);
 
 ALTER TABLE ONLY public.bayesian_model_fits FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p00 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p00 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p01 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p01 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p02 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p02 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p03 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p03 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p04 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p04 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p05 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p05 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p06 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p06 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p07 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p07 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p08 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p08 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p09 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p09 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p10 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p10 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p11 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p11 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p12 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p12 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p13 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p13 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p14 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p14 FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.bayesian_model_fits_p15 (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    source_snapshot_hash character varying(64) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    eligibility_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    data_completeness_status character varying(32) DEFAULT 'unknown'::character varying NOT NULL,
+    fallback_applied boolean DEFAULT false NOT NULL,
+    fallback_reason character varying(64),
+    sampling_started_at timestamp with time zone,
+    last_eligibility_check_at timestamp with time zone,
+    last_fit_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    runtime_seconds integer,
+    max_runtime_seconds integer DEFAULT 60 NOT NULL,
+    max_samples integer DEFAULT 0 NOT NULL,
+    max_cores integer DEFAULT 1 NOT NULL,
+    n_chains integer,
+    n_samples_actual integer,
+    r_hat_max double precision,
+    ess_min double precision,
+    divergence_count integer,
+    credible_interval_status character varying(32) DEFAULT 'not_available'::character varying NOT NULL,
+    confidence_bucket character varying(32),
+    confidence_bucket_reason character varying(255),
+    confidence_policy_version character varying(64),
+    artifact_ref character varying(255),
+    artifact_hash character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bayesian_model_fits_artifact_hash_sha256 CHECK (((artifact_hash IS NULL) OR ((artifact_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_format CHECK (((artifact_ref IS NULL) OR ((artifact_ref)::text ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'::text))),
+    CONSTRAINT ck_bayesian_model_fits_artifact_ref_hash_pair CHECK ((((artifact_ref IS NULL) AND (artifact_hash IS NULL)) OR ((artifact_ref IS NOT NULL) AND (artifact_hash IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_confidence_bucket CHECK (((confidence_bucket IS NULL) OR ((confidence_bucket)::text = ANY ((ARRAY['unavailable'::character varying, 'low'::character varying, 'medium'::character varying, 'high'::character varying, 'fallback'::character varying, 'needs_review'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_credible_interval_status CHECK (((credible_interval_status)::text = ANY ((ARRAY['not_available'::character varying, 'available'::character varying, 'suppressed'::character varying, 'invalid'::character varying, 'pending'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_data_completeness_status CHECK (((data_completeness_status)::text = ANY ((ARRAY['unknown'::character varying, 'complete'::character varying, 'partial'::character varying, 'insufficient'::character varying, 'stale'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_divergence_count_non_negative CHECK (((divergence_count IS NULL) OR (divergence_count >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_eligibility_status CHECK (((eligibility_status)::text = ANY ((ARRAY['unknown'::character varying, 'eligible'::character varying, 'ineligible'::character varying, 'fallback_only'::character varying])::text[]))),
+    CONSTRAINT ck_bayesian_model_fits_ess_min_non_negative CHECK (((ess_min IS NULL) OR (ess_min >= (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason CHECK (((fallback_reason IS NULL) OR ((fallback_reason)::text = ANY ((ARRAY['insufficient_data'::character varying, 'timeout'::character varying, 'worker_failure'::character varying, 'no_convergence'::character varying, 'resource_bound_exceeded'::character varying, 'source_unavailable'::character varying, 'duplicate_fit_suppressed'::character varying, 'artifact_unavailable'::character varying, 'storage_quota_exceeded'::character varying])::text[])))),
+    CONSTRAINT ck_bayesian_model_fits_fallback_reason_required CHECK ((((fallback_applied = false) AND (fallback_reason IS NULL)) OR ((fallback_applied = true) AND (fallback_reason IS NOT NULL)))),
+    CONSTRAINT ck_bayesian_model_fits_max_cores_non_negative CHECK ((max_cores >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_runtime_seconds_non_negative CHECK ((max_runtime_seconds >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_max_samples_non_negative CHECK ((max_samples >= 0)),
+    CONSTRAINT ck_bayesian_model_fits_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_bayesian_model_fits_n_chains_non_negative CHECK (((n_chains IS NULL) OR (n_chains >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_n_samples_actual_non_negative CHECK (((n_samples_actual IS NULL) OR (n_samples_actual >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_r_hat_max_positive CHECK (((r_hat_max IS NULL) OR (r_hat_max > (0)::double precision))),
+    CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
+    CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
+    CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+)
+WITH (fillfactor='90');
+
+ALTER TABLE ONLY public.bayesian_model_fits_p15 FORCE ROW LEVEL SECURITY;
 
 CREATE TABLE public.budget_jobs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -1760,22 +3201,22 @@ CREATE SEQUENCE public.message_id_sequence
 ALTER SEQUENCE public.message_id_sequence OWNED BY public.kombu_message.id;
 
 CREATE MATERIALIZED VIEW mv_allocation_summary AS
- SELECT aa.tenant_id,
-    aa.event_id,
-    aa.model_version,
-    sum(aa.allocated_revenue_cents) AS total_allocated_cents,
-    e.revenue_cents AS event_revenue_cents,
+ SELECT tenant_id,
+    event_id,
+    model_version,
+    sum(allocated_revenue_cents) AS total_allocated_cents,
+    revenue_cents AS event_revenue_cents,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::boolean
-            ELSE (sum(aa.allocated_revenue_cents) = e.revenue_cents)
+            WHEN (revenue_cents IS NULL) THEN NULL::boolean
+            ELSE (sum(allocated_revenue_cents) = revenue_cents)
         END AS is_balanced,
         CASE
-            WHEN (e.revenue_cents IS NULL) THEN NULL::bigint
-            ELSE abs((sum(aa.allocated_revenue_cents) - e.revenue_cents))
+            WHEN (revenue_cents IS NULL) THEN NULL::bigint
+            ELSE abs((sum(allocated_revenue_cents) - revenue_cents))
         END AS drift_cents
    FROM (attribution_allocations aa
-     LEFT JOIN attribution_events e ON ((aa.event_id = e.id)))
-  GROUP BY aa.tenant_id, aa.event_id, aa.model_version, e.revenue_cents
+     LEFT JOIN attribution_events e ON ((event_id = id)))
+  GROUP BY tenant_id, event_id, model_version, revenue_cents
   WITH NO DATA;
 
 CREATE MATERIALIZED VIEW mv_channel_performance AS
@@ -1864,15 +3305,15 @@ CREATE TABLE public.reconciliation_runs (
 ALTER TABLE ONLY public.reconciliation_runs FORCE ROW LEVEL SECURITY;
 
 CREATE MATERIALIZED VIEW mv_reconciliation_status AS
- SELECT rr.tenant_id,
-    rr.state,
-    rr.last_run_at,
-    rr.id AS reconciliation_run_id
+ SELECT tenant_id,
+    state,
+    last_run_at,
+    id AS reconciliation_run_id
    FROM (reconciliation_runs rr
-     JOIN ( SELECT reconciliation_runs.tenant_id,
-            max(reconciliation_runs.last_run_at) AS max_last_run_at
+     JOIN ( SELECT tenant_id,
+            max(last_run_at) AS max_last_run_at
            FROM reconciliation_runs
-          GROUP BY reconciliation_runs.tenant_id) latest ON (((rr.tenant_id = latest.tenant_id) AND (rr.last_run_at = latest.max_last_run_at))))
+          GROUP BY tenant_id) latest ON (((tenant_id = tenant_id) AND (last_run_at = max_last_run_at))))
   WITH NO DATA;
 
 CREATE TABLE public.oauth_handshake_sessions (
@@ -2211,6 +3652,70 @@ CREATE TABLE public.worker_side_effects (
 
 ALTER TABLE ONLY public.worker_side_effects FORCE ROW LEVEL SECURITY;
 
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p00 FOR VALUES WITH (modulus 16, remainder 0);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p01 FOR VALUES WITH (modulus 16, remainder 1);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p02 FOR VALUES WITH (modulus 16, remainder 2);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p03 FOR VALUES WITH (modulus 16, remainder 3);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p04 FOR VALUES WITH (modulus 16, remainder 4);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p05 FOR VALUES WITH (modulus 16, remainder 5);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p06 FOR VALUES WITH (modulus 16, remainder 6);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p07 FOR VALUES WITH (modulus 16, remainder 7);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p08 FOR VALUES WITH (modulus 16, remainder 8);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p09 FOR VALUES WITH (modulus 16, remainder 9);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p10 FOR VALUES WITH (modulus 16, remainder 10);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p11 FOR VALUES WITH (modulus 16, remainder 11);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p12 FOR VALUES WITH (modulus 16, remainder 12);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p13 FOR VALUES WITH (modulus 16, remainder 13);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p14 FOR VALUES WITH (modulus 16, remainder 14);
+
+ALTER TABLE ONLY public.bayesian_artifacts ATTACH PARTITION public.bayesian_artifacts_p15 FOR VALUES WITH (modulus 16, remainder 15);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p00 FOR VALUES WITH (modulus 16, remainder 0);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p01 FOR VALUES WITH (modulus 16, remainder 1);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p02 FOR VALUES WITH (modulus 16, remainder 2);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p03 FOR VALUES WITH (modulus 16, remainder 3);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p04 FOR VALUES WITH (modulus 16, remainder 4);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p05 FOR VALUES WITH (modulus 16, remainder 5);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p06 FOR VALUES WITH (modulus 16, remainder 6);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p07 FOR VALUES WITH (modulus 16, remainder 7);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p08 FOR VALUES WITH (modulus 16, remainder 8);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p09 FOR VALUES WITH (modulus 16, remainder 9);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p10 FOR VALUES WITH (modulus 16, remainder 10);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p11 FOR VALUES WITH (modulus 16, remainder 11);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p12 FOR VALUES WITH (modulus 16, remainder 12);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p13 FOR VALUES WITH (modulus 16, remainder 13);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p14 FOR VALUES WITH (modulus 16, remainder 14);
+
+ALTER TABLE ONLY public.bayesian_model_fits ATTACH PARTITION public.bayesian_model_fits_p15 FOR VALUES WITH (modulus 16, remainder 15);
+
 ALTER TABLE ONLY public.celery_taskmeta ALTER COLUMN id SET DEFAULT nextval('public.task_id_sequence'::regclass);
 
 ALTER TABLE ONLY public.celery_tasksetmeta ALTER COLUMN id SET DEFAULT nextval('public.taskset_id_sequence'::regclass);
@@ -2255,10 +3760,208 @@ ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.bayesian_artifacts
-    ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p00
+    ADD CONSTRAINT bayesian_artifacts_p00_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts
+    ADD CONSTRAINT uq_bayesian_artifacts_tenant_artifact_ref UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p00
+    ADD CONSTRAINT bayesian_artifacts_p00_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p01
+    ADD CONSTRAINT bayesian_artifacts_p01_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p01
+    ADD CONSTRAINT bayesian_artifacts_p01_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p02
+    ADD CONSTRAINT bayesian_artifacts_p02_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p02
+    ADD CONSTRAINT bayesian_artifacts_p02_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p03
+    ADD CONSTRAINT bayesian_artifacts_p03_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p03
+    ADD CONSTRAINT bayesian_artifacts_p03_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p04
+    ADD CONSTRAINT bayesian_artifacts_p04_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p04
+    ADD CONSTRAINT bayesian_artifacts_p04_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p05
+    ADD CONSTRAINT bayesian_artifacts_p05_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p05
+    ADD CONSTRAINT bayesian_artifacts_p05_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p06
+    ADD CONSTRAINT bayesian_artifacts_p06_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p06
+    ADD CONSTRAINT bayesian_artifacts_p06_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p07
+    ADD CONSTRAINT bayesian_artifacts_p07_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p07
+    ADD CONSTRAINT bayesian_artifacts_p07_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p08
+    ADD CONSTRAINT bayesian_artifacts_p08_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p08
+    ADD CONSTRAINT bayesian_artifacts_p08_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p09
+    ADD CONSTRAINT bayesian_artifacts_p09_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p09
+    ADD CONSTRAINT bayesian_artifacts_p09_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p10
+    ADD CONSTRAINT bayesian_artifacts_p10_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p10
+    ADD CONSTRAINT bayesian_artifacts_p10_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p11
+    ADD CONSTRAINT bayesian_artifacts_p11_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p11
+    ADD CONSTRAINT bayesian_artifacts_p11_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p12
+    ADD CONSTRAINT bayesian_artifacts_p12_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p12
+    ADD CONSTRAINT bayesian_artifacts_p12_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p13
+    ADD CONSTRAINT bayesian_artifacts_p13_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p13
+    ADD CONSTRAINT bayesian_artifacts_p13_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p14
+    ADD CONSTRAINT bayesian_artifacts_p14_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p14
+    ADD CONSTRAINT bayesian_artifacts_p14_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p15
+    ADD CONSTRAINT bayesian_artifacts_p15_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_artifacts_p15
+    ADD CONSTRAINT bayesian_artifacts_p15_tenant_id_artifact_ref_key UNIQUE (tenant_id, artifact_ref);
 
 ALTER TABLE ONLY public.bayesian_model_fits
-    ADD CONSTRAINT bayesian_model_fits_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT bayesian_model_fits_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p00
+    ADD CONSTRAINT bayesian_model_fits_p00_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits
+    ADD CONSTRAINT uq_bayesian_model_fits_tenant_model_window_snapshot UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p00
+    ADD CONSTRAINT bayesian_model_fits_p00_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p01
+    ADD CONSTRAINT bayesian_model_fits_p01_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p01
+    ADD CONSTRAINT bayesian_model_fits_p01_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p02
+    ADD CONSTRAINT bayesian_model_fits_p02_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p02
+    ADD CONSTRAINT bayesian_model_fits_p02_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p03
+    ADD CONSTRAINT bayesian_model_fits_p03_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p03
+    ADD CONSTRAINT bayesian_model_fits_p03_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p04
+    ADD CONSTRAINT bayesian_model_fits_p04_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p04
+    ADD CONSTRAINT bayesian_model_fits_p04_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p05
+    ADD CONSTRAINT bayesian_model_fits_p05_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p05
+    ADD CONSTRAINT bayesian_model_fits_p05_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p06
+    ADD CONSTRAINT bayesian_model_fits_p06_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p06
+    ADD CONSTRAINT bayesian_model_fits_p06_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p07
+    ADD CONSTRAINT bayesian_model_fits_p07_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p07
+    ADD CONSTRAINT bayesian_model_fits_p07_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p08
+    ADD CONSTRAINT bayesian_model_fits_p08_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p08
+    ADD CONSTRAINT bayesian_model_fits_p08_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p09
+    ADD CONSTRAINT bayesian_model_fits_p09_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p09
+    ADD CONSTRAINT bayesian_model_fits_p09_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p10
+    ADD CONSTRAINT bayesian_model_fits_p10_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p10
+    ADD CONSTRAINT bayesian_model_fits_p10_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p11
+    ADD CONSTRAINT bayesian_model_fits_p11_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p11
+    ADD CONSTRAINT bayesian_model_fits_p11_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p12
+    ADD CONSTRAINT bayesian_model_fits_p12_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p12
+    ADD CONSTRAINT bayesian_model_fits_p12_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p13
+    ADD CONSTRAINT bayesian_model_fits_p13_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p13
+    ADD CONSTRAINT bayesian_model_fits_p13_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p14
+    ADD CONSTRAINT bayesian_model_fits_p14_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p14
+    ADD CONSTRAINT bayesian_model_fits_p14_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p15
+    ADD CONSTRAINT bayesian_model_fits_p15_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.bayesian_model_fits_p15
+    ADD CONSTRAINT bayesian_model_fits_p15_tenant_id_model_type_model_version__key UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT budget_jobs_pkey PRIMARY KEY (id);
@@ -2455,15 +4158,6 @@ ALTER TABLE ONLY public.b23_match_verdicts
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT uq_b23_revenue_events_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
 
-ALTER TABLE ONLY public.bayesian_artifacts
-    ADD CONSTRAINT uq_bayesian_artifacts_tenant_artifact_ref UNIQUE (tenant_id, artifact_ref);
-
-ALTER TABLE ONLY public.bayesian_model_fits
-    ADD CONSTRAINT uq_bayesian_model_fits_tenant_id_id UNIQUE (tenant_id, id);
-
-ALTER TABLE ONLY public.bayesian_model_fits
-    ADD CONSTRAINT uq_bayesian_model_fits_tenant_model_window_snapshot UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
 
@@ -2529,6 +4223,380 @@ ALTER TABLE ONLY public.webhook_ingress_identities
 
 ALTER TABLE ONLY public.worker_side_effects
     ADD CONSTRAINT worker_side_effects_pkey PRIMARY KEY (id);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_artifact_hash ON ONLY public.bayesian_artifacts USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p00_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_artifact_ref ON ONLY public.bayesian_artifacts USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p00_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_fit ON ONLY public.bayesian_artifacts USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p00_tenant_id_fit_id_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id, fit_id);
+
+CREATE INDEX idx_bayesian_artifacts_tenant_id ON ONLY public.bayesian_artifacts USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p00_tenant_id_idx ON public.bayesian_artifacts_p00 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p01_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p01_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p01_tenant_id_fit_id_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p01_tenant_id_idx ON public.bayesian_artifacts_p01 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p02_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p02_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p02_tenant_id_fit_id_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p02_tenant_id_idx ON public.bayesian_artifacts_p02 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p03_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p03_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p03_tenant_id_fit_id_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p03_tenant_id_idx ON public.bayesian_artifacts_p03 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p04_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p04_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p04_tenant_id_fit_id_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p04_tenant_id_idx ON public.bayesian_artifacts_p04 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p05_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p05_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p05_tenant_id_fit_id_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p05_tenant_id_idx ON public.bayesian_artifacts_p05 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p06_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p06_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p06_tenant_id_fit_id_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p06_tenant_id_idx ON public.bayesian_artifacts_p06 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p07_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p07_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p07_tenant_id_fit_id_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p07_tenant_id_idx ON public.bayesian_artifacts_p07 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p08_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p08_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p08_tenant_id_fit_id_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p08_tenant_id_idx ON public.bayesian_artifacts_p08 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p09_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p09_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p09_tenant_id_fit_id_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p09_tenant_id_idx ON public.bayesian_artifacts_p09 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p10_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p10_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p10_tenant_id_fit_id_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p10_tenant_id_idx ON public.bayesian_artifacts_p10 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p11_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p11_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p11_tenant_id_fit_id_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p11_tenant_id_idx ON public.bayesian_artifacts_p11 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p12_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p12_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p12_tenant_id_fit_id_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p12_tenant_id_idx ON public.bayesian_artifacts_p12 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p13_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p13_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p13_tenant_id_fit_id_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p13_tenant_id_idx ON public.bayesian_artifacts_p13 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p14_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p14_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p14_tenant_id_fit_id_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p14_tenant_id_idx ON public.bayesian_artifacts_p14 USING btree (tenant_id);
+
+CREATE INDEX bayesian_artifacts_p15_tenant_id_artifact_hash_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, artifact_hash);
+
+CREATE INDEX bayesian_artifacts_p15_tenant_id_artifact_ref_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, artifact_ref);
+
+CREATE INDEX bayesian_artifacts_p15_tenant_id_fit_id_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id, fit_id);
+
+CREATE INDEX bayesian_artifacts_p15_tenant_id_idx ON public.bayesian_artifacts_p15 USING btree (tenant_id);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_id ON ONLY public.bayesian_model_fits USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p00_tenant_id_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_eligibility ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_fallback ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_window ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_model_window_latest ON ONLY public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p00 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_source_snapshot_hash ON ONLY public.bayesian_model_fits USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX idx_bayesian_model_fits_tenant_status ON ONLY public.bayesian_model_fits USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p00_tenant_id_status_idx ON public.bayesian_model_fits_p00 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p01_tenant_id_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p01 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p01_tenant_id_status_idx ON public.bayesian_model_fits_p01 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p02_tenant_id_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p02 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p02_tenant_id_status_idx ON public.bayesian_model_fits_p02 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p03_tenant_id_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p03 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p03_tenant_id_status_idx ON public.bayesian_model_fits_p03 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p04_tenant_id_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p04 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p04_tenant_id_status_idx ON public.bayesian_model_fits_p04 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p05_tenant_id_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p05 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p05_tenant_id_status_idx ON public.bayesian_model_fits_p05 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p06_tenant_id_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p06 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p06_tenant_id_status_idx ON public.bayesian_model_fits_p06 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p07_tenant_id_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p07 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p07_tenant_id_status_idx ON public.bayesian_model_fits_p07 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p08_tenant_id_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p08 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p08_tenant_id_status_idx ON public.bayesian_model_fits_p08 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p09_tenant_id_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p09 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p09_tenant_id_status_idx ON public.bayesian_model_fits_p09 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p10_tenant_id_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p10 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p10_tenant_id_status_idx ON public.bayesian_model_fits_p10 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p11_tenant_id_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p11 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p11_tenant_id_status_idx ON public.bayesian_model_fits_p11 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p12_tenant_id_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p12 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p12_tenant_id_status_idx ON public.bayesian_model_fits_p12 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p13_tenant_id_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p13 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p13_tenant_id_status_idx ON public.bayesian_model_fits_p13 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p14_tenant_id_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p14 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p14_tenant_id_status_idx ON public.bayesian_model_fits_p14 USING btree (tenant_id, status);
+
+CREATE INDEX bayesian_model_fits_p15_tenant_id_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id);
+
+CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
+
+CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
+
+CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_source_window__idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, source_window_start, source_window_end);
+
+CREATE INDEX bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1 ON public.bayesian_model_fits_p15 USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
+
+CREATE INDEX bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, source_snapshot_hash);
+
+CREATE INDEX bayesian_model_fits_p15_tenant_id_status_idx ON public.bayesian_model_fits_p15 USING btree (tenant_id, status);
 
 CREATE INDEX idx_allocations_channel_performance ON public.attribution_allocations USING btree (tenant_id, channel_code, created_at DESC) INCLUDE (allocated_revenue_cents, confidence_score);
 
@@ -2627,28 +4695,6 @@ CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_reve
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
-
-CREATE INDEX idx_bayesian_artifacts_tenant_artifact_hash ON public.bayesian_artifacts USING btree (tenant_id, artifact_hash);
-
-CREATE INDEX idx_bayesian_artifacts_tenant_artifact_ref ON public.bayesian_artifacts USING btree (tenant_id, artifact_ref);
-
-CREATE INDEX idx_bayesian_artifacts_tenant_fit ON public.bayesian_artifacts USING btree (tenant_id, fit_id);
-
-CREATE INDEX idx_bayesian_artifacts_tenant_id ON public.bayesian_artifacts USING btree (tenant_id);
-
-CREATE INDEX idx_bayesian_model_fits_tenant_id ON public.bayesian_model_fits USING btree (tenant_id);
-
-CREATE INDEX idx_bayesian_model_fits_tenant_model_eligibility ON public.bayesian_model_fits USING btree (tenant_id, model_type, eligibility_status, last_eligibility_check_at DESC);
-
-CREATE INDEX idx_bayesian_model_fits_tenant_model_fallback ON public.bayesian_model_fits USING btree (tenant_id, model_type, fallback_reason, last_eligibility_check_at DESC) WHERE (fallback_applied = true);
-
-CREATE INDEX idx_bayesian_model_fits_tenant_model_window ON public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end);
-
-CREATE INDEX idx_bayesian_model_fits_tenant_model_window_latest ON public.bayesian_model_fits USING btree (tenant_id, model_type, source_window_start, source_window_end, created_at DESC);
-
-CREATE INDEX idx_bayesian_model_fits_tenant_source_snapshot_hash ON public.bayesian_model_fits USING btree (tenant_id, source_snapshot_hash);
-
-CREATE INDEX idx_bayesian_model_fits_tenant_status ON public.bayesian_model_fits USING btree (tenant_id, status);
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
@@ -2868,6 +4914,486 @@ CREATE UNIQUE INDEX ux_r4_task_attempts_tenant_task_attempt ON public.r4_task_at
 
 CREATE UNIQUE INDEX ux_worker_side_effects_tenant_task_id ON public.worker_side_effects USING btree (tenant_id, task_id);
 
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p00_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p00_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p01_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p01_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p02_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p02_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p03_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p03_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p04_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p04_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p05_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p05_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p06_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p06_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p07_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p07_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p08_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p08_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p09_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p09_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p10_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p10_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p11_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p11_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p12_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p12_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p13_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p13_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p14_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p14_tenant_id_idx;
+
+ALTER INDEX public.bayesian_artifacts_pkey ATTACH PARTITION public.bayesian_artifacts_p15_pkey;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_hash ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_hash_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_ref_idx;
+
+ALTER INDEX public.uq_bayesian_artifacts_tenant_artifact_ref ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_artifact_ref_key;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_fit ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_fit_id_idx;
+
+ALTER INDEX public.idx_bayesian_artifacts_tenant_id ATTACH PARTITION public.bayesian_artifacts_p15_tenant_id_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p00_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p00_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p01_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p01_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p02_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p02_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p03_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p03_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p04_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p04_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p05_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p05_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p06_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p06_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p07_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p07_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p08_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p08_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p09_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p09_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p10_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p10_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p11_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p11_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p12_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p12_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p13_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p13_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p14_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p14_tenant_id_status_idx;
+
+ALTER INDEX public.bayesian_model_fits_pkey ATTACH PARTITION public.bayesian_model_fits_p15_pkey;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_id ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_eligibility ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_eligibility_st_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_fallback ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_fallback_reaso_idx;
+
+ALTER INDEX public.uq_bayesian_model_fits_tenant_model_window_snapshot ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_model_version__key;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_source_window__idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_model_window_latest ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_model_type_source_window_idx1;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_source_snapshot_hash ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_source_snapshot_hash_idx;
+
+ALTER INDEX public.idx_bayesian_model_fits_tenant_status ATTACH PARTITION public.bayesian_model_fits_p15_tenant_id_status_idx;
+
 CREATE TRIGGER trg_allocations_channel_correction_audit AFTER UPDATE OF channel_code ON public.attribution_allocations FOR EACH ROW WHEN ((old.channel_code IS DISTINCT FROM new.channel_code)) EXECUTE FUNCTION public.fn_log_channel_assignment_correction();
 
 CREATE TRIGGER trg_b23_p0_prune_attribution_commerce_identities AFTER INSERT OR UPDATE OF last_observed_at ON public.attribution_commerce_identities FOR EACH STATEMENT EXECUTE FUNCTION public.fn_b23_p0_prune_attribution_commerce_identities_trigger();
@@ -2970,10 +5496,10 @@ ALTER TABLE ONLY public.b23_revenue_events
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.bayesian_artifacts
+ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.bayesian_model_fits
+ALTER TABLE public.bayesian_model_fits
     ADD CONSTRAINT bayesian_model_fits_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.budget_jobs
@@ -3024,7 +5550,7 @@ ALTER TABLE ONLY public.attribution_events
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_session_authority FOREIGN KEY (tenant_id, session_id) REFERENCES public.session_authority(tenant_id, session_id) DEFERRABLE INITIALLY DEFERRED;
 
-ALTER TABLE ONLY public.bayesian_artifacts
+ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT fk_bayesian_artifacts_tenant_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.kombu_message
@@ -3172,7 +5698,71 @@ ALTER TABLE public.b23_webhook_ingestion_logs ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.bayesian_artifacts ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.bayesian_artifacts_p00 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p01 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p02 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p03 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p04 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p05 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p06 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p07 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p08 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p09 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p10 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p11 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p12 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p13 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p14 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_artifacts_p15 ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE public.bayesian_model_fits ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p00 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p01 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p02 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p03 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p04 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p05 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p06 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p07 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p08 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p09 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p10 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p11 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p12 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p13 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p14 ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.bayesian_model_fits_p15 ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.budget_jobs ENABLE ROW LEVEL SECURITY;
 
@@ -3328,7 +5918,71 @@ CREATE POLICY tenant_isolation_policy_b23_webhook_ingestion_logs ON public.b23_w
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts ON public.bayesian_artifacts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p00 ON public.bayesian_artifacts_p00 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p01 ON public.bayesian_artifacts_p01 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p02 ON public.bayesian_artifacts_p02 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p03 ON public.bayesian_artifacts_p03 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p04 ON public.bayesian_artifacts_p04 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p05 ON public.bayesian_artifacts_p05 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p06 ON public.bayesian_artifacts_p06 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p07 ON public.bayesian_artifacts_p07 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p08 ON public.bayesian_artifacts_p08 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p09 ON public.bayesian_artifacts_p09 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p10 ON public.bayesian_artifacts_p10 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p11 ON public.bayesian_artifacts_p11 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p12 ON public.bayesian_artifacts_p12 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p13 ON public.bayesian_artifacts_p13 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p14 ON public.bayesian_artifacts_p14 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_artifacts_p15 ON public.bayesian_artifacts_p15 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
 CREATE POLICY tenant_isolation_policy_bayesian_model_fits ON public.bayesian_model_fits USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p00 ON public.bayesian_model_fits_p00 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p01 ON public.bayesian_model_fits_p01 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p02 ON public.bayesian_model_fits_p02 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p03 ON public.bayesian_model_fits_p03 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p04 ON public.bayesian_model_fits_p04 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p05 ON public.bayesian_model_fits_p05 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p06 ON public.bayesian_model_fits_p06 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p07 ON public.bayesian_model_fits_p07 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p08 ON public.bayesian_model_fits_p08 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p09 ON public.bayesian_model_fits_p09 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p10 ON public.bayesian_model_fits_p10 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p11 ON public.bayesian_model_fits_p11 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p12 ON public.bayesian_model_fits_p12 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p13 ON public.bayesian_model_fits_p13 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p14 ON public.bayesian_model_fits_p14 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_bayesian_model_fits_p15 ON public.bayesian_model_fits_p15 USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_compliance_audit_ledger ON public.compliance_audit_ledger USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 

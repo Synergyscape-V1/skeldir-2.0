@@ -701,15 +701,21 @@ tables:
     purpose: "B2.4-P1 tenant-scoped Bayesian fit authority records; persistence only"
     rls_enabled: true
     primary_key_strategy:
-      type: UUID
+      type: composite tenant-scoped UUID
+      columns: [tenant_id, id]
       default: "gen_random_uuid()"
-      rationale: "Retains existing Skeldir UUID convention; tenant-prefixed indexes provide query locality and future partitioning or ordered IDs remain available if volume grows."
+      rationale: "Retains existing Skeldir UUID convention while using PRIMARY KEY (tenant_id, id) so HASH partitioning by tenant_id is PostgreSQL-valid and tenant-bound artifact FKs remain relationally enforced."
+    partitioning:
+      strategy: HASH
+      key: [tenant_id]
+      partitions: 16
+      rationale: "Final physical table family for P1; tenant-scoped RLS and query paths prune by tenant while preserving window-inclusive identity and tenant-bound artifact linkage."
     storage:
-      fillfactor: 90
-      partition_readiness: "source window and created_at columns remain present; pre-P3/P5 partition decision required before fit workers or artifact lifecycle volume."
+      fit_partition_fillfactor: 90
+      table_family: partitioned
     columns:
-      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
-      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      id: {type: UUID, nullable: false, primary_key_component: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, primary_key_component: true, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
       model_type: {type: VARCHAR(64), nullable: false}
       model_version: {type: VARCHAR(64), nullable: false}
       source_window_start: {type: TIMESTAMPTZ, nullable: false}
@@ -745,7 +751,7 @@ tables:
       - {name: ck_bayesian_model_fits_source_snapshot_hash_sha256, type: CHECK, definition: "source_snapshot_hash matches ^[a-f0-9]{64}$"}
       - {name: ck_bayesian_model_fits_artifact_hash_sha256, type: CHECK, definition: "artifact_hash is null or matches ^[a-f0-9]{64}$"}
       - {name: ck_bayesian_model_fits_source_window_order, type: CHECK, definition: "source_window_end > source_window_start"}
-      - {name: uq_bayesian_model_fits_tenant_id_id, type: UNIQUE, columns: [tenant_id, id]}
+      - {name: bayesian_model_fits_pkey, type: PRIMARY KEY, columns: [tenant_id, id]}
       - {name: uq_bayesian_model_fits_tenant_model_window_snapshot, type: UNIQUE, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash]}
     indexes:
       - {name: idx_bayesian_model_fits_tenant_id, columns: [tenant_id]}
@@ -764,12 +770,18 @@ tables:
     purpose: "B2.4-P1 tenant-scoped Bayesian artifact authority records; lifecycle jobs out of scope"
     rls_enabled: true
     primary_key_strategy:
-      type: UUID
+      type: composite tenant-scoped UUID
+      columns: [tenant_id, id]
       default: "gen_random_uuid()"
-      rationale: "Retains existing Skeldir UUID convention and uses tenant-prefixed artifact lookup indexes for access locality."
+      rationale: "Retains existing Skeldir UUID convention while using PRIMARY KEY (tenant_id, id) so artifact authority is partition-compatible and tenant-scoped by construction."
+    partitioning:
+      strategy: HASH
+      key: [tenant_id]
+      partitions: 16
+      rationale: "Final P1 decision is to partition artifacts now instead of carrying an envelope exception; tenant-scoped artifact lookup, retention, and pruning can operate partition-locally."
     columns:
-      id: {type: UUID, nullable: false, primary_key: true, default: "gen_random_uuid()"}
-      tenant_id: {type: UUID, nullable: false, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      id: {type: UUID, nullable: false, primary_key_component: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, primary_key_component: true, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
       fit_id: {type: UUID, nullable: false, foreign_key: "bayesian_model_fits(tenant_id, id) via (tenant_id, fit_id) ON DELETE RESTRICT"}
       artifact_ref: {type: VARCHAR(255), nullable: false}
       artifact_hash: {type: VARCHAR(64), nullable: false, format: lowercase_sha256_hex}
@@ -785,6 +797,7 @@ tables:
     constraints:
       - {name: ck_bayesian_artifacts_artifact_hash_sha256, type: CHECK, definition: "artifact_hash matches ^[a-f0-9]{64}$"}
       - {name: ck_bayesian_artifacts_size_non_negative, type: CHECK, definition: "artifact_size_bytes >= 0"}
+      - {name: bayesian_artifacts_pkey, type: PRIMARY KEY, columns: [tenant_id, id]}
       - {name: fk_bayesian_artifacts_tenant_fit, type: FOREIGN KEY, columns: [tenant_id, fit_id], references: "bayesian_model_fits(tenant_id, id)", on_delete: RESTRICT}
     indexes:
       - {name: idx_bayesian_artifacts_tenant_id, columns: [tenant_id]}

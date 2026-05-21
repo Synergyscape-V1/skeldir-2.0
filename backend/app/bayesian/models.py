@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    PrimaryKeyConstraint,
     String,
     UniqueConstraint,
     func,
@@ -33,7 +34,6 @@ class BayesianModelFit(Base, TenantMixin):
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        primary_key=True,
         default=uuid4,
         server_default=func.gen_random_uuid(),
     )
@@ -88,10 +88,10 @@ class BayesianModelFit(Base, TenantMixin):
     artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint(
+        PrimaryKeyConstraint(
             "tenant_id",
             "id",
-            name="uq_bayesian_model_fits_tenant_id_id",
+            name="bayesian_model_fits_pkey",
         ),
         UniqueConstraint(
             "tenant_id",
@@ -180,7 +180,12 @@ class BayesianModelFit(Base, TenantMixin):
             "source_window_end",
             text("created_at DESC"),
         ),
-        {"info": {"storage_parameters": {"fillfactor": 90}}},
+        {
+            "info": {
+                "storage_parameters": {"fit_partition_fillfactor": 90},
+                "partitioning": {"strategy": "hash", "key": ["tenant_id"], "partitions": 16},
+            }
+        },
     )
 
 
@@ -191,7 +196,6 @@ class BayesianArtifact(Base):
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        primary_key=True,
         default=uuid4,
         server_default=func.gen_random_uuid(),
     )
@@ -222,6 +226,11 @@ class BayesianArtifact(Base):
     )
 
     __table_args__ = (
+        PrimaryKeyConstraint(
+            "tenant_id",
+            "id",
+            name="bayesian_artifacts_pkey",
+        ),
         ForeignKeyConstraint(
             ["tenant_id", "fit_id"],
             ["bayesian_model_fits.tenant_id", "bayesian_model_fits.id"],
@@ -248,4 +257,5 @@ class BayesianArtifact(Base):
         Index("idx_bayesian_artifacts_tenant_fit", "tenant_id", "fit_id"),
         Index("idx_bayesian_artifacts_tenant_artifact_ref", "tenant_id", "artifact_ref"),
         Index("idx_bayesian_artifacts_tenant_artifact_hash", "tenant_id", "artifact_hash"),
+        {"info": {"partitioning": {"strategy": "hash", "key": ["tenant_id"], "partitions": 16}}},
     )

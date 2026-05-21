@@ -460,6 +460,46 @@ async def test_b24_p1_fit_identity_is_unique_over_window_and_hash(test_tenant_pa
         )
         assert int(visible.scalar() or 0) == 1
 
+    async with get_session(tenant_a) as session:
+        with pytest.raises((IntegrityError, DBAPIError)):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO bayesian_model_fits (
+                        tenant_id,
+                        model_type,
+                        model_version,
+                        source_window_start,
+                        source_window_end,
+                        source_snapshot_hash,
+                        status,
+                        eligibility_status,
+                        data_completeness_status,
+                        fallback_applied,
+                        max_runtime_seconds,
+                        max_samples,
+                        max_cores
+                    )
+                    VALUES (
+                        :tenant_id,
+                        'mmm',
+                        '2026.05.p1',
+                        NULL,
+                        '2026-04-01T00:00:00+00:00',
+                        :source_snapshot_hash,
+                        'pending',
+                        'eligible',
+                        'complete',
+                        false,
+                        60,
+                        1000,
+                        2
+                    )
+                    """
+                ),
+                {"tenant_id": str(tenant_a), "source_snapshot_hash": "f" * 64},
+            )
+
 
 @pytest.mark.asyncio
 async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exist() -> None:
@@ -513,7 +553,8 @@ async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exi
                 FROM pg_constraint
                 WHERE conname IN (
                     'fk_bayesian_artifacts_tenant_fit',
-                    'uq_bayesian_model_fits_tenant_id_id',
+                    'bayesian_model_fits_pkey',
+                    'bayesian_artifacts_pkey',
                     'uq_bayesian_model_fits_tenant_model_window_snapshot'
                 )
                 """
@@ -522,20 +563,84 @@ async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exi
         constraints = {row["conname"]: row["definition"] for row in constraint_result.mappings()}
         assert "FOREIGN KEY (tenant_id, fit_id)" in constraints["fk_bayesian_artifacts_tenant_fit"]
         assert "REFERENCES bayesian_model_fits(tenant_id, id)" in constraints["fk_bayesian_artifacts_tenant_fit"]
-        assert "UNIQUE (tenant_id, id)" in constraints["uq_bayesian_model_fits_tenant_id_id"]
+        assert "PRIMARY KEY (tenant_id, id)" in constraints["bayesian_model_fits_pkey"]
+        assert "PRIMARY KEY (tenant_id, id)" in constraints["bayesian_artifacts_pkey"]
         assert (
             "UNIQUE (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash)"
             in constraints["uq_bayesian_model_fits_tenant_model_window_snapshot"]
         )
 
-        reloptions_result = await conn.execute(
+        partition_result = await conn.execute(
             text(
                 """
-                SELECT reloptions
-                FROM pg_class
-                WHERE oid = 'public.bayesian_model_fits'::regclass
+                SELECT c.relname, c.relkind, pg_get_partkeydef(c.oid) AS partition_key
+                FROM pg_class c
+                WHERE c.oid IN (
+                    'public.bayesian_model_fits'::regclass,
+                    'public.bayesian_artifacts'::regclass
+                )
                 """
             )
         )
-        reloptions = reloptions_result.scalar() or []
-        assert "fillfactor=90" in reloptions
+        partitions = {row["relname"]: row for row in partition_result.mappings()}
+        assert partitions["bayesian_model_fits"]["relkind"] in ("p", b"p")
+        assert partitions["bayesian_model_fits"]["partition_key"] == "HASH (tenant_id)"
+        assert partitions["bayesian_artifacts"]["relkind"] in ("p", b"p")
+        assert partitions["bayesian_artifacts"]["partition_key"] == "HASH (tenant_id)"
+
+        child_result = await conn.execute(
+            text(
+                """
+                SELECT parent.relname AS parent_name, count(*) AS child_count
+                FROM pg_inherits
+                JOIN pg_class parent ON parent.oid = inhparent
+                WHERE parent.relname IN ('bayesian_model_fits', 'bayesian_artifacts')
+                GROUP BY parent.relname
+                """
+            )
+        )
+        child_counts = {row["parent_name"]: int(row["child_count"]) for row in child_result.mappings()}
+        assert child_counts["bayesian_model_fits"] == 16
+        assert child_counts["bayesian_artifacts"] == 16
+
+        reloptions_result = await conn.execute(
+            text(
+                """
+                SELECT child.reloptions
+                FROM pg_inherits
+                JOIN pg_class parent ON parent.oid = inhparent
+                JOIN pg_class child ON child.oid = inhrelid
+                WHERE parent.relname = 'bayesian_model_fits'
+                """
+            )
+        )
+        fit_partition_options = [row[0] or [] for row in reloptions_result.all()]
+        assert fit_partition_options
+        assert all("fillfactor=90" in options for options in fit_partition_options)
+
+        identity_result = await conn.execute(
+            text(
+                """
+                SELECT attname, attnotnull
+                FROM pg_attribute
+                WHERE attrelid = 'public.bayesian_model_fits'::regclass
+                  AND attname IN (
+                    'tenant_id',
+                    'model_type',
+                    'model_version',
+                    'source_window_start',
+                    'source_window_end',
+                    'source_snapshot_hash'
+                  )
+                """
+            )
+        )
+        identity_columns = {row["attname"]: bool(row["attnotnull"]) for row in identity_result.mappings()}
+        assert identity_columns == {
+            "tenant_id": True,
+            "model_type": True,
+            "model_version": True,
+            "source_window_start": True,
+            "source_window_end": True,
+            "source_snapshot_hash": True,
+        }
