@@ -120,7 +120,8 @@ class BayesianModelFit(Base, TenantMixin):
         ),
         CheckConstraint(
             "fallback_reason IS NULL OR fallback_reason IN ("
-            "'insufficient_data', 'timeout', 'worker_failure', 'no_convergence', "
+            "'source_window_empty', 'insufficient_data', 'insufficient_privacy_cohort', "
+            "'timeout', 'worker_failure', 'no_convergence', "
             "'resource_bound_exceeded', 'source_unavailable', 'duplicate_fit_suppressed', "
             "'artifact_unavailable', 'storage_quota_exceeded')",
             name="ck_bayesian_model_fits_fallback_reason",

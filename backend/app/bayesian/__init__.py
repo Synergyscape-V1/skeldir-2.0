@@ -1,7 +1,8 @@
 """Internal B2.4 Bayesian authority package.
 
-P1 exposes persistence authority only. It intentionally does not expose a
-FastAPI router, public API surface, LLM integration, or statistical runtime fitting.
+P2 adds deterministic source snapshot authority only. It intentionally does not
+expose a FastAPI router, public API surface, LLM integration, queue planner, or
+statistical runtime fitting.
 """
 
 from app.bayesian.models import BayesianArtifact, BayesianModelFit

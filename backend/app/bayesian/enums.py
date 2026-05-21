@@ -36,7 +36,9 @@ class DataCompletenessStatus(StrEnum):
 
 
 class FallbackReason(StrEnum):
+    SOURCE_WINDOW_EMPTY = "source_window_empty"
     INSUFFICIENT_DATA = "insufficient_data"
+    INSUFFICIENT_PRIVACY_COHORT = "insufficient_privacy_cohort"
     TIMEOUT = "timeout"
     WORKER_FAILURE = "worker_failure"
     NO_CONVERGENCE = "no_convergence"

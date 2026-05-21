@@ -13,3 +13,15 @@ class BayesianFitNotFoundError(BayesianAuthorityError):
 
 class BayesianArtifactNotFoundError(BayesianAuthorityError):
     """Raised when a tenant-scoped artifact authority row is not found."""
+
+
+class BayesianSourceSnapshotError(BayesianAuthorityError):
+    """Raised when a deterministic source snapshot cannot be constructed."""
+
+
+class BayesianEligibilityError(BayesianAuthorityError):
+    """Raised when source eligibility cannot be classified safely."""
+
+
+class BayesianTenantContextError(BayesianAuthorityError):
+    """Raised when P2 source reads are attempted without tenant context."""
