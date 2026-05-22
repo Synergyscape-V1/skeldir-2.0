@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 
 /**
- * D2 negative controls — proves crawl-graph validators fire on corruption.
+ * D2 negative controls — proves crawl-graph validators fire on corruption (D2-C mechanism-aware).
  */
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   validateSitemapXmlWellFormed,
   validateSitemapMatchesExpected,
+  getExpectedSitemapUrls,
   validateRobotsPolicy,
   extractCanonicalHrefs,
   validateFooterLegalAndSupportHygiene,
   assertDiscoverabilityGitBranchPolicy,
+  validateRobotsDoesNotBlockMetaNoindexRoutes,
+  validateBookDemoDefectiveRequiresNoindex,
+  validateShippedImplementationAgentsHaveNoindex,
 } from './discoverability/lib/d2-crawl-graph.mjs';
 
 let failures = 0;
@@ -68,6 +75,55 @@ function main() {
 
   const badFooter = '<a href="/resources">Privacy Policy</a><a href="/resources">API Reference</a>';
   expectErrors('NC-footer-resources', validateFooterLegalAndSupportHygiene(badFooter));
+
+  console.log('\n[NC-D2-C] Mechanism-aware negative controls');
+
+  const badRobotsBlocksLogin =
+    'User-agent: *\nDisallow: /Login\nAllow: /\nSitemap: https://skeldir.com/sitemap.xml\n';
+  expectErrors(
+    'NC-D2-X1 noindex route blocked by robots',
+    validateRobotsDoesNotBlockMetaNoindexRoutes(badRobotsBlocksLogin, ['/Login']),
+  );
+
+  const badRobotsImplDisallow =
+    'User-agent: *\nAllow: /\nSitemap: https://skeldir.com/sitemap.xml\nDisallow: /implementations/\n';
+  expectErrors('NC-D2-X2 implementations disallow (contradicts crawlable noindex proof)', validateRobotsPolicy(badRobotsImplDisallow));
+
+  const defectiveRegistry = {
+    routes: [{ id: 'route-book-demo', status: 'active_defective_until_static_body_verified' }],
+  };
+  expectErrors(
+    'NC-D2-X3 linked defective /book-demo lacks noindex',
+    validateBookDemoDefectiveRequiresNoindex(defectiveRegistry, '<html><head></head><body></body></html>'),
+  );
+
+  const badRobotsBookDemo =
+    'User-agent: *\nAllow: /\nSitemap: https://skeldir.com/sitemap.xml\nDisallow: /book-demo\n';
+  expectErrors('NC-D2-X4 robots Disallow /book-demo (noindex paradox)', validateRobotsPolicy(badRobotsBookDemo));
+
+  const expectedBase = getExpectedSitemapUrls(marketingRoot);
+  const pollutedWithBookDemo = [...expectedBase, 'https://skeldir.com/book-demo'];
+  expectErrors(
+    'NC-D2-X5 defective /book-demo must not be in sitemap (sitemap ≠ deindex)',
+    validateSitemapMatchesExpected(marketingRoot, pollutedWithBookDemo),
+  );
+
+  const tmpOut = fs.mkdtempSync(path.join(os.tmpdir(), 'd2-nc-impl-'));
+  try {
+    const agentDir = path.join(tmpOut, 'implementations', 'agent-a');
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(agentDir, 'index.html'),
+      '<!DOCTYPE html><html><head><title>x</title></head><body>no robots meta</body></html>',
+      'utf8',
+    );
+    expectErrors(
+      'NC-D2-X6 shipped implementations without crawlable noindex',
+      validateShippedImplementationAgentsHaveNoindex(tmpOut),
+    );
+  } finally {
+    fs.rmSync(tmpOut, { recursive: true, force: true });
+  }
 
   console.log('\n[NC-git] Branch policy on current worktree');
   const gitMsgs = assertDiscoverabilityGitBranchPolicy(marketingRoot);

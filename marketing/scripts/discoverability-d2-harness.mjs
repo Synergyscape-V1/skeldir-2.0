@@ -16,8 +16,12 @@ import {
   extractCanonicalHrefs,
   sitemapPathToOutRelative,
   htmlHasNoindexRobots,
+  htmlHasNoindexFollow,
   validateFooterLegalAndSupportHygiene,
   assertDiscoverabilityGitBranchPolicy,
+  validateRobotsDoesNotBlockMetaNoindexRoutes,
+  META_NOINDEX_PUBLIC_PATHS,
+  validateBookDemoDefectiveRequiresNoindex,
 } from './discoverability/lib/d2-crawl-graph.mjs';
 import { validateResourcesHubAnchors, validateBookDemoSitemapContainment } from './discoverability/lib/d1-html-retrieval.mjs';
 
@@ -96,6 +100,12 @@ function main() {
     for (const e of rb) fail(e);
   } else pass('robots.txt policy-safe and references sitemap');
 
+  console.log('\n[3b] robots.txt must not block meta-noindex HTML routes (D2-C crawlability law)');
+  const crawlBlock = validateRobotsDoesNotBlockMetaNoindexRoutes(robotsTxt, META_NOINDEX_PUBLIC_PATHS);
+  if (crawlBlock.length) {
+    for (const e of crawlBlock) fail(e);
+  } else pass('robots Disallow does not block meta-noindex surfaces');
+
   console.log('\n[4] Registry /book-demo sitemap containment (D0)');
   const registry = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
   const bdErrs = validateBookDemoSitemapContainment(registry);
@@ -133,7 +143,7 @@ function main() {
     } else pass(`${rel}: canonical matches sitemap`);
   }
 
-  console.log('\n[6] Noindex boundaries (auth, thank-you, review artifacts)');
+  console.log('\n[6] Noindex boundaries, /implementations removal, /book-demo defective containment (D2-C)');
   const loginHtml = path.join(OUT_DIR, 'Login.html');
   const signupHtml = path.join(OUT_DIR, 'signup.html');
   const tyHtml = path.join(OUT_DIR, 'book-demo', 'thank-you.html');
@@ -151,12 +161,21 @@ function main() {
     else pass(`${label} has noindex`);
   }
 
-  const impl = path.join(OUT_DIR, 'implementations', 'agent-a', 'index.html');
-  if (fs.existsSync(impl)) {
-    const ih = fs.readFileSync(impl, 'utf8');
-    if (!htmlHasNoindexRobots(ih)) fail('implementations/agent-a missing noindex');
-    else pass('implementations/agent-a carries noindex');
-  } else fail('implementations/agent-a/index.html missing from export');
+  const implDir = path.join(OUT_DIR, 'implementations');
+  if (fs.existsSync(implDir)) {
+    fail('out/implementations/ must be absent — review artifacts removed from public export (D2-C strategy A)');
+  } else pass('implementations/ absent from static export (removed from public/)');
+
+  const bookDemoPath = path.join(OUT_DIR, 'book-demo.html');
+  if (!fs.existsSync(bookDemoPath)) {
+    fail('missing book-demo.html');
+  } else {
+    const bookHtml = fs.readFileSync(bookDemoPath, 'utf8');
+    const bdNo = validateBookDemoDefectiveRequiresNoindex(registry, bookHtml);
+    if (bdNo.length) {
+      for (const e of bdNo) fail(e);
+    } else pass('/book-demo defective containment: noindex,follow present (crawlable deindexing)');
+  }
 
   console.log('\n[7] Resources hub article anchors');
   const hubPath = path.join(OUT_DIR, 'resources.html');

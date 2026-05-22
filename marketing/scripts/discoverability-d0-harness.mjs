@@ -296,8 +296,10 @@ function main() {
 
   // [14] Review artifacts
   console.log('\n[14] Review artifact governance');
-  for (const r of routes.filter((rt) => rt.logical_route.startsWith('/implementations/'))) {
-    if (r.route_type === 'review_artifact' && r.noindex_required === true) {
+  for (const r of routes.filter((rt) => rt.logical_route && rt.logical_route.startsWith('/implementations/'))) {
+    if (r.status === 'removed_public_surface') {
+      pass(`Review artifact removed from public export: ${r.logical_route}`);
+    } else if (r.route_type === 'review_artifact' && r.noindex_required === true) {
       pass(`Review artifact governed: ${r.logical_route}`);
     } else {
       fail(`Review artifact not governed: ${r.logical_route}`);

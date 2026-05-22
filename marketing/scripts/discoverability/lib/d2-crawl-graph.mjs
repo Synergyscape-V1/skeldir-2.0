@@ -151,7 +151,103 @@ export function validateRobotsPolicy(body) {
     if (/disallow:\s*\/product/i.test(body)) errors.push('robots blocks /product for public crawlers');
     if (/disallow:\s*\/resources/i.test(body)) errors.push('robots blocks /resources for public crawlers');
   }
+  if (/disallow:\s*\/book-demo/i.test(body)) {
+    errors.push(
+      'robots.txt must not Disallow /book-demo when index exclusion uses HTML noindex (crawlers cannot observe noindex if blocked)',
+    );
+  }
+  if (/disallow:\s*\/implementations/i.test(body)) {
+    errors.push(
+      'robots.txt must not Disallow /implementations/ for deindexing while claiming HTML noindex proof — pick crawlable noindex or remove public artifacts (D2-C)',
+    );
+  }
   return errors;
+}
+
+/**
+ * Parse Disallow path values from the first `User-agent: *` block (case-insensitive).
+ * @param {string} body
+ * @returns {string[]}
+ */
+export function parseRobotsDisallowPaths(body) {
+  const lines = body.split(/\r?\n/);
+  const disallows = [];
+  let inStar = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (/^user-agent:\s*\*/i.test(line)) {
+      inStar = true;
+      continue;
+    }
+    if (/^user-agent:/i.test(line)) {
+      inStar = false;
+      continue;
+    }
+    if (!inStar) continue;
+    const m = /^disallow:\s*(.+)$/i.exec(line);
+    if (!m) continue;
+    const val = m[1].trim();
+    if (val && val !== '/') disallows.push(val);
+  }
+  return disallows;
+}
+
+/**
+ * If HTML uses meta noindex for index exclusion, robots.txt must not block that URL for * crawlers.
+ * @param {string} robotsBody
+ * @param {string[]} pathnames — e.g. ['/Login','/book-demo']
+ */
+export function validateRobotsDoesNotBlockMetaNoindexRoutes(robotsBody, pathnames) {
+  const errors = [];
+  const disallows = parseRobotsDisallowPaths(robotsBody);
+  for (const pathname of pathnames) {
+    const p = pathname.startsWith('/') ? pathname : `/${pathname}`;
+    for (const d of disallows) {
+      const dNorm = d.split(/\s+/)[0].trim();
+      if (!dNorm) continue;
+      const prefix = dNorm.endsWith('/') ? dNorm.slice(0, -1) : dNorm;
+      if (p === prefix || p.startsWith(`${prefix}/`)) {
+        errors.push(
+          `robots Disallow "${dNorm}" blocks "${p}" which uses meta noindex — crawlers cannot fetch and cannot observe noindex (D2-C crawlability law)`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+/**
+ * Routes that ship meta noindex in static HTML (must remain crawlable; never pair with robots Disallow).
+ */
+export const META_NOINDEX_PUBLIC_PATHS = [
+  '/Login',
+  '/signup',
+  '/book-demo',
+  '/book-demo/thank-you',
+  '/privacy',
+  '/terms',
+  '/gdpr',
+  '/security',
+  '/status',
+  '/about',
+  '/careers',
+  '/press',
+  '/docs',
+  '/api',
+  '/trust-envelope',
+];
+
+/**
+ * @param {string} html
+ */
+export function htmlHasNoindexFollow(html) {
+  const re = /<meta[^>]*name=["']robots["'][^>]*content=["']([^"']+)["']/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const c = m[1].toLowerCase();
+    if (c.includes('noindex') && !c.includes('nofollow')) return true;
+  }
+  return false;
 }
 
 /**
@@ -191,6 +287,52 @@ export function sitemapPathToOutRelative(pathname) {
  */
 export function htmlHasNoindexRobots(html) {
   return /<meta[^>]*name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html);
+}
+
+/**
+ * /book-demo while registry-marked defective must not rely on sitemap exclusion alone (D2-C).
+ * @param {object} registry
+ * @param {string} bookDemoHtml
+ * @returns {string[]}
+ */
+export function validateBookDemoDefectiveRequiresNoindex(registry, bookDemoHtml) {
+  const errors = [];
+  const bd = registry.routes?.find((r) => r.id === 'route-book-demo');
+  if (!bd) {
+    errors.push('registry missing route-book-demo');
+    return errors;
+  }
+  const defective = bd.status && String(bd.status).includes('defective');
+  if (!defective) return errors;
+  if (!htmlHasNoindexRobots(bookDemoHtml)) {
+    errors.push('/book-demo is registry-defective but static HTML lacks noindex (sitemap exclusion is not index exclusion)');
+  }
+  if (!htmlHasNoindexFollow(bookDemoHtml)) {
+    errors.push('/book-demo must emit noindex,follow (crawlable deindexing) while defective — avoid nofollow-only');
+  }
+  return errors;
+}
+
+/**
+ * If review artifacts ship under `out/implementations/`, each must carry crawlable noindex (strategy B).
+ * Strategy A (preferred): directory absent — then this returns [].
+ * @param {string} outDir — marketing `out/` root
+ * @returns {string[]}
+ */
+export function validateShippedImplementationAgentsHaveNoindex(outDir) {
+  const errors = [];
+  const implDir = path.join(outDir, 'implementations');
+  if (!fs.existsSync(implDir)) return errors;
+  const agents = ['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e'];
+  for (const ag of agents) {
+    const p = path.join(implDir, ag, 'index.html');
+    if (!fs.existsSync(p)) continue;
+    const h = fs.readFileSync(p, 'utf8');
+    if (!htmlHasNoindexRobots(h)) {
+      errors.push(`/implementations/${ag}/ present in export but lacks noindex meta (D2-C)`);
+    }
+  }
+  return errors;
 }
 
 /**
