@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * D2 negative controls — proves crawl-graph validators fire on corruption (D2-C mechanism-aware).
+ * D2 negative controls — proves crawl-graph validators fire on corruption (D2-C + D2-C2).
  */
 
 import fs from 'node:fs';
@@ -18,6 +18,13 @@ import {
   validateRobotsDoesNotBlockMetaNoindexRoutes,
   validateBookDemoDefectiveRequiresNoindex,
   validateShippedImplementationAgentsHaveNoindex,
+  readCrawlUrlAuthority,
+  validateBookDemoDefectiveNoSelfCanonical,
+  validateSitemapLocPathsNoTrailingSlashExceptRoot,
+  validateSitemapLocCanonicalPathAlignment,
+  validateRobotsSitemapUrlMatchesAuthority,
+  validateSitemapSourceStringStaticSafe,
+  validateRobotsSourceStringStaticAndNoLiteralOrigin,
 } from './discoverability/lib/d2-crawl-graph.mjs';
 
 let failures = 0;
@@ -47,26 +54,24 @@ function main() {
   console.log('║  Skeldir D2 — Negative control proof          ║');
   console.log('╚══════════════════════════════════════════════╝\n');
 
-  const badXml = '<urlset><loc>oops</loc></urlset>';
-  expectErrors('NC-sitemap-xml', validateSitemapXmlWellFormed(badXml));
-
   const marketingRoot = process.cwd();
-  const pollutedLocs = [
-    'https://skeldir.com/',
-    'https://skeldir.com/product',
-    'https://skeldir.com/extra-bad',
-  ];
+  const auth = readCrawlUrlAuthority(marketingRoot);
+
+  const badXml = '<urlset><loc>oops</loc></urlset>';
+  expectErrors('NC-sitemap-xml', validateSitemapXmlWellFormed(badXml, marketingRoot));
+
+  const pollutedLocs = [`${auth.SITE_ORIGIN}/`, `${auth.SITE_ORIGIN}/product`, `${auth.SITE_ORIGIN}/extra-bad`];
   expectErrors('NC-sitemap-expected-set', validateSitemapMatchesExpected(marketingRoot, pollutedLocs));
 
   const badRobots = 'User-agent: *\nDisallow: /\n';
-  expectErrors('NC-robots-block-all', validateRobotsPolicy(badRobots));
+  expectErrors('NC-robots-block-all', validateRobotsPolicy(badRobots, marketingRoot));
 
   const noSitemapLine = 'User-agent: *\nAllow: /\n';
-  expectErrors('NC-robots-missing-sitemap', validateRobotsPolicy(noSitemapLine));
+  expectErrors('NC-robots-missing-sitemap', validateRobotsPolicy(noSitemapLine, marketingRoot));
 
   const leak =
-    'User-agent: *\nAllow: /\nSitemap: https://skeldir.com/sitemap.xml\nDisallow: /node_modules\n';
-  expectErrors('NC-robots-sensitive-leak', validateRobotsPolicy(leak));
+    `User-agent: *\nAllow: /\nSitemap: ${auth.SITE_ORIGIN}/sitemap.xml\nDisallow: /node_modules\n`;
+  expectErrors('NC-robots-sensitive-leak', validateRobotsPolicy(leak, marketingRoot));
 
   const htmlNoCanon = '<html><head><title>x</title></head><body></body></html>';
   const cans = extractCanonicalHrefs(htmlNoCanon);
@@ -79,15 +84,15 @@ function main() {
   console.log('\n[NC-D2-C] Mechanism-aware negative controls');
 
   const badRobotsBlocksLogin =
-    'User-agent: *\nDisallow: /Login\nAllow: /\nSitemap: https://skeldir.com/sitemap.xml\n';
+    `User-agent: *\nDisallow: /Login\nAllow: /\nSitemap: ${auth.SITE_ORIGIN}/sitemap.xml\n`;
   expectErrors(
     'NC-D2-X1 noindex route blocked by robots',
     validateRobotsDoesNotBlockMetaNoindexRoutes(badRobotsBlocksLogin, ['/Login']),
   );
 
   const badRobotsImplDisallow =
-    'User-agent: *\nAllow: /\nSitemap: https://skeldir.com/sitemap.xml\nDisallow: /implementations/\n';
-  expectErrors('NC-D2-X2 implementations disallow (contradicts crawlable noindex proof)', validateRobotsPolicy(badRobotsImplDisallow));
+    `User-agent: *\nAllow: /\nSitemap: ${auth.SITE_ORIGIN}/sitemap.xml\nDisallow: /implementations/\n`;
+  expectErrors('NC-D2-X2 implementations disallow (contradicts crawlable noindex proof)', validateRobotsPolicy(badRobotsImplDisallow, marketingRoot));
 
   const defectiveRegistry = {
     routes: [{ id: 'route-book-demo', status: 'active_defective_until_static_body_verified' }],
@@ -98,11 +103,11 @@ function main() {
   );
 
   const badRobotsBookDemo =
-    'User-agent: *\nAllow: /\nSitemap: https://skeldir.com/sitemap.xml\nDisallow: /book-demo\n';
-  expectErrors('NC-D2-X4 robots Disallow /book-demo (noindex paradox)', validateRobotsPolicy(badRobotsBookDemo));
+    `User-agent: *\nAllow: /\nSitemap: ${auth.SITE_ORIGIN}/sitemap.xml\nDisallow: /book-demo\n`;
+  expectErrors('NC-D2-X4 robots Disallow /book-demo (noindex paradox)', validateRobotsPolicy(badRobotsBookDemo, marketingRoot));
 
   const expectedBase = getExpectedSitemapUrls(marketingRoot);
-  const pollutedWithBookDemo = [...expectedBase, 'https://skeldir.com/book-demo'];
+  const pollutedWithBookDemo = [...expectedBase, `${auth.SITE_ORIGIN}/book-demo`];
   expectErrors(
     'NC-D2-X5 defective /book-demo must not be in sitemap (sitemap ≠ deindex)',
     validateSitemapMatchesExpected(marketingRoot, pollutedWithBookDemo),
@@ -124,6 +129,48 @@ function main() {
   } finally {
     fs.rmSync(tmpOut, { recursive: true, force: true });
   }
+
+  console.log('\n[NC-D2-C2] URL authority + defective canonical + static sitemap contract');
+
+  const regWithCanon = {
+    routes: [
+      {
+        id: 'route-book-demo',
+        status: 'active_defective_until_static_body_verified',
+        canonical_exception_justification: null,
+      },
+    ],
+  };
+  const badBookHtml =
+    '<html><head><link rel="canonical" href="https://example.com/book-demo"/><meta name="robots" content="noindex,follow"/></head><body></body></html>';
+  expectErrors(
+    'NC-D2-C2-01 defective noindexed /book-demo with self-canonical',
+    validateBookDemoDefectiveNoSelfCanonical(regWithCanon, badBookHtml),
+  );
+
+  expectErrors(
+    'NC-D2-C2-02 sitemap loc trailing slash on non-root',
+    validateSitemapLocPathsNoTrailingSlashExceptRoot([`${auth.SITE_ORIGIN}/product/`], marketingRoot),
+  );
+
+  expectErrors(
+    'NC-D2-C2-03 sitemap vs canonical trailing mismatch',
+    validateSitemapLocCanonicalPathAlignment(`${auth.SITE_ORIGIN}/product/`, `${auth.SITE_ORIGIN}/product`),
+  );
+
+  expectErrors(
+    'NC-D2-C2-04 robots Sitemap origin mismatch vs authority',
+    validateRobotsSitemapUrlMatchesAuthority(`User-agent: *\nAllow: /\nSitemap: https://evil.example/sitemap.xml\n`, marketingRoot),
+  );
+
+  const badSitemapSrc = `import { cookies } from "next/headers";\nexport const dynamic = "error";\n`;
+  expectErrors('NC-D2-C2-05 sitemap.ts request-time API', validateSitemapSourceStringStaticSafe(badSitemapSrc, 'synthetic-sitemap'));
+
+  const badLiteralOrigin = `export const dynamic = "error";\nconst x = "https://skeldir.com";\n`;
+  expectErrors('NC-D2-C2-06 literal origin outside crawlUrls', validateSitemapSourceStringStaticSafe(badLiteralOrigin, 'synthetic'));
+
+  const badRobotsDynamic = 'export const dynamic = "force-static";\n';
+  expectErrors('NC-D2-C2-07 robots must use dynamic error', validateRobotsSourceStringStaticAndNoLiteralOrigin(badRobotsDynamic, 'synthetic-robots'));
 
   console.log('\n[NC-git] Branch policy on current worktree');
   const gitMsgs = assertDiscoverabilityGitBranchPolicy(marketingRoot);

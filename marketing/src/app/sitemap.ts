@@ -1,20 +1,27 @@
 import type { MetadataRoute } from "next";
 import manifest from "../../discoverability.sitemap-manifest.json";
 import { articles } from "@/data/articlesData";
-import { SITE_ORIGIN } from "@/lib/siteCrawl";
+import { SITE_ORIGIN, sitemapUrl } from "@/lib/crawlUrls";
 
-export const dynamic = "force-static";
+/** Static export contract: fail the build if Next would treat this route as dynamic. */
+export const dynamic = "error";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const origin = (manifest as { origin?: string }).origin ?? SITE_ORIGIN;
-  const staticPaths = (manifest as { staticPaths?: string[] }).staticPaths ?? [];
+  const manifestOrigin = (manifest as { origin?: string }).origin;
+  if (manifestOrigin !== undefined && manifestOrigin !== SITE_ORIGIN) {
+    throw new Error(
+      `discoverability.sitemap-manifest.json origin must equal SITE_ORIGIN from crawlUrls.ts (got ${manifestOrigin})`,
+    );
+  }
+
   const hubRaw = (manifest as { hubLastmod?: string }).hubLastmod ?? "2026-05-22";
   const hubLastModified = new Date(`${hubRaw}T12:00:00.000Z`);
 
   const entries: MetadataRoute.Sitemap = [];
+  const staticPaths = (manifest as { staticPaths?: string[] }).staticPaths ?? [];
 
   for (const path of staticPaths) {
-    const url = path === "/" ? `${origin}/` : `${origin}${path}`;
+    const url = sitemapUrl(path);
     entries.push({
       url,
       lastModified: hubLastModified,
@@ -26,7 +33,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   for (const article of articles) {
     const path = `/resources/${article.slug}`;
     entries.push({
-      url: `${origin}${path}`,
+      url: sitemapUrl(path),
       lastModified: new Date(`${article.publishDate}T12:00:00.000Z`),
       changeFrequency: "monthly",
       priority: 0.7,

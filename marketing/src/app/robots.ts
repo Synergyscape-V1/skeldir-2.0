@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
-import { SITE_ORIGIN } from "@/lib/siteCrawl";
+import { robotsSitemapUrl } from "@/lib/crawlUrls";
 
-export const dynamic = "force-static";
+export const dynamic = "error";
 
 /**
  * Root robots.txt for static export.
@@ -14,7 +14,7 @@ export const dynamic = "force-static";
  *   training-crawler tuning is deferred to Phase D3 (do not add sensitive path disclosure here).
  */
 export default function robots(): MetadataRoute.Robots {
-  const sitemap = `${SITE_ORIGIN}/sitemap.xml`;
+  const sitemap = robotsSitemapUrl();
 
   return {
     rules: [

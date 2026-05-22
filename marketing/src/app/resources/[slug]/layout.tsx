@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getArticleBySlug, articles } from "@/data/articlesData";
+import { canonicalUrl, SITE_ORIGIN } from "@/lib/crawlUrls";
 
 // Article-specific metadata
 const articleMetadata: Record<
@@ -90,9 +91,8 @@ export async function generateMetadata({
         };
     }
 
-    const baseUrl = "https://skeldir.com";
-    const articleUrl = `${baseUrl}/resources/${slug}`;
-    const imageUrl = `${baseUrl}${article.heroImagePath}`;
+    const articleUrl = canonicalUrl(`/resources/${slug}`);
+    const imageUrl = `${SITE_ORIGIN}${article.heroImagePath}`;
 
     return {
         title: `${article.title} | Skeldir`,

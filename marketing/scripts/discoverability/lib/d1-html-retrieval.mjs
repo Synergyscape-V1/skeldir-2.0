@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { readCrawlUrlAuthority } from './d2-crawl-graph.mjs';
 
 /** @param {string} html */
 export function stripScriptsAndStyles(html) {
@@ -218,7 +219,8 @@ export function validateArticleJsonLdAgainstMetadata(html, meta) {
   if (an !== expectedAuthor) {
     errors.push(`JSON-LD author.name mismatch: expected "${expectedAuthor}", got "${an}"`);
   }
-  const expectedUrl = `https://skeldir.com/resources/${meta.slug}`;
+  const { SITE_ORIGIN } = readCrawlUrlAuthority(process.cwd());
+  const expectedUrl = `${SITE_ORIGIN}/resources/${meta.slug}`;
   const pageId = articleLd.mainEntityOfPage && articleLd.mainEntityOfPage['@id'];
   const url = articleLd.url;
   if (pageId !== expectedUrl && url !== expectedUrl) {

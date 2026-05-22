@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
+import { canonicalUrl } from "@/lib/crawlUrls";
 
 const manrope = Manrope({
     subsets: ["latin"],
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
         title: "Resources | Skeldir – Marketing Attribution Insights",
         description:
             "Learn how to navigate attribution discrepancies, understand ROAS ranges, and defend budget shifts with evidence-based frameworks from Skeldir.",
-        url: "https://skeldir.com/resources",
+        url: canonicalUrl("/resources"),
         siteName: "Skeldir",
         images: [
             {
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
         images: ["/images/resources/article-1-hero.png"],
     },
     alternates: {
-        canonical: "https://skeldir.com/resources",
+        canonical: canonicalUrl("/resources"),
     },
 };
 

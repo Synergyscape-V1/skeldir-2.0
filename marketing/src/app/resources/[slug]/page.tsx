@@ -9,6 +9,7 @@ import { SocialShare } from "@/components/article/SocialShare";
 import { BackToTop } from "@/components/article/BackToTop";
 import { RelatedArticles } from "@/components/article/RelatedArticles";
 import { getArticleBySlug, getRelatedArticles } from "@/data/articlesData";
+import { canonicalUrl, SITE_ORIGIN } from "@/lib/crawlUrls";
 
 function generateArticleJsonLd(
     article: {
@@ -25,27 +26,27 @@ function generateArticleJsonLd(
         "@type": "Article",
         headline: article.title,
         description: article.excerpt,
-        image: `https://skeldir.com${article.heroImagePath}`,
+        image: `${SITE_ORIGIN}${article.heroImagePath}`,
         datePublished: article.publishDate,
         dateModified: article.publishDate,
         author: {
             "@type": "Organization",
             name: article.author || "Amulya Puri",
-            url: "https://skeldir.com",
+            url: SITE_ORIGIN,
         },
         publisher: {
             "@type": "Organization",
             name: "Skeldir",
             logo: {
                 "@type": "ImageObject",
-                url: "https://skeldir.com/images/skeldir-logo-black.png",
+                url: `${SITE_ORIGIN}/images/skeldir-logo-black.png`,
             },
         },
         mainEntityOfPage: {
             "@type": "WebPage",
-            "@id": `https://skeldir.com/resources/${slug}`,
+            "@id": canonicalUrl(`/resources/${slug}`),
         },
-        url: `https://skeldir.com/resources/${slug}`,
+        url: canonicalUrl(`/resources/${slug}`),
     };
 }
 
@@ -123,7 +124,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
                 <RelatedArticles articles={relatedArticles} currentArticleSlug={slug} />
             </main>
 
-            <SocialShare title={article.title} url={`https://skeldir.com/resources/${slug}`} />
+            <SocialShare title={article.title} url={canonicalUrl(`/resources/${slug}`)} />
 
             <BackToTop />
 

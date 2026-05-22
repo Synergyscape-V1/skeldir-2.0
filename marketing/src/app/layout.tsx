@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, IBM_Plex_Sans_Condensed, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { NavigationWrapper } from "@/components/layout/NavigationWrapper";
+import { SITE_ORIGIN } from "@/lib/crawlUrls";
 import { SITE_DESCRIPTION, SITE_DOCUMENT_TITLE } from "@/lib/siteMetadata";
 
 const dmSans = DM_Sans({
@@ -28,7 +29,7 @@ const heroDisplay = IBM_Plex_Sans_Condensed({
 const FAVICON_VERSION = "20260415a";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://skeldir.com"),
+  metadataBase: new URL(SITE_ORIGIN),
   title: SITE_DOCUMENT_TITLE,
   description: SITE_DESCRIPTION,
   openGraph: {

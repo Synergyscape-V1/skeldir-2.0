@@ -1,5 +1,6 @@
 /**
  * D2 — crawl graph, sitemap, robots, canonical, and internal link hygiene (pure helpers).
+ * D2-C2 — URL authority read from `src/lib/crawlUrls.ts`; static sitemap/robots contract checks.
  */
 
 import fs from 'node:fs';
@@ -7,7 +8,122 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArticleSlugsFromContent, slugToArticleRoute } from './content-slugs.mjs';
 
-const SITE_ORIGIN = 'https://skeldir.com';
+/**
+ * Read `SITE_ORIGIN` / `TRAILING_SLASH` from the TypeScript URL authority (single source of truth).
+ * @param {string} marketingRoot
+ */
+export function readCrawlUrlAuthority(marketingRoot) {
+  const tsPath = path.join(marketingRoot, 'src', 'lib', 'crawlUrls.ts');
+  if (!fs.existsSync(tsPath)) {
+    throw new Error(`Missing crawl URL authority module: ${tsPath}`);
+  }
+  const src = fs.readFileSync(tsPath, 'utf8');
+  const originM = /export const SITE_ORIGIN\s*=\s*["']([^"']+)["']/.exec(src);
+  if (!originM) throw new Error(`SITE_ORIGIN not found in ${tsPath}`);
+  const slashM = /export const TRAILING_SLASH\b[^=]*=\s*(true|false)/.exec(src);
+  const SITE_ORIGIN = originM[1].replace(/\/$/, '');
+  return {
+    SITE_ORIGIN,
+    TRAILING_SLASH: slashM ? slashM[1] === 'true' : false,
+  };
+}
+
+/** @param {string} s */
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * @param {object} auth from readCrawlUrlAuthority
+ */
+export function robotsSitemapLineFromAuthority(auth) {
+  return `Sitemap: ${auth.SITE_ORIGIN}/sitemap.xml`;
+}
+
+/**
+ * @param {string} marketingRoot
+ * @returns {string[]}
+ */
+export function validateManifestOriginMatchesAuthority(marketingRoot) {
+  const errors = [];
+  const auth = readCrawlUrlAuthority(marketingRoot);
+  const manifestPath = path.join(marketingRoot, 'discoverability.sitemap-manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (manifest.origin && manifest.origin !== auth.SITE_ORIGIN) {
+    errors.push(
+      `discoverability.sitemap-manifest.json origin "${manifest.origin}" must equal crawlUrls SITE_ORIGIN "${auth.SITE_ORIGIN}"`,
+    );
+  }
+  return errors;
+}
+
+/**
+ * @param {string} content
+ * @param {string} [label]
+ * @returns {string[]}
+ */
+export function validateSitemapSourceStringStaticSafe(content, label = 'sitemap.ts') {
+  const errors = [];
+  if (
+    !/export\s+const\s+dynamic\s*=\s*["']error["']/.test(content) &&
+    !/export\s+const\s+dynamic\s*=\s*["']force-static["']/.test(content)
+  ) {
+    errors.push(`${label} must export const dynamic = "error" or "force-static" (D2-C2 static contract)`);
+  }
+  const banned = [
+    [/from\s*["']next\/headers["']/, 'next/headers'],
+    [/\bcookies\s*\(/, 'cookies()'],
+    [/\bheaders\s*\(/, 'headers()'],
+    [/\bdraftMode\s*\(/, 'draftMode()'],
+    [/\bconnection\s*\(/, 'connection()'],
+    [/\bunstable_/, 'unstable_*'],
+    [/cache:\s*["']no-store["']/, "cache: 'no-store'"],
+    [/\bDate\.now\s*\(/, 'Date.now'],
+  ];
+  for (const [re, name] of banned) {
+    if (re.test(content)) errors.push(`${label} must not use ${name} (static export guard)`);
+  }
+  if (/https:\/\/skeldir\.com/i.test(content)) {
+    errors.push(`${label} must not embed literal https://skeldir.com — import from @/lib/crawlUrls`);
+  }
+  return errors;
+}
+
+/**
+ * @param {string} marketingRoot
+ * @returns {string[]}
+ */
+export function validateSitemapSourceStaticSafe(marketingRoot) {
+  const p = path.join(marketingRoot, 'src', 'app', 'sitemap.ts');
+  const s = fs.readFileSync(p, 'utf8');
+  return validateSitemapSourceStringStaticSafe(s, 'sitemap.ts');
+}
+
+/**
+ * @param {string} content
+ * @param {string} [label]
+ * @returns {string[]}
+ */
+export function validateRobotsSourceStringStaticAndNoLiteralOrigin(content, label = 'robots.ts') {
+  const errors = [];
+  if (!/export\s+const\s+dynamic\s*=\s*["']error["']/.test(content)) {
+    errors.push(`${label} must export const dynamic = "error" (D2-C2 static contract)`);
+  }
+  if (/https:\/\/skeldir\.com/i.test(content)) {
+    errors.push(`${label} must not embed literal https://skeldir.com — use robotsSitemapUrl() from @/lib/crawlUrls`);
+  }
+  return errors;
+}
+
+/**
+ * @param {string} marketingRoot
+ * @returns {string[]}
+ */
+export function validateRobotsSourceStaticAndNoLiteralOrigin(marketingRoot) {
+  const p = path.join(marketingRoot, 'src', 'app', 'robots.ts');
+  const s = fs.readFileSync(p, 'utf8');
+  return validateRobotsSourceStringStaticAndNoLiteralOrigin(s, 'robots.ts');
+}
 
 /** @param {string} xml */
 export function parseSitemapLocs(xml) {
@@ -30,8 +146,12 @@ export function getExpectedSitemapUrls(marketingRoot) {
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`Missing ${manifestPath}`);
   }
+  const auth = readCrawlUrlAuthority(marketingRoot);
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const origin = (manifest.origin || SITE_ORIGIN).replace(/\/$/, '');
+  if (manifest.origin && manifest.origin !== auth.SITE_ORIGIN) {
+    throw new Error(`manifest.origin "${manifest.origin}" !== crawlUrls SITE_ORIGIN "${auth.SITE_ORIGIN}"`);
+  }
+  const origin = auth.SITE_ORIGIN.replace(/\/$/, '');
   const staticPaths = manifest.staticPaths || [];
   const slugs = parseArticleSlugsFromContent(marketingRoot);
   const urls = [];
@@ -47,9 +167,10 @@ export function getExpectedSitemapUrls(marketingRoot) {
 
 /**
  * @param {string} xml
+ * @param {string} [marketingRoot]
  * @returns {string[]}
  */
-export function validateSitemapXmlWellFormed(xml) {
+export function validateSitemapXmlWellFormed(xml, marketingRoot = process.cwd()) {
   const errors = [];
   if (!xml || xml.length < 50) errors.push('sitemap XML missing or too small');
   if (!/<urlset[\s\S]+xmlns=["']http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9["']/.test(xml)) {
@@ -58,15 +179,75 @@ export function validateSitemapXmlWellFormed(xml) {
   if (!/<loc>/.test(xml)) errors.push('sitemap has no <loc> entries');
   const locs = parseSitemapLocs(xml);
   if (locs.length === 0) errors.push('parsed zero sitemap locs');
+  const auth = readCrawlUrlAuthority(marketingRoot);
+  const host = new URL(`${auth.SITE_ORIGIN}/`).hostname;
+  const escapedHost = escapeRegExp(host);
+  const locPattern = new RegExp(`^https://${escapedHost}(/[\\w./-]*)?$`, 'i');
+  const locPatternRoot = new RegExp(`^https://${escapedHost}/$`, 'i');
   for (const loc of locs) {
-    if (!/^https:\/\/skeldir\.com(\/[\w\-./]*)?$/.test(loc) && !/^https:\/\/skeldir\.com\/$/.test(loc)) {
-      errors.push(`sitemap loc not under skeldir.com: ${loc}`);
+    if (!locPattern.test(loc) && !locPatternRoot.test(loc)) {
+      errors.push(`sitemap loc not under ${auth.SITE_ORIGIN}: ${loc}`);
     }
     if (loc.includes('utm_')) errors.push(`sitemap loc contains tracking params: ${loc}`);
   }
   const lastmods = (xml.match(/<lastmod>/gi) || []).length;
   if (lastmods < locs.length) {
     errors.push('expected a <lastmod> per <url> entry for deterministic freshness signals');
+  }
+  return errors;
+}
+
+/**
+ * Non-root sitemap URLs must not end with `/` when TRAILING_SLASH is false (matches crawlUrls contract).
+ * @param {string[]} locs
+ * @param {string} marketingRoot
+ */
+export function validateSitemapLocPathsNoTrailingSlashExceptRoot(locs, marketingRoot) {
+  const errors = [];
+  const { TRAILING_SLASH } = readCrawlUrlAuthority(marketingRoot);
+  if (TRAILING_SLASH) return errors;
+  for (const loc of locs) {
+    let pathname;
+    try {
+      pathname = new URL(loc).pathname;
+    } catch {
+      errors.push(`invalid sitemap loc URL: ${loc}`);
+      continue;
+    }
+    if (pathname !== '/' && pathname.endsWith('/')) {
+      errors.push(`sitemap loc must not use trailing slash on non-root path (D2-C2): ${loc}`);
+    }
+  }
+  return errors;
+}
+
+/**
+ * @param {string} locUrl
+ * @param {string} canonicalHref
+ * @returns {string[]}
+ */
+export function validateSitemapLocCanonicalPathAlignment(locUrl, canonicalHref) {
+  const errors = [];
+  let lp;
+  let cp;
+  try {
+    lp = new URL(locUrl).pathname;
+    cp = new URL(canonicalHref).pathname;
+  } catch (e) {
+    errors.push(`invalid URL in loc/canonical alignment: ${e}`);
+    return errors;
+  }
+  const norm = (p) => {
+    if (p.length > 1 && p.endsWith('/')) return p.slice(0, -1);
+    return p;
+  };
+  if (norm(lp) !== norm(cp)) {
+    errors.push(`canonical path does not match sitemap loc path: loc=${lp} canonical=${cp}`);
+  }
+  const locTrail = lp !== '/' && lp.endsWith('/');
+  const canTrail = cp !== '/' && cp.endsWith('/');
+  if (locTrail !== canTrail) {
+    errors.push(`trailing slash mismatch between sitemap loc and canonical: ${locUrl} vs ${canonicalHref}`);
   }
   return errors;
 }
@@ -128,17 +309,21 @@ export function validateSitemapMatchesExpected(marketingRoot, locs) {
       errors.push(`forbidden sitemap URL (review artifact): ${loc}`);
     }
   }
+  errors.push(...validateSitemapLocPathsNoTrailingSlashExceptRoot(actual, marketingRoot));
   return errors;
 }
 
 /**
  * @param {string} body
+ * @param {string} [marketingRoot]
  */
-export function validateRobotsPolicy(body) {
+export function validateRobotsPolicy(body, marketingRoot = process.cwd()) {
   const errors = [];
   if (!body || body.length < 20) errors.push('robots.txt empty');
-  if (!/sitemap:\s*https:\/\/skeldir\.com\/sitemap\.xml/i.test(body)) {
-    errors.push('robots.txt missing Sitemap: https://skeldir.com/sitemap.xml');
+  const auth = readCrawlUrlAuthority(marketingRoot);
+  const expectedRe = new RegExp(`sitemap:\\s*${escapeRegExp(auth.SITE_ORIGIN)}/sitemap\\.xml`, 'i');
+  if (!expectedRe.test(body)) {
+    errors.push(`robots.txt missing Sitemap: ${auth.SITE_ORIGIN}/sitemap.xml`);
   }
   if (/^\s*disallow:\s*\/\s*$/im.test(body) && !/^\s*#\s*disallow:\s*\//im.test(body)) {
     errors.push('robots.txt contains blanket Disallow: /');
@@ -160,6 +345,23 @@ export function validateRobotsPolicy(body) {
     errors.push(
       'robots.txt must not Disallow /implementations/ for deindexing while claiming HTML noindex proof — pick crawlable noindex or remove public artifacts (D2-C)',
     );
+  }
+  return errors;
+}
+
+/**
+ * @param {string} body
+ * @param {string} marketingRoot
+ */
+export function validateRobotsSitemapUrlMatchesAuthority(body, marketingRoot) {
+  const errors = [];
+  const auth = readCrawlUrlAuthority(marketingRoot);
+  const m = /sitemap:\s*(\S+)/i.exec(body);
+  if (!m) return errors;
+  const found = m[1].trim();
+  const expected = `${auth.SITE_ORIGIN}/sitemap.xml`;
+  if (found !== expected) {
+    errors.push(`robots Sitemap URL "${found}" !== crawl authority "${expected}" (D2-C2)`);
   }
   return errors;
 }
@@ -314,6 +516,32 @@ export function validateBookDemoDefectiveRequiresNoindex(registry, bookDemoHtml)
 }
 
 /**
+ * D2-C2: defective contained /book-demo must not emit self-canonical unless registry documents an exception.
+ * @param {object} registry
+ * @param {string} bookDemoHtml
+ * @returns {string[]}
+ */
+export function validateBookDemoDefectiveNoSelfCanonical(registry, bookDemoHtml) {
+  const errors = [];
+  const bd = registry.routes?.find((r) => r.id === 'route-book-demo');
+  if (!bd) {
+    errors.push('registry missing route-book-demo');
+    return errors;
+  }
+  const defective = bd.status && String(bd.status).includes('defective');
+  if (!defective) return errors;
+  const exc = bd.canonical_exception_justification;
+  if (exc && String(exc).trim()) return errors;
+  const cans = extractCanonicalHrefs(bookDemoHtml);
+  if (cans.length > 0) {
+    errors.push(
+      'D2-C2: /book-demo is defective+noindexed but HTML still emits rel=canonical — remove canonical or set canonical_exception_justification in registry',
+    );
+  }
+  return errors;
+}
+
+/**
  * If review artifacts ship under `out/implementations/`, each must carry crawlable noindex (strategy B).
  * Strategy A (preferred): directory absent — then this returns [].
  * @param {string} outDir — marketing `out/` root
@@ -380,6 +608,7 @@ export function validateFooterLegalAndSupportHygiene(html) {
  */
 export function assertDiscoverabilityGitBranchPolicy(marketingRoot) {
   if (process.env.D2_SKIP_BRANCH_CHECK === '1') return [];
+  if (process.env.GITHUB_ACTIONS === 'true' || process.env.CI === 'true') return [];
   const candidates = [path.join(marketingRoot, '.git'), path.join(marketingRoot, '..', '.git')];
   const hasGit = candidates.some((p) => fs.existsSync(p));
   if (!hasGit) return [];
