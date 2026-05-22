@@ -19,7 +19,7 @@ This report covers **Phase D2 only** (sitemap, robots, canonical alignment, noin
 | D0 commit | *Not isolated*: prior D0/D1 work had no Git root under `Skeldir Webpage`; see note below |
 | D1 commit | *Same note* |
 | D1 corrective commit | *Same note* |
-| D2 commit | Single integration commit records D2 + registry fixes + repo scaffolding |
+| D2 commit | `2740c9d8a6676dc07bfb43da130c984724f383bc` (root commit; includes full marketing tree + D2 changes) |
 | Main untouched | **Yes** — no `main`/`master` branch created in this new root |
 | D10 merge gate | Remains future integration; this branch is the merge candidate |
 
@@ -109,7 +109,7 @@ npm run discoverability:d1
 ## 13. Commit / Push Status
 
 - **Branch:** `feat/discoverability-remediation` (initial branch at new root)
-- **Commits:** See `git log` after agent commit (single integration commit expected)
+- **Commits:** `2740c9d8a6676dc07bfb43da130c984724f383bc` on `feat/discoverability-remediation`
 - **Pushed:** **No** (no `git push` performed)
 
 ## 14. D3 Readiness Statement
