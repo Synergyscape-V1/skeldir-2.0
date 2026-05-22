@@ -1,0 +1,14 @@
+﻿{
+    "agentId":  "C",
+    "layoutMethod":  "Hybrid Grid/Flex",
+    "strategyName":  "CSS Modules-like scoping + hybrid layout + SVG sprite",
+    "componentStructure":  "Data-oriented stage render blocks",
+    "notableDecisions":  [
+                             "Symbol sprite used for all stage icons",
+                             "Entry animation constrained to root for accessibility"
+                         ],
+    "animationTreatment":  "Entry fade-up on initial render",
+    "iconGraphicApproach":  "SVG sprite symbols reused across modules",
+    "connectorTechnique":  "Absolute positioned HTML/CSS gradient segments",
+    "cssArchitecture":  "Scoped CSS classes (module-like)"
+}

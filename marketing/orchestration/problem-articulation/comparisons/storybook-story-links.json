@@ -1,0 +1,8 @@
+﻿{
+  "comparison_grid": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--comparison-grid",
+  "agent_a_focus": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-a-focus",
+  "agent_b_focus": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-b-focus",
+  "agent_c_focus": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-c-focus",
+  "agent_d_focus": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-d-focus",
+  "agent_e_focus": "http://localhost:6006/?path=/story/solutionarticulation-comparisongate--agent-e-focus"
+}

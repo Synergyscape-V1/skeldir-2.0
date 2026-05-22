@@ -1,0 +1,7 @@
+﻿{
+  "population_mode": "run-output-mounted",
+  "run_id": "run-2026-02-19-orch-sol-art-003",
+  "source_root": "marketing/orchestration/problem-articulation/runs/run-2026-02-19-orch-sol-art-003",
+  "reference": "marketing/public/implementations/reference/solution-articulation-final.jpg",
+  "agents": ["agent-a", "agent-b", "agent-c", "agent-d", "agent-e"]
+}

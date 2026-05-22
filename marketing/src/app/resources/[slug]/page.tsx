@@ -1,0 +1,133 @@
+import { notFound } from "next/navigation";
+import { Manrope, DM_Sans, Fira_Code } from "next/font/google";
+import { Footer } from "@/components/layout/Footer";
+import { ArticleHeader } from "@/components/article/ArticleHeader";
+import { TableOfContents, getTOCItemsBySlug } from "@/components/article/TableOfContents";
+import { getArticleBodyComponent } from "@/data/articleBodyRegistry";
+import { ReadingProgressBar } from "@/components/article/ReadingProgressBar";
+import { SocialShare } from "@/components/article/SocialShare";
+import { BackToTop } from "@/components/article/BackToTop";
+import { RelatedArticles } from "@/components/article/RelatedArticles";
+import { getArticleBySlug, getRelatedArticles } from "@/data/articlesData";
+
+function generateArticleJsonLd(
+    article: {
+        title: string;
+        excerpt: string;
+        publishDate: string;
+        heroImagePath: string;
+        author?: string;
+    },
+    slug: string
+) {
+    return {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        headline: article.title,
+        description: article.excerpt,
+        image: `https://skeldir.com${article.heroImagePath}`,
+        datePublished: article.publishDate,
+        dateModified: article.publishDate,
+        author: {
+            "@type": "Organization",
+            name: article.author || "Amulya Puri",
+            url: "https://skeldir.com",
+        },
+        publisher: {
+            "@type": "Organization",
+            name: "Skeldir",
+            logo: {
+                "@type": "ImageObject",
+                url: "https://skeldir.com/images/skeldir-logo-black.png",
+            },
+        },
+        mainEntityOfPage: {
+            "@type": "WebPage",
+            "@id": `https://skeldir.com/resources/${slug}`,
+        },
+        url: `https://skeldir.com/resources/${slug}`,
+    };
+}
+
+/** Next.js JSON-LD guidance: escape `<` in serialized JSON for script safety. */
+function serializeArticleJsonLd(obj: object) {
+    return JSON.stringify(obj).replace(/</g, "\\u003c");
+}
+
+const manrope = Manrope({
+    subsets: ["latin"],
+    weight: ["400", "500", "600", "700", "800"],
+    variable: "--font-manrope",
+});
+
+const dmSans = DM_Sans({
+    subsets: ["latin"],
+    weight: ["400", "500", "600", "700"],
+    variable: "--font-dm-sans",
+});
+
+const firaCode = Fira_Code({
+    subsets: ["latin"],
+    weight: ["400", "500"],
+    variable: "--font-fira-code",
+});
+
+interface ArticlePageProps {
+    params: Promise<{ slug: string }>;
+}
+
+export default async function ArticlePage({ params }: ArticlePageProps) {
+    const { slug } = await params;
+    const article = getArticleBySlug(slug);
+
+    if (!article) {
+        notFound();
+    }
+
+    const Body = getArticleBodyComponent(slug);
+    if (!Body) {
+        notFound();
+    }
+
+    const relatedArticles = getRelatedArticles(slug, 2);
+    const tocItems = getTOCItemsBySlug(slug);
+    const jsonLd = generateArticleJsonLd(article, slug);
+
+    return (
+        <div
+            className={`min-h-screen flex flex-col bg-white ${manrope.variable} ${dmSans.variable} ${firaCode.variable}`}
+            style={{ fontFamily: dmSans.style.fontFamily }}
+        >
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: serializeArticleJsonLd(jsonLd) }}
+            />
+
+            <ReadingProgressBar />
+
+            <main className="flex-grow pt-20">
+                <ArticleHeader article={article} />
+
+                <div className="container mx-auto px-4 md:px-6">
+                    <div className="flex flex-col xl:flex-row gap-8 xl:gap-16 max-w-7xl mx-auto">
+                        <aside className="xl:w-72 xl:flex-shrink-0 order-2 xl:order-1">
+                            <TableOfContents items={tocItems} />
+                        </aside>
+
+                        <article className="flex-1 max-w-3xl order-1 xl:order-2">
+                            <Body />
+                        </article>
+                    </div>
+                </div>
+
+                <RelatedArticles articles={relatedArticles} currentArticleSlug={slug} />
+            </main>
+
+            <SocialShare title={article.title} url={`https://skeldir.com/resources/${slug}`} />
+
+            <BackToTop />
+
+            <Footer />
+        </div>
+    );
+}

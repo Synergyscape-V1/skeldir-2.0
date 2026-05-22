@@ -1,0 +1,20 @@
+# Marketing build artifacts & dependencies
+marketing/node_modules/
+marketing/.next/
+marketing/out/
+marketing/storybook-static/
+marketing/test-results/
+marketing/playwright-report/
+
+# Local sibling clones / scratch trees (not part of this canonical repo)
+skeldir-*/
+tmp_redketchup*/
+live-audit/
+
+# Logs & OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.claude/

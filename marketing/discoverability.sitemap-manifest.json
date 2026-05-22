@@ -1,0 +1,6 @@
+{
+  "$comment": "D2 single source for static sitemap paths. Article URLs are /resources/{slug} from src/data/articlesData.ts (parsed by harness). Keep in sync with src/app/sitemap.ts.",
+  "origin": "https://skeldir.com",
+  "hubLastmod": "2026-05-22",
+  "staticPaths": ["/", "/product", "/pricing", "/agencies", "/resources"]
+}
