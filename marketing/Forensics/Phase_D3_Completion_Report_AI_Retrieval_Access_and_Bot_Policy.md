@@ -1,8 +1,10 @@
 # Phase D3 Completion Report — AI Retrieval Access and Bot Policy
 
 **Date:** 2026-05-22  
-**Repository:** `Skeldir Webpage` (git root) — application code under `marketing/`  
-**Branch merged to `main`:** (recorded at merge time via `git log -1` on `main`)
+**Repository:** `Synergyscape-V1/skeldir-2.0` (remote), workspace `Skeldir Webpage` — application code under `marketing/`  
+**Branch:** `feat/discoverability-remediation`  
+**Commit:** `a410242a` — `feat(discoverability): Phase D3 bot policy, robots compiler, and parity harness`  
+**Merge to remote `main`:** **Not completed** — GitHub reports *“feat/discoverability-remediation has no history in common with main”* (`gh pr create` fails). Reconciling the marketing-site branch with `main` requires a planned history merge, subtree, or moving the marketing app onto the same root commit as `main` before a protected-branch PR can land.
 
 ## 1. Verdict
 
@@ -113,9 +115,12 @@ Harness: `npm run discoverability:d3` section `[6]`. **URLs:** `/`, `/resources`
 
 ## 10. Git / CI Proof
 
-- **Workflow:** `.github/workflows/marketing-discoverability.yml` runs on `push`/`pull_request` when `marketing/**` changes: `npm ci`, `npm run discoverability:d2`, `npm run discoverability:d3`, `npm run discoverability:d3:negative-controls`.
-- **Note on ESLint:** `npm run lint` currently reports long-standing **errors** elsewhere in `marketing/` (e.g. `react/no-unescaped-entities` in content/components). The new workflow intentionally **does not** gate on full-repo lint so D3/D2 automation can go green; tightening lint is a separate hygiene task.
-- **Post-merge verification:** After merging to `main`, run `gh run list --workflow=marketing-discoverability.yml --branch=main --limit 5` and attach the successful run URL in the next report revision.
+- **Push:** `origin/feat/discoverability-remediation` updated to `a410242a`.
+- **PR to `main`:** **blocked** — `gh pr create --base main --head feat/discoverability-remediation` → *“no history in common with main”* (same blocker class as D2-C2 forensics).
+- **Workflow:** `.github/workflows/marketing-discoverability.yml` runs on `push` when `marketing/**` or the workflow file changes.
+- **Green CI (feat branch):** run `26310582078` — https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26310582078 (D2 + D3 + D3 negative controls all passed on `feat/discoverability-remediation`).
+- **Note on ESLint:** `npm run lint` still reports long-standing **errors** elsewhere in `marketing/`. The workflow intentionally **does not** gate on full-repo lint so discoverability automation can go green; fixing lint is a separate task.
+- **`main` branch:** discoverability workflow will not execute on `main` until this work is merged/rebased onto `main` (or the workflow file exists on `main` from another path).
 
 ## 11. Remaining Unknowns
 
