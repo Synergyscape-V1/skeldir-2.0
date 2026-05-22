@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     PrimaryKeyConstraint,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -259,4 +260,148 @@ class BayesianArtifact(Base):
         Index("idx_bayesian_artifacts_tenant_artifact_ref", "tenant_id", "artifact_ref"),
         Index("idx_bayesian_artifacts_tenant_artifact_hash", "tenant_id", "artifact_hash"),
         {"info": {"partitioning": {"strategy": "hash", "key": ["tenant_id"], "partitions": 16}}},
+    )
+
+
+class B24DirtyEvent(Base, TenantMixin):
+    """Append-only B2.4-P3 dirty event emitted by deterministic hot paths."""
+
+    __tablename__ = "b24_dirty_events"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid())
+    model_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    dirty_reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_family: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
+    planner_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    leased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    coalesced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suppressed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fallback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pruned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
+
+    __table_args__ = (
+        PrimaryKeyConstraint("tenant_id", "id", name="b24_dirty_events_pkey"),
+        CheckConstraint("source_window_end > source_window_start", name="ck_b24_dirty_events_source_window_order"),
+        CheckConstraint("event_hash IS NULL OR event_hash ~ '^[a-f0-9]{64}$'", name="ck_b24_dirty_events_event_hash_sha256"),
+        Index("idx_b24_dirty_events_tenant_status_observed", "tenant_id", "status", "observed_at", "id"),
+        Index(
+            "idx_b24_dirty_events_tenant_model_window_pending",
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "observed_at",
+            "id",
+            postgresql_where=text("status IN ('pending', 'leased')"),
+        ),
+    )
+
+
+class B24ActiveExecutionLease(Base, TenantMixin):
+    """Hash-independent active execution lease for one tenant/model/window."""
+
+    __tablename__ = "b24_active_execution_leases"
+
+    model_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fit_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    active_source_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latest_desired_source_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="claiming", server_default="claiming")
+    needs_refit_after_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
+    leased_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stale_recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            name="b24_active_execution_leases_pkey",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "fit_id"],
+            ["bayesian_model_fits.tenant_id", "bayesian_model_fits.id"],
+            name="fk_b24_active_execution_fit",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("source_window_end > source_window_start", name="ck_b24_active_execution_source_window_order"),
+        CheckConstraint(
+            "active_source_snapshot_hash IS NULL OR active_source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_active_execution_active_hash_sha256",
+        ),
+        CheckConstraint(
+            "latest_desired_source_snapshot_hash IS NULL OR latest_desired_source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_active_execution_desired_hash_sha256",
+        ),
+        Index("idx_b24_active_execution_tenant_status_lease", "tenant_id", "status", "leased_until"),
+        Index("idx_b24_active_execution_tenant_fit", "tenant_id", "fit_id", postgresql_where=text("fit_id IS NOT NULL")),
+    )
+
+
+class B24FitDispatchOutbox(Base, TenantMixin):
+    """Durable dispatch intent committed atomically with a fit claim."""
+
+    __tablename__ = "b24_fit_dispatch_outbox"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid())
+    fit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    dispatch_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default="5")
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dispatching_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stale_recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("tenant_id", "id", name="b24_fit_dispatch_outbox_pkey"),
+        ForeignKeyConstraint(
+            ["tenant_id", "fit_id"],
+            ["bayesian_model_fits.tenant_id", "bayesian_model_fits.id"],
+            name="fk_b24_fit_dispatch_outbox_fit",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("tenant_id", "dispatch_key", name="uq_b24_fit_dispatch_outbox_dispatch_key"),
+        UniqueConstraint("tenant_id", "fit_id", name="uq_b24_fit_dispatch_outbox_fit"),
+        CheckConstraint("attempt_count >= 0", name="ck_b24_fit_dispatch_outbox_attempt_count"),
+        CheckConstraint("max_attempts > 0", name="ck_b24_fit_dispatch_outbox_max_attempts"),
+        Index(
+            "idx_b24_fit_dispatch_outbox_due",
+            "tenant_id",
+            "status",
+            "next_attempt_at",
+            "id",
+            postgresql_where=text("status IN ('pending', 'failed_retryable', 'stale_recovered')"),
+        ),
+        Index(
+            "idx_b24_fit_dispatch_outbox_dispatching",
+            "tenant_id",
+            "dispatching_started_at",
+            postgresql_where=text("status = 'dispatching'"),
+        ),
     )

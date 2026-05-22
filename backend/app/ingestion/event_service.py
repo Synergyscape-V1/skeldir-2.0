@@ -10,7 +10,7 @@ B0.4.4 Enhancement: Integrated DLQHandler with error classification and retry lo
 import logging
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 import time
@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bayesian.dirty_marker import append_dirty_event
 from app.ingestion.channel_normalization import normalize_channel
 from app.ingestion.dlq_handler import DLQHandler
 from app.ingestion.privacy_boundary import enforce_ingress_privacy_boundary
@@ -718,6 +719,22 @@ class EventIngestionService:
                     source=source,
                     observed_at=validated["event_timestamp"],
                 )
+            dirty_window_start = validated["event_timestamp"].replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            await append_dirty_event(
+                session,
+                tenant_id=tenant_id,
+                source_window_start=dirty_window_start,
+                source_window_end=dirty_window_start + timedelta(days=1),
+                dirty_reason="attribution_event_ingested",
+                source_family="attribution_events",
+                source_event_id=event.id,
+                observed_at=validated["event_timestamp"],
+            )
 
             logger.info(
                 "event_ingested",

@@ -40,6 +40,27 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-p3-fit-planning
+  path: scripts/ci/validate_b24_p3_fit_planning.py
+  status: required
+  owning_phase: B2.4-P3
+  protected_invariant: B2.4-P3 dirty-event capture, debounce planning, hash-independent active execution lease, atomic fit claim, transactional dispatch outbox, fit-id-only payload, duplicate delivery idempotency, source query-plan fallback indexes, and no-P4/P5/P6 scope remain machine-falsifiable.
+  command: python scripts/ci/validate_b24_p3_fit_planning.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-b24-p3-fit-planning
+  expected_failure_meaning: B2.4-P3 planning is missing, hot paths do expensive work, dirty capture serializes bursts, active execution uniqueness is hash-scoped, claim and dispatch are dual-written, payloads are not fit-id-only, or P4/P5/P6 behavior leaked into P3.
+  first_diagnostic_command: python scripts/ci/validate_b24_p3_fit_planning.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m7-b24-readiness
   path: scripts/ci/validate_m7_b24_readiness.py
   status: required

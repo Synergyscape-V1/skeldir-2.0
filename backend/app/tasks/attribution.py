@@ -21,6 +21,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.bayesian.dirty_marker import append_dirty_event
 from app.attribution.semantics import (
     ATTRIBUTION_SEMANTICS_VERSION,
     CONVERSION_EVENT_TYPES,
@@ -70,6 +71,27 @@ ALLOWED_BOUNDED_TELEMETRY_KEYS = frozenset(
     }
 )
 FORBIDDEN_TELEMETRY_KEYS = banned_identifier_key_set()
+
+
+async def _append_b24_attribution_dirty_event(
+    *,
+    tenant_id: UUID,
+    window_start: datetime,
+    window_end: datetime,
+    job_id: UUID,
+) -> None:
+    async with engine.begin() as conn:
+        await set_tenant_guc(conn, tenant_id, local=True)
+        await append_dirty_event(
+            conn,
+            tenant_id=tenant_id,
+            source_window_start=window_start,
+            source_window_end=window_end,
+            dirty_reason="attribution_allocations_changed",
+            source_family="attribution_allocations",
+            source_event_id=job_id,
+            observed_at=datetime.now(timezone.utc),
+        )
 
 
 @dataclass(frozen=True)
@@ -1601,6 +1623,14 @@ def recompute_window(
                 "replay_identity_digest": result.get("replay_identity_digest"),
             },
         )
+        if int(result["allocation_count"]) > 0:
+            _run_async(
+                _append_b24_attribution_dirty_event,
+                tenant_id=model.tenant_id,
+                window_start=window_start_dt,
+                window_end=window_end_dt,
+                job_id=job_id,
+            )
 
         return {
             "status": "succeeded",

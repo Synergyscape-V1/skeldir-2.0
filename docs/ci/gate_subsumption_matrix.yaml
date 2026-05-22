@@ -32,6 +32,25 @@
   local_reproduction_command: make validate-b24-p2-source-snapshot
   risk_if_removed: B2.4 could hash identity-bearing, sparse, unordered, split-snapshot, or fully materialized source manifests without a merge-blocking signal.
   decision: keep_required
+- gate_id: validate-b24-p3-fit-planning
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_b24_p3_fit_planning.py
+  owning_phase: B2.4-P3
+  protected_invariant: B2.4-P3 dirty-event capture, debounce planning, hash-independent active execution lease, atomic fit claim, transactional dispatch outbox, fit-id-only payload, duplicate delivery idempotency, source query-plan fallback indexes, and no-P4/P5/P6 scope remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P3 introduces orchestration-safety semantics that P1/P2 do not validate:
+    hot-path dirty-only emission, debounced candidate leasing, active execution
+    uniqueness independent of source hash, claim plus outbox atomicity, dispatch
+    recovery, and fit-id-only broker payloads.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p3_fit_planning.py --negative-control
+  local_reproduction_command: make validate-b24-p3-fit-planning
+  risk_if_removed: B2.4 could regress to hot-path snapshot generation, compute stampedes, unsafe DB-then-broker dual writes, or source-data queue payloads without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
