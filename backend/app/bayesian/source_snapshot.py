@@ -20,10 +20,13 @@ from app.bayesian.eligibility import (
 )
 from app.bayesian.exceptions import BayesianTenantContextError
 from app.bayesian.input_contract import (
+    ALLOWED_SOURCE_READ_MODELS,
     ELIGIBILITY_POLICY_VERSION,
     REQUIRED_TENANT_GUC,
     SENTINEL_PREFIX,
     SOURCE_CONTRACT_VERSION,
+    SOURCE_STREAM_MAX_ROW_BUFFER,
+    SOURCE_STREAM_PARTITION_SIZE,
     STREAM_CHUNK_FORMAT_VERSION,
 )
 
@@ -82,6 +85,19 @@ def canonical_json_bytes(payload: dict[str, object]) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+
+
+def _contract_row_payload(source_name: str, row: dict[str, object]) -> dict[str, object]:
+    """Project a streamed row onto the versioned source contract allowlist."""
+
+    allowed = set(ALLOWED_SOURCE_READ_MODELS[source_name])
+    allowed.add("source_table_discriminator")
+    extra_fields = set(row) - allowed
+    if extra_fields:
+        raise ValueError(
+            f"non-contract source fields for {source_name}: {sorted(extra_fields)}"
+        )
+    return {field: row.get(field) for field in sorted(allowed) if field in row}
 
 
 def sentinel_material_for(fallback_reason: FallbackReason | str) -> str:
@@ -261,6 +277,12 @@ _QUERY_PARAMS = {
     ),
 }
 
+_STREAM_EXECUTION_OPTIONS = {
+    "stream_results": True,
+    "yield_per": SOURCE_STREAM_PARTITION_SIZE,
+    "max_row_buffer": SOURCE_STREAM_MAX_ROW_BUFFER,
+}
+
 
 async def _assert_tenant_guc(session: AsyncSession, tenant_id: UUID) -> None:
     result = await session.execute(
@@ -296,11 +318,15 @@ async def stream_source_chunks(
                 "source_contract_version": SOURCE_CONTRACT_VERSION,
             }
         )
-        stream = await session.stream(query, params)
-        async for row in stream.mappings():
-            payload = dict(row)
-            payload["chunk_type"] = "source_row"
-            yield canonical_json_bytes(payload)
+        stream = await session.stream(
+            query.execution_options(**_STREAM_EXECUTION_OPTIONS),
+            params,
+        )
+        async for partition in stream.mappings().partitions(SOURCE_STREAM_PARTITION_SIZE):
+            for row in partition:
+                payload = _contract_row_payload(source_name, dict(row))
+                payload["chunk_type"] = "source_row"
+                yield canonical_json_bytes(payload)
         yield canonical_json_bytes({"chunk_type": "source_end", "source": source_name})
 
 

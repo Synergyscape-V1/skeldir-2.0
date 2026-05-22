@@ -22,6 +22,9 @@ ENUMS = BAYESIAN_PACKAGE / "enums.py"
 P2_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202605211430_b24_p2_sparse_fallback_reasons.py"
 )
+P2_STREAM_INDEX_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605221200_b24_p2_source_stream_safety_indexes.py"
+)
 CANONICAL_SCHEMA = Path("db/schema/canonical_schema.sql")
 COMPLETION_REPORT = Path(
     "docs/forensics/B2.4-P2_Deterministic_Input_Contract_Source_Snapshot_Completion_Report.md"
@@ -32,6 +35,7 @@ REQUIRED_FILES = {
     ELIGIBILITY,
     SOURCE_SNAPSHOT,
     P2_MIGRATION,
+    P2_STREAM_INDEX_MIGRATION,
 }
 
 FORBIDDEN_SCOPE_TOKENS = {
@@ -79,6 +83,23 @@ SENTINEL_REASONS = {
     "insufficient_privacy_cohort",
 }
 
+REQUIRED_SPARSE_THRESHOLD_FIELDS = {
+    "minimum_eligible_source_events",
+    "minimum_distinct_source_events",
+    "minimum_conversion_or_revenue_events",
+    "minimum_confirmed_match_verdicts",
+    "minimum_distinct_channels",
+    "minimum_observations_per_currency",
+    "minimum_source_window_density_days",
+}
+
+REQUIRED_SOURCE_STREAM_INDEXES = {
+    "idx_b24_p2_attribution_events_source_stream",
+    "idx_b24_p2_attribution_allocations_source_stream",
+    "idx_b24_p2_match_verdicts_source_stream",
+    "idx_b24_p2_revenue_events_source_stream",
+}
+
 
 class ValidationError(RuntimeError):
     pass
@@ -117,12 +138,64 @@ def _literal_assignment(tree: ast.Module, name: str) -> object:
     raise ValidationError(f"missing literal assignment: {name}")
 
 
+def _constant_assignments(tree: ast.Module) -> dict[str, object]:
+    constants: dict[str, object] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    try:
+                        constants[target.id] = ast.literal_eval(node.value)
+                    except (ValueError, SyntaxError):
+                        continue
+    return constants
+
+
+def _threshold_defaults(tree: ast.Module) -> dict[str, int]:
+    constants = _constant_assignments(tree)
+    defaults: dict[str, int] = {}
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "SparsePrivacyThresholds":
+            for item in node.body:
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                    name = item.target.id
+                    if item.value is None:
+                        continue
+                    try:
+                        value = ast.literal_eval(item.value)
+                    except (ValueError, SyntaxError):
+                        if isinstance(item.value, ast.Name) and item.value.id in constants:
+                            value = constants[item.value.id]
+                        else:
+                            raise ValidationError(
+                                f"sparse threshold must be literal or named floor: {name}"
+                            )
+                    if not isinstance(value, int):
+                        raise ValidationError(f"sparse threshold is not integer: {name}")
+                    defaults[name] = value
+            return defaults
+    raise ValidationError("SparsePrivacyThresholds class missing")
+
+
 def validate_input_contract(root: Path, text: str | None = None) -> None:
     text = text if text is not None else _read(root, INPUT_CONTRACT)
     tree = _parse(text, INPUT_CONTRACT)
     _require("SOURCE_CONTRACT_VERSION" in text, "source contract version missing")
     _require("ELIGIBILITY_POLICY_VERSION" in text, "eligibility policy version missing")
     _require("SparsePrivacyThresholds" in text, "sparse privacy thresholds missing")
+    constants = _constant_assignments(tree)
+    floor = constants.get("MIN_SPARSE_PRIVACY_FLOOR")
+    _require(
+        isinstance(floor, int) and floor >= 20,
+        "sparse privacy floor must be at least 20",
+    )
+    thresholds = _threshold_defaults(tree)
+    for threshold_name in REQUIRED_SPARSE_THRESHOLD_FIELDS:
+        _require(threshold_name in thresholds, f"sparse threshold missing: {threshold_name}")
+        _require(
+            thresholds[threshold_name] >= floor,
+            f"sparse threshold below floor: {threshold_name}={thresholds[threshold_name]}",
+        )
     _require(
         "REPEATABLE READ" in text and "READ ONLY" in text,
         "transaction requirements missing",
@@ -131,6 +204,11 @@ def validate_input_contract(root: Path, text: str | None = None) -> None:
     _require(
         "VERIFICATION_COVERAGE_RULE" in text and "excluded_in_b24_source_v1" in text,
         "verification coverage rule missing",
+    )
+    _require("SOURCE_STREAM_BUFFERING_RULE" in text, "source buffering rule missing")
+    _require(
+        "SOURCE_STREAM_INDEX_REQUIREMENTS" in text,
+        "source stream index requirements missing",
     )
 
     allowed = _literal_assignment(tree, "ALLOWED_SOURCE_READ_MODELS")
@@ -234,6 +312,26 @@ def validate_source_snapshot(root: Path, text: str | None = None) -> None:
     _validate_no_forbidden_scope(text, SOURCE_SNAPSHOT)
     _validate_no_identity_query(text, SOURCE_SNAPSHOT)
     _require(
+        re.search(r"SELECT\s+\*", text, re.IGNORECASE) is None,
+        "SELECT * forbidden in source snapshot queries",
+    )
+    _require(
+        re.search(r"\bOFFSET\b|\.offset\s*\(", text, re.IGNORECASE) is None,
+        "OFFSET pagination forbidden in source snapshot paths",
+    )
+    for forbidden in (
+        "row.__dict__",
+        "vars(row)",
+        "__table__.columns",
+        ".__columns__",
+        "reflect(",
+        "Reflected",
+    ):
+        _require(
+            forbidden not in text,
+            f"reflected/ORM row serialization forbidden: {forbidden}",
+        )
+    _require(
         "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY" in text,
         "missing repeatable-read read-only transaction",
     )
@@ -251,6 +349,18 @@ def validate_source_snapshot(root: Path, text: str | None = None) -> None:
         "preflight must precede source streaming",
     )
     _require("session.stream" in text, "source hashing must use streaming cursor API")
+    for streaming_token in (
+        "stream_results",
+        "yield_per",
+        "max_row_buffer",
+        "SOURCE_STREAM_PARTITION_SIZE",
+        "SOURCE_STREAM_MAX_ROW_BUFFER",
+        ".partitions(",
+    ):
+        _require(
+            streaming_token in text,
+            f"bounded physical streaming token missing: {streaming_token}",
+        )
     _require(
         "hashlib.sha256" in text and ".update(" in text,
         "hashing must update SHA-256 incrementally",
@@ -264,8 +374,16 @@ def validate_source_snapshot(root: Path, text: str | None = None) -> None:
         "full manifest JSON serialization forbidden",
     )
     _require(
-        "list(rows)" not in text and "fetchall" not in text and ".all()" not in text,
+        "execute(query).all()" not in text
+        and "fetchall" not in text
+        and ".all()" not in text
+        and "list(rows)" not in text
+        and "list(stream" not in text,
         "full source materialization forbidden",
+    )
+    _require(
+        "_contract_row_payload(source_name, dict(row))" in text,
+        "source rows must pass through contract allowlist projection",
     )
     for order_fragment in (
         "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC",
@@ -294,6 +412,21 @@ def validate_source_snapshot(root: Path, text: str | None = None) -> None:
             re.fullmatch(r"[a-f0-9]{64}", expected_hash) is not None,
             f"invalid sentinel hash for {reason}",
         )
+
+
+def validate_query_path_indexes(root: Path) -> None:
+    canonical = _read(root, CANONICAL_SCHEMA)
+    migration = _read(root, P2_STREAM_INDEX_MIGRATION)
+    for index_name in REQUIRED_SOURCE_STREAM_INDEXES:
+        _require(index_name in canonical, f"canonical schema missing source stream index: {index_name}")
+        _require(index_name in migration, f"migration missing source stream index: {index_name}")
+    for fragment in (
+        "ON public.attribution_events (tenant_id, occurred_at ASC, id ASC)",
+        "ON public.attribution_allocations (tenant_id, created_at ASC, id ASC)",
+        "ON public.b23_match_verdicts (tenant_id, last_transition_at ASC, id ASC)",
+        "ON public.b23_revenue_events (tenant_id, event_occurred_at ASC, id ASC)",
+    ):
+        _require(fragment in migration, f"source stream index missing order keys: {fragment}")
 
 
 def validate_repository(root: Path, text: str | None = None) -> None:
@@ -343,6 +476,7 @@ def validate_all(root: Path) -> None:
     validate_source_snapshot(root)
     validate_repository(root)
     validate_schema_surface(root)
+    validate_query_path_indexes(root)
 
 
 def run_negative_controls(root: Path) -> None:
@@ -351,6 +485,30 @@ def run_negative_controls(root: Path) -> None:
     snapshot = _read(root, SOURCE_SNAPSHOT)
     repository = _read(root, REPOSITORY)
     controls = (
+        (
+            "B24_P2_NC_THRESHOLD_BELOW_FLOOR_PASS",
+            lambda: validate_input_contract(
+                root,
+                contract.replace(
+                    "minimum_confirmed_match_verdicts: int = MIN_SPARSE_PRIVACY_FLOOR",
+                    "minimum_confirmed_match_verdicts: int = 5",
+                    1,
+                ),
+            ),
+            "below floor",
+        ),
+        (
+            "B24_P2_NC_THRESHOLD_MISSING_PASS",
+            lambda: validate_input_contract(
+                root,
+                contract.replace(
+                    "    minimum_confirmed_match_verdicts: int = MIN_SPARSE_PRIVACY_FLOOR\n",
+                    "",
+                    1,
+                ),
+            ),
+            "threshold missing",
+        ),
         (
             "B24_P2_NC_IDENTITY_TABLE_MANIFEST_SOURCE_PASS",
             lambda: validate_input_contract(
@@ -436,6 +594,70 @@ def run_negative_controls(root: Path) -> None:
                 repository.replace("last_fit_at = NULL", "last_fit_at = now()", 1),
             ),
             "last_fit_at = NULL",
+        ),
+        (
+            "B24_P2_NC_SELECT_STAR_SOURCE_QUERY_PASS",
+            lambda: validate_source_snapshot(
+                root,
+                snapshot.replace(
+                    "SELECT\n                'attribution_events'",
+                    "SELECT * -- 'attribution_events'",
+                    1,
+                ),
+            ),
+            "select *",
+        ),
+        (
+            "B24_P2_NC_ORM_TO_JSON_PASS",
+            lambda: validate_source_snapshot(
+                root,
+                snapshot.replace(
+                    "_contract_row_payload(source_name, dict(row))",
+                    "row.__dict__",
+                    1,
+                ),
+            ),
+            "serialization",
+        ),
+        (
+            "B24_P2_NC_REFLECTED_COLUMNS_PASS",
+            lambda: validate_source_snapshot(
+                root,
+                snapshot + "\ncolumns = model.__table__.columns\n",
+            ),
+            "reflected",
+        ),
+        (
+            "B24_P2_NC_OFFSET_PAGINATION_PASS",
+            lambda: validate_source_snapshot(
+                root,
+                snapshot.replace(
+                    "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC",
+                    "ORDER BY tenant_id ASC, occurred_at ASC NULLS LAST, id ASC OFFSET 100",
+                    1,
+                ),
+            ),
+            "offset",
+        ),
+        (
+            "B24_P2_NC_UNBOUNDED_FETCHALL_PASS",
+            lambda: validate_source_snapshot(
+                root,
+                snapshot.replace(
+                    "async for partition in stream.mappings().partitions(SOURCE_STREAM_PARTITION_SIZE):",
+                    "rows = await stream.fetchall()\n        async for partition in stream.mappings().partitions(SOURCE_STREAM_PARTITION_SIZE):",
+                    1,
+                ),
+            ),
+            "materialization",
+        ),
+        (
+            "B24_P2_NC_MISSING_PARTITIONS_PASS",
+            lambda: validate_source_snapshot(
+                root,
+                snapshot.replace(".partitions(SOURCE_STREAM_PARTITION_SIZE)", "", 1),
+            ),
+            "bounded physical streaming",
         ),
         (
             "B24_P2_NC_UNBOUNDED_JSON_DUMPS_PASS",

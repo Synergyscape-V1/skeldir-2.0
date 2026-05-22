@@ -23,19 +23,22 @@ SENTINEL_FALLBACK_REASONS = (
 REQUIRED_TRANSACTION_ISOLATION = "REPEATABLE READ"
 REQUIRED_TRANSACTION_ACCESS_MODE = "READ ONLY"
 REQUIRED_TENANT_GUC = "app.current_tenant_id"
+MIN_SPARSE_PRIVACY_FLOOR = 20
+SOURCE_STREAM_PARTITION_SIZE = 128
+SOURCE_STREAM_MAX_ROW_BUFFER = 256
 
 
 @dataclass(frozen=True)
 class SparsePrivacyThresholds:
     """Machine-owned sparse privacy gates enforced before row-level streaming."""
 
-    minimum_eligible_source_events: int = 10
-    minimum_distinct_source_events: int = 10
-    minimum_conversion_or_revenue_events: int = 5
-    minimum_confirmed_match_verdicts: int = 5
-    minimum_distinct_channels: int = 2
-    minimum_observations_per_currency: int = 3
-    minimum_source_window_density_days: int = 2
+    minimum_eligible_source_events: int = MIN_SPARSE_PRIVACY_FLOOR
+    minimum_distinct_source_events: int = MIN_SPARSE_PRIVACY_FLOOR
+    minimum_conversion_or_revenue_events: int = MIN_SPARSE_PRIVACY_FLOOR
+    minimum_confirmed_match_verdicts: int = MIN_SPARSE_PRIVACY_FLOOR
+    minimum_distinct_channels: int = MIN_SPARSE_PRIVACY_FLOOR
+    minimum_observations_per_currency: int = MIN_SPARSE_PRIVACY_FLOOR
+    minimum_source_window_density_days: int = MIN_SPARSE_PRIVACY_FLOOR
 
 
 SPARSE_PRIVACY_THRESHOLDS = SparsePrivacyThresholds()
@@ -188,6 +191,19 @@ VERIFICATION_COVERAGE_RULE = (
     "excluded_in_b24_source_v1: current verification coverage aggregate reads "
     "webhook_ingress_identities, so P2 does not include coverage in the source hash."
 )
+SOURCE_STREAM_BUFFERING_RULE = (
+    "eligible source rows are consumed with SQLAlchemy async streaming, explicit "
+    "stream_results/yield_per/max_row_buffer execution options, and Result.partitions(); "
+    "full-result materialization is forbidden."
+)
+SOURCE_STREAM_INDEX_REQUIREMENTS = MappingProxyType(
+    {
+        "attribution_events": "idx_b24_p2_attribution_events_source_stream",
+        "attribution_allocations": "idx_b24_p2_attribution_allocations_source_stream",
+        "b23_match_verdicts": "idx_b24_p2_match_verdicts_source_stream",
+        "b23_revenue_events": "idx_b24_p2_revenue_events_source_stream",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -232,6 +248,11 @@ SOURCE_READ_MODELS: tuple[SourceReadModel, ...] = tuple(
 def validate_contract() -> None:
     """Fail closed if source membership violates P2 privacy/order rules."""
 
+    for threshold_name, threshold_value in SPARSE_PRIVACY_THRESHOLDS.__dict__.items():
+        if threshold_value < MIN_SPARSE_PRIVACY_FLOOR:
+            raise ValueError(
+                f"sparse privacy threshold below floor: {threshold_name}={threshold_value}"
+            )
     for forbidden_source in FORBIDDEN_MANIFEST_SOURCES:
         if forbidden_source in ALLOWED_SOURCE_READ_MODELS:
             raise ValueError(f"forbidden source read model allowed: {forbidden_source}")

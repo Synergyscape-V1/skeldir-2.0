@@ -4696,6 +4696,14 @@ CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
 
+CREATE INDEX idx_b24_p2_attribution_allocations_source_stream ON public.attribution_allocations USING btree (tenant_id, created_at, id) WHERE (verified = true);
+
+CREATE INDEX idx_b24_p2_attribution_events_source_stream ON public.attribution_events USING btree (tenant_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text));
+
+CREATE INDEX idx_b24_p2_match_verdicts_source_stream ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at, id) WHERE ((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[]));
+
+CREATE INDEX idx_b24_p2_revenue_events_source_stream ON public.b23_revenue_events USING btree (tenant_id, event_occurred_at, id) WHERE ((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[]));
+
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
 CREATE INDEX idx_channel_assignment_corrections_channels ON public.channel_assignment_corrections USING btree (from_channel, to_channel, corrected_at DESC);
