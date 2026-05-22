@@ -1,35 +1,36 @@
 import type { MetadataRoute } from "next";
+import botPolicy from "../../discoverability.bot-policy.json";
 import { robotsSitemapUrl } from "@/lib/crawlUrls";
 
 export const dynamic = "error";
 
+type BotEntry = (typeof botPolicy.bots)[number];
+
 /**
- * Root robots.txt for static export.
- * - Public marketing/resources remain crawlable.
- * - Do NOT Disallow paths that rely on HTML `<meta name="robots" content="noindex">` for index
- *   exclusion: crawlers that obey Disallow never fetch the page and cannot observe noindex
- *   (Google Search guidance). Review artifacts under /implementations/* were removed from
- *   `public/` (D2-C) instead of combining Disallow + noindex.
- * - Retrieval vs training/bulk crawler policy: explicit allows for common retrieval UAs; broader
- *   training-crawler tuning is deferred to Phase D3 (do not add sensitive path disclosure here).
+ * Root robots.txt for static export — compiled from `discoverability.bot-policy.json` (Phase D3).
+ * Do not hand-edit stanzas here; update the manifest and `BOT_POLICY.md` together.
  */
 export default function robots(): MetadataRoute.Robots {
-  const sitemap = robotsSitemapUrl();
+  const bots = botPolicy.bots as BotEntry[];
+  const rules: MetadataRoute.Robots["rules"] = [];
+
+  const disallowBots = bots.filter((b) => b.robots_required && b.robots_rule === "disallow_root");
+  const allowBots = bots.filter((b) => b.robots_required && b.robots_rule === "allow_root");
+
+  for (const b of disallowBots) {
+    const disallow = b.paths_disallowed?.length ? b.paths_disallowed : ["/"];
+    rules.push({ userAgent: b.user_agent_token, disallow });
+  }
+  for (const b of allowBots) {
+    const allow = b.paths_allowed?.length ? b.paths_allowed : ["/"];
+    rules.push({ userAgent: b.user_agent_token, allow });
+  }
+
+  rules.push({ userAgent: "*", allow: "/" });
 
   return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: "/",
-      },
-      { userAgent: "Googlebot", allow: "/" },
-      { userAgent: "Googlebot-Image", allow: "/" },
-      { userAgent: "OAI-SearchBot", allow: "/" },
-      { userAgent: "Claude-SearchBot", allow: "/" },
-      { userAgent: "PerplexityBot", allow: "/" },
-      { userAgent: "GPTBot", allow: "/" },
-    ],
-    host: "skeldir.com",
-    sitemap,
+    rules,
+    host: botPolicy.site_host_robots,
+    sitemap: robotsSitemapUrl(),
   };
 }

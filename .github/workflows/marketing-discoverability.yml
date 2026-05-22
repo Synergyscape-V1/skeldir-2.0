@@ -1,0 +1,41 @@
+# Discoverability gates for `marketing/` (D2 + D3)
+name: marketing-discoverability
+
+on:
+  push:
+    branches: [main, master, feat/discoverability-remediation]
+    paths:
+      - "marketing/**"
+      - ".github/workflows/marketing-discoverability.yml"
+  pull_request:
+    paths:
+      - "marketing/**"
+      - ".github/workflows/marketing-discoverability.yml"
+
+defaults:
+  run:
+    working-directory: marketing
+
+jobs:
+  discoverability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: marketing/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: D2 crawl graph & index control
+        run: npm run discoverability:d2
+
+      - name: D3 bot policy & retrieval parity
+        run: npm run discoverability:d3
+
+      - name: D3 negative controls
+        run: npm run discoverability:d3:negative-controls

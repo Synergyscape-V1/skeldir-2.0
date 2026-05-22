@@ -325,8 +325,25 @@ export function validateRobotsPolicy(body, marketingRoot = process.cwd()) {
   if (!expectedRe.test(body)) {
     errors.push(`robots.txt missing Sitemap: ${auth.SITE_ORIGIN}/sitemap.xml`);
   }
-  if (/^\s*disallow:\s*\/\s*$/im.test(body) && !/^\s*#\s*disallow:\s*\//im.test(body)) {
-    errors.push('robots.txt contains blanket Disallow: /');
+  let wildcardStarHasBlanketDisallow = false;
+  let inWildcardStarGroup = false;
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (/^user-agent:\s*\*/i.test(line)) {
+      inWildcardStarGroup = true;
+      continue;
+    }
+    if (/^user-agent:/i.test(line)) {
+      inWildcardStarGroup = false;
+      continue;
+    }
+    if (inWildcardStarGroup && /^\s*disallow:\s*\/\s*$/i.test(line)) {
+      wildcardStarHasBlanketDisallow = true;
+      break;
+    }
+  }
+  if (wildcardStarHasBlanketDisallow && !/^\s*#\s*disallow:\s*\//im.test(body)) {
+    errors.push('robots.txt wildcard User-agent: * contains blanket Disallow: /');
   }
   const sensitive = ['/node_modules', '/.git', '/src/', '.env', 'package.json', 'C:\\', 'C:/'];
   for (const s of sensitive) {
