@@ -74,6 +74,12 @@ async function ensureDir(dir) {
 
 async function main() {
   const startedAt = new Date().toISOString();
+  if (!(await exists(IMPLEMENTATIONS_ROOT))) {
+    console.warn(
+      "SKIP: public/implementations/ is absent (removed from public export per D2-C). Run scripts/populate-solution-iterations.mjs locally if you need Storybook comparison mounts.",
+    );
+    process.exit(0);
+  }
   const agents = await Promise.all(AGENTS.map((id) => analyzeAgent(id)));
   const completeCount = agents.filter((a) => a.complete).length;
   const incompleteCount = agents.length - completeCount;
