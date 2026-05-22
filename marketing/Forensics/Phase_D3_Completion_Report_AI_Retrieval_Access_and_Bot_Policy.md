@@ -3,7 +3,8 @@
 **Date:** 2026-05-22  
 **Repository:** `Synergyscape-V1/skeldir-2.0` (remote), workspace `Skeldir Webpage` — application code under `marketing/`  
 **Branch:** `feat/discoverability-remediation`  
-**Commit:** `a410242a` — `feat(discoverability): Phase D3 bot policy, robots compiler, and parity harness`  
+**Commit (D3 feature):** `a410242a` — `feat(discoverability): Phase D3 bot policy, robots compiler, and parity harness`  
+**Branch tip:** `b4544dfb` (includes forensics doc follow-ups)  
 **Merge to remote `main`:** **Not completed** — GitHub reports *“feat/discoverability-remediation has no history in common with main”* (`gh pr create` fails). Reconciling the marketing-site branch with `main` requires a planned history merge, subtree, or moving the marketing app onto the same root commit as `main` before a protected-branch PR can land.
 
 ## 1. Verdict
@@ -115,7 +116,7 @@ Harness: `npm run discoverability:d3` section `[6]`. **URLs:** `/`, `/resources`
 
 ## 10. Git / CI Proof
 
-- **Push:** `origin/feat/discoverability-remediation` at `4cae3817` (D3 feature `a410242a` plus forensics doc commits).
+- **Push:** `origin/feat/discoverability-remediation` at `b4544dfb` (D3 feature `a410242a` plus forensics doc commits).
 - **PR to `main`:** **blocked** — `gh pr create --base main --head feat/discoverability-remediation` → *“no history in common with main”* (same blocker class as D2-C2 forensics).
 - **Workflow:** `.github/workflows/marketing-discoverability.yml` runs on `push` when `marketing/**` or the workflow file changes.
 - **Green CI (feat branch):** run `26310582078` — https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26310582078 (D2 + D3 + D3 negative controls all passed on `feat/discoverability-remediation`).
