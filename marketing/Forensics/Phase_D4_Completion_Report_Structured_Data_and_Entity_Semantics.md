@@ -129,11 +129,9 @@ Representative blocks are visible in `out/index.html`, `out/product.html`, `out/
 
 - **branch:** `feat/discoverability-remediation` (pre-merge).  
 - **commit:** `6268dd6b` — `feat(discoverability): Phase D4 JSON-LD, entity semantics, and harness`.  
-- **push:** `git push origin feat/discoverability-remediation` after commit.  
-- **CI:** Open or attach the latest `marketing-discoverability` workflow run for the PR once pushed (GitHub Actions on `Synergyscape-V1/skeldir-2.0`).  
-- **deploy/preview:** Not attached in this session.
-
-**Merge status:** A PR from `feat/discoverability-remediation` → `main` must be opened and merged through the repo’s protected-branch workflow; **this document’s production-final gate is not satisfied until that merge completes with required checks green.**
+- **push:** **Done** — `origin/feat/discoverability-remediation` at `93a23960` (includes D4 commits `6268dd6b` + docs SHA commit).  
+- **CI:** Await `marketing-discoverability` run for `93a23960` on branch `feat/discoverability-remediation` (workflow triggers on `push` to that branch). Attach run URL from `gh run list --workflow marketing-discoverability`.  
+- **PR / merge to `main`:** **Blocked at GitHub** — `gh pr create --base main` returns *“branch has no history in common with main”*. Verified with `gh api .../compare/main...feat/discoverability-remediation` → HTTP 404 *“No common ancestor”*. `git merge-base --is-ancestor origin/main HEAD` fails locally: the feature line and `main` are **parallel unrelated roots** on the remote object graph. A naive `git merge --allow-unrelated-histories` into local `main` produced **mass add/add conflicts** across the tree and was **aborted** — reconciliation needs a planned history strategy (subtree, re-parent, or curated squash onto `main`), not an automatic unrelated merge.
 
 ## 14. Remaining Unknowns
 
