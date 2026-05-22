@@ -28,7 +28,6 @@ Usage:
         await session.commit()
 """
 
-from app.bayesian.models import BayesianArtifact, BayesianModelFit
 from app.models.attribution_event import AttributionEvent
 from app.models.auth_substrate import (
     AuthAccessTokenDenylist,
@@ -66,6 +65,22 @@ from app.models.raw_event_payload import RawEventPayload
 from app.models.revenue_cache import RevenueCacheEntry
 from app.models.session_authority import SessionAuthority
 from app.models.webhook_ingress_identity import WebhookIngressIdentity
+
+_BAYESIAN_EXPORTS = {
+    "BayesianModelFit",
+    "BayesianArtifact",
+    "B24DirtyEvent",
+    "B24ActiveExecutionLease",
+    "B24FitDispatchOutbox",
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _BAYESIAN_EXPORTS:
+        from app.bayesian import models as bayesian_models
+
+        return getattr(bayesian_models, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "Base",
@@ -105,4 +120,7 @@ __all__ = [
     "WebhookIngressIdentity",
     "BayesianModelFit",
     "BayesianArtifact",
+    "B24DirtyEvent",
+    "B24ActiveExecutionLease",
+    "B24FitDispatchOutbox",
 ]

@@ -45,6 +45,9 @@ jobs:
       - name: Validate B2.4-P2 source snapshot authority
         run: make validate-b24-p2-source-snapshot
 
+      - name: Validate B2.4-P3 fit planning and dispatch outbox
+        run: make validate-b24-p3-fit-planning
+
   b2-4-p1-db-proof:
     name: B2.4-P1 DB Proof
     runs-on: ubuntu-latest

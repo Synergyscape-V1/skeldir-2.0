@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from app.bayesian.dirty_marker import append_dirty_event
 from app.db.session import get_b23_session
 from app.revenue_verification.timing_constants import PROVISIONAL_MATCH_WINDOW
 
@@ -261,7 +262,19 @@ async def _execute_b23_batch_chunk(
                 "provisional_window_seconds": int(PROVISIONAL_MATCH_WINDOW.total_seconds()),
             },
         )
-        return int(result.scalar_one() or 0)
+        processed_count = int(result.scalar_one() or 0)
+        if processed_count > 0:
+            await append_dirty_event(
+                session,
+                tenant_id=tenant_id,
+                source_window_start=window_start,
+                source_window_end=window_end,
+                dirty_reason="b23_match_verdicts_changed",
+                source_family="b23_match_verdicts",
+                source_event_id=f"{window_start.isoformat()}:{window_end.isoformat()}",
+                observed_at=datetime.now(timezone.utc),
+            )
+        return processed_count
 
 
 async def execute_b23_batch_match_engine(

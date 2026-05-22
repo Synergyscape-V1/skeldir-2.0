@@ -225,6 +225,30 @@ def run_mcmc_inference(
 
 @celery_app.task(
     bind=True,
+    name="app.tasks.bayesian.execute_fit_intent",
+    routing_key="bayesian.task",
+    soft_time_limit=30,
+    time_limit=60,
+    acks_late=True,
+    max_retries=0,
+)
+def execute_fit_intent(self, *, fit_id: str) -> dict:
+    """P3 worker stub: fit_id-only, duplicate-delivery-safe, no compute."""
+
+    fit_uuid = _as_uuid(fit_id)
+    payload = {
+        "status": "accepted",
+        "task_id": str(self.request.id),
+        "fit_id": str(fit_uuid),
+        "p3_scope": "planning_claim_dispatch_only",
+        "compute_started": False,
+    }
+    _append_probe_event({"event": "bayesian_fit_intent_accepted", **payload})
+    return payload
+
+
+@celery_app.task(
+    bind=True,
     name="app.tasks.bayesian.run_resource_contention",
     routing_key="bayesian.task",
     soft_time_limit=120,

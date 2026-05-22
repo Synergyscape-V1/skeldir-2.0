@@ -766,6 +766,101 @@ tables:
       using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
       with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
 
+  b24_dirty_events:
+    purpose: "B2.4-P3 append-only dirty source-change events emitted by deterministic hot paths"
+    rls_enabled: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key_component: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, primary_key_component: true, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      model_type: {type: VARCHAR(64), nullable: false}
+      model_version: {type: VARCHAR(64), nullable: false}
+      source_window_start: {type: TIMESTAMPTZ, nullable: false}
+      source_window_end: {type: TIMESTAMPTZ, nullable: false}
+      dirty_reason: {type: VARCHAR(64), nullable: false}
+      source_family: {type: VARCHAR(64), nullable: false}
+      event_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
+      source_event_id: {type: VARCHAR(128), nullable: true}
+      status: {type: VARCHAR(32), nullable: false, default: pending, values: [pending, leased, coalesced, claimed, suppressed, fallback_only, superseded, dispatched, pruned]}
+      planner_owner: {type: VARCHAR(128), nullable: true}
+      observed_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: b24_dirty_events_pkey, type: PRIMARY KEY, columns: [tenant_id, id]}
+      - {name: ck_b24_dirty_events_event_hash_sha256, type: CHECK, definition: "event_hash is null or matches ^[a-f0-9]{64}$"}
+      - {name: ck_b24_dirty_events_source_window_order, type: CHECK, definition: "source_window_end > source_window_start"}
+    indexes:
+      - {name: idx_b24_dirty_events_tenant_status_observed, columns: [tenant_id, status, observed_at, id]}
+      - {name: idx_b24_dirty_events_tenant_model_window_pending, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, id], where: "status IN ('pending', 'leased')"}
+      - {name: idx_b24_dirty_events_tenant_event_hash, columns: [tenant_id, event_hash], where: "event_hash IS NOT NULL"}
+    rls_policy:
+      name: tenant_isolation_policy_b24_dirty_events
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  b24_active_execution_leases:
+    purpose: "B2.4-P3 active execution lock keyed by tenant/model/version/window, independent of source_snapshot_hash"
+    rls_enabled: true
+    columns:
+      tenant_id: {type: UUID, nullable: false, primary_key_component: true, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      model_type: {type: VARCHAR(64), nullable: false, primary_key_component: true}
+      model_version: {type: VARCHAR(64), nullable: false, primary_key_component: true}
+      source_window_start: {type: TIMESTAMPTZ, nullable: false, primary_key_component: true}
+      source_window_end: {type: TIMESTAMPTZ, nullable: false, primary_key_component: true}
+      fit_id: {type: UUID, nullable: true, foreign_key: "bayesian_model_fits(tenant_id, id) via (tenant_id, fit_id) ON DELETE RESTRICT"}
+      active_source_snapshot_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
+      latest_desired_source_snapshot_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
+      status: {type: VARCHAR(32), nullable: false, default: claiming, values: [claiming, dispatch_pending, dispatched, running, cancel_requested, succeeded, failed, fallback_only, cancelled, stale_recovered]}
+      needs_refit_after_current: {type: BOOLEAN, nullable: false, default: false}
+      leased_until: {type: TIMESTAMPTZ, nullable: false}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: b24_active_execution_leases_pkey, type: PRIMARY KEY, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end]}
+      - {name: fk_b24_active_execution_fit, type: FOREIGN KEY, columns: [tenant_id, fit_id], references: "bayesian_model_fits(tenant_id, id)", on_delete: RESTRICT}
+      - {name: ck_b24_active_execution_active_hash_sha256, type: CHECK, definition: "active_source_snapshot_hash is null or matches ^[a-f0-9]{64}$"}
+      - {name: ck_b24_active_execution_desired_hash_sha256, type: CHECK, definition: "latest_desired_source_snapshot_hash is null or matches ^[a-f0-9]{64}$"}
+    indexes:
+      - {name: idx_b24_active_execution_tenant_status_lease, columns: [tenant_id, status, leased_until]}
+      - {name: idx_b24_active_execution_tenant_fit, columns: [tenant_id, fit_id], where: "fit_id IS NOT NULL"}
+      - {name: idx_b24_active_execution_superseded, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end], where: "needs_refit_after_current = true"}
+    rls_policy:
+      name: tenant_isolation_policy_b24_active_execution_leases
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  b24_fit_dispatch_outbox:
+    purpose: "B2.4-P3 transactional queue dispatch outbox committed atomically with fit claim"
+    rls_enabled: true
+    columns:
+      id: {type: UUID, nullable: false, primary_key_component: true, default: "gen_random_uuid()"}
+      tenant_id: {type: UUID, nullable: false, primary_key_component: true, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      fit_id: {type: UUID, nullable: false, foreign_key: "bayesian_model_fits(tenant_id, id) via (tenant_id, fit_id) ON DELETE RESTRICT"}
+      dispatch_key: {type: VARCHAR(128), nullable: false}
+      status: {type: VARCHAR(32), nullable: false, default: pending, values: [pending, dispatching, dispatched, failed_retryable, dead_lettered, stale_recovered]}
+      attempt_count: {type: INTEGER, nullable: false, default: 0}
+      max_attempts: {type: INTEGER, nullable: false, default: 5}
+      next_attempt_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      last_error: {type: TEXT, nullable: true}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: b24_fit_dispatch_outbox_pkey, type: PRIMARY KEY, columns: [tenant_id, id]}
+      - {name: fk_b24_fit_dispatch_outbox_fit, type: FOREIGN KEY, columns: [tenant_id, fit_id], references: "bayesian_model_fits(tenant_id, id)", on_delete: RESTRICT}
+      - {name: uq_b24_fit_dispatch_outbox_dispatch_key, type: UNIQUE, columns: [tenant_id, dispatch_key]}
+      - {name: uq_b24_fit_dispatch_outbox_fit, type: UNIQUE, columns: [tenant_id, fit_id]}
+    indexes:
+      - {name: idx_b24_fit_dispatch_outbox_due, columns: [tenant_id, status, next_attempt_at, id], where: "status IN ('pending', 'failed_retryable', 'stale_recovered')"}
+      - {name: idx_b24_fit_dispatch_outbox_dispatching, columns: [tenant_id, dispatching_started_at], where: "status = 'dispatching'"}
+      - {name: idx_b24_p3_attribution_events_source_stream_fallback, table: attribution_events, columns: [tenant_id, occurred_at, id], rationale: "Non-partial fallback for parameterized P2 source snapshot stream predicates"}
+      - {name: idx_b24_p3_attribution_allocations_source_stream_fallback, table: attribution_allocations, columns: [tenant_id, created_at, id], rationale: "Non-partial fallback for parameterized P2 source snapshot stream predicates"}
+      - {name: idx_b24_p3_match_verdicts_source_stream_fallback, table: b23_match_verdicts, columns: [tenant_id, last_transition_at, id], rationale: "Non-partial fallback for parameterized P2 source snapshot stream predicates"}
+      - {name: idx_b24_p3_revenue_events_source_stream_fallback, table: b23_revenue_events, columns: [tenant_id, event_occurred_at, id], rationale: "Non-partial fallback for parameterized P2 source snapshot stream predicates"}
+    rls_policy:
+      name: tenant_isolation_policy_b24_fit_dispatch_outbox
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
   bayesian_artifacts:
     purpose: "B2.4-P1 tenant-scoped Bayesian artifact authority records; lifecycle jobs out of scope"
     rls_enabled: true

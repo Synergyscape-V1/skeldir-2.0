@@ -1129,6 +1129,97 @@ CREATE TABLE public.b23_webhook_ingestion_logs (
 
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs FORCE ROW LEVEL SECURITY;
 
+CREATE TABLE public.b24_active_execution_leases (
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    fit_id uuid,
+    active_source_snapshot_hash character varying(64),
+    latest_desired_source_snapshot_hash character varying(64),
+    status character varying(32) DEFAULT 'claiming'::character varying NOT NULL,
+    needs_refit_after_current boolean DEFAULT false NOT NULL,
+    lease_owner character varying(128),
+    lease_acquired_at timestamp with time zone DEFAULT now() NOT NULL,
+    leased_until timestamp with time zone NOT NULL,
+    heartbeat_at timestamp with time zone,
+    stale_recovered_at timestamp with time zone,
+    terminal_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b24_active_execution_active_fit_required CHECK ((((status)::text = 'claiming'::text) OR (fit_id IS NOT NULL))),
+    CONSTRAINT ck_b24_active_execution_active_hash_sha256 CHECK (((active_source_snapshot_hash IS NULL) OR ((active_source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_b24_active_execution_desired_hash_sha256 CHECK (((latest_desired_source_snapshot_hash IS NULL) OR ((latest_desired_source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_b24_active_execution_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_b24_active_execution_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_b24_active_execution_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_b24_active_execution_status CHECK (((status)::text = ANY ((ARRAY['claiming'::character varying, 'dispatch_pending'::character varying, 'dispatched'::character varying, 'running'::character varying, 'cancel_requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying, 'stale_recovered'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.b24_active_execution_leases FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b24_dirty_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    model_type character varying(64) NOT NULL,
+    model_version character varying(64) NOT NULL,
+    source_window_start timestamp with time zone NOT NULL,
+    source_window_end timestamp with time zone NOT NULL,
+    dirty_reason character varying(64) NOT NULL,
+    source_family character varying(64) NOT NULL,
+    event_hash character varying(64),
+    source_event_id character varying(128),
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    planner_owner character varying(128),
+    leased_at timestamp with time zone,
+    lease_expires_at timestamp with time zone,
+    coalesced_at timestamp with time zone,
+    claimed_at timestamp with time zone,
+    suppressed_at timestamp with time zone,
+    fallback_at timestamp with time zone,
+    superseded_at timestamp with time zone,
+    dispatched_at timestamp with time zone,
+    pruned_at timestamp with time zone,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b24_dirty_events_event_hash_sha256 CHECK (((event_hash IS NULL) OR ((event_hash)::text ~ '^[a-f0-9]{64}$'::text))),
+    CONSTRAINT ck_b24_dirty_events_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
+    CONSTRAINT ck_b24_dirty_events_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
+    CONSTRAINT ck_b24_dirty_events_reason_not_blank CHECK ((char_length(TRIM(BOTH FROM dirty_reason)) > 0)),
+    CONSTRAINT ck_b24_dirty_events_source_family_not_blank CHECK ((char_length(TRIM(BOTH FROM source_family)) > 0)),
+    CONSTRAINT ck_b24_dirty_events_source_window_order CHECK ((source_window_end > source_window_start)),
+    CONSTRAINT ck_b24_dirty_events_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'leased'::character varying, 'coalesced'::character varying, 'claimed'::character varying, 'suppressed'::character varying, 'fallback_only'::character varying, 'superseded'::character varying, 'dispatched'::character varying, 'pruned'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.b24_dirty_events FORCE ROW LEVEL SECURITY;
+
+CREATE TABLE public.b24_fit_dispatch_outbox (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    fit_id uuid NOT NULL,
+    dispatch_key character varying(128) NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    max_attempts integer DEFAULT 5 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_attempt_at timestamp with time zone,
+    dispatching_started_at timestamp with time zone,
+    dispatched_at timestamp with time zone,
+    dead_lettered_at timestamp with time zone,
+    stale_recovered_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_b24_fit_dispatch_outbox_attempt_count CHECK ((attempt_count >= 0)),
+    CONSTRAINT ck_b24_fit_dispatch_outbox_dispatch_key_not_blank CHECK ((char_length(TRIM(BOTH FROM dispatch_key)) > 0)),
+    CONSTRAINT ck_b24_fit_dispatch_outbox_max_attempts CHECK ((max_attempts > 0)),
+    CONSTRAINT ck_b24_fit_dispatch_outbox_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'dispatching'::character varying, 'dispatched'::character varying, 'failed_retryable'::character varying, 'dead_lettered'::character varying, 'stale_recovered'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.b24_fit_dispatch_outbox FORCE ROW LEVEL SECURITY;
+
 CREATE TABLE public.bayesian_artifacts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -3759,6 +3850,15 @@ ALTER TABLE ONLY public.b23_revenue_events
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.b24_active_execution_leases
+    ADD CONSTRAINT b24_active_execution_leases_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end);
+
+ALTER TABLE ONLY public.b24_dirty_events
+    ADD CONSTRAINT b24_dirty_events_pkey PRIMARY KEY (tenant_id, id);
+
+ALTER TABLE ONLY public.b24_fit_dispatch_outbox
+    ADD CONSTRAINT b24_fit_dispatch_outbox_pkey PRIMARY KEY (tenant_id, id);
+
 ALTER TABLE ONLY public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_pkey PRIMARY KEY (tenant_id, id);
 
@@ -4157,6 +4257,12 @@ ALTER TABLE ONLY public.b23_match_verdicts
 
 ALTER TABLE ONLY public.b23_revenue_events
     ADD CONSTRAINT uq_b23_revenue_events_tenant_provider_event_ref UNIQUE (tenant_id, provider, provider_native_event_reference);
+
+ALTER TABLE ONLY public.b24_fit_dispatch_outbox
+    ADD CONSTRAINT uq_b24_fit_dispatch_outbox_dispatch_key UNIQUE (tenant_id, dispatch_key);
+
+ALTER TABLE ONLY public.b24_fit_dispatch_outbox
+    ADD CONSTRAINT uq_b24_fit_dispatch_outbox_fit UNIQUE (tenant_id, fit_id);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
@@ -4696,6 +4802,22 @@ CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
 
+CREATE INDEX idx_b24_active_execution_superseded ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end) WHERE (needs_refit_after_current = true);
+
+CREATE INDEX idx_b24_active_execution_tenant_fit ON public.b24_active_execution_leases USING btree (tenant_id, fit_id) WHERE (fit_id IS NOT NULL);
+
+CREATE INDEX idx_b24_active_execution_tenant_status_lease ON public.b24_active_execution_leases USING btree (tenant_id, status, leased_until);
+
+CREATE INDEX idx_b24_dirty_events_tenant_event_hash ON public.b24_dirty_events USING btree (tenant_id, event_hash) WHERE (event_hash IS NOT NULL);
+
+CREATE INDEX idx_b24_dirty_events_tenant_model_window_pending ON public.b24_dirty_events USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'leased'::character varying])::text[]));
+
+CREATE INDEX idx_b24_dirty_events_tenant_status_observed ON public.b24_dirty_events USING btree (tenant_id, status, observed_at, id);
+
+CREATE INDEX idx_b24_fit_dispatch_outbox_dispatching ON public.b24_fit_dispatch_outbox USING btree (tenant_id, dispatching_started_at) WHERE ((status)::text = 'dispatching'::text);
+
+CREATE INDEX idx_b24_fit_dispatch_outbox_due ON public.b24_fit_dispatch_outbox USING btree (tenant_id, status, next_attempt_at, id) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'failed_retryable'::character varying, 'stale_recovered'::character varying])::text[]));
+
 CREATE INDEX idx_b24_p2_attribution_allocations_source_stream ON public.attribution_allocations USING btree (tenant_id, created_at, id) WHERE (verified = true);
 
 CREATE INDEX idx_b24_p2_attribution_events_source_stream ON public.attribution_events USING btree (tenant_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text));
@@ -4703,6 +4825,14 @@ CREATE INDEX idx_b24_p2_attribution_events_source_stream ON public.attribution_e
 CREATE INDEX idx_b24_p2_match_verdicts_source_stream ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at, id) WHERE ((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[]));
 
 CREATE INDEX idx_b24_p2_revenue_events_source_stream ON public.b23_revenue_events USING btree (tenant_id, event_occurred_at, id) WHERE ((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[]));
+
+CREATE INDEX idx_b24_p3_attribution_allocations_source_stream_fallback ON public.attribution_allocations USING btree (tenant_id, created_at, id);
+
+CREATE INDEX idx_b24_p3_attribution_events_source_stream_fallback ON public.attribution_events USING btree (tenant_id, occurred_at, id);
+
+CREATE INDEX idx_b24_p3_match_verdicts_source_stream_fallback ON public.b23_match_verdicts USING btree (tenant_id, last_transition_at, id);
+
+CREATE INDEX idx_b24_p3_revenue_events_source_stream_fallback ON public.b23_revenue_events USING btree (tenant_id, event_occurred_at, id);
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 
@@ -5504,6 +5634,15 @@ ALTER TABLE ONLY public.b23_revenue_events
 ALTER TABLE ONLY public.b23_webhook_ingestion_logs
     ADD CONSTRAINT b23_webhook_ingestion_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
+ALTER TABLE ONLY public.b24_active_execution_leases
+    ADD CONSTRAINT b24_active_execution_leases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b24_dirty_events
+    ADD CONSTRAINT b24_dirty_events_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.b24_fit_dispatch_outbox
+    ADD CONSTRAINT b24_fit_dispatch_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT bayesian_artifacts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -5557,6 +5696,12 @@ ALTER TABLE ONLY public.attribution_events
 
 ALTER TABLE ONLY public.attribution_events
     ADD CONSTRAINT fk_attribution_events_session_authority FOREIGN KEY (tenant_id, session_id) REFERENCES public.session_authority(tenant_id, session_id) DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.b24_active_execution_leases
+    ADD CONSTRAINT fk_b24_active_execution_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.b24_fit_dispatch_outbox
+    ADD CONSTRAINT fk_b24_fit_dispatch_outbox_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE public.bayesian_artifacts
     ADD CONSTRAINT fk_bayesian_artifacts_tenant_fit FOREIGN KEY (tenant_id, fit_id) REFERENCES public.bayesian_model_fits(tenant_id, id) ON DELETE RESTRICT;
@@ -5703,6 +5848,12 @@ ALTER TABLE public.b23_match_verdicts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.b23_revenue_events ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b23_webhook_ingestion_logs ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b24_active_execution_leases ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b24_dirty_events ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.bayesian_artifacts ENABLE ROW LEVEL SECURITY;
 
@@ -5923,6 +6074,12 @@ CREATE POLICY tenant_isolation_policy_b23_match_verdicts ON public.b23_match_ver
 CREATE POLICY tenant_isolation_policy_b23_revenue_events ON public.b23_revenue_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_b23_webhook_ingestion_logs ON public.b23_webhook_ingestion_logs USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_b24_active_execution_leases ON public.b24_active_execution_leases USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_b24_dirty_events ON public.b24_dirty_events USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
+
+CREATE POLICY tenant_isolation_policy_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_bayesian_artifacts ON public.bayesian_artifacts USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
