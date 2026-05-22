@@ -115,7 +115,7 @@ Harness: `npm run discoverability:d3` section `[6]`. **URLs:** `/`, `/resources`
 
 ## 10. Git / CI Proof
 
-- **Push:** `origin/feat/discoverability-remediation` at `5b220f4e` (includes docs commit `docs(forensics): D3 report CI run URL and main-merge blocker` after `a410242a` feature commit).
+- **Push:** `origin/feat/discoverability-remediation` at `4cae3817` (D3 feature `a410242a` plus forensics doc commits).
 - **PR to `main`:** **blocked** — `gh pr create --base main --head feat/discoverability-remediation` → *“no history in common with main”* (same blocker class as D2-C2 forensics).
 - **Workflow:** `.github/workflows/marketing-discoverability.yml` runs on `push` when `marketing/**` or the workflow file changes.
 - **Green CI (feat branch):** run `26310582078` — https://github.com/Synergyscape-V1/skeldir-2.0/actions/runs/26310582078 (D2 + D3 + D3 negative controls all passed on `feat/discoverability-remediation`).
