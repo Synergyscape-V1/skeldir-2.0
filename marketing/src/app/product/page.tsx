@@ -8,6 +8,7 @@ import { IntegrationsShowcase } from "@/components/layout/IntegrationsShowcase";
 import { DashboardStage } from "@/components/layout/DashboardStage";
 import { ProductDemoAiLogos } from "@/components/layout/ProductDemoAiLogos";
 import { PRODUCT_HERO_ANALYZE_ASSET } from "@/components/layout/dashboardStagePhysics";
+import { PRODUCT_PAGE_HEADLINE, PRODUCT_PAGE_LEAD_DESCRIPTION } from "@/lib/schema/pageSchemas";
 
 export default function ProductPage() {
   const router = useRouter();
@@ -410,7 +411,7 @@ export default function ProductPage() {
           <div className="product-hero__text-column" style={{ display: "flex", flexDirection: "column" }}>
             {/* Headline */}
             <h1
-              aria-label="The Revenue Verification Infrastructure Your Ad Stack Has Always Been Missing"
+              aria-label={PRODUCT_PAGE_HEADLINE}
               style={{
                 fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                 fontSize: "52px",
@@ -428,7 +429,7 @@ export default function ProductPage() {
                 Your Ad Stack Has Always Been Missing
               </span>
               <span className="product-hero__headline--mobile" aria-hidden="true">
-                The Revenue Verification Infrastructure Your Ad Stack Has Always Been Missing
+                {PRODUCT_PAGE_HEADLINE}
               </span>
             </h1>
 
@@ -443,7 +444,7 @@ export default function ProductPage() {
                 margin: "0 0 24px 0",
               }}
             >
-              Stop guessing where your budget works. Skeldir connects all ad platforms, reconciles claimed revenue vs. verified revenue, and shows exactly which channels drive real growth.
+              {PRODUCT_PAGE_LEAD_DESCRIPTION}
             </p>
 
             {/* Bullet List */}

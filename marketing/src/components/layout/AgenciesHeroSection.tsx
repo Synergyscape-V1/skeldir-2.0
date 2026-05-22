@@ -5,6 +5,7 @@ import {
   AGENCIES_HERO_HEADLINE_ACCENT,
   AGENCIES_HERO_HEADLINE_ARIA_LABEL,
   AGENCIES_HERO_HEADLINE_LEAD,
+  AGENCIES_HERO_SUBHEAD,
 } from "@/components/layout/agenciesHeroCopy";
 import {
   DISPLAY_HEADLINE_FONT_SIZE,
@@ -122,7 +123,7 @@ export function AgenciesHeroSection() {
               maxWidth: '600px',
             }}
           >
-            Skeldir delivers Bayesian confidence ranges for multi-client portfolios—exposing platform over-reporting discrepancies, eliminating manual reconciliation cycles, with deployment measured in days instead of months.
+            {AGENCIES_HERO_SUBHEAD}
           </p>
 
           {/* Feature Badges */}

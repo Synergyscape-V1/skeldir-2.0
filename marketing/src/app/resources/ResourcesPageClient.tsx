@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Footer } from "@/components/layout/Footer";
 import { CategoryFilter } from "@/components/resources/CategoryFilter";
 import type { CategoryFilter as CategoryFilterType } from "@/data/articlesData";
+import { RESOURCES_HUB_DESCRIPTION, RESOURCES_HUB_H1 } from "@/lib/schema/pageSchemas";
 
 type ResourcesPageClientProps = {
     /** Pre-rendered server content per category (RSC composition — do not import article grid/hero here). */
@@ -29,7 +30,7 @@ export function ResourcesPageClient({ sections }: ResourcesPageClientProps) {
                                 letterSpacing: "-0.03em",
                             }}
                         >
-                            What&apos;s new at Skeldir?
+                            {RESOURCES_HUB_H1}
                         </h1>
                         <p
                             className="max-w-2xl mx-auto"
@@ -39,8 +40,7 @@ export function ResourcesPageClient({ sections }: ResourcesPageClientProps) {
                                 color: "#4B5563",
                             }}
                         >
-                            Learn how to navigate attribution discrepancies, understand ROAS ranges, and defend budget
-                            shifts with evidence-based frameworks.
+                            {RESOURCES_HUB_DESCRIPTION}
                         </p>
                     </div>
                 </header>

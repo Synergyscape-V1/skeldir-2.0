@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
+import { JsonLd } from "@/components/schema/JsonLd";
 import { AgenciesHeroSection } from "@/components/layout/AgenciesHeroSection";
 import { AgenciesPostHeroSection } from "@/components/layout/AgenciesPostHeroSection";
 import { AgenciesScalabilitySection } from "@/components/layout/AgenciesScalabilitySection";
 import { AgenciesSection4 } from "@/components/layout/AgenciesSection4";
 import { Footer } from "@/components/layout/Footer";
 import { absoluteUrl } from "@/lib/siteCrawl";
+import { webPageJsonLd } from "@/lib/schema/entity";
+import { AGENCIES_HERO_SUBHEAD, AGENCIES_PAGE_H1_TEXT } from "@/components/layout/agenciesHeroCopy";
 
 export const metadata: Metadata = {
-  title: "Skeldir for Agencies — Enterprise Attribution Intelligence",
-  description:
-    "Skeldir delivers Bayesian confidence ranges for multi-client portfolios. White-label dashboards, REST API access, and deployment in days—not months.",
+  title: "Skeldir for Agencies — Revenue verification for client portfolios",
+  description: AGENCIES_HERO_SUBHEAD,
   alternates: {
     canonical: absoluteUrl("/agencies"),
   },
@@ -18,6 +20,12 @@ export const metadata: Metadata = {
 export default function AgenciesPage() {
   return (
     <main className="min-h-screen flex flex-col font-sans">
+      <JsonLd
+        data={webPageJsonLd("/agencies", {
+          name: AGENCIES_PAGE_H1_TEXT,
+          description: AGENCIES_HERO_SUBHEAD,
+        })}
+      />
       {/* Hero Section */}
       <AgenciesHeroSection />
 

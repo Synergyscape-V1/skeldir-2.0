@@ -39,3 +39,9 @@ jobs:
 
       - name: D3 negative controls
         run: npm run discoverability:d3:negative-controls
+
+      - name: D4 structured data & entity semantics
+        run: npm run discoverability:d4
+
+      - name: D4 negative controls
+        run: npm run discoverability:d4:negative-controls

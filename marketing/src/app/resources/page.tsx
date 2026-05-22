@@ -8,6 +8,8 @@ import {
 import { ArticleGrid } from "@/components/resources/ArticleGrid";
 import { ResourcesHero } from "@/components/resources/ResourcesHero";
 import { ResourcesPageClient } from "./ResourcesPageClient";
+import { JsonLd } from "@/components/schema/JsonLd";
+import { collectionPageResourcesJsonLd, resourcesHubBreadcrumbJsonLd } from "@/lib/schema/pageSchemas";
 
 function buildCategorySections(): Record<CategoryFilter, ReactNode> {
     const featured = getFeaturedArticle();
@@ -47,6 +49,7 @@ export default function ResourcesPage() {
 
     return (
         <>
+            <JsonLd data={[collectionPageResourcesJsonLd(), resourcesHubBreadcrumbJsonLd()]} />
             <nav aria-label="All Skeldir resource articles" className="sr-only">
                 <ul>
                     {articles.map((article) => (

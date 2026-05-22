@@ -64,7 +64,7 @@ export function FinalCTA() {
             MozOsxFontSmoothing: "grayscale",
           }}
         >
-          Decision intelligence for smarter ad spend
+          Deterministic revenue verification for AI-native stacks
         </h1>
 
         {/* ================================================================ */}

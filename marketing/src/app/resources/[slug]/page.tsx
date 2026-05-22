@@ -9,51 +9,9 @@ import { SocialShare } from "@/components/article/SocialShare";
 import { BackToTop } from "@/components/article/BackToTop";
 import { RelatedArticles } from "@/components/article/RelatedArticles";
 import { getArticleBySlug, getRelatedArticles } from "@/data/articlesData";
-import { canonicalUrl, SITE_ORIGIN } from "@/lib/crawlUrls";
-
-function generateArticleJsonLd(
-    article: {
-        title: string;
-        excerpt: string;
-        publishDate: string;
-        heroImagePath: string;
-        author?: string;
-    },
-    slug: string
-) {
-    return {
-        "@context": "https://schema.org",
-        "@type": "Article",
-        headline: article.title,
-        description: article.excerpt,
-        image: `${SITE_ORIGIN}${article.heroImagePath}`,
-        datePublished: article.publishDate,
-        dateModified: article.publishDate,
-        author: {
-            "@type": "Organization",
-            name: article.author || "Amulya Puri",
-            url: SITE_ORIGIN,
-        },
-        publisher: {
-            "@type": "Organization",
-            name: "Skeldir",
-            logo: {
-                "@type": "ImageObject",
-                url: `${SITE_ORIGIN}/images/skeldir-logo-black.png`,
-            },
-        },
-        mainEntityOfPage: {
-            "@type": "WebPage",
-            "@id": canonicalUrl(`/resources/${slug}`),
-        },
-        url: canonicalUrl(`/resources/${slug}`),
-    };
-}
-
-/** Next.js JSON-LD guidance: escape `<` in serialized JSON for script safety. */
-function serializeArticleJsonLd(obj: object) {
-    return JSON.stringify(obj).replace(/</g, "\\u003c");
-}
+import { canonicalUrl } from "@/lib/crawlUrls";
+import { JsonLd } from "@/components/schema/JsonLd";
+import { articleBreadcrumbJsonLd, articleJsonLd } from "@/lib/schema/pageSchemas";
 
 const manrope = Manrope({
     subsets: ["latin"],
@@ -92,17 +50,13 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
     const relatedArticles = getRelatedArticles(slug, 2);
     const tocItems = getTOCItemsBySlug(slug);
-    const jsonLd = generateArticleJsonLd(article, slug);
 
     return (
         <div
             className={`min-h-screen flex flex-col bg-white ${manrope.variable} ${dmSans.variable} ${firaCode.variable}`}
             style={{ fontFamily: dmSans.style.fontFamily }}
         >
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{ __html: serializeArticleJsonLd(jsonLd) }}
-            />
+            <JsonLd data={[articleJsonLd(article, slug), articleBreadcrumbJsonLd(slug, article.title)]} />
 
             <ReadingProgressBar />
 

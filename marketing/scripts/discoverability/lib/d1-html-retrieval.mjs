@@ -208,8 +208,22 @@ export function validateArticleJsonLdAgainstMetadata(html, meta) {
   if (articleLd.headline !== meta.title) {
     errors.push(`JSON-LD headline mismatch: expected "${meta.title}", got "${articleLd.headline}"`);
   }
-  if (articleLd.description !== meta.excerpt) {
-    errors.push('JSON-LD description does not match articlesData excerpt');
+  const metaDMatch =
+    /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(html) ||
+    /<meta[^>]*content=["']([^"']*)["'][^>]*name=["']description["']/i.exec(html);
+  const metaDRaw = metaDMatch ? metaDMatch[1].trim() : null;
+  const metaD = metaDRaw
+    ? metaDRaw
+        .replace(/&#x27;/gi, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+    : null;
+  const descOk =
+    articleLd.description === meta.excerpt ||
+    (metaD && articleLd.description === metaD);
+  if (!descOk) {
+    errors.push('JSON-LD description must match articlesData excerpt or <meta name="description">');
   }
   if (articleLd.datePublished !== meta.publishDate || articleLd.dateModified !== meta.publishDate) {
     errors.push('JSON-LD dates do not match articlesData publishDate');

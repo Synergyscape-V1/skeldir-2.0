@@ -20,7 +20,9 @@
     "discoverability:d2": "node scripts/discoverability-d2-harness.mjs",
     "discoverability:d2:negative-controls": "node scripts/discoverability-d2-negative-controls.mjs",
     "discoverability:d3": "node scripts/discoverability-d3-harness.mjs",
-    "discoverability:d3:negative-controls": "npm run build && node scripts/discoverability-d3-negative-controls.mjs"
+    "discoverability:d3:negative-controls": "npm run build && node scripts/discoverability-d3-negative-controls.mjs",
+    "discoverability:d4": "node scripts/discoverability-d4-harness.mjs",
+    "discoverability:d4:negative-controls": "npm run build && node scripts/discoverability-d4-negative-controls.mjs"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",
