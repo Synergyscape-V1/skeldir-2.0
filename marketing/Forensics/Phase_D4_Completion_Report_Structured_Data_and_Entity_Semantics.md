@@ -128,7 +128,7 @@ Representative blocks are visible in `out/index.html`, `out/product.html`, `out/
 ## 13. Git / CI / Deploy Proof
 
 - **branch:** `feat/discoverability-remediation` (pre-merge).  
-- **commit:** `9d1d7635` — `feat(discoverability): Phase D4 JSON-LD, entity semantics, and harness`.  
+- **commit:** `6268dd6b` — `feat(discoverability): Phase D4 JSON-LD, entity semantics, and harness`.  
 - **push:** `git push origin feat/discoverability-remediation` after commit.  
 - **CI:** Open or attach the latest `marketing-discoverability` workflow run for the PR once pushed (GitHub Actions on `Synergyscape-V1/skeldir-2.0`).  
 - **deploy/preview:** Not attached in this session.
