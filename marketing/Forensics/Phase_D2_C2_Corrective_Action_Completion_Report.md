@@ -15,7 +15,7 @@
 | Local build + `npm run discoverability:d2` | **PASS** |
 | `npm run discoverability:d2:negative-controls` (incl. NC-D2-C2-01–07) | **PASS** |
 | `npm run discoverability:d1` (regression after `d1-html-retrieval` → `readCrawlUrlAuthority`) | **PASS** |
-| Merge to `main` + green required checks | **Attach** `gh pr merge` result + `gh run list --branch main` after you complete the PR workflow |
+| Merge to `main` + green required checks | **BLOCKED** — GitHub: *“feat/discoverability-remediation has no history in common with main”* (`gh pr create` cannot open a normal PR). Reconcile histories with `main`, then PR + attach `gh run list` / checks URLs. |
 
 ---
 
@@ -146,8 +146,8 @@ findstr /i "canonical" out\resources\why-your-attribution-numbers-never-match.ht
 |-------|------------------------|
 | **remote** | `origin` → `https://github.com/Synergyscape-V1/skeldir-2.0.git` |
 | **branch** | `feat/discoverability-remediation` (source of D2-C2 commits) → merge **into** `main` |
-| **commit** | *(fill at merge time)* |
-| **push** | `git push origin feat/discoverability-remediation` then merge PR to `main` |
+| **commit (D2-C2)** | `494a07f` — `fix(discoverability): D2-C2 URL authority and defective-route coherence` |
+| **push** | **Done** — `origin/feat/discoverability-remediation` updated (`bed9656..494a07f`). **PR to `main`:** not created (see Verdict table). |
 | **CI** | `gh run list --workflow=<name> --branch main` or PR checks URL |
 | **Deploy / preview origin** | Netlify / production — attach `curl` transcripts |
 
