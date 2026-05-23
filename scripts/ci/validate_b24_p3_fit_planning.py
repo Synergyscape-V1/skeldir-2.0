@@ -46,7 +46,6 @@ FORBIDDEN_P3_TOKENS = {
     "pm.Model",
     "pm.sample",
     "design_matrix",
-    "resource_bounds",
     "credible_interval",
     "artifact_lifecycle",
     "APIRouter",

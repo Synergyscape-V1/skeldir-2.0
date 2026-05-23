@@ -431,12 +431,16 @@ def validate_query_path_indexes(root: Path) -> None:
 
 def validate_repository(root: Path, text: str | None = None) -> None:
     text = text if text is not None else _read(root, REPOSITORY)
+    fallback_start = text.find("async def upsert_fallback_from_snapshot")
+    fallback_end = text.find("async def upsert_resource_fallback_from_snapshot")
+    _require(fallback_start >= 0, "fallback upsert repository method missing")
+    fallback_text = text[fallback_start:fallback_end if fallback_end >= 0 else len(text)]
     _require(
-        "upsert_fallback_from_snapshot" in text,
+        "upsert_fallback_from_snapshot" in fallback_text,
         "fallback upsert repository method missing",
     )
     _require(
-        "ON CONFLICT" in text and "DO UPDATE SET" in text,
+        "ON CONFLICT" in fallback_text and "DO UPDATE SET" in fallback_text,
         "fallback debounce must use ON CONFLICT DO UPDATE",
     )
     for marker in (
@@ -448,7 +452,7 @@ def validate_repository(root: Path, text: str | None = None) -> None:
         "artifact_hash = NULL",
     ):
         _require(
-            marker in text,
+            marker in fallback_text,
             f"cold-start fallback must clear compute/artifact marker: {marker}",
         )
     _validate_no_forbidden_scope(text, REPOSITORY)

@@ -122,6 +122,10 @@ class BayesianModelFit(Base, TenantMixin):
         CheckConstraint(
             "fallback_reason IS NULL OR fallback_reason IN ("
             "'source_window_empty', 'insufficient_data', 'insufficient_privacy_cohort', "
+            "'input_too_large', 'feature_width_exceeded', 'source_window_too_large', "
+            "'memory_bound_exceeded', 'graph_complexity_exceeded', "
+            "'parameter_count_exceeded', 'hierarchy_width_exceeded', "
+            "'compilation_memory_bound_exceeded', "
             "'timeout', 'worker_failure', 'no_convergence', "
             "'resource_bound_exceeded', 'source_unavailable', 'duplicate_fit_suppressed', "
             "'artifact_unavailable', 'storage_quota_exceeded')",

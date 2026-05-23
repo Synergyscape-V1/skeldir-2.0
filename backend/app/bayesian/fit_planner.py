@@ -9,7 +9,16 @@ from uuid import UUID
 from sqlalchemy import text
 
 from app.bayesian.fit_claim import FitClaimResult, claim_fit_for_snapshot
+from app.bayesian.preflight_lease import (
+    PreflightLeaseResult,
+    acquire_preflight_lease,
+    terminalize_preflight_lease,
+)
 from app.bayesian.repository import BayesianFitRepository
+from app.bayesian.resource_profile import (
+    B24ResourceDecision,
+    evaluate_source_snapshot_resource_bounds,
+)
 from app.bayesian.source_snapshot import SourceSnapshotResult
 from app.db.session import AsyncSessionLocal, get_session
 
@@ -36,7 +45,9 @@ class DirtyPlanningCandidate:
 @dataclass(frozen=True)
 class PlannedFitIntent:
     candidate: DirtyPlanningCandidate
-    snapshot: SourceSnapshotResult
+    snapshot: SourceSnapshotResult | None
+    preflight_lease: PreflightLeaseResult | None
+    resource_decision: B24ResourceDecision | None
     claim: FitClaimResult | None
     fallback_only: bool
 
@@ -213,9 +224,35 @@ async def plan_candidate(
     candidate: DirtyPlanningCandidate,
     planner_owner: str,
 ) -> PlannedFitIntent:
-    """Compute one P2 snapshot after debounce and persist claim/outbox intent."""
+    """Acquire P4 preflight, compute P2/P4, then persist claim/outbox intent."""
 
     from app.bayesian.source_snapshot import compute_source_snapshot_hash
+
+    async with get_session(candidate.tenant_id) as lease_session:
+        preflight_lease = await acquire_preflight_lease(
+            lease_session,
+            tenant_id=candidate.tenant_id,
+            model_type=candidate.model_type,
+            model_version=candidate.model_version,
+            source_window_start=candidate.source_window_start,
+            source_window_end=candidate.source_window_end,
+            lease_owner=planner_owner,
+        )
+
+    if not preflight_lease.acquired:
+        await mark_dirty_events_for_candidate(
+            tenant_id=candidate.tenant_id,
+            candidate=candidate,
+            status="suppressed",
+        )
+        return PlannedFitIntent(
+            candidate=candidate,
+            snapshot=None,
+            preflight_lease=preflight_lease,
+            resource_decision=None,
+            claim=None,
+            fallback_only=True,
+        )
 
     async with AsyncSessionLocal() as snapshot_session:
         snapshot = await compute_source_snapshot_hash(
@@ -230,13 +267,65 @@ async def plan_candidate(
     if not snapshot.preflight.is_eligible:
         async with get_session(candidate.tenant_id) as session:
             repo = BayesianFitRepository(session)
-            await repo.upsert_fallback_from_snapshot(snapshot=snapshot)
+            fit_id = await repo.upsert_fallback_from_snapshot(snapshot=snapshot)
+            await terminalize_preflight_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                fit_id=fit_id,
+                terminal_status="fallback_only",
+            )
         await mark_dirty_events_for_candidate(
             tenant_id=candidate.tenant_id,
             candidate=candidate,
             status="fallback_only",
         )
-        return PlannedFitIntent(candidate=candidate, snapshot=snapshot, claim=None, fallback_only=True)
+        return PlannedFitIntent(
+            candidate=candidate,
+            snapshot=snapshot,
+            preflight_lease=preflight_lease,
+            resource_decision=None,
+            claim=None,
+            fallback_only=True,
+        )
+
+    resource_decision = evaluate_source_snapshot_resource_bounds(
+        snapshot=snapshot,
+        preflight_lease_id=preflight_lease.preflight_lease_id,
+    )
+    if not resource_decision.allowed:
+        async with get_session(candidate.tenant_id) as session:
+            repo = BayesianFitRepository(session)
+            fit_id = await repo.upsert_resource_fallback_from_snapshot(
+                snapshot=snapshot,
+                resource_decision=resource_decision,
+            )
+            await terminalize_preflight_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                fit_id=fit_id,
+                terminal_status="fallback_only",
+            )
+        await mark_dirty_events_for_candidate(
+            tenant_id=candidate.tenant_id,
+            candidate=candidate,
+            status="fallback_only",
+        )
+        return PlannedFitIntent(
+            candidate=candidate,
+            snapshot=snapshot,
+            preflight_lease=preflight_lease,
+            resource_decision=resource_decision,
+            claim=None,
+            fallback_only=True,
+        )
 
     async with get_session(candidate.tenant_id) as session:
         claim = await claim_fit_for_snapshot(
@@ -254,7 +343,14 @@ async def plan_candidate(
         candidate=candidate,
         status=status,
     )
-    return PlannedFitIntent(candidate=candidate, snapshot=snapshot, claim=claim, fallback_only=False)
+    return PlannedFitIntent(
+        candidate=candidate,
+        snapshot=snapshot,
+        preflight_lease=preflight_lease,
+        resource_decision=resource_decision,
+        claim=claim,
+        fallback_only=False,
+    )
 
 
 async def plan_due_dirty_events(

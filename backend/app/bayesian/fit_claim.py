@@ -138,6 +138,7 @@ async def claim_fit_for_snapshot(
                         SELECT
                             fit_id,
                             status,
+                            lease_owner,
                             active_source_snapshot_hash,
                             latest_desired_source_snapshot_hash,
                             needs_refit_after_current,
@@ -159,7 +160,12 @@ async def claim_fit_for_snapshot(
         )
         status = str(existing["status"])
         stale = existing["leased_until"] is not None and existing["leased_until"] < now
-        if status in ACTIVE_EXECUTION_STATUSES and not stale:
+        owned_preflight = (
+            status == "claiming"
+            and existing["fit_id"] is None
+            and existing["lease_owner"] == claim_owner
+        )
+        if status in ACTIVE_EXECUTION_STATUSES and not stale and not owned_preflight:
             await session.execute(
                 text(
                     """
