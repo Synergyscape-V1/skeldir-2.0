@@ -48,6 +48,9 @@ jobs:
       - name: Validate B2.4-P3 fit planning and dispatch outbox
         run: make validate-b24-p3-fit-planning
 
+      - name: Validate B2.4-P4 resource bounds
+        run: make validate-b24-p4-resource-bounds
+
   b2-4-p1-db-proof:
     name: B2.4-P1 DB Proof
     runs-on: ubuntu-latest

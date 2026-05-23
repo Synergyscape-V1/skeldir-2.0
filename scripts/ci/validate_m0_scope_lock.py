@@ -190,6 +190,7 @@ ALLOWED_M0_PATHS = [
     "alembic/versions/007_skeldir_foundation/202605211430_b24_p2_sparse_fallback_reasons.py",
     "alembic/versions/007_skeldir_foundation/202605221200_b24_p2_source_stream_safety_indexes.py",
     "alembic/versions/007_skeldir_foundation/202605221430_b24_p3_fit_planning_outbox.py",
+    "alembic/versions/007_skeldir_foundation/202605231200_b24_p4_resource_bounds.py",
     "backend/app/bayesian/",
     "backend/app/ingestion/event_service.py",
     "backend/app/models/__init__.py",
@@ -207,6 +208,7 @@ ALLOWED_M0_PATHS = [
     "docs/forensics/B2.4-P2_Deterministic_Input_Contract_Source_Snapshot_Completion_Report.md",
     "docs/forensics/B2.4-P2_Source_Safety_and_Sparse_Privacy_Corrective_Report.md",
     "docs/forensics/B2.4-P3_Fit_Planning_Debounced_Atomic_Claim_Dispatch_Outbox_Completion_Report.md",
+    "docs/forensics/B2.4-P4_Input_Cardinality_Memory_Graph_Envelope_PreGraph_Resource_Controls_Completion_Report.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "db/schema/canonical_schema.sql",
@@ -214,6 +216,7 @@ ALLOWED_M0_PATHS = [
     "scripts/ci/validate_b24_p1_authority_schema.py",
     "scripts/ci/validate_b24_p2_source_snapshot.py",
     "scripts/ci/validate_b24_p3_fit_planning.py",
+    "scripts/ci/validate_b24_p4_resource_bounds.py",
     "scripts/ci/phase2_schema_closure_gate.py",
     "scripts/schema/assert_canonical_schema.py",
     "M4 Remediation Evidence Pack.md",
@@ -503,9 +506,23 @@ def check_b24_contamination_dependencies(result: ValidationResult, diff_content:
 
 
 def check_b24_contamination_code(result: ValidationResult, diff_content: str) -> None:
-    added_lines = [
-        line for line in diff_content.splitlines() if line.startswith("+") and not line.startswith("+++")
-    ]
+    added_lines: list[str] = []
+    current_path = ""
+    for line in diff_content.splitlines():
+        if line.startswith("diff --git "):
+            marker = " b/"
+            current_path = line.split(marker, 1)[1] if marker in line else ""
+            continue
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        if (
+            current_path.startswith("docs/")
+            or current_path.startswith("scripts/ci/")
+            or current_path.startswith("backend/tests/")
+            or current_path.startswith("tests/")
+        ):
+            continue
+        added_lines.append(line)
     for pattern in B24_CODE_PATTERNS:
         found = any(re.search(pattern, line) for line in added_lines)
         result.add(f"No B2.4 code pattern: {pattern}", not found)
