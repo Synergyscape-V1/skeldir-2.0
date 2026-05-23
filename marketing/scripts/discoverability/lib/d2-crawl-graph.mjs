@@ -273,6 +273,14 @@ export function validateSitemapMatchesExpected(marketingRoot, locs) {
     if (!expectedSet.has(a)) errors.push(`sitemap contains unexpected URL: ${a}`);
   }
 
+  /**
+   * D5: `/security`, `/docs`, `/api`, `/trust-envelope`, plus the new
+   * `/methodology`, `/ai-boundary`, `/revenue-verification`,
+   * `/attribution-methodology`, `/discrepancy-taxonomy` proof routes are
+   * intentionally indexable and ARE permitted in the sitemap. The
+   * forbidden set here is only the routes that remain noindex / not
+   * intended for crawl/index.
+   */
   const forbiddenExact = new Set([
     '/Login',
     '/login',
@@ -282,10 +290,6 @@ export function validateSitemapMatchesExpected(marketingRoot, locs) {
     '/404',
     '/_not-found',
     '/privacy',
-    '/security',
-    '/docs',
-    '/api',
-    '/trust-envelope',
     '/status',
     '/about',
     '/careers',
@@ -451,9 +455,6 @@ export const META_NOINDEX_PUBLIC_PATHS = [
   '/about',
   '/careers',
   '/press',
-  '/docs',
-  '/api',
-  '/trust-envelope',
 ];
 
 /**

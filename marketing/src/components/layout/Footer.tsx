@@ -41,6 +41,17 @@ export function Footer() {
         { label: "Press", href: "/press" },
       ],
     },
+    trust: {
+      title: "TRUST & METHODOLOGY",
+      links: [
+        { label: "Methodology", href: "/methodology" },
+        { label: "TrustEnvelope", href: "/trust-envelope" },
+        { label: "Revenue Verification", href: "/revenue-verification" },
+        { label: "Attribution Methodology", href: "/attribution-methodology" },
+        { label: "Discrepancy Taxonomy", href: "/discrepancy-taxonomy" },
+        { label: "AI Boundary", href: "/ai-boundary" },
+      ],
+    },
     support: {
       title: "SUPPORT",
       links: [
@@ -76,13 +87,13 @@ export function Footer() {
         }}
       >
         {/* ================================================================ */}
-        {/* MAIN FOOTER CONTENT - Logo + 4 Column Grid                      */}
+        {/* MAIN FOOTER CONTENT - Logo + 5 Column Grid                      */}
         {/* ================================================================ */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "200px repeat(4, 1fr)",
-            gap: "40px",
+            gridTemplateColumns: "200px repeat(5, 1fr)",
+            gap: "32px",
             marginBottom: "64px",
           }}
           className="footer-grid"
@@ -383,7 +394,47 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Column 3: Support */}
+          {/* Column 3: Trust & Methodology (D5 proof links) */}
+          <div>
+            <h3
+              style={{
+                color: "#FFFFFF",
+                fontSize: "14px",
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                marginBottom: "20px",
+                textTransform: "uppercase",
+              }}
+            >
+              {footerLinks.trust.title}
+            </h3>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {footerLinks.trust.links.map((link) => (
+                <li key={link.label} style={{ marginBottom: "12px" }}>
+                  <a
+                    href={link.href}
+                    style={{
+                      color: "#FFFFFF",
+                      fontSize: "14px",
+                      fontWeight: 400,
+                      textDecoration: "none",
+                      transition: "color 200ms ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "#FFFFFF";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "#FFFFFF";
+                    }}
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Column 4: Support */}
           <div>
             <h3
               style={{
@@ -651,6 +702,17 @@ export function Footer() {
       {/* RESPONSIVE STYLES                                                 */}
       {/* ================================================================== */}
       <style>{`
+        /* DESKTOP-MID (1024px - 1280px) — 5 column grid is cramped, drop to 3 */
+        @media (max-width: 1280px) and (min-width: 1025px) {
+          .footer-grid {
+            grid-template-columns: 200px repeat(3, 1fr) !important;
+            gap: 32px !important;
+          }
+          .footer-grid > div:nth-child(n+5) {
+            grid-column: span 1 !important;
+          }
+        }
+
         /* TABLET (768px - 1024px) */
         @media (max-width: 1024px) and (min-width: 768px) {
           .footer-grid {

@@ -6,7 +6,7 @@ export function PlaceholderDocPage(props: {
 }) {
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <main className="flex-grow px-6 py-16 max-w-xl mx-auto">
+      <main className="flex-grow px-6 pt-20 pb-16 max-w-xl mx-auto">
         <h1 className="text-2xl font-semibold text-slate-900 mb-4">{props.headline}</h1>
         <div className="text-slate-600 leading-relaxed space-y-4">{props.children}</div>
       </main>

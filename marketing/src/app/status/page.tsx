@@ -4,7 +4,8 @@ import { absoluteUrl } from "@/lib/siteCrawl";
 
 export const metadata: Metadata = {
   title: "Status | Skeldir",
-  description: "Skeldir service status is not yet published at this URL.",
+  description:
+    "This URL is reserved for Skeldir service status. Content is being prepared and is not published here yet.",
   robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
   alternates: { canonical: absoluteUrl("/status") },
 };
@@ -13,10 +14,13 @@ export default function StatusPlaceholderPage() {
   return (
     <PlaceholderDocPage headline="Status">
       <p>
-        A public status page is not yet published at this URL. This placeholder exists so navigation labels do not
-        point at unrelated marketing surfaces.
+        This URL is reserved for a public service status page. Content is being prepared and is not
+        published here yet.
       </p>
-      <p>If you need uptime information today, contact sales@skeldir.com.</p>
+      <p>
+        This placeholder exists so navigation labels resolve to a real page rather than unrelated
+        marketing surfaces. For uptime questions today, contact sales@skeldir.com.
+      </p>
     </PlaceholderDocPage>
   );
 }
