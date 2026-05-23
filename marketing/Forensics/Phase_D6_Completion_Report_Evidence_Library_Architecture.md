@@ -14,11 +14,13 @@ D6 only. No D8/D9/D10 production claims.
 
 | Gate | State |
 | --- | --- |
-| local branch | Not verified in this transcript as a single authoritative remote; workspace changes live under `marketing/`. |
-| mainline integration | Unresolved in directive sense (no merge to `main` performed in this session). |
-| CI | GitHub `marketing-discoverability` workflow updated to include D5/D6; **not** re-run as green on `main` from this environment. |
+| local branch | `feat/discoverability-remediation` — D6 commit **2d30fe2c** pushed to `origin/feat/discoverability-remediation` (`Synergyscape-V1/skeldir-2.0`). |
+| mainline integration | **BLOCKED:** `gh pr create --base main` fails with *“branch has no history in common with main”* (unrelated histories / no merge-base with `origin/main`). Protected-branch merge to `main` was **not** possible from this lineage in this session. |
+| CI | Workflow file includes D5/D6; green run on **mergeable `main` PR** not proven here because no PR to `main` could be opened. |
 | deploy preview | Not attached / not proven here. |
 | production-final blocked? | **yes** |
+
+**Git author note:** The workstation had no `user.name` / `user.email` configured; the D6 commit was created with one-off `git -c user.name=… -c user.email=…` (repo `git config` was **not** modified).
 
 ## 4. Files Changed (summary)
 
@@ -77,8 +79,10 @@ Meta vs Google Ads de-boilerplated token Jaccard similarity: **~0.31** (well bel
 | `npm run discoverability:d1` | **PASS** |
 | `MARKETING_D4_SKIP_BUILD=1 npm run discoverability:d4` | **PASS** |
 | `MARKETING_D5_SKIP_BUILD=1 npm run discoverability:d5` | **PASS** (1 informational WARN on production-final separation) |
+| `npm run discoverability:d2` | **PASS** (53 checks; runs full `npm run build`) — post-commit verification |
+| `npm run discoverability:d3` | **PASS** (51 passes; `D3_LIVE_URL` live fetch skipped) — post-commit verification |
 
-**Not re-executed in the final transcript block:** `discoverability:d2`, `discoverability:d3`, and all `*:negative-controls` except D6 — recommend running the full matrix in CI after merge.
+**Negative controls:** D6 negative controls passed in the prior verification block; D2/D3 negative-control scripts were not re-run in this follow-up pass — run the full matrix in CI once a mergeable PR exists.
 
 ## 13. Artifact Excerpts
 
@@ -93,8 +97,8 @@ Use local `out/` after `npm run build`:
 
 ## 14. Remaining Unknowns
 
-- Remote Git default branch / PR merge state and whether `origin/main` shares history with this workspace (per global blocker narrative).
-- Full green CI on GitHub after push (workflow file updated locally only until pushed).
+- **Resolved for this repo:** `origin/main` does **not** share history with `feat/discoverability-remediation` (GitHub blocks PR creation). Remediating that requires an explicit repository integration strategy (e.g. subtree, re-import, or history rewrite with org approval) — outside D6 page engineering.
+- Whether `marketing-discoverability` (or other required checks) are green on a PR that targets whatever the org treats as the integration default branch once history is reconciled.
 
 ## 15. D7 Readiness
 
@@ -104,4 +108,8 @@ Use local `out/` after `npm run build`:
 
 ### B1.4-P3 / merge-to-main note
 
-The user’s closing mandate requires merge through protected `main` with green CI. **That merge and remote CI proof were not executed in this chat session** (no authenticated `git push` / `gh pr merge` to the user’s remote). To finish that mandate: push the discoverability branch, open/merge the PR, and confirm the updated `marketing-discoverability` workflow is green on `main`.
+**B1.4-P3 is not satisfied:** merging this lineage into **`main`** through the protected workflow is **not currently possible** because GitHub reports **no common ancestor** between `feat/discoverability-remediation` and `main` (`gh pr create --base main` → GraphQL error). **Green CI on `main` after merge** therefore could not be validated here.
+
+**Completed in this session:** `git push origin feat/discoverability-remediation` succeeded (commit **2d30fe2c**).
+
+**Still required for B1.4-P3 / production-final:** reconcile unrelated histories (or adopt a new canonical repo/branch), open a mergeable PR to `main`, obtain all required checks green, attach deploy preview, and run production-equivalent curl proof for D6 evidence URLs.
