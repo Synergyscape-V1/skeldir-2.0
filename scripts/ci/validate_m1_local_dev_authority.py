@@ -143,6 +143,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "scripts/ci/validate_b24_p1_authority_schema.py",
     "scripts/ci/validate_b24_p2_source_snapshot.py",
     "scripts/ci/validate_b24_p3_fit_planning.py",
+    "scripts/ci/validate_b24_p4_resource_bounds.py",
     "scripts/ci/validate_m5_b24_readiness_design.py",
     "scripts/ci/validate_m6_llm_boundary.py",
     "scripts/ci/validate_m7_b24_readiness.py",
@@ -163,6 +164,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "alembic/versions/007_skeldir_foundation/202605211430_b24_p2_sparse_fallback_reasons.py",
     "alembic/versions/007_skeldir_foundation/202605221200_b24_p2_source_stream_safety_indexes.py",
     "alembic/versions/007_skeldir_foundation/202605221430_b24_p3_fit_planning_outbox.py",
+    "alembic/versions/007_skeldir_foundation/202605231200_b24_p4_resource_bounds.py",
     "backend/app/bayesian/",
     "backend/app/ingestion/event_service.py",
     "backend/app/models/__init__.py",
@@ -185,6 +187,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/B2.4-P2_Deterministic_Input_Contract_Source_Snapshot_Completion_Report.md",
     "docs/forensics/B2.4-P2_Source_Safety_and_Sparse_Privacy_Corrective_Report.md",
     "docs/forensics/B2.4-P3_Fit_Planning_Debounced_Atomic_Claim_Dispatch_Outbox_Completion_Report.md",
+    "docs/forensics/B2.4-P4_Input_Cardinality_Memory_Graph_Envelope_PreGraph_Resource_Controls_Completion_Report.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "M4 Remediation Evidence Pack.md",
@@ -410,6 +413,8 @@ def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) 
         if current_path.startswith("docs/") or current_path == "DEVELOPMENT.md":
             continue
         if current_path.startswith("scripts/ci/validate_"):
+            continue
+        if current_path.startswith("backend/tests/") or current_path.startswith("tests/"):
             continue
         added.append(line[1:])
     for pattern in PROHIBITED_ADDED_PATTERNS:

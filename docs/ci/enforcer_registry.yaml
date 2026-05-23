@@ -61,6 +61,27 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-p4-resource-bounds
+  path: scripts/ci/validate_b24_p4_resource_bounds.py
+  status: required
+  owning_phase: B2.4-P4
+  protected_invariant: B2.4-P4 preflight lease ordering, deterministic resource/cardinality/memory/graph envelopes, bounded source-profile query strategy, pre-dispatch rejection, durable fallback taxonomy, and no-P5/P6 runtime behavior remain machine-falsifiable.
+  command: python scripts/ci/validate_b24_p4_resource_bounds.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  local_reproduction_command: make validate-b24-p4-resource-bounds
+  expected_failure_meaning: B2.4-P4 resource bounds are missing, unversioned, allocation-backed, graph-runtime contaminated, dispatcher-visible before acceptance, unable to persist reason-coded fallback, or not enforced before P2/P4 work and dispatch.
+  first_diagnostic_command: python scripts/ci/validate_b24_p4_resource_bounds.py --negative-control
+  depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m7-b24-readiness
   path: scripts/ci/validate_m7_b24_readiness.py
   status: required

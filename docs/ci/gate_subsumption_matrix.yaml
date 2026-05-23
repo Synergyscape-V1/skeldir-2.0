@@ -51,6 +51,26 @@
   local_reproduction_command: make validate-b24-p3-fit-planning
   risk_if_removed: B2.4 could regress to hot-path snapshot generation, compute stampedes, unsafe DB-then-broker dual writes, or source-data queue payloads without a merge-blocking signal.
   decision: keep_required
+- gate_id: validate-b24-p4-resource-bounds
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_b24_p4_resource_bounds.py
+  owning_phase: B2.4-P4
+  protected_invariant: B2.4-P4 preflight lease ordering, deterministic resource/cardinality/memory/graph envelopes, bounded source-profile query strategy, pre-dispatch rejection, durable fallback taxonomy, and no-P5/P6 runtime behavior remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P4 introduces resource-safety semantics that P1/P2/P3 do not validate:
+    cheap preflight leasing before source snapshot/profile work, arithmetic-only
+    input memory envelopes, formula-only symbolic graph envelopes, bounded
+    profiler query discipline, pre-dispatch rejection, and durable
+    resource/graph fallback without sampler/artifact behavior.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p4_resource_bounds.py --negative-control
+  local_reproduction_command: make validate-b24-p4-resource-bounds
+  risk_if_removed: B2.4 could regress to duplicate planner DB work, unbounded cardinality profiling, allocation-backed memory proofs, PyMC/PyTensor dry-runs, oversized dispatch, or non-durable resource fallback without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
