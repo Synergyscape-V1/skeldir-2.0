@@ -16,10 +16,13 @@ const RICH_FORBIDDEN_ON_NOINDEX = new Set([
   'FinancialProduct',
 ]);
 
+const JSON_LD_SCRIPT_BLOCK_RE = /<script[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi;
+
 /**
  * @param {string} marketingRoot
+ * @returns {{ sameAs: string[], waiverActive: boolean, waiver?: Record<string, unknown> }}
  */
-export function loadVerifiedSameAsUrls(marketingRoot) {
+export function loadEntityProfileRegistry(marketingRoot) {
   const p = path.join(marketingRoot, 'entity-profile-registry.json');
   if (!fs.existsSync(p)) {
     throw new Error(`Missing entity-profile-registry.json at ${p}`);
@@ -27,7 +30,51 @@ export function loadVerifiedSameAsUrls(marketingRoot) {
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   const arr = j.sameAs;
   if (!Array.isArray(arr)) throw new Error('entity-profile-registry.json must contain sameAs array');
-  return arr.map(String);
+  const waiver = j.entityAuthorityWaiver;
+  const waiverActive = !!(waiver && waiver.active === true);
+  return { sameAs: arr.map(String), waiverActive, waiver };
+}
+
+/**
+ * @param {string} marketingRoot
+ */
+export function loadVerifiedSameAsUrls(marketingRoot) {
+  return loadEntityProfileRegistry(marketingRoot).sameAs;
+}
+
+/**
+ * @param {string} html
+ * @returns {{ tag: string, start: number, end: number }[]}
+ */
+export function extractJsonLdScriptTagBlocks(html) {
+  return [...html.matchAll(JSON_LD_SCRIPT_BLOCK_RE)].map((m) => ({
+    tag: m[0],
+    start: m.index,
+    end: m.index + m[0].length,
+  }));
+}
+
+/**
+ * D4-C2: required JSON-LD must be wholly inside `<head>` (static export post-process relocates body scripts).
+ * @param {string} html
+ * @returns {string[]}
+ */
+export function validateJsonLdScriptsInHead(html) {
+  const errors = [];
+  const headClose = html.search(/<\/head>/i);
+  if (headClose === -1) {
+    errors.push('HTML missing </head> (cannot validate JSON-LD placement)');
+    return errors;
+  }
+  for (const { start, end } of extractJsonLdScriptTagBlocks(html)) {
+    const whollyInHead = start < headClose && end <= headClose;
+    if (!whollyInHead) {
+      errors.push(
+        `JSON-LD script must be wholly inside <head> (script bytes ${start}-${end}, </head> starts at ${headClose})`,
+      );
+    }
+  }
+  return errors;
 }
 
 /**
@@ -203,6 +250,13 @@ export function validateD4IndexablePage(marketingRoot, logicalPath, html, verifi
     return errors;
   }
 
+  errors.push(...validateJsonLdScriptsInHead(html));
+
+  const primaryH1 = extractPrimaryH1Text(html);
+  if (!primaryH1) {
+    errors.push(`${logicalPath}: indexable route must expose a primary <h1> (or h1 aria-label) in raw HTML`);
+  }
+
   if (logicalPath === '/') {
     const org = findByType(objs, 'Organization')[0];
     const site = findByType(objs, 'WebSite')[0];
@@ -233,6 +287,17 @@ export function validateD4IndexablePage(marketingRoot, logicalPath, html, verifi
     if (wp && wp.name && !html.includes(String(wp.name))) {
       errors.push('homepage: WebPage.name must appear in raw HTML (match hero aria-label / H1)');
     }
+    const metaD = extractMetaDescription(html);
+    if (wp && metaD && normalizeVisibleText(String(wp.description || '')) !== normalizeVisibleText(metaD)) {
+      errors.push('homepage: WebPage.description must match meta description');
+    }
+    if (site && metaD && site.description && normalizeVisibleText(String(site.description)) !== normalizeVisibleText(metaD)) {
+      errors.push('homepage: WebSite.description must match meta description');
+    }
+    const normUrl = (u) => String(u).replace(/\/$/, '') || String(u);
+    if (wp && ch && normUrl(String(wp.url)) !== normUrl(ch)) {
+      errors.push(`homepage: WebPage.url must match canonical (got ${String(wp.url)}, canonical ${ch})`);
+    }
   }
 
   if (logicalPath === '/product') {
@@ -241,6 +306,20 @@ export function validateD4IndexablePage(marketingRoot, logicalPath, html, verifi
     if (!app) errors.push('/product: missing SoftwareApplication');
     if (!wp) errors.push('/product: missing WebPage');
     if (app && app.url && !String(app.url).startsWith(origin)) errors.push('SoftwareApplication.url must use SITE_ORIGIN');
+    const h1 = extractPrimaryH1Text(html);
+    if (app && h1 && app.alternateName && normalizeVisibleText(String(app.alternateName)) !== h1) {
+      errors.push('/product: SoftwareApplication.alternateName must match visible H1');
+    }
+    const metaD = extractMetaDescription(html);
+    if (app && metaD && normalizeVisibleText(String(app.description || '')) !== normalizeVisibleText(metaD)) {
+      errors.push('/product: SoftwareApplication.description must match meta description');
+    }
+    const title = extractTitle(html);
+    if (wp && title && wp.name && normalizeVisibleText(String(wp.name)) !== normalizeVisibleText(title)) {
+      errors.push('/product: WebPage.name must match <title>');
+    }
+    if (wp && ch && String(wp.url) !== ch) errors.push('/product: WebPage.url must match canonical');
+    if (app && ch && String(app.url) !== ch) errors.push('/product: SoftwareApplication.url must match canonical');
   }
 
   if (logicalPath === '/pricing' || logicalPath === '/agencies') {
@@ -253,6 +332,13 @@ export function validateD4IndexablePage(marketingRoot, logicalPath, html, verifi
     if (wp && wp.name && h1 && normalizeVisibleText(String(wp.name)) !== h1) {
       errors.push(`${logicalPath}: WebPage.name must match visible H1`);
     }
+    const metaD = extractMetaDescription(html);
+    if (wp && metaD && normalizeVisibleText(String(wp.description || '')) !== normalizeVisibleText(metaD)) {
+      errors.push(`${logicalPath}: WebPage.description must match meta description`);
+    }
+    if (wp && ch && String(wp.url) !== ch) {
+      errors.push(`${logicalPath}: WebPage.url must match canonical`);
+    }
   }
 
   if (logicalPath === '/resources') {
@@ -264,9 +350,69 @@ export function validateD4IndexablePage(marketingRoot, logicalPath, html, verifi
     if (cp && cp.name && h1 && normalizeVisibleText(String(cp.name)) !== h1) {
       errors.push('/resources: CollectionPage.name must match visible H1');
     }
+    const metaD = extractMetaDescription(html);
+    if (cp && metaD && normalizeVisibleText(String(cp.description || '')) !== normalizeVisibleText(metaD)) {
+      errors.push('/resources: CollectionPage.description must match meta description');
+    }
+    if (cp && ch && String(cp.url) !== ch) {
+      errors.push('/resources: CollectionPage.url must match canonical');
+    }
   }
 
-  if (logicalPath.startsWith('/resources/') && logicalPath !== '/resources') {
+  /** D6 evidence library hub — CollectionPage (not Article). */
+  if (logicalPath === '/resources/evidence') {
+    const cp = findByType(objs, 'CollectionPage')[0];
+    const bc = findByType(objs, 'BreadcrumbList')[0];
+    if (!cp) errors.push('/resources/evidence: missing CollectionPage');
+    if (!bc) errors.push('/resources/evidence: missing BreadcrumbList');
+    const h1 = extractPrimaryH1Text(html);
+    if (cp && cp.name && h1 && normalizeVisibleText(String(cp.name)) !== h1) {
+      errors.push('/resources/evidence: CollectionPage.name must match visible H1');
+    }
+    const metaD = extractMetaDescription(html);
+    if (cp && metaD && normalizeVisibleText(String(cp.description || '')) !== normalizeVisibleText(metaD)) {
+      errors.push('/resources/evidence: CollectionPage.description must match meta description');
+    }
+    if (cp && ch && String(cp.url) !== ch) {
+      errors.push('/resources/evidence: CollectionPage.url must match canonical');
+    }
+  }
+
+  /**
+   * D6 evidence detail pages — conservative WebPage + BreadcrumbList
+   * (avoid Article overclaim on query-addressed evidence surfaces).
+   */
+  if (logicalPath.startsWith('/resources/evidence/') && logicalPath !== '/resources/evidence') {
+    const wp = findByType(objs, 'WebPage')[0];
+    const bc = findByType(objs, 'BreadcrumbList')[0];
+    if (!wp) errors.push(`${logicalPath}: missing WebPage JSON-LD`);
+    if (!bc) errors.push(`${logicalPath}: missing BreadcrumbList`);
+    const h1 = extractPrimaryH1Text(html);
+    if (wp && wp.name && h1 && normalizeVisibleText(String(wp.name)) !== h1) {
+      errors.push(`${logicalPath}: WebPage.name must match visible H1`);
+    }
+    const metaD = extractMetaDescription(html);
+    if (wp && metaD && normalizeVisibleText(String(wp.description || '')) !== normalizeVisibleText(metaD)) {
+      errors.push(`${logicalPath}: WebPage.description must match meta description`);
+    }
+    if (wp && ch && String(wp.url) !== ch) {
+      errors.push(`${logicalPath}: WebPage.url must match canonical`);
+    }
+    if (bc && Array.isArray(bc.itemListElement)) {
+      const last = bc.itemListElement[bc.itemListElement.length - 1];
+      const item = last && last.item;
+      if (item !== expectedCanonical) {
+        errors.push(`${logicalPath}: BreadcrumbList last item must equal evidence page canonical`);
+      }
+    }
+  }
+
+  if (
+    logicalPath.startsWith('/resources/') &&
+    logicalPath !== '/resources' &&
+    logicalPath !== '/resources/evidence' &&
+    !logicalPath.startsWith('/resources/evidence/')
+  ) {
     const art = findByType(objs, 'Article')[0];
     const bc = findByType(objs, 'BreadcrumbList')[0];
     if (!art) errors.push(`${logicalPath}: missing Article JSON-LD`);

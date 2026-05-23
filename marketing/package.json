@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node scripts/d4-move-jsonld-to-head.mjs",
     "start": "next start",
     "lint": "eslint",
     "storybook": "storybook dev -p 6006",
@@ -22,7 +22,11 @@
     "discoverability:d3": "node scripts/discoverability-d3-harness.mjs",
     "discoverability:d3:negative-controls": "npm run build && node scripts/discoverability-d3-negative-controls.mjs",
     "discoverability:d4": "node scripts/discoverability-d4-harness.mjs",
-    "discoverability:d4:negative-controls": "npm run build && node scripts/discoverability-d4-negative-controls.mjs"
+    "discoverability:d4:negative-controls": "node scripts/discoverability-d4-negative-controls.mjs",
+    "discoverability:d5": "node scripts/discoverability-d5-harness.mjs",
+    "discoverability:d5:negative-controls": "node scripts/discoverability-d5-negative-controls.mjs",
+    "discoverability:d6": "node scripts/discoverability-d6-harness.mjs",
+    "discoverability:d6:negative-controls": "node scripts/discoverability-d6-negative-controls.mjs"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",

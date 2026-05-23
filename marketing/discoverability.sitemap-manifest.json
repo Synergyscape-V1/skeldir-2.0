@@ -1,6 +1,35 @@
 {
-  "$comment": "D2 single source for static sitemap paths. Article URLs are /resources/{slug} from src/data/articlesData.ts (parsed by harness). Keep in sync with src/app/sitemap.ts.",
+  "$comment": "D2 + D5 single source for static sitemap paths. Article URLs are /resources/{slug} from src/data/articlesData.ts (parsed by harness). Keep in sync with src/app/sitemap.ts. D5 proof routes are indexable; D5 legal placeholder routes (/privacy, /terms, /gdpr) remain noindex and are excluded.",
   "origin": "https://skeldir.com",
-  "hubLastmod": "2026-05-22",
-  "staticPaths": ["/", "/product", "/pricing", "/agencies", "/resources"]
+  "hubLastmod": "2026-05-23",
+  "staticPaths": [
+    "/",
+    "/product",
+    "/pricing",
+    "/agencies",
+    "/resources",
+    "/trust-envelope",
+    "/methodology",
+    "/ai-boundary",
+    "/revenue-verification",
+    "/attribution-methodology",
+    "/discrepancy-taxonomy",
+    "/docs",
+    "/api",
+    "/resources/evidence",
+    "/resources/evidence/meta-vs-stripe",
+    "/resources/evidence/google-ads-vs-shopify",
+    "/resources/evidence/shopify-reconciliation",
+    "/resources/evidence/finance-roas-audit-checklist",
+    "/resources/evidence/deterministic-attribution-methods",
+    "/resources/evidence/deterministic-vs-probabilistic-confidence",
+    "/resources/evidence/benchmark-methodology",
+    "/resources/evidence/privacy-no-pii-methodology",
+    "/resources/evidence/trust-envelope-technical-spec",
+    "/resources/evidence/ai-llm-explanation-boundary",
+    "/resources/evidence/tiktok-discrepancies",
+    "/resources/evidence/pinterest-discrepancies",
+    "/resources/evidence/paypal-reconciliation",
+    "/resources/evidence/woocommerce-reconciliation"
+  ]
 }

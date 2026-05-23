@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import {
     articles,
     getFeaturedArticle,
@@ -47,6 +48,42 @@ function buildCategorySections(): Record<CategoryFilter, ReactNode> {
 export default function ResourcesPage() {
     const sections = buildCategorySections();
 
+    const evidenceStrip = (
+        <section
+            className="container mx-auto px-4 md:px-6 max-w-5xl pb-10"
+            aria-label="Evidence Library — query-shaped public evidence pages"
+        >
+            <h2 className="text-2xl font-bold text-slate-900 mb-3">Evidence Library</h2>
+            <p className="text-slate-700 leading-relaxed mb-4">
+                Skeldir&apos;s public resources now include a query-addressable{" "}
+                <strong>Evidence Library</strong> for{" "}
+                <strong>Revenue Verification</strong>, <strong>Platform Discrepancies</strong>,{" "}
+                <strong>Finance Audit</strong> checklists, <strong>TrustEnvelope</strong> retrieval notes,{" "}
+                <strong>Benchmark Methodology</strong> honesty boundaries, deterministic vs probabilistic{" "}
+                <strong>confidence</strong> semantics, <strong>privacy</strong> / durable PII scope, and the{" "}
+                <strong>AI boundary</strong>. Each page links back to D5 proof authorities (for example{" "}
+                <Link className="underline font-medium text-slate-900" href="/methodology">
+                    /methodology
+                </Link>
+                ,{" "}
+                <Link className="underline font-medium text-slate-900" href="/revenue-verification">
+                    /revenue-verification
+                </Link>
+                ,{" "}
+                <Link className="underline font-medium text-slate-900" href="/discrepancy-taxonomy">
+                    /discrepancy-taxonomy
+                </Link>
+                ).
+            </p>
+            <Link
+                href="/resources/evidence"
+                className="inline-flex font-semibold text-slate-900 underline underline-offset-4"
+            >
+                Browse the Evidence Library hub
+            </Link>
+        </section>
+    );
+
     return (
         <>
             <JsonLd data={[collectionPageResourcesJsonLd(), resourcesHubBreadcrumbJsonLd()]} />
@@ -59,7 +96,7 @@ export default function ResourcesPage() {
                     ))}
                 </ul>
             </nav>
-            <ResourcesPageClient sections={sections} />
+            <ResourcesPageClient sections={sections} prepend={evidenceStrip} />
         </>
     );
 }

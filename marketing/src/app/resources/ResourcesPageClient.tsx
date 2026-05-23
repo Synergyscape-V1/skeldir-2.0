@@ -9,14 +9,17 @@ import { RESOURCES_HUB_DESCRIPTION, RESOURCES_HUB_H1 } from "@/lib/schema/pageSc
 type ResourcesPageClientProps = {
     /** Pre-rendered server content per category (RSC composition — do not import article grid/hero here). */
     sections: Record<CategoryFilterType, ReactNode>;
+    /** Optional server-rendered strip above the hub hero (D6 evidence library entry). */
+    prepend?: ReactNode;
 };
 
-export function ResourcesPageClient({ sections }: ResourcesPageClientProps) {
+export function ResourcesPageClient({ sections, prepend }: ResourcesPageClientProps) {
     const [activeCategory, setActiveCategory] = useState<CategoryFilterType>("All");
 
     return (
         <div className="min-h-screen flex flex-col bg-white">
             <main className="flex-grow pt-20">
+                {prepend}
                 <header className="w-full pt-12 md:pt-16 lg:pt-20 pb-4 md:pb-6 text-center">
                     <div className="container mx-auto px-4 md:px-6">
                         <h1

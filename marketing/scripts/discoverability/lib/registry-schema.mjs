@@ -204,7 +204,13 @@ export function validateArticleInstanceGovernance(registry, contentSlugs, outArt
     }
   }
 
+  /** Top-level `out/resources/*.html` names that are not articlesData slugs (D6 evidence hub, etc.). */
+  const RESERVED_RESOURCE_HTML_SLUGS = new Set(['evidence']);
+
   for (const slug of outSet) {
+    if (RESERVED_RESOURCE_HTML_SLUGS.has(slug)) {
+      continue;
+    }
     if (!contentSet.has(slug)) {
       errors.push(
         `UNCLASSIFIED_BUILD_ARTIFACT: out/resources/${slug}.html exists but slug not in articlesData.ts — classify or remove`

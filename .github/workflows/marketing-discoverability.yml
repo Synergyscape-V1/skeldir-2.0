@@ -45,3 +45,15 @@ jobs:
 
       - name: D4 negative controls
         run: npm run discoverability:d4:negative-controls
+
+      - name: D5 trust proof boundary
+        run: npm run discoverability:d5
+
+      - name: D5 negative controls
+        run: npm run discoverability:d5:negative-controls
+
+      - name: D6 evidence library architecture
+        run: npm run discoverability:d6
+
+      - name: D6 negative controls
+        run: npm run discoverability:d6:negative-controls
