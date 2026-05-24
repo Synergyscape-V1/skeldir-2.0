@@ -15,6 +15,7 @@ RESOURCE_BOUNDS = BAYESIAN_PACKAGE / "resource_bounds.py"
 INPUT_PROFILE = BAYESIAN_PACKAGE / "input_profile.py"
 DESIGN_ENVELOPE = BAYESIAN_PACKAGE / "design_matrix_envelope.py"
 GRAPH_ENVELOPE = BAYESIAN_PACKAGE / "graph_complexity_envelope.py"
+MODEL_FAMILY_CONTRACT = BAYESIAN_PACKAGE / "model_family_contract.py"
 PREFLIGHT_LEASE = BAYESIAN_PACKAGE / "preflight_lease.py"
 RESOURCE_PROFILE = BAYESIAN_PACKAGE / "resource_profile.py"
 FIT_PLANNER = BAYESIAN_PACKAGE / "fit_planner.py"
@@ -26,16 +27,22 @@ MODELS = BAYESIAN_PACKAGE / "models.py"
 P4_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202605231200_b24_p4_resource_bounds.py"
 )
+P4_FEATURE_CARDINALITY_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605241200_b24_p4_feature_cardinality_indexes.py"
+)
 CANONICAL_SCHEMA = Path("db/schema/canonical_schema.sql")
+P4_TESTS = Path("backend/tests/test_b24_p4_resource_bounds.py")
 
 REQUIRED_FILES = {
     RESOURCE_BOUNDS,
     INPUT_PROFILE,
     DESIGN_ENVELOPE,
     GRAPH_ENVELOPE,
+    MODEL_FAMILY_CONTRACT,
     PREFLIGHT_LEASE,
     RESOURCE_PROFILE,
     P4_MIGRATION,
+    P4_FEATURE_CARDINALITY_MIGRATION,
 }
 
 REQUIRED_CAP_NAMES = {
@@ -189,18 +196,68 @@ def validate_resource_profile(root: Path) -> None:
     input_text = _read(root, INPUT_PROFILE)
     design_text = _read(root, DESIGN_ENVELOPE)
     graph_text = _read(root, GRAPH_ENVELOPE)
+    contract_text = _read(root, MODEL_FAMILY_CONTRACT)
     profile_text = _read(root, RESOURCE_PROFILE)
-    combined = "\n".join([input_text, design_text, graph_text, profile_text])
+    tests_text = _read(root, P4_TESTS)
+    combined = "\n".join([input_text, design_text, graph_text, contract_text, profile_text])
     for token in FORBIDDEN_MATERIALIZATION_TOKENS:
         _require(token.lower() not in combined.lower(), f"forbidden allocation/materialization: {token}")
     _require("GROUP BY" not in input_text or "LIMIT" not in input_text, "unproven GROUP BY LIMIT forbidden")
     _require("COUNT(DISTINCT" not in input_text.upper(), "unbounded exact COUNT(DISTINCT) forbidden in P4 profile")
+    _require(
+        re.search(r"provider_count\s*=\s*0\b", input_text) is None,
+        "silent zero provider_count placeholder forbidden",
+    )
+    _require(
+        re.search(r"campaign_or_feature_count\s*=\s*0\b", input_text) is None,
+        "silent zero campaign_or_feature_count placeholder forbidden",
+    )
+    for required in (
+        "B24_MODEL_FAMILY_DIMENSION_CONTRACT",
+        "PROVIDER_DIMENSION",
+        "CAMPAIGN_OR_FEATURE_DIMENSION",
+        "assert_profiled_dimensions_cover_model",
+        "assert_candidate_dimensions_allowed_for_graph_build",
+    ):
+        _require(required in contract_text, f"model-family dimension contract missing: {required}")
+    for required in (
+        "preflight.provider_count",
+        "preflight.campaign_or_feature_count",
+        "cardinality_profiled_dimensions",
+        "idx_b24_p4_attribution_events_campaign_cardinality",
+        "idx_b24_p4_match_verdicts_provider_cardinality",
+        "idx_b24_p4_revenue_events_provider_cardinality",
+    ):
+        _require(required in input_text, f"live feature cardinality profile missing: {required}")
     _require("estimated_design_matrix_cells" in design_text, "design matrix cell estimate missing")
     _require("estimated_tensor_shape" in design_text, "tensor shape estimate missing")
     _require("estimated_input_memory_bytes" in design_text, "input memory estimate missing")
+    _require(
+        "profile.provider_count + profile.campaign_or_feature_count" in design_text,
+        "active provider/campaign dimensions missing from tensor shape",
+    )
     _require("estimated_symbolic_nodes" in graph_text, "graph node estimate missing")
     _require("estimated_random_variables" in graph_text, "random variable estimate missing")
     _require("estimated_parameter_count" in graph_text, "parameter estimate missing")
+    for required in (
+        "profile.provider_count",
+        "profile.campaign_or_feature_count",
+        "live_feature_width",
+        "estimated_compilation_memory_bytes",
+    ):
+        _require(required in graph_text, f"graph formula missing active feature coupling: {required}")
+    for required_test in (
+        "test_b24_p4_provider_count_not_silently_zero",
+        "test_b24_p4_campaign_or_feature_count_not_silently_zero",
+        "test_b24_p4_live_campaign_count_above_cap_fallback_feature_width_exceeded",
+        "test_b24_p4_live_provider_count_above_cap_fallback_feature_width_exceeded",
+        "test_b24_p4_low_channel_high_campaign_count_fails_feature_width",
+        "test_b24_p4_high_sparse_feature_count_fails_graph_complexity_even_with_low_rows",
+        "test_b24_p4_p5_cannot_use_unprofiled_campaign_dimension",
+        "test_b24_p4_p5_cannot_use_unprofiled_provider_dimension",
+        "test_b24_p4_forced_profile_values_do_not_replace_live_path_proof",
+    ):
+        _require(required_test in tests_text, f"missing live cardinality regression test: {required_test}")
     for reason in P4_FALLBACK_REASONS:
         _require(reason.upper() in profile_text or reason in profile_text, f"profile missing fallback reason: {reason}")
 
@@ -226,6 +283,7 @@ def validate_fallback_persistence(root: Path) -> None:
 
 def validate_schema_surface(root: Path) -> None:
     migration = _read(root, P4_MIGRATION)
+    feature_migration = _read(root, P4_FEATURE_CARDINALITY_MIGRATION)
     canonical = _read(root, CANONICAL_SCHEMA)
     enums = _read(root, ENUMS)
     models = _read(root, MODELS)
@@ -237,6 +295,13 @@ def validate_schema_surface(root: Path) -> None:
             ("models", models),
         ):
             _require(reason in text, f"{label} missing P4 fallback reason: {reason}")
+    for index_name in (
+        "idx_b24_p4_attribution_events_campaign_cardinality",
+        "idx_b24_p4_match_verdicts_provider_cardinality",
+        "idx_b24_p4_revenue_events_provider_cardinality",
+    ):
+        _require(index_name in canonical, f"canonical schema missing P4 cardinality index: {index_name}")
+        _require(index_name in feature_migration, f"migration missing P4 cardinality index: {index_name}")
 
 
 def validate_scope(root: Path) -> None:
@@ -309,6 +374,43 @@ def run_negative_control(root: Path) -> None:
             "allocation",
         ),
         (
+            "silent_provider_zero",
+            lambda: validate_resource_profile_texts(
+                root,
+                _read(root, INPUT_PROFILE).replace(
+                    "provider_count=int(preflight.provider_count)",
+                    "provider_count=0",
+                    1,
+                ),
+            ),
+            "silent zero",
+        ),
+        (
+            "silent_campaign_zero",
+            lambda: validate_resource_profile_texts(
+                root,
+                _read(root, INPUT_PROFILE).replace(
+                    "campaign_or_feature_count=int(preflight.campaign_or_feature_count)",
+                    "campaign_or_feature_count=0",
+                    1,
+                ),
+            ),
+            "silent zero",
+        ),
+        (
+            "missing_graph_feature_coupling",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE).replace(
+                    "live_feature_width",
+                    "ignored_feature_width",
+                ),
+            ),
+            "graph formula",
+        ),
+        (
             "forbidden_import",
             lambda: validate_scope_text(root, _read(root, RESOURCE_PROFILE) + "\nimport pymc\n"),
             "scope",
@@ -326,14 +428,50 @@ def run_negative_control(root: Path) -> None:
 def validate_resource_profile_texts(root: Path, input_text: str) -> None:
     design_text = _read(root, DESIGN_ENVELOPE)
     graph_text = _read(root, GRAPH_ENVELOPE)
+    validate_resource_profile_module_texts(
+        root,
+        input_text=input_text,
+        design_text=design_text,
+        graph_text=graph_text,
+    )
+
+
+def validate_resource_profile_module_texts(
+    root: Path,
+    *,
+    input_text: str,
+    design_text: str,
+    graph_text: str,
+) -> None:
     profile_text = _read(root, RESOURCE_PROFILE)
-    combined = "\n".join([input_text, design_text, graph_text, profile_text])
+    contract_text = _read(root, MODEL_FAMILY_CONTRACT)
+    combined = "\n".join([input_text, design_text, graph_text, contract_text, profile_text])
     for token in FORBIDDEN_MATERIALIZATION_TOKENS:
         _require(token.lower() not in combined.lower(), f"forbidden allocation/materialization: {token}")
     _require(
         re.search(r"GROUP\s+BY[\s\S]{0,120}\bLIMIT\b", input_text, re.IGNORECASE) is None,
         "unproven GROUP BY LIMIT forbidden",
     )
+    _require(
+        re.search(r"provider_count\s*=\s*0\b", input_text) is None,
+        "silent zero provider_count placeholder forbidden",
+    )
+    _require(
+        re.search(r"campaign_or_feature_count\s*=\s*0\b", input_text) is None,
+        "silent zero campaign_or_feature_count placeholder forbidden",
+    )
+    for required in (
+        "preflight.provider_count",
+        "preflight.campaign_or_feature_count",
+        "cardinality_profiled_dimensions",
+    ):
+        _require(required in input_text, f"live feature cardinality profile missing: {required}")
+    _require(
+        "profile.provider_count + profile.campaign_or_feature_count" in design_text,
+        "active provider/campaign dimensions missing from tensor shape",
+    )
+    for required in ("profile.provider_count", "profile.campaign_or_feature_count", "live_feature_width"):
+        _require(required in graph_text, f"graph formula missing active feature coupling: {required}")
 
 
 def validate_scope_text(root: Path, injected_text: str) -> None:

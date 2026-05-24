@@ -67,6 +67,8 @@ class EligibilityPreflightResult:
     excluded_row_counts_by_reason: dict[str, int]
     currency_groups: tuple[CurrencyGroupPreflight, ...]
     eligible_channel_count: int
+    provider_count: int
+    campaign_or_feature_count: int
     eligible_conversion_or_revenue_event_count: int
     eligible_amount_minor_by_currency: dict[str, int]
     confirmed_match_verdict_count: int
@@ -97,7 +99,8 @@ _PREFLIGHT_SQL = (
     text(
         """
         WITH eligible_attribution_events AS (
-            SELECT id, channel, upper(coalesce(currency, 'USD')) AS currency_code,
+            SELECT id, channel, nullif(campaign_id, '') AS campaign_id,
+                   upper(coalesce(currency, 'USD')) AS currency_code,
                    revenue_cents, occurred_at
             FROM public.attribution_events
             WHERE tenant_id = :tenant_id
@@ -127,7 +130,7 @@ _PREFLIGHT_SQL = (
               AND verified = true
         ),
         eligible_match_verdicts AS (
-            SELECT id, upper(currency_code) AS currency_code,
+            SELECT id, nullif(provider, '') AS provider, upper(currency_code) AS currency_code,
                    canonical_net_verified_amount_minor, last_transition_at
             FROM public.b23_match_verdicts
             WHERE tenant_id = :tenant_id
@@ -145,7 +148,7 @@ _PREFLIGHT_SQL = (
             GROUP BY status
         ),
         eligible_revenue_events AS (
-            SELECT id, upper(currency_code) AS currency_code,
+            SELECT id, nullif(provider, '') AS provider, upper(currency_code) AS currency_code,
                    coalesce(captured_amount_minor, 0)
                    + coalesce(refund_amount_minor, 0)
                    + coalesce(chargeback_amount_minor, 0)
@@ -172,6 +175,16 @@ _PREFLIGHT_SQL = (
             FROM eligible_revenue_events
             GROUP BY currency_code
         ),
+        eligible_provider_values AS (
+            SELECT provider FROM eligible_match_verdicts WHERE provider IS NOT NULL
+            UNION
+            SELECT provider FROM eligible_revenue_events WHERE provider IS NOT NULL
+        ),
+        eligible_campaign_or_feature_values AS (
+            SELECT campaign_id AS feature_key
+            FROM eligible_attribution_events
+            WHERE campaign_id IS NOT NULL
+        ),
         all_event_times AS (
             SELECT occurred_at AS event_at FROM eligible_attribution_events
             UNION ALL
@@ -187,6 +200,9 @@ _PREFLIGHT_SQL = (
             (SELECT count(*)::bigint FROM eligible_match_verdicts) AS match_verdict_count,
             (SELECT count(*)::bigint FROM eligible_revenue_events) AS revenue_event_count,
             (SELECT count(DISTINCT channel) FROM eligible_attribution_events) AS eligible_channel_count,
+            (SELECT count(*)::bigint FROM eligible_provider_values) AS provider_count,
+            (SELECT count(DISTINCT feature_key)::bigint FROM eligible_campaign_or_feature_values)
+                AS campaign_or_feature_count,
             (SELECT count(DISTINCT id) FROM eligible_attribution_events) AS distinct_source_event_count,
             (SELECT coalesce(sum(revenue_cents), 0)::bigint FROM eligible_attribution_events) AS attribution_amount_minor,
             (SELECT coalesce(sum(canonical_net_verified_amount_minor), 0)::bigint FROM eligible_match_verdicts) AS match_amount_minor,
@@ -269,6 +285,8 @@ def classify_preflight(
         + revenue_event_count
     )
     eligible_channel_count = _as_int(row["eligible_channel_count"])
+    provider_count = _as_int(row["provider_count"])
+    campaign_or_feature_count = _as_int(row["campaign_or_feature_count"])
     distinct_source_event_count = _as_int(row["distinct_source_event_count"])
     conversion_or_revenue_count = attribution_event_count + revenue_event_count
     min_event_at = row["min_event_at"]
@@ -340,6 +358,8 @@ def classify_preflight(
         excluded_row_counts_by_reason=excluded_counts,
         currency_groups=groups,
         eligible_channel_count=eligible_channel_count,
+        provider_count=provider_count,
+        campaign_or_feature_count=campaign_or_feature_count,
         eligible_conversion_or_revenue_event_count=conversion_or_revenue_count,
         eligible_amount_minor_by_currency=amount_by_currency,
         confirmed_match_verdict_count=match_verdict_count,

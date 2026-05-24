@@ -11,9 +11,17 @@ import pytest
 from app.bayesian.design_matrix_envelope import estimate_design_matrix_envelope
 from app.bayesian.enums import FallbackReason
 from app.bayesian.graph_complexity_envelope import estimate_graph_complexity_envelope
-from app.bayesian.input_profile import B24InputProfile
+from app.bayesian.input_profile import B24InputProfile, build_input_profile_from_preflight
+from app.bayesian.model_family_contract import (
+    B24_ACTIVE_FEATURE_DIMENSIONS,
+    ModelFamilyDimensionContractError,
+    assert_candidate_dimensions_allowed_for_graph_build,
+)
 from app.bayesian.resource_bounds import B24_RESOURCE_POLICY, required_policy_caps
-from app.bayesian.resource_profile import evaluate_input_profile_resource_bounds
+from app.bayesian.resource_profile import (
+    evaluate_input_profile_resource_bounds,
+    evaluate_source_snapshot_resource_bounds,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -68,6 +76,7 @@ def _profile(**overrides: int) -> B24InputProfile:
         source_window_end=END,
         source_snapshot_hash="a" * 64,
         policy_version=B24_RESOURCE_POLICY.policy_version,
+        cardinality_profiled_dimensions=tuple(sorted(B24_ACTIVE_FEATURE_DIMENSIONS)),
         computed_at=START,
         **defaults,
     )
@@ -87,6 +96,8 @@ def _snapshot_from_profile(profile: B24InputProfile):
             "b23_revenue_events": 0,
         },
         eligible_channel_count=profile.channel_count,
+        provider_count=profile.provider_count,
+        campaign_or_feature_count=profile.campaign_or_feature_count,
         eligible_amount_minor_by_currency={f"C{i}": 1 for i in range(profile.currency_count)},
     )
     return SimpleNamespace(source_snapshot_hash=profile.source_snapshot_hash, preflight=preflight)
@@ -160,11 +171,51 @@ def test_b24_p4_profile_uses_aggregate_queries_not_raw_row_materialization() -> 
         assert forbidden not in text
 
 
+def test_b24_p4_provider_count_not_silently_zero() -> None:
+    profile = _profile(provider_count=3)
+    built = build_input_profile_from_preflight(
+        preflight_lease_id="lease",
+        source_snapshot_hash=profile.source_snapshot_hash,
+        preflight=_snapshot_from_profile(profile).preflight,
+    )
+    assert built.provider_count == 3
+    assert "provider" in built.cardinality_profiled_dimensions
+
+
+def test_b24_p4_campaign_or_feature_count_not_silently_zero() -> None:
+    profile = _profile(campaign_or_feature_count=33)
+    built = build_input_profile_from_preflight(
+        preflight_lease_id="lease",
+        source_snapshot_hash=profile.source_snapshot_hash,
+        preflight=_snapshot_from_profile(profile).preflight,
+    )
+    assert built.campaign_or_feature_count == 33
+    assert "campaign_or_feature" in built.cardinality_profiled_dimensions
+
+
 def test_b24_p4_group_by_limit_requires_explain_proof() -> None:
     validator = _load_validator()
     mutated = _read(INPUT_PROFILE) + "\nSELECT channel FROM source GROUP BY channel LIMIT 129\n"
     with pytest.raises(validator.ValidationError, match="GROUP BY LIMIT"):
         validator.validate_resource_profile_texts(REPO_ROOT, mutated)
+
+
+def test_b24_p4_validator_rejects_silent_zero_feature_dimensions() -> None:
+    validator = _load_validator()
+    provider_zero = _read(INPUT_PROFILE).replace(
+        "provider_count=int(preflight.provider_count)",
+        "provider_count=0",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="silent zero"):
+        validator.validate_resource_profile_texts(REPO_ROOT, provider_zero)
+    campaign_zero = _read(INPUT_PROFILE).replace(
+        "campaign_or_feature_count=int(preflight.campaign_or_feature_count)",
+        "campaign_or_feature_count=0",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="silent zero"):
+        validator.validate_resource_profile_texts(REPO_ROOT, campaign_zero)
 
 
 def test_b24_p4_memory_estimate_is_arithmetic_only() -> None:
@@ -180,6 +231,36 @@ def test_b24_p4_graph_complexity_estimate_is_formula_only_no_pymc_pytensor() -> 
     assert "estimated_random_variables" in text
     assert "pymc" not in text.lower()
     assert "pytensor" not in text.lower()
+
+
+def test_b24_p4_active_dimension_must_have_live_profiler() -> None:
+    profile = _profile()
+    unprofiled = B24InputProfile(
+        **{
+            **profile.__dict__,
+            "cardinality_profiled_dimensions": ("channel", "currency"),
+        }
+    )
+    with pytest.raises(ModelFamilyDimensionContractError, match="provider"):
+        estimate_design_matrix_envelope(unprofiled)
+
+
+def test_b24_p4_p5_cannot_use_unprofiled_campaign_dimension() -> None:
+    with pytest.raises(ModelFamilyDimensionContractError, match="campaign_or_feature"):
+        assert_candidate_dimensions_allowed_for_graph_build(
+            model_type="mmm",
+            requested_dimensions=("campaign_or_feature",),
+            profiled_dimensions=("channel", "currency", "provider"),
+        )
+
+
+def test_b24_p4_p5_cannot_use_unprofiled_provider_dimension() -> None:
+    with pytest.raises(ModelFamilyDimensionContractError, match="provider"):
+        assert_candidate_dimensions_allowed_for_graph_build(
+            model_type="mmm",
+            requested_dimensions=("provider",),
+            profiled_dimensions=("channel", "currency", "campaign_or_feature"),
+        )
 
 
 def test_b24_p4_large_projected_shape_returns_fallback_without_allocation() -> None:
@@ -211,6 +292,42 @@ def test_b24_p4_high_channel_cardinality_fallback_feature_width_exceeded() -> No
     assert decision.failure_reason == FallbackReason.FEATURE_WIDTH_EXCEEDED
 
 
+def test_b24_p4_live_campaign_count_above_cap_fallback_feature_width_exceeded() -> None:
+    profile = _profile(
+        channel_count=3,
+        campaign_or_feature_count=B24_RESOURCE_POLICY.max_campaigns_or_feature_keys + 1,
+    )
+    decision = evaluate_source_snapshot_resource_bounds(
+        snapshot=_snapshot_from_profile(profile),
+        preflight_lease_id="lease",
+    )
+    assert decision.input_profile.campaign_or_feature_count == (
+        B24_RESOURCE_POLICY.max_campaigns_or_feature_keys + 1
+    )
+    assert decision.failure_reason == FallbackReason.FEATURE_WIDTH_EXCEEDED
+
+
+def test_b24_p4_live_provider_count_above_cap_fallback_feature_width_exceeded() -> None:
+    profile = _profile(provider_count=B24_RESOURCE_POLICY.max_providers + 1)
+    decision = evaluate_source_snapshot_resource_bounds(
+        snapshot=_snapshot_from_profile(profile),
+        preflight_lease_id="lease",
+    )
+    assert decision.input_profile.provider_count == B24_RESOURCE_POLICY.max_providers + 1
+    assert decision.failure_reason == FallbackReason.FEATURE_WIDTH_EXCEEDED
+
+
+def test_b24_p4_low_channel_high_campaign_count_fails_feature_width() -> None:
+    decision = _decision(
+        _profile(
+            source_row_count=100,
+            channel_count=2,
+            campaign_or_feature_count=B24_RESOURCE_POLICY.max_campaigns_or_feature_keys + 1,
+        )
+    )
+    assert decision.failure_reason == FallbackReason.FEATURE_WIDTH_EXCEEDED
+
+
 def test_b24_p4_source_window_too_large_fallback() -> None:
     decision = _decision(_profile(window_days=B24_RESOURCE_POLICY.max_window_days + 1))
     assert decision.failure_reason == FallbackReason.SOURCE_WINDOW_TOO_LARGE
@@ -237,8 +354,55 @@ def test_b24_p4_parameter_count_above_cap_fallback_parameter_count_exceeded() ->
 
 
 def test_b24_p4_high_sparse_feature_count_fails_graph_complexity_even_with_low_rows() -> None:
-    decision = _decision(_profile(source_row_count=100, touchpoint_count=10, conversion_count=40, campaign_or_feature_count=2_049))
-    assert decision.failure_reason == FallbackReason.FEATURE_WIDTH_EXCEEDED
+    decision = _decision(
+        _profile(
+            source_row_count=100,
+            touchpoint_count=10,
+            conversion_count=40,
+            channel_count=2,
+            campaign_or_feature_count=B24_RESOURCE_POLICY.max_levels_per_hierarchy + 1,
+        )
+    )
+    assert decision.failure_reason == FallbackReason.HIERARCHY_WIDTH_EXCEEDED
+
+
+def test_b24_p4_campaign_count_feeds_parameter_count_estimate() -> None:
+    low = _profile(campaign_or_feature_count=4)
+    high = _profile(campaign_or_feature_count=40)
+    low_graph = estimate_graph_complexity_envelope(low, estimate_design_matrix_envelope(low))
+    high_graph = estimate_graph_complexity_envelope(high, estimate_design_matrix_envelope(high))
+    assert high_graph.estimated_parameter_count > low_graph.estimated_parameter_count
+
+
+def test_b24_p4_campaign_count_feeds_symbolic_node_estimate() -> None:
+    low = _profile(campaign_or_feature_count=4)
+    high = _profile(campaign_or_feature_count=40)
+    low_graph = estimate_graph_complexity_envelope(low, estimate_design_matrix_envelope(low))
+    high_graph = estimate_graph_complexity_envelope(high, estimate_design_matrix_envelope(high))
+    assert high_graph.estimated_symbolic_nodes > low_graph.estimated_symbolic_nodes
+
+
+def test_b24_p4_campaign_count_feeds_compilation_memory_estimate() -> None:
+    low = _profile(campaign_or_feature_count=4)
+    high = _profile(campaign_or_feature_count=40)
+    low_graph = estimate_graph_complexity_envelope(low, estimate_design_matrix_envelope(low))
+    high_graph = estimate_graph_complexity_envelope(high, estimate_design_matrix_envelope(high))
+    assert high_graph.estimated_compilation_memory_bytes > low_graph.estimated_compilation_memory_bytes
+
+
+def test_b24_p4_provider_count_feeds_graph_complexity_estimate() -> None:
+    low = _profile(provider_count=1)
+    high = _profile(provider_count=10)
+    low_graph = estimate_graph_complexity_envelope(low, estimate_design_matrix_envelope(low))
+    high_graph = estimate_graph_complexity_envelope(high, estimate_design_matrix_envelope(high))
+    assert high_graph.estimated_hierarchical_groups > low_graph.estimated_hierarchical_groups
+    assert high_graph.estimated_symbolic_nodes > low_graph.estimated_symbolic_nodes
+
+
+def test_b24_p4_forced_profile_values_do_not_replace_live_path_proof() -> None:
+    text = _read(INPUT_PROFILE)
+    assert "preflight.provider_count" in text
+    assert "preflight.campaign_or_feature_count" in text
 
 
 def test_b24_p4_resource_fallback_sampling_started_null_and_last_fit_null() -> None:

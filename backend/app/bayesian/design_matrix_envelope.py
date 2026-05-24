@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.bayesian.input_profile import B24InputProfile
+from app.bayesian.model_family_contract import assert_profiled_dimensions_cover_model
 from app.bayesian.resource_bounds import B24_MEMORY_ESTIMATE_SAFETY_FACTOR
 
 
@@ -33,6 +34,10 @@ def _product(values: tuple[int, ...]) -> int:
 def estimate_design_matrix_envelope(profile: B24InputProfile) -> DesignMatrixEnvelope:
     """Estimate matrix/tensor size using integer formulas only."""
 
+    assert_profiled_dimensions_cover_model(
+        model_type=profile.model_type,
+        profiled_dimensions=profile.cardinality_profiled_dimensions,
+    )
     rows = max(1, profile.touchpoint_count + profile.conversion_count)
     columns = max(
         1,
@@ -47,6 +52,7 @@ def estimate_design_matrix_envelope(profile: B24InputProfile) -> DesignMatrixEnv
         rows,
         max(1, profile.channel_count),
         max(1, profile.currency_count),
+        max(1, profile.provider_count + profile.campaign_or_feature_count),
     )
     tensor_elements = _product(tensor_shape)
     memory_bytes = (
