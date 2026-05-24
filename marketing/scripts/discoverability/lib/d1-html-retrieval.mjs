@@ -225,8 +225,11 @@ export function validateArticleJsonLdAgainstMetadata(html, meta) {
   if (!descOk) {
     errors.push('JSON-LD description must match articlesData excerpt or <meta name="description">');
   }
-  if (articleLd.datePublished !== meta.publishDate || articleLd.dateModified !== meta.publishDate) {
-    errors.push('JSON-LD dates do not match articlesData publishDate');
+  if (articleLd.datePublished !== meta.publishDate) {
+    errors.push('JSON-LD datePublished does not match articlesData publishDate');
+  }
+  if (Object.prototype.hasOwnProperty.call(articleLd, 'dateModified')) {
+    errors.push('JSON-LD Article must not include dateModified');
   }
   const expectedAuthor = meta.author || 'Amulya Puri';
   const an = articleLd.author && articleLd.author.name;

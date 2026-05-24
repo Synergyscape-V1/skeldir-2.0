@@ -2,114 +2,215 @@
 
 ## 1. Verdict
 
-**PASS (local)** — D6 evidence library architecture, buyer-query matrix, registry, static routes, BLUF/EAV-E-shaped pages, D5 proof integration, anti-spam similarity gate, and harnesses are implemented and green on this workspace after `npm run build`.
-
-**D6 production-final:** **BLOCKED_BY_GLOBAL_RELEASE** — same global closure conditions as prior phases (mainline Git lineage / mergeable CI / deploy-preview / production curl proof not asserted here).
-
-## 2. Scope Confirmation
-
-D6 only. No D8/D9/D10 production claims.
-
-## 3. Global Release Blocker Status
-
-| Gate | State |
-| --- | --- |
-| local branch | `feat/discoverability-remediation` — D6 commit **2d30fe2c** pushed to `origin/feat/discoverability-remediation` (`Synergyscape-V1/skeldir-2.0`). |
-| mainline integration | **BLOCKED:** `gh pr create --base main` fails with *“branch has no history in common with main”* (unrelated histories / no merge-base with `origin/main`). Protected-branch merge to `main` was **not** possible from this lineage in this session. |
-| CI | Workflow file includes D5/D6; green run on **mergeable `main` PR** not proven here because no PR to `main` could be opened. |
-| deploy preview | Not attached / not proven here. |
-| production-final blocked? | **yes** |
-
-**Git author note:** The workstation had no `user.name` / `user.email` configured; the D6 commit was created with one-off `git -c user.name=… -c user.email=…` (repo `git config` was **not** modified).
-
-## 4. Files Changed (summary)
-
-| Area | Files | Reason |
+| Closure tier | Verdict | Notes |
 | --- | --- | --- |
-| Evidence UI | `src/components/discoverability/EvidenceLibraryDocument.tsx`, `src/types/evidenceLibrary.ts` | Shared BLUF/EAV-E contract for all D6 pages. |
-| Content | `src/data/evidenceLibraryCatalog.ts` | Single catalog: distinct platform + core cluster copy; `[[label\|/path]]` mini-syntax for D5 links. |
-| Routes | `src/app/resources/evidence/page.tsx`, `[slug]/page.tsx` | Static hub + SSG detail pages. |
-| Resources hub | `src/app/resources/page.tsx`, `ResourcesPageClient.tsx` | Server-rendered Evidence Library strip + link to `/resources/evidence`. |
-| Sitemap | `discoverability.sitemap-manifest.json`, `discoverability.routes.json` | Register all indexable D6 URLs. |
-| D4 | `scripts/discoverability/lib/d4-structured-data.mjs` | `/resources/evidence` uses `CollectionPage`; nested evidence uses `WebPage`; articles unchanged. |
-| Schemas | `src/lib/schema/pageSchemas.ts` | Evidence hub + detail JSON-LD helpers. |
-| D0 governance | `scripts/discoverability/lib/registry-schema.mjs` | Exclude reserved `out/resources/evidence.html` slug `evidence` from article-only governance. |
-| D6 artifacts | `BUYER_QUERY_CONTENT_MATRIX.md`, `discoverability.buyer-query-matrix.json`, `EVIDENCE_LIBRARY_REGISTRY.md`, `discoverability.evidence-library-registry.json`, `discoverability.d6-similarity-overrides.json` | Buyer matrix + machine registry + similarity override file. |
-| Harness | `scripts/discoverability/lib/d6-evidence-library.mjs`, `discoverability-d6-harness.mjs`, `discoverability-d6-negative-controls.mjs`, `package.json` | `npm run discoverability:d6` + negative controls. |
-| CI | `.github/workflows/marketing-discoverability.yml` | Run D5/D6 gates on pushes/PRs touching `marketing/`. |
+| **D6 local (engineering)** | **PASS** | Evidence library hub, core + optional evidence routes, buyer-query matrix + JSON, evidence-library registry + JSON, D6/D5 harnesses and D6 negative controls pass locally after `npm run build`. D2 and D3 harnesses were also executed successfully in this workspace. |
+| **D6 remote CI (`feat/discoverability-remediation`)** | **FAIL (at time of last verification)** | Latest GitHub Actions run for head **`9d417bfc`** completed with **failure** in **`discoverability:d4:negative-controls`** (NC-D4-04 golden home fixture vs JSON-in-`<head>` contract). Root cause and fix path are documented in §16.2. |
+| **D6 production-final** | **BLOCKED_BY_GLOBAL_RELEASE** | No mergeable PR to `origin/main` (unrelated histories). Deploy-preview and production-equivalent curl proof not attached. |
 
-## 5. Buyer Query Matrix Summary
-
-See `BUYER_QUERY_CONTENT_MATRIX.md` and `discoverability.buyer-query-matrix.json` (19 entries). All directive-required queries and nine minimum `query_category` values are present; each row includes `canonical_route`, `route_status`, `proof_routes`, `claim_registry_refs`, `priority`, `owner`, `last_reviewed`, and `review_cadence`.
-
-## 6. Evidence Library Registry Summary
-
-`discoverability.evidence-library-registry.json` lists **15** pages (hub + 14 evidence slugs). Each row includes `proof_authority_routes`, `schema_type`, `similarity_group`, and indexability flags aligned with the sitemap manifest.
-
-## 7. Evidence Route Coverage
-
-All routes in `D6_CORE_EVIDENCE_ROUTES` produce static HTML with required visible headings (BLUF, Key Facts, Claim / Evidence Table, Capability status, How Skeldir Treats This, Methodology, What This Does Not Prove, Limitations, Related Proof Pages, Related Buyer Questions, Last Reviewed, Owner) and at least one `href="/…"` to D5 proof authorities — verified by `npm run discoverability:d6`.
-
-## 8. D5 Proof Boundary Integration
-
-Every evidence page’s `relatedProof` list includes multiple D5 routes (`/methodology`, `/revenue-verification`, `/discrepancy-taxonomy`, `/attribution-methodology`, `/ai-boundary`, `/trust-envelope`, `/security`, `/api`, `/docs` as applicable). D6 pages explicitly state they do not fork D5 definitions.
-
-## 9. Future-Capability Honesty Boundary
-
-Capability rows label items as **Currently public**, **Unavailable**, **Planned**, **Partially implemented**, or **operator/legal review required**. Harness blocks banned marketing phrases (`cross-tenant benchmark`, `Bayesian confidence is authoritative`, blanket `we collect no PII`, `signed artifact`, `auto-execute`, `external alpha`) and guards `live API` phrasing.
-
-## 10. Similarity / No-Spam Evidence
-
-Meta vs Google Ads de-boilerplated token Jaccard similarity: **~0.31** (well below soft threshold **0.72** and hard **0.85**). `discoverability.d6-similarity-overrides.json` is present with an empty `pair_overrides` array (no manual justification required).
-
-## 11. Crawl / Sitemap / Schema Integration
-
-- **Route registry:** D6 routes appended to `discoverability.routes.json`.
-- **Sitemap manifest:** All indexable D6 paths added to `discoverability.sitemap-manifest.json` (consumed by `src/app/sitemap.ts`).
-- **Canonical / JSON-LD:** Evidence hub uses `CollectionPage` + `BreadcrumbList`; detail pages use `WebPage` + `BreadcrumbList` (D4 branch logic).
-- **Bot policy:** unchanged global allow; new URLs remain static files under `/`.
-
-## 12. Harness Proof (local)
-
-| Command | Result |
-| --- | --- |
-| `npm run discoverability:d6` | **PASS** (after catalog/hub copy fixes) |
-| `npm run discoverability:d6:negative-controls` | **PASS** |
-| `npm run discoverability:d0` | **PASS** (after `evidence` slug governance exclusion) |
-| `npm run discoverability:d1` | **PASS** |
-| `MARKETING_D4_SKIP_BUILD=1 npm run discoverability:d4` | **PASS** |
-| `MARKETING_D5_SKIP_BUILD=1 npm run discoverability:d5` | **PASS** (1 informational WARN on production-final separation) |
-| `npm run discoverability:d2` | **PASS** (53 checks; runs full `npm run build`) — post-commit verification |
-| `npm run discoverability:d3` | **PASS** (51 passes; `D3_LIVE_URL` live fetch skipped) — post-commit verification |
-
-**Negative controls:** D6 negative controls passed in the prior verification block; D2/D3 negative-control scripts were not re-run in this follow-up pass — run the full matrix in CI once a mergeable PR exists.
-
-## 13. Artifact Excerpts
-
-Use local `out/` after `npm run build`:
-
-- Hub: `out/resources/evidence.html` — H1 “Evidence Library”, cluster sections including **Platform Discrepancies**, **Revenue Verification & Finance Audit**, **Benchmark Methodology & Related**, and links to D5 routes.
-- Meta vs Stripe: `out/resources/evidence/meta-vs-stripe.html` — BLUF + Claim/Evidence table + capability rows.
-- Google Ads vs Shopify: `out/resources/evidence/google-ads-vs-shopify.html`.
-- Deterministic vs probabilistic confidence: `out/resources/evidence/deterministic-vs-probabilistic-confidence.html`.
-- Finance ROAS checklist: `out/resources/evidence/finance-roas-audit-checklist.html`.
-- Benchmark methodology: `out/resources/evidence/benchmark-methodology.html`.
-
-## 14. Remaining Unknowns
-
-- **Resolved for this repo:** `origin/main` does **not** share history with `feat/discoverability-remediation` (GitHub blocks PR creation). Remediating that requires an explicit repository integration strategy (e.g. subtree, re-import, or history rewrite with org approval) — outside D6 page engineering.
-- Whether `marketing-discoverability` (or other required checks) are green on a PR that targets whatever the org treats as the integration default branch once history is reconciled.
-
-## 15. D7 Readiness
-
-**Yes — D7 may begin** from a *local engineering* standpoint: D6 routes are static, linked, schema-valid under D4, and gated by `discoverability:d6`. Any D7 work should still treat **production-final** closure as blocked until the global release gates close.
+**Scope:** D6 only. No D8/D9/D10 production claims.
 
 ---
 
-### B1.4-P3 / merge-to-main note
+## 2. Scope confirmation
 
-**B1.4-P3 is not satisfied:** merging this lineage into **`main`** through the protected workflow is **not currently possible** because GitHub reports **no common ancestor** between `feat/discoverability-remediation` and `main` (`gh pr create --base main` → GraphQL error). **Green CI on `main` after merge** therefore could not be validated here.
+- D6 deliverables: query-addressable evidence library, matrices/registries, static BLUF/EAV-E-shaped evidence pages, D5 proof links (not forked definitions), capability-honesty gates, platform anti-spam similarity, harnesses `discoverability:d6` + `:negative-controls`, crawl/sitemap/schema/bot integration per directive.
+- Explicitly out of scope for “production-final”: resolving unrelated `main` history, attach deploy preview, production curls — tracked only as global gates.
 
-**Completed in this session:** `git push origin feat/discoverability-remediation` succeeded (commit **2d30fe2c**).
+---
 
-**Still required for B1.4-P3 / production-final:** reconcile unrelated histories (or adopt a new canonical repo/branch), open a mergeable PR to `main`, obtain all required checks green, attach deploy preview, and run production-equivalent curl proof for D6 evidence URLs.
+## 3. Global release blocker status
+
+| Gate | State |
+| --- | --- |
+| **Local / remote branch** | `feat/discoverability-remediation` on `https://github.com/Synergyscape-V1/skeldir-2.0`. Branch tip at last documentation update: **`9d417bfc`** (includes D6 stack + follow-on CI fixes). |
+| **Mainline integration** | **BLOCKED:** `gh pr create --base main` returns GraphQL *“branch has no history in common with main”*. There is **no merge-base** with `origin/main` from this lineage without an explicit integration strategy (subtree, re-home repo, or org-approved history reconciliation). |
+| **CI (feature branch)** | Workflow **`.github/workflows/marketing-discoverability.yml`** runs D2 → D3 → D4 → D5 → D6 (+ negative controls). After remediations in §16, D2/D3/D4 main harness and D5/D6 steps progressed; **D4 negative controls still fail on remote** until **`discoverability-d4-negative-controls.mjs`** golden fixture is aligned with the JSON-LD-in-`<head>` validator (see §16.2). Run ID examined: **26342205879** (`9d417bfc`). |
+| **CI (`main`)** | **Not applicable / not proven** — no PR to `main`. |
+| **Deploy preview** | Not attached; not proven here. |
+| **Production-final blocked?** | **yes** |
+
+**Git author note:** Commits on the workstation used one-off `git -c user.name=… -c user.email=…` because no default `user.name` / `user.email` was configured. Repository `git config` was **not** modified.
+
+---
+
+## 4. Files changed (summary table)
+
+| Area | Representative paths | Reason |
+| --- | --- | --- |
+| Evidence UI + types | `src/components/discoverability/EvidenceLibraryDocument.tsx`, `src/types/evidenceLibrary.ts` | Shared evidence page contract (BLUF, key facts, claim/evidence table, capability block, methodology, limitations, owner, last reviewed, related proof). |
+| Evidence content | `src/data/evidenceLibraryCatalog.ts` | Single catalog for hub + slugs; distinct copy per platform pair; internal link mini-syntax to D5 routes. |
+| Evidence routes | `src/app/resources/evidence/page.tsx`, `src/app/resources/evidence/[slug]/page.tsx` | Static hub + SSG detail pages + metadata / JSON-LD. |
+| Resources hub | `src/app/resources/page.tsx`, `ResourcesPageClient.tsx` | Evidence Library entry strip + link into `/resources/evidence`. |
+| Sitemap + route registry | `discoverability.sitemap-manifest.json`, `discoverability.routes.json` | Indexable D6 URLs registered consistently. |
+| D4 schema | `scripts/discoverability/lib/d4-structured-data.mjs` | `CollectionPage` for evidence hub; `WebPage` (+ breadcrumbs) for nested evidence; articles unchanged. |
+| D4 post-build | `scripts/d4-move-jsonld-to-head.mjs` | After `next build`, hoists body JSON-LD into `<head>` for static export contract (CI must ship this file — see §16). |
+| D0 governance | `scripts/discoverability/lib/registry-schema.mjs` | Reserved slug **`evidence`**: `out/resources/evidence.html` is the D6 hub, not an `articlesData` article instance. |
+| D6 artifacts | `BUYER_QUERY_CONTENT_MATRIX.md`, `discoverability.buyer-query-matrix.json`, `EVIDENCE_LIBRARY_REGISTRY.md`, `discoverability.evidence-library-registry.json`, `discoverability.d6-similarity-overrides.json` | Human + machine registries; similarity override file for future pair justifications. |
+| D6 harness | `scripts/discoverability/lib/d6-evidence-library.mjs`, `discoverability-d6-harness.mjs`, `discoverability-d6-negative-controls.mjs`, `package.json` | `npm run discoverability:d6` + negative controls. |
+| D5 proof surface (required for D6 links + sitemap coherence) | `src/app/methodology/`, `ai-boundary/`, `revenue-verification/`, `attribution-methodology/`, `discrepancy-taxonomy/`, `TrustProofPage.tsx`, `LegalPlaceholderPage.tsx`, `src/lib/schema/trustProof.ts`, updates to `api`, `docs`, `trust-envelope`, legal placeholders, `discoverability.claim-proof-registry.json`, `D5_CLAIM_PROOF_REGISTRY.md`, D5 harness scripts | D6 evidence pages must cite live proof authorities; sitemap manifest lists D5 indexable routes; D2/D5 gates expect built HTML. |
+| D2 policy | `scripts/discoverability/lib/d2-crawl-graph.mjs` | Remove `/trust-envelope`, `/docs`, `/api` from sitemap “forbidden” set when those URLs are indexable per manifest; align `META_NOINDEX_PUBLIC_PATHS` with actual `noindex` policy. |
+| Footer | `src/components/layout/Footer.tsx` | D5.1 policy: required labels (including **Methodology**, **TrustEnvelope**) wired to canonical hrefs. |
+| CI | `.github/workflows/marketing-discoverability.yml` | Runs D5 + D6 gates on `marketing/**` changes. |
+
+**Commit chain (newest first):** `9d417bfc` (D5 routes + D2 alignment + Footer), `3b68d12b` (add `d4-move-jsonld-to-head.mjs`), `05e54147` (this report — earlier revision), `2d30fe2c` (D6 evidence library + matrices + harnesses).
+
+---
+
+## 5. Buyer query matrix summary
+
+Authoritative tables live in:
+
+- `marketing/BUYER_QUERY_CONTENT_MATRIX.md`
+- `marketing/discoverability.buyer-query-matrix.json`
+
+**Shape:** **19** entries covering the directive’s minimum buyer/agent questions and **nine** `query_category` buckets (`platform_discrepancy`, `revenue_verification`, `finance_audit`, `attribution_methodology`, `trust_envelope`, `confidence_semantics`, `privacy_boundary`, `ai_boundary`, `benchmark_methodology`). Each row includes `query`, `query_category`, `buyer_role`, `search_intent`, `agent_retrieval_intent`, `canonical_route`, `route_status`, `proof_routes`, `claim_registry_refs`, `priority` (P0/P1/P2), `owner`, `last_reviewed`.
+
+---
+
+## 6. Evidence library registry summary
+
+- `marketing/EVIDENCE_LIBRARY_REGISTRY.md`
+- `marketing/discoverability.evidence-library-registry.json`
+
+**15** registry rows: **hub** `/resources/evidence` + **14** evidence slugs (core + optional platform/reconciliation pages). Fields include `route`, `cluster`, `primary_query`, `secondary_queries`, `proof_authority_routes`, `content_status`, `indexable`, `sitemap_required`, `schema_type`, `owner`, `last_reviewed`, `similarity_group`.
+
+---
+
+## 7. Evidence route coverage
+
+All `D6_CORE_EVIDENCE_ROUTES` (and optional slugs in the catalog) produce static HTML with the harness-required sections and headings, including **BLUF**, **Key Facts**, **Claim / Evidence Table**, capability status block, **How Skeldir Treats This**, **Methodology**, **What This Does Not Prove**, **Limitations**, **Related Proof Pages**, **Related Buyer Questions**, **Last Reviewed**, **Owner**, and at least one `href="/…"` to D5 proof authorities — verified by `npm run discoverability:d6`.
+
+---
+
+## 8. D5 proof boundary integration
+
+| D5 proof authority (examples) | Role for D6 |
+| --- | --- |
+| `/methodology`, `/revenue-verification`, `/attribution-methodology`, `/discrepancy-taxonomy`, `/ai-boundary`, `/trust-envelope`, `/security`, `/api`, `/docs` | Linked from every evidence page’s “Related Proof Pages” / catalog `relatedProof`; registry `proof_authority_routes` records the mapping. D6 copy states it does **not** redefine D5 terms. |
+
+---
+
+## 9. Future-capability honesty boundary
+
+- Evidence pages include an explicit **capability status** block (labels such as *Currently public*, *Planned*, *Unavailable*, *Partially implemented*, *operator/legal review required*).
+- Harness enforces absence of disallowed “live capability” phrasing unless paired with approved capability semantics (e.g. guards around “live API”, blocks on treating Bayesian/cross-tenant benchmarks as authoritative, blocks blanket “we collect no PII”, etc. — see `d6-evidence-library.mjs`).
+
+---
+
+## 10. Similarity / no-spam evidence
+
+| Pair | Metric | Threshold | Result |
+| --- | --- | --- | --- |
+| Meta vs Stripe × Google Ads vs Shopify | De-boilerplated token Jaccard | soft **0.72** / hard **0.85** | **~0.31** — PASS |
+| Overrides | `discoverability.d6-similarity-overrides.json` | `pair_overrides` | **[]** (no manual justification required at this time) |
+
+*Directive asked for a matrix: the harness currently enforces the highest-risk pair explicitly; additional pairs can be added to the harness/registry if product requires broader automated pairwise gates.*
+
+---
+
+## 11. Crawl / sitemap / schema integration
+
+- **Route registry:** D6 paths recorded in `discoverability.routes.json`.
+- **Sitemap manifest:** D6 + D5 indexable paths in `discoverability.sitemap-manifest.json`; consumed by `src/app/sitemap.ts`.
+- **Canonical:** D2 harness checks built `out/**/*.html` canonical alignment for every sitemap `loc`.
+- **JSON-LD:** Evidence hub → `CollectionPage` + `BreadcrumbList`; evidence detail → `WebPage` + `BreadcrumbList` (D4 branch). Post-build `d4-move-jsonld-to-head.mjs` moves blocks into `<head>` for export HTML.
+- **Bot policy:** No regression introduced for indexable evidence URLs under the existing `discoverability.bot-policy.json` + `robots.ts` contract.
+
+---
+
+## 12. Harness proof
+
+### 12.1 Local (workspace)
+
+| Command | Result |
+| --- | --- |
+| `npm run discoverability:d6` | **PASS** |
+| `npm run discoverability:d6:negative-controls` | **PASS** |
+| `npm run discoverability:d0` | **PASS** (post `evidence` slug governance) |
+| `npm run discoverability:d1` | **PASS** |
+| `MARKETING_D4_SKIP_BUILD=1 npm run discoverability:d4` | **PASS** |
+| `MARKETING_D5_SKIP_BUILD=1 npm run discoverability:d5` | **PASS** (1× informational WARN: production-final separation) |
+| `npm run discoverability:d5:negative-controls` | **PASS** |
+| `npm run discoverability:d2` | **PASS** (includes full `npm run build`) |
+| `npm run discoverability:d3` | **PASS** (`D3_LIVE_URL` live fetch skipped unless set) |
+
+**Not re-run in the latest short session:** `discoverability:d2:negative-controls`, `discoverability:d3:negative-controls`, full `discoverability:d4` without skip (CI runs full build + D4 NC).
+
+### 12.2 Remote CI (GitHub Actions, `feat/discoverability-remediation`)
+
+| Step | Result on run **26342205879** (`9d417bfc`) |
+| --- | --- |
+| D2 | **PASS** (after D5 routes + D2 forbidden-set fix) |
+| D3 + D3 NC | **PASS** (per job progression; failure occurred later) |
+| D4 harness | **PASS** |
+| **D4 negative controls** | **FAIL** — NC-D4-04 “golden home fixture” JSON-LD placement vs `validateJsonLdScriptsInHead` / `validateD4IndexablePage` (see §16.2) |
+| D5 / D6 | Not reached in that run after D4 NC failure |
+
+---
+
+## 13. Artifact excerpts (local static export)
+
+After `npm run build`, inspect under `marketing/out/`:
+
+| Artifact | Path |
+| --- | --- |
+| Evidence hub | `out/resources/evidence.html` |
+| Meta vs Stripe | `out/resources/evidence/meta-vs-stripe.html` |
+| Google Ads vs Shopify | `out/resources/evidence/google-ads-vs-shopify.html` |
+| Deterministic vs probabilistic confidence | `out/resources/evidence/deterministic-vs-probabilistic-confidence.html` |
+| Finance ROAS audit checklist | `out/resources/evidence/finance-roas-audit-checklist.html` |
+| Benchmark methodology | `out/resources/evidence/benchmark-methodology.html` |
+
+Excerpts are intentionally not pasted here at full length; they are deterministic build outputs and should be quoted from `out/` for audit defensibility.
+
+---
+
+## 14. Remaining unknowns (fact-bound)
+
+1. **`main` integration:** Unrelated histories block PR creation until the org selects an integration approach.
+2. **D4 NC on CI:** Until **`marketing/scripts/discoverability-d4-negative-controls.mjs`** on the default branch matches the JSON-LD-in-`<head>` contract (see §16.2), **`npm run discoverability:d4:negative-controls`** may fail in CI even when local D4 main harness passes with skip flags.
+3. **Production / preview URLs:** No live URL list or curl transcript is claimed in this document.
+
+---
+
+## 15. D7 readiness
+
+**Local engineering:** **Yes** — D6 evidence routes are static, registered, sitemap-backed, schema-shaped under D4, and gated locally by D6 harnesses.
+
+**Production / mobile / performance hardening (D7):** Proceed only with awareness that **production-final** closure remains blocked on global gates; also resolve **D4 negative controls on CI** so the discoverability workflow is fully green on the integration branch.
+
+---
+
+## 16. Initial findings and remediations (evidence trail)
+
+### 16.1 Finding: post-build JSON-LD hoist script missing from git
+
+- **Symptom (CI):** `next build` succeeded, then `node scripts/d4-move-jsonld-to-head.mjs` failed with **`MODULE_NOT_FOUND`** on GitHub Actions.
+- **Root cause:** `package.json` `build` invoked the script, but the file was not in the tracked tree.
+- **Remediation:** Committed **`marketing/scripts/d4-move-jsonld-to-head.mjs`** (`3b68d12b`).
+
+### 16.2 Finding: D2 “forbidden sitemap URL” contradicted D5/D6 manifest + D4 NC golden fixture drift
+
+- **Symptom (CI):** D2 failed: sitemap listed `https://skeldir.com/trust-envelope`, `/docs`, `/api` but validator treated them as forbidden.
+- **Root cause:** `validateSitemapMatchesExpected` in **`d2-crawl-graph.mjs`** still listed those paths in `forbiddenExact` while the sitemap manifest marked them indexable for D5.
+- **Remediation:** Committed D2 policy update + **full D5 static proof routes and claim registry** + Footer wiring + D5 harnesses (`9d417bfc`). D2 then passed locally and progressed on CI.
+
+- **Symptom (CI, follow-on):** **`discoverability:d4:negative-controls`** failed NC-D4-04: *“golden home fixture … JSON-LD script must be wholly inside `<head>`”*.
+- **Root cause:** Committed **`discoverability-d4-negative-controls.mjs`** still used a **`headBase` template that closed `</head>` before JSON-LD**, while `validateD4IndexablePage` now enforces JSON-LD-in-head (consistent with `d4-move-jsonld-to-head.mjs` and D4 main harness). A corrected version exists **locally as unstaged changes** to that file (refactor `headBase` to accept `inner`, move golden JSON-LD into `<head>`, add NC-D4-09 body-json-ld case, fix article/pricing fixtures).
+- **Remediation status:** **Documented; not landed on remote at time of this report revision.** Next step is to **`git add` + commit + push** `marketing/scripts/discoverability-d4-negative-controls.mjs` (and re-run / watch `marketing-discoverability`).
+
+### 16.3 Finding: B1.4-P3 / merge-to-`main` / “green main CI” cannot be asserted
+
+- **Symptom:** `gh pr create --base main` fails (no common ancestor).
+- **Remediation:** Not a D6 content change — requires repository integration decision at org level.
+
+---
+
+### B1.4-P3 closure statement
+
+**B1.4-P3 is not satisfied:** there is no falsifiable proof of merge to **`main`** via protected workflow, nor **green `main` CI**, nor deploy-preview / production curls, from this lineage.
+
+**What is satisfied with local falsifiability:** D6 architecture + registries + static pages + local harness matrix described in §12.1.
+
+**Next engineering commits (minimal):** land **`discoverability-d4-negative-controls.mjs`** fix for CI D4 NC; then re-run `gh run watch` on `marketing-discoverability` for `feat/discoverability-remediation`. **Next org actions:** reconcile `main` history or adopt new canonical remote; then PR + merge + attach preview + production verification.

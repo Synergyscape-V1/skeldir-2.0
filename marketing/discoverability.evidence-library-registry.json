@@ -22,7 +22,6 @@
       "schema_type": "CollectionPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "hub"
     },
     {
@@ -44,7 +43,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "meta_stripe"
     },
     {
@@ -65,7 +63,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "google_shopify"
     },
     {
@@ -86,7 +83,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "shopify_core"
     },
     {
@@ -107,7 +103,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "finance_audit"
     },
     {
@@ -127,7 +122,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "attribution_core"
     },
     {
@@ -148,7 +142,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "confidence_core"
     },
     {
@@ -167,7 +160,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "benchmark"
     },
     {
@@ -187,7 +179,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "privacy"
     },
     {
@@ -207,7 +198,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "trust_env"
     },
     {
@@ -227,7 +217,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "ai_boundary"
     },
     {
@@ -246,7 +235,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "tiktok"
     },
     {
@@ -265,7 +253,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "pinterest"
     },
     {
@@ -285,7 +272,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "paypal"
     },
     {
@@ -305,7 +291,6 @@
       "schema_type": "WebPage",
       "owner": "Skeldir Product Engineering",
       "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)",
       "similarity_group": "woo"
     }
   ]

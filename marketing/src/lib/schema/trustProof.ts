@@ -10,7 +10,7 @@ import { SKELDIR_ORGANIZATION_ID, SKELDIR_WEBSITE_ID } from "@/lib/schema/entity
  */
 export function trustProofWebPageJsonLd(
   path: string,
-  args: { name: string; description: string; dateModified: string },
+  args: { name: string; description: string },
 ): Record<string, unknown> {
   const url = canonicalUrl(path);
   return {
@@ -22,7 +22,6 @@ export function trustProofWebPageJsonLd(
     description: args.description,
     isPartOf: { "@id": SKELDIR_WEBSITE_ID },
     about: { "@id": SKELDIR_ORGANIZATION_ID },
-    dateModified: args.dateModified,
   };
 }
 

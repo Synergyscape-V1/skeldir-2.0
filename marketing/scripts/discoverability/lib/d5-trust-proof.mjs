@@ -9,7 +9,7 @@
  *
  *   1) Indexable proof surfaces — public, static, retrievable, must contain
  *      the concepts they claim. These are scanned for static H1, primary
- *      body, required concept sections, last-reviewed/dateModified, and
+ *      body, required concept sections, last-reviewed metadata, and
  *      canonical alignment. They must NOT be noindex.
  *
  *   2) Legal placeholder surfaces — `/privacy`, `/terms`, `/gdpr`. These
@@ -40,7 +40,7 @@ import {
 /**
  * Indexable D5 proof surfaces. These MUST exist as static HTML, MUST be
  * indexable, MUST contain the concepts the marketing site asserts, and
- * MUST carry a visible last-reviewed/dateModified token.
+ * MUST carry a visible last-reviewed token.
  */
 export const D5_INDEXABLE_PROOF_ROUTES = [
   '/methodology',
@@ -326,7 +326,6 @@ export function visibleTextOnly(html) {
  *   - Title present
  *   - Meta description present
  *   - Visible review-status token from D5_REVIEW_STATUS_TOKENS
- *   - dateModified in JSON-LD (not required in visible body copy)
  *
  * @param {string} marketingRoot
  * @param {string} logicalPath

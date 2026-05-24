@@ -2,16 +2,15 @@ import type { EvidencePageDefinition } from "@/types/evidenceLibrary";
 
 const LR = "2026-05-23";
 const OWNER = "Skeldir Product Engineering";
-const CADENCE = "Quarterly (90 days) or sooner after major platform API changes";
 
-const D5_BASE = [
+const CANONICAL_METHODOLOGY_LINKS = [
   { href: "/methodology", label: "Methodology — deterministic reconciliation boundary" },
   { href: "/revenue-verification", label: "Revenue verification — commerce/payment evidence" },
   { href: "/discrepancy-taxonomy", label: "Discrepancy taxonomy — classification of mismatches" },
 ] as const;
 
-function proof(extra: { href: string; label: string }[]) {
-  return [...D5_BASE, ...extra];
+function withMethodologyLinks(extra: { href: string; label: string }[]) {
+  return [...CANONICAL_METHODOLOGY_LINKS, ...extra];
 }
 
 export const EVIDENCE_SLUGS = [
@@ -38,11 +37,9 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     routePath: "/resources/evidence/meta-vs-stripe",
     h1: "Meta (Facebook) Ads vs Stripe: why totals diverge",
     metaDescription:
-      "Mechanisms that inflate Meta purchase revenue vs Stripe-settled card money: attribution windows, dedupe rules, CAPI vs Pixel timing, refunds/chargebacks, and multi-currency presentation — with D5 proof anchors.",
+      "Mechanisms that inflate Meta purchase revenue vs Stripe-settled card money: attribution windows, dedupe rules, CAPI vs Pixel timing, refunds/chargebacks, and multi-currency presentation — with methodology cross-links.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "Meta Ads Manager can show higher “purchase” revenue than Stripe because Meta is crediting modeled or deduplicated web events on an attribution clock, while Stripe records card capture, refunds, disputes, and settlement in payment time. This page names the mechanisms; authoritative definitions stay on [[Methodology|/methodology]] and [[Revenue verification|/revenue-verification]].",
@@ -64,14 +61,14 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       },
     ],
     howSkeldirTreats:
-      "Skeldir treats Meta-reported revenue as a **platform claim** and Stripe/Shopify evidence as **commerce/payment truth** for the questions Skeldir is built to answer. The engine normalizes money into integer cents and pairs claims with evidence under policy captured in a [[TrustEnvelope concept|/trust-envelope]].\n\nThis retrieval page does **not** fork the D5 definitions — it routes you to them.",
+      "Skeldir treats Meta-reported revenue as a **platform claim** and Stripe/Shopify evidence as **commerce/payment truth** for the questions Skeldir is built to answer. The engine normalizes money into integer cents and pairs claims with evidence under policy captured in a [[TrustEnvelope concept|/trust-envelope]].\n\nThis page summarizes the stance and points to the canonical write-ups—it does not redefine terms.",
     methodology:
       "Follow the reconciliation outline on [[Methodology|/methodology]]: deterministic joins on stable identifiers where available, explicit handling for timing and refund classes per [[Discrepancy taxonomy|/discrepancy-taxonomy]], and no silent substitution of modeled Meta revenue for settled funds.",
     whatDoesNotProve:
       "This explainer does not prove incremental lift from Meta spend, does not adjudicate creative quality, and does not replace your finance team’s close process. It also does not assert that any live Skeldir tenant dashboard matches examples on this marketing site.",
     limitations:
       "Examples are educational. Connector coverage, identity graph quality, and policy packs depend on tenant configuration. Bayesian enrichment or tenant-spanning benchmark-style features, if present in product, are **not authoritative** over deterministic reconciliation outcomes unless separately implemented and disclosed per tenant policy.",
-    relatedProof: proof([
+    relatedProof: withMethodologyLinks([
       { href: "/attribution-methodology", label: "Attribution methodology — bounded questions only" },
       { href: "/trust-envelope", label: "TrustEnvelope — policy + evidence container concept" },
     ]),
@@ -90,11 +87,9 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     routePath: "/resources/evidence/google-ads-vs-shopify",
     h1: "Google Ads vs Shopify: reconciliation lens for finance",
     metaDescription:
-      "Why Google Ads conversion value and Shopify gross sales diverge: click vs order lifecycle, conversion lag settings, cart edits, tax/shipping presentation, and offline conversions — grounded in Skeldir’s D5 proof routes.",
+      "Why Google Ads conversion value and Shopify gross sales diverge: click vs order lifecycle, conversion lag settings, cart edits, tax/shipping presentation, and offline conversions — grounded in Skeldir methodology pages.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "Google Ads attributes *conversion events* tied to ad clicks within configured windows, while Shopify totals reflect order rows that can change with edits, partial captures, refunds, and tax/shipping rules. Finance should expect systematic gaps even when both systems are “implemented correctly.” Start from [[Revenue verification|/revenue-verification]], not from either UI headline.",
@@ -123,7 +118,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not prove search incrementality, does not validate Quality Score mechanics, and does not replace Google Ads billing invoices for tax reporting.",
     limitations:
       "Marketing site copy cannot reflect your MCC structure, offline conversion schema, or Shopify markets configuration. No claim here implies a generally available external Trust API endpoint on skeldir.com — see [[API concepts|/api]].",
-    relatedProof: proof([
+    relatedProof: withMethodologyLinks([
       { href: "/attribution-methodology", label: "Attribution methodology" },
       { href: "/ai-boundary", label: "AI / LLM boundary" },
     ]),
@@ -141,14 +136,12 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     routePath: "/resources/evidence/shopify-reconciliation",
     h1: "Shopify order reconciliation against ad-channel revenue claims",
     metaDescription:
-      "Practical join keys, timing classes, and refund behaviors when reconciling Shopify orders to Meta, Google, TikTok, or Pinterest claims — with explicit limitations and D5 proof anchors.",
+      "Practical join keys, timing classes, and refund behaviors when reconciling Shopify orders to Meta, Google, TikTok, or Pinterest claims — with explicit limitations and methodology cross-links.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
-      "Reconciling Shopify to ad platforms is a **deterministic inventory problem with messy inputs**: you need stable order IDs, currency normalization, and explicit rules for partial refunds and split fulfillments. Skeldir’s proof stance is documented on [[Revenue verification|/revenue-verification]]; this page is a retrieval-oriented checklist, not a second methodology fork.",
+      "Reconciling Shopify to ad platforms is a **deterministic inventory problem with messy inputs**: you need stable order IDs, currency normalization, and explicit rules for partial refunds and split fulfillments. Skeldir’s stance is documented on [[Revenue verification|/revenue-verification]]; this page is a condensed checklist, not a second methodology fork.",
     keyFacts: [
       "Shopify’s admin totals are commerce-state totals; ad platforms count modeled conversions on click/view clocks.",
       "Gift cards, split payments, and delayed captures routinely break naive one-click joins.",
@@ -169,7 +162,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not prove that any specific SKU’s margin supports continued spend; that is finance planning outside Skeldir’s commerce/payment proof boundary.",
     limitations:
       "Does not describe every Shopify app stack. Third-party subscription apps, external ERPs, or custom checkout scripts can change evidence availability.",
-    relatedProof: proof([{ href: "/trust-envelope", label: "TrustEnvelope — evidence + policy container" }]),
+    relatedProof: withMethodologyLinks([{ href: "/trust-envelope", label: "TrustEnvelope — evidence + policy container" }]),
     relatedQuestions: [
       { href: "/resources/evidence/google-ads-vs-shopify", label: "Google Ads vs Shopify" },
       { href: "/resources/evidence/paypal-reconciliation", label: "PayPal-specific reconciliation" },
@@ -183,14 +176,12 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     routePath: "/resources/evidence/finance-roas-audit-checklist",
     h1: "Finance ROAS audit checklist before budget shifts",
     metaDescription:
-      "A disciplined checklist: define the revenue numerator, align clocks, isolate refunds, separate modeled from settled, and document residual discrepancy classes — anchored to Skeldir D5 proof pages.",
+      "A disciplined checklist: define the revenue numerator, align clocks, isolate refunds, separate modeled from settled, and document residual discrepancy classes — anchored to Skeldir methodology pages.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
-      "Before moving material budget, finance should verify **which revenue definition** ROAS uses, **which costs** the denominator includes, and **which timing axis** both sides use. This checklist is retrieval-shaped; authoritative methodology remains on [[Methodology|/methodology]] and [[Revenue verification|/revenue-verification]].",
+      "Before moving material budget, finance should verify **which revenue definition** ROAS uses, **which costs** the denominator includes, and **which timing axis** both sides use. This checklist is intentionally short; authoritative methodology remains on [[Methodology|/methodology]] and [[Revenue verification|/revenue-verification]].",
     keyFacts: [
       "ROAS built on platform-attributed revenue is not interchangeable with ROAS built on settled card cash.",
       "Weekly rollups hide refund bursts that arrive late relative to click date.",
@@ -211,7 +202,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not provide accounting sign-off, tax advice, or investment recommendations.",
     limitations:
       "Checklist is generic. Your close calendar, intercompany billing, and marketplace fee structures may require additional controls.",
-    relatedProof: proof([{ href: "/ai-boundary", label: "AI boundary — LLMs do not calculate financial truth" }]),
+    relatedProof: withMethodologyLinks([{ href: "/ai-boundary", label: "AI boundary — LLMs do not calculate financial truth" }]),
     relatedQuestions: [
       { href: "/resources/evidence/benchmark-methodology", label: "Benchmark methodology and limitations" },
     ],
@@ -224,11 +215,9 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     routePath: "/resources/evidence/deterministic-attribution-methods",
     h1: "Deterministic attribution methods Skeldir uses (and does not use)",
     metaDescription:
-      "What deterministic means for joins, money normalization, and policy-bound attribution models — versus narrative or ML-explanations — with links to D5 methodology and AI boundary proof pages.",
+      "What deterministic means for joins, money normalization, and policy-bound attribution models — versus narrative or ML-explanations — with links to the methodology and AI boundary pages.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "**Deterministic** here means: given the same evidence inputs and the same published policy, Skeldir’s engine should reach the same reconciled outputs (byte-stable where specified). It does **not** mean “the market behaves deterministically.” Explanations in natural language are governed by [[AI boundary|/ai-boundary]].",
@@ -246,12 +235,12 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     howSkeldirTreats:
       "Skeldir separates **reconciliation** (evidence vs claims) from **allocation** (how to split verified totals across touchpoints).",
     methodology:
-      "Read [[Methodology|/methodology]] for the full proof outline; this page is a retrieval shortcut.",
+      "Read [[Methodology|/methodology]] for the full outline; this page is a short overview.",
     whatDoesNotProve:
       "Does not prove which creative caused a purchase; creative analytics remain platform- and experiment-specific.",
     limitations:
       "Where evidence is incomplete, outputs should carry explicit low-confidence semantics — never silent LLM backfill for money.",
-    relatedProof: proof([
+    relatedProof: withMethodologyLinks([
       { href: "/attribution-methodology", label: "Attribution methodology" },
       { href: "/trust-envelope", label: "TrustEnvelope" },
     ]),
@@ -269,9 +258,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     metaDescription:
       "Clarifies deterministic verified values, model assumptions, confidence_status / fallback_reason semantics, cold-start behavior, and that Bayesian enrichment is not treated as overriding commerce evidence unless explicitly implemented and governed.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "**Deterministic verified values** (money in evidence, normalized under policy) are sovereign for Skeldir’s financial-trust posture. **Probabilistic** layers (if enabled in product) may rank, explain, or prioritize — but must not silently replace settled commerce totals. As of this review, treat any Bayesian benchmark story as **planned / non-authoritative** unless your tenant contract states otherwise.",
@@ -295,7 +282,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not provide a mathematical proof of posterior correctness for your catalog.",
     limitations:
       "This static page cannot know which future releases your organization purchased. It intentionally avoids implying “Bayesian confidence is shipping and binding” in product without an approved capability matrix signed by product + legal.",
-    relatedProof: proof([{ href: "/trust-envelope", label: "TrustEnvelope concepts" }]),
+    relatedProof: withMethodologyLinks([{ href: "/trust-envelope", label: "TrustEnvelope concepts" }]),
     relatedQuestions: [{ href: "/resources/evidence/benchmark-methodology", label: "Benchmark methodology" }],
     capabilityRows: [
       { label: "Bayesian confidence as finance authority", state: "Not available as a global default (do not treat as live)" },
@@ -308,12 +295,10 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     metaDescription:
       "How Skeldir discusses benchmarks without claiming live tenant-spanning intelligence: k-anonymity, dominance suppression, anti-differencing, and honest cold-start priors — mostly planned substrate, clearly labeled.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
-      "Skeldir’s public stance is conservative: **benchmark-style intelligence that spans unrelated tenants** is roadmap-class engineering, requiring statistical controls (k-anonymity, dominance suppression, anti-differencing) and honest priors. This page exists so buyers and agents do not infer live benchmark feeds from marketing prose.",
+      "Skeldir’s public stance is conservative: **benchmark-style intelligence that spans unrelated tenants** is roadmap-class engineering, requiring statistical controls (k-anonymity, dominance suppression, anti-differencing) and honest priors. This page exists so readers do not infer live benchmark feeds from marketing prose.",
     keyFacts: [
       "A benchmark you cannot join to your own evidence is a vanity metric.",
       "Small-N segments leak information unless suppressed — a planned engineering obligation, not a slogan.",
@@ -333,7 +318,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not rank your brand against competitors with verified third-party data on this site.",
     limitations:
       "No live benchmark database is described as queryable from this static export.",
-    relatedProof: proof([{ href: "/methodology", label: "Methodology" }]),
+    relatedProof: withMethodologyLinks([{ href: "/methodology", label: "Methodology" }]),
     relatedQuestions: [{ href: "/resources/evidence/finance-roas-audit-checklist", label: "Finance ROAS audit checklist" }],
     capabilityRows: [
       { label: "Tenant-spanning benchmark query API", state: "Planned — not described as live" },
@@ -344,11 +329,9 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     routePath: "/resources/evidence/privacy-no-pii-methodology",
     h1: "Privacy and durable PII boundaries inside the reconciliation substrate",
     metaDescription:
-      "Privacy-minimizing design for financial reconciliation: what Skeldir avoids claiming (“zero PII everywhere”), what durable storage targets, and where legal review still applies — consistent with D5 honesty boundaries.",
+      "Privacy-minimizing design for financial reconciliation: what Skeldir avoids claiming (“zero PII everywhere”), what durable storage targets, and where legal review still applies — consistent with honesty boundaries described in our public methodology.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "Skeldir targets **privacy-minimizing** commerce/payment reconciliation: reduce durable sensitive fields, strip where applicable, and avoid turning the reconciliation substrate into a global identity graph. This is **not** a promise that your company collects **zero** PII in every department — do not misread it as blanket “no PII” marketing.",
@@ -364,14 +347,14 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       },
     ],
     howSkeldirTreats:
-      "Skeldir aligns public language with the claim-proof posture in [[Methodology|/methodology]] and security placeholders on [[Security|/security]] rather than inventing certifications.",
+      "Skeldir aligns public language with the framing in [[Methodology|/methodology]] and the disclosures on [[Security|/security]] rather than inventing certifications.",
     methodology:
-      "See D5 proof pages and your operator agreements for the authoritative boundary for your deployment.",
+      "See Skeldir methodology pages and your operator agreements for the authoritative boundary for your deployment.",
     whatDoesNotProve:
       "Does not provide GDPR legal analysis for your entity.",
     limitations:
       "Static marketing copy cannot know your data processing agreements. legal_review_required may apply before customer-facing promises.",
-    relatedProof: proof([
+    relatedProof: withMethodologyLinks([
       { href: "/security", label: "Security disclosures placeholder" },
       { href: "/docs", label: "Documentation concepts index" },
     ]),
@@ -383,16 +366,14 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
 
   "trust-envelope-technical-spec": {
     routePath: "/resources/evidence/trust-envelope-technical-spec",
-    h1: "TrustEnvelope technical spec (retrieval view)",
+    h1: "TrustEnvelope technical overview",
     metaDescription:
-      "Retrieval-oriented summary of TrustEnvelope fields, hashes, confidence semantics, and externalization — citing the D5 TrustEnvelope proof page without forking definitions or implying live external signing.",
+      "Overview of TrustEnvelope fields, hashes, confidence semantics, and externalization—pointing to the canonical TrustEnvelope page without redefining terms or implying live external signing.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
-      "Treat [[TrustEnvelope|/trust-envelope]] as the **canonical proof surface** for field names and semantics. This D6 page exists so agents can land on a shorter route that still points upward to the authority page — it must not introduce alternate hash algorithms, signing ceremonies, or API promises.",
+      "Treat [[TrustEnvelope|/trust-envelope]] as the **canonical write-up** for field names and semantics. This page is a shorter on-ramp—it still points to that page first—and it must not introduce alternate hash algorithms, signing ceremonies, or API promises.",
     keyFacts: [
       "Canonical definitions live on /trust-envelope — not here.",
       "External verification and asymmetric signing are roadmap-sensitive; default assumption is **not live** on the marketing host.",
@@ -405,14 +386,14 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       },
     ],
     howSkeldirTreats:
-      "D6 routes cite D5 authorities; retrieval pages stay thin and link-heavy.",
+      "Skeldir keeps these overviews short and link-heavy so the canonical methodology pages remain the source of truth.",
     methodology:
       "Read the canonical page: [[TrustEnvelope|/trust-envelope]].",
     whatDoesNotProve:
       "Does not provide a W3C-style formal specification with independent test vectors.",
     limitations:
-      "If product drift occurs, the D5 page must be updated first; this retrieval page follows it.",
-    relatedProof: proof([
+      "If product terminology shifts, update the TrustEnvelope page first—this overview follows it.",
+    relatedProof: withMethodologyLinks([
       { href: "/trust-envelope", label: "TrustEnvelope (canonical)" },
       { href: "/api", label: "API concepts + availability boundary" },
     ]),
@@ -426,14 +407,12 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     routePath: "/resources/evidence/ai-llm-explanation-boundary",
     h1: "AI / LLM explanation boundary for financial truth",
     metaDescription:
-      "Retrieval explainer: LLMs may narrate deterministic outputs but do not compute reconciled money; links to the D5 AI boundary proof page and TrustEnvelope concepts.",
+      "Overview: LLMs may narrate deterministic outputs but do not compute reconciled money; links to the AI boundary page and TrustEnvelope concepts.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
-      "Skeldir’s boundary is strict: **LLMs explain, they do not calculate financial truth.** The canonical disclosure is [[AI boundary|/ai-boundary]]; this page helps agents and buyers query that stance without duplicating the proof text.",
+      "Skeldir’s boundary is strict: **LLMs explain, they do not calculate financial truth.** The canonical disclosure is [[AI boundary|/ai-boundary]]; this page helps teams find that stance quickly without duplicating the full write-up.",
     keyFacts: [
       "Narration must cite engine outputs and policy IDs — not invent numbers.",
       "Hands-free financial actions triggered directly from LLM suggestions are out of scope for this public evidence layer.",
@@ -453,7 +432,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not discuss third-party tool security for your org — that is an operator integration topic, not asserted here as live.",
     limitations:
       "Does not claim MCP integrations, invite-only partner programs, or hands-free budget changes are available from static pages.",
-    relatedProof: proof([
+    relatedProof: withMethodologyLinks([
       { href: "/ai-boundary", label: "AI boundary (canonical)" },
       { href: "/methodology", label: "Methodology" },
     ]),
@@ -470,9 +449,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     metaDescription:
       "SKAdNetwork postbacks, modeled conversions, delayed attribution, and SAN limitations vs Shopify/Stripe settlement reality — unique mechanisms separate from Meta or Google drift.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "TikTok on iOS often operates under **SKAN constraints** and aggregated postbacks, which intentionally obscure user-level joins that Stripe receipts still contain. That structural opacity — not just “attribution windows” — drives persistent gaps versus commerce cash.",
@@ -495,7 +472,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not provide TikTok Ads API field-by-field mapping for your catalog.",
     limitations:
       "TikTok product surfaces change frequently; operator review may be needed quarterly.",
-    relatedProof: proof([{ href: "/revenue-verification", label: "Revenue verification" }]),
+    relatedProof: withMethodologyLinks([{ href: "/revenue-verification", label: "Revenue verification" }]),
     relatedQuestions: [{ href: "/resources/evidence/pinterest-discrepancies", label: "Pinterest discrepancies" }],
     capabilityRows: [
       { label: "SKAN user-level joins inside Skeldir", state: "Partially implemented / often unavailable by Apple design" },
@@ -508,9 +485,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     metaDescription:
       "Pin promotion catalogs, long-tail discovery traffic, and Pinterest’s delayed engagement model vs short conversion windows in Shopify — distinct from TikTok SKAN issues or Meta CAPI/Pixel mechanics.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "Pinterest frequently behaves like **discovery with long half-life**: a pin can earn traffic weeks after spend, while Shopify attributes revenue to checkout date and coupon rules. Misaligned **view-through** settings and catalog feed mismatches create deltas that are not numerically similar to Meta vs Stripe cases.",
@@ -533,7 +508,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not evaluate creative fatigue for individual boards.",
     limitations:
       "Does not cover every Pinterest objective type or catalog edge case.",
-    relatedProof: proof([{ href: "/attribution-methodology", label: "Attribution methodology" }]),
+    relatedProof: withMethodologyLinks([{ href: "/attribution-methodology", label: "Attribution methodology" }]),
     relatedQuestions: [{ href: "/resources/evidence/tiktok-discrepancies", label: "TikTok discrepancies" }],
     capabilityRows: [
       { label: "Pin-level deterministic cash mapping", state: "Planned / tenant-dependent" },
@@ -546,9 +521,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     metaDescription:
       "Express Checkout, partial captures, disputes, and multi-currency settlement vs Shopify order totals — distinct mechanisms from card-only Stripe drift or Google click attribution.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "PayPal introduces **wallet-specific settlement paths**, hold periods, and dispute flows that do not mirror card processors line-for-line. Shopify may show an order as paid while PayPal’s settlement file still shows a pending or reversed state — a different failure mode than Meta over-attribution.",
@@ -571,7 +544,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not provide PayPal merchant legal advice.",
     limitations:
       "PayPal product names and reporting exports vary by region; finance must validate field dictionaries locally.",
-    relatedProof: proof([{ href: "/revenue-verification", label: "Revenue verification" }]),
+    relatedProof: withMethodologyLinks([{ href: "/revenue-verification", label: "Revenue verification" }]),
     relatedQuestions: [{ href: "/resources/evidence/woocommerce-reconciliation", label: "WooCommerce reconciliation" }],
     capabilityRows: [
       { label: "Automated PayPal legal dispute prediction", state: "Unavailable" },
@@ -584,9 +557,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
     metaDescription:
       "Plugin-driven UTM capture, server-side order edits, HPOS, and mixed payment gateways vs ad platform conversion APIs — distinct from Shopify-native assumptions.",
     lastReviewed: LR,
-    dateModified: LR,
     owner: OWNER,
-    reviewCadence: CADENCE,
     disclosureStatus: "technical_disclosure_only",
     bluf:
       "WooCommerce sites inherit **plugin combinatorics**: the same order might be touched by tax plugins, subscription renewals, and manual admin edits. Ad platforms see conversion pings that may never reflect the final `wp_post` totals Woo reports — a different reconciliation graph than SaaS-native Shopify stores.",
@@ -609,7 +580,7 @@ export const EVIDENCE_CATALOG: Record<EvidenceSlug, EvidencePageDefinition> = {
       "Does not audit PHP plugin security for your store.",
     limitations:
       "Self-hosted variance is high; this page cannot enumerate every plugin interaction.",
-    relatedProof: proof([{ href: "/docs", label: "Documentation concepts" }]),
+    relatedProof: withMethodologyLinks([{ href: "/docs", label: "Documentation concepts" }]),
     relatedQuestions: [{ href: "/resources/evidence/shopify-reconciliation", label: "Shopify reconciliation primer" }],
     capabilityRows: [
       { label: "Universal Woo plugin graph inference", state: "Planned / operator-intensive today" },

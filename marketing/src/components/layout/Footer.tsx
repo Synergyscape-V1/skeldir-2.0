@@ -394,7 +394,7 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Column 3: Trust & Methodology (D5 proof links) */}
+          {/* Column 3: Trust & methodology */}
           <div>
             <h3
               style={{

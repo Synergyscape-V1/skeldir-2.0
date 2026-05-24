@@ -3,7 +3,6 @@
 **Phase:** D5 — Trust Proof Boundary and Legal/Security Surface
 **Last reviewed:** 2026-05-23
 **Owner:** Skeldir Product Engineering
-**Review cadence:** Quarterly, and on every change to public marketing claims.
 
 This registry is the human-readable counterpart of `discoverability.claim-proof-registry.json`. Every high-stakes Skeldir marketing claim must appear in both. The harness `scripts/discoverability-d5-harness.mjs` enforces:
 

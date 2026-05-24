@@ -46,40 +46,17 @@ export function EvidenceLibraryDocument(props: { page: EvidencePageDefinition })
     <div className="min-h-screen flex flex-col bg-white text-slate-900">
       <main className="flex-grow pt-20 pb-16">
         <div className="container mx-auto px-4 md:px-6 max-w-3xl">
-          <header className="mb-10 border-b border-slate-200 pb-8 pt-12 md:pt-16 lg:pt-20">
+          <header className="mb-8 border-b border-slate-200 pb-6 pt-12 md:pt-16 lg:pt-20">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
               Evidence Library
             </p>
-            <h1 className="text-3xl md:text-4xl font-semibold leading-tight mb-4">{page.h1}</h1>
-            <p className="text-sm text-slate-600 leading-relaxed mb-6">{page.metaDescription}</p>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm border border-slate-100 rounded-lg p-4 bg-slate-50">
-              <div>
-                <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">Owner</dt>
-                <dd>{page.owner}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">Status</dt>
-                <dd>
-                  <code className="text-xs bg-white px-2 py-1 rounded border border-slate-200">
-                    {page.disclosureStatus}
-                  </code>
-                </dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">Review cadence</dt>
-                <dd>{page.reviewCadence}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">dateModified</dt>
-                <dd>{page.dateModified}</dd>
-              </div>
-            </dl>
+            <h1 className="text-3xl md:text-4xl font-semibold leading-tight">{page.h1}</h1>
           </header>
 
           <article className="space-y-12">
-            <section id="bluf" aria-labelledby="bluf-heading" className="scroll-mt-24">
-              <h2 id="bluf-heading" className="text-xl md:text-2xl font-semibold mb-4">
-                BLUF
+            <section id="bottom-line" aria-labelledby="bottom-line-heading" className="scroll-mt-24">
+              <h2 id="bottom-line-heading" className="text-xl md:text-2xl font-semibold mb-4">
+                Bottom line
               </h2>
               <RichParagraphs body={page.bluf} />
             </section>
@@ -95,9 +72,9 @@ export function EvidenceLibraryDocument(props: { page: EvidencePageDefinition })
               </ul>
             </section>
 
-            <section id="claim-evidence-table" aria-labelledby="claim-evidence-heading" className="scroll-mt-24">
-              <h2 id="claim-evidence-heading" className="text-xl md:text-2xl font-semibold mb-4">
-                Claim / Evidence Table
+            <section id="claims-and-evidence" aria-labelledby="claims-evidence-heading" className="scroll-mt-24">
+              <h2 id="claims-evidence-heading" className="text-xl md:text-2xl font-semibold mb-4">
+                Claims and evidence
               </h2>
               <div className="overflow-x-auto border border-slate-200 rounded-lg">
                 <table className="min-w-full text-sm text-left">
@@ -117,6 +94,30 @@ export function EvidenceLibraryDocument(props: { page: EvidencePageDefinition })
                   </tbody>
                 </table>
               </div>
+            </section>
+
+            <section
+              id="evidence-metadata"
+              aria-labelledby="evidence-metadata-heading"
+              className="scroll-mt-24"
+            >
+              <h2 id="evidence-metadata-heading" className="sr-only">
+                Evidence metadata
+              </h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm border border-slate-100 rounded-lg p-4 bg-slate-50">
+                <div>
+                  <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">Owner</dt>
+                  <dd>{page.owner}</dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">Status</dt>
+                  <dd>
+                    <code className="text-xs bg-white px-2 py-1 rounded border border-slate-200">
+                      {page.disclosureStatus}
+                    </code>
+                  </dd>
+                </div>
+              </dl>
             </section>
 
             <section id="capability-status" aria-labelledby="capability-status-heading" className="scroll-mt-24">
@@ -160,9 +161,9 @@ export function EvidenceLibraryDocument(props: { page: EvidencePageDefinition })
               <RichParagraphs body={page.limitations} />
             </section>
 
-            <section id="related-proof-pages" aria-labelledby="related-proof-heading" className="scroll-mt-24">
-              <h2 id="related-proof-heading" className="text-xl md:text-2xl font-semibold mb-4">
-                Related Proof Pages
+            <section id="related-methodology-pages" aria-labelledby="related-methodology-heading" className="scroll-mt-24">
+              <h2 id="related-methodology-heading" className="text-xl md:text-2xl font-semibold mb-4">
+                Related methodology pages
               </h2>
               <ul className="list-disc pl-6 space-y-2">
                 {page.relatedProof.map((l) => (
@@ -175,9 +176,9 @@ export function EvidenceLibraryDocument(props: { page: EvidencePageDefinition })
               </ul>
             </section>
 
-            <section id="related-buyer-questions" aria-labelledby="related-questions-heading" className="scroll-mt-24">
-              <h2 id="related-questions-heading" className="text-xl md:text-2xl font-semibold mb-4">
-                Related Buyer Questions
+            <section id="common-questions" aria-labelledby="common-questions-heading" className="scroll-mt-24">
+              <h2 id="common-questions-heading" className="text-xl md:text-2xl font-semibold mb-4">
+                Common questions
               </h2>
               <ul className="list-disc pl-6 space-y-2">
                 {page.relatedQuestions.map((l) => (

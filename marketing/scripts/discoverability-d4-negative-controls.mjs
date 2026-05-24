@@ -6,12 +6,14 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { extractJsonLdScriptInnerHtmls } from './discoverability/lib/d1-html-retrieval.mjs';
 import { readCrawlUrlAuthority } from './discoverability/lib/d2-crawl-graph.mjs';
 import {
   validateD4IndexablePage,
   parseAllJsonLdObjects,
   loadVerifiedSameAsUrls,
+  validateJsonLdScriptsInHead,
 } from './discoverability/lib/d4-structured-data.mjs';
 
 const MARKETING_ROOT = process.cwd();
@@ -43,6 +45,23 @@ function main() {
   console.log('║  Skeldir D4 — Negative control proof              ║');
   console.log('╚══════════════════════════════════════════════╝\n');
 
+  console.log('[0] Production build (golden regression uses out/index.html)');
+  const skipBuild = process.env.MARKETING_D4_SKIP_BUILD === '1' || process.argv.includes('--skip-build');
+  if (!skipBuild) {
+    const b = spawnSync('npm run build', {
+      cwd: MARKETING_ROOT,
+      shell: true,
+      stdio: 'inherit',
+    });
+    if (b.status !== 0) {
+      fail('npm run build exited non-zero');
+      process.exit(1);
+    }
+    pass('npm run build completed');
+  } else {
+    pass('npm run build skipped (MARKETING_D4_SKIP_BUILD=1 or --skip-build)');
+  }
+
   const auth = readCrawlUrlAuthority(MARKETING_ROOT);
   const origin = auth.SITE_ORIGIN;
   const verified = [];
@@ -50,9 +69,9 @@ function main() {
   const ld = (obj) =>
     `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 
-  const headBase = `<head><meta charset="utf-8"/><title>T</title><link rel="canonical" href="${origin}/" /></head>`;
+  const headBase = (inner) => `<head><meta charset="utf-8"/><title>T</title><link rel="canonical" href="${origin}/" />${inner}</head>`;
 
-  const badParseHtml = `<html>${headBase}<body><script type="application/ld+json">{ not json</script></body></html>`;
+  const badParseHtml = `<html>${headBase('')}<body><script type="application/ld+json">{ not json</script></body></html>`;
   const rawInner = extractJsonLdScriptInnerHtmls(badParseHtml)[0];
   const parseFails = [];
   try {
@@ -62,7 +81,7 @@ function main() {
   }
   expectErrors('NC-D4-01 invalid JSON-LD', parseFails, 1);
 
-  const unsafeLt = `<html>${headBase}<body><script type="application/ld+json">{"x":"<img" }</script></body></html>`;
+  const unsafeLt = `<html>${headBase('')}<body><script type="application/ld+json">{"x":"<img" }</script></body></html>`;
   try {
     parseAllJsonLdObjects(unsafeLt);
     fail('NC-D4-02 raw < should throw');
@@ -78,7 +97,7 @@ function main() {
     name: 'Skeldir',
     publisher: { '@id': `${origin}/#organization` },
   };
-  const homeHtml = `<html>${headBase}<body>${ld(homeMissingOrg)}</body></html>`;
+  const homeHtml = `<html>${headBase(ld(homeMissingOrg))}<body><h1>x</h1></body></html>`;
   expectErrors(
     'NC-D4-03 homepage missing Organization',
     validateD4IndexablePage(MARKETING_ROOT, '/', homeHtml, verified),
@@ -94,14 +113,6 @@ function main() {
     description:
       'Skeldir is deterministic revenue-verification and attribution infrastructure that reconciles platform-reported revenue against verified commerce and payment evidence.',
   };
-  const siteOk = {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    '@id': `${origin}/#website`,
-    url: `${origin}/`,
-    name: 'Skeldir',
-    publisher: { '@id': `${origin}/#organization` },
-  };
   const aria =
     'Every ad dollar traced, verified to the source— So your AI Agents and teams execute from confirmed truth.';
   const wpOk = {
@@ -115,14 +126,28 @@ function main() {
     isPartOf: { '@id': `${origin}/#website` },
     about: { '@id': `${origin}/#organization` },
   };
-  const homeGood = `<html>${headBase}<body><h1 aria-label="${aria.replace(/"/g, '&quot;')}">x</h1>${ld(orgOk)}${ld(siteOk)}${ld(wpOk)}</body></html>`;
+  const wpDesc = String(wpOk.description);
+  const siteOk = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': `${origin}/#website`,
+    url: `${origin}/`,
+    name: 'Skeldir',
+    description: wpDesc,
+    publisher: { '@id': `${origin}/#organization` },
+  };
+  const homeGood = `<html>${headBase(
+    `<meta name="description" content="${wpDesc.replace(/"/g, '&quot;')}"/>${ld(orgOk)}${ld(siteOk)}${ld(wpOk)}`,
+  )}<body><h1 aria-label="${aria.replace(/"/g, '&quot;')}">x</h1></body></html>`;
   const homeGoodErrs = validateD4IndexablePage(MARKETING_ROOT, '/', homeGood, verified);
   if (homeGoodErrs.length) {
     homeGoodErrs.forEach((e) => fail(`golden home fixture should pass: ${e}`));
   } else pass('NC-D4-04 golden home fixture passes validator');
 
   const orgBadSameAs = { ...orgOk, sameAs: ['https://example.com/fake-profile'] };
-  const homeBadSameAs = `<html>${headBase}<body>${ld(orgBadSameAs)}${ld(siteOk)}${ld(wpOk)}</body></html>`;
+  const homeBadSameAs = `<html>${headBase(
+    `<meta name="description" content="${wpDesc.replace(/"/g, '&quot;')}"/>${ld(orgBadSameAs)}${ld(siteOk)}${ld(wpOk)}`,
+  )}<body><h1 aria-label="${aria.replace(/"/g, '&quot;')}">x</h1></body></html>`;
   expectErrors(
     'NC-D4-05 sameAs not in registry',
     validateD4IndexablePage(MARKETING_ROOT, '/', homeBadSameAs, verified),
@@ -141,14 +166,13 @@ function main() {
     1,
   );
 
-  const articleHtml = `<html><head><title>Wrong | Skeldir</title><link rel="canonical" href="${origin}/resources/why-your-attribution-numbers-never-match"/><meta name="description" content="x"/></head><body><h1>Why Your Attribution Numbers Never Match</h1>${ld({
+  const articleHtml = `<html><head><title>Wrong | Skeldir</title><link rel="canonical" href="${origin}/resources/why-your-attribution-numbers-never-match"/><meta name="description" content="x"/>${ld({
     '@context': 'https://schema.org',
     '@type': 'Article',
     headline: 'Wrong headline',
     description: 'ex',
     url: `${origin}/resources/why-your-attribution-numbers-never-match`,
     datePublished: '2026-01-25',
-    dateModified: '2026-01-25',
     author: { '@type': 'Person', name: 'Amulya Puri' },
     publisher: { '@id': `${origin}/#organization` },
     mainEntityOfPage: {
@@ -168,7 +192,7 @@ function main() {
         item: `${origin}/resources/wrong-slug`,
       },
     ],
-  })}</body></html>`;
+  })}</head><body><h1>Why Your Attribution Numbers Never Match</h1></body></html>`;
   const artErrs = validateD4IndexablePage(
     MARKETING_ROOT,
     '/resources/why-your-attribution-numbers-never-match',
@@ -179,15 +203,24 @@ function main() {
     fail(`NC-D4-07 article headline/breadcrumb mismatch expected ≥2 errors, got ${artErrs.length}`);
   } else pass(`NC-D4-07 article parity issues detected (${artErrs.length})`);
 
-  const pricingOfferHtml = `<html><head><title>P</title><link rel="canonical" href="${origin}/pricing"/></head><body><h1>One platform for marketing, finance, and leadership.</h1>${ld({
+  const pricingOfferHtml = `<html><head><title>P</title><link rel="canonical" href="${origin}/pricing"/>${ld({
     '@context': 'https://schema.org',
     '@type': 'Offer',
     price: '1',
     priceCurrency: 'USD',
-  })}</body></html>`;
+  })}</head><body><h1>One platform for marketing, finance, and leadership.</h1></body></html>`;
   expectErrors(
     'NC-D4-08 Offer on /pricing',
     validateD4IndexablePage(MARKETING_ROOT, '/pricing', pricingOfferHtml, verified),
+    1,
+  );
+
+  const homeJsonLdInBody = `<html>${headBase(
+    `<meta name="description" content="${wpDesc.replace(/"/g, '&quot;')}"/>`,
+  )}<body><h1 aria-label="${aria.replace(/"/g, '&quot;')}">x</h1>${ld(orgOk)}${ld(siteOk)}${ld(wpOk)}</body></html>`;
+  expectErrors(
+    'NC-D4-09 JSON-LD must not remain outside <head>',
+    validateJsonLdScriptsInHead(homeJsonLdInBody),
     1,
   );
 

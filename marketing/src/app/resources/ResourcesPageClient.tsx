@@ -9,7 +9,7 @@ import { RESOURCES_HUB_DESCRIPTION, RESOURCES_HUB_H1 } from "@/lib/schema/pageSc
 type ResourcesPageClientProps = {
     /** Pre-rendered server content per category (RSC composition — do not import article grid/hero here). */
     sections: Record<CategoryFilterType, ReactNode>;
-    /** Optional server-rendered strip above the hub hero (D6 evidence library entry). */
+    /** Optional server-rendered strip above the hub hero (Evidence Library entry). */
     prepend?: ReactNode;
 };
 

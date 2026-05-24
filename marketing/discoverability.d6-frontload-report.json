@@ -1,0 +1,1591 @@
+{
+  "generatedAt": "2026-05-24T16:37:42.287Z",
+  "frontLoad": [
+    {
+      "route": "/resources/evidence/meta-vs-stripe",
+      "section": "Bottom line",
+      "byteOffsetInMain": 388,
+      "normalizedPositionInMain": 0.0416,
+      "byteOffsetInBody": 11928,
+      "normalizedPositionInBody": 0.1761,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/meta-vs-stripe",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1167,
+      "normalizedPositionInMain": 0.125,
+      "byteOffsetInBody": 12707,
+      "normalizedPositionInBody": 0.1876,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/meta-vs-stripe",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1884,
+      "normalizedPositionInMain": 0.2018,
+      "byteOffsetInBody": 13424,
+      "normalizedPositionInBody": 0.1982,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/meta-vs-stripe",
+      "section": "Methodology",
+      "byteOffsetInMain": 5404,
+      "normalizedPositionInMain": 0.5788,
+      "byteOffsetInBody": 16944,
+      "normalizedPositionInBody": 0.2501,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/meta-vs-stripe",
+      "section": "Limitations",
+      "byteOffsetInMain": 6679,
+      "normalizedPositionInMain": 0.7153,
+      "byteOffsetInBody": 18219,
+      "normalizedPositionInBody": 0.269,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/google-ads-vs-shopify",
+      "section": "Bottom line",
+      "byteOffsetInMain": 393,
+      "normalizedPositionInMain": 0.0447,
+      "byteOffsetInBody": 11933,
+      "normalizedPositionInBody": 0.1793,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/google-ads-vs-shopify",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1117,
+      "normalizedPositionInMain": 0.1269,
+      "byteOffsetInBody": 12657,
+      "normalizedPositionInBody": 0.1902,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/google-ads-vs-shopify",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1837,
+      "normalizedPositionInMain": 0.2087,
+      "byteOffsetInBody": 13377,
+      "normalizedPositionInBody": 0.201,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/google-ads-vs-shopify",
+      "section": "Methodology",
+      "byteOffsetInMain": 5256,
+      "normalizedPositionInMain": 0.5973,
+      "byteOffsetInBody": 16796,
+      "normalizedPositionInBody": 0.2524,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/google-ads-vs-shopify",
+      "section": "Limitations",
+      "byteOffsetInMain": 6274,
+      "normalizedPositionInMain": 0.713,
+      "byteOffsetInBody": 17814,
+      "normalizedPositionInBody": 0.2677,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/shopify-reconciliation",
+      "section": "Bottom line",
+      "byteOffsetInMain": 401,
+      "normalizedPositionInMain": 0.0534,
+      "byteOffsetInBody": 11941,
+      "normalizedPositionInBody": 0.1885,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/shopify-reconciliation",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1100,
+      "normalizedPositionInMain": 0.1465,
+      "byteOffsetInBody": 12640,
+      "normalizedPositionInBody": 0.1996,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/shopify-reconciliation",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1693,
+      "normalizedPositionInMain": 0.2254,
+      "byteOffsetInBody": 13233,
+      "normalizedPositionInBody": 0.2089,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/shopify-reconciliation",
+      "section": "Methodology",
+      "byteOffsetInMain": 4180,
+      "normalizedPositionInMain": 0.5566,
+      "byteOffsetInBody": 15720,
+      "normalizedPositionInBody": 0.2482,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/shopify-reconciliation",
+      "section": "Limitations",
+      "byteOffsetInMain": 5227,
+      "normalizedPositionInMain": 0.696,
+      "byteOffsetInBody": 16767,
+      "normalizedPositionInBody": 0.2647,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/finance-roas-audit-checklist",
+      "section": "Bottom line",
+      "byteOffsetInMain": 388,
+      "normalizedPositionInMain": 0.0529,
+      "byteOffsetInBody": 11928,
+      "normalizedPositionInBody": 0.1895,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/finance-roas-audit-checklist",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1118,
+      "normalizedPositionInMain": 0.1525,
+      "byteOffsetInBody": 12658,
+      "normalizedPositionInBody": 0.2011,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/finance-roas-audit-checklist",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1694,
+      "normalizedPositionInMain": 0.2311,
+      "byteOffsetInBody": 13234,
+      "normalizedPositionInBody": 0.2102,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/finance-roas-audit-checklist",
+      "section": "Methodology",
+      "byteOffsetInMain": 4171,
+      "normalizedPositionInMain": 0.569,
+      "byteOffsetInBody": 15711,
+      "normalizedPositionInBody": 0.2496,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/finance-roas-audit-checklist",
+      "section": "Limitations",
+      "byteOffsetInMain": 5176,
+      "normalizedPositionInMain": 0.706,
+      "byteOffsetInBody": 16716,
+      "normalizedPositionInBody": 0.2655,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/deterministic-attribution-methods",
+      "section": "Bottom line",
+      "byteOffsetInMain": 404,
+      "normalizedPositionInMain": 0.057,
+      "byteOffsetInBody": 11944,
+      "normalizedPositionInBody": 0.1914,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-attribution-methods",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1065,
+      "normalizedPositionInMain": 0.1504,
+      "byteOffsetInBody": 12605,
+      "normalizedPositionInBody": 0.202,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-attribution-methods",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1670,
+      "normalizedPositionInMain": 0.2358,
+      "byteOffsetInBody": 13210,
+      "normalizedPositionInBody": 0.2117,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-attribution-methods",
+      "section": "Methodology",
+      "byteOffsetInMain": 3982,
+      "normalizedPositionInMain": 0.5622,
+      "byteOffsetInBody": 15522,
+      "normalizedPositionInBody": 0.2487,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/deterministic-attribution-methods",
+      "section": "Limitations",
+      "byteOffsetInMain": 4840,
+      "normalizedPositionInMain": 0.6833,
+      "byteOffsetInBody": 16380,
+      "normalizedPositionInBody": 0.2625,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "section": "Bottom line",
+      "byteOffsetInMain": 398,
+      "normalizedPositionInMain": 0.054,
+      "byteOffsetInBody": 11938,
+      "normalizedPositionInBody": 0.1889,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1088,
+      "normalizedPositionInMain": 0.1477,
+      "byteOffsetInBody": 12628,
+      "normalizedPositionInBody": 0.1998,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1694,
+      "normalizedPositionInMain": 0.2299,
+      "byteOffsetInBody": 13234,
+      "normalizedPositionInBody": 0.2094,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "section": "Methodology",
+      "byteOffsetInMain": 4235,
+      "normalizedPositionInMain": 0.5749,
+      "byteOffsetInBody": 15775,
+      "normalizedPositionInBody": 0.2496,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "section": "Limitations",
+      "byteOffsetInMain": 5148,
+      "normalizedPositionInMain": 0.6988,
+      "byteOffsetInBody": 16688,
+      "normalizedPositionInBody": 0.264,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/benchmark-methodology",
+      "section": "Bottom line",
+      "byteOffsetInMain": 410,
+      "normalizedPositionInMain": 0.0597,
+      "byteOffsetInBody": 11950,
+      "normalizedPositionInBody": 0.1937,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/benchmark-methodology",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1017,
+      "normalizedPositionInMain": 0.1482,
+      "byteOffsetInBody": 12557,
+      "normalizedPositionInBody": 0.2035,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/benchmark-methodology",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1466,
+      "normalizedPositionInMain": 0.2136,
+      "byteOffsetInBody": 13006,
+      "normalizedPositionInBody": 0.2108,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/benchmark-methodology",
+      "section": "Methodology",
+      "byteOffsetInMain": 3897,
+      "normalizedPositionInMain": 0.5677,
+      "byteOffsetInBody": 15437,
+      "normalizedPositionInBody": 0.2502,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/benchmark-methodology",
+      "section": "Limitations",
+      "byteOffsetInMain": 4802,
+      "normalizedPositionInMain": 0.6996,
+      "byteOffsetInBody": 16342,
+      "normalizedPositionInBody": 0.2649,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/privacy-no-pii-methodology",
+      "section": "Bottom line",
+      "byteOffsetInMain": 409,
+      "normalizedPositionInMain": 0.0579,
+      "byteOffsetInBody": 11949,
+      "normalizedPositionInBody": 0.1915,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/privacy-no-pii-methodology",
+      "section": "Key Facts",
+      "byteOffsetInMain": 1036,
+      "normalizedPositionInMain": 0.1466,
+      "byteOffsetInBody": 12576,
+      "normalizedPositionInBody": 0.2015,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/privacy-no-pii-methodology",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1527,
+      "normalizedPositionInMain": 0.216,
+      "byteOffsetInBody": 13067,
+      "normalizedPositionInBody": 0.2094,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/privacy-no-pii-methodology",
+      "section": "Methodology",
+      "byteOffsetInMain": 4075,
+      "normalizedPositionInMain": 0.5765,
+      "byteOffsetInBody": 15615,
+      "normalizedPositionInBody": 0.2502,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/privacy-no-pii-methodology",
+      "section": "Limitations",
+      "byteOffsetInMain": 4845,
+      "normalizedPositionInMain": 0.6854,
+      "byteOffsetInBody": 16385,
+      "normalizedPositionInBody": 0.2626,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/trust-envelope-technical-spec",
+      "section": "Bottom line",
+      "byteOffsetInMain": 371,
+      "normalizedPositionInMain": 0.0548,
+      "byteOffsetInBody": 11911,
+      "normalizedPositionInBody": 0.1936,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/trust-envelope-technical-spec",
+      "section": "Key Facts",
+      "byteOffsetInMain": 968,
+      "normalizedPositionInMain": 0.143,
+      "byteOffsetInBody": 12508,
+      "normalizedPositionInBody": 0.2033,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/trust-envelope-technical-spec",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1430,
+      "normalizedPositionInMain": 0.2113,
+      "byteOffsetInBody": 12970,
+      "normalizedPositionInBody": 0.2108,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/trust-envelope-technical-spec",
+      "section": "Methodology",
+      "byteOffsetInMain": 3771,
+      "normalizedPositionInMain": 0.5571,
+      "byteOffsetInBody": 15311,
+      "normalizedPositionInBody": 0.2489,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/trust-envelope-technical-spec",
+      "section": "Limitations",
+      "byteOffsetInMain": 4573,
+      "normalizedPositionInMain": 0.6756,
+      "byteOffsetInBody": 16113,
+      "normalizedPositionInBody": 0.2619,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/ai-llm-explanation-boundary",
+      "section": "Bottom line",
+      "byteOffsetInMain": 388,
+      "normalizedPositionInMain": 0.0559,
+      "byteOffsetInBody": 11928,
+      "normalizedPositionInBody": 0.1926,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/ai-llm-explanation-boundary",
+      "section": "Key Facts",
+      "byteOffsetInMain": 959,
+      "normalizedPositionInMain": 0.1382,
+      "byteOffsetInBody": 12499,
+      "normalizedPositionInBody": 0.2018,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/ai-llm-explanation-boundary",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1427,
+      "normalizedPositionInMain": 0.2056,
+      "byteOffsetInBody": 12967,
+      "normalizedPositionInBody": 0.2094,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/ai-llm-explanation-boundary",
+      "section": "Methodology",
+      "byteOffsetInMain": 3817,
+      "normalizedPositionInMain": 0.5499,
+      "byteOffsetInBody": 15357,
+      "normalizedPositionInBody": 0.2479,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/ai-llm-explanation-boundary",
+      "section": "Limitations",
+      "byteOffsetInMain": 4730,
+      "normalizedPositionInMain": 0.6815,
+      "byteOffsetInBody": 16270,
+      "normalizedPositionInBody": 0.2627,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/tiktok-discrepancies",
+      "section": "Bottom line",
+      "byteOffsetInMain": 384,
+      "normalizedPositionInMain": 0.0569,
+      "byteOffsetInBody": 11924,
+      "normalizedPositionInBody": 0.1943,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/tiktok-discrepancies",
+      "section": "Key Facts",
+      "byteOffsetInMain": 935,
+      "normalizedPositionInMain": 0.1385,
+      "byteOffsetInBody": 12475,
+      "normalizedPositionInBody": 0.2033,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/tiktok-discrepancies",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1416,
+      "normalizedPositionInMain": 0.2097,
+      "byteOffsetInBody": 12956,
+      "normalizedPositionInBody": 0.2111,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/tiktok-discrepancies",
+      "section": "Methodology",
+      "byteOffsetInMain": 3767,
+      "normalizedPositionInMain": 0.558,
+      "byteOffsetInBody": 15307,
+      "normalizedPositionInBody": 0.2494,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/tiktok-discrepancies",
+      "section": "Limitations",
+      "byteOffsetInMain": 4675,
+      "normalizedPositionInMain": 0.6925,
+      "byteOffsetInBody": 16215,
+      "normalizedPositionInBody": 0.2642,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/pinterest-discrepancies",
+      "section": "Bottom line",
+      "byteOffsetInMain": 383,
+      "normalizedPositionInMain": 0.0564,
+      "byteOffsetInBody": 11923,
+      "normalizedPositionInBody": 0.1938,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/pinterest-discrepancies",
+      "section": "Key Facts",
+      "byteOffsetInMain": 983,
+      "normalizedPositionInMain": 0.1447,
+      "byteOffsetInBody": 12523,
+      "normalizedPositionInBody": 0.2036,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/pinterest-discrepancies",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1479,
+      "normalizedPositionInMain": 0.2177,
+      "byteOffsetInBody": 13019,
+      "normalizedPositionInBody": 0.2117,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/pinterest-discrepancies",
+      "section": "Methodology",
+      "byteOffsetInMain": 3794,
+      "normalizedPositionInMain": 0.5585,
+      "byteOffsetInBody": 15334,
+      "normalizedPositionInBody": 0.2493,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/pinterest-discrepancies",
+      "section": "Limitations",
+      "byteOffsetInMain": 4733,
+      "normalizedPositionInMain": 0.6967,
+      "byteOffsetInBody": 16273,
+      "normalizedPositionInBody": 0.2646,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/paypal-reconciliation",
+      "section": "Bottom line",
+      "byteOffsetInMain": 386,
+      "normalizedPositionInMain": 0.0576,
+      "byteOffsetInBody": 11926,
+      "normalizedPositionInBody": 0.1947,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/paypal-reconciliation",
+      "section": "Key Facts",
+      "byteOffsetInMain": 968,
+      "normalizedPositionInMain": 0.1446,
+      "byteOffsetInBody": 12508,
+      "normalizedPositionInBody": 0.2042,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/paypal-reconciliation",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1397,
+      "normalizedPositionInMain": 0.2086,
+      "byteOffsetInBody": 12937,
+      "normalizedPositionInBody": 0.2112,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/paypal-reconciliation",
+      "section": "Methodology",
+      "byteOffsetInMain": 3681,
+      "normalizedPositionInMain": 0.5497,
+      "byteOffsetInBody": 15221,
+      "normalizedPositionInBody": 0.2485,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/paypal-reconciliation",
+      "section": "Limitations",
+      "byteOffsetInMain": 4589,
+      "normalizedPositionInMain": 0.6853,
+      "byteOffsetInBody": 16129,
+      "normalizedPositionInBody": 0.2633,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/woocommerce-reconciliation",
+      "section": "Bottom line",
+      "byteOffsetInMain": 381,
+      "normalizedPositionInMain": 0.0576,
+      "byteOffsetInBody": 11921,
+      "normalizedPositionInBody": 0.1955,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/woocommerce-reconciliation",
+      "section": "Key Facts",
+      "byteOffsetInMain": 976,
+      "normalizedPositionInMain": 0.1475,
+      "byteOffsetInBody": 12516,
+      "normalizedPositionInBody": 0.2053,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/woocommerce-reconciliation",
+      "section": "Claims and evidence",
+      "byteOffsetInMain": 1429,
+      "normalizedPositionInMain": 0.216,
+      "byteOffsetInBody": 12969,
+      "normalizedPositionInBody": 0.2127,
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/woocommerce-reconciliation",
+      "section": "Methodology",
+      "byteOffsetInMain": 3737,
+      "normalizedPositionInMain": 0.5649,
+      "byteOffsetInBody": 15277,
+      "normalizedPositionInBody": 0.2506,
+      "result": "info"
+    },
+    {
+      "route": "/resources/evidence/woocommerce-reconciliation",
+      "section": "Limitations",
+      "byteOffsetInMain": 4549,
+      "normalizedPositionInMain": 0.6877,
+      "byteOffsetInBody": 16089,
+      "normalizedPositionInBody": 0.2639,
+      "result": "info"
+    }
+  ],
+  "entitySemantics": [
+    {
+      "route": "/resources/evidence/meta-vs-stripe",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/google-ads-vs-shopify",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/shopify-reconciliation",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/finance-roas-audit-checklist",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-attribution-methods",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/benchmark-methodology",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/privacy-no-pii-methodology",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/trust-envelope-technical-spec",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/ai-llm-explanation-boundary",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/tiktok-discrepancies",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/pinterest-discrepancies",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/paypal-reconciliation",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    },
+    {
+      "route": "/resources/evidence/woocommerce-reconciliation",
+      "scannedFields": [
+        "title",
+        "meta description",
+        "H1",
+        "BLUF",
+        "Key Facts",
+        "first 30% of main",
+        "JSON-LD"
+      ],
+      "disallowedTermsFound": [],
+      "highRiskTermsFound": [],
+      "exceptions": [],
+      "result": "pass"
+    }
+  ],
+  "similarity": [
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/google-ads-vs-shopify",
+      "similarityScore": 0.2838,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/shopify-reconciliation",
+      "similarityScore": 0.2414,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/finance-roas-audit-checklist",
+      "similarityScore": 0.2219,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/deterministic-attribution-methods",
+      "similarityScore": 0.224,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "similarityScore": 0.2229,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/benchmark-methodology",
+      "similarityScore": 0.2145,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/privacy-no-pii-methodology",
+      "similarityScore": 0.191,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.228,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.2236,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2194,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2073,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2421,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/meta-vs-stripe",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2006,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/shopify-reconciliation",
+      "similarityScore": 0.2226,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/finance-roas-audit-checklist",
+      "similarityScore": 0.1982,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/deterministic-attribution-methods",
+      "similarityScore": 0.2066,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "similarityScore": 0.2291,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/benchmark-methodology",
+      "similarityScore": 0.2244,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/privacy-no-pii-methodology",
+      "similarityScore": 0.2032,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.231,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.2181,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2594,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2492,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2376,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/google-ads-vs-shopify",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2451,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/finance-roas-audit-checklist",
+      "similarityScore": 0.231,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/deterministic-attribution-methods",
+      "similarityScore": 0.249,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "similarityScore": 0.2021,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/benchmark-methodology",
+      "similarityScore": 0.2222,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/privacy-no-pii-methodology",
+      "similarityScore": 0.2022,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.1961,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.2341,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2431,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2706,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2568,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/shopify-reconciliation",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2322,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/deterministic-attribution-methods",
+      "similarityScore": 0.2427,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "similarityScore": 0.2302,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/benchmark-methodology",
+      "similarityScore": 0.2148,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/privacy-no-pii-methodology",
+      "similarityScore": 0.2126,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.2222,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.2373,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.279,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2398,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2358,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/finance-roas-audit-checklist",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2062,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "similarityScore": 0.2542,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/benchmark-methodology",
+      "similarityScore": 0.217,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/privacy-no-pii-methodology",
+      "similarityScore": 0.2251,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.2732,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.2837,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2466,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2389,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2291,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-attribution-methods",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2232,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/benchmark-methodology",
+      "similarityScore": 0.26,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/privacy-no-pii-methodology",
+      "similarityScore": 0.248,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.2946,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.265,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2531,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.1977,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2174,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/deterministic-vs-probabilistic-confidence",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2124,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/benchmark-methodology",
+      "routeB": "/resources/evidence/privacy-no-pii-methodology",
+      "similarityScore": 0.2172,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/benchmark-methodology",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.2791,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/benchmark-methodology",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.2715,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/benchmark-methodology",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2059,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/benchmark-methodology",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2099,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/benchmark-methodology",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.1911,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/benchmark-methodology",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2056,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/privacy-no-pii-methodology",
+      "routeB": "/resources/evidence/trust-envelope-technical-spec",
+      "similarityScore": 0.2535,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/privacy-no-pii-methodology",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.2694,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/privacy-no-pii-methodology",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2456,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/privacy-no-pii-methodology",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2025,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/privacy-no-pii-methodology",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2393,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/privacy-no-pii-methodology",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2489,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/trust-envelope-technical-spec",
+      "routeB": "/resources/evidence/ai-llm-explanation-boundary",
+      "similarityScore": 0.3061,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/trust-envelope-technical-spec",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2358,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/trust-envelope-technical-spec",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2117,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/trust-envelope-technical-spec",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2407,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/trust-envelope-technical-spec",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2287,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/ai-llm-explanation-boundary",
+      "routeB": "/resources/evidence/tiktok-discrepancies",
+      "similarityScore": 0.2465,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/ai-llm-explanation-boundary",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2222,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/ai-llm-explanation-boundary",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2178,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/ai-llm-explanation-boundary",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.25,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/tiktok-discrepancies",
+      "routeB": "/resources/evidence/pinterest-discrepancies",
+      "similarityScore": 0.2831,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/tiktok-discrepancies",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2727,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/tiktok-discrepancies",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2275,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/pinterest-discrepancies",
+      "routeB": "/resources/evidence/paypal-reconciliation",
+      "similarityScore": 0.2756,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/pinterest-discrepancies",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2415,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    },
+    {
+      "routeA": "/resources/evidence/paypal-reconciliation",
+      "routeB": "/resources/evidence/woocommerce-reconciliation",
+      "similarityScore": 0.2532,
+      "threshold": 0.72,
+      "result": "pass",
+      "manualOverride": false
+    }
+  ]
+}

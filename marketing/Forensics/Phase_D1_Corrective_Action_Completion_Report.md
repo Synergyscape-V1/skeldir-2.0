@@ -117,7 +117,7 @@ npm run discoverability:d1:content-parity
 **Field consistency:** `validateArticleJsonLdAgainstMetadata` asserts:
 
 - `@type` includes `Article`
-- `headline`, `description`, `datePublished` / `dateModified`, `author.name`, and canonical `url` / `mainEntityOfPage.@id` match parsed `articlesData.ts` metadata for that slug.
+- `headline`, `description`, `datePublished`, `author.name`, and canonical `url` / `mainEntityOfPage.@id` match parsed `articlesData.ts` metadata for that slug (Article JSON-LD does not emit `dateModified`).
 
 **Negative control:** NC-8 (invalid JSON) and NC-9 (headline mismatch) both produce expected failures.
 

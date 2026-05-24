@@ -1,3 +1,9 @@
 {
-  "sameAs": []
+  "sameAs": [],
+  "entityAuthorityWaiver": {
+    "active": true,
+    "scope": "D4-C2-production-entity-authority",
+    "statement": "Skeldir marketing ships Organization JSON-LD without sameAs external anchors until Growth/Ops documents at least two verified owned profile URLs (e.g. LinkedIn company, GitHub organization) in ENTITY_PROFILE_REGISTRY.md and adds them to the sameAs array. This waiver explicitly accepts incomplete multi-source entity authority for D4 local closure.",
+    "operatorAcknowledgedAt": "2026-05-22"
+  }
 }

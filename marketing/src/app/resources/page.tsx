@@ -51,29 +51,29 @@ export default function ResourcesPage() {
     const evidenceStrip = (
         <section
             className="container mx-auto px-4 md:px-6 max-w-5xl pb-10"
-            aria-label="Evidence Library — query-shaped public evidence pages"
+            aria-label="Evidence Library — methodology-aligned explainers"
         >
             <h2 className="text-2xl font-bold text-slate-900 mb-3">Evidence Library</h2>
             <p className="text-slate-700 leading-relaxed mb-4">
-                Skeldir&apos;s public resources now include a query-addressable{" "}
-                <strong>Evidence Library</strong> for{" "}
-                <strong>Revenue Verification</strong>, <strong>Platform Discrepancies</strong>,{" "}
-                <strong>Finance Audit</strong> checklists, <strong>TrustEnvelope</strong> retrieval notes,{" "}
-                <strong>Benchmark Methodology</strong> honesty boundaries, deterministic vs probabilistic{" "}
-                <strong>confidence</strong> semantics, <strong>privacy</strong> / durable PII scope, and the{" "}
-                <strong>AI boundary</strong>. Each page links back to D5 proof authorities (for example{" "}
+                Alongside the articles below, we publish focused explainers on{" "}
+                <strong>revenue verification</strong>, <strong>platform discrepancies</strong>, finance{" "}
+                <strong>audit</strong> checklists, <strong>TrustEnvelope</strong> concepts,{" "}
+                <strong>benchmark methodology</strong> and its limits, deterministic versus probabilistic{" "}
+                <strong>confidence</strong>, <strong>privacy</strong> and durable identifiers, and the{" "}
+                <strong>AI boundary</strong>. Those pages intentionally cross-link the same public methodology
+                anchors (for example{" "}
                 <Link className="underline font-medium text-slate-900" href="/methodology">
-                    /methodology
+                    Methodology
                 </Link>
                 ,{" "}
                 <Link className="underline font-medium text-slate-900" href="/revenue-verification">
-                    /revenue-verification
+                    Revenue verification
                 </Link>
-                ,{" "}
+                , and{" "}
                 <Link className="underline font-medium text-slate-900" href="/discrepancy-taxonomy">
-                    /discrepancy-taxonomy
+                    Discrepancy taxonomy
                 </Link>
-                ).
+                ) so we do not drift between “marketing language” and how Skeldir defines terms.
             </p>
             <Link
                 href="/resources/evidence"

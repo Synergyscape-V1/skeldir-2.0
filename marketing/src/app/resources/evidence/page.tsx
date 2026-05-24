@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 const CLUSTER_LINKS: { title: string; description: string; hrefs: { href: string; label: string }[] }[] = [
   {
     title: "Platform Discrepancies",
-    description: "Pair-specific mechanisms (not generic blog copy).",
+    description: "Concrete mechanics per platform pair—not generic thought leadership.",
     hrefs: [
       { href: "/resources/evidence/meta-vs-stripe", label: "Meta vs Stripe" },
       { href: "/resources/evidence/google-ads-vs-shopify", label: "Google Ads vs Shopify" },
@@ -39,34 +39,35 @@ const CLUSTER_LINKS: { title: string; description: string; hrefs: { href: string
   },
   {
     title: "Revenue Verification & Finance Audit",
-    description: "Checklists and verification framing for operators.",
+    description: "Checklists and framing finance can use before trusting platform headlines.",
     hrefs: [
       { href: "/resources/evidence/shopify-reconciliation", label: "Shopify reconciliation" },
       { href: "/resources/evidence/finance-roas-audit-checklist", label: "Finance ROAS audit checklist" },
-      { href: "/revenue-verification", label: "D5 — Revenue verification" },
+      { href: "/revenue-verification", label: "Revenue verification (full brief)" },
     ],
   },
   {
     title: "Attribution, confidence, TrustEnvelope",
-    description: "Deterministic substrate vs model layers; TrustEnvelope authority.",
+    description:
+      "How Skeldir separates settled commerce evidence from model layers, and where TrustEnvelope summaries fit.",
     hrefs: [
       { href: "/resources/evidence/deterministic-attribution-methods", label: "Deterministic attribution methods" },
       {
         href: "/resources/evidence/deterministic-vs-probabilistic-confidence",
         label: "Deterministic vs probabilistic confidence",
       },
-      { href: "/resources/evidence/trust-envelope-technical-spec", label: "TrustEnvelope technical spec (retrieval)" },
-      { href: "/trust-envelope", label: "D5 — TrustEnvelope (canonical)" },
+      { href: "/resources/evidence/trust-envelope-technical-spec", label: "TrustEnvelope technical overview" },
+      { href: "/trust-envelope", label: "TrustEnvelope (canonical page)" },
     ],
   },
   {
     title: "Benchmark Methodology & Related",
-    description: "Honesty boundaries for PII claims, LLMs, and roadmap benchmarks.",
+    description: "Honesty boundaries for privacy claims, LLMs, and roadmap benchmarks.",
     hrefs: [
       { href: "/resources/evidence/privacy-no-pii-methodology", label: "Privacy / durable PII methodology" },
       { href: "/resources/evidence/ai-llm-explanation-boundary", label: "AI / LLM explanation boundary" },
       { href: "/resources/evidence/benchmark-methodology", label: "Benchmark methodology" },
-      { href: "/ai-boundary", label: "D5 — AI boundary" },
+      { href: "/ai-boundary", label: "AI boundary (canonical page)" },
     ],
   },
 ];
@@ -84,17 +85,18 @@ export default function EvidenceLibraryHubPage() {
             <h1 className="text-3xl md:text-4xl font-semibold leading-tight mb-4">{EVIDENCE_HUB_H1}</h1>
             <p className="text-lg text-slate-700 leading-relaxed">{EVIDENCE_HUB_DESCRIPTION}</p>
             <p className="mt-6 text-sm text-slate-600">
-              This hub is the D6 retrieval layer. Canonical proof definitions remain on D5 routes such as{" "}
+              Shorter pages here summarize topics for quick reading; canonical definitions and review status live on
+              the methodology routes such as{" "}
               <Link className="underline" href="/methodology">
-                /methodology
+                Methodology
               </Link>
               ,{" "}
               <Link className="underline" href="/revenue-verification">
-                /revenue-verification
+                Revenue verification
               </Link>
               , and{" "}
               <Link className="underline" href="/discrepancy-taxonomy">
-                /discrepancy-taxonomy
+                Discrepancy taxonomy
               </Link>
               .
             </p>
@@ -131,21 +133,6 @@ export default function EvidenceLibraryHubPage() {
               </section>
             );
             })}
-
-            <section aria-labelledby="matrix-heading" className="border-t border-slate-200 pt-10">
-              <h2 id="matrix-heading" className="text-2xl font-semibold mb-3">
-                Buyer query map
-              </h2>
-              <p className="text-slate-700 mb-4">
-                Machine-readable matrices live at repo root:{" "}
-                <code className="text-xs bg-slate-100 px-2 py-1 rounded">BUYER_QUERY_CONTENT_MATRIX.md</code> and{" "}
-                <code className="text-xs bg-slate-100 px-2 py-1 rounded">discoverability.buyer-query-matrix.json</code>.
-              </p>
-              <p className="text-slate-600 text-sm">
-                Evidence routes in this build: {EVIDENCE_SLUGS.length} pages under{" "}
-                <code className="text-xs bg-slate-100 px-1 rounded">/resources/evidence/&lt;slug&gt;</code>.
-              </p>
-            </section>
 
             <section aria-labelledby="all-pages-heading">
               <h2 id="all-pages-heading" className="text-2xl font-semibold mb-4">

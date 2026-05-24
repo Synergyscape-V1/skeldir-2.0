@@ -71,16 +71,16 @@ export const D6_PLATFORM_PAIR_ROUTES = [
 ];
 
 export const D6_SECTION_HEADINGS = [
-  'BLUF',
+  'Bottom line',
   'Key Facts',
-  'Claim / Evidence Table',
+  'Claims and evidence',
   'Capability status',
   'How Skeldir Treats This',
   'Methodology',
   'What This Does Not Prove',
   'Limitations',
-  'Related Proof Pages',
-  'Related Buyer Questions',
+  'Related methodology pages',
+  'Common questions',
   'Last Reviewed',
   'Owner',
 ];
@@ -204,7 +204,7 @@ export function validateD6EvidenceDetailHtml(_marketingRoot, logicalPath, html) 
     }
   }
   if (!proofHit) {
-    errors.push(`${logicalPath}: missing anchor href to at least one D5 proof authority`);
+    errors.push(`${logicalPath}: missing anchor href to at least one methodology page`);
   }
   if (!lower.includes('capability status')) {
     errors.push(`${logicalPath}: missing capability status block heading`);
@@ -274,7 +274,6 @@ export function validateBuyerQueryMatrixShape(matrix) {
     'priority',
     'owner',
     'last_reviewed',
-    'review_cadence',
   ];
   const cats = new Set();
   for (const e of entries) {
@@ -298,6 +297,61 @@ export function validateBuyerQueryMatrixShape(matrix) {
  * @param {object} reg
  * @returns {string[]}
  */
+/**
+ * All-pairs Jaccard similarity for evidence detail routes (hub excluded).
+ * @param {string} marketingRoot
+ * @param {(route: string) => string | null} readHtml
+ * @param {string[]} routes
+ * @param {{ hard?: number, soft?: number }} [thresholds]
+ */
+export function computeEvidenceAllPairsSimilarity(
+  marketingRoot,
+  readHtml,
+  routes,
+  thresholds = {},
+) {
+  const hard = thresholds.hard ?? 0.85;
+  const soft = thresholds.soft ?? 0.72;
+  const detailRoutes = routes.filter((r) => r !== '/resources/evidence');
+  const texts = new Map();
+  for (const route of detailRoutes) {
+    const html = readHtml(route);
+    texts.set(route, html ? extractEvidenceTextForSimilarity(html) : '');
+  }
+  const overrides = loadSimilarityOverrides(marketingRoot).pair_overrides || [];
+  const rows = [];
+  const errors = [];
+  for (let i = 0; i < detailRoutes.length; i++) {
+    for (let j = i + 1; j < detailRoutes.length; j++) {
+      const routeA = detailRoutes[i];
+      const routeB = detailRoutes[j];
+      const ta = texts.get(routeA) || '';
+      const tb = texts.get(routeB) || '';
+      const score = jaccardWordSimilarity(ta, tb);
+      const pairKey = `${routeA.replace('/resources/evidence/', '')}|${routeB.replace('/resources/evidence/', '')}`;
+      const manualOverride = overrides.some((o) => o.pair === pairKey && o.justification);
+      let result = 'pass';
+      if (score >= hard && !manualOverride) {
+        result = 'fail';
+        errors.push(
+          `${routeA} × ${routeB}: similarity ${score.toFixed(3)} >= hard ${hard} without manual override`,
+        );
+      } else if (score >= soft) {
+        result = 'warn';
+      }
+      rows.push({
+        routeA,
+        routeB,
+        similarityScore: Number(score.toFixed(4)),
+        threshold: score >= hard ? hard : soft,
+        result,
+        manualOverride: Boolean(manualOverride),
+      });
+    }
+  }
+  return { rows, errors };
+}
+
 export function validateEvidenceLibraryRegistryShape(reg) {
   const errors = [];
   if (!reg || reg.version === undefined) errors.push('evidence-library-registry: missing version');
@@ -316,7 +370,6 @@ export function validateEvidenceLibraryRegistryShape(reg) {
     'schema_type',
     'owner',
     'last_reviewed',
-    'review_cadence',
     'similarity_group',
   ];
   for (const p of pages) {

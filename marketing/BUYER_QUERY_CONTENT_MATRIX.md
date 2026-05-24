@@ -20,4 +20,4 @@ This markdown view summarizes the same rows for humans. Every priority buyer/age
 | What are the privacy/no-PII boundaries? | privacy_boundary | Legal / security | /resources/evidence/privacy-no-pii-methodology | P1 |
 | What benchmark limitations apply? | benchmark_methodology | Finance | /resources/evidence/benchmark-methodology | P1 |
 
-Owner default: Skeldir Product Engineering. Last reviewed: 2026-05-23. Review cadence: Quarterly (90 days).
+Owner default: Skeldir Product Engineering. Last reviewed: 2026-05-23.

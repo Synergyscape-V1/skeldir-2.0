@@ -29,7 +29,6 @@ export default function AiBoundaryProofPage() {
           trustProofWebPageJsonLd(ROUTE, {
             name: PAGE_TITLE,
             description: PAGE_DESCRIPTION,
-            dateModified: LAST_REVIEWED,
           }),
           trustProofBreadcrumbJsonLd(ROUTE, { label: "AI boundary" }),
         ]}

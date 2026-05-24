@@ -13,7 +13,7 @@ import {
   META_NOINDEX_PUBLIC_PATHS,
 } from './discoverability/lib/d2-crawl-graph.mjs';
 import {
-  loadVerifiedSameAsUrls,
+  loadEntityProfileRegistry,
   validateD4IndexablePage,
   validateAllOrganizationIds,
   assertHtmlContainsUnescapedJsonLdLt,
@@ -52,24 +52,46 @@ function main() {
   } else pass('Git branch policy satisfied (or skipped)');
 
   console.log('\n[1] Production build');
-  const build = spawnSync('npm run build', {
-    cwd: MARKETING_ROOT,
-    shell: true,
-    stdio: 'inherit',
-  });
-  if (build.status !== 0) {
-    fail('npm run build exited non-zero');
-    process.exit(1);
+  const skipBuild =
+    process.env.MARKETING_D4_SKIP_BUILD === '1' || process.argv.includes('--skip-build');
+  if (skipBuild) {
+    const idx = path.join(MARKETING_ROOT, 'out', 'index.html');
+    if (!fs.existsSync(idx)) {
+      fail('MARKETING_D4_SKIP_BUILD=1 but out/index.html is missing — run npm run build first');
+      process.exit(1);
+    }
+    pass('npm run build skipped (MARKETING_D4_SKIP_BUILD=1 or --skip-build); using existing out/');
+  } else {
+    const build = spawnSync('npm run build', {
+      cwd: MARKETING_ROOT,
+      shell: true,
+      stdio: 'inherit',
+    });
+    if (build.status !== 0) {
+      fail('npm run build exited non-zero');
+      process.exit(1);
+    }
+    pass('npm run build completed');
   }
-  pass('npm run build completed');
 
-  console.log('\n[2] Verified sameAs registry');
+  console.log('\n[2] Verified sameAs registry + entity authority gate');
   let verifiedSameAs = [];
+  let waiverActive = false;
   try {
-    verifiedSameAs = loadVerifiedSameAsUrls(MARKETING_ROOT);
-    pass(`entity-profile-registry.json loaded (${verifiedSameAs.length} sameAs URLs)`);
+    const reg = loadEntityProfileRegistry(MARKETING_ROOT);
+    verifiedSameAs = reg.sameAs;
+    waiverActive = reg.waiverActive;
+    pass(
+      `entity-profile-registry.json loaded (${verifiedSameAs.length} sameAs URLs, entityAuthorityWaiver.active=${waiverActive})`,
+    );
   } catch (e) {
     fail(e.message);
+    process.exit(1);
+  }
+  if (verifiedSameAs.length < 2 && !waiverActive) {
+    fail(
+      'D4 entity authority: fewer than two verified sameAs URLs and entityAuthorityWaiver.active is not true (ENTITY_AUTHORITY_BLOCKED_BY_OPERATOR_INPUT)',
+    );
     process.exit(1);
   }
 

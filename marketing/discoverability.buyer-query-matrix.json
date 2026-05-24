@@ -21,9 +21,7 @@
       ],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "Why do Google Ads and Shopify revenue disagree?",
       "query_category": "platform_discrepancy",
@@ -39,9 +37,7 @@
       "claim_registry_refs": [],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "How do I audit platform-reported revenue?",
       "query_category": "finance_audit",
@@ -57,9 +53,7 @@
       "claim_registry_refs": [],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "How do I reconcile Shopify orders to ad-channel claims?",
       "query_category": "revenue_verification",
@@ -75,9 +69,7 @@
       "claim_registry_refs": [],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What causes attribution discrepancies?",
       "query_category": "attribution_methodology",
@@ -93,9 +85,7 @@
       "claim_registry_refs": [],
       "priority": "P1",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "How should finance validate ROAS before budget shifts?",
       "query_category": "finance_audit",
@@ -111,9 +101,7 @@
       "claim_registry_refs": [],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What does Skeldir mean by verified revenue?",
       "query_category": "revenue_verification",
@@ -131,9 +119,7 @@
       ],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What is a TrustEnvelope?",
       "query_category": "trust_envelope",
@@ -151,9 +137,7 @@
       ],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What is deterministic attribution?",
       "query_category": "attribution_methodology",
@@ -169,9 +153,7 @@
       "claim_registry_refs": [],
       "priority": "P1",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What is deterministic vs probabilistic confidence?",
       "query_category": "confidence_semantics",
@@ -187,9 +169,7 @@
       "claim_registry_refs": [],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What does AI explain versus calculate?",
       "query_category": "ai_boundary",
@@ -207,9 +187,7 @@
       ],
       "priority": "P0",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What are the privacy/no-PII boundaries?",
       "query_category": "privacy_boundary",
@@ -225,9 +203,7 @@
       "claim_registry_refs": [],
       "priority": "P1",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What benchmark limitations apply?",
       "query_category": "benchmark_methodology",
@@ -242,9 +218,7 @@
       "claim_registry_refs": [],
       "priority": "P1",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "How do TikTok SKAN and modeled conversions skew totals?",
       "query_category": "platform_discrepancy",
@@ -260,9 +234,7 @@
       "claim_registry_refs": [],
       "priority": "P2",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "How does Pinterest discovery half-life affect tie-out?",
       "query_category": "platform_discrepancy",
@@ -277,9 +249,7 @@
       "claim_registry_refs": [],
       "priority": "P2",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "How should I reconcile PayPal wallet flows to store orders?",
       "query_category": "platform_discrepancy",
@@ -294,9 +264,7 @@
       "claim_registry_refs": [],
       "priority": "P2",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What is different about WooCommerce plugin stacks?",
       "query_category": "platform_discrepancy",
@@ -311,9 +279,7 @@
       "claim_registry_refs": [],
       "priority": "P2",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "Where is the evidence library hub?",
       "query_category": "revenue_verification",
@@ -329,9 +295,7 @@
       "claim_registry_refs": [],
       "priority": "P1",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    },
+      "last_reviewed": "2026-05-23"    },
     {
       "query": "What is the TrustEnvelope retrieval spec (non-canonical)?",
       "query_category": "trust_envelope",
@@ -347,8 +311,6 @@
       "claim_registry_refs": [],
       "priority": "P2",
       "owner": "Skeldir Product Engineering",
-      "last_reviewed": "2026-05-23",
-      "review_cadence": "Quarterly (90 days)"
-    }
+      "last_reviewed": "2026-05-23"    }
   ]
 }

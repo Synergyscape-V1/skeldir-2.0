@@ -98,7 +98,6 @@ function main() {
     headline: 'Wrong Title',
     description: 'e',
     datePublished: '2026-01-01',
-    dateModified: '2026-01-01',
     author: { '@type': 'Organization', name: 'A' },
     mainEntityOfPage: { '@type': 'WebPage', '@id': 'https://skeldir.com/resources/why-your-attribution-numbers-never-match' },
     url: 'https://skeldir.com/resources/why-your-attribution-numbers-never-match',

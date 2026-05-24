@@ -36,7 +36,7 @@ export interface TrustProofPageMeta {
     | "technical_disclosure_only"
     | "legal_review_required"
     | "blocked_missing_content";
-  /** Used for JSON-LD `dateModified` on each route; not shown in the page UI. */
+  /** Shown in the page meta strip (e.g. last reviewed). */
   lastReviewed: string;
   notes?: string;
 }

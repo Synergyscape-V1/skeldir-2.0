@@ -83,10 +83,10 @@ export function resourcesHubBreadcrumbJsonLd(): Record<string, unknown> {
   ]);
 }
 
-/** D6 — Evidence library hub (CollectionPage; must match `resources/evidence/page.tsx` H1 + meta). */
+/** Evidence library hub (CollectionPage; keep in sync with `resources/evidence/page.tsx` H1 + meta). */
 export const EVIDENCE_HUB_H1 = "Evidence Library" as const;
 export const EVIDENCE_HUB_DESCRIPTION =
-  "Query-shaped evidence for finance and growth teams: platform-vs-commerce discrepancies, revenue verification entry points, ROAS audit discipline, TrustEnvelope concepts, attribution limits, confidence semantics, privacy boundaries, and benchmark honesty — each page links to D5 proof authorities." as const;
+  "Short explainers for finance and growth teams: platform versus commerce discrepancies, revenue verification, ROAS audit discipline, TrustEnvelope concepts at a high level, attribution limits, confidence semantics, privacy boundaries, and benchmark limitations. Each topic links to our public methodology pages so definitions stay consistent." as const;
 
 export function evidenceHubCollectionJsonLd(): Record<string, unknown> {
   const url = canonicalUrl("/resources/evidence");
@@ -112,7 +112,7 @@ export function evidenceHubBreadcrumbJsonLd(): Record<string, unknown> {
 
 export function evidenceWebPageJsonLd(
   routePath: string,
-  args: { name: string; description: string; dateModified: string },
+  args: { name: string; description: string },
 ): Record<string, unknown> {
   const url = canonicalUrl(routePath);
   return {
@@ -122,7 +122,6 @@ export function evidenceWebPageJsonLd(
     url,
     name: args.name,
     description: args.description,
-    dateModified: args.dateModified,
     isPartOf: { "@id": SKELDIR_WEBSITE_ID },
     publisher: { "@id": SKELDIR_ORGANIZATION_ID },
   };
@@ -162,7 +161,6 @@ export function articleJsonLd(article: ArticleMetadata, slug: string): Record<st
     description,
     image: imageUrl,
     datePublished: article.publishDate,
-    dateModified: article.publishDate,
     author: {
       "@type": "Person",
       name: authorName,

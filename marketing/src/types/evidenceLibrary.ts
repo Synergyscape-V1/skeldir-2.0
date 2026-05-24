@@ -13,9 +13,7 @@ export type EvidencePageDefinition = {
   h1: string;
   metaDescription: string;
   lastReviewed: string;
-  dateModified: string;
   owner: string;
-  reviewCadence: string;
   disclosureStatus:
     | "technical_disclosure_only"
     | "operator_approved"

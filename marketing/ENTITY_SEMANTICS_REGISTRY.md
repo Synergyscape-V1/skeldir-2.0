@@ -56,3 +56,7 @@ Single Organization node emitted on the homepage; other pages reference `publish
 
 - Only URLs listed in `entity-profile-registry.json` with verified ownership may appear in `Organization.sameAs`.
 - If the registry `sameAs` array is empty, **omit** `sameAs` from JSON-LD (do not emit an empty array in production payloads).
+
+## Machine-readable registry (D6-C)
+
+Harness scanners consume **`entity-semantics-registry.json`** (canonical name, approved/disallowed/high-risk terminology, route exceptions). D6 evidence routes are scanned on title, meta description, H1, BLUF, Key Facts, the first 30% of `<main>`, and JSON-LD name/description fields.

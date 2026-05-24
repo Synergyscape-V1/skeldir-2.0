@@ -42,7 +42,6 @@ export default async function EvidenceDetailPage({ params }: Props) {
           evidenceWebPageJsonLd(def.routePath, {
             name: def.h1,
             description: def.metaDescription,
-            dateModified: def.dateModified,
           }),
           evidenceDetailBreadcrumbJsonLd(def.routePath, def.h1),
         ]}

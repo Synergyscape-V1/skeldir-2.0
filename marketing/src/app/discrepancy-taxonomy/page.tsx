@@ -28,7 +28,6 @@ export default function DiscrepancyTaxonomyProofPage() {
           trustProofWebPageJsonLd(ROUTE, {
             name: PAGE_TITLE,
             description: PAGE_DESCRIPTION,
-            dateModified: LAST_REVIEWED,
           }),
           trustProofBreadcrumbJsonLd(ROUTE, { label: "Discrepancy taxonomy" }),
         ]}
