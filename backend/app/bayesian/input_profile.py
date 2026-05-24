@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from app.bayesian.eligibility import EligibilityPreflightResult
+from app.bayesian.model_family_contract import (
+    B24_ACTIVE_FEATURE_DIMENSIONS,
+    assert_profiled_dimensions_cover_model,
+)
 from app.bayesian.resource_bounds import B24_RESOURCE_POLICY_VERSION
 
 
@@ -20,6 +24,14 @@ PROFILE_QUERY_PLAN_PROOF = """
 B2.4-P4 source profile is aggregate-only. Runtime profile construction uses
 P2 EligibilityPreflightResult counts that are produced before source stream
 hashing and never opens ORM relationships, tabular frames, or source-row lists.
+Provider and campaign feature cardinality are live-derived from approved
+source-contract fields only: b23_match_verdicts.provider,
+b23_revenue_events.provider, and attribution_events.campaign_id. They are not
+raw payload, identity, token, or PII fields. Cardinality reads are backed by
+the B2.4-P4 tenant-leading feature-cardinality indexes:
+idx_b24_p4_attribution_events_campaign_cardinality,
+idx_b24_p4_match_verdicts_provider_cardinality,
+idx_b24_p4_revenue_events_provider_cardinality.
 Distinct cardinality gates are governed by
 rollup_or_plan_proven_no_group_by_limit_v1: cap-plus-one grouped limiter and
 unbounded exact distinct-count SQL is rejected by validate_b24_p4_resource_bounds.py.
@@ -56,6 +68,7 @@ class B24InputProfile:
     provider_count: int
     campaign_or_feature_count: int
     window_days: int
+    cardinality_profiled_dimensions: tuple[str, ...]
     computed_at: datetime
 
 
@@ -83,6 +96,11 @@ def build_input_profile_from_preflight(
         + revenue_event_count
     )
     currency_count = len(preflight.eligible_amount_minor_by_currency)
+    profiled_dimensions = tuple(sorted(B24_ACTIVE_FEATURE_DIMENSIONS))
+    assert_profiled_dimensions_cover_model(
+        model_type=preflight.model_type,
+        profiled_dimensions=profiled_dimensions,
+    )
     return B24InputProfile(
         tenant_id=preflight.tenant_id,
         preflight_lease_id=preflight_lease_id,
@@ -97,11 +115,12 @@ def build_input_profile_from_preflight(
         conversion_count=attribution_event_count + revenue_event_count,
         channel_count=int(preflight.eligible_channel_count),
         currency_count=currency_count,
-        provider_count=0,
-        campaign_or_feature_count=0,
+        provider_count=int(preflight.provider_count),
+        campaign_or_feature_count=int(preflight.campaign_or_feature_count),
         window_days=_window_days(
             preflight.source_window_start,
             preflight.source_window_end,
         ),
+        cardinality_profiled_dimensions=profiled_dimensions,
         computed_at=datetime.now(timezone.utc),
     )

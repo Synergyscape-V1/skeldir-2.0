@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from app.bayesian.design_matrix_envelope import DesignMatrixEnvelope
 from app.bayesian.input_profile import B24InputProfile
+from app.bayesian.model_family_contract import assert_profiled_dimensions_cover_model
 from app.bayesian.resource_bounds import B24_GRAPH_COMPLEXITY_SAFETY_FACTOR
 
 
@@ -32,6 +33,10 @@ def estimate_graph_complexity_envelope(
 ) -> GraphComplexityEnvelope:
     """Estimate symbolic graph pressure without importing any sampler stack."""
 
+    assert_profiled_dimensions_cover_model(
+        model_type=profile.model_type,
+        profiled_dimensions=profile.cardinality_profiled_dimensions,
+    )
     levels = {
         "channel": max(1, profile.channel_count),
         "currency": max(1, profile.currency_count),
@@ -39,14 +44,26 @@ def estimate_graph_complexity_envelope(
         "campaign_or_feature": max(1, profile.campaign_or_feature_count),
     }
     hierarchical_groups = sum(levels.values())
+    live_feature_width = (
+        profile.channel_count
+        + profile.currency_count
+        + profile.provider_count
+        + profile.campaign_or_feature_count
+    )
     parameters = (
         design.estimated_design_matrix_columns * 3
         + hierarchical_groups * 2
+        + live_feature_width
         + max(1, profile.conversion_count)
     )
     random_variables = hierarchical_groups + 8
-    logp_terms = profile.source_row_count + profile.conversion_count + random_variables
-    transform_ops = random_variables * 2 + hierarchical_groups
+    logp_terms = (
+        profile.source_row_count
+        + profile.conversion_count
+        + random_variables
+        + live_feature_width
+    )
+    transform_ops = random_variables * 2 + hierarchical_groups + live_feature_width
     symbolic_nodes = (
         parameters
         + logp_terms

@@ -65,6 +65,8 @@ def _base_preflight_row(**overrides):
         "match_verdict_count": 20,
         "revenue_event_count": 20,
         "eligible_channel_count": 20,
+        "provider_count": 2,
+        "campaign_or_feature_count": 20,
         "distinct_source_event_count": 20,
         "attribution_amount_minor": 20000,
         "match_amount_minor": 20000,
