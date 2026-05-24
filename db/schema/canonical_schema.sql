@@ -4836,9 +4836,17 @@ CREATE INDEX idx_b24_p3_revenue_events_source_stream_fallback ON public.b23_reve
 
 CREATE INDEX idx_b24_p4_attribution_events_campaign_cardinality ON public.attribution_events USING btree (tenant_id, campaign_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (campaign_id IS NOT NULL));
 
+CREATE INDEX idx_b24_p4_attribution_events_campaign_early_stop ON public.attribution_events USING btree (tenant_id, campaign_id, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (campaign_id IS NOT NULL) AND ((campaign_id)::text <> ''::text));
+
+CREATE INDEX idx_b24_p4_attribution_events_channel_early_stop ON public.attribution_events USING btree (tenant_id, channel, occurred_at, id) WHERE (((processing_status)::text = 'processed'::text) AND ((event_type)::text = 'conversion'::text) AND (channel IS NOT NULL) AND ((channel)::text <> ''::text));
+
 CREATE INDEX idx_b24_p4_match_verdicts_provider_cardinality ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL));
 
+CREATE INDEX idx_b24_p4_match_verdicts_provider_early_stop ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
+
 CREATE INDEX idx_b24_p4_revenue_events_provider_cardinality ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL));
+
+CREATE INDEX idx_b24_p4_revenue_events_provider_early_stop ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
 
 CREATE INDEX idx_budget_jobs_tenant_status ON public.budget_optimization_jobs USING btree (tenant_id, status, created_at DESC);
 

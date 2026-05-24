@@ -20,6 +20,7 @@ from app.bayesian.input_contract import (
     SPARSE_PRIVACY_THRESHOLDS,
     SparsePrivacyThresholds,
 )
+from app.bayesian.resource_bounds import B24_RESOURCE_POLICY
 
 
 class EligibilityDecision(StrEnum):
@@ -93,12 +94,15 @@ _PROCESSED_EVENT_STATUSES = LIFECYCLE_INCLUSION_RULES[
 _CONVERSION_EVENT_TYPES = LIFECYCLE_INCLUSION_RULES["attribution_events.event_type"]
 _MATCH_VERDICT_STATUSES = LIFECYCLE_INCLUSION_RULES["b23_match_verdicts.status"]
 _REVENUE_EVENT_TYPES = LIFECYCLE_INCLUSION_RULES["b23_revenue_events.event_type"]
+_CHANNEL_CAP_PLUS_ONE = B24_RESOURCE_POLICY.max_channels + 1
+_PROVIDER_CAP_PLUS_ONE = B24_RESOURCE_POLICY.max_providers + 1
+_CAMPAIGN_FEATURE_CAP_PLUS_ONE = B24_RESOURCE_POLICY.max_campaigns_or_feature_keys + 1
 
 
 _PREFLIGHT_SQL = (
     text(
         """
-        WITH eligible_attribution_events AS (
+        WITH RECURSIVE eligible_attribution_events AS (
             SELECT id, channel, nullif(campaign_id, '') AS campaign_id,
                    upper(coalesce(currency, 'USD')) AS currency_code,
                    revenue_cents, occurred_at
@@ -175,15 +179,167 @@ _PREFLIGHT_SQL = (
             FROM eligible_revenue_events
             GROUP BY currency_code
         ),
-        eligible_provider_values AS (
-            SELECT provider FROM eligible_match_verdicts WHERE provider IS NOT NULL
-            UNION
-            SELECT provider FROM eligible_revenue_events WHERE provider IS NOT NULL
+        channel_keys(channel_key, ordinal) AS (
+            (
+                SELECT channel AS channel_key, 1 AS ordinal
+                FROM public.attribution_events
+                WHERE tenant_id = :tenant_id
+                  AND occurred_at >= :window_start
+                  AND occurred_at < :window_end
+                  AND processing_status IN :processed_event_statuses
+                  AND event_type IN :conversion_event_types
+                  AND channel IS NOT NULL
+                  AND channel <> ''
+                ORDER BY channel, occurred_at, id
+                LIMIT 1
+            )
+            UNION ALL
+            SELECT next_key.channel_key, channel_keys.ordinal + 1
+            FROM channel_keys
+            CROSS JOIN LATERAL (
+                SELECT candidate.channel AS channel_key
+                FROM public.attribution_events AS candidate
+                WHERE candidate.tenant_id = :tenant_id
+                  AND candidate.occurred_at >= :window_start
+                  AND candidate.occurred_at < :window_end
+                  AND candidate.processing_status IN :processed_event_statuses
+                  AND candidate.event_type IN :conversion_event_types
+                  AND candidate.channel IS NOT NULL
+                  AND candidate.channel <> ''
+                  AND candidate.channel > channel_keys.channel_key
+                ORDER BY candidate.channel, candidate.occurred_at, candidate.id
+                LIMIT 1
+            ) AS next_key
+            WHERE channel_keys.ordinal < :channel_cap_plus_one
         ),
-        eligible_campaign_or_feature_values AS (
-            SELECT campaign_id AS feature_key
-            FROM eligible_attribution_events
-            WHERE campaign_id IS NOT NULL
+        campaign_feature_keys(feature_key, ordinal) AS (
+            (
+                SELECT campaign_id AS feature_key, 1 AS ordinal
+                FROM public.attribution_events
+                WHERE tenant_id = :tenant_id
+                  AND occurred_at >= :window_start
+                  AND occurred_at < :window_end
+                  AND processing_status IN :processed_event_statuses
+                  AND event_type IN :conversion_event_types
+                  AND campaign_id IS NOT NULL
+                  AND campaign_id <> ''
+                ORDER BY campaign_id, occurred_at, id
+                LIMIT 1
+            )
+            UNION ALL
+            SELECT next_key.feature_key, campaign_feature_keys.ordinal + 1
+            FROM campaign_feature_keys
+            CROSS JOIN LATERAL (
+                SELECT candidate.campaign_id AS feature_key
+                FROM public.attribution_events AS candidate
+                WHERE candidate.tenant_id = :tenant_id
+                  AND candidate.occurred_at >= :window_start
+                  AND candidate.occurred_at < :window_end
+                  AND candidate.processing_status IN :processed_event_statuses
+                  AND candidate.event_type IN :conversion_event_types
+                  AND candidate.campaign_id IS NOT NULL
+                  AND candidate.campaign_id <> ''
+                  AND candidate.campaign_id > campaign_feature_keys.feature_key
+                ORDER BY candidate.campaign_id, candidate.occurred_at, candidate.id
+                LIMIT 1
+            ) AS next_key
+            WHERE campaign_feature_keys.ordinal < :campaign_feature_cap_plus_one
+        ),
+        provider_keys(provider_key, ordinal) AS (
+            (
+                SELECT chosen_provider.provider_key, 1 AS ordinal
+                FROM (
+                    SELECT
+                        (
+                            SELECT provider
+                            FROM public.b23_match_verdicts
+                            WHERE tenant_id = :tenant_id
+                              AND last_transition_at >= :window_start
+                              AND last_transition_at < :window_end
+                              AND status IN :match_verdict_statuses
+                              AND provider IS NOT NULL
+                              AND provider <> ''
+                            ORDER BY provider, last_transition_at, id
+                            LIMIT 1
+                        ) AS match_provider_key,
+                        (
+                            SELECT provider
+                            FROM public.b23_revenue_events
+                            WHERE tenant_id = :tenant_id
+                              AND event_occurred_at >= :window_start
+                              AND event_occurred_at < :window_end
+                              AND event_type IN :revenue_event_types
+                              AND provider IS NOT NULL
+                              AND provider <> ''
+                            ORDER BY provider, event_occurred_at, id
+                            LIMIT 1
+                        ) AS revenue_provider_key
+                ) AS first_provider_candidates
+                CROSS JOIN LATERAL (
+                    SELECT
+                        CASE
+                            WHEN first_provider_candidates.match_provider_key IS NULL
+                                THEN first_provider_candidates.revenue_provider_key
+                            WHEN first_provider_candidates.revenue_provider_key IS NULL
+                                THEN first_provider_candidates.match_provider_key
+                            WHEN first_provider_candidates.match_provider_key
+                                <= first_provider_candidates.revenue_provider_key
+                                THEN first_provider_candidates.match_provider_key
+                            ELSE first_provider_candidates.revenue_provider_key
+                        END AS provider_key
+                ) AS chosen_provider
+                WHERE chosen_provider.provider_key IS NOT NULL
+            )
+            UNION ALL
+            SELECT next_provider.provider_key, provider_keys.ordinal + 1
+            FROM provider_keys
+            CROSS JOIN LATERAL (
+                SELECT chosen_provider.provider_key
+                FROM (
+                    SELECT
+                        (
+                            SELECT candidate.provider
+                            FROM public.b23_match_verdicts AS candidate
+                            WHERE candidate.tenant_id = :tenant_id
+                              AND candidate.last_transition_at >= :window_start
+                              AND candidate.last_transition_at < :window_end
+                              AND candidate.status IN :match_verdict_statuses
+                              AND candidate.provider IS NOT NULL
+                              AND candidate.provider <> ''
+                              AND candidate.provider > provider_keys.provider_key
+                            ORDER BY candidate.provider, candidate.last_transition_at, candidate.id
+                            LIMIT 1
+                        ) AS match_provider_key,
+                        (
+                            SELECT candidate.provider
+                            FROM public.b23_revenue_events AS candidate
+                            WHERE candidate.tenant_id = :tenant_id
+                              AND candidate.event_occurred_at >= :window_start
+                              AND candidate.event_occurred_at < :window_end
+                              AND candidate.event_type IN :revenue_event_types
+                              AND candidate.provider IS NOT NULL
+                              AND candidate.provider <> ''
+                              AND candidate.provider > provider_keys.provider_key
+                            ORDER BY candidate.provider, candidate.event_occurred_at, candidate.id
+                            LIMIT 1
+                        ) AS revenue_provider_key
+                ) AS next_provider_candidates
+                CROSS JOIN LATERAL (
+                    SELECT
+                        CASE
+                            WHEN next_provider_candidates.match_provider_key IS NULL
+                                THEN next_provider_candidates.revenue_provider_key
+                            WHEN next_provider_candidates.revenue_provider_key IS NULL
+                                THEN next_provider_candidates.match_provider_key
+                            WHEN next_provider_candidates.match_provider_key
+                                <= next_provider_candidates.revenue_provider_key
+                                THEN next_provider_candidates.match_provider_key
+                            ELSE next_provider_candidates.revenue_provider_key
+                        END AS provider_key
+                ) AS chosen_provider
+                WHERE chosen_provider.provider_key IS NOT NULL
+            ) AS next_provider
+            WHERE provider_keys.ordinal < :provider_cap_plus_one
         ),
         all_event_times AS (
             SELECT occurred_at AS event_at FROM eligible_attribution_events
@@ -199,11 +355,10 @@ _PREFLIGHT_SQL = (
             (SELECT count(*)::bigint FROM eligible_allocations) AS allocation_count,
             (SELECT count(*)::bigint FROM eligible_match_verdicts) AS match_verdict_count,
             (SELECT count(*)::bigint FROM eligible_revenue_events) AS revenue_event_count,
-            (SELECT count(DISTINCT channel) FROM eligible_attribution_events) AS eligible_channel_count,
-            (SELECT count(*)::bigint FROM eligible_provider_values) AS provider_count,
-            (SELECT count(DISTINCT feature_key)::bigint FROM eligible_campaign_or_feature_values)
-                AS campaign_or_feature_count,
-            (SELECT count(DISTINCT id) FROM eligible_attribution_events) AS distinct_source_event_count,
+            (SELECT count(*)::bigint FROM channel_keys) AS eligible_channel_count,
+            (SELECT count(*)::bigint FROM provider_keys) AS provider_count,
+            (SELECT count(*)::bigint FROM campaign_feature_keys) AS campaign_or_feature_count,
+            (SELECT count(*)::bigint FROM eligible_attribution_events) AS distinct_source_event_count,
             (SELECT coalesce(sum(revenue_cents), 0)::bigint FROM eligible_attribution_events) AS attribution_amount_minor,
             (SELECT coalesce(sum(canonical_net_verified_amount_minor), 0)::bigint FROM eligible_match_verdicts) AS match_amount_minor,
             (SELECT min(event_at) FROM all_event_times) AS min_event_at,
@@ -392,6 +547,9 @@ async def run_eligibility_preflight(
             "conversion_event_types": tuple(_CONVERSION_EVENT_TYPES),
             "match_verdict_statuses": tuple(_MATCH_VERDICT_STATUSES),
             "revenue_event_types": tuple(_REVENUE_EVENT_TYPES),
+            "channel_cap_plus_one": _CHANNEL_CAP_PLUS_ONE,
+            "provider_cap_plus_one": _PROVIDER_CAP_PLUS_ONE,
+            "campaign_feature_cap_plus_one": _CAMPAIGN_FEATURE_CAP_PLUS_ONE,
         },
     )
     row = dict(result.mappings().one())

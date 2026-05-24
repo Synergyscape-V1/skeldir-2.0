@@ -166,6 +166,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "alembic/versions/007_skeldir_foundation/202605221430_b24_p3_fit_planning_outbox.py",
     "alembic/versions/007_skeldir_foundation/202605231200_b24_p4_resource_bounds.py",
     "alembic/versions/007_skeldir_foundation/202605241200_b24_p4_feature_cardinality_indexes.py",
+    "alembic/versions/007_skeldir_foundation/202605241430_b24_p4_cardinality_early_stop_indexes.py",
     "backend/app/bayesian/",
     "backend/app/ingestion/event_service.py",
     "backend/app/models/__init__.py",
@@ -190,6 +191,7 @@ ALLOWED_M1_PATH_PREFIXES = [
     "docs/forensics/B2.4-P3_Fit_Planning_Debounced_Atomic_Claim_Dispatch_Outbox_Completion_Report.md",
     "docs/forensics/B2.4-P4_Input_Cardinality_Memory_Graph_Envelope_PreGraph_Resource_Controls_Completion_Report.md",
     "docs/forensics/B2.4-P4_Live_Feature_Cardinality_Graph_Envelope_Corrective_Report.md",
+    "docs/forensics/B2.4-P4_Bounded_Cardinality_DB_Work_Corrective_Report.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "M4 Remediation Evidence Pack.md",
@@ -256,14 +258,20 @@ def read_text(path: str) -> str:
 
 
 def git(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=REPO_ROOT, text=True, capture_output=True, timeout=60)
+    return subprocess.run(
+        ["git", *args], cwd=REPO_ROOT, text=True, capture_output=True, timeout=60
+    )
 
 
 def changed_files(baseline_sha: str) -> list[str]:
     proc = git(["diff", "--name-only", f"{baseline_sha}...HEAD"])
     if proc.returncode != 0:
         proc = git(["diff", "--name-only", baseline_sha, "HEAD"])
-    return [line.strip().replace("\\", "/") for line in proc.stdout.splitlines() if line.strip()]
+    return [
+        line.strip().replace("\\", "/")
+        for line in proc.stdout.splitlines()
+        if line.strip()
+    ]
 
 
 def diff_content(baseline_sha: str) -> str:
@@ -276,7 +284,9 @@ def diff_content(baseline_sha: str) -> str:
 def check_required_files(result: Result) -> None:
     for path in REQUIRED_FILES:
         full = REPO_ROOT / path
-        result.add(f"required file exists: {path}", full.exists() and full.stat().st_size > 0)
+        result.add(
+            f"required file exists: {path}", full.exists() and full.stat().st_size > 0
+        )
 
 
 def check_development_doc(result: Result) -> None:
@@ -289,19 +299,30 @@ def check_readmes(result: Result) -> None:
     combined = read_text("README.md") + "\n" + read_text("backend/README.md")
     for pattern in STALE_README_PATTERNS:
         result.add(f"README stale language absent: {pattern}", pattern not in combined)
-    result.add("README points to DEVELOPMENT.md", "DEVELOPMENT.md" in read_text("README.md"))
-    result.add("backend README points to DEVELOPMENT.md", "DEVELOPMENT.md" in read_text("backend/README.md"))
+    result.add(
+        "README points to DEVELOPMENT.md", "DEVELOPMENT.md" in read_text("README.md")
+    )
+    result.add(
+        "backend README points to DEVELOPMENT.md",
+        "DEVELOPMENT.md" in read_text("backend/README.md"),
+    )
 
 
 def check_makefile(result: Result) -> None:
     text = read_text("Makefile")
     for target in REQUIRED_MAKE_TARGETS:
-        result.add(f"Makefile target: {target}", re.search(rf"^{re.escape(target)}:", text, re.M) is not None)
+        result.add(
+            f"Makefile target: {target}",
+            re.search(rf"^{re.escape(target)}:", text, re.M) is not None,
+        )
 
     for target in ("dev", "migrate", "api", "worker", "health", "smoke"):
         match = re.search(rf"^{target}:.*?(?=^[A-Za-z0-9_.-]+:|\Z)", text, re.M | re.S)
         body = match.group(0) if match else ""
-        result.add(f"{target} uses Docker Compose", "docker compose" in body or "$(COMPOSE)" in body)
+        result.add(
+            f"{target} uses Docker Compose",
+            "docker compose" in body or "$(COMPOSE)" in body,
+        )
         host_python = re.search(r"(^|\n)\s*@?python\s+", body) is not None
         result.add(f"{target} does not use host python", not host_python)
 
@@ -319,7 +340,7 @@ def _host_from_url(raw: str) -> str:
     cleaned = raw
     for prefix in ("sqla+", "db+"):
         if cleaned.startswith(prefix):
-            cleaned = cleaned[len(prefix):]
+            cleaned = cleaned[len(prefix) :]
     return (urlparse(cleaned).hostname or "").lower()
 
 
@@ -327,17 +348,32 @@ def check_env_templates(result: Result) -> None:
     local_env = read_text(".env.local.example")
     general_env = read_text(".env.example")
     for var in REQUIRED_ENV_VARS:
-        result.add(f".env.local.example contains {var}", _extract_env_value(local_env, var) is not None)
+        result.add(
+            f".env.local.example contains {var}",
+            _extract_env_value(local_env, var) is not None,
+        )
 
-    for var in ("DATABASE_URL", "MIGRATION_DATABASE_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND"):
-        for filename, text in ((".env.local.example", local_env), (".env.example", general_env)):
+    for var in (
+        "DATABASE_URL",
+        "MIGRATION_DATABASE_URL",
+        "CELERY_BROKER_URL",
+        "CELERY_RESULT_BACKEND",
+    ):
+        for filename, text in (
+            (".env.local.example", local_env),
+            (".env.example", general_env),
+        ):
             value = _extract_env_value(text, var)
             if value is None:
                 result.add(f"{filename} {var} exists", False, "missing")
                 continue
             host = _host_from_url(value)
             is_external = any(marker in host for marker in EXTERNAL_MARKERS)
-            result.add(f"{filename} {var} is local-safe", host in LOCAL_HOSTS and not is_external, f"host={host}")
+            result.add(
+                f"{filename} {var} is local-safe",
+                host in LOCAL_HOSTS and not is_external,
+                f"host={host}",
+            )
 
 
 def check_compose_and_workflow(result: Result) -> None:
@@ -354,7 +390,17 @@ def check_compose_and_workflow(result: Result) -> None:
     workflow = read_text(".github/workflows/m1-local-dev-authority.yml")
     bootstrap = read_text("scripts/ci/run_m1_onboarding_bootstrap.sh")
     workflow_authority_text = workflow + "\n" + bootstrap
-    for token in ("pull_request", "push", "docker compose --env-file .env.local -f docker-compose.local.yml config", "make dev", "make migrate", "make api", "make worker", "make health", "make smoke"):
+    for token in (
+        "pull_request",
+        "push",
+        "docker compose --env-file .env.local -f docker-compose.local.yml config",
+        "make dev",
+        "make migrate",
+        "make api",
+        "make worker",
+        "make health",
+        "make smoke",
+    ):
         result.add(f"M1 workflow includes {token}", token in workflow_authority_text)
 
 
@@ -377,11 +423,15 @@ def check_completion_record(result: Result) -> None:
         "final verdict",
     ]
     for token in required:
-        result.add(f"completion record contains: {token}", token.lower() in text.lower())
+        result.add(
+            f"completion record contains: {token}", token.lower() in text.lower()
+        )
 
 
 def _allowed_m1_path(path: str) -> bool:
-    return any(path == prefix or path.startswith(prefix) for prefix in ALLOWED_M1_PATH_PREFIXES)
+    return any(
+        path == prefix or path.startswith(prefix) for prefix in ALLOWED_M1_PATH_PREFIXES
+    )
 
 
 def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) -> None:
@@ -393,7 +443,9 @@ def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) 
         return
     files = changed_files(baseline_sha)
     violations = [path for path in files if not _allowed_m1_path(path)]
-    result.add("M1 diff stays in allowed surfaces", not violations, ", ".join(violations[:10]))
+    result.add(
+        "M1 diff stays in allowed surfaces", not violations, ", ".join(violations[:10])
+    )
 
     prohibited = [
         path
@@ -401,7 +453,9 @@ def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) 
         if any(re.search(pattern, path) for pattern in PROHIBITED_PATH_PATTERNS)
         and not _allowed_m1_path(path)
     ]
-    result.add("M1 diff avoids prohibited surfaces", not prohibited, ", ".join(prohibited[:10]))
+    result.add(
+        "M1 diff avoids prohibited surfaces", not prohibited, ", ".join(prohibited[:10])
+    )
 
     added: list[str] = []
     current_path = ""
@@ -416,7 +470,9 @@ def check_diff_scope(result: Result, baseline_sha: str | None, local_dev: bool) 
             continue
         if current_path.startswith("scripts/ci/validate_"):
             continue
-        if current_path.startswith("backend/tests/") or current_path.startswith("tests/"):
+        if current_path.startswith("backend/tests/") or current_path.startswith(
+            "tests/"
+        ):
             continue
         added.append(line[1:])
     for pattern in PROHIBITED_ADDED_PATTERNS:

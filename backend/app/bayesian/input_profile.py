@@ -28,13 +28,14 @@ Provider and campaign feature cardinality are live-derived from approved
 source-contract fields only: b23_match_verdicts.provider,
 b23_revenue_events.provider, and attribution_events.campaign_id. They are not
 raw payload, identity, token, or PII fields. Cardinality reads are backed by
-the B2.4-P4 tenant-leading feature-cardinality indexes:
-idx_b24_p4_attribution_events_campaign_cardinality,
-idx_b24_p4_match_verdicts_provider_cardinality,
-idx_b24_p4_revenue_events_provider_cardinality.
+the B2.4-P4 tenant-leading next-key early-stop indexes:
+idx_b24_p4_attribution_events_channel_early_stop,
+idx_b24_p4_attribution_events_campaign_early_stop,
+idx_b24_p4_match_verdicts_provider_early_stop,
+idx_b24_p4_revenue_events_provider_early_stop.
 Distinct cardinality gates are governed by
-rollup_or_plan_proven_no_group_by_limit_v1: cap-plus-one grouped limiter and
-unbounded exact distinct-count SQL is rejected by validate_b24_p4_resource_bounds.py.
+true_next_key_early_stop_cap_plus_one_v1: fake-bounded GROUP BY/LIMIT and
+unbounded exact distinct-count SQL are rejected by validate_b24_p4_resource_bounds.py.
 Representative source access remains tenant-leading and backed by the P2/P3
 source stream indexes:
 idx_b24_p2_attribution_events_source_stream,

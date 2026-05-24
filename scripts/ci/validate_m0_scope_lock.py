@@ -192,6 +192,7 @@ ALLOWED_M0_PATHS = [
     "alembic/versions/007_skeldir_foundation/202605221430_b24_p3_fit_planning_outbox.py",
     "alembic/versions/007_skeldir_foundation/202605231200_b24_p4_resource_bounds.py",
     "alembic/versions/007_skeldir_foundation/202605241200_b24_p4_feature_cardinality_indexes.py",
+    "alembic/versions/007_skeldir_foundation/202605241430_b24_p4_cardinality_early_stop_indexes.py",
     "backend/app/bayesian/",
     "backend/app/ingestion/event_service.py",
     "backend/app/models/__init__.py",
@@ -211,6 +212,7 @@ ALLOWED_M0_PATHS = [
     "docs/forensics/B2.4-P3_Fit_Planning_Debounced_Atomic_Claim_Dispatch_Outbox_Completion_Report.md",
     "docs/forensics/B2.4-P4_Input_Cardinality_Memory_Graph_Envelope_PreGraph_Resource_Controls_Completion_Report.md",
     "docs/forensics/B2.4-P4_Live_Feature_Cardinality_Graph_Envelope_Corrective_Report.md",
+    "docs/forensics/B2.4-P4_Bounded_Cardinality_DB_Work_Corrective_Report.md",
     "docs/forensics/M3 Remediation Evidence Pack .md",
     "docs/forensics/M5 Remediation Evidence Pack .md",
     "db/schema/canonical_schema.sql",
@@ -374,7 +376,8 @@ def check_baseline_fields(result: ValidationResult) -> None:
     )
     result.add(
         "Baseline has no stale pending/admin language",
-        stale_clean_state is None and not any(marker in content for marker in stale_markers),
+        stale_clean_state is None
+        and not any(marker in content for marker in stale_markers),
     )
     result.add(
         "Baseline references canonical validation artifact",
@@ -397,10 +400,19 @@ def check_canonical_artifact_consistency(result: ValidationResult) -> None:
     scope_lock = _read_lower(M0_SCOPE_LOCK_PATH)
     completion_record = _read_lower(M0_COMPLETION_RECORD_PATH)
 
-    result.add("Canonical completion artifact is required", M0_COMPLETION_RECORD_PATH.exists())
-    result.add("Baseline uses canonical completion path", CANONICAL_ARTIFACT in baseline)
-    result.add("Scope lock uses canonical completion path", CANONICAL_ARTIFACT in scope_lock)
-    result.add("Completion record self-identifies canonical path", CANONICAL_ARTIFACT in completion_record)
+    result.add(
+        "Canonical completion artifact is required", M0_COMPLETION_RECORD_PATH.exists()
+    )
+    result.add(
+        "Baseline uses canonical completion path", CANONICAL_ARTIFACT in baseline
+    )
+    result.add(
+        "Scope lock uses canonical completion path", CANONICAL_ARTIFACT in scope_lock
+    )
+    result.add(
+        "Completion record self-identifies canonical path",
+        CANONICAL_ARTIFACT in completion_record,
+    )
     result.add(
         "Completion record claims canonical status",
         "canonical completion artifact" in completion_record
@@ -411,7 +423,11 @@ def check_canonical_artifact_consistency(result: ValidationResult) -> None:
 def check_validation_report(result: ValidationResult) -> None:
     content = _read_lower(M0_COMPLETION_RECORD_PATH)
     if not content:
-        result.add("Completion record readable", False, "canonical artifact is missing or empty")
+        result.add(
+            "Completion record readable",
+            False,
+            "canonical artifact is missing or empty",
+        )
         return
 
     for phrase in REQUIRED_REPORT_PHRASES:
@@ -445,11 +461,15 @@ def check_codeowners(result: ValidationResult) -> None:
 def check_issue_register(result: ValidationResult) -> None:
     content = _read_text(M0_ISSUE_REGISTER_PATH)
     if not content:
-        result.add("Issue register readable", False, "issue register is missing or empty")
+        result.add(
+            "Issue register readable", False, "issue register is missing or empty"
+        )
         return
 
     for source in REQUIRED_SOURCES:
-        result.add(f"Issue register covers source: {source}", f"source: {source}" in content)
+        result.add(
+            f"Issue register covers source: {source}", f"source: {source}" in content
+        )
 
     for category in REQUIRED_CATEGORIES:
         result.add(
@@ -457,19 +477,26 @@ def check_issue_register(result: ValidationResult) -> None:
             f"affected_substrate: {category}" in content,
         )
 
-    result.add("Issue register has B2.4-entry blockers", "b24_entry_blocking: true" in content)
+    result.add(
+        "Issue register has B2.4-entry blockers", "b24_entry_blocking: true" in content
+    )
 
     null_deferred_reasons = 0
     for issue_block in content.split("  - id:")[1:]:
         if "phase_disposition: deferred" in issue_block:
-            if "deferred_reason: null" in issue_block or "deferred_reason:" not in issue_block:
+            if (
+                "deferred_reason: null" in issue_block
+                or "deferred_reason:" not in issue_block
+            ):
                 null_deferred_reasons += 1
     result.add(
         "Deferred issues have reasons",
         null_deferred_reasons == 0,
-        f"{null_deferred_reasons} deferred issues lack reasons"
-        if null_deferred_reasons
-        else "",
+        (
+            f"{null_deferred_reasons} deferred issues lack reasons"
+            if null_deferred_reasons
+            else ""
+        ),
     )
 
     for field in REQUIRED_ISSUE_FIELDS:
@@ -500,7 +527,9 @@ def _added_lines_for_dependency_files(diff_content: str) -> list[str]:
     return added_lines
 
 
-def check_b24_contamination_dependencies(result: ValidationResult, diff_content: str) -> None:
+def check_b24_contamination_dependencies(
+    result: ValidationResult, diff_content: str
+) -> None:
     added_lines = _added_lines_for_dependency_files(diff_content)
     for pattern in B24_DEPENDENCY_PATTERNS:
         found = any(re.search(pattern, line.lower()) for line in added_lines)
@@ -530,8 +559,12 @@ def check_b24_contamination_code(result: ValidationResult, diff_content: str) ->
         result.add(f"No B2.4 code pattern: {pattern}", not found)
 
 
-def check_allowed_change_surface(result: ValidationResult, changed_files: list[str]) -> None:
-    violations = [filepath for filepath in changed_files if not _is_governance_path(filepath)]
+def check_allowed_change_surface(
+    result: ValidationResult, changed_files: list[str]
+) -> None:
+    violations = [
+        filepath for filepath in changed_files if not _is_governance_path(filepath)
+    ]
     result.add(
         "M0 changes within allowed surface",
         not violations,
@@ -557,7 +590,9 @@ def check_no_prohibited_surface_changes(
 
 def check_no_ci_gate_removal(result: ValidationResult, diff_content: str) -> None:
     removed_lines = [
-        line for line in diff_content.splitlines() if line.startswith("-") and not line.startswith("---")
+        line
+        for line in diff_content.splitlines()
+        if line.startswith("-") and not line.startswith("---")
     ]
     suspicious = [
         line.strip()[:120]
@@ -581,7 +616,9 @@ def check_no_ci_gate_removal(result: ValidationResult, diff_content: str) -> Non
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="M0 Scope Lock Validator")
-    parser.add_argument("--baseline-sha", help="Override baseline SHA for diff comparison")
+    parser.add_argument(
+        "--baseline-sha", help="Override baseline SHA for diff comparison"
+    )
     parser.add_argument(
         "--local-dev",
         action="store_true",
