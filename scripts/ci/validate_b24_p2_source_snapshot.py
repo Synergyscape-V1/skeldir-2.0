@@ -157,21 +157,28 @@ def _threshold_defaults(tree: ast.Module) -> dict[str, int]:
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == "SparsePrivacyThresholds":
             for item in node.body:
-                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                if isinstance(item, ast.AnnAssign) and isinstance(
+                    item.target, ast.Name
+                ):
                     name = item.target.id
                     if item.value is None:
                         continue
                     try:
                         value = ast.literal_eval(item.value)
                     except (ValueError, SyntaxError):
-                        if isinstance(item.value, ast.Name) and item.value.id in constants:
+                        if (
+                            isinstance(item.value, ast.Name)
+                            and item.value.id in constants
+                        ):
                             value = constants[item.value.id]
                         else:
                             raise ValidationError(
                                 f"sparse threshold must be literal or named floor: {name}"
                             )
                     if not isinstance(value, int):
-                        raise ValidationError(f"sparse threshold is not integer: {name}")
+                        raise ValidationError(
+                            f"sparse threshold is not integer: {name}"
+                        )
                     defaults[name] = value
             return defaults
     raise ValidationError("SparsePrivacyThresholds class missing")
@@ -191,7 +198,9 @@ def validate_input_contract(root: Path, text: str | None = None) -> None:
     )
     thresholds = _threshold_defaults(tree)
     for threshold_name in REQUIRED_SPARSE_THRESHOLD_FIELDS:
-        _require(threshold_name in thresholds, f"sparse threshold missing: {threshold_name}")
+        _require(
+            threshold_name in thresholds, f"sparse threshold missing: {threshold_name}"
+        )
         _require(
             thresholds[threshold_name] >= floor,
             f"sparse threshold below floor: {threshold_name}={thresholds[threshold_name]}",
@@ -284,8 +293,11 @@ def validate_eligibility(root: Path, text: str | None = None) -> None:
     _validate_no_identity_query(text, ELIGIBILITY)
     _require("COUNT" in text.upper(), "preflight must use aggregate counts")
     _require(
-        "count(DISTINCT" in text or "count(distinct" in text.lower(),
-        "preflight must count distinct source features/events",
+        "WITH RECURSIVE" in text
+        and "CROSS JOIN LATERAL" in text
+        and "channel_cap_plus_one" in text
+        and "campaign_feature_cap_plus_one" in text,
+        "preflight must use bounded next-key source feature cardinality",
     )
     _require("sum(" in text.lower(), "preflight must aggregate amount by currency")
     _require(
@@ -418,15 +430,23 @@ def validate_query_path_indexes(root: Path) -> None:
     canonical = _read(root, CANONICAL_SCHEMA)
     migration = _read(root, P2_STREAM_INDEX_MIGRATION)
     for index_name in REQUIRED_SOURCE_STREAM_INDEXES:
-        _require(index_name in canonical, f"canonical schema missing source stream index: {index_name}")
-        _require(index_name in migration, f"migration missing source stream index: {index_name}")
+        _require(
+            index_name in canonical,
+            f"canonical schema missing source stream index: {index_name}",
+        )
+        _require(
+            index_name in migration,
+            f"migration missing source stream index: {index_name}",
+        )
     for fragment in (
         "ON public.attribution_events (tenant_id, occurred_at ASC, id ASC)",
         "ON public.attribution_allocations (tenant_id, created_at ASC, id ASC)",
         "ON public.b23_match_verdicts (tenant_id, last_transition_at ASC, id ASC)",
         "ON public.b23_revenue_events (tenant_id, event_occurred_at ASC, id ASC)",
     ):
-        _require(fragment in migration, f"source stream index missing order keys: {fragment}")
+        _require(
+            fragment in migration, f"source stream index missing order keys: {fragment}"
+        )
 
 
 def validate_repository(root: Path, text: str | None = None) -> None:
@@ -434,7 +454,9 @@ def validate_repository(root: Path, text: str | None = None) -> None:
     fallback_start = text.find("async def upsert_fallback_from_snapshot")
     fallback_end = text.find("async def upsert_resource_fallback_from_snapshot")
     _require(fallback_start >= 0, "fallback upsert repository method missing")
-    fallback_text = text[fallback_start:fallback_end if fallback_end >= 0 else len(text)]
+    fallback_text = text[
+        fallback_start : fallback_end if fallback_end >= 0 else len(text)
+    ]
     _require(
         "upsert_fallback_from_snapshot" in fallback_text,
         "fallback upsert repository method missing",

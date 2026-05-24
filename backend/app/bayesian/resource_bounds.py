@@ -40,13 +40,36 @@ class B24ResourcePolicy:
     max_logp_terms_estimate: int = 300_000
     max_compilation_memory_mb_estimate: int = 1_024
     graph_complexity_safety_factor: int = 2
-    distinct_cardinality_policy: str = "rollup_or_plan_proven_no_group_by_limit_v1"
-    db_work_budget_policy: str = "indexed_aggregate_no_large_hashaggregate_sort_v1"
+    distinct_cardinality_policy: str = "true_next_key_early_stop_cap_plus_one_v1"
+    db_work_budget_policy: str = "b24_cardinality_no_exact_distinct_no_group_limit_v1"
+    max_cardinality_plan_rows: int = 15_000
+    max_cardinality_plan_shared_buffers: int = 60_000
+    max_cardinality_plan_temp_blocks: int = 0
+    max_cardinality_plan_sort_nodes: int = 0
+    max_cardinality_plan_hashaggregate_nodes: int = 0
+    max_cardinality_plan_seq_scan_nodes: int = 0
+    max_cardinality_plan_bitmap_heap_scan_nodes: int = 0
+    max_cardinality_plan_execution_ms: int = 500
+    max_cardinality_plan_planning_ms: int = 100
+    cardinality_plan_work_mem: str = "1MB"
 
     def validate(self) -> None:
+        zero_budget_fields = {
+            "max_cardinality_plan_temp_blocks",
+            "max_cardinality_plan_sort_nodes",
+            "max_cardinality_plan_hashaggregate_nodes",
+            "max_cardinality_plan_seq_scan_nodes",
+            "max_cardinality_plan_bitmap_heap_scan_nodes",
+        }
         for item in fields(self):
             value = getattr(self, item.name)
-            if isinstance(value, int) and value <= 0:
+            if isinstance(value, int) and item.name in zero_budget_fields and value < 0:
+                raise ValueError(f"invalid negative B2.4-P4 budget: {item.name}")
+            if (
+                isinstance(value, int)
+                and item.name not in zero_budget_fields
+                and value <= 0
+            ):
                 raise ValueError(f"invalid non-positive B2.4-P4 cap: {item.name}")
             if isinstance(value, str) and not value.strip():
                 raise ValueError(f"invalid blank B2.4-P4 policy field: {item.name}")
@@ -84,6 +107,32 @@ B24_MAX_COMPILATION_MEMORY_MB_ESTIMATE = (
 B24_GRAPH_COMPLEXITY_SAFETY_FACTOR = B24_RESOURCE_POLICY.graph_complexity_safety_factor
 B24_DISTINCT_CARDINALITY_POLICY = B24_RESOURCE_POLICY.distinct_cardinality_policy
 B24_DB_WORK_BUDGET_POLICY = B24_RESOURCE_POLICY.db_work_budget_policy
+B24_MAX_CARDINALITY_PLAN_ROWS = B24_RESOURCE_POLICY.max_cardinality_plan_rows
+B24_MAX_CARDINALITY_PLAN_SHARED_BUFFERS = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_shared_buffers
+)
+B24_MAX_CARDINALITY_PLAN_TEMP_BLOCKS = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_temp_blocks
+)
+B24_MAX_CARDINALITY_PLAN_SORT_NODES = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_sort_nodes
+)
+B24_MAX_CARDINALITY_PLAN_HASHAGGREGATE_NODES = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_hashaggregate_nodes
+)
+B24_MAX_CARDINALITY_PLAN_SEQ_SCAN_NODES = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_seq_scan_nodes
+)
+B24_MAX_CARDINALITY_PLAN_BITMAP_HEAP_SCAN_NODES = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_bitmap_heap_scan_nodes
+)
+B24_MAX_CARDINALITY_PLAN_EXECUTION_MS = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_execution_ms
+)
+B24_MAX_CARDINALITY_PLAN_PLANNING_MS = (
+    B24_RESOURCE_POLICY.max_cardinality_plan_planning_ms
+)
+B24_CARDINALITY_PLAN_WORK_MEM = B24_RESOURCE_POLICY.cardinality_plan_work_mem
 
 
 def required_policy_caps() -> dict[str, int | str]:
@@ -116,4 +165,14 @@ def required_policy_caps() -> dict[str, int | str]:
         "B24_GRAPH_COMPLEXITY_SAFETY_FACTOR": B24_GRAPH_COMPLEXITY_SAFETY_FACTOR,
         "B24_DISTINCT_CARDINALITY_POLICY": B24_DISTINCT_CARDINALITY_POLICY,
         "B24_DB_WORK_BUDGET_POLICY": B24_DB_WORK_BUDGET_POLICY,
+        "B24_MAX_CARDINALITY_PLAN_ROWS": B24_MAX_CARDINALITY_PLAN_ROWS,
+        "B24_MAX_CARDINALITY_PLAN_SHARED_BUFFERS": B24_MAX_CARDINALITY_PLAN_SHARED_BUFFERS,
+        "B24_MAX_CARDINALITY_PLAN_TEMP_BLOCKS": B24_MAX_CARDINALITY_PLAN_TEMP_BLOCKS,
+        "B24_MAX_CARDINALITY_PLAN_SORT_NODES": B24_MAX_CARDINALITY_PLAN_SORT_NODES,
+        "B24_MAX_CARDINALITY_PLAN_HASHAGGREGATE_NODES": B24_MAX_CARDINALITY_PLAN_HASHAGGREGATE_NODES,
+        "B24_MAX_CARDINALITY_PLAN_SEQ_SCAN_NODES": B24_MAX_CARDINALITY_PLAN_SEQ_SCAN_NODES,
+        "B24_MAX_CARDINALITY_PLAN_BITMAP_HEAP_SCAN_NODES": B24_MAX_CARDINALITY_PLAN_BITMAP_HEAP_SCAN_NODES,
+        "B24_MAX_CARDINALITY_PLAN_EXECUTION_MS": B24_MAX_CARDINALITY_PLAN_EXECUTION_MS,
+        "B24_MAX_CARDINALITY_PLAN_PLANNING_MS": B24_MAX_CARDINALITY_PLAN_PLANNING_MS,
+        "B24_CARDINALITY_PLAN_WORK_MEM": B24_CARDINALITY_PLAN_WORK_MEM,
     }

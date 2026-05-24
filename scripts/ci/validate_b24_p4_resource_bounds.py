@@ -16,6 +16,8 @@ INPUT_PROFILE = BAYESIAN_PACKAGE / "input_profile.py"
 DESIGN_ENVELOPE = BAYESIAN_PACKAGE / "design_matrix_envelope.py"
 GRAPH_ENVELOPE = BAYESIAN_PACKAGE / "graph_complexity_envelope.py"
 MODEL_FAMILY_CONTRACT = BAYESIAN_PACKAGE / "model_family_contract.py"
+ELIGIBILITY = BAYESIAN_PACKAGE / "eligibility.py"
+CARDINALITY_DB_WORK = BAYESIAN_PACKAGE / "cardinality_db_work.py"
 PREFLIGHT_LEASE = BAYESIAN_PACKAGE / "preflight_lease.py"
 RESOURCE_PROFILE = BAYESIAN_PACKAGE / "resource_profile.py"
 FIT_PLANNER = BAYESIAN_PACKAGE / "fit_planner.py"
@@ -30,6 +32,9 @@ P4_MIGRATION = Path(
 P4_FEATURE_CARDINALITY_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202605241200_b24_p4_feature_cardinality_indexes.py"
 )
+P4_CARDINALITY_EARLY_STOP_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605241430_b24_p4_cardinality_early_stop_indexes.py"
+)
 CANONICAL_SCHEMA = Path("db/schema/canonical_schema.sql")
 P4_TESTS = Path("backend/tests/test_b24_p4_resource_bounds.py")
 
@@ -39,10 +44,13 @@ REQUIRED_FILES = {
     DESIGN_ENVELOPE,
     GRAPH_ENVELOPE,
     MODEL_FAMILY_CONTRACT,
+    ELIGIBILITY,
+    CARDINALITY_DB_WORK,
     PREFLIGHT_LEASE,
     RESOURCE_PROFILE,
     P4_MIGRATION,
     P4_FEATURE_CARDINALITY_MIGRATION,
+    P4_CARDINALITY_EARLY_STOP_MIGRATION,
 }
 
 REQUIRED_CAP_NAMES = {
@@ -72,6 +80,24 @@ REQUIRED_CAP_NAMES = {
     "B24_GRAPH_COMPLEXITY_SAFETY_FACTOR",
     "B24_DISTINCT_CARDINALITY_POLICY",
     "B24_DB_WORK_BUDGET_POLICY",
+    "B24_MAX_CARDINALITY_PLAN_ROWS",
+    "B24_MAX_CARDINALITY_PLAN_SHARED_BUFFERS",
+    "B24_MAX_CARDINALITY_PLAN_TEMP_BLOCKS",
+    "B24_MAX_CARDINALITY_PLAN_SORT_NODES",
+    "B24_MAX_CARDINALITY_PLAN_HASHAGGREGATE_NODES",
+    "B24_MAX_CARDINALITY_PLAN_SEQ_SCAN_NODES",
+    "B24_MAX_CARDINALITY_PLAN_BITMAP_HEAP_SCAN_NODES",
+    "B24_MAX_CARDINALITY_PLAN_EXECUTION_MS",
+    "B24_MAX_CARDINALITY_PLAN_PLANNING_MS",
+    "B24_CARDINALITY_PLAN_WORK_MEM",
+}
+
+ZERO_ALLOWED_INT_FIELDS = {
+    "max_cardinality_plan_temp_blocks",
+    "max_cardinality_plan_sort_nodes",
+    "max_cardinality_plan_hashaggregate_nodes",
+    "max_cardinality_plan_seq_scan_nodes",
+    "max_cardinality_plan_bitmap_heap_scan_nodes",
 }
 
 P4_FALLBACK_REASONS = {
@@ -112,6 +138,13 @@ FORBIDDEN_MATERIALIZATION_TOKENS = {
     "pytensor",
 }
 
+EARLY_STOP_INDEXES = (
+    "idx_b24_p4_attribution_events_channel_early_stop",
+    "idx_b24_p4_attribution_events_campaign_early_stop",
+    "idx_b24_p4_match_verdicts_provider_early_stop",
+    "idx_b24_p4_revenue_events_provider_early_stop",
+)
+
 
 class ValidationError(RuntimeError):
     pass
@@ -145,10 +178,11 @@ def validate_policy(root: Path, text: str | None = None) -> None:
                         continue
     _require("B24_RESOURCE_POLICY_VERSION" in text, "policy version missing")
     _require("B24ResourcePolicy" in text, "single authoritative policy object missing")
-    _require(
-        re.search(r":\s*int\s*=\s*0\b", text) is None,
-        "invalid zero/negative cap: dataclass cap",
-    )
+    for match in re.finditer(r"(?P<field>\w+):\s*int\s*=\s*0\b", text):
+        _require(
+            match.group("field") in ZERO_ALLOWED_INT_FIELDS,
+            "invalid zero/negative cap: dataclass cap",
+        )
     for name, value in assignments.items():
         if name.startswith("B24_MAX_") and isinstance(value, int):
             _require(value > 0, f"invalid zero/negative cap: {name}")
@@ -159,7 +193,10 @@ def validate_preflight_order(root: Path, text: str | None = None) -> None:
     plan_start = text.find("async def plan_candidate")
     _require(plan_start >= 0, "plan_candidate missing")
     plan_text = text[plan_start:]
-    _require("preflight_lease = await acquire_preflight_lease" in plan_text, "preflight lease acquisition missing")
+    _require(
+        "preflight_lease = await acquire_preflight_lease" in plan_text,
+        "preflight lease acquisition missing",
+    )
     _require("terminalize_preflight_lease" in text, "preflight terminalization missing")
     _require(
         plan_text.find("preflight_lease = await acquire_preflight_lease")
@@ -173,7 +210,9 @@ def validate_preflight_order(root: Path, text: str | None = None) -> None:
         "resource profile must run before claim/dispatch",
     )
     _require("if not preflight_lease.acquired" in text, "loser branch missing")
-    _require('status="suppressed"' in text, "loser planners must exit/suppress before P2/P4")
+    _require(
+        'status="suppressed"' in text, "loser planners must exit/suppress before P2/P4"
+    )
 
 
 def validate_preflight_lease(root: Path, text: str | None = None) -> None:
@@ -188,22 +227,68 @@ def validate_preflight_lease(root: Path, text: str | None = None) -> None:
         "DELETE FROM public.b24_active_execution_leases",
     ):
         _require(token in text, f"preflight lease missing semantic: {token}")
-    key_func = text[text.find("def preflight_lease_id") : text.find("async def acquire_preflight_lease")]
-    _require("source_snapshot_hash" not in key_func, "preflight lease key includes source_snapshot_hash")
+    key_func = text[
+        text.find("def preflight_lease_id") : text.find(
+            "async def acquire_preflight_lease"
+        )
+    ]
+    _require(
+        "source_snapshot_hash" not in key_func,
+        "preflight lease key includes source_snapshot_hash",
+    )
 
 
 def validate_resource_profile(root: Path) -> None:
     input_text = _read(root, INPUT_PROFILE)
+    eligibility_text = _read(root, ELIGIBILITY)
     design_text = _read(root, DESIGN_ENVELOPE)
     graph_text = _read(root, GRAPH_ENVELOPE)
     contract_text = _read(root, MODEL_FAMILY_CONTRACT)
     profile_text = _read(root, RESOURCE_PROFILE)
+    db_work_text = _read(root, CARDINALITY_DB_WORK)
     tests_text = _read(root, P4_TESTS)
-    combined = "\n".join([input_text, design_text, graph_text, contract_text, profile_text])
+    combined = "\n".join(
+        [
+            input_text,
+            eligibility_text,
+            design_text,
+            graph_text,
+            contract_text,
+            profile_text,
+            db_work_text,
+        ]
+    )
     for token in FORBIDDEN_MATERIALIZATION_TOKENS:
-        _require(token.lower() not in combined.lower(), f"forbidden allocation/materialization: {token}")
-    _require("GROUP BY" not in input_text or "LIMIT" not in input_text, "unproven GROUP BY LIMIT forbidden")
-    _require("COUNT(DISTINCT" not in input_text.upper(), "unbounded exact COUNT(DISTINCT) forbidden in P4 profile")
+        _require(
+            token.lower() not in combined.lower(),
+            f"forbidden allocation/materialization: {token}",
+        )
+    _require(
+        re.search(r"COUNT\s*\(\s*DISTINCT\b", eligibility_text, re.IGNORECASE) is None,
+        "unbounded exact COUNT(DISTINCT) forbidden in live P4 eligibility cardinality",
+    )
+    _require(
+        re.search(r"GROUP\s+BY\s+[^\n;/]*\s+LIMIT\b", eligibility_text, re.IGNORECASE)
+        is None,
+        "unproven GROUP BY LIMIT forbidden in live P4 eligibility cardinality",
+    )
+    _require(
+        re.search(r"\bUNION\b(?!\s+ALL)", eligibility_text, re.IGNORECASE) is None,
+        "provider/campaign cardinality must not use UNION deduplication",
+    )
+    for required in (
+        "WITH RECURSIVE",
+        "CROSS JOIN LATERAL",
+        "channel_cap_plus_one",
+        "provider_cap_plus_one",
+        "campaign_feature_cap_plus_one",
+        "candidate.campaign_id > campaign_feature_keys.feature_key",
+        "candidate.provider > provider_keys.provider_key",
+    ):
+        _require(
+            required in eligibility_text,
+            f"true next-key early-stop cardinality missing: {required}",
+        )
     _require(
         re.search(r"provider_count\s*=\s*0\b", input_text) is None,
         "silent zero provider_count placeholder forbidden",
@@ -219,25 +304,55 @@ def validate_resource_profile(root: Path) -> None:
         "assert_profiled_dimensions_cover_model",
         "assert_candidate_dimensions_allowed_for_graph_build",
     ):
-        _require(required in contract_text, f"model-family dimension contract missing: {required}")
+        _require(
+            required in contract_text,
+            f"model-family dimension contract missing: {required}",
+        )
     for required in (
         "preflight.provider_count",
         "preflight.campaign_or_feature_count",
         "cardinality_profiled_dimensions",
-        "idx_b24_p4_attribution_events_campaign_cardinality",
-        "idx_b24_p4_match_verdicts_provider_cardinality",
-        "idx_b24_p4_revenue_events_provider_cardinality",
+        *EARLY_STOP_INDEXES,
+        "true_next_key_early_stop_cap_plus_one_v1",
     ):
-        _require(required in input_text, f"live feature cardinality profile missing: {required}")
-    _require("estimated_design_matrix_cells" in design_text, "design matrix cell estimate missing")
+        _require(
+            required in input_text,
+            f"live feature cardinality profile missing: {required}",
+        )
+    for required in (
+        "CardinalityPlanEvidence",
+        "validate_cardinality_plan_evidence",
+        "ANALYZE",
+        "BUFFERS",
+        "VERBOSE",
+        "SETTINGS",
+        "work_mem",
+        "hashaggregate_nodes",
+        "sort_nodes",
+        "seq_scan_nodes",
+        "bitmap_heap_scan_nodes",
+        "temp_blocks_read_or_written",
+    ):
+        _require(
+            required in db_work_text,
+            f"cardinality DB-work budget validation missing: {required}",
+        )
+    _require(
+        "estimated_design_matrix_cells" in design_text,
+        "design matrix cell estimate missing",
+    )
     _require("estimated_tensor_shape" in design_text, "tensor shape estimate missing")
-    _require("estimated_input_memory_bytes" in design_text, "input memory estimate missing")
+    _require(
+        "estimated_input_memory_bytes" in design_text, "input memory estimate missing"
+    )
     _require(
         "profile.provider_count + profile.campaign_or_feature_count" in design_text,
         "active provider/campaign dimensions missing from tensor shape",
     )
     _require("estimated_symbolic_nodes" in graph_text, "graph node estimate missing")
-    _require("estimated_random_variables" in graph_text, "random variable estimate missing")
+    _require(
+        "estimated_random_variables" in graph_text, "random variable estimate missing"
+    )
     _require("estimated_parameter_count" in graph_text, "parameter estimate missing")
     for required in (
         "profile.provider_count",
@@ -245,7 +360,10 @@ def validate_resource_profile(root: Path) -> None:
         "live_feature_width",
         "estimated_compilation_memory_bytes",
     ):
-        _require(required in graph_text, f"graph formula missing active feature coupling: {required}")
+        _require(
+            required in graph_text,
+            f"graph formula missing active feature coupling: {required}",
+        )
     for required_test in (
         "test_b24_p4_provider_count_not_silently_zero",
         "test_b24_p4_campaign_or_feature_count_not_silently_zero",
@@ -256,10 +374,29 @@ def validate_resource_profile(root: Path) -> None:
         "test_b24_p4_p5_cannot_use_unprofiled_campaign_dimension",
         "test_b24_p4_p5_cannot_use_unprofiled_provider_dimension",
         "test_b24_p4_forced_profile_values_do_not_replace_live_path_proof",
+        "test_b24_p4_campaign_cardinality_does_not_use_plain_count_distinct",
+        "test_b24_p4_provider_cardinality_does_not_use_plain_count_distinct",
+        "test_b24_p4_campaign_cardinality_uses_rollup_vocabulary_or_true_early_stop",
+        "test_b24_p4_provider_cardinality_uses_rollup_vocabulary_or_true_early_stop",
+        "test_b24_p4_tiny_fixture_explain_is_not_sufficient",
+        "test_b24_p4_exact_distinct_with_partial_index_is_not_sufficient",
+        "test_b24_p4_cardinality_plan_rejects_hashaggregate_over_large_slice",
+        "test_b24_p4_cardinality_plan_rejects_sort_over_large_slice",
+        "test_b24_p4_cardinality_plan_rejects_large_seq_scan_or_bitmap_heap_scan",
+        "test_b24_p4_cardinality_plan_rejects_temp_spill",
+        "test_b24_p4_cardinality_plan_enforces_buffers_budget",
+        "test_b24_p4_eligibility_validator_rejects_count_distinct_regression",
+        "test_b24_p4_cardinality_fix_preserves_no_pii_no_identity_no_raw_payload",
     ):
-        _require(required_test in tests_text, f"missing live cardinality regression test: {required_test}")
+        _require(
+            required_test in tests_text,
+            f"missing live cardinality regression test: {required_test}",
+        )
     for reason in P4_FALLBACK_REASONS:
-        _require(reason.upper() in profile_text or reason in profile_text, f"profile missing fallback reason: {reason}")
+        _require(
+            reason.upper() in profile_text or reason in profile_text,
+            f"profile missing fallback reason: {reason}",
+        )
 
 
 def validate_fallback_persistence(root: Path) -> None:
@@ -272,8 +409,13 @@ def validate_fallback_persistence(root: Path) -> None:
         "artifact_ref = NULL",
         "artifact_hash = NULL",
     ):
-        _require(marker in repo, f"resource fallback persistence missing marker: {marker}")
-    _require("INSERT INTO public.b24_fit_dispatch_outbox" not in repo, "resource fallback creates dispatch outbox")
+        _require(
+            marker in repo, f"resource fallback persistence missing marker: {marker}"
+        )
+    _require(
+        "INSERT INTO public.b24_fit_dispatch_outbox" not in repo,
+        "resource fallback creates dispatch outbox",
+    )
     outbox = _read(root, DISPATCH_OUTBOX)
     _require(
         "status IN ('pending', 'failed_retryable', 'stale_recovered')" in outbox,
@@ -284,6 +426,7 @@ def validate_fallback_persistence(root: Path) -> None:
 def validate_schema_surface(root: Path) -> None:
     migration = _read(root, P4_MIGRATION)
     feature_migration = _read(root, P4_FEATURE_CARDINALITY_MIGRATION)
+    early_stop_migration = _read(root, P4_CARDINALITY_EARLY_STOP_MIGRATION)
     canonical = _read(root, CANONICAL_SCHEMA)
     enums = _read(root, ENUMS)
     models = _read(root, MODELS)
@@ -300,8 +443,23 @@ def validate_schema_surface(root: Path) -> None:
         "idx_b24_p4_match_verdicts_provider_cardinality",
         "idx_b24_p4_revenue_events_provider_cardinality",
     ):
-        _require(index_name in canonical, f"canonical schema missing P4 cardinality index: {index_name}")
-        _require(index_name in feature_migration, f"migration missing P4 cardinality index: {index_name}")
+        _require(
+            index_name in canonical,
+            f"canonical schema missing P4 cardinality index: {index_name}",
+        )
+        _require(
+            index_name in feature_migration,
+            f"migration missing P4 cardinality index: {index_name}",
+        )
+    for index_name in EARLY_STOP_INDEXES:
+        _require(
+            index_name in canonical,
+            f"canonical schema missing P4 early-stop index: {index_name}",
+        )
+        _require(
+            index_name in early_stop_migration,
+            f"migration missing P4 early-stop index: {index_name}",
+        )
 
 
 def validate_scope(root: Path) -> None:
@@ -310,8 +468,13 @@ def validate_scope(root: Path) -> None:
         text = _read(root, path)
         lowered = text.lower()
         for token in FORBIDDEN_SCOPE_TOKENS:
-            _require(token.lower() not in lowered, f"P4 scope violation in {path.as_posix()}: {token}")
-    planner_claim_dispatch = _read(root, FIT_PLANNER) + _read(root, FIT_CLAIM) + _read(root, DISPATCH_OUTBOX)
+            _require(
+                token.lower() not in lowered,
+                f"P4 scope violation in {path.as_posix()}: {token}",
+            )
+    planner_claim_dispatch = (
+        _read(root, FIT_PLANNER) + _read(root, FIT_CLAIM) + _read(root, DISPATCH_OUTBOX)
+    )
     for mutation in (
         "UPDATE public.attribution_events",
         "UPDATE public.attribution_allocations",
@@ -320,7 +483,10 @@ def validate_scope(root: Path) -> None:
         "INSERT INTO public.attribution_events",
         "INSERT INTO public.b23_match_verdicts",
     ):
-        _require(mutation not in planner_claim_dispatch, f"P4 mutates deterministic truth: {mutation}")
+        _require(
+            mutation not in planner_claim_dispatch,
+            f"P4 mutates deterministic truth: {mutation}",
+        )
 
 
 def validate_all(root: Path) -> None:
@@ -353,7 +519,9 @@ def run_negative_control(root: Path) -> None:
             "zero_cap",
             lambda: validate_policy(
                 root,
-                _read(root, RESOURCE_BOUNDS).replace("max_source_rows: int = 250_000", "max_source_rows: int = 0", 1),
+                _read(root, RESOURCE_BOUNDS).replace(
+                    "max_source_rows: int = 250_000", "max_source_rows: int = 0", 1
+                ),
             ),
             "cap",
         ),
@@ -361,9 +529,89 @@ def run_negative_control(root: Path) -> None:
             "group_by_limit",
             lambda: validate_resource_profile_texts(
                 root,
-                _read(root, INPUT_PROFILE) + "\nSELECT channel FROM source GROUP BY channel LIMIT 129\n",
+                _read(root, INPUT_PROFILE)
+                + "\nSELECT channel FROM source GROUP BY channel LIMIT 129\n",
             ),
             "GROUP BY LIMIT",
+        ),
+        (
+            "eligibility_count_distinct",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY)
+                + "\nSELECT count(DISTINCT campaign_id) FROM public.attribution_events\n",
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+            ),
+            "COUNT(DISTINCT",
+        ),
+        (
+            "eligibility_group_by_limit",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY)
+                + "\nSELECT campaign_id FROM public.attribution_events GROUP BY campaign_id LIMIT 2049\n",
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+            ),
+            "GROUP BY LIMIT",
+        ),
+        (
+            "provider_union_dedup",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY).replace(
+                    "UNION ALL", "UNION", 1
+                ),
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+            ),
+            "UNION deduplication",
+        ),
+        (
+            "missing_early_stop",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY).replace(
+                    "WITH RECURSIVE", "WITH", 1
+                ),
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+            ),
+            "early-stop",
+        ),
+        (
+            "tiny_fixture_only_proof",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY),
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+                db_work_text=_read(root, CARDINALITY_DB_WORK).replace(
+                    "SETTINGS", "TINY_FIXTURE_ONLY", 1
+                ),
+            ),
+            "SETTINGS",
+        ),
+        (
+            "partial_index_only_proof",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE).replace(
+                    "true_next_key_early_stop_cap_plus_one_v1",
+                    "partial_index_only_v1",
+                    1,
+                ),
+                eligibility_text=_read(root, ELIGIBILITY),
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+            ),
+            "true_next_key",
         ),
         (
             "dummy_allocation",
@@ -402,6 +650,7 @@ def run_negative_control(root: Path) -> None:
             lambda: validate_resource_profile_module_texts(
                 root,
                 input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY),
                 design_text=_read(root, DESIGN_ENVELOPE),
                 graph_text=_read(root, GRAPH_ENVELOPE).replace(
                     "live_feature_width",
@@ -412,7 +661,9 @@ def run_negative_control(root: Path) -> None:
         ),
         (
             "forbidden_import",
-            lambda: validate_scope_text(root, _read(root, RESOURCE_PROFILE) + "\nimport pymc\n"),
+            lambda: validate_scope_text(
+                root, _read(root, RESOURCE_PROFILE) + "\nimport pymc\n"
+            ),
             "scope",
         ),
     )
@@ -420,17 +671,22 @@ def run_negative_control(root: Path) -> None:
         try:
             runner()
         except ValidationError as exc:
-            _require(expected.lower() in str(exc).lower(), f"{name} failed for wrong reason: {exc}")
+            _require(
+                expected.lower() in str(exc).lower(),
+                f"{name} failed for wrong reason: {exc}",
+            )
         else:
             raise ValidationError(f"negative control did not fail: {name}")
 
 
 def validate_resource_profile_texts(root: Path, input_text: str) -> None:
+    eligibility_text = _read(root, ELIGIBILITY)
     design_text = _read(root, DESIGN_ENVELOPE)
     graph_text = _read(root, GRAPH_ENVELOPE)
     validate_resource_profile_module_texts(
         root,
         input_text=input_text,
+        eligibility_text=eligibility_text,
         design_text=design_text,
         graph_text=graph_text,
     )
@@ -440,18 +696,66 @@ def validate_resource_profile_module_texts(
     root: Path,
     *,
     input_text: str,
+    eligibility_text: str,
     design_text: str,
     graph_text: str,
+    db_work_text: str | None = None,
 ) -> None:
     profile_text = _read(root, RESOURCE_PROFILE)
     contract_text = _read(root, MODEL_FAMILY_CONTRACT)
-    combined = "\n".join([input_text, design_text, graph_text, contract_text, profile_text])
+    db_work_text = (
+        db_work_text if db_work_text is not None else _read(root, CARDINALITY_DB_WORK)
+    )
+    combined = "\n".join(
+        [
+            input_text,
+            eligibility_text,
+            design_text,
+            graph_text,
+            contract_text,
+            profile_text,
+            db_work_text,
+        ]
+    )
     for token in FORBIDDEN_MATERIALIZATION_TOKENS:
-        _require(token.lower() not in combined.lower(), f"forbidden allocation/materialization: {token}")
+        _require(
+            token.lower() not in combined.lower(),
+            f"forbidden allocation/materialization: {token}",
+        )
     _require(
-        re.search(r"GROUP\s+BY[\s\S]{0,120}\bLIMIT\b", input_text, re.IGNORECASE) is None,
+        re.search(r"GROUP\s+BY\s+[^\n;/]*\s+LIMIT\b", input_text, re.IGNORECASE)
+        is None,
         "unproven GROUP BY LIMIT forbidden",
     )
+    _require(
+        re.search(r"COUNT\s*\(\s*DISTINCT\b", eligibility_text, re.IGNORECASE) is None,
+        "unbounded exact COUNT(DISTINCT) forbidden in live P4 eligibility cardinality",
+    )
+    _require(
+        re.search(r"GROUP\s+BY\s+[^\n;/]*\s+LIMIT\b", eligibility_text, re.IGNORECASE)
+        is None,
+        "unproven GROUP BY LIMIT forbidden in live P4 eligibility cardinality",
+    )
+    _require(
+        re.search(r"\bUNION\b(?!\s+ALL)", eligibility_text, re.IGNORECASE) is None,
+        "provider/campaign cardinality must not use UNION deduplication",
+    )
+    _require(
+        "WITH RECURSIVE" in eligibility_text
+        and "CROSS JOIN LATERAL" in eligibility_text
+        and "campaign_feature_cap_plus_one" in eligibility_text
+        and "provider_cap_plus_one" in eligibility_text,
+        "true next-key early-stop cardinality missing",
+    )
+    _require(
+        "true_next_key_early_stop_cap_plus_one_v1" in input_text,
+        "true_next_key policy proof missing",
+    )
+    for required in ("ANALYZE", "BUFFERS", "VERBOSE", "SETTINGS", "work_mem"):
+        _require(
+            required in db_work_text,
+            f"cardinality DB-work proof validation missing: {required}",
+        )
     _require(
         re.search(r"provider_count\s*=\s*0\b", input_text) is None,
         "silent zero provider_count placeholder forbidden",
@@ -465,18 +769,30 @@ def validate_resource_profile_module_texts(
         "preflight.campaign_or_feature_count",
         "cardinality_profiled_dimensions",
     ):
-        _require(required in input_text, f"live feature cardinality profile missing: {required}")
+        _require(
+            required in input_text,
+            f"live feature cardinality profile missing: {required}",
+        )
     _require(
         "profile.provider_count + profile.campaign_or_feature_count" in design_text,
         "active provider/campaign dimensions missing from tensor shape",
     )
-    for required in ("profile.provider_count", "profile.campaign_or_feature_count", "live_feature_width"):
-        _require(required in graph_text, f"graph formula missing active feature coupling: {required}")
+    for required in (
+        "profile.provider_count",
+        "profile.campaign_or_feature_count",
+        "live_feature_width",
+    ):
+        _require(
+            required in graph_text,
+            f"graph formula missing active feature coupling: {required}",
+        )
 
 
 def validate_scope_text(root: Path, injected_text: str) -> None:
     for token in FORBIDDEN_SCOPE_TOKENS:
-        _require(token.lower() not in injected_text.lower(), f"P4 scope violation: {token}")
+        _require(
+            token.lower() not in injected_text.lower(), f"P4 scope violation: {token}"
+        )
     validate_scope(root)
 
 
