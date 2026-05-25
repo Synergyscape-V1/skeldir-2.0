@@ -1,7 +1,5 @@
-"use client";
-
-import { useState, useEffect, useCallback } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import type { ReactNode } from "react";
+import { articles } from "@/data/articlesData";
 
 export interface TOCItem {
     id: string;
@@ -14,120 +12,39 @@ interface TableOfContentsProps {
     items: TOCItem[];
 }
 
+function renderTocItem(item: TOCItem, depth: number): ReactNode {
+    const paddingLeft = depth * 16 + 16;
+    return (
+        <li key={item.id} className="relative">
+            <a
+                href={`#${item.id}`}
+                className="block py-1.5 transition-colors duration-200 hover:text-blue-600"
+                style={{
+                    paddingLeft: `${paddingLeft}px`,
+                    fontSize: depth === 0 ? "15px" : "14px",
+                    fontWeight: 400,
+                    color: "#6B7280",
+                    borderLeft: "3px solid transparent",
+                    lineHeight: 1.8,
+                }}
+            >
+                {item.title}
+            </a>
+            {item.children && item.children.length > 0 && (
+                <ul className="ml-0">{item.children.map((child) => renderTocItem(child, depth + 1))}</ul>
+            )}
+        </li>
+    );
+}
+
+function tocLinkList(items: TOCItem[]) {
+    return <ul className="space-y-0">{items.map((item) => renderTocItem(item, 0))}</ul>;
+}
+
+/** Server-rendered TOC: native hash links; mobile uses `<details>` (no JS). */
 export function TableOfContents({ items }: TableOfContentsProps) {
-    const [activeId, setActiveId] = useState<string>("");
-    const [isExpanded, setIsExpanded] = useState(false);
-
-    // Flatten items for scroll spy
-    const flattenItems = useCallback((items: TOCItem[]): TOCItem[] => {
-        const flat: TOCItem[] = [];
-        items.forEach((item) => {
-            flat.push(item);
-            if (item.children) {
-                flat.push(...flattenItems(item.children));
-            }
-        });
-        return flat;
-    }, []);
-
-    useEffect(() => {
-        const allItems = flattenItems(items);
-        const headingIds = allItems.map((item) => item.id);
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    if (entry.isIntersecting) {
-                        setActiveId(entry.target.id);
-                    }
-                });
-            },
-            {
-                rootMargin: "-20% 0px -75% 0px",
-                threshold: 0,
-            }
-        );
-
-        headingIds.forEach((id) => {
-            const element = document.getElementById(id);
-            if (element) {
-                observer.observe(element);
-            }
-        });
-
-        return () => {
-            headingIds.forEach((id) => {
-                const element = document.getElementById(id);
-                if (element) {
-                    observer.unobserve(element);
-                }
-            });
-        };
-    }, [items, flattenItems]);
-
-    const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
-        e.preventDefault();
-        const element = document.getElementById(id);
-        if (element) {
-            const headerOffset = 100;
-            const elementPosition = element.getBoundingClientRect().top;
-            const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
-
-            window.scrollTo({
-                top: offsetPosition,
-                behavior: "smooth",
-            });
-
-            // Update URL hash
-            window.history.pushState(null, "", `#${id}`);
-            setActiveId(id);
-        }
-    };
-
-    const renderItem = (item: TOCItem, depth: number = 0) => {
-        const isActive = activeId === item.id;
-        const paddingLeft = depth * 16;
-
-        return (
-            <li key={item.id} className="relative">
-                <a
-                    href={`#${item.id}`}
-                    onClick={(e) => handleClick(e, item.id)}
-                    aria-current={isActive ? "location" : undefined}
-                    className="block py-1.5 transition-all duration-200"
-                    style={{
-                        paddingLeft: `${paddingLeft + (isActive ? 13 : 16)}px`,
-                        fontSize: depth === 0 ? '15px' : '14px',
-                        fontWeight: isActive ? 600 : 400,
-                        color: isActive ? '#111827' : '#6B7280',
-                        borderLeft: isActive ? '3px solid #3B82F6' : '3px solid transparent',
-                        lineHeight: 1.8,
-                    }}
-                    onMouseEnter={(e) => {
-                        if (!isActive) {
-                            e.currentTarget.style.color = '#3B82F6';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (!isActive) {
-                            e.currentTarget.style.color = '#6B7280';
-                        }
-                    }}
-                >
-                    {item.title}
-                </a>
-                {item.children && item.children.length > 0 && (
-                    <ul className="ml-0">
-                        {item.children.map((child) => renderItem(child, depth + 1))}
-                    </ul>
-                )}
-            </li>
-        );
-    };
-
     return (
         <>
-            {/* Desktop TOC - Sticky Sidebar */}
             <nav
                 aria-label="Article table of contents"
                 className="hidden xl:block sticky top-32 w-72 max-h-[calc(100vh-160px)] overflow-y-auto pr-4"
@@ -135,53 +52,37 @@ export function TableOfContents({ items }: TableOfContentsProps) {
                 <h3
                     className="mb-4 uppercase tracking-wide"
                     style={{
-                        fontSize: '12px',
+                        fontSize: "12px",
                         fontWeight: 600,
-                        color: '#9CA3AF',
-                        letterSpacing: '0.5px',
+                        color: "#9CA3AF",
+                        letterSpacing: "0.5px",
                     }}
                 >
                     Table of Contents
                 </h3>
-                <ul className="space-y-0">
-                    {items.map((item) => renderItem(item))}
-                </ul>
+                {tocLinkList(items)}
             </nav>
 
-            {/* Mobile TOC - Collapsible */}
             <div className="xl:hidden mb-8">
-                <button
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors"
-                    style={{
-                        backgroundColor: '#F3F4F6',
-                        color: '#374151',
-                        fontSize: '14px',
-                        fontWeight: 500,
-                    }}
-                    aria-expanded={isExpanded}
-                    aria-controls="mobile-toc"
+                <details
+                    className="rounded-lg overflow-hidden group"
+                    style={{ backgroundColor: "#F3F4F6" }}
                 >
-                    <span>Table of Contents</span>
-                    {isExpanded ? (
-                        <ChevronUp className="w-5 h-5" />
-                    ) : (
-                        <ChevronDown className="w-5 h-5" />
-                    )}
-                </button>
-
-                {isExpanded && (
-                    <nav
-                        id="mobile-toc"
-                        aria-label="Article table of contents"
-                        className="mt-2 px-4 py-3 rounded-lg"
-                        style={{ backgroundColor: '#F9FAFB' }}
+                    <summary
+                        className="px-4 py-3 cursor-pointer font-medium flex items-center justify-between list-none [&::-webkit-details-marker]:hidden"
+                        style={{ color: "#374151", fontSize: "14px" }}
                     >
-                        <ul className="space-y-0">
-                            {items.map((item) => renderItem(item))}
-                        </ul>
-                    </nav>
-                )}
+                        <span>Table of Contents</span>
+                        <span className="text-gray-500 select-none group-open:rotate-180 transition-transform">
+                            ▼
+                        </span>
+                    </summary>
+                    <div className="px-4 py-3" style={{ backgroundColor: "#F9FAFB" }}>
+                        <nav aria-label="Article table of contents" id="mobile-toc">
+                            {tocLinkList(items)}
+                        </nav>
+                    </div>
+                </details>
             </div>
         </>
     );
@@ -419,15 +320,29 @@ export function generateTOCItems4(): TOCItem[] {
     ];
 }
 
+const ARTICLE_TOC_GENERATORS: Record<string, () => TOCItem[]> = {
+    "why-your-attribution-numbers-never-match": generateTOCItems,
+    "roas-is-not-a-number-its-a-range": generateTOCItems2,
+    "attribution-methods-answer-different-questions": generateTOCItems3,
+    "confidently-defend-budget-shift": generateTOCItems4,
+};
+
+(function assertTocRegistryParity() {
+    const fromData = new Set(articles.map((a) => a.slug));
+    const fromMap = new Set(Object.keys(ARTICLE_TOC_GENERATORS));
+    const missing = [...fromData].filter((s) => !fromMap.has(s));
+    const extra = [...fromMap].filter((s) => !fromData.has(s));
+    if (missing.length || extra.length) {
+        throw new Error(
+            `[TableOfContents] TOC slug map must match articlesData exactly.\n` +
+                `  Missing TOC for: ${missing.join(", ") || "none"}\n` +
+                `  Extra TOC keys: ${extra.join(", ") || "none"}`
+        );
+    }
+})();
+
 // Get TOC items by article slug
 export function getTOCItemsBySlug(slug: string): TOCItem[] {
-    const tocMap: Record<string, () => TOCItem[]> = {
-        "why-your-attribution-numbers-never-match": generateTOCItems,
-        "roas-is-not-a-number-its-a-range": generateTOCItems2,
-        "attribution-methods-answer-different-questions": generateTOCItems3,
-        "confidently-defend-budget-shift": generateTOCItems4,
-    };
-
-    const generator = tocMap[slug];
+    const generator = ARTICLE_TOC_GENERATORS[slug];
     return generator ? generator() : [];
 }
