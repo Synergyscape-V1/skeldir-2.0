@@ -164,7 +164,10 @@ class BayesianModelFit(Base, TenantMixin):
             "'parameter_count_exceeded', 'hierarchy_width_exceeded', "
             "'compilation_memory_bound_exceeded', "
             "'cardinality_authority_missing', 'cardinality_authority_stale', "
-            "'cardinality_authority_mismatch', 'source_profile_unavailable', "
+            "'cardinality_authority_mismatch', "
+            "'cardinality_authority_timeout', "
+            "'cardinality_authority_build_failed', "
+            "'source_profile_unavailable', "
             "'timeout', 'worker_failure', 'no_convergence', "
             "'resource_bound_exceeded', 'source_unavailable', 'duplicate_fit_suppressed', "
             "'artifact_unavailable', 'storage_quota_exceeded')",
@@ -411,6 +414,7 @@ class B24DirtyEvent(Base, TenantMixin):
     source_family: Mapped[str] = mapped_column(String(64), nullable=False)
     event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default="pending"
     )
@@ -442,6 +446,21 @@ class B24DirtyEvent(Base, TenantMixin):
     pruned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    authority_retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    authority_retry_after_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    authority_wait_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    authority_reactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    authority_terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -458,6 +477,14 @@ class B24DirtyEvent(Base, TenantMixin):
         CheckConstraint(
             "event_hash IS NULL OR event_hash ~ '^[a-f0-9]{64}$'",
             name="ck_b24_dirty_events_event_hash_sha256",
+        ),
+        CheckConstraint(
+            "source_snapshot_hash IS NULL OR source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_dirty_events_source_snapshot_hash_sha256",
+        ),
+        CheckConstraint(
+            "authority_retry_count >= 0",
+            name="ck_b24_dirty_events_authority_retry_count_nonnegative",
         ),
         Index(
             "idx_b24_dirty_events_tenant_status_observed",
@@ -476,6 +503,17 @@ class B24DirtyEvent(Base, TenantMixin):
             "observed_at",
             "id",
             postgresql_where=text("status IN ('pending', 'leased')"),
+        ),
+        Index(
+            "idx_b24_dirty_events_authority_retry_ready",
+            "tenant_id",
+            "status",
+            "authority_retry_after_at",
+            "observed_at",
+            "id",
+            postgresql_where=text(
+                "status IN ('authority_waiting', 'authority_retry_ready')"
+            ),
         ),
     )
 
@@ -655,6 +693,125 @@ class B24SourceWindowFeatureAuthority(Base, TenantMixin):
             "source_window_start",
             "source_window_end",
             text("computed_at DESC"),
+        ),
+    )
+
+
+class B24FeatureAuthorityBuildRequest(Base, TenantMixin):
+    """Snapshot-scoped transient request for feature-authority construction."""
+
+    __tablename__ = "b24_feature_authority_build_requests"
+
+    model_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="authority_build_requested",
+        server_default="authority_build_requested",
+    )
+    authority_reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    max_retries: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default="5"
+    )
+    retry_after_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    terminal_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "source_snapshot_hash",
+            name="b24_feature_authority_build_requests_pkey",
+        ),
+        CheckConstraint(
+            "model_type ~ '^[a-z][a-z0-9_]{1,63}$'",
+            name="ck_b24_feature_authority_request_model_type_format",
+        ),
+        CheckConstraint(
+            "char_length(trim(model_version)) > 0",
+            name="ck_b24_feature_authority_request_model_version_not_blank",
+        ),
+        CheckConstraint(
+            "source_window_end > source_window_start",
+            name="ck_b24_feature_authority_request_window_order",
+        ),
+        CheckConstraint(
+            "source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_feature_authority_request_snapshot_hash_sha256",
+        ),
+        CheckConstraint(
+            "status IN ("
+            "'authority_build_requested', 'authority_waiting', "
+            "'authority_retry_ready', 'authority_completed', "
+            "'authority_timeout', 'authority_build_failed')",
+            name="ck_b24_feature_authority_request_status",
+        ),
+        CheckConstraint(
+            "authority_reason IN ("
+            "'cardinality_authority_missing', "
+            "'cardinality_authority_stale', "
+            "'cardinality_authority_mismatch')",
+            name="ck_b24_feature_authority_request_reason",
+        ),
+        CheckConstraint(
+            "terminal_reason IS NULL OR terminal_reason IN ("
+            "'cardinality_authority_timeout', "
+            "'cardinality_authority_build_failed')",
+            name="ck_b24_feature_authority_request_terminal_reason",
+        ),
+        CheckConstraint(
+            "retry_count >= 0",
+            name="ck_b24_feature_authority_request_retry_count",
+        ),
+        CheckConstraint(
+            "max_retries > 0",
+            name="ck_b24_feature_authority_request_max_retries",
+        ),
+        CheckConstraint(
+            "char_length(trim(policy_version)) > 0",
+            name="ck_b24_feature_authority_request_policy_version_not_blank",
+        ),
+        Index(
+            "idx_b24_feature_authority_build_requests_due",
+            "tenant_id",
+            "status",
+            "retry_after_at",
+            postgresql_where=text(
+                "status IN ("
+                "'authority_build_requested', "
+                "'authority_waiting', "
+                "'authority_retry_ready')"
+            ),
         ),
     )
 

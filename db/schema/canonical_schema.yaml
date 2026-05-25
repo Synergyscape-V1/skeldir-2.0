@@ -725,7 +725,7 @@ tables:
       eligibility_status: {type: VARCHAR(32), nullable: false, default: unknown, values: [unknown, eligible, ineligible, fallback_only]}
       data_completeness_status: {type: VARCHAR(32), nullable: false, default: unknown, values: [unknown, complete, partial, insufficient, stale]}
       fallback_applied: {type: BOOLEAN, nullable: false, default: false}
-      fallback_reason: {type: VARCHAR(64), nullable: true, values: [source_window_empty, insufficient_data, insufficient_privacy_cohort, timeout, worker_failure, no_convergence, resource_bound_exceeded, source_unavailable, duplicate_fit_suppressed, artifact_unavailable, storage_quota_exceeded]}
+      fallback_reason: {type: VARCHAR(64), nullable: true, values: [source_window_empty, insufficient_data, insufficient_privacy_cohort, input_too_large, feature_width_exceeded, source_window_too_large, memory_bound_exceeded, graph_complexity_exceeded, parameter_count_exceeded, hierarchy_width_exceeded, compilation_memory_bound_exceeded, cardinality_authority_missing, cardinality_authority_stale, cardinality_authority_mismatch, cardinality_authority_timeout, cardinality_authority_build_failed, source_profile_unavailable, timeout, worker_failure, no_convergence, resource_bound_exceeded, source_unavailable, duplicate_fit_suppressed, artifact_unavailable, storage_quota_exceeded]}
       sampling_started_at: {type: TIMESTAMPTZ, nullable: true}
       last_eligibility_check_at: {type: TIMESTAMPTZ, nullable: true}
       last_fit_at: {type: TIMESTAMPTZ, nullable: true}
@@ -780,21 +780,66 @@ tables:
       source_family: {type: VARCHAR(64), nullable: false}
       event_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
       source_event_id: {type: VARCHAR(128), nullable: true}
-      status: {type: VARCHAR(32), nullable: false, default: pending, values: [pending, leased, coalesced, claimed, suppressed, fallback_only, superseded, dispatched, pruned]}
+      status: {type: VARCHAR(32), nullable: false, default: pending, values: [pending, leased, coalesced, claimed, suppressed, fallback_only, superseded, dispatched, authority_waiting, authority_retry_ready, authority_timeout, authority_build_failed, pruned]}
       planner_owner: {type: VARCHAR(128), nullable: true}
       observed_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
       created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
       updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      source_snapshot_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
+      authority_retry_count: {type: INTEGER, nullable: false, default: 0}
+      authority_retry_after_at: {type: TIMESTAMPTZ, nullable: true}
+      authority_wait_started_at: {type: TIMESTAMPTZ, nullable: true}
+      authority_reactivated_at: {type: TIMESTAMPTZ, nullable: true}
+      authority_terminal_at: {type: TIMESTAMPTZ, nullable: true}
     constraints:
       - {name: b24_dirty_events_pkey, type: PRIMARY KEY, columns: [tenant_id, id]}
       - {name: ck_b24_dirty_events_event_hash_sha256, type: CHECK, definition: "event_hash is null or matches ^[a-f0-9]{64}$"}
+      - {name: ck_b24_dirty_events_source_snapshot_hash_sha256, type: CHECK, definition: "source_snapshot_hash is null or matches ^[a-f0-9]{64}$"}
+      - {name: ck_b24_dirty_events_authority_retry_count_nonnegative, type: CHECK, definition: "authority_retry_count >= 0"}
       - {name: ck_b24_dirty_events_source_window_order, type: CHECK, definition: "source_window_end > source_window_start"}
     indexes:
       - {name: idx_b24_dirty_events_tenant_status_observed, columns: [tenant_id, status, observed_at, id]}
       - {name: idx_b24_dirty_events_tenant_model_window_pending, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end, observed_at, id], where: "status IN ('pending', 'leased')"}
       - {name: idx_b24_dirty_events_tenant_event_hash, columns: [tenant_id, event_hash], where: "event_hash IS NOT NULL"}
+      - {name: idx_b24_dirty_events_authority_retry_ready, columns: [tenant_id, status, authority_retry_after_at, observed_at, id], where: "status IN ('authority_waiting', 'authority_retry_ready')"}
     rls_policy:
       name: tenant_isolation_policy_b24_dirty_events
+      using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+      with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
+
+  b24_feature_authority_build_requests:
+    purpose: "B2.4-P4 transient feature-authority build/rebuild requests keyed by source snapshot"
+    rls_enabled: true
+    columns:
+      tenant_id: {type: UUID, nullable: false, primary_key_component: true, foreign_key: "tenants(id) ON DELETE CASCADE", invariant: privacy_critical}
+      model_type: {type: VARCHAR(64), nullable: false, primary_key_component: true}
+      model_version: {type: VARCHAR(64), nullable: false, primary_key_component: true}
+      source_window_start: {type: TIMESTAMPTZ, nullable: false, primary_key_component: true}
+      source_window_end: {type: TIMESTAMPTZ, nullable: false, primary_key_component: true}
+      source_snapshot_hash: {type: VARCHAR(64), nullable: false, primary_key_component: true, format: lowercase_sha256_hex}
+      status: {type: VARCHAR(32), nullable: false, default: authority_build_requested, values: [authority_build_requested, authority_waiting, authority_retry_ready, authority_completed, authority_timeout, authority_build_failed]}
+      authority_reason: {type: VARCHAR(64), nullable: false, values: [cardinality_authority_missing, cardinality_authority_stale, cardinality_authority_mismatch]}
+      detail: {type: TEXT, nullable: true}
+      retry_count: {type: INTEGER, nullable: false, default: 0}
+      max_retries: {type: INTEGER, nullable: false, default: 5}
+      retry_after_at: {type: TIMESTAMPTZ, nullable: true}
+      requested_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      completed_at: {type: TIMESTAMPTZ, nullable: true}
+      terminal_reason: {type: VARCHAR(64), nullable: true, values: [cardinality_authority_timeout, cardinality_authority_build_failed]}
+      terminal_at: {type: TIMESTAMPTZ, nullable: true}
+      policy_version: {type: VARCHAR(64), nullable: false}
+      created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+      updated_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
+    constraints:
+      - {name: b24_feature_authority_build_requests_pkey, type: PRIMARY KEY, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash]}
+      - {name: ck_b24_feature_authority_request_snapshot_hash_sha256, type: CHECK, definition: "source_snapshot_hash matches ^[a-f0-9]{64}$"}
+      - {name: ck_b24_feature_authority_request_window_order, type: CHECK, definition: "source_window_end > source_window_start"}
+      - {name: ck_b24_feature_authority_request_retry_count, type: CHECK, definition: "retry_count >= 0"}
+      - {name: ck_b24_feature_authority_request_max_retries, type: CHECK, definition: "max_retries > 0"}
+    indexes:
+      - {name: idx_b24_feature_authority_build_requests_due, columns: [tenant_id, status, retry_after_at, requested_at]}
+    rls_policy:
+      name: tenant_isolation_policy_b24_feature_authority_build_requests
       using: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
       with_check: "tenant_id = current_setting('app.current_tenant_id', true)::UUID"
 

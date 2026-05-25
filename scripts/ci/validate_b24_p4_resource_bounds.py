@@ -18,6 +18,7 @@ GRAPH_ENVELOPE = BAYESIAN_PACKAGE / "graph_complexity_envelope.py"
 MODEL_FAMILY_CONTRACT = BAYESIAN_PACKAGE / "model_family_contract.py"
 ELIGIBILITY = BAYESIAN_PACKAGE / "eligibility.py"
 FEATURE_AUTHORITY = BAYESIAN_PACKAGE / "feature_authority.py"
+AUTHORITY_LIVENESS = BAYESIAN_PACKAGE / "authority_liveness.py"
 CARDINALITY_DB_WORK = BAYESIAN_PACKAGE / "cardinality_db_work.py"
 PREFLIGHT_LEASE = BAYESIAN_PACKAGE / "preflight_lease.py"
 RESOURCE_PROFILE = BAYESIAN_PACKAGE / "resource_profile.py"
@@ -39,6 +40,9 @@ P4_CARDINALITY_EARLY_STOP_MIGRATION = Path(
 P4_FEATURE_AUTHORITY_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202605251200_b24_p4_feature_authority.py"
 )
+P4_AUTHORITY_LIVENESS_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605251430_b24_p4_authority_liveness.py"
+)
 CANONICAL_SCHEMA = Path("db/schema/canonical_schema.sql")
 P4_TESTS = Path("backend/tests/test_b24_p4_resource_bounds.py")
 
@@ -50,6 +54,7 @@ REQUIRED_FILES = {
     MODEL_FAMILY_CONTRACT,
     ELIGIBILITY,
     FEATURE_AUTHORITY,
+    AUTHORITY_LIVENESS,
     CARDINALITY_DB_WORK,
     PREFLIGHT_LEASE,
     RESOURCE_PROFILE,
@@ -57,6 +62,7 @@ REQUIRED_FILES = {
     P4_FEATURE_CARDINALITY_MIGRATION,
     P4_CARDINALITY_EARLY_STOP_MIGRATION,
     P4_FEATURE_AUTHORITY_MIGRATION,
+    P4_AUTHORITY_LIVENESS_MIGRATION,
 }
 
 REQUIRED_CAP_NAMES = {
@@ -118,6 +124,8 @@ P4_FALLBACK_REASONS = {
     "cardinality_authority_missing",
     "cardinality_authority_stale",
     "cardinality_authority_mismatch",
+    "cardinality_authority_timeout",
+    "cardinality_authority_build_failed",
     "source_profile_unavailable",
 }
 
@@ -463,32 +471,193 @@ def validate_fallback_persistence(root: Path) -> None:
     )
 
 
+def validate_authority_liveness(root: Path) -> None:
+    validate_authority_liveness_texts(root)
+
+
+def validate_authority_liveness_texts(
+    root: Path,
+    *,
+    planner_text: str | None = None,
+    liveness_text: str | None = None,
+    feature_authority_text: str | None = None,
+    repository_text: str | None = None,
+    tests_text: str | None = None,
+    migration_text: str | None = None,
+) -> None:
+    planner = planner_text if planner_text is not None else _read(root, FIT_PLANNER)
+    liveness = (
+        liveness_text if liveness_text is not None else _read(root, AUTHORITY_LIVENESS)
+    )
+    feature_authority = (
+        feature_authority_text
+        if feature_authority_text is not None
+        else _read(root, FEATURE_AUTHORITY)
+    )
+    repository = (
+        repository_text if repository_text is not None else _read(root, REPOSITORY)
+    )
+    tests = tests_text if tests_text is not None else _read(root, P4_TESTS)
+    migration = (
+        migration_text
+        if migration_text is not None
+        else _read(root, P4_AUTHORITY_LIVENESS_MIGRATION)
+    )
+    authority_branch_start = planner.find("except FeatureAuthorityUnavailable")
+    authority_branch_end = planner.find("assert feature_authority is not None")
+    _require(authority_branch_start >= 0, "authority unavailable branch missing")
+    _require(
+        authority_branch_end > authority_branch_start, "authority branch malformed"
+    )
+    authority_branch = planner[authority_branch_start:authority_branch_end]
+    for token in (
+        "request_feature_authority_build",
+        "mark_authority_waiting_dirty_events",
+        "AuthorityBuildStatus.TIMEOUT",
+        "AuthorityBuildStatus.BUILD_FAILED",
+    ):
+        _require(token in authority_branch, f"authority-yield branch missing: {token}")
+    first_yield_path = authority_branch[
+        : authority_branch.find("AuthorityBuildStatus.TIMEOUT")
+    ]
+    _require(
+        'status="fallback_only"' not in first_yield_path,
+        "missing/stale/mismatched authority must not become fallback_only before retry exhaustion",
+    )
+    _require(
+        "upsert_feature_authority_fallback_from_snapshot" not in first_yield_path,
+        "authority dependency yield must not persist fallback before retry exhaustion",
+    )
+    _require(
+        "claim_fit_for_snapshot" not in authority_branch,
+        "authority-yield path must not claim fit",
+    )
+    _require(
+        "INSERT INTO public.b24_fit_dispatch_outbox" not in liveness + repository,
+        "authority-yield path must not create dispatch outbox",
+    )
+    for token in (
+        "b24_feature_authority_build_requests",
+        "source_snapshot_hash",
+        "retry_count",
+        "retry_after_at",
+        "max_retries",
+        "authority_waiting",
+        "authority_retry_ready",
+        "cardinality_authority_timeout",
+        "cardinality_authority_build_failed",
+    ):
+        _require(
+            token in liveness and token in migration,
+            f"authority liveness missing: {token}",
+        )
+    _require(
+        "AUTHORITY_LIVENESS_POLICY_VERSION" in liveness,
+        "authority liveness policy version missing",
+    )
+    _require(
+        "AND source_snapshot_hash = :source_snapshot_hash" in liveness,
+        "reactivation must be source_snapshot_hash scoped",
+    )
+    for token in (
+        "reactivate_planner_for_feature_authority",
+        "feature_authority_fresh",
+        "INSERT INTO public.b24_dirty_events",
+        "status IN (",
+        "authority_completed",
+    ):
+        _require(token in liveness, f"planner reactivation missing: {token}")
+    _require(
+        "reactivate_planner_for_feature_authority" in feature_authority,
+        "feature authority completion must reactivate planner",
+    )
+    _require(
+        "sweep_authority_waiting_requests" in liveness,
+        "stale authority wait must have bounded sweeper hook",
+    )
+    _require(
+        planner.count("status IN ('pending', 'authority_retry_ready')") >= 2,
+        "authority retry must re-enter normal dirty-event planner lease path",
+    )
+    _require(
+        "preflight_lease = await acquire_preflight_lease" in planner,
+        "authority retry must preserve P3/P4 preflight leasing",
+    )
+    for required_test in (
+        "test_b24_p4_missing_authority_yields_transient_state_not_fallback_only",
+        "test_b24_p4_stale_authority_yields_transient_state_not_fallback_only",
+        "test_b24_p4_mismatched_authority_yields_transient_state_not_fallback_only",
+        "test_b24_p4_authority_yield_creates_no_dispatchable_outbox",
+        "test_b24_p4_authority_yield_does_not_claim_fit",
+        "test_b24_p4_authority_yield_preserves_retry_intent",
+        "test_b24_p4_authority_build_request_is_created_idempotently",
+        "test_b24_p4_authority_completion_reactivates_planner",
+        "test_b24_p4_stale_wait_retries_without_new_webhook",
+        "test_b24_p4_reactivation_is_source_snapshot_scoped",
+        "test_b24_p4_reactivation_is_idempotent",
+        "test_b24_p4_reactivation_respects_p3_preflight_lock",
+        "test_b24_p4_reactivation_respects_active_execution_lock",
+        "test_b24_p4_authority_wait_retry_budget_terminalizes_safely",
+        "test_b24_p4_authority_timeout_is_distinct_from_fallback_only",
+        "test_b24_p4_fresh_authority_after_yield_runs_feature_width_check",
+        "test_b24_p4_fresh_authority_after_yield_runs_graph_complexity_check",
+        "test_b24_p4_validator_rejects_authority_missing_to_fallback_only",
+        "test_b24_p4_validator_rejects_stale_wait_without_reactivation",
+        "test_b24_p4_validator_rejects_reactivation_without_source_snapshot_hash",
+        "test_b24_p4_validator_rejects_authority_retry_bypassing_p3_locks",
+    ):
+        _require(
+            required_test in tests, f"missing authority liveness test: {required_test}"
+        )
+
+
 def validate_schema_surface(root: Path) -> None:
     feature_migration = _read(root, P4_FEATURE_CARDINALITY_MIGRATION)
     early_stop_migration = _read(root, P4_CARDINALITY_EARLY_STOP_MIGRATION)
     feature_authority_migration = _read(root, P4_FEATURE_AUTHORITY_MIGRATION)
+    authority_liveness_migration = _read(root, P4_AUTHORITY_LIVENESS_MIGRATION)
     canonical = _read(root, CANONICAL_SCHEMA)
     enums = _read(root, ENUMS)
     models = _read(root, MODELS)
+    authority_dependency_reasons = {
+        "cardinality_authority_missing",
+        "cardinality_authority_stale",
+        "cardinality_authority_mismatch",
+    }
+    authority_terminal_reasons = {
+        "cardinality_authority_timeout",
+        "cardinality_authority_build_failed",
+    }
     for reason in P4_FALLBACK_REASONS:
-        for label, text in (
-            ("feature authority migration", feature_authority_migration),
+        required_surfaces = [
             ("canonical schema", canonical),
             ("enums", enums),
             ("models", models),
-        ):
+        ]
+        if reason in authority_dependency_reasons:
+            required_surfaces.append(
+                ("feature authority migration", feature_authority_migration)
+            )
+        if reason in authority_dependency_reasons | authority_terminal_reasons:
+            required_surfaces.append(
+                ("authority liveness migration", authority_liveness_migration)
+            )
+        for label, text in required_surfaces:
             _require(reason in text, f"{label} missing P4 fallback reason: {reason}")
     for token in (
         "b24_source_window_feature_authority",
+        "b24_feature_authority_build_requests",
         "source_snapshot_hash",
         "freshness_status",
+        "authority_waiting",
+        "authority_retry_ready",
+        "cardinality_authority_timeout",
         "idx_b24_feature_authority_tenant_model_window",
+        "idx_b24_feature_authority_build_requests_due",
         "tenant_isolation_policy_b24_source_window_feature_authority",
+        "tenant_isolation_policy_b24_feature_authority_build_requests",
     ):
-        _require(
-            token in canonical and token in feature_authority_migration,
-            f"feature authority schema missing: {token}",
-        )
+        _require(token in canonical, f"feature authority schema missing: {token}")
     for index_name in (
         "idx_b24_p4_attribution_events_campaign_cardinality",
         "idx_b24_p4_match_verdicts_provider_cardinality",
@@ -514,7 +683,13 @@ def validate_schema_surface(root: Path) -> None:
 
 
 def validate_scope(root: Path) -> None:
-    scan_paths = REQUIRED_FILES | {FIT_PLANNER, FIT_CLAIM, DISPATCH_OUTBOX, REPOSITORY}
+    scan_paths = REQUIRED_FILES | {
+        FIT_PLANNER,
+        FIT_CLAIM,
+        DISPATCH_OUTBOX,
+        REPOSITORY,
+        AUTHORITY_LIVENESS,
+    }
     for path in scan_paths:
         text = _read(root, path)
         lowered = text.lower()
@@ -548,6 +723,7 @@ def validate_all(root: Path) -> None:
     validate_preflight_lease(root)
     validate_resource_profile(root)
     validate_fallback_persistence(root)
+    validate_authority_liveness(root)
     validate_schema_surface(root)
     validate_scope(root)
 
@@ -737,6 +913,53 @@ def run_negative_control(root: Path) -> None:
                 ),
             ),
             "graph formula",
+        ),
+        (
+            "authority_missing_to_fallback_only",
+            lambda: validate_authority_liveness_texts(
+                root,
+                planner_text=_read(root, FIT_PLANNER).replace(
+                    "await mark_authority_waiting_dirty_events",
+                    'mark_dirty_events_for_candidate  # status="fallback_only"',
+                    1,
+                ),
+            ),
+            "authority-yield",
+        ),
+        (
+            "stale_wait_without_reactivation",
+            lambda: validate_authority_liveness_texts(
+                root,
+                liveness_text=_read(root, AUTHORITY_LIVENESS).replace(
+                    "def sweep_authority_waiting_requests",
+                    "def missing_sweeper",
+                    1,
+                ),
+            ),
+            "sweeper",
+        ),
+        (
+            "reactivation_without_source_snapshot_hash",
+            lambda: validate_authority_liveness_texts(
+                root,
+                liveness_text=_read(root, AUTHORITY_LIVENESS).replace(
+                    "AND source_snapshot_hash = :source_snapshot_hash",
+                    "",
+                ),
+            ),
+            "source_snapshot_hash",
+        ),
+        (
+            "authority_retry_bypassing_p3_locks",
+            lambda: validate_authority_liveness_texts(
+                root,
+                planner_text=_read(root, FIT_PLANNER).replace(
+                    "status IN ('pending', 'authority_retry_ready')",
+                    "status = 'pending'",
+                    1,
+                ),
+            ),
+            "normal dirty-event",
         ),
         (
             "forbidden_import",

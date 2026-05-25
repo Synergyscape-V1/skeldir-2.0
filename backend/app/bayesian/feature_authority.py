@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bayesian.authority_liveness import reactivate_planner_for_feature_authority
 from app.bayesian.enums import FallbackReason
 from app.bayesian.resource_bounds import B24_RESOURCE_POLICY_VERSION
 
@@ -210,7 +211,7 @@ async def upsert_source_window_feature_authority(
     *,
     authority: SourceWindowFeatureAuthority,
 ) -> None:
-    """Persist one bounded rollup row outside the P4 planner hot path."""
+    """Persist one bounded rollup row and reactivate any matching waiter."""
 
     await session.execute(
         text(UPSERT_SOURCE_WINDOW_FEATURE_AUTHORITY_SQL),
@@ -230,3 +231,13 @@ async def upsert_source_window_feature_authority(
             "computed_at": authority.computed_at,
         },
     )
+    if authority.freshness_status == FeatureAuthorityStatus.FRESH:
+        await reactivate_planner_for_feature_authority(
+            session,
+            tenant_id=authority.tenant_id,
+            model_type=authority.model_type,
+            model_version=authority.model_version,
+            source_window_start=authority.source_window_start,
+            source_window_end=authority.source_window_end,
+            source_snapshot_hash=authority.source_snapshot_hash,
+        )

@@ -8,6 +8,12 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from app.bayesian.authority_liveness import (
+    AuthorityBuildRequestResult,
+    AuthorityBuildStatus,
+    request_feature_authority_build,
+)
+from app.bayesian.enums import FallbackReason
 from app.bayesian.feature_authority import (
     FeatureAuthorityUnavailable,
     load_source_window_feature_authority,
@@ -54,6 +60,7 @@ class PlannedFitIntent:
     resource_decision: B24ResourceDecision | None
     claim: FitClaimResult | None
     fallback_only: bool
+    authority_yield: AuthorityBuildRequestResult | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -97,7 +104,7 @@ async def lease_debounced_dirty_candidates(
                         max(observed_at) AS last_observed_at
                     FROM public.b24_dirty_events
                     WHERE tenant_id = :tenant_id
-                      AND status = 'pending'
+                      AND status IN ('pending', 'authority_retry_ready')
                     GROUP BY
                         tenant_id,
                         model_type,
@@ -119,7 +126,7 @@ async def lease_debounced_dirty_candidates(
                      AND keys.model_version = dirty.model_version
                      AND keys.source_window_start = dirty.source_window_start
                      AND keys.source_window_end = dirty.source_window_end
-                    WHERE dirty.status = 'pending'
+                    WHERE dirty.status IN ('pending', 'authority_retry_ready')
                     ORDER BY dirty.observed_at ASC, dirty.id ASC
                     FOR UPDATE OF dirty SKIP LOCKED
                 ),
@@ -197,6 +204,8 @@ async def mark_dirty_events_for_candidate(
         "superseded": "superseded_at",
         "dispatched": "dispatched_at",
         "suppressed": "suppressed_at",
+        "authority_timeout": "authority_terminal_at",
+        "authority_build_failed": "authority_terminal_at",
         "pruned": "pruned_at",
     }.get(status)
     if timestamp_column is None:
@@ -224,6 +233,48 @@ async def mark_dirty_events_for_candidate(
                 "source_window_start": candidate.source_window_start,
                 "source_window_end": candidate.source_window_end,
                 "status": status,
+            },
+        )
+        return int(result.rowcount or 0)
+
+
+async def mark_authority_waiting_dirty_events(
+    *,
+    tenant_id: UUID,
+    candidate: DirtyPlanningCandidate,
+    snapshot: SourceSnapshotResult,
+    request: AuthorityBuildRequestResult,
+) -> int:
+    """Park leased dirty events in a non-dispatchable authority wait state."""
+
+    async with get_session(tenant_id) as session:
+        result = await session.execute(
+            text(
+                """
+                UPDATE public.b24_dirty_events
+                SET status = 'authority_waiting',
+                    source_snapshot_hash = :source_snapshot_hash,
+                    authority_retry_count = :authority_retry_count,
+                    authority_retry_after_at = :authority_retry_after_at,
+                    authority_wait_started_at = COALESCE(authority_wait_started_at, now()),
+                    updated_at = now()
+                WHERE tenant_id = :tenant_id
+                  AND model_type = :model_type
+                  AND model_version = :model_version
+                  AND source_window_start = :source_window_start
+                  AND source_window_end = :source_window_end
+                  AND status = 'leased'
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "model_type": candidate.model_type,
+                "model_version": candidate.model_version,
+                "source_window_start": candidate.source_window_start,
+                "source_window_end": candidate.source_window_end,
+                "source_snapshot_hash": snapshot.source_snapshot_hash,
+                "authority_retry_count": request.retry_count,
+                "authority_retry_after_at": request.retry_after_at,
             },
         )
         return int(result.rowcount or 0)
@@ -262,6 +313,7 @@ async def plan_candidate(
             resource_decision=None,
             claim=None,
             fallback_only=True,
+            authority_yield=None,
         )
 
     async with AsyncSessionLocal() as snapshot_session:
@@ -300,9 +352,11 @@ async def plan_candidate(
             resource_decision=None,
             claim=None,
             fallback_only=True,
+            authority_yield=None,
         )
 
-    authority_failed = False
+    authority_yield: AuthorityBuildRequestResult | None = None
+    authority_terminal_reason: FallbackReason | None = None
     feature_authority = None
     async with get_session(candidate.tenant_id) as session:
         try:
@@ -316,12 +370,25 @@ async def plan_candidate(
                 source_snapshot_hash=snapshot.source_snapshot_hash,
             )
         except FeatureAuthorityUnavailable as exc:
-            repo = BayesianFitRepository(session)
-            fit_id = await repo.upsert_feature_authority_fallback_from_snapshot(
+            authority_yield = await request_feature_authority_build(
+                session,
                 snapshot=snapshot,
-                fallback_reason=exc.reason,
+                reason=exc.reason,
                 detail=exc.detail,
             )
+            authority_terminal_reason = authority_yield.terminal_reason
+            fit_id = None
+            if authority_yield.status in {
+                AuthorityBuildStatus.TIMEOUT,
+                AuthorityBuildStatus.BUILD_FAILED,
+            }:
+                repo = BayesianFitRepository(session)
+                fit_id = await repo.upsert_feature_authority_fallback_from_snapshot(
+                    snapshot=snapshot,
+                    fallback_reason=authority_terminal_reason
+                    or FallbackReason.CARDINALITY_AUTHORITY_TIMEOUT,
+                    detail=exc.detail,
+                )
             await terminalize_preflight_lease(
                 session,
                 tenant_id=candidate.tenant_id,
@@ -330,15 +397,37 @@ async def plan_candidate(
                 source_window_start=candidate.source_window_start,
                 source_window_end=candidate.source_window_end,
                 fit_id=fit_id,
-                terminal_status="fallback_only",
+                terminal_status=(
+                    "fallback_only"
+                    if fit_id is not None
+                    else AuthorityBuildStatus.WAITING.value
+                ),
             )
-            authority_failed = True
 
-    if authority_failed:
-        await mark_dirty_events_for_candidate(
+    if authority_yield is not None:
+        if authority_yield.status in {
+            AuthorityBuildStatus.TIMEOUT,
+            AuthorityBuildStatus.BUILD_FAILED,
+        }:
+            await mark_dirty_events_for_candidate(
+                tenant_id=candidate.tenant_id,
+                candidate=candidate,
+                status=authority_yield.status.value,
+            )
+            return PlannedFitIntent(
+                candidate=candidate,
+                snapshot=snapshot,
+                preflight_lease=preflight_lease,
+                resource_decision=None,
+                claim=None,
+                fallback_only=True,
+                authority_yield=authority_yield,
+            )
+        await mark_authority_waiting_dirty_events(
             tenant_id=candidate.tenant_id,
             candidate=candidate,
-            status="fallback_only",
+            snapshot=snapshot,
+            request=authority_yield,
         )
         return PlannedFitIntent(
             candidate=candidate,
@@ -346,7 +435,8 @@ async def plan_candidate(
             preflight_lease=preflight_lease,
             resource_decision=None,
             claim=None,
-            fallback_only=True,
+            fallback_only=False,
+            authority_yield=authority_yield,
         )
 
     assert feature_authority is not None
@@ -384,6 +474,7 @@ async def plan_candidate(
             resource_decision=resource_decision,
             claim=None,
             fallback_only=True,
+            authority_yield=None,
         )
 
     async with get_session(candidate.tenant_id) as session:
@@ -409,6 +500,7 @@ async def plan_candidate(
         resource_decision=resource_decision,
         claim=claim,
         fallback_only=False,
+        authority_yield=None,
     )
 
 
