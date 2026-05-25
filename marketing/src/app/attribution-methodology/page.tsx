@@ -9,10 +9,17 @@ import {
 } from "@/lib/schema/trustProof";
 
 const ROUTE = "/attribution-methodology";
-const LAST_REVIEWED = "2026-05-23";
-const PAGE_TITLE = "Attribution methodology — Bounded questions, explicit assumptions";
+const PAGE_TITLE = "Attribution Methodology | Skeldir";
 const PAGE_DESCRIPTION =
-  "Skeldir's attribution methodology answers bounded questions about how to distribute verified revenue across touchpoints. Each attribution model has named assumptions and stated limitations; no model proves causality on its own.";
+  "Skeldir's attribution methodology answers bounded questions about how to distribute verified revenue across observed touchpoints under documented assumptions. It explains what attribution output means, what it does not prove, and why attribution should not be confused with verified revenue or causal lift.";
+
+const KEY_FACTS = [
+  "Attribution models take verified revenue as input and distribute credit across observed touchpoints; they do not invent revenue or alter deterministic verified values.",
+  "Each attribution view depends on documented assumption categories such as time scope, touchpoint treatment, and inclusion boundaries.",
+  "Attribution distributes credit across touchpoints; it does not measure causal lift. Causal proof requires controlled experimentation.",
+  "Attribution output is presented separately from the verified revenue value it distributes so the two layers are not collapsed.",
+  "Model output depends on complete touchpoint capture; unobserved touchpoints are omitted and can distort distribution.",
+];
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -27,89 +34,83 @@ export default function AttributionMethodologyProofPage() {
       <JsonLd
         data={[
           trustProofWebPageJsonLd(ROUTE, {
-            name: PAGE_TITLE,
+            name: "Attribution Methodology",
             description: PAGE_DESCRIPTION,
           }),
-          trustProofBreadcrumbJsonLd(ROUTE, {
-            label: "Attribution methodology",
-          }),
+          trustProofBreadcrumbJsonLd(ROUTE, { label: "Attribution methodology" }),
         ]}
       />
       <TrustProofPage
-        headline="Attribution methodology"
+        presentation="public"
+        headline="Attribution Methodology"
         lede={PAGE_DESCRIPTION}
+        lastUpdated="February 2026"
         meta={{
           owner: "Skeldir Product Engineering",
           status: "technical_disclosure_only",
-          lastReviewed: LAST_REVIEWED,
+          lastReviewed: "2026-05-25",
           notes:
-            "This page describes what attribution models can answer, what they cannot answer, and how Skeldir bounds the questions they are asked.",
+            "This page is informational and explains Skeldir's public attribution methodology for finance and marketing operators. It does not replace contractual terms.",
         }}
         sections={[
           {
+            id: "key-facts",
+            heading: "Key facts",
+            body: (
+              <ul className="list-disc pl-6 space-y-3 text-slate-700">
+                {KEY_FACTS.map((fact) => (
+                  <li key={fact.slice(0, 48)}>{fact}</li>
+                ))}
+              </ul>
+            ),
+          },
+          {
             id: "what-attribution-answers",
-            heading: "What an attribution model answers",
+            heading: "What attribution models answer",
             body: (
               <p>
-                An attribution model answers a bounded question of the form
-                "given a fixed window and a fixed set of touchpoints, how
-                should this verified revenue be distributed across the
-                touchpoints?". The model takes verified revenue as input — it
-                does not invent revenue, and it does not change the
-                deterministic value reconciled by the revenue verification
-                pipeline.
+                An attribution model answers a bounded question: given documented time scope and a
+                fixed set of observed touchpoints, how should verified revenue be distributed across
+                those touchpoints? The model takes{" "}
+                <Link className="underline" href="/revenue-verification">
+                  verified revenue
+                </Link>{" "}
+                as input — it does not invent revenue, and it does not change the deterministic
+                value produced by revenue verification.
               </p>
             ),
           },
           {
             id: "assumptions",
-            heading: "Named assumptions",
+            heading: "What assumptions mean at a public level",
             body: (
               <>
                 <p>
-                  Every supported attribution model carries a named set of
-                  assumptions:
+                  Each attribution view depends on documented assumption categories such as time
+                  scope, touchpoint treatment, and inclusion boundaries. Those categories describe
+                  what period and which touchpoints the view considers — not a single universal
+                  truth independent of context.
                 </p>
-                <ul className="list-disc pl-6 space-y-1">
-                  <li>
-                    <strong>Window length</strong> — how long after a
-                    touchpoint a conversion may still be assigned to it.
-                  </li>
-                  <li>
-                    <strong>Touchpoint weighting</strong> — how credit is
-                    distributed across touchpoints (e.g. first-touch,
-                    last-touch, linear, position-based, time-decay,
-                    data-driven).
-                  </li>
-                  <li>
-                    <strong>Eligibility rules</strong> — which touchpoints are
-                    even considered (paid only, paid plus organic, etc.).
-                  </li>
-                  <li>
-                    <strong>Exclusions</strong> — which categories of
-                    conversion are excluded by policy (refunds, duplicates,
-                    test orders).
-                  </li>
-                </ul>
                 <p>
-                  The chosen assumption set is captured in the policy authority
-                  of every TrustEnvelope so a reviewer can always reproduce the
-                  model output.
+                  The chosen assumption set is recorded with the output so a reviewer can understand
+                  which assumptions shaped the distribution and where the model&apos;s limits apply.
                 </p>
               </>
             ),
           },
           {
             id: "bounded-questions",
-            heading: "Bounded questions, not universal claims",
+            heading: "Why attribution models are bounded",
             body: (
               <p>
-                The attribution model is{" "}
-                <strong>bounded</strong> to the data it was fed and the
-                assumptions it was given. It does not extrapolate beyond the
-                connected platforms. It does not infer touchpoints it did not
-                observe. It does not produce a single "true" attribution number
-                independent of its assumptions.
+                The attribution view is <strong>bounded</strong> to the data it was fed and the
+                assumptions it was given. It does not extrapolate beyond connected platforms. It does
+                not infer touchpoints it did not observe. It does not produce a single &ldquo;true&rdquo;
+                attribution number independent of its assumptions. See the broader proof boundary on{" "}
+                <Link className="underline" href="/methodology">
+                  methodology
+                </Link>
+                .
               </p>
             ),
           },
@@ -118,55 +119,70 @@ export default function AttributionMethodologyProofPage() {
             heading: "Why attribution is not causality",
             body: (
               <p>
-                An attribution model distributes credit; it does not measure
-                causal lift. A last-touch model does not prove the last touch
-                caused the conversion; a data-driven model does not prove the
-                touchpoints it weights heavily would not have converted
-                without intervention. Causal lift requires experimentation
-                (geo holdouts, conversion-lift studies, incrementality
-                tests). Skeldir surfaces attribution model output alongside
-                its assumptions so operators can see what the model is and is
-                not asserting.
+                An attribution model <strong>distributes credit</strong> across touchpoints; it does
+                not measure <strong>causal lift</strong> or incrementality. Observed timing
+                relationships in a model do not prove that a touchpoint caused a conversion. Causal
+                lift requires controlled experimentation — geo holdouts, conversion-lift studies, and
+                incrementality tests. Skeldir surfaces attribution output alongside its documented
+                assumptions so operators can see exactly what the model is and is not asserting.
               </p>
             ),
           },
           {
-            id: "interaction-with-envelope",
-            heading: "Interaction with TrustEnvelopes",
+            id: "deterministic-revenue-separation",
+            heading: "How attribution output relates to deterministic revenue",
             body: (
-              <p>
-                Attribution model output is layered on top of verified
-                revenue. The verified revenue itself sits in a deterministic{" "}
-                <Link className="underline" href="/trust-envelope">
-                  TrustEnvelope
-                </Link>
-                . The attribution distribution sits in a separate, clearly
-                labeled record that references the underlying envelope. This
-                keeps the deterministic and the model-derived layers from
-                being collapsed in dashboards or in LLM-generated
-                explanations.
-              </p>
+              <>
+                <p>
+                  <strong>Verified revenue</strong> is the deterministic financial value produced by{" "}
+                  <Link className="underline" href="/revenue-verification">
+                    revenue verification
+                  </Link>
+                  . <strong>Attribution output</strong> is model-derived distribution of that verified
+                  value across observed touchpoints under documented assumptions. The two are kept
+                  separate in presentation so dashboards and automated explanations do not treat
+                  allocation as if it were settlement truth.
+                </p>
+                <p>
+                  When a discrepancy affects the verified total, classification lives in the{" "}
+                  <Link className="underline" href="/discrepancy-taxonomy">
+                    discrepancy taxonomy
+                  </Link>
+                  ; attribution does not override or smooth those outcomes.
+                </p>
+              </>
             ),
           },
+        ]}
+        relatedProofLinks={[
+          { href: "/methodology", label: "Methodology — deterministic reconciliation boundary" },
+          {
+            href: "/revenue-verification",
+            label: "Revenue verification — verified revenue input",
+          },
+          {
+            href: "/discrepancy-taxonomy",
+            label: "Discrepancy taxonomy — classification when evidence disagrees",
+          },
+          { href: "/ai-boundary", label: "AI / LLM boundary — explanation vs computation" },
+          { href: "/trust-envelope", label: "TrustEnvelope — verified outcome container" },
         ]}
         limitations={
           <>
             <p>
-              No attribution model proves causality. Treat model output as a
-              decision-support signal, not as the ground truth of marketing
+              <strong>Current limitations.</strong> No attribution model proves causality. Treat
+              model output as a decision-support signal, not as the ground truth of marketing
               effectiveness.
             </p>
             <p>
-              Model output depends on completeness of touchpoint capture. Lost
-              touchpoints (ITP, ad blockers, cookieless contexts, off-platform
-              influence) will not appear in the model and will distort the
-              distribution.
+              Model output depends on completeness of touchpoint capture. Lost touchpoints — whether
+              from tracking prevention, ad blockers, cookieless contexts, or off-platform influence —
+              will not appear in the model and will distort the distribution.
             </p>
             <p>
-              Changing assumptions between reporting periods makes
-              period-over-period comparison invalid unless the change is
-              explicitly noted in the policy authority and the operator
-              re-runs prior periods under the new assumptions.
+              Changing assumptions between reporting periods makes period-over-period comparison
+              invalid unless the change is explicitly documented and prior periods are re-evaluated
+              under the new assumption set.
             </p>
           </>
         }

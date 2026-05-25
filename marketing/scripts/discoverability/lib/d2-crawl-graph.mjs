@@ -290,10 +290,6 @@ export function validateSitemapMatchesExpected(marketingRoot, locs) {
     '/404',
     '/_not-found',
     '/privacy',
-    '/status',
-    '/about',
-    '/careers',
-    '/press',
     '/terms',
     '/gdpr',
   ]);
@@ -450,11 +446,6 @@ export const META_NOINDEX_PUBLIC_PATHS = [
   '/privacy',
   '/terms',
   '/gdpr',
-  '/security',
-  '/status',
-  '/about',
-  '/careers',
-  '/press',
 ];
 
 /**

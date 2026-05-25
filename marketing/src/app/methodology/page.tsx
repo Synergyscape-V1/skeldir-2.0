@@ -9,10 +9,9 @@ import {
 } from "@/lib/schema/trustProof";
 
 const ROUTE = "/methodology";
-const LAST_REVIEWED = "2026-05-23";
-const PAGE_TITLE = "Methodology — How Skeldir verifies revenue and bounds attribution";
+const PAGE_TITLE = "How Skeldir Produces Verified Revenue Truth | Skeldir";
 const PAGE_DESCRIPTION =
-  "Skeldir's methodology: how deterministic revenue verification works, how attribution models answer bounded questions, how discrepancies are classified, and the strict boundary between deterministic engine output and LLM-generated explanations.";
+  "Skeldir's methodology for deterministic revenue verification — how platform-reported ad revenue is reconciled against verified commerce and payment evidence, how attribution models answer bounded questions, and where LLM-generated explanations are and are not used.";
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -21,115 +20,147 @@ export const metadata: Metadata = {
   openGraph: { title: PAGE_TITLE, description: PAGE_DESCRIPTION },
 };
 
+const FIVE_FACTS = [
+  "Every authoritative revenue figure originates from verified commerce and payment evidence — not from a model, and not from platform-reported data accepted at face value.",
+  "Reconciliation is deterministic: identical inputs produce identical verified outputs.",
+  "Discrepancies between platform-reported revenue and verified evidence are classified by type — not averaged, estimated, or suppressed.",
+  "Attribution model output is always displayed alongside the verified revenue total it distributes, so reviewers can see exactly what was computed and what was modeled.",
+  "LLMs in Skeldir explain deterministic outputs — they do not compute, invent, or estimate financial values.",
+];
+
 export default function MethodologyProofPage() {
   return (
     <>
       <JsonLd
         data={[
           trustProofWebPageJsonLd(ROUTE, {
-            name: PAGE_TITLE,
+            name: "How Skeldir Produces Verified Revenue Truth",
             description: PAGE_DESCRIPTION,
           }),
           trustProofBreadcrumbJsonLd(ROUTE, { label: "Methodology" }),
         ]}
       />
       <TrustProofPage
-        headline="Methodology"
+        presentation="public"
+        headline="How Skeldir Produces Verified Revenue Truth"
         lede={PAGE_DESCRIPTION}
+        lastUpdated="February 2026"
         meta={{
           owner: "Skeldir Product Engineering",
           status: "technical_disclosure_only",
-          lastReviewed: LAST_REVIEWED,
+          lastReviewed: "2026-02-01",
           notes:
-            "This page explains how Skeldir produces deterministic values, where attribution models answer bounded questions, and where LLM-generated explanations are allowed. It is technical disclosure only — it is not a contract.",
+            "This page is technical disclosure for informational use. It is not a contract, service-level agreement, or legal commitment.",
+        }}
+        bluf={{
+          paragraphs: (
+            <>
+              <p>
+                Skeldir reconciles platform-reported ad revenue against verified commerce and
+                payment evidence using a deterministic process: given the same inputs, the same
+                verified output is produced every time. This page explains what counts as verified
+                evidence, what attribution models prove and do not prove, how discrepancies are
+                classified, and the strict boundary between deterministic computation and
+                LLM-generated explanation.
+              </p>
+              <p>
+                This is technical disclosure for informational use. It is not a contract.
+              </p>
+            </>
+          ),
+          fiveFacts: FIVE_FACTS,
         }}
         sections={[
           {
             id: "deterministic-reconciliation",
-            heading: "Deterministic reconciliation",
+            heading: "How deterministic reconciliation works",
             body: (
               <>
                 <p>
-                  Skeldir reconciles platform-reported ad revenue against
-                  verified commerce and payment evidence. Reconciliation is a
-                  deterministic process: given the same inputs and policy
-                  authority, the output is byte-for-byte reproducible.
+                  Skeldir reconciles platform-reported ad revenue against verified commerce and
+                  payment evidence. Reconciliation is deterministic: given the same inputs and the
+                  same verification policy, the output is reproducible.
                 </p>
                 <p>
-                  Authoritative financial numbers come from verified evidence,
-                  not from a model. Stripe charges, Shopify orders, and the
-                  payment processor's record of settled funds are the ground
-                  truth. Platform-reported revenue is treated as a claim that
-                  must be reconciled against that ground truth, never accepted
-                  on its own.
+                  Authoritative financial numbers originate from verified evidence, not from a
+                  model. Payment processor settlement records, order records from connected commerce
+                  platforms, and charge records from connected payment systems are the ground
+                  truth. Platform-reported revenue is treated as a claim that must be reconciled
+                  against that ground truth — it is never accepted on its own authority.
                 </p>
               </>
             ),
           },
           {
-            id: "evidence-sources",
+            id: "verified-evidence",
             heading: "What counts as verified evidence",
             body: (
               <>
                 <p>
-                  Verified evidence is commerce and payment data Skeldir can
-                  reach independently of the ad platform whose revenue is being
-                  evaluated. Today that means the operator's connected Stripe
-                  account, Shopify shop, or equivalent commerce platform.
+                  Verified evidence is commerce and payment data that Skeldir reaches independently
+                  of the ad platform whose revenue is being evaluated. Verified evidence sources
+                  include the operator&apos;s connected Stripe account, Shopify shop, or equivalent
+                  connected commerce platform.
                 </p>
                 <p>
-                  Evidence is normalized into integer cents, with currency,
-                  refund, chargeback, tax, and shipping treatment recorded
-                  alongside the raw record. The normalization rules are part of
-                  the policy authority captured in every{" "}
-                  <Link className="underline" href="/trust-envelope">
-                    TrustEnvelope
-                  </Link>
-                  .
+                  Evidence is standardized to integer-precision monetary units. Currency treatment,
+                  refunds, chargebacks, taxes, and shipping are recorded alongside each evidence
+                  record — not inferred or estimated after the fact. The standardization policy that
+                  governs each evidence record is captured in the verified audit record Skeldir
+                  maintains for every reconciliation.
                 </p>
               </>
             ),
           },
           {
             id: "attribution-models",
-            heading: "What attribution models do and do not prove",
+            heading: "What attribution models prove — and what do they not prove",
             body: (
               <>
                 <p>
-                  Attribution models answer bounded questions about how to
-                  assign verified revenue across the touchpoints that may have
-                  influenced it. They do not prove causal lift on their own,
-                  and Skeldir does not present model output as deterministic
-                  truth.
+                  Attribution models answer a bounded question: given a verified revenue total, how
+                  should that total be distributed across the touchpoints that may have influenced
+                  it?
                 </p>
                 <p>
-                  Each attribution model carries explicit assumptions (window
-                  length, touchpoint weighting, exclusion rules) and is
-                  documented separately on the{" "}
+                  Attribution models do not prove causal lift. Skeldir does not present attribution
+                  model output as deterministic truth.
+                </p>
+                <p>
+                  Each attribution model operates under documented assumptions — including
+                  attribution window boundaries and touchpoint treatment rules — published on the{" "}
                   <Link className="underline" href="/attribution-methodology">
                     attribution methodology
                   </Link>{" "}
-                  surface. Model output is always paired with the verified
-                  revenue total it is distributing, so any reviewer can see
-                  exactly which number was modeled and which was reconciled.
+                  surface. Model output is always paired with the verified revenue total it
+                  distributes, so any reviewer can see exactly which number was modeled and which
+                  was reconciled from evidence.
                 </p>
               </>
             ),
           },
           {
-            id: "discrepancy-handling",
+            id: "discrepancy-classification",
             heading: "How discrepancies are classified",
             body: (
               <>
                 <p>
-                  When platform-reported revenue and verified commerce evidence
-                  disagree, Skeldir classifies the discrepancy rather than
-                  silently averaging the difference. The full taxonomy of
-                  discrepancy classes — timing mismatch, currency / tax /
-                  shipping mismatch, refund and chargeback adjustment,
-                  attribution-window mismatch, duplicate or order-id mismatch,
-                  missing commerce event, unmatched platform claim, delayed
-                  arrival — is published separately on the{" "}
+                  When platform-reported revenue and verified commerce evidence disagree, Skeldir
+                  classifies the discrepancy by type rather than averaging or suppressing the
+                  difference. The published discrepancy taxonomy covers:
+                </p>
+                <ul className="list-disc pl-6 space-y-2">
+                  <li>Timing mismatch</li>
+                  <li>Currency, tax, and shipping treatment mismatch</li>
+                  <li>Refund and chargeback adjustment</li>
+                  <li>Attribution window mismatch</li>
+                  <li>Duplicate or order-ID mismatch</li>
+                  <li>Missing commerce event</li>
+                  <li>Unmatched platform claim</li>
+                  <li>Delayed evidence arrival</li>
+                </ul>
+                <p>
+                  The full discrepancy taxonomy with classification criteria is published on the{" "}
                   <Link className="underline" href="/discrepancy-taxonomy">
                     discrepancy taxonomy
                   </Link>{" "}
@@ -139,58 +170,58 @@ export default function MethodologyProofPage() {
             ),
           },
           {
-            id: "delayed-events",
-            heading: "How delayed events are handled",
+            id: "delayed-evidence",
+            heading: "How delayed evidence is handled",
             body: (
               <p>
-                Commerce and payment evidence arrives on different latencies
-                from the ad platform's reporting. Skeldir does not freeze a
-                value at first sight; it restates the deterministic value as
-                later evidence arrives, recording each restatement in the
-                envelope's audit trail. A value marked <code>verified</code> at
-                T+1 day may become <code>partially_verified</code> if a
-                processor delay is detected, and vice versa as the missing
-                evidence lands.
+                Commerce and payment evidence arrives on different latencies than ad platform
+                reporting. Skeldir does not lock a verification state at first observation. As later
+                evidence arrives, the verified value is restated — with each restatement recorded in
+                the verified audit record. A value that is fully verified on day one may shift
+                verification state if a processor delay is subsequently detected; it returns to full
+                verification as the missing evidence lands. The audit record preserves every
+                restatement.
               </p>
             ),
           },
           {
-            id: "confidence-and-benchmark",
-            heading: "How confidence and benchmark context are bounded",
+            id: "confidence-expression",
+            heading: "How confidence is expressed — and what does it not collapse",
             body: (
               <p>
-                Skeldir does not emit a single "confidence score" that
-                collapses verification state and model uncertainty together.
-                Verification state is the enumerated confidence status carried
-                in every TrustEnvelope; attribution model uncertainty is
-                expressed as bounded ranges on the attribution methodology
-                surface. Benchmark context (platform vs commerce delta, peer
-                cohort, historical baseline) is explanatory metadata, not a
-                source of truth.
+                Skeldir does not emit a single confidence score that collapses verification state and
+                model uncertainty into one number. Verification state is expressed as an enumerated
+                verification status on the verified output — reflecting what the deterministic
+                reconciliation engine has established from evidence, not what a model has estimated.
+                Attribution model uncertainty is expressed as bounded ranges on the{" "}
+                <Link className="underline" href="/attribution-methodology">
+                  attribution methodology
+                </Link>{" "}
+                surface. Benchmark context — comparisons between platform-reported figures and
+                verified commerce figures, peer cohort reference points, and historical baselines — is
+                explanatory metadata. It informs analysis. It is not a source of financial truth.
               </p>
             ),
           },
           {
-            id: "ai-boundary",
-            heading: "Why LLMs do not compute financial truth",
+            id: "llm-boundary",
+            heading: "Why LLMs do not compute financial truth in Skeldir",
             body: (
               <>
                 <p>
-                  Large language models (LLMs) are useful for explaining
-                  reconciliation outcomes, summarizing discrepancies in plain
-                  language, and generating narrative answers grounded in
-                  deterministic records. They are not used to compute the
-                  numbers themselves.
+                  Large language models are useful for explaining reconciliation outcomes,
+                  summarizing discrepancies in plain language, and generating narrative answers
+                  grounded in verified records. They are not used to compute the numbers
+                  themselves.
                 </p>
                 <p>
-                  In Skeldir, every authoritative number is produced by the
-                  deterministic reconciliation engine. LLMs read those numbers
-                  and their TrustEnvelope; LLMs do not invent, average, or
-                  estimate values. LLM-generated explanations are bounded to
-                  the deterministic record they reference. The detailed
-                  policy lives on the{" "}
+                  In Skeldir, every authoritative number is produced by the deterministic
+                  reconciliation engine. LLMs read verified outputs and the audit records that
+                  accompany them. LLMs do not invent, average, or estimate values. LLM-generated
+                  explanations are bounded to the deterministic record they reference. The governing
+                  policy for this architectural boundary is published on the{" "}
                   <Link className="underline" href="/ai-boundary">
-                    AI boundary
+                    AI explanation boundary
                   </Link>{" "}
                   surface.
                 </p>
@@ -198,26 +229,42 @@ export default function MethodologyProofPage() {
             ),
           },
         ]}
+        relatedProofLinks={[
+          {
+            href: "/revenue-verification",
+            label: "Revenue verification — commerce and payment evidence",
+          },
+          {
+            href: "/attribution-methodology",
+            label: "Attribution methodology — bounded model assumptions",
+          },
+          {
+            href: "/discrepancy-taxonomy",
+            label: "Discrepancy taxonomy — classification criteria",
+          },
+          {
+            href: "/ai-boundary",
+            label: "AI / LLM boundary — explanation vs computation",
+          },
+        ]}
         limitations={
           <>
             <p>
-              Reconciliation depends on the operator connecting authoritative
-              commerce and payment systems. If a revenue source is not
-              connected, Skeldir cannot reconcile against it; envelopes for
-              that source will be marked <code>unverified</code> or{" "}
-              <code>blocked</code> rather than guessed.
+              <strong>Unconnected revenue sources cannot be reconciled.</strong> Reconciliation
+              depends on the operator connecting authoritative commerce and payment systems. If a
+              revenue source is not connected, Skeldir cannot reconcile against it. Verified outputs
+              for unconnected sources are marked accordingly — they are not estimated or guessed.
             </p>
             <p>
-              The attribution model surface answers bounded questions only. It
-              does not prove causality. Any business decision that depends on
-              causal lift requires experimentation, not just attribution
-              model output.
+              <strong>Attribution models do not prove causality.</strong> Attribution model output
+              answers the distribution question only. Any business decision that depends on causal
+              lift requires controlled experimentation — attribution model output alone is not
+              sufficient evidence of causal effect.
             </p>
             <p>
-              Skeldir does not currently reconcile every commerce platform.
-              Unsupported platforms are explicitly listed when an integration
-              cannot proceed; in those cases the reconciliation engine refuses
-              to assert deterministic truth.
+              <strong>Not every commerce platform is currently supported.</strong> When an
+              integration is unsupported, Skeldir explicitly identifies it. The reconciliation engine
+              does not assert verified truth it cannot reach.
             </p>
           </>
         }

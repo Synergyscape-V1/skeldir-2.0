@@ -47,7 +47,8 @@ Field meanings:
 
 ## Notes
 
-- **Legal placeholder routes** (`/privacy`, `/terms`, `/gdpr`) are intentionally not registered above because they assert no claims. They carry `legal_review_required` status on the page itself and remain noindex until operator/legal supplies approved copy. A future revision adding approved legal copy will register the resulting claims here.
+- **`/privacy`** (D6-b) is a noindex **privacy posture summary**, not a registered high-stakes claim surface. Claims about security posture and PII boundaries proof to `/security` anchors.
+- **Legal placeholder routes** (`/terms`, `/gdpr`) remain noindex until operator/legal supplies approved copy.
 - **Status `technical_disclosure_only`** means the claim is engineering-grade posture disclosure that does not require legal sign-off (e.g. how the deterministic engine works), or that the row openly explains why the broader compliance claim is *not* made.
 - **No `SOC 2 certified`, `ISO 27001 certified`, `GDPR compliant`, `HIPAA compliant`, `PCI compliant`, `fully encrypted`, or `no PII` claims appear above**, by design. The harness blocks any source file from introducing those phrases unless the registry first records an `operator_approved` row with cited audit evidence.
 - **AI boundary claim** (D5-CLAIM-006) is the structurally most important high-stakes claim because Skeldir markets to buyers who explicitly worry about LLMs computing financial numbers. It is anchored at `#llm-does-not-calculate` so the proof is reachable by a single deep link.

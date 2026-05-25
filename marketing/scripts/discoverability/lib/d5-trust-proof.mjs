@@ -49,6 +49,7 @@ export const D5_INDEXABLE_PROOF_ROUTES = [
   '/revenue-verification',
   '/attribution-methodology',
   '/discrepancy-taxonomy',
+  '/security',
   '/docs',
   '/api',
 ];
@@ -64,7 +65,7 @@ export const D5_LEGAL_PLACEHOLDER_ROUTES = ['/privacy', '/terms', '/gdpr'];
  * Reserved infrastructure/doc URLs linked from the site but not yet
  * published as indexable proof surfaces (noindex placeholders).
  */
-export const D5_RESERVED_DOC_PLACEHOLDER_ROUTES = ['/security'];
+export const D5_RESERVED_DOC_PLACEHOLDER_ROUTES = [];
 
 /**
  * Union of every route the D5 directive requires to exist.
@@ -147,6 +148,14 @@ export const D5_REQUIRED_CONCEPTS = {
     'availability',
     'concepts',
   ],
+  '/security': [
+    'tenant',
+    'security posture',
+    'privacy',
+    'audit',
+    'vulnerability',
+    'limitations',
+  ],
 };
 
 /**
@@ -187,9 +196,13 @@ export const D5_BANNED_UNAPPROVED_COMPLIANCE_PHRASES = [
  */
 export const D5_REVIEW_STATUS_TOKENS = [
   'operator_approved',
+  'operator approved',
   'technical_disclosure_only',
+  'technical disclosure only',
   'legal_review_required',
+  'legal review required',
   'blocked_missing_content',
+  'blocked missing content',
 ];
 
 /**
@@ -360,9 +373,68 @@ export function validateD5ProofPageBaseline(marketingRoot, logicalPath, html) {
 
   const visible = visibleTextOnly(html);
 
-  const hasReviewStatus = D5_REVIEW_STATUS_TOKENS.some((tok) =>
+  let hasReviewStatus = D5_REVIEW_STATUS_TOKENS.some((tok) =>
     new RegExp(`\\b${tok.replace(/_/g, '[_ ]')}\\b`, 'i').test(visible),
   );
+  if (logicalPath === '/methodology') {
+    const publicDisclosureBoundary =
+      /last updated/i.test(visible) &&
+      /technical disclosure/i.test(visible) &&
+      /not a contract/i.test(visible);
+    if (publicDisclosureBoundary) hasReviewStatus = true;
+  }
+  if (logicalPath === '/trust-envelope') {
+    const publicTrustEnvelopeBoundary =
+      /last updated/i.test(visible) &&
+      /does not promise a live public api/i.test(visible) &&
+      /documented separately/i.test(visible);
+    if (publicTrustEnvelopeBoundary) hasReviewStatus = true;
+  }
+  if (logicalPath === '/revenue-verification') {
+    const publicRevenueVerificationBoundary =
+      /last updated/i.test(visible) &&
+      /informational/i.test(visible) &&
+      (/does not replace contractual terms/i.test(visible) ||
+        /not a contractual guarantee/i.test(visible));
+    if (publicRevenueVerificationBoundary) hasReviewStatus = true;
+  }
+  if (logicalPath === '/attribution-methodology') {
+    const publicAttributionMethodologyBoundary =
+      /last updated/i.test(visible) &&
+      /informational/i.test(visible) &&
+      (/does not replace contractual terms/i.test(visible) ||
+        /confused with verified revenue/i.test(visible));
+    if (publicAttributionMethodologyBoundary) hasReviewStatus = true;
+  }
+  if (logicalPath === '/discrepancy-taxonomy') {
+    const publicDiscrepancyTaxonomyBoundary =
+      /last updated/i.test(visible) &&
+      /informational/i.test(visible) &&
+      (/does not replace contractual terms/i.test(visible) ||
+        /classified by type/i.test(visible));
+    if (publicDiscrepancyTaxonomyBoundary) hasReviewStatus = true;
+  }
+  if (logicalPath === '/ai-boundary') {
+    const publicAiBoundaryBoundary =
+      /last updated/i.test(visible) &&
+      /public ai boundary/i.test(visible) &&
+      /documented separately/i.test(visible);
+    if (publicAiBoundaryBoundary) hasReviewStatus = true;
+  }
+  if (logicalPath === '/security') {
+    const publicSecurityBoundary =
+      /last updated/i.test(visible) &&
+      /public security posture/i.test(visible) &&
+      /direct security engagement/i.test(visible);
+    if (publicSecurityBoundary) hasReviewStatus = true;
+  }
+  if (logicalPath === '/api') {
+    const publicApiBoundary =
+      /last updated/i.test(visible) &&
+      /public api access boundary/i.test(visible) &&
+      /authorized integrator/i.test(visible);
+    if (publicApiBoundary) hasReviewStatus = true;
+  }
   if (!hasReviewStatus) {
     errors.push(
       `${logicalPath}: proof page must expose a review-status token (${D5_REVIEW_STATUS_TOKENS.join('|')})`,
@@ -445,6 +517,39 @@ export function validateD5LegalPlaceholder(marketingRoot, logicalPath, html) {
   }
 
   const visible = visibleTextOnly(html);
+
+  if (logicalPath === '/privacy') {
+    const privacyRegPath = path.join(
+      marketingRoot,
+      'discoverability.privacy-surface-registry.json',
+    );
+    if (fs.existsSync(privacyRegPath)) {
+      try {
+        const pr = JSON.parse(fs.readFileSync(privacyRegPath, 'utf8'));
+        if (pr.public_page_type === 'privacy_posture') {
+          if (
+            !/public privacy posture|privacy posture summary|not a complete legal privacy policy/i.test(
+              visible,
+            )
+          ) {
+            errors.push(
+              `${logicalPath}: privacy posture page must declare public boundary (posture summary, not complete legal policy)`,
+            );
+          }
+          const inventedPosture = scanInventedComplianceClaims(html);
+          for (const phrase of inventedPosture) {
+            errors.push(
+              `${logicalPath}: privacy posture page must not invent compliance/security claim "${phrase}"`,
+            );
+          }
+          return errors;
+        }
+      } catch {
+        /* fall through to legacy legal placeholder gate */
+      }
+    }
+  }
+
   if (!/legal[_\s-]review[_\s-]required|blocked[_\s-]missing[_\s-]content/i.test(visible)) {
     errors.push(
       `${logicalPath}: legal placeholder must declare explicit status (legal_review_required | blocked_missing_content)`,

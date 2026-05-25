@@ -42,6 +42,10 @@ function RichParagraphs({ body }: { body: string }) {
 
 export function EvidenceLibraryDocument(props: { page: EvidencePageDefinition }) {
   const { page } = props;
+  const disclosureLabel =
+    page.disclosureStatus === "technical_disclosure_only"
+      ? "Technical disclosure only"
+      : page.disclosureStatus.replaceAll("_", " ");
   return (
     <div className="min-h-screen flex flex-col bg-white text-slate-900">
       <main className="flex-grow pt-20 pb-16">
@@ -113,7 +117,7 @@ export function EvidenceLibraryDocument(props: { page: EvidencePageDefinition })
                   <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">Status</dt>
                   <dd>
                     <code className="text-xs bg-white px-2 py-1 rounded border border-slate-200">
-                      {page.disclosureStatus}
+                      {disclosureLabel}
                     </code>
                   </dd>
                 </div>

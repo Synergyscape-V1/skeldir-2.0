@@ -34,6 +34,7 @@ export default function DocsProofPage() {
         ]}
       />
       <TrustProofPage
+        presentation="public"
         headline="Documentation"
         lede={PAGE_DESCRIPTION}
         meta={{
@@ -97,8 +98,8 @@ export default function DocsProofPage() {
                     <Link className="underline" href="/security">
                       Security
                     </Link>{" "}
-                    — reserved URL for security disclosures (placeholder until
-                    published).
+                    — reserved URL for security disclosures while publication
+                    approval is pending.
                   </li>
                 </ul>
               </>

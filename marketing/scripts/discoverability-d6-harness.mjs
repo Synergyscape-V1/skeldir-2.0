@@ -26,6 +26,41 @@ import {
   validateD6EntitySemanticsDrift,
   validateEntitySemanticsRegistryShape,
 } from './discoverability/lib/d6-entity-semantics.mjs';
+import { validateD6MethodologyExposure } from './discoverability/lib/d6-methodology-exposure.mjs';
+import { validateD6TrustEnvelopeExposure } from './discoverability/lib/d6-trust-envelope-exposure.mjs';
+import { validateD6RevenueVerificationExposure } from './discoverability/lib/d6-revenue-verification-exposure.mjs';
+import { validateD6AttributionMethodologyExposure } from './discoverability/lib/d6-attribution-methodology-exposure.mjs';
+import { validateD6DiscrepancyTaxonomyExposure } from './discoverability/lib/d6-discrepancy-taxonomy-exposure.mjs';
+import { validateD6AiBoundaryExposure } from './discoverability/lib/d6-ai-boundary-exposure.mjs';
+import { validateD6SecurityExposure } from './discoverability/lib/d6-security-exposure.mjs';
+import {
+  loadStatusRegistry,
+  validateD6StatusExposure,
+} from './discoverability/lib/d6-status-exposure.mjs';
+import {
+  loadPressRegistry,
+  loadPublicContactsRegistry,
+  validateD6PressExposure,
+} from './discoverability/lib/d6-press-exposure.mjs';
+import {
+  loadCareersRegistry,
+  loadPublicContactsForCareers,
+  validateD6CareersExposure,
+} from './discoverability/lib/d6-careers-exposure.mjs';
+import {
+  loadApiSurfaceRegistry,
+  loadPublicContactsForApi,
+  validateD6ApiExposure,
+} from './discoverability/lib/d6-api-exposure.mjs';
+import {
+  loadPrivacySurfaceRegistry,
+  loadPublicContactsForPrivacy,
+  validateD6PrivacyExposure,
+} from './discoverability/lib/d6-privacy-exposure.mjs';
+import {
+  loadAboutSurfaceRegistry,
+  validateD6AboutExposure,
+} from './discoverability/lib/d6-about-exposure.mjs';
 
 const MARKETING_ROOT = process.cwd();
 let failures = 0;
@@ -219,6 +254,276 @@ function main() {
       if (errors.length) errors.forEach(fail);
       else pass(`entity semantics OK: ${route}`);
     }
+  }
+
+  gate('6d] D6-b /methodology IP exposure and placeholder theater');
+  const methodologyHtml = readBuiltHtml(MARKETING_ROOT, '/methodology');
+  if (!methodologyHtml) {
+    fail('missing built HTML for /methodology');
+  } else {
+    const mExp = validateD6MethodologyExposure(methodologyHtml);
+    if (mExp.length) mExp.forEach(fail);
+    else pass('/methodology D6-b exposure + structure OK');
+  }
+
+  gate('6e] D6-b /trust-envelope IP exposure and placeholder theater');
+  const trustEnvelopeHtml = readBuiltHtml(MARKETING_ROOT, '/trust-envelope');
+  if (!trustEnvelopeHtml) {
+    fail('missing built HTML for /trust-envelope');
+  } else {
+    const teExp = validateD6TrustEnvelopeExposure(trustEnvelopeHtml);
+    if (teExp.length) teExp.forEach(fail);
+    else pass('/trust-envelope D6-b exposure + structure OK');
+  }
+
+  gate('6f] D6-b /revenue-verification IP exposure and placeholder theater');
+  const revenueVerificationHtml = readBuiltHtml(MARKETING_ROOT, '/revenue-verification');
+  if (!revenueVerificationHtml) {
+    fail('missing built HTML for /revenue-verification');
+  } else {
+    const rvExp = validateD6RevenueVerificationExposure(revenueVerificationHtml);
+    if (rvExp.length) rvExp.forEach(fail);
+    else pass('/revenue-verification D6-b exposure + structure OK');
+  }
+
+  gate('6g] D6-b /attribution-methodology IP exposure and placeholder theater');
+  const attributionMethodologyHtml = readBuiltHtml(MARKETING_ROOT, '/attribution-methodology');
+  if (!attributionMethodologyHtml) {
+    fail('missing built HTML for /attribution-methodology');
+  } else {
+    const amExp = validateD6AttributionMethodologyExposure(attributionMethodologyHtml);
+    if (amExp.length) amExp.forEach(fail);
+    else pass('/attribution-methodology D6-b exposure + structure OK');
+  }
+
+  gate('6h] D6-b /discrepancy-taxonomy IP exposure and placeholder theater');
+  const discrepancyTaxonomyHtml = readBuiltHtml(MARKETING_ROOT, '/discrepancy-taxonomy');
+  if (!discrepancyTaxonomyHtml) {
+    fail('missing built HTML for /discrepancy-taxonomy');
+  } else {
+    const dtExp = validateD6DiscrepancyTaxonomyExposure(discrepancyTaxonomyHtml);
+    if (dtExp.length) dtExp.forEach(fail);
+    else pass('/discrepancy-taxonomy D6-b exposure + structure OK');
+  }
+
+  gate('6i] D6-b /ai-boundary IP exposure and placeholder theater');
+  const aiBoundaryHtml = readBuiltHtml(MARKETING_ROOT, '/ai-boundary');
+  if (!aiBoundaryHtml) {
+    fail('missing built HTML for /ai-boundary');
+  } else {
+    const aiExp = validateD6AiBoundaryExposure(aiBoundaryHtml);
+    if (aiExp.length) aiExp.forEach(fail);
+    else pass('/ai-boundary D6-b exposure + structure OK');
+  }
+
+  gate('6j] D6-b /security IP exposure, overclaim, and placeholder theater');
+  const securityHtml = readBuiltHtml(MARKETING_ROOT, '/security');
+  if (!securityHtml) {
+    fail('missing built HTML for /security');
+  } else {
+    const secExp = validateD6SecurityExposure(securityHtml);
+    if (secExp.length) secExp.forEach(fail);
+    else pass('/security D6-b exposure + structure OK');
+  }
+
+  gate('6k] D6-b /status designed-absence and registry alignment');
+  const statusHtml = readBuiltHtml(MARKETING_ROOT, '/status');
+  let statusRegistry;
+  try {
+    statusRegistry = loadStatusRegistry(MARKETING_ROOT);
+    pass('discoverability.status-registry.json parses');
+  } catch (e) {
+    fail(e.message);
+    statusRegistry = { active_incidents: [], scheduled_maintenance: [], sitemap_required: true };
+  }
+  if (!statusHtml) {
+    fail('missing built HTML for /status');
+  } else {
+    const stExp = validateD6StatusExposure(statusHtml, statusRegistry, {
+      sitemapPaths: staticPaths,
+    });
+    if (stExp.length) stExp.forEach(fail);
+    else pass('/status D6-b designed-absence + registry OK');
+  }
+
+  gate('6l] D6-b /press designed-absence, contacts, and IP boundary');
+  const pressHtml = readBuiltHtml(MARKETING_ROOT, '/press');
+  let pressRegistry;
+  let contactsRegistry;
+  try {
+    pressRegistry = loadPressRegistry(MARKETING_ROOT);
+    pass('discoverability.press-registry.json parses');
+  } catch (e) {
+    fail(e.message);
+    pressRegistry = { indexability: true, sitemap_required: true, approved_media_claims: [] };
+  }
+  try {
+    contactsRegistry = loadPublicContactsRegistry(MARKETING_ROOT);
+    pass('discoverability.public-contacts.json parses');
+  } catch (e) {
+    fail(e.message);
+    contactsRegistry = { contacts: [] };
+  }
+  if (!pressHtml) {
+    fail('missing built HTML for /press');
+  } else {
+    const prExp = validateD6PressExposure(pressHtml, contactsRegistry, pressRegistry, {
+      sitemapPaths: staticPaths,
+    });
+    if (prExp.length) prExp.forEach(fail);
+    else pass('/press D6-b designed-absence + contacts OK');
+  }
+
+  gate('6m] D6-b /careers designed-absence, contacts, and IP boundary');
+  const careersHtml = readBuiltHtml(MARKETING_ROOT, '/careers');
+  let careersRegistry;
+  let careersContactsRegistry;
+  try {
+    careersRegistry = loadCareersRegistry(MARKETING_ROOT);
+    pass('discoverability.careers-registry.json parses');
+  } catch (e) {
+    fail(e.message);
+    careersRegistry = {
+      active_roles_count: 0,
+      talent_contact_channel: 'engineering@skeldir.com',
+      contact_approved: true,
+      indexability: true,
+      sitemap_required: true,
+      job_posting_allowed: false,
+      approved_benefit_claims: [],
+    };
+  }
+  try {
+    careersContactsRegistry = loadPublicContactsForCareers(MARKETING_ROOT);
+  } catch (e) {
+    fail(e.message);
+    careersContactsRegistry = { contacts: [] };
+  }
+  if (!careersHtml) {
+    fail('missing built HTML for /careers');
+  } else {
+    const carExp = validateD6CareersExposure(
+      careersHtml,
+      careersRegistry,
+      careersContactsRegistry,
+      { sitemapPaths: staticPaths },
+    );
+    if (carExp.length) carExp.forEach(fail);
+    else pass('/careers D6-b designed-absence + registry OK');
+  }
+
+  const footerPath = path.join(MARKETING_ROOT, 'src', 'components', 'layout', 'Footer.tsx');
+  if (fs.existsSync(footerPath)) {
+    const footerSrc = fs.readFileSync(footerPath, 'utf8');
+    if (/label:\s*["']Careers["'][^}]*href:\s*["']\/careers["']/i.test(footerSrc)) {
+      pass('Footer.tsx: Careers → /careers');
+    } else {
+      fail('Footer.tsx: Careers label must href="/careers"');
+    }
+    if (/label:\s*["']Careers["'][^}]*href:\s*["']\/resources["']/i.test(footerSrc)) {
+      fail('Footer.tsx: Careers must not point to /resources');
+    } else {
+      pass('Footer.tsx: Careers does not point to /resources');
+    }
+  }
+
+  gate('6n] D6-b /api access boundary, contract leakage, and contacts');
+  const apiHtml = readBuiltHtml(MARKETING_ROOT, '/api');
+  let apiSurfaceRegistry;
+  let apiContactsRegistry;
+  try {
+    apiSurfaceRegistry = loadApiSurfaceRegistry(MARKETING_ROOT);
+    pass('discoverability.api-surface-registry.json parses');
+  } catch (e) {
+    fail(e.message);
+    apiSurfaceRegistry = {
+      public_api_reference_available: false,
+      public_endpoint_details_rendered: false,
+      contact_channel: 'sales@skeldir.com',
+      contact_approved: true,
+      indexability: true,
+      sitemap_required: true,
+      required_boundary_phrases: [],
+    };
+  }
+  try {
+    apiContactsRegistry = loadPublicContactsForApi(MARKETING_ROOT);
+  } catch (e) {
+    fail(e.message);
+    apiContactsRegistry = { contacts: [] };
+  }
+  if (!apiHtml) {
+    fail('missing built HTML for /api');
+  } else {
+    const apiExp = validateD6ApiExposure(apiHtml, apiSurfaceRegistry, apiContactsRegistry, {
+      sitemapPaths: staticPaths,
+    });
+    if (apiExp.length) apiExp.forEach(fail);
+    else pass('/api D6-b access boundary + registry OK');
+  }
+
+  gate('6o] D6-b /privacy posture, IP leakage, overclaim, and contacts');
+  const privacyHtml = readBuiltHtml(MARKETING_ROOT, '/privacy');
+  let privacySurfaceRegistry;
+  let privacyContactsRegistry;
+  try {
+    privacySurfaceRegistry = loadPrivacySurfaceRegistry(MARKETING_ROOT);
+    pass('discoverability.privacy-surface-registry.json parses');
+  } catch (e) {
+    fail(e.message);
+    privacySurfaceRegistry = {
+      public_page_type: 'privacy_posture',
+      legal_review_status: 'pending',
+      indexability: false,
+      sitemap_required: false,
+      contact_channels: ['engineering@skeldir.com', 'security@skeldir.com'],
+      contact_approved: true,
+      required_boundary_phrases: [],
+    };
+  }
+  try {
+    privacyContactsRegistry = loadPublicContactsForPrivacy(MARKETING_ROOT);
+  } catch (e) {
+    fail(e.message);
+    privacyContactsRegistry = { contacts: [] };
+  }
+  if (!privacyHtml) {
+    fail('missing built HTML for /privacy');
+  } else {
+    const privExp = validateD6PrivacyExposure(
+      privacyHtml,
+      privacySurfaceRegistry,
+      privacyContactsRegistry,
+      { sitemapPaths: staticPaths },
+    );
+    if (privExp.length) privExp.forEach(fail);
+    else pass('/privacy D6-b privacy posture + registry OK');
+  }
+
+  gate('6p] D6-b /about entity positioning, IP exposure, and semantics');
+  const aboutHtml = readBuiltHtml(MARKETING_ROOT, '/about');
+  let aboutSurfaceRegistry;
+  try {
+    aboutSurfaceRegistry = loadAboutSurfaceRegistry(MARKETING_ROOT);
+    pass('discoverability.about-surface-registry.json parses');
+  } catch (e) {
+    fail(e.message);
+    aboutSurfaceRegistry = {
+      indexability: true,
+      sitemap_required: true,
+      required_boundary_phrases: [],
+      approved_positioning_terms: [],
+    };
+  }
+  if (!aboutHtml) {
+    fail('missing built HTML for /about');
+  } else {
+    const aboutExp = validateD6AboutExposure(aboutHtml, aboutSurfaceRegistry, {
+      sitemapPaths: staticPaths,
+      marketingRoot: MARKETING_ROOT,
+    });
+    if (aboutExp.length) aboutExp.forEach(fail);
+    else pass('/about D6-b entity page + registry OK');
   }
 
   gate('7] /resources hub links to evidence library');

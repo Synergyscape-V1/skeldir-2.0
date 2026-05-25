@@ -69,7 +69,7 @@ Measured on built HTML (`out/resources/evidence/*.html`) after production build.
 ## 7. D4 Fixture Hygiene
 
 - **fixed file:** `marketing/scripts/discoverability-d4-negative-controls.mjs`
-- **commit hash:** _(set after push — see Section 11)_
+- **commit hash:** `d0dcc229`
 - **local d4 negative-control output:** `Passes: 11  Failures: 0` (with `MARKETING_D4_SKIP_BUILD=1`, golden `out/index.html` regression included)
 
 ## 8. Artifact Excerpts
@@ -175,8 +175,8 @@ Full matrix: `marketing/discoverability.d6-frontload-report.json` → `similarit
 ## 11. Branch / Commit Status
 
 - **active branch:** `feat/discoverability-remediation`
-- **commit hash:** _(recorded at commit time below)_
-- **pushed?:** _(see git push result)_
+- **commit hash:** `d0dcc229`
+- **pushed?:** **yes** (`origin/feat/discoverability-remediation` @ `d0dcc229`)
 - **production-final status:** `BLOCKED_BY_GLOBAL_RELEASE`
 
 ### Closure separation

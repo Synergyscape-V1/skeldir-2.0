@@ -219,9 +219,9 @@ function main() {
   }
 
   /**
-   * NC-D5-10 — Legal placeholder /privacy missing legal_review_required status is caught.
+   * NC-D5-10 — /privacy D6-b posture page missing boundary declaration is caught.
    */
-  console.log('\n[NC-D5-10] /privacy missing legal_review_required is caught');
+  console.log('\n[NC-D5-10] /privacy missing privacy posture boundary is caught');
   {
     const html = `
       <html><head>
@@ -229,10 +229,10 @@ function main() {
       <meta name="description" content="x"/>
       <link rel="canonical" href="https://skeldir.com/privacy"/>
       <meta name="robots" content="noindex"/>
-      </head><body><h1>Privacy</h1><p>Generic placeholder text without status.</p></body></html>
+      </head><body><h1>Privacy</h1><p>Generic text without posture boundary.</p></body></html>
     `;
     const errs = validateD5LegalPlaceholder(MARKETING_ROOT, '/privacy', html);
-    expectErrors('NC-D5-10 /privacy missing legal_review_required', errs, 1);
+    expectErrors('NC-D5-10 /privacy missing privacy posture boundary', errs, 1);
   }
 
   /**

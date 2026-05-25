@@ -41,20 +41,54 @@ export interface TrustProofPageMeta {
   notes?: string;
 }
 
+export type TrustProofPresentation = "internal" | "public";
+
+export interface TrustProofBlufBlock {
+  heading?: string;
+  paragraphs: ReactNode;
+  fiveFactsHeading?: string;
+  fiveFacts: string[];
+}
+
 export interface TrustProofPageProps {
   headline: string;
   lede: string;
   meta: TrustProofPageMeta;
   sections: TrustProofPageSection[];
   limitations: ReactNode;
+  /** Public proof pages hide owner/status badges; show lastUpdated + notes only. */
+  presentation?: TrustProofPresentation;
+  lastUpdated?: string;
+  bluf?: TrustProofBlufBlock;
+  relatedProofLinks?: { href: string; label: string }[];
 }
 
 const LIMITATIONS_TOC_ID = "limitations";
+const BLUF_TOC_ID = "bottom-line-up-front";
+const FIVE_FACTS_TOC_ID = "five-methodology-facts";
+const RELATED_PROOF_TOC_ID = "related-proof-pages";
+
+const REVIEW_STATUS_LABELS: Record<TrustProofPageMeta["status"], string> = {
+  operator_approved: "Operator approved",
+  technical_disclosure_only: "Technical disclosure only",
+  legal_review_required: "Legal review required",
+  blocked_missing_content: "Blocked missing content",
+};
 
 export function buildTrustProofTocItems(
-  sections: TrustProofPageSection[]
+  sections: TrustProofPageSection[],
+  opts?: { bluf?: boolean; relatedProof?: boolean },
 ): TOCItem[] {
-  const items: TOCItem[] = sections.map((section) => ({
+  const items: TOCItem[] = [];
+  if (opts?.bluf) {
+    items.push({ id: BLUF_TOC_ID, title: "Bottom Line Up Front", level: 2 });
+    items.push({
+      id: FIVE_FACTS_TOC_ID,
+      title: "Five things that are true about this methodology",
+      level: 2,
+    });
+  }
+  items.push(...sections.map((section) => ({
     id: section.id,
     title: section.heading,
     level: 2,
@@ -63,7 +97,15 @@ export function buildTrustProofTocItems(
       title: child.title,
       level: 3,
     })),
-  }));
+  })));
+
+  if (opts?.relatedProof) {
+    items.push({
+      id: RELATED_PROOF_TOC_ID,
+      title: "Related proof pages",
+      level: 2,
+    });
+  }
 
   items.push({
     id: LIMITATIONS_TOC_ID,
@@ -75,8 +117,22 @@ export function buildTrustProofTocItems(
 }
 
 export function TrustProofPage(props: TrustProofPageProps) {
-  const { headline, lede, meta, sections, limitations } = props;
-  const tocItems = buildTrustProofTocItems(sections);
+  const {
+    headline,
+    lede,
+    meta,
+    sections,
+    limitations,
+    presentation = "internal",
+    lastUpdated,
+    bluf,
+    relatedProofLinks,
+  } = props;
+  const isPublic = presentation === "public";
+  const tocItems = buildTrustProofTocItems(sections, {
+    bluf: Boolean(bluf),
+    relatedProof: Boolean(relatedProofLinks?.length),
+  });
 
   return (
     <div className="min-h-screen flex flex-col bg-white text-slate-900">
@@ -87,32 +143,53 @@ export function TrustProofPage(props: TrustProofPageProps) {
               {headline}
             </h1>
             <p className="text-lg text-slate-700 leading-relaxed mb-6">{lede}</p>
-            <dl
-              className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm"
-              aria-label="Proof page metadata"
-            >
-              <div>
-                <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">
-                  Owner
-                </dt>
-                <dd>{meta.owner}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">
-                  Status
-                </dt>
-                <dd>
-                  <code className="text-xs bg-slate-100 px-2 py-1 rounded">
-                    {meta.status}
-                  </code>
-                </dd>
-              </div>
-            </dl>
-            {meta.notes ? (
-              <p className="mt-6 text-xs text-slate-500 leading-relaxed">
-                {meta.notes}
-              </p>
-            ) : null}
+            {isPublic ? (
+              <>
+                {lastUpdated ? (
+                  <p className="text-sm text-slate-600 mb-4">
+                    <span className="font-medium text-slate-800">Last updated:</span>{" "}
+                    {lastUpdated}
+                  </p>
+                ) : null}
+                {meta.notes ? (
+                  <p className="text-sm text-slate-600 leading-relaxed border-l-2 border-slate-200 pl-4">
+                    {meta.notes}
+                  </p>
+                ) : null}
+                <p className="text-xs text-slate-500 mt-4">
+                  Review status: {REVIEW_STATUS_LABELS[meta.status]}
+                </p>
+              </>
+            ) : (
+              <>
+                <dl
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm"
+                  aria-label="Proof page metadata"
+                >
+                  <div>
+                    <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">
+                      Owner
+                    </dt>
+                    <dd>{meta.owner}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-slate-500 uppercase tracking-wide text-xs">
+                      Status
+                    </dt>
+                    <dd>
+                      <code className="text-xs bg-slate-100 px-2 py-1 rounded">
+                        {meta.status}
+                      </code>
+                    </dd>
+                  </div>
+                </dl>
+                {meta.notes ? (
+                  <p className="mt-6 text-xs text-slate-500 leading-relaxed">
+                    {meta.notes}
+                  </p>
+                ) : null}
+              </>
+            )}
           </header>
 
           <div className="flex flex-col xl:flex-row gap-8 xl:gap-16 max-w-7xl mx-auto">
@@ -122,6 +199,43 @@ export function TrustProofPage(props: TrustProofPageProps) {
 
             <article className="flex-1 max-w-3xl order-1 xl:order-2">
               <div className="space-y-12">
+                {bluf ? (
+                  <>
+                    <section
+                      id={BLUF_TOC_ID}
+                      className="scroll-mt-24"
+                      aria-labelledby={`${BLUF_TOC_ID}-heading`}
+                    >
+                      <h2
+                        id={`${BLUF_TOC_ID}-heading`}
+                        className="text-xl md:text-2xl font-semibold mb-4"
+                      >
+                        {bluf.heading ?? "Bottom Line Up Front"}
+                      </h2>
+                      <div className="text-base text-slate-700 leading-relaxed space-y-4">
+                        {bluf.paragraphs}
+                      </div>
+                    </section>
+                    <section
+                      id={FIVE_FACTS_TOC_ID}
+                      className="scroll-mt-24"
+                      aria-labelledby={`${FIVE_FACTS_TOC_ID}-heading`}
+                    >
+                      <h2
+                        id={`${FIVE_FACTS_TOC_ID}-heading`}
+                        className="text-xl md:text-2xl font-semibold mb-4"
+                      >
+                        {bluf.fiveFactsHeading ??
+                          "Five things that are true about this methodology"}
+                      </h2>
+                      <ul className="list-disc pl-6 space-y-3 text-slate-700">
+                        {bluf.fiveFacts.map((fact) => (
+                          <li key={fact.slice(0, 48)}>{fact}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  </>
+                ) : null}
                 {sections.map((section) => (
                   <section
                     key={section.id}
@@ -140,6 +254,30 @@ export function TrustProofPage(props: TrustProofPageProps) {
                     </div>
                   </section>
                 ))}
+
+                {relatedProofLinks?.length ? (
+                  <section
+                    id={RELATED_PROOF_TOC_ID}
+                    className="scroll-mt-24"
+                    aria-labelledby={`${RELATED_PROOF_TOC_ID}-heading`}
+                  >
+                    <h2
+                      id={`${RELATED_PROOF_TOC_ID}-heading`}
+                      className="text-xl md:text-2xl font-semibold mb-4"
+                    >
+                      Related proof pages
+                    </h2>
+                    <ul className="list-disc pl-6 space-y-2 text-slate-700">
+                      {relatedProofLinks.map((link) => (
+                        <li key={link.href}>
+                          <a className="underline text-slate-900" href={link.href}>
+                            {link.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
 
                 <section
                   id={LIMITATIONS_TOC_ID}
