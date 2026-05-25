@@ -15,6 +15,12 @@ from app.bayesian.cardinality_db_work import (
     CardinalityPlanEvidence,
     validate_cardinality_plan_evidence,
 )
+from app.bayesian.feature_authority import (
+    FeatureAuthorityStatus,
+    FeatureAuthorityUnavailable,
+    SourceWindowFeatureAuthority,
+    load_source_window_feature_authority,
+)
 from app.bayesian.graph_complexity_envelope import estimate_graph_complexity_envelope
 from app.bayesian.input_profile import (
     B24InputProfile,
@@ -45,6 +51,12 @@ ELIGIBILITY = REPO_ROOT / "backend/app/bayesian/eligibility.py"
 DESIGN_ENVELOPE = REPO_ROOT / "backend/app/bayesian/design_matrix_envelope.py"
 GRAPH_ENVELOPE = REPO_ROOT / "backend/app/bayesian/graph_complexity_envelope.py"
 RESOURCE_PROFILE = REPO_ROOT / "backend/app/bayesian/resource_profile.py"
+FEATURE_AUTHORITY = REPO_ROOT / "backend/app/bayesian/feature_authority.py"
+MODELS = REPO_ROOT / "backend/app/bayesian/models.py"
+FEATURE_AUTHORITY_MIGRATION = (
+    REPO_ROOT
+    / "alembic/versions/007_skeldir_foundation/202605251200_b24_p4_feature_authority.py"
+)
 
 
 TENANT_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -107,14 +119,35 @@ def _snapshot_from_profile(profile: B24InputProfile):
             "b23_revenue_events": 0,
         },
         eligible_channel_count=profile.channel_count,
-        provider_count=profile.provider_count,
-        campaign_or_feature_count=profile.campaign_or_feature_count,
         eligible_amount_minor_by_currency={
             f"C{i}": 1 for i in range(profile.currency_count)
         },
     )
     return SimpleNamespace(
         source_snapshot_hash=profile.source_snapshot_hash, preflight=preflight
+    )
+
+
+def _authority_from_profile(
+    profile: B24InputProfile,
+    *,
+    source_snapshot_hash: str | None = None,
+    freshness_status: FeatureAuthorityStatus = FeatureAuthorityStatus.FRESH,
+) -> SourceWindowFeatureAuthority:
+    return SourceWindowFeatureAuthority(
+        tenant_id=profile.tenant_id,
+        model_type=profile.model_type,
+        model_version=profile.model_version,
+        source_window_start=profile.source_window_start,
+        source_window_end=profile.source_window_end,
+        source_snapshot_hash=source_snapshot_hash or profile.source_snapshot_hash,
+        channel_count=profile.channel_count,
+        currency_count=profile.currency_count,
+        provider_count=profile.provider_count,
+        campaign_or_feature_count=profile.campaign_or_feature_count,
+        freshness_status=freshness_status,
+        policy_version=B24_RESOURCE_POLICY.policy_version,
+        computed_at=profile.computed_at,
     )
 
 
@@ -138,6 +171,56 @@ def _valid_plan_evidence(**overrides: int | float | str) -> CardinalityPlanEvide
     }
     defaults.update(overrides)
     return CardinalityPlanEvidence(**defaults)
+
+
+class _FakeMappings:
+    def __init__(self, row):
+        self._row = row
+
+    def one_or_none(self):
+        return self._row
+
+
+class _FakeResult:
+    def __init__(self, row):
+        self._row = row
+
+    def mappings(self):
+        return _FakeMappings(self._row)
+
+
+class _FakeAuthoritySession:
+    def __init__(self, exact_row=None, related_row=None):
+        self._rows = [exact_row, related_row]
+        self.calls = 0
+
+    async def execute(self, *_args, **_kwargs):
+        row = self._rows[self.calls]
+        self.calls += 1
+        return _FakeResult(row)
+
+
+def _authority_row(
+    profile: B24InputProfile,
+    *,
+    status: str = "fresh",
+    policy_version: str | None = None,
+) -> dict[str, object]:
+    return {
+        "tenant_id": profile.tenant_id,
+        "model_type": profile.model_type,
+        "model_version": profile.model_version,
+        "source_window_start": profile.source_window_start,
+        "source_window_end": profile.source_window_end,
+        "source_snapshot_hash": profile.source_snapshot_hash,
+        "channel_count": profile.channel_count,
+        "currency_count": profile.currency_count,
+        "provider_count": profile.provider_count,
+        "campaign_or_feature_count": profile.campaign_or_feature_count,
+        "freshness_status": status,
+        "policy_version": policy_version or B24_RESOURCE_POLICY.policy_version,
+        "computed_at": profile.computed_at,
+    }
 
 
 def test_b24_p4_resource_policy_has_required_caps() -> None:
@@ -220,12 +303,128 @@ def test_b24_p4_profile_uses_aggregate_queries_not_raw_row_materialization() -> 
         assert forbidden not in text
 
 
+def test_b24_p4_no_raw_source_recursive_cardinality_in_planner() -> None:
+    text = _read(ELIGIBILITY)
+    assert "campaign_feature_keys" not in text
+    assert "provider_keys" not in text
+    assert "candidate.campaign_id >" not in text
+    assert "candidate.provider >" not in text
+
+
+def test_b24_p4_uses_source_window_feature_vocabulary_or_rollup() -> None:
+    text = _read(FEATURE_AUTHORITY)
+    migration = _read(FEATURE_AUTHORITY_MIGRATION)
+    assert "b24_source_window_feature_authority" in text
+    assert "b24_source_window_feature_authority" in migration
+    assert "UPSERT_SOURCE_WINDOW_FEATURE_AUTHORITY_SQL" in text
+
+
+def test_b24_p4_feature_authority_keyed_by_source_snapshot_hash() -> None:
+    text = _read(FEATURE_AUTHORITY) + _read(MODELS) + _read(FEATURE_AUTHORITY_MIGRATION)
+    assert "source_snapshot_hash = :source_snapshot_hash" in text
+    assert "source_snapshot_hash" in text
+    assert "b24_source_window_feature_authority_pkey" in text
+
+
+@pytest.mark.asyncio
+async def test_b24_p4_missing_feature_authority_fails_closed() -> None:
+    profile = _profile()
+    session = _FakeAuthoritySession(exact_row=None, related_row=None)
+    with pytest.raises(FeatureAuthorityUnavailable) as exc:
+        await load_source_window_feature_authority(
+            session,
+            tenant_id=profile.tenant_id,
+            model_type=profile.model_type,
+            model_version=profile.model_version,
+            source_window_start=profile.source_window_start,
+            source_window_end=profile.source_window_end,
+            source_snapshot_hash=profile.source_snapshot_hash,
+        )
+    assert exc.value.reason == FallbackReason.CARDINALITY_AUTHORITY_MISSING
+
+
+@pytest.mark.asyncio
+async def test_b24_p4_stale_feature_authority_fails_closed() -> None:
+    profile = _profile()
+    session = _FakeAuthoritySession(exact_row=_authority_row(profile, status="stale"))
+    with pytest.raises(FeatureAuthorityUnavailable) as exc:
+        await load_source_window_feature_authority(
+            session,
+            tenant_id=profile.tenant_id,
+            model_type=profile.model_type,
+            model_version=profile.model_version,
+            source_window_start=profile.source_window_start,
+            source_window_end=profile.source_window_end,
+            source_snapshot_hash=profile.source_snapshot_hash,
+        )
+    assert exc.value.reason == FallbackReason.CARDINALITY_AUTHORITY_STALE
+
+
+@pytest.mark.asyncio
+async def test_b24_p4_mismatched_source_snapshot_authority_fails_closed() -> None:
+    profile = _profile()
+    session = _FakeAuthoritySession(
+        exact_row=None,
+        related_row={
+            "source_snapshot_hash": "b" * 64,
+            "freshness_status": "fresh",
+            "computed_at": profile.computed_at,
+        },
+    )
+    with pytest.raises(FeatureAuthorityUnavailable) as exc:
+        await load_source_window_feature_authority(
+            session,
+            tenant_id=profile.tenant_id,
+            model_type=profile.model_type,
+            model_version=profile.model_version,
+            source_window_start=profile.source_window_start,
+            source_window_end=profile.source_window_end,
+            source_snapshot_hash=profile.source_snapshot_hash,
+        )
+    assert exc.value.reason == FallbackReason.CARDINALITY_AUTHORITY_MISMATCH
+
+
+def test_b24_p4_missing_count_never_defaults_to_zero() -> None:
+    text = _read(INPUT_PROFILE)
+    assert "feature_authority.provider_count" in text
+    assert "feature_authority.campaign_or_feature_count" in text
+    assert "provider_count=0" not in text
+    assert "campaign_or_feature_count=0" not in text
+
+
+def test_b24_p4_async_campaign_arrival_after_rollup_blocks_approval() -> None:
+    text = _read(FIT_PLANNER) + _read(FEATURE_AUTHORITY)
+    assert "source_snapshot_hash=snapshot.source_snapshot_hash" in text
+    assert "CARDINALITY_AUTHORITY_MISMATCH" in text
+
+
+def test_b24_p4_rollup_lag_creates_non_dispatchable_state() -> None:
+    text = _read(FIT_PLANNER) + _read(REPOSITORY)
+    assert "upsert_feature_authority_fallback_from_snapshot" in text
+    assert "INSERT INTO public.b24_fit_dispatch_outbox" not in _read(REPOSITORY)
+
+
+def test_b24_p4_vocabulary_upsert_is_tenant_window_snapshot_feature_scoped() -> None:
+    text = _read(FEATURE_AUTHORITY)
+    for token in (
+        "tenant_id",
+        "model_type",
+        "model_version",
+        "source_window_start",
+        "source_window_end",
+        "source_snapshot_hash",
+        "ON CONFLICT",
+    ):
+        assert token in text
+
+
 def test_b24_p4_provider_count_not_silently_zero() -> None:
     profile = _profile(provider_count=3)
     built = build_input_profile_from_preflight(
         preflight_lease_id="lease",
         source_snapshot_hash=profile.source_snapshot_hash,
         preflight=_snapshot_from_profile(profile).preflight,
+        feature_authority=_authority_from_profile(profile),
     )
     assert built.provider_count == 3
     assert "provider" in built.cardinality_profiled_dimensions
@@ -237,6 +436,7 @@ def test_b24_p4_campaign_or_feature_count_not_silently_zero() -> None:
         preflight_lease_id="lease",
         source_snapshot_hash=profile.source_snapshot_hash,
         preflight=_snapshot_from_profile(profile).preflight,
+        feature_authority=_authority_from_profile(profile),
     )
     assert built.campaign_or_feature_count == 33
     assert "campaign_or_feature" in built.cardinality_profiled_dimensions
@@ -269,21 +469,19 @@ def test_b24_p4_provider_cardinality_does_not_use_plain_count_distinct() -> None
 def test_b24_p4_campaign_cardinality_uses_rollup_vocabulary_or_true_early_stop() -> (
     None
 ):
-    text = _read(ELIGIBILITY)
-    assert "campaign_feature_keys(feature_key, ordinal)" in text
-    assert "candidate.campaign_id > campaign_feature_keys.feature_key" in text
-    assert "campaign_feature_cap_plus_one" in text
-    assert "CROSS JOIN LATERAL" in text
+    text = _read(FEATURE_AUTHORITY)
+    assert "b24_source_window_feature_authority" in text
+    assert "source_snapshot_hash = :source_snapshot_hash" in text
+    assert "campaign_or_feature_count" in text
 
 
 def test_b24_p4_provider_cardinality_uses_rollup_vocabulary_or_true_early_stop() -> (
     None
 ):
-    text = _read(ELIGIBILITY)
-    assert "provider_keys(provider_key, ordinal)" in text
-    assert "candidate.provider > provider_keys.provider_key" in text
-    assert "provider_cap_plus_one" in text
-    assert "CROSS JOIN LATERAL" in text
+    text = _read(FEATURE_AUTHORITY)
+    assert "b24_source_window_feature_authority" in text
+    assert "source_snapshot_hash = :source_snapshot_hash" in text
+    assert "provider_count" in text
 
 
 def test_b24_p4_unproven_group_by_limit_cardinality_rejected() -> None:
@@ -294,6 +492,19 @@ def test_b24_p4_unproven_group_by_limit_cardinality_rejected() -> None:
             input_text=_read(INPUT_PROFILE),
             eligibility_text=_read(ELIGIBILITY)
             + "\nSELECT campaign_id FROM source GROUP BY campaign_id LIMIT 2049\n",
+            design_text=_read(DESIGN_ENVELOPE),
+            graph_text=_read(GRAPH_ENVELOPE),
+        )
+
+
+def test_b24_p4_validator_rejects_raw_source_cardinality_discovery() -> None:
+    validator = _load_validator()
+    with pytest.raises(validator.ValidationError, match="raw-source"):
+        validator.validate_resource_profile_module_texts(
+            REPO_ROOT,
+            input_text=_read(INPUT_PROFILE),
+            eligibility_text=_read(ELIGIBILITY)
+            + "\nprovider_keys AS (SELECT provider FROM public.b23_revenue_events)\n",
             design_text=_read(DESIGN_ENVELOPE),
             graph_text=_read(GRAPH_ENVELOPE),
         )
@@ -376,14 +587,14 @@ def test_b24_p4_cardinality_plan_enforces_buffers_budget() -> None:
 def test_b24_p4_validator_rejects_silent_zero_feature_dimensions() -> None:
     validator = _load_validator()
     provider_zero = _read(INPUT_PROFILE).replace(
-        "provider_count=int(preflight.provider_count)",
+        "provider_count=int(feature_authority.provider_count)",
         "provider_count=0",
         1,
     )
     with pytest.raises(validator.ValidationError, match="silent zero"):
         validator.validate_resource_profile_texts(REPO_ROOT, provider_zero)
     campaign_zero = _read(INPUT_PROFILE).replace(
-        "campaign_or_feature_count=int(preflight.campaign_or_feature_count)",
+        "campaign_or_feature_count=int(feature_authority.campaign_or_feature_count)",
         "campaign_or_feature_count=0",
         1,
     )
@@ -481,6 +692,7 @@ def test_b24_p4_live_campaign_count_above_cap_fallback_feature_width_exceeded() 
     decision = evaluate_source_snapshot_resource_bounds(
         snapshot=_snapshot_from_profile(profile),
         preflight_lease_id="lease",
+        feature_authority=_authority_from_profile(profile),
     )
     assert decision.input_profile.campaign_or_feature_count == (
         B24_RESOURCE_POLICY.max_campaigns_or_feature_keys + 1
@@ -493,6 +705,7 @@ def test_b24_p4_live_provider_count_above_cap_fallback_feature_width_exceeded() 
     decision = evaluate_source_snapshot_resource_bounds(
         snapshot=_snapshot_from_profile(profile),
         preflight_lease_id="lease",
+        feature_authority=_authority_from_profile(profile),
     )
     assert (
         decision.input_profile.provider_count == B24_RESOURCE_POLICY.max_providers + 1
@@ -614,12 +827,18 @@ def test_b24_p4_provider_count_feeds_graph_complexity_estimate() -> None:
 
 def test_b24_p4_forced_profile_values_do_not_replace_live_path_proof() -> None:
     text = _read(INPUT_PROFILE)
-    assert "preflight.provider_count" in text
-    assert "preflight.campaign_or_feature_count" in text
+    assert "feature_authority.provider_count" in text
+    assert "feature_authority.campaign_or_feature_count" in text
+    assert "preflight.provider_count" not in text
+    assert "preflight.campaign_or_feature_count" not in text
 
 
 def test_b24_p4_cardinality_fix_preserves_no_pii_no_identity_no_raw_payload() -> None:
-    text = _read(ELIGIBILITY)
+    text = (
+        _read(ELIGIBILITY)
+        + _read(FEATURE_AUTHORITY)
+        + _read(FEATURE_AUTHORITY_MIGRATION)
+    )
     forbidden = (
         "raw_payload",
         "email",

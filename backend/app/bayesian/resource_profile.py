@@ -10,13 +10,25 @@ from app.bayesian.design_matrix_envelope import (
     estimate_design_matrix_envelope,
 )
 from app.bayesian.enums import FallbackReason
+from app.bayesian.feature_authority import SourceWindowFeatureAuthority
 from app.bayesian.graph_complexity_envelope import (
     GraphComplexityEnvelope,
     estimate_graph_complexity_envelope,
 )
-from app.bayesian.input_profile import B24InputProfile, build_input_profile_from_preflight
+from app.bayesian.input_profile import (
+    B24InputProfile,
+    build_input_profile_from_preflight,
+)
 from app.bayesian.resource_bounds import B24_RESOURCE_POLICY, B24ResourcePolicy
 from app.bayesian.source_snapshot import SourceSnapshotResult
+
+
+FEATURE_AUTHORITY_FAIL_CLOSED_REASONS = (
+    FallbackReason.CARDINALITY_AUTHORITY_MISSING,
+    FallbackReason.CARDINALITY_AUTHORITY_STALE,
+    FallbackReason.CARDINALITY_AUTHORITY_MISMATCH,
+    FallbackReason.SOURCE_PROFILE_UNAVAILABLE,
+)
 
 
 @dataclass(frozen=True)
@@ -63,7 +75,8 @@ def _failure_reason(
         design.estimated_design_matrix_cells > policy.max_design_matrix_cells
         or design.estimated_tensor_elements > policy.max_tensor_elements
         or design.estimated_tensor_rank > policy.max_tensor_rank
-        or design.estimated_input_memory_bytes > _mb_to_bytes(policy.max_input_memory_mb)
+        or design.estimated_input_memory_bytes
+        > _mb_to_bytes(policy.max_input_memory_mb)
     ):
         return FallbackReason.MEMORY_BOUND_EXCEEDED
     if (
@@ -93,6 +106,7 @@ def evaluate_source_snapshot_resource_bounds(
     *,
     snapshot: SourceSnapshotResult,
     preflight_lease_id: str,
+    feature_authority: SourceWindowFeatureAuthority,
     policy: B24ResourcePolicy = B24_RESOURCE_POLICY,
 ) -> B24ResourceDecision:
     """Evaluate P4 before claim, graph build, sampler dispatch, or artifacts."""
@@ -101,8 +115,11 @@ def evaluate_source_snapshot_resource_bounds(
         preflight_lease_id=preflight_lease_id,
         source_snapshot_hash=snapshot.source_snapshot_hash,
         preflight=snapshot.preflight,
+        feature_authority=feature_authority,
     )
-    return evaluate_input_profile_resource_bounds(input_profile=input_profile, policy=policy)
+    return evaluate_input_profile_resource_bounds(
+        input_profile=input_profile, policy=policy
+    )
 
 
 def evaluate_input_profile_resource_bounds(

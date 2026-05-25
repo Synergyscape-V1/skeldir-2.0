@@ -17,6 +17,7 @@ DESIGN_ENVELOPE = BAYESIAN_PACKAGE / "design_matrix_envelope.py"
 GRAPH_ENVELOPE = BAYESIAN_PACKAGE / "graph_complexity_envelope.py"
 MODEL_FAMILY_CONTRACT = BAYESIAN_PACKAGE / "model_family_contract.py"
 ELIGIBILITY = BAYESIAN_PACKAGE / "eligibility.py"
+FEATURE_AUTHORITY = BAYESIAN_PACKAGE / "feature_authority.py"
 CARDINALITY_DB_WORK = BAYESIAN_PACKAGE / "cardinality_db_work.py"
 PREFLIGHT_LEASE = BAYESIAN_PACKAGE / "preflight_lease.py"
 RESOURCE_PROFILE = BAYESIAN_PACKAGE / "resource_profile.py"
@@ -35,6 +36,9 @@ P4_FEATURE_CARDINALITY_MIGRATION = Path(
 P4_CARDINALITY_EARLY_STOP_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202605241430_b24_p4_cardinality_early_stop_indexes.py"
 )
+P4_FEATURE_AUTHORITY_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605251200_b24_p4_feature_authority.py"
+)
 CANONICAL_SCHEMA = Path("db/schema/canonical_schema.sql")
 P4_TESTS = Path("backend/tests/test_b24_p4_resource_bounds.py")
 
@@ -45,12 +49,14 @@ REQUIRED_FILES = {
     GRAPH_ENVELOPE,
     MODEL_FAMILY_CONTRACT,
     ELIGIBILITY,
+    FEATURE_AUTHORITY,
     CARDINALITY_DB_WORK,
     PREFLIGHT_LEASE,
     RESOURCE_PROFILE,
     P4_MIGRATION,
     P4_FEATURE_CARDINALITY_MIGRATION,
     P4_CARDINALITY_EARLY_STOP_MIGRATION,
+    P4_FEATURE_AUTHORITY_MIGRATION,
 }
 
 REQUIRED_CAP_NAMES = {
@@ -109,6 +115,10 @@ P4_FALLBACK_REASONS = {
     "parameter_count_exceeded",
     "hierarchy_width_exceeded",
     "compilation_memory_bound_exceeded",
+    "cardinality_authority_missing",
+    "cardinality_authority_stale",
+    "cardinality_authority_mismatch",
+    "source_profile_unavailable",
 }
 
 FORBIDDEN_SCOPE_TOKENS = {
@@ -241,6 +251,7 @@ def validate_preflight_lease(root: Path, text: str | None = None) -> None:
 def validate_resource_profile(root: Path) -> None:
     input_text = _read(root, INPUT_PROFILE)
     eligibility_text = _read(root, ELIGIBILITY)
+    authority_text = _read(root, FEATURE_AUTHORITY)
     design_text = _read(root, DESIGN_ENVELOPE)
     graph_text = _read(root, GRAPH_ENVELOPE)
     contract_text = _read(root, MODEL_FAMILY_CONTRACT)
@@ -251,6 +262,7 @@ def validate_resource_profile(root: Path) -> None:
         [
             input_text,
             eligibility_text,
+            authority_text,
             design_text,
             graph_text,
             contract_text,
@@ -276,18 +288,38 @@ def validate_resource_profile(root: Path) -> None:
         re.search(r"\bUNION\b(?!\s+ALL)", eligibility_text, re.IGNORECASE) is None,
         "provider/campaign cardinality must not use UNION deduplication",
     )
-    for required in (
-        "WITH RECURSIVE",
-        "CROSS JOIN LATERAL",
-        "channel_cap_plus_one",
-        "provider_cap_plus_one",
-        "campaign_feature_cap_plus_one",
-        "candidate.campaign_id > campaign_feature_keys.feature_key",
-        "candidate.provider > provider_keys.provider_key",
+    for forbidden in (
+        "campaign_feature_keys",
+        "provider_keys",
+        "candidate.campaign_id >",
+        "candidate.provider >",
     ):
         _require(
-            required in eligibility_text,
-            f"true next-key early-stop cardinality missing: {required}",
+            forbidden not in eligibility_text,
+            f"raw-source cardinality discovery forbidden: {forbidden}",
+        )
+    for required in (
+        "b24_source_window_feature_authority",
+        "source_snapshot_hash = :source_snapshot_hash",
+        "FeatureAuthorityUnavailable",
+        "CARDINALITY_AUTHORITY_MISSING",
+        "CARDINALITY_AUTHORITY_STALE",
+        "CARDINALITY_AUTHORITY_MISMATCH",
+        "authority.freshness_status != FeatureAuthorityStatus.FRESH",
+        "authority.policy_version != B24_FEATURE_AUTHORITY_POLICY_VERSION",
+        "UPSERT_SOURCE_WINDOW_FEATURE_AUTHORITY_SQL",
+    ):
+        _require(required in authority_text, f"feature authority missing: {required}")
+    for forbidden in (
+        "public.attribution_events",
+        "public.b23_match_verdicts",
+        "public.b23_revenue_events",
+        "COUNT(DISTINCT",
+        "GROUP BY",
+    ):
+        _require(
+            forbidden.lower() not in authority_text.lower(),
+            f"feature authority must not discover raw source cardinality: {forbidden}",
         )
     _require(
         re.search(r"provider_count\s*=\s*0\b", input_text) is None,
@@ -309,15 +341,15 @@ def validate_resource_profile(root: Path) -> None:
             f"model-family dimension contract missing: {required}",
         )
     for required in (
-        "preflight.provider_count",
-        "preflight.campaign_or_feature_count",
+        "feature_authority.provider_count",
+        "feature_authority.campaign_or_feature_count",
+        "feature_authority.channel_count",
+        "feature_authority.currency_count",
         "cardinality_profiled_dimensions",
-        *EARLY_STOP_INDEXES,
-        "true_next_key_early_stop_cap_plus_one_v1",
     ):
         _require(
             required in input_text,
-            f"live feature cardinality profile missing: {required}",
+            f"feature authority profile missing: {required}",
         )
     for required in (
         "CardinalityPlanEvidence",
@@ -374,6 +406,14 @@ def validate_resource_profile(root: Path) -> None:
         "test_b24_p4_p5_cannot_use_unprofiled_campaign_dimension",
         "test_b24_p4_p5_cannot_use_unprofiled_provider_dimension",
         "test_b24_p4_forced_profile_values_do_not_replace_live_path_proof",
+        "test_b24_p4_no_raw_source_recursive_cardinality_in_planner",
+        "test_b24_p4_uses_source_window_feature_vocabulary_or_rollup",
+        "test_b24_p4_feature_authority_keyed_by_source_snapshot_hash",
+        "test_b24_p4_missing_feature_authority_fails_closed",
+        "test_b24_p4_stale_feature_authority_fails_closed",
+        "test_b24_p4_mismatched_source_snapshot_authority_fails_closed",
+        "test_b24_p4_async_campaign_arrival_after_rollup_blocks_approval",
+        "test_b24_p4_rollup_lag_creates_non_dispatchable_state",
         "test_b24_p4_campaign_cardinality_does_not_use_plain_count_distinct",
         "test_b24_p4_provider_cardinality_does_not_use_plain_count_distinct",
         "test_b24_p4_campaign_cardinality_uses_rollup_vocabulary_or_true_early_stop",
@@ -424,20 +464,31 @@ def validate_fallback_persistence(root: Path) -> None:
 
 
 def validate_schema_surface(root: Path) -> None:
-    migration = _read(root, P4_MIGRATION)
     feature_migration = _read(root, P4_FEATURE_CARDINALITY_MIGRATION)
     early_stop_migration = _read(root, P4_CARDINALITY_EARLY_STOP_MIGRATION)
+    feature_authority_migration = _read(root, P4_FEATURE_AUTHORITY_MIGRATION)
     canonical = _read(root, CANONICAL_SCHEMA)
     enums = _read(root, ENUMS)
     models = _read(root, MODELS)
     for reason in P4_FALLBACK_REASONS:
         for label, text in (
-            ("migration", migration),
+            ("feature authority migration", feature_authority_migration),
             ("canonical schema", canonical),
             ("enums", enums),
             ("models", models),
         ):
             _require(reason in text, f"{label} missing P4 fallback reason: {reason}")
+    for token in (
+        "b24_source_window_feature_authority",
+        "source_snapshot_hash",
+        "freshness_status",
+        "idx_b24_feature_authority_tenant_model_window",
+        "tenant_isolation_policy_b24_source_window_feature_authority",
+    ):
+        _require(
+            token in canonical and token in feature_authority_migration,
+            f"feature authority schema missing: {token}",
+        )
     for index_name in (
         "idx_b24_p4_attribution_events_campaign_cardinality",
         "idx_b24_p4_match_verdicts_provider_cardinality",
@@ -572,17 +623,16 @@ def run_negative_control(root: Path) -> None:
             "UNION deduplication",
         ),
         (
-            "missing_early_stop",
+            "raw_source_recursive_cardinality",
             lambda: validate_resource_profile_module_texts(
                 root,
                 input_text=_read(root, INPUT_PROFILE),
-                eligibility_text=_read(root, ELIGIBILITY).replace(
-                    "WITH RECURSIVE", "WITH", 1
-                ),
+                eligibility_text=_read(root, ELIGIBILITY)
+                + "\ncampaign_feature_keys AS (SELECT campaign_id FROM public.attribution_events)\n",
                 design_text=_read(root, DESIGN_ENVELOPE),
                 graph_text=_read(root, GRAPH_ENVELOPE),
             ),
-            "early-stop",
+            "raw-source",
         ),
         (
             "tiny_fixture_only_proof",
@@ -599,19 +649,48 @@ def run_negative_control(root: Path) -> None:
             "SETTINGS",
         ),
         (
+            "raw_source_feature_authority",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY),
+                authority_text=_read(root, FEATURE_AUTHORITY)
+                + "\nSELECT provider FROM public.b23_revenue_events\n",
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+            ),
+            "raw source",
+        ),
+        (
+            "stale_authority_approval",
+            lambda: validate_resource_profile_module_texts(
+                root,
+                input_text=_read(root, INPUT_PROFILE),
+                eligibility_text=_read(root, ELIGIBILITY),
+                authority_text=_read(root, FEATURE_AUTHORITY).replace(
+                    "authority.freshness_status != FeatureAuthorityStatus.FRESH",
+                    "False",
+                    1,
+                ),
+                design_text=_read(root, DESIGN_ENVELOPE),
+                graph_text=_read(root, GRAPH_ENVELOPE),
+            ),
+            "stale authority",
+        ),
+        (
             "partial_index_only_proof",
             lambda: validate_resource_profile_module_texts(
                 root,
                 input_text=_read(root, INPUT_PROFILE).replace(
-                    "true_next_key_early_stop_cap_plus_one_v1",
-                    "partial_index_only_v1",
+                    "feature_authority.provider_count",
+                    "preflight.provider_count",
                     1,
                 ),
                 eligibility_text=_read(root, ELIGIBILITY),
                 design_text=_read(root, DESIGN_ENVELOPE),
                 graph_text=_read(root, GRAPH_ENVELOPE),
             ),
-            "true_next_key",
+            "feature_authority",
         ),
         (
             "dummy_allocation",
@@ -626,7 +705,7 @@ def run_negative_control(root: Path) -> None:
             lambda: validate_resource_profile_texts(
                 root,
                 _read(root, INPUT_PROFILE).replace(
-                    "provider_count=int(preflight.provider_count)",
+                    "provider_count=int(feature_authority.provider_count)",
                     "provider_count=0",
                     1,
                 ),
@@ -638,7 +717,7 @@ def run_negative_control(root: Path) -> None:
             lambda: validate_resource_profile_texts(
                 root,
                 _read(root, INPUT_PROFILE).replace(
-                    "campaign_or_feature_count=int(preflight.campaign_or_feature_count)",
+                    "campaign_or_feature_count=int(feature_authority.campaign_or_feature_count)",
                     "campaign_or_feature_count=0",
                     1,
                 ),
@@ -699,10 +778,14 @@ def validate_resource_profile_module_texts(
     eligibility_text: str,
     design_text: str,
     graph_text: str,
+    authority_text: str | None = None,
     db_work_text: str | None = None,
 ) -> None:
     profile_text = _read(root, RESOURCE_PROFILE)
     contract_text = _read(root, MODEL_FAMILY_CONTRACT)
+    authority_text = (
+        authority_text if authority_text is not None else _read(root, FEATURE_AUTHORITY)
+    )
     db_work_text = (
         db_work_text if db_work_text is not None else _read(root, CARDINALITY_DB_WORK)
     )
@@ -710,6 +793,7 @@ def validate_resource_profile_module_texts(
         [
             input_text,
             eligibility_text,
+            authority_text,
             design_text,
             graph_text,
             contract_text,
@@ -740,17 +824,36 @@ def validate_resource_profile_module_texts(
         re.search(r"\bUNION\b(?!\s+ALL)", eligibility_text, re.IGNORECASE) is None,
         "provider/campaign cardinality must not use UNION deduplication",
     )
+    for forbidden in (
+        "campaign_feature_keys",
+        "provider_keys",
+        "candidate.campaign_id >",
+        "candidate.provider >",
+    ):
+        _require(
+            forbidden not in eligibility_text,
+            f"raw-source cardinality discovery forbidden: {forbidden}",
+        )
     _require(
-        "WITH RECURSIVE" in eligibility_text
-        and "CROSS JOIN LATERAL" in eligibility_text
-        and "campaign_feature_cap_plus_one" in eligibility_text
-        and "provider_cap_plus_one" in eligibility_text,
-        "true next-key early-stop cardinality missing",
+        "b24_source_window_feature_authority" in authority_text
+        and "source_snapshot_hash = :source_snapshot_hash" in authority_text,
+        "source-window feature authority missing",
     )
     _require(
-        "true_next_key_early_stop_cap_plus_one_v1" in input_text,
-        "true_next_key policy proof missing",
+        "authority.freshness_status != FeatureAuthorityStatus.FRESH" in authority_text,
+        "stale authority fail-closed check missing",
     )
+    for forbidden in (
+        "public.attribution_events",
+        "public.b23_match_verdicts",
+        "public.b23_revenue_events",
+        "COUNT(DISTINCT",
+        "GROUP BY",
+    ):
+        _require(
+            forbidden.lower() not in authority_text.lower(),
+            f"feature authority must not discover raw source cardinality: {forbidden}",
+        )
     for required in ("ANALYZE", "BUFFERS", "VERBOSE", "SETTINGS", "work_mem"):
         _require(
             required in db_work_text,
@@ -765,8 +868,8 @@ def validate_resource_profile_module_texts(
         "silent zero campaign_or_feature_count placeholder forbidden",
     )
     for required in (
-        "preflight.provider_count",
-        "preflight.campaign_or_feature_count",
+        "feature_authority.provider_count",
+        "feature_authority.campaign_or_feature_count",
         "cardinality_profiled_dimensions",
     ):
         _require(

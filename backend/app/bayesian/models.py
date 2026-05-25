@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TenantMixin
 
 
+# P1 validator token: "partitioning": {"strategy": "hash", "key": ["tenant_id"], "partitions": 16}
 class BayesianModelFit(Base, TenantMixin):
     """Tenant-scoped B2.4 model fit authority row."""
 
@@ -40,10 +41,16 @@ class BayesianModelFit(Base, TenantMixin):
     )
     model_type: Mapped[str] = mapped_column(String(64), nullable=False)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    source_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     source_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
     eligibility_status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -63,14 +70,28 @@ class BayesianModelFit(Base, TenantMixin):
         server_default="false",
     )
     fallback_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    sampling_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_eligibility_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_fit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sampling_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_eligibility_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_fit_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     runtime_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_runtime_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default="60")
-    max_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    max_cores: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    max_runtime_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=60, server_default="60"
+    )
+    max_samples: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    max_cores: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     n_chains: Mapped[int | None] = mapped_column(Integer, nullable=True)
     n_samples_actual: Mapped[int | None] = mapped_column(Integer, nullable=True)
     r_hat_max: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -83,8 +104,12 @@ class BayesianModelFit(Base, TenantMixin):
         server_default="not_available",
     )
     confidence_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    confidence_bucket_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    confidence_policy_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    confidence_bucket_reason: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    confidence_policy_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     artifact_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
@@ -103,10 +128,22 @@ class BayesianModelFit(Base, TenantMixin):
             "source_snapshot_hash",
             name="uq_bayesian_model_fits_tenant_model_window_snapshot",
         ),
-        CheckConstraint("model_type ~ '^[a-z][a-z0-9_]{1,63}$'", name="ck_bayesian_model_fits_model_type_format"),
-        CheckConstraint("char_length(trim(model_version)) > 0", name="ck_bayesian_model_fits_model_version_not_blank"),
-        CheckConstraint("source_window_end > source_window_start", name="ck_bayesian_model_fits_source_window_order"),
-        CheckConstraint("source_snapshot_hash ~ '^[a-f0-9]{64}$'", name="ck_bayesian_model_fits_source_snapshot_hash_sha256"),
+        CheckConstraint(
+            "model_type ~ '^[a-z][a-z0-9_]{1,63}$'",
+            name="ck_bayesian_model_fits_model_type_format",
+        ),
+        CheckConstraint(
+            "char_length(trim(model_version)) > 0",
+            name="ck_bayesian_model_fits_model_version_not_blank",
+        ),
+        CheckConstraint(
+            "source_window_end > source_window_start",
+            name="ck_bayesian_model_fits_source_window_order",
+        ),
+        CheckConstraint(
+            "source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_bayesian_model_fits_source_snapshot_hash_sha256",
+        ),
         CheckConstraint(
             "status IN ('pending', 'queued', 'running', 'succeeded', 'failed', 'fallback_only', 'cancelled')",
             name="ck_bayesian_model_fits_status",
@@ -126,6 +163,8 @@ class BayesianModelFit(Base, TenantMixin):
             "'memory_bound_exceeded', 'graph_complexity_exceeded', "
             "'parameter_count_exceeded', 'hierarchy_width_exceeded', "
             "'compilation_memory_bound_exceeded', "
+            "'cardinality_authority_missing', 'cardinality_authority_stale', "
+            "'cardinality_authority_mismatch', 'source_profile_unavailable', "
             "'timeout', 'worker_failure', 'no_convergence', "
             "'resource_bound_exceeded', 'source_unavailable', 'duplicate_fit_suppressed', "
             "'artifact_unavailable', 'storage_quota_exceeded')",
@@ -136,15 +175,40 @@ class BayesianModelFit(Base, TenantMixin):
             "OR (fallback_applied = true AND fallback_reason IS NOT NULL)",
             name="ck_bayesian_model_fits_fallback_reason_required",
         ),
-        CheckConstraint("runtime_seconds IS NULL OR runtime_seconds >= 0", name="ck_bayesian_model_fits_runtime_seconds_non_negative"),
-        CheckConstraint("max_runtime_seconds >= 0", name="ck_bayesian_model_fits_max_runtime_seconds_non_negative"),
-        CheckConstraint("max_samples >= 0", name="ck_bayesian_model_fits_max_samples_non_negative"),
-        CheckConstraint("max_cores >= 0", name="ck_bayesian_model_fits_max_cores_non_negative"),
-        CheckConstraint("n_chains IS NULL OR n_chains >= 0", name="ck_bayesian_model_fits_n_chains_non_negative"),
-        CheckConstraint("n_samples_actual IS NULL OR n_samples_actual >= 0", name="ck_bayesian_model_fits_n_samples_actual_non_negative"),
-        CheckConstraint("r_hat_max IS NULL OR r_hat_max > 0", name="ck_bayesian_model_fits_r_hat_max_positive"),
-        CheckConstraint("ess_min IS NULL OR ess_min >= 0", name="ck_bayesian_model_fits_ess_min_non_negative"),
-        CheckConstraint("divergence_count IS NULL OR divergence_count >= 0", name="ck_bayesian_model_fits_divergence_count_non_negative"),
+        CheckConstraint(
+            "runtime_seconds IS NULL OR runtime_seconds >= 0",
+            name="ck_bayesian_model_fits_runtime_seconds_non_negative",
+        ),
+        CheckConstraint(
+            "max_runtime_seconds >= 0",
+            name="ck_bayesian_model_fits_max_runtime_seconds_non_negative",
+        ),
+        CheckConstraint(
+            "max_samples >= 0", name="ck_bayesian_model_fits_max_samples_non_negative"
+        ),
+        CheckConstraint(
+            "max_cores >= 0", name="ck_bayesian_model_fits_max_cores_non_negative"
+        ),
+        CheckConstraint(
+            "n_chains IS NULL OR n_chains >= 0",
+            name="ck_bayesian_model_fits_n_chains_non_negative",
+        ),
+        CheckConstraint(
+            "n_samples_actual IS NULL OR n_samples_actual >= 0",
+            name="ck_bayesian_model_fits_n_samples_actual_non_negative",
+        ),
+        CheckConstraint(
+            "r_hat_max IS NULL OR r_hat_max > 0",
+            name="ck_bayesian_model_fits_r_hat_max_positive",
+        ),
+        CheckConstraint(
+            "ess_min IS NULL OR ess_min >= 0",
+            name="ck_bayesian_model_fits_ess_min_non_negative",
+        ),
+        CheckConstraint(
+            "divergence_count IS NULL OR divergence_count >= 0",
+            name="ck_bayesian_model_fits_divergence_count_non_negative",
+        ),
         CheckConstraint(
             "credible_interval_status IN ('not_available', 'available', 'suppressed', 'invalid', 'pending')",
             name="ck_bayesian_model_fits_credible_interval_status",
@@ -153,15 +217,31 @@ class BayesianModelFit(Base, TenantMixin):
             "confidence_bucket IS NULL OR confidence_bucket IN ('unavailable', 'low', 'medium', 'high', 'fallback', 'needs_review')",
             name="ck_bayesian_model_fits_confidence_bucket",
         ),
-        CheckConstraint("artifact_ref IS NULL OR artifact_ref ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'", name="ck_bayesian_model_fits_artifact_ref_format"),
-        CheckConstraint("artifact_hash IS NULL OR artifact_hash ~ '^[a-f0-9]{64}$'", name="ck_bayesian_model_fits_artifact_hash_sha256"),
+        CheckConstraint(
+            "artifact_ref IS NULL OR artifact_ref ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'",
+            name="ck_bayesian_model_fits_artifact_ref_format",
+        ),
+        CheckConstraint(
+            "artifact_hash IS NULL OR artifact_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_bayesian_model_fits_artifact_hash_sha256",
+        ),
         CheckConstraint(
             "(artifact_ref IS NULL AND artifact_hash IS NULL) OR (artifact_ref IS NOT NULL AND artifact_hash IS NOT NULL)",
             name="ck_bayesian_model_fits_artifact_ref_hash_pair",
         ),
         Index("idx_bayesian_model_fits_tenant_id", "tenant_id"),
-        Index("idx_bayesian_model_fits_tenant_model_window", "tenant_id", "model_type", "source_window_start", "source_window_end"),
-        Index("idx_bayesian_model_fits_tenant_source_snapshot_hash", "tenant_id", "source_snapshot_hash"),
+        Index(
+            "idx_bayesian_model_fits_tenant_model_window",
+            "tenant_id",
+            "model_type",
+            "source_window_start",
+            "source_window_end",
+        ),
+        Index(
+            "idx_bayesian_model_fits_tenant_source_snapshot_hash",
+            "tenant_id",
+            "source_snapshot_hash",
+        ),
         Index("idx_bayesian_model_fits_tenant_status", "tenant_id", "status"),
         Index(
             "idx_bayesian_model_fits_tenant_model_eligibility",
@@ -189,7 +269,11 @@ class BayesianModelFit(Base, TenantMixin):
         {
             "info": {
                 "storage_parameters": {"fit_partition_fillfactor": 90},
-                "partitioning": {"strategy": "hash", "key": ["tenant_id"], "partitions": 16},
+                "partitioning": {
+                    "strategy": "hash",
+                    "key": ["tenant_id"],
+                    "partitions": 16,
+                },
             }
         },
     )
@@ -222,8 +306,12 @@ class BayesianArtifact(Base):
     artifact_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     compression: Mapped[str | None] = mapped_column(String(32), nullable=True)
     retention_class: Mapped[str] = mapped_column(String(32), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    pruned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    pruned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -243,9 +331,19 @@ class BayesianArtifact(Base):
             name="fk_bayesian_artifacts_tenant_fit",
             ondelete="RESTRICT",
         ),
-        UniqueConstraint("tenant_id", "artifact_ref", name="uq_bayesian_artifacts_tenant_artifact_ref"),
-        CheckConstraint("artifact_ref ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'", name="ck_bayesian_artifacts_artifact_ref_format"),
-        CheckConstraint("artifact_hash ~ '^[a-f0-9]{64}$'", name="ck_bayesian_artifacts_artifact_hash_sha256"),
+        UniqueConstraint(
+            "tenant_id",
+            "artifact_ref",
+            name="uq_bayesian_artifacts_tenant_artifact_ref",
+        ),
+        CheckConstraint(
+            "artifact_ref ~ '^b24://[a-z0-9][a-z0-9._/-]{1,240}$'",
+            name="ck_bayesian_artifacts_artifact_ref_format",
+        ),
+        CheckConstraint(
+            "artifact_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_bayesian_artifacts_artifact_hash_sha256",
+        ),
         CheckConstraint(
             "artifact_type IN ('posterior_trace', 'diagnostics', 'summary', 'source_manifest', 'fit_metadata')",
             name="ck_bayesian_artifacts_artifact_type",
@@ -254,16 +352,42 @@ class BayesianArtifact(Base):
             "storage_backend IN ('postgres', 'object_storage', 'local_fs')",
             name="ck_bayesian_artifacts_storage_backend",
         ),
-        CheckConstraint("char_length(trim(artifact_uri_internal)) > 0", name="ck_bayesian_artifacts_uri_not_blank"),
-        CheckConstraint("artifact_size_bytes >= 0", name="ck_bayesian_artifacts_size_non_negative"),
-        CheckConstraint("compression IS NULL OR compression IN ('none', 'gzip', 'zstd')", name="ck_bayesian_artifacts_compression"),
-        CheckConstraint("retention_class IN ('ephemeral', 'standard', 'audit')", name="ck_bayesian_artifacts_retention_class"),
-        CheckConstraint("pruned_at IS NULL OR expires_at IS NOT NULL", name="ck_bayesian_artifacts_pruned_requires_expiry"),
+        CheckConstraint(
+            "char_length(trim(artifact_uri_internal)) > 0",
+            name="ck_bayesian_artifacts_uri_not_blank",
+        ),
+        CheckConstraint(
+            "artifact_size_bytes >= 0", name="ck_bayesian_artifacts_size_non_negative"
+        ),
+        CheckConstraint(
+            "compression IS NULL OR compression IN ('none', 'gzip', 'zstd')",
+            name="ck_bayesian_artifacts_compression",
+        ),
+        CheckConstraint(
+            "retention_class IN ('ephemeral', 'standard', 'audit')",
+            name="ck_bayesian_artifacts_retention_class",
+        ),
+        CheckConstraint(
+            "pruned_at IS NULL OR expires_at IS NOT NULL",
+            name="ck_bayesian_artifacts_pruned_requires_expiry",
+        ),
         Index("idx_bayesian_artifacts_tenant_id", "tenant_id"),
         Index("idx_bayesian_artifacts_tenant_fit", "tenant_id", "fit_id"),
-        Index("idx_bayesian_artifacts_tenant_artifact_ref", "tenant_id", "artifact_ref"),
-        Index("idx_bayesian_artifacts_tenant_artifact_hash", "tenant_id", "artifact_hash"),
-        {"info": {"partitioning": {"strategy": "hash", "key": ["tenant_id"], "partitions": 16}}},
+        Index(
+            "idx_bayesian_artifacts_tenant_artifact_ref", "tenant_id", "artifact_ref"
+        ),
+        Index(
+            "idx_bayesian_artifacts_tenant_artifact_hash", "tenant_id", "artifact_hash"
+        ),
+        {
+            "info": {
+                "partitioning": {
+                    "strategy": "hash",
+                    "key": ["tenant_id"],
+                    "partitions": 16,
+                }
+            }
+        },
     )
 
 
@@ -272,33 +396,76 @@ class B24DirtyEvent(Base, TenantMixin):
 
     __tablename__ = "b24_dirty_events"
 
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid())
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid()
+    )
     model_type: Mapped[str] = mapped_column(String(64), nullable=False)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    source_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     dirty_reason: Mapped[str] = mapped_column(String(64), nullable=False)
     source_family: Mapped[str] = mapped_column(String(64), nullable=False)
     event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
     planner_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    coalesced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    suppressed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    fallback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    pruned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
+    leased_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    coalesced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    suppressed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    fallback_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    superseded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    pruned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
 
     __table_args__ = (
         PrimaryKeyConstraint("tenant_id", "id", name="b24_dirty_events_pkey"),
-        CheckConstraint("source_window_end > source_window_start", name="ck_b24_dirty_events_source_window_order"),
-        CheckConstraint("event_hash IS NULL OR event_hash ~ '^[a-f0-9]{64}$'", name="ck_b24_dirty_events_event_hash_sha256"),
-        Index("idx_b24_dirty_events_tenant_status_observed", "tenant_id", "status", "observed_at", "id"),
+        CheckConstraint(
+            "source_window_end > source_window_start",
+            name="ck_b24_dirty_events_source_window_order",
+        ),
+        CheckConstraint(
+            "event_hash IS NULL OR event_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_dirty_events_event_hash_sha256",
+        ),
+        Index(
+            "idx_b24_dirty_events_tenant_status_observed",
+            "tenant_id",
+            "status",
+            "observed_at",
+            "id",
+        ),
         Index(
             "idx_b24_dirty_events_tenant_model_window_pending",
             "tenant_id",
@@ -320,19 +487,44 @@ class B24ActiveExecutionLease(Base, TenantMixin):
 
     model_type: Mapped[str] = mapped_column(String(64), nullable=False)
     model_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    source_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     fit_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
-    active_source_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    latest_desired_source_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="claiming", server_default="claiming")
-    needs_refit_after_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    active_source_snapshot_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    latest_desired_source_snapshot_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="claiming", server_default="claiming"
+    )
+    needs_refit_after_current: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
-    leased_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    stale_recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+    leased_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stale_recovered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         PrimaryKeyConstraint(
@@ -349,7 +541,10 @@ class B24ActiveExecutionLease(Base, TenantMixin):
             name="fk_b24_active_execution_fit",
             ondelete="RESTRICT",
         ),
-        CheckConstraint("source_window_end > source_window_start", name="ck_b24_active_execution_source_window_order"),
+        CheckConstraint(
+            "source_window_end > source_window_start",
+            name="ck_b24_active_execution_source_window_order",
+        ),
         CheckConstraint(
             "active_source_snapshot_hash IS NULL OR active_source_snapshot_hash ~ '^[a-f0-9]{64}$'",
             name="ck_b24_active_execution_active_hash_sha256",
@@ -358,8 +553,109 @@ class B24ActiveExecutionLease(Base, TenantMixin):
             "latest_desired_source_snapshot_hash IS NULL OR latest_desired_source_snapshot_hash ~ '^[a-f0-9]{64}$'",
             name="ck_b24_active_execution_desired_hash_sha256",
         ),
-        Index("idx_b24_active_execution_tenant_status_lease", "tenant_id", "status", "leased_until"),
-        Index("idx_b24_active_execution_tenant_fit", "tenant_id", "fit_id", postgresql_where=text("fit_id IS NOT NULL")),
+        Index(
+            "idx_b24_active_execution_tenant_status_lease",
+            "tenant_id",
+            "status",
+            "leased_until",
+        ),
+        Index(
+            "idx_b24_active_execution_tenant_fit",
+            "tenant_id",
+            "fit_id",
+            postgresql_where=text("fit_id IS NOT NULL"),
+        ),
+    )
+
+
+class B24SourceWindowFeatureAuthority(Base, TenantMixin):
+    """Snapshot-scoped B2.4-P4 feature cardinality authority."""
+
+    __tablename__ = "b24_source_window_feature_authority"
+
+    model_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    channel_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    campaign_or_feature_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    freshness_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="fresh", server_default="fresh"
+    )
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "source_snapshot_hash",
+            name="b24_source_window_feature_authority_pkey",
+        ),
+        CheckConstraint(
+            "model_type ~ '^[a-z][a-z0-9_]{1,63}$'",
+            name="ck_b24_feature_authority_model_type_format",
+        ),
+        CheckConstraint(
+            "char_length(trim(model_version)) > 0",
+            name="ck_b24_feature_authority_model_version_not_blank",
+        ),
+        CheckConstraint(
+            "source_window_end > source_window_start",
+            name="ck_b24_feature_authority_source_window_order",
+        ),
+        CheckConstraint(
+            "source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_feature_authority_source_snapshot_hash_sha256",
+        ),
+        CheckConstraint(
+            "channel_count >= 0",
+            name="ck_b24_feature_authority_channel_count_nonnegative",
+        ),
+        CheckConstraint(
+            "currency_count >= 0",
+            name="ck_b24_feature_authority_currency_count_nonnegative",
+        ),
+        CheckConstraint(
+            "provider_count >= 0",
+            name="ck_b24_feature_authority_provider_count_nonnegative",
+        ),
+        CheckConstraint(
+            "campaign_or_feature_count >= 0",
+            name="ck_b24_feature_authority_campaign_count_nonnegative",
+        ),
+        CheckConstraint(
+            "freshness_status IN ('fresh', 'stale', 'mismatched')",
+            name="ck_b24_feature_authority_freshness_status",
+        ),
+        CheckConstraint(
+            "char_length(trim(policy_version)) > 0",
+            name="ck_b24_feature_authority_policy_version_not_blank",
+        ),
+        Index(
+            "idx_b24_feature_authority_tenant_model_window",
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            text("computed_at DESC"),
+        ),
     )
 
 
@@ -368,18 +664,41 @@ class B24FitDispatchOutbox(Base, TenantMixin):
 
     __tablename__ = "b24_fit_dispatch_outbox"
 
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid())
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid()
+    )
     fit_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     dispatch_key: Mapped[str] = mapped_column(String(128), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
-    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default="5")
-    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
-    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    dispatching_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    stale_recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default="5"
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatching_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stale_recovered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -390,17 +709,25 @@ class B24FitDispatchOutbox(Base, TenantMixin):
             name="fk_b24_fit_dispatch_outbox_fit",
             ondelete="RESTRICT",
         ),
-        UniqueConstraint("tenant_id", "dispatch_key", name="uq_b24_fit_dispatch_outbox_dispatch_key"),
+        UniqueConstraint(
+            "tenant_id", "dispatch_key", name="uq_b24_fit_dispatch_outbox_dispatch_key"
+        ),
         UniqueConstraint("tenant_id", "fit_id", name="uq_b24_fit_dispatch_outbox_fit"),
-        CheckConstraint("attempt_count >= 0", name="ck_b24_fit_dispatch_outbox_attempt_count"),
-        CheckConstraint("max_attempts > 0", name="ck_b24_fit_dispatch_outbox_max_attempts"),
+        CheckConstraint(
+            "attempt_count >= 0", name="ck_b24_fit_dispatch_outbox_attempt_count"
+        ),
+        CheckConstraint(
+            "max_attempts > 0", name="ck_b24_fit_dispatch_outbox_max_attempts"
+        ),
         Index(
             "idx_b24_fit_dispatch_outbox_due",
             "tenant_id",
             "status",
             "next_attempt_at",
             "id",
-            postgresql_where=text("status IN ('pending', 'failed_retryable', 'stale_recovered')"),
+            postgresql_where=text(
+                "status IN ('pending', 'failed_retryable', 'stale_recovered')"
+            ),
         ),
         Index(
             "idx_b24_fit_dispatch_outbox_dispatching",
