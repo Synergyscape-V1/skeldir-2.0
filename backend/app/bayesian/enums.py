@@ -50,6 +50,8 @@ class FallbackReason(StrEnum):
     CARDINALITY_AUTHORITY_MISSING = "cardinality_authority_missing"
     CARDINALITY_AUTHORITY_STALE = "cardinality_authority_stale"
     CARDINALITY_AUTHORITY_MISMATCH = "cardinality_authority_mismatch"
+    CARDINALITY_AUTHORITY_TIMEOUT = "cardinality_authority_timeout"
+    CARDINALITY_AUTHORITY_BUILD_FAILED = "cardinality_authority_build_failed"
     SOURCE_PROFILE_UNAVAILABLE = "source_profile_unavailable"
     TIMEOUT = "timeout"
     WORKER_FAILURE = "worker_failure"

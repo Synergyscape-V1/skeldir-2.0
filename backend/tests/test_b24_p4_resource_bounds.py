@@ -10,6 +10,10 @@ import pytest
 
 from app.bayesian.design_matrix_envelope import estimate_design_matrix_envelope
 from app.bayesian.enums import FallbackReason
+from app.bayesian.authority_liveness import (
+    AuthorityBuildStatus,
+    request_feature_authority_build,
+)
 from app.bayesian.cardinality_db_work import (
     CardinalityDBWorkBudgetError,
     CardinalityPlanEvidence,
@@ -52,10 +56,15 @@ DESIGN_ENVELOPE = REPO_ROOT / "backend/app/bayesian/design_matrix_envelope.py"
 GRAPH_ENVELOPE = REPO_ROOT / "backend/app/bayesian/graph_complexity_envelope.py"
 RESOURCE_PROFILE = REPO_ROOT / "backend/app/bayesian/resource_profile.py"
 FEATURE_AUTHORITY = REPO_ROOT / "backend/app/bayesian/feature_authority.py"
+AUTHORITY_LIVENESS = REPO_ROOT / "backend/app/bayesian/authority_liveness.py"
 MODELS = REPO_ROOT / "backend/app/bayesian/models.py"
 FEATURE_AUTHORITY_MIGRATION = (
     REPO_ROOT
     / "alembic/versions/007_skeldir_foundation/202605251200_b24_p4_feature_authority.py"
+)
+AUTHORITY_LIVENESS_MIGRATION = (
+    REPO_ROOT
+    / "alembic/versions/007_skeldir_foundation/202605251430_b24_p4_authority_liveness.py"
 )
 
 
@@ -124,7 +133,13 @@ def _snapshot_from_profile(profile: B24InputProfile):
         },
     )
     return SimpleNamespace(
-        source_snapshot_hash=profile.source_snapshot_hash, preflight=preflight
+        tenant_id=profile.tenant_id,
+        model_type=profile.model_type,
+        model_version=profile.model_version,
+        source_window_start=profile.source_window_start,
+        source_window_end=profile.source_window_end,
+        source_snapshot_hash=profile.source_snapshot_hash,
+        preflight=preflight,
     )
 
 
@@ -180,6 +195,9 @@ class _FakeMappings:
     def one_or_none(self):
         return self._row
 
+    def one(self):
+        return self._row
+
 
 class _FakeResult:
     def __init__(self, row):
@@ -187,6 +205,9 @@ class _FakeResult:
 
     def mappings(self):
         return _FakeMappings(self._row)
+
+    def scalar_one(self):
+        return self._row
 
 
 class _FakeAuthoritySession:
@@ -399,9 +420,219 @@ def test_b24_p4_async_campaign_arrival_after_rollup_blocks_approval() -> None:
 
 
 def test_b24_p4_rollup_lag_creates_non_dispatchable_state() -> None:
-    text = _read(FIT_PLANNER) + _read(REPOSITORY)
-    assert "upsert_feature_authority_fallback_from_snapshot" in text
+    text = _read(FIT_PLANNER) + _read(AUTHORITY_LIVENESS)
+    assert "request_feature_authority_build" in text
+    assert "authority_waiting" in text
     assert "INSERT INTO public.b24_fit_dispatch_outbox" not in _read(REPOSITORY)
+
+
+def test_b24_p4_missing_authority_yields_transient_state_not_fallback_only() -> None:
+    text = _read(FIT_PLANNER)
+    authority_branch = text[
+        text.find("except FeatureAuthorityUnavailable") : text.find(
+            "assert feature_authority is not None"
+        )
+    ]
+    assert "request_feature_authority_build" in authority_branch
+    assert "mark_authority_waiting_dirty_events" in authority_branch
+    assert 'status="fallback_only"' not in authority_branch
+
+
+def test_b24_p4_stale_authority_yields_transient_state_not_fallback_only() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(FIT_PLANNER)
+    assert "cardinality_authority_stale" in text
+    assert "authority_waiting" in text
+    assert "AuthorityBuildStatus.TIMEOUT" in text
+
+
+def test_b24_p4_mismatched_authority_yields_transient_state_not_fallback_only() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(FIT_PLANNER)
+    assert "cardinality_authority_mismatch" in text
+    assert "source_snapshot_hash" in text
+    assert "authority_waiting" in text
+
+
+def test_b24_p4_authority_yield_creates_no_dispatchable_outbox() -> None:
+    branch = _read(FIT_PLANNER)
+    branch = branch[
+        branch.find("except FeatureAuthorityUnavailable") : branch.find(
+            "assert feature_authority is not None"
+        )
+    ]
+    assert "INSERT INTO public.b24_fit_dispatch_outbox" not in branch
+    assert "claim_fit_for_snapshot" not in branch
+
+
+def test_b24_p4_authority_yield_does_not_claim_fit() -> None:
+    text = _read(FIT_PLANNER)
+    authority_branch = text[
+        text.find("except FeatureAuthorityUnavailable") : text.find(
+            "assert feature_authority is not None"
+        )
+    ]
+    assert "claim_fit_for_snapshot" not in authority_branch
+    assert (
+        "upsert_feature_authority_fallback_from_snapshot"
+        not in authority_branch[: authority_branch.find("AuthorityBuildStatus.TIMEOUT")]
+    )
+
+
+def test_b24_p4_authority_yield_preserves_retry_intent() -> None:
+    text = (
+        _read(AUTHORITY_LIVENESS)
+        + _read(FIT_PLANNER)
+        + _read(AUTHORITY_LIVENESS_MIGRATION)
+    )
+    for token in (
+        "b24_feature_authority_build_requests",
+        "retry_count",
+        "retry_after_at",
+        "max_retries",
+        "source_snapshot_hash",
+        "authority_waiting",
+    ):
+        assert token in text
+
+
+@pytest.mark.asyncio
+async def test_b24_p4_authority_build_request_is_created_idempotently() -> None:
+    profile = _profile()
+    returned = {
+        "tenant_id": profile.tenant_id,
+        "model_type": profile.model_type,
+        "model_version": profile.model_version,
+        "source_window_start": profile.source_window_start,
+        "source_window_end": profile.source_window_end,
+        "source_snapshot_hash": profile.source_snapshot_hash,
+        "status": "authority_build_requested",
+        "retry_count": 0,
+        "max_retries": 5,
+        "retry_after_at": profile.computed_at,
+        "terminal_reason": None,
+    }
+    session = _FakeAuthoritySession(exact_row=returned)
+    result = await request_feature_authority_build(
+        session,
+        snapshot=_snapshot_from_profile(profile),
+        reason=FallbackReason.CARDINALITY_AUTHORITY_MISSING,
+        detail="missing",
+    )
+    assert result.status == AuthorityBuildStatus.BUILD_REQUESTED
+    assert "ON CONFLICT" in _read(AUTHORITY_LIVENESS)
+
+
+def test_b24_p4_authority_completion_reactivates_planner() -> None:
+    text = _read(FEATURE_AUTHORITY) + _read(AUTHORITY_LIVENESS)
+    assert "reactivate_planner_for_feature_authority" in text
+    assert "feature_authority_fresh" in text
+    assert "INSERT INTO public.b24_dirty_events" in text
+
+
+def test_b24_p4_stale_wait_retries_without_new_webhook() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "sweep_authority_waiting_requests" in text
+    assert "authority_retry_ready" in text
+    assert "JOIN public.b24_source_window_feature_authority" in text
+
+
+def test_b24_p4_reactivation_is_source_snapshot_scoped() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "source_snapshot_hash = :source_snapshot_hash" in text
+    assert "source_event_id" in text
+
+
+def test_b24_p4_reactivation_is_idempotent() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "status IN (" in text
+    assert "'authority_completed'" in text
+    assert "FROM transitioned" in text
+
+
+def test_b24_p4_reactivation_respects_p3_preflight_lock() -> None:
+    planner = _read(FIT_PLANNER)
+    assert "status IN ('pending', 'authority_retry_ready')" in planner
+    assert planner.find("lease_debounced_dirty_candidates") < planner.find(
+        "preflight_lease = await acquire_preflight_lease"
+    )
+
+
+def test_b24_p4_reactivation_respects_active_execution_lock() -> None:
+    text = _read(FIT_PLANNER) + _read(AUTHORITY_LIVENESS)
+    assert "claim_fit_for_snapshot" in text
+    assert "acquire_preflight_lease" in text
+    assert "authority_retry_ready" in text
+
+
+def test_b24_p4_authority_wait_retry_budget_terminalizes_safely() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(FIT_PLANNER)
+    assert "max_retries" in text
+    assert "cardinality_authority_timeout" in text
+    assert "AuthorityBuildStatus.TIMEOUT" in text
+
+
+def test_b24_p4_authority_timeout_is_distinct_from_fallback_only() -> None:
+    text = (
+        _read(AUTHORITY_LIVENESS)
+        + _read(REPOSITORY)
+        + _read(AUTHORITY_LIVENESS_MIGRATION)
+    )
+    assert "cardinality_authority_timeout" in text
+    assert "cardinality_authority_build_failed" in text
+
+
+def test_b24_p4_validator_rejects_authority_missing_to_fallback_only() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_PLANNER).replace(
+        "await mark_authority_waiting_dirty_events",
+        'mark_dirty_events_for_candidate  # status="fallback_only"',
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="authority-yield"):
+        validator.validate_authority_liveness_texts(
+            REPO_ROOT,
+            planner_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_stale_wait_without_reactivation() -> None:
+    validator = _load_validator()
+    mutated = _read(AUTHORITY_LIVENESS).replace(
+        "def sweep_authority_waiting_requests",
+        "def missing_sweeper",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="sweeper"):
+        validator.validate_authority_liveness_texts(
+            REPO_ROOT,
+            liveness_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_reactivation_without_source_snapshot_hash() -> None:
+    validator = _load_validator()
+    mutated = _read(AUTHORITY_LIVENESS).replace(
+        "AND source_snapshot_hash = :source_snapshot_hash",
+        "",
+    )
+    with pytest.raises(validator.ValidationError, match="source_snapshot_hash"):
+        validator.validate_authority_liveness_texts(
+            REPO_ROOT,
+            liveness_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_authority_retry_bypassing_p3_locks() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_PLANNER).replace(
+        "status IN ('pending', 'authority_retry_ready')",
+        "status = 'pending'",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="normal dirty-event"):
+        validator.validate_authority_liveness_texts(
+            REPO_ROOT,
+            planner_text=mutated,
+        )
 
 
 def test_b24_p4_vocabulary_upsert_is_tenant_window_snapshot_feature_scoped() -> None:
@@ -713,6 +944,18 @@ def test_b24_p4_live_provider_count_above_cap_fallback_feature_width_exceeded() 
     assert decision.failure_reason == FallbackReason.FEATURE_WIDTH_EXCEEDED
 
 
+def test_b24_p4_fresh_authority_after_yield_runs_feature_width_check() -> None:
+    profile = _profile(
+        campaign_or_feature_count=B24_RESOURCE_POLICY.max_campaigns_or_feature_keys + 1
+    )
+    decision = evaluate_source_snapshot_resource_bounds(
+        snapshot=_snapshot_from_profile(profile),
+        preflight_lease_id="lease",
+        feature_authority=_authority_from_profile(profile),
+    )
+    assert decision.failure_reason == FallbackReason.FEATURE_WIDTH_EXCEEDED
+
+
 def test_b24_p4_low_channel_high_campaign_count_fails_feature_width() -> None:
     decision = _decision(
         _profile(
@@ -764,6 +1007,18 @@ def test_b24_p4_high_sparse_feature_count_fails_graph_complexity_even_with_low_r
             touchpoint_count=10,
             conversion_count=40,
             channel_count=2,
+            campaign_or_feature_count=B24_RESOURCE_POLICY.max_levels_per_hierarchy + 1,
+        )
+    )
+    assert decision.failure_reason == FallbackReason.HIERARCHY_WIDTH_EXCEEDED
+
+
+def test_b24_p4_fresh_authority_after_yield_runs_graph_complexity_check() -> None:
+    decision = _decision(
+        _profile(
+            source_row_count=100,
+            touchpoint_count=10,
+            conversion_count=40,
             campaign_or_feature_count=B24_RESOURCE_POLICY.max_levels_per_hierarchy + 1,
         )
     )
