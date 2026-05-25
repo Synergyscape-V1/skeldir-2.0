@@ -8,6 +8,10 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from app.bayesian.feature_authority import (
+    FeatureAuthorityUnavailable,
+    load_source_window_feature_authority,
+)
 from app.bayesian.fit_claim import FitClaimResult, claim_fit_for_snapshot
 from app.bayesian.preflight_lease import (
     PreflightLeaseResult,
@@ -68,9 +72,15 @@ async def lease_debounced_dirty_candidates(
 ) -> list[DirtyPlanningCandidate]:
     """Lease debounced dirty rows using FOR UPDATE SKIP LOCKED."""
 
-    quiet_cutoff = datetime.now(timezone.utc) - timedelta(seconds=max(1, quiet_period_seconds))
-    stale_cutoff = datetime.now(timezone.utc) - timedelta(seconds=max(quiet_period_seconds, max_wait_seconds))
-    lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=DIRTY_EVENT_LEASE_SECONDS)
+    quiet_cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=max(1, quiet_period_seconds)
+    )
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=max(quiet_period_seconds, max_wait_seconds)
+    )
+    lease_expires_at = datetime.now(timezone.utc) + timedelta(
+        seconds=DIRTY_EVENT_LEASE_SECONDS
+    )
     async with get_session(tenant_id) as session:
         result = await session.execute(
             text(
@@ -292,9 +302,58 @@ async def plan_candidate(
             fallback_only=True,
         )
 
+    authority_failed = False
+    feature_authority = None
+    async with get_session(candidate.tenant_id) as session:
+        try:
+            feature_authority = await load_source_window_feature_authority(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                source_snapshot_hash=snapshot.source_snapshot_hash,
+            )
+        except FeatureAuthorityUnavailable as exc:
+            repo = BayesianFitRepository(session)
+            fit_id = await repo.upsert_feature_authority_fallback_from_snapshot(
+                snapshot=snapshot,
+                fallback_reason=exc.reason,
+                detail=exc.detail,
+            )
+            await terminalize_preflight_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                fit_id=fit_id,
+                terminal_status="fallback_only",
+            )
+            authority_failed = True
+
+    if authority_failed:
+        await mark_dirty_events_for_candidate(
+            tenant_id=candidate.tenant_id,
+            candidate=candidate,
+            status="fallback_only",
+        )
+        return PlannedFitIntent(
+            candidate=candidate,
+            snapshot=snapshot,
+            preflight_lease=preflight_lease,
+            resource_decision=None,
+            claim=None,
+            fallback_only=True,
+        )
+
+    assert feature_authority is not None
     resource_decision = evaluate_source_snapshot_resource_bounds(
         snapshot=snapshot,
         preflight_lease_id=preflight_lease.preflight_lease_id,
+        feature_authority=feature_authority,
     )
     if not resource_decision.allowed:
         async with get_session(candidate.tenant_id) as session:

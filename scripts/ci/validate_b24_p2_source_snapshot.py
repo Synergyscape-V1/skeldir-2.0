@@ -295,9 +295,8 @@ def validate_eligibility(root: Path, text: str | None = None) -> None:
     _require(
         "WITH RECURSIVE" in text
         and "CROSS JOIN LATERAL" in text
-        and "channel_cap_plus_one" in text
-        and "campaign_feature_cap_plus_one" in text,
-        "preflight must use bounded next-key source feature cardinality",
+        and "channel_cap_plus_one" in text,
+        "preflight must use bounded next-key channel privacy cardinality",
     )
     _require("sum(" in text.lower(), "preflight must aggregate amount by currency")
     _require(
