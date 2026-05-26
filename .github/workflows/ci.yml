@@ -3967,6 +3967,7 @@ jobs:
     if: always()
     permissions:
       actions: read
+      checks: read
       contents: read
     steps:
       - name: Checkout code
@@ -3981,7 +3982,7 @@ jobs:
 
       - name: Generate and validate EG-5 proof pack
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python scripts/phase_gates/generate_value_trace_proof_pack.py
 

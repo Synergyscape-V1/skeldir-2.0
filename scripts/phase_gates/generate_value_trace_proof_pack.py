@@ -52,6 +52,7 @@ def _required_env(name: str) -> str:
 def _api_get_json(url: str, *, token: str) -> Dict[str, Any]:
     req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
     req.add_header("User-Agent", "skeldir-eg5-proof-pack")
     req.add_header("Authorization", f"Bearer {token}")
     last_error: Exception | None = None
@@ -72,10 +73,38 @@ def _api_get_json(url: str, *, token: str) -> Dict[str, Any]:
     raise RuntimeError(f"GitHub API request failed after retries: {last_error}")
 
 
+def _collect_paginated_items(
+    api_url: str,
+    repo: str,
+    endpoint: str,
+    token: str,
+    payload_key: str,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        url = f"{api_url}/repos/{repo}/{endpoint}?per_page=100&page={page}"
+        payload = _api_get_json(url, token=token)
+        page_items = payload.get(payload_key, [])
+        if not isinstance(page_items, list):
+            raise RuntimeError(
+                f"GitHub API response missing list key {payload_key!r} for {endpoint}"
+            )
+        items.extend(item for item in page_items if isinstance(item, dict))
+        if len(page_items) < 100:
+            break
+        page += 1
+    return items
+
+
 def _collect_run_artifacts(api_url: str, repo: str, run_id: str, token: str) -> Dict[str, int]:
-    url = f"{api_url}/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100"
-    payload = _api_get_json(url, token=token)
-    artifacts = payload.get("artifacts", [])
+    artifacts = _collect_paginated_items(
+        api_url,
+        repo,
+        f"actions/runs/{run_id}/artifacts",
+        token,
+        "artifacts",
+    )
     mapping: Dict[str, int] = {}
     for a in artifacts:
         name = a.get("name")
@@ -86,9 +115,13 @@ def _collect_run_artifacts(api_url: str, repo: str, run_id: str, token: str) -> 
 
 
 def _collect_run_jobs(api_url: str, repo: str, run_id: str, token: str) -> Dict[str, str]:
-    url = f"{api_url}/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
-    payload = _api_get_json(url, token=token)
-    jobs = payload.get("jobs", [])
+    jobs = _collect_paginated_items(
+        api_url,
+        repo,
+        f"actions/runs/{run_id}/jobs",
+        token,
+        "jobs",
+    )
     mapping: Dict[str, str] = {}
     for j in jobs:
         name = j.get("name")
@@ -254,4 +287,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
