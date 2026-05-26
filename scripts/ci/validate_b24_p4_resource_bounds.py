@@ -48,6 +48,9 @@ P4_AUTHORITY_LIVENESS_MIGRATION = Path(
 P4_SUPERSESSION_PROFILING_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202605251800_b24_p4_supersession_profiling_lease.py"
 )
+P4_ATOMIC_DOMINANCE_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605261200_b24_p4_atomic_dominance_canonical_profiling.py"
+)
 CANONICAL_SCHEMA = Path("db/schema/canonical_schema.sql")
 P4_TESTS = Path("backend/tests/test_b24_p4_resource_bounds.py")
 
@@ -71,6 +74,7 @@ REQUIRED_FILES = {
     P4_FEATURE_AUTHORITY_MIGRATION,
     P4_AUTHORITY_LIVENESS_MIGRATION,
     P4_SUPERSESSION_PROFILING_MIGRATION,
+    P4_ATOMIC_DOMINANCE_MIGRATION,
 }
 
 REQUIRED_CAP_NAMES = {
@@ -630,6 +634,7 @@ def validate_snapshot_supersession_texts(
     liveness_text: str | None = None,
     profiling_text: str | None = None,
     supersession_text: str | None = None,
+    fit_claim_text: str | None = None,
     models_text: str | None = None,
     migration_text: str | None = None,
     tests_text: str | None = None,
@@ -646,11 +651,13 @@ def validate_snapshot_supersession_texts(
         if supersession_text is not None
         else _read(root, SNAPSHOT_SUPERSESSION)
     )
+    fit_claim = fit_claim_text if fit_claim_text is not None else _read(root, FIT_CLAIM)
     models = models_text if models_text is not None else _read(root, MODELS)
+    atomic_migration = _read(root, P4_ATOMIC_DOMINANCE_MIGRATION)
     migration = (
         migration_text
         if migration_text is not None
-        else _read(root, P4_SUPERSESSION_PROFILING_MIGRATION)
+        else _read(root, P4_SUPERSESSION_PROFILING_MIGRATION) + "\n" + atomic_migration
     )
     tests = tests_text if tests_text is not None else _read(root, P4_TESTS)
 
@@ -670,9 +677,39 @@ def validate_snapshot_supersession_texts(
         "supersession check missing from planner",
     )
     _require(
+        "SERIALIZABLE" not in fit_claim,
+        "SERIALIZABLE is not allowed as the primary supersession mechanism",
+    )
+    _require(
+        "newer_dominant_snapshot" in fit_claim,
+        "ON CONFLICT mutual exclusion cannot replace DB-boundary dominance",
+    )
+    for token in (
+        "locked_execution_lane AS",
+        "FOR UPDATE",
+        "newer_dominant_snapshot AS",
+        "claimable_execution_lane AS",
+        "claimed_fit AS",
+        "dispatchable_outbox AS",
+        "activated_execution_lane AS",
+        "source_snapshot_superseded",
+        "AND NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)",
+    ):
+        _require(token in fit_claim, f"atomic dominance missing: {token}")
+    _require(
+        fit_claim.find("newer_dominant_snapshot AS")
+        < fit_claim.find("claimed_fit AS")
+        < fit_claim.find("dispatchable_outbox AS"),
+        "ON CONFLICT mutual exclusion cannot replace DB-boundary dominance",
+    )
+    _require(
         "assert_snapshot_artifact_not_regressing_current_output" in supersession
         and "TrustEnvelope current output" in supersession,
         "artifact non-regression guard missing",
+    )
+    _require(
+        "B24_P5_OUTPUT_NON_REGRESSION_ENTRY_GATE" in supersession,
+        "artifact non-regression P5 entry gate missing",
     )
     _require(
         "source_snapshot_hash IS NOT DISTINCT FROM dirty.source_snapshot_hash"
@@ -704,7 +741,8 @@ def validate_snapshot_supersession_texts(
     )
 
     for token in (
-        "b24_p4_profiling_leases",
+        "b24_active_execution_leases",
+        "canonical P3 active-execution substrate",
         "PROFILING_LEASE_POLICY_VERSION",
         "ProfilingLeaseStatus",
         "terminalize_profiling_lease",
@@ -722,6 +760,18 @@ def validate_snapshot_supersession_texts(
         "profiling lease acquisition missing from planner",
     )
     _require("ON CONFLICT" in profiling, "one profiler conflict guard missing")
+    conflict_key = profiling[
+        profiling.find("ON CONFLICT (") : profiling.find("DO UPDATE SET")
+    ]
+    _require(
+        "source_snapshot_hash" not in conflict_key,
+        "one profiler per tenant/model/window requires hash-free conflict key",
+    )
+    _require(
+        "INSERT INTO public.b24_p4_profiling_leases" not in profiling
+        and "UPDATE public.b24_p4_profiling_leases" not in profiling,
+        "split-brain profiling table cannot be the active owner",
+    )
     plan_text = planner[planner.find("async def plan_candidate") :]
     _require(
         plan_text.find("acquire_profiling_lease")
@@ -740,7 +790,14 @@ def validate_snapshot_supersession_texts(
         "test_b24_p4_hash_a_retry_superseded_if_hash_b_already_dispatched",
         "test_b24_p4_hash_a_retry_superseded_if_hash_b_already_completed",
         "test_b24_p4_hash_a_cannot_overwrite_hash_b_artifacts",
+        "test_b24_p4_output_non_regression_is_production_wired_or_p5_entry_gated",
         "test_b24_p4_newer_snapshot_dominates_older_authority_retry",
+        "test_b24_p4_supersession_claim_is_atomic_under_concurrent_hash_a_hash_b",
+        "test_b24_p4_python_precheck_pause_cannot_allow_stale_hash_a_claim",
+        "test_b24_p4_db_rejects_hash_a_claim_if_hash_b_wins_between_check_and_commit",
+        "test_b24_p4_serializable_only_supersession_solution_rejected",
+        "test_b24_p4_on_conflict_active_execution_is_not_chronological_dominance",
+        "test_b24_p4_newer_hash_b_wins_even_if_older_hash_a_reaches_insert_first",
         "test_b24_p4_superseded_hash_a_creates_no_dispatchable_outbox",
         "test_b24_p4_hash_a_hash_b_lifecycles_remain_separate",
         "test_b24_p4_missing_authority_creates_build_request_and_dispatch_signal",
@@ -749,6 +806,13 @@ def validate_snapshot_supersession_texts(
         "test_b24_p4_build_request_not_left_unclaimed_without_dispatcher",
         "test_b24_p4_build_dispatch_has_latency_budget",
         "test_b24_p4_only_one_planner_profiles_same_frozen_hash",
+        "test_b24_p4_window_level_profiling_ownership_blocks_multi_hash_fanout",
+        "test_b24_p4_hash_scoped_profiling_lease_alone_is_rejected",
+        "test_b24_p4_duplicate_hashes_do_not_profile_same_window_concurrently",
+        "test_b24_p4_profiling_ownership_uses_or_coordinates_with_canonical_active_execution_lane",
+        "test_b24_p4_rejects_split_brain_between_profiling_and_active_execution",
+        "test_b24_p4_profiling_ownership_acquired_before_authority_validation",
+        "test_b24_p4_profiling_ownership_acquired_before_envelope_math",
         "test_b24_p4_duplicate_feature_authority_fresh_events_do_not_duplicate_p4_profiling",
         "test_b24_p4_profiling_lease_required_before_p4_envelope",
         "test_b24_p4_profiling_lease_released_on_authority_failure",
@@ -761,6 +825,11 @@ def validate_snapshot_supersession_texts(
         "test_b24_p4_validator_rejects_build_request_without_dispatch",
         "test_b24_p4_validator_rejects_p4_profiling_without_lease",
         "test_b24_p4_validator_rejects_duplicate_p4_profiling",
+        "test_b24_p4_validator_rejects_python_only_supersession",
+        "test_b24_p4_validator_rejects_serializable_only_supersession",
+        "test_b24_p4_validator_rejects_on_conflict_as_dominance",
+        "test_b24_p4_validator_rejects_unbounded_hash_scoped_profiling_fanout",
+        "test_b24_p4_validator_rejects_passive_polling_as_primary_build_trigger",
     ):
         _require(
             required_test in tests,
@@ -774,6 +843,15 @@ def validate_schema_surface(root: Path) -> None:
     feature_authority_migration = _read(root, P4_FEATURE_AUTHORITY_MIGRATION)
     authority_liveness_migration = _read(root, P4_AUTHORITY_LIVENESS_MIGRATION)
     supersession_migration = _read(root, P4_SUPERSESSION_PROFILING_MIGRATION)
+    atomic_migration = _read(root, P4_ATOMIC_DOMINANCE_MIGRATION)
+    p4_migration_text = "\n".join(
+        [
+            feature_authority_migration,
+            authority_liveness_migration,
+            supersession_migration,
+            atomic_migration,
+        ]
+    )
     canonical = _read(root, CANONICAL_SCHEMA)
     enums = _read(root, ENUMS)
     models = _read(root, MODELS)
@@ -819,6 +897,7 @@ def validate_schema_surface(root: Path) -> None:
         "authority_retry_superseded",
         "idx_b24_feature_authority_build_outbox_due",
         "idx_b24_p4_profiling_leases_active",
+        "idx_b24_active_execution_canonical_profiling",
         "tenant_isolation_policy_b24_feature_authority_build_outbox",
         "tenant_isolation_policy_b24_p4_profiling_leases",
     ):
@@ -829,9 +908,7 @@ def validate_schema_surface(root: Path) -> None:
             or token.startswith("tenant_")
         ):
             _require(
-                token in supersession_migration
-                or token in feature_authority_migration
-                or token in authority_liveness_migration,
+                token in p4_migration_text,
                 f"migration missing feature authority schema: {token}",
             )
     for index_name in (
@@ -1158,7 +1235,6 @@ def run_negative_control(root: Path) -> None:
                 supersession_text=_read(root, SNAPSHOT_SUPERSESSION).replace(
                     "assert_snapshot_artifact_not_regressing_current_output",
                     "allow_snapshot_artifact_regression",
-                    1,
                 ),
             ),
             "artifact",
@@ -1191,12 +1267,69 @@ def run_negative_control(root: Path) -> None:
             lambda: validate_snapshot_supersession_texts(
                 root,
                 profiling_text=_read(root, PROFILING_LEASE).replace(
-                    "ON CONFLICT",
-                    "-- no conflict guard",
+                    "source_window_end\n                    )",
+                    "source_window_end,\n                        source_snapshot_hash\n                    )",
                     1,
                 ),
             ),
             "one profiler",
+        ),
+        (
+            "python_only_supersession",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                fit_claim_text=_read(root, FIT_CLAIM).replace(
+                    "locked_execution_lane",
+                    "python_precheck_only",
+                ),
+            ),
+            "atomic dominance",
+        ),
+        (
+            "serializable_only_supersession",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                fit_claim_text=_read(root, FIT_CLAIM).replace(
+                    "locked_execution_lane",
+                    "SERIALIZABLE",
+                ),
+            ),
+            "serializable",
+        ),
+        (
+            "on_conflict_as_dominance",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                fit_claim_text=_read(root, FIT_CLAIM).replace(
+                    "newer_dominant_snapshot",
+                    "ON CONFLICT",
+                ),
+            ),
+            "on conflict",
+        ),
+        (
+            "unbounded_hash_scoped_profiling_fanout",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                profiling_text=_read(root, PROFILING_LEASE).replace(
+                    "source_window_end\n                    )",
+                    "source_window_end,\n                        source_snapshot_hash\n                    )",
+                    1,
+                ),
+            ),
+            "one profiler",
+        ),
+        (
+            "passive_polling_as_primary_build_trigger",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                liveness_text=_read(root, AUTHORITY_LIVENESS).replace(
+                    "queued_dispatch AS",
+                    "sweeper_only AS",
+                    1,
+                ),
+            ),
+            "build dispatch",
         ),
         (
             "forbidden_import",

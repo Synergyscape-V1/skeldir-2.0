@@ -591,11 +591,30 @@ class B24ActiveExecutionLease(Base, TenantMixin):
             "latest_desired_source_snapshot_hash IS NULL OR latest_desired_source_snapshot_hash ~ '^[a-f0-9]{64}$'",
             name="ck_b24_active_execution_desired_hash_sha256",
         ),
+        CheckConstraint(
+            "status IN ('profiling', 'profile_passed', 'profile_rejected', 'profile_superseded', 'profile_timeout', 'profile_failed', 'claiming', 'dispatch_pending', 'dispatched', 'running', 'cancel_requested', 'succeeded', 'failed', 'fallback_only', 'cancelled', 'stale_recovered')",
+            name="ck_b24_active_execution_status",
+        ),
+        CheckConstraint(
+            "status IN ('claiming', 'profiling', 'profile_passed', 'profile_rejected', 'profile_superseded', 'profile_timeout', 'profile_failed') OR fit_id IS NOT NULL",
+            name="ck_b24_active_execution_active_fit_required",
+        ),
         Index(
             "idx_b24_active_execution_tenant_status_lease",
             "tenant_id",
             "status",
             "leased_until",
+        ),
+        Index(
+            "idx_b24_active_execution_canonical_profiling",
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "status",
+            "leased_until",
+            postgresql_where=text("status = 'profiling'"),
         ),
         Index(
             "idx_b24_active_execution_tenant_fit",

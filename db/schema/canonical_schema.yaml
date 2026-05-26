@@ -855,7 +855,7 @@ tables:
       fit_id: {type: UUID, nullable: true, foreign_key: "bayesian_model_fits(tenant_id, id) via (tenant_id, fit_id) ON DELETE RESTRICT"}
       active_source_snapshot_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
       latest_desired_source_snapshot_hash: {type: VARCHAR(64), nullable: true, format: lowercase_sha256_hex}
-      status: {type: VARCHAR(32), nullable: false, default: claiming, values: [claiming, dispatch_pending, dispatched, running, cancel_requested, succeeded, failed, fallback_only, cancelled, stale_recovered]}
+      status: {type: VARCHAR(32), nullable: false, default: claiming, values: [profiling, profile_passed, profile_rejected, profile_superseded, profile_timeout, profile_failed, claiming, dispatch_pending, dispatched, running, cancel_requested, succeeded, failed, fallback_only, cancelled, stale_recovered]}
       needs_refit_after_current: {type: BOOLEAN, nullable: false, default: false}
       leased_until: {type: TIMESTAMPTZ, nullable: false}
       created_at: {type: TIMESTAMPTZ, nullable: false, default: "now()"}
@@ -865,8 +865,11 @@ tables:
       - {name: fk_b24_active_execution_fit, type: FOREIGN KEY, columns: [tenant_id, fit_id], references: "bayesian_model_fits(tenant_id, id)", on_delete: RESTRICT}
       - {name: ck_b24_active_execution_active_hash_sha256, type: CHECK, definition: "active_source_snapshot_hash is null or matches ^[a-f0-9]{64}$"}
       - {name: ck_b24_active_execution_desired_hash_sha256, type: CHECK, definition: "latest_desired_source_snapshot_hash is null or matches ^[a-f0-9]{64}$"}
+      - {name: ck_b24_active_execution_status, type: CHECK, definition: "status is one of profiling, profile_passed, profile_rejected, profile_superseded, profile_timeout, profile_failed, claiming, dispatch_pending, dispatched, running, cancel_requested, succeeded, failed, fallback_only, cancelled, stale_recovered"}
+      - {name: ck_b24_active_execution_active_fit_required, type: CHECK, definition: "claiming/profile states may omit fit_id; execution/output states require fit_id"}
     indexes:
       - {name: idx_b24_active_execution_tenant_status_lease, columns: [tenant_id, status, leased_until]}
+      - {name: idx_b24_active_execution_canonical_profiling, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end, status, leased_until], where: "status = 'profiling'"}
       - {name: idx_b24_active_execution_tenant_fit, columns: [tenant_id, fit_id], where: "fit_id IS NOT NULL"}
       - {name: idx_b24_active_execution_superseded, columns: [tenant_id, model_type, model_version, source_window_start, source_window_end], where: "needs_refit_after_current = true"}
     rls_policy:

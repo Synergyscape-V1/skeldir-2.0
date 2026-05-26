@@ -642,11 +642,12 @@ def test_b24_p4_validator_rejects_authority_retry_bypassing_p3_locks() -> None:
 
 
 def test_b24_p4_hash_a_retry_superseded_if_hash_b_already_dispatched() -> None:
-    text = _read(SNAPSHOT_SUPERSESSION) + _read(FIT_PLANNER)
+    text = _read(SNAPSHOT_SUPERSESSION) + _read(FIT_PLANNER) + _read(FIT_CLAIM)
     assert "check_snapshot_supersession" in text
     assert "newer_dispatch_outbox_visible" in text
     assert "outbox.status IN ('pending', 'dispatching', 'dispatched')" in text
     assert 'terminal_status="authority_retry_superseded"' in text
+    assert "newer_dominant_snapshot" in text
 
 
 def test_b24_p4_hash_a_retry_superseded_if_hash_b_already_completed() -> None:
@@ -661,13 +662,65 @@ def test_b24_p4_hash_a_cannot_overwrite_hash_b_artifacts() -> None:
     assert "assert_snapshot_artifact_not_regressing_current_output" in text
     assert "older Hash A cannot overwrite newer Hash B artifact" in text
     assert "TrustEnvelope current output" in text
+    assert "B24_P5_OUTPUT_NON_REGRESSION_ENTRY_GATE" in text
+
+
+def test_b24_p4_output_non_regression_is_production_wired_or_p5_entry_gated() -> None:
+    text = _read(SNAPSHOT_SUPERSESSION)
+    assert "B24_P5_OUTPUT_NON_REGRESSION_ENTRY_GATE" in text
+    assert "assert_snapshot_artifact_not_regressing_current_output" in text
+    assert "Before B2.4-P5 introduces artifact" in text
 
 
 def test_b24_p4_newer_snapshot_dominates_older_authority_retry() -> None:
-    text = _read(SNAPSHOT_SUPERSESSION)
+    text = _read(SNAPSHOT_SUPERSESSION) + _read(FIT_CLAIM)
     assert "SNAPSHOT_SUPERSESSION_POLICY_VERSION" in text
     assert "active_source_snapshot_hash <> :source_snapshot_hash" in text
     assert "newer_active_execution_owner" in text
+    assert "newer_dominant_snapshot" in text
+
+
+def test_b24_p4_supersession_claim_is_atomic_under_concurrent_hash_a_hash_b() -> None:
+    text = _read(FIT_CLAIM)
+    assert "locked_execution_lane AS" in text
+    assert "FOR UPDATE" in text
+    assert "newer_dominant_snapshot AS" in text
+    assert "claimed_fit AS" in text
+    assert "dispatchable_outbox AS" in text
+
+
+def test_b24_p4_python_precheck_pause_cannot_allow_stale_hash_a_claim() -> None:
+    text = _read(FIT_CLAIM)
+    assert text.find("newer_dominant_snapshot AS") < text.find("claimed_fit AS")
+    assert "WHERE EXISTS (SELECT 1 FROM claimable_execution_lane)" in text
+    assert "AND NOT EXISTS (SELECT 1 FROM newer_dominant_snapshot)" in text
+
+
+def test_b24_p4_db_rejects_hash_a_claim_if_hash_b_wins_between_check_and_commit() -> None:
+    text = _read(FIT_CLAIM)
+    assert "source_snapshot_superseded" in text
+    assert "WHERE EXISTS (SELECT 1 FROM newer_dominant_snapshot)" in text
+    assert "INSERT INTO public.b24_fit_dispatch_outbox" in text
+
+
+def test_b24_p4_serializable_only_supersession_solution_rejected() -> None:
+    text = _read(FIT_CLAIM)
+    assert "SERIALIZABLE" not in text
+    assert "locked_execution_lane" in text
+
+
+def test_b24_p4_on_conflict_active_execution_is_not_chronological_dominance() -> None:
+    text = _read(FIT_CLAIM)
+    assert "ON CONFLICT DO NOTHING" in text
+    assert "newer_dominant_snapshot" in text
+    assert text.find("newer_dominant_snapshot") < text.find("claimed_fit AS")
+
+
+def test_b24_p4_newer_hash_b_wins_even_if_older_hash_a_reaches_insert_first() -> None:
+    text = _read(FIT_CLAIM)
+    assert "ON CONFLICT DO NOTHING" in text
+    assert "newer_dominant_snapshot AS" in text
+    assert "WHERE EXISTS (SELECT 1 FROM newer_dominant_snapshot)" in text
 
 
 def test_b24_p4_superseded_hash_a_creates_no_dispatchable_outbox() -> None:
@@ -732,6 +785,58 @@ def test_b24_p4_only_one_planner_profiles_same_frozen_hash() -> None:
     assert "source_snapshot_hash" in text
     assert "ON CONFLICT" in text
     assert "if not profiling_lease.acquired" in text
+    assert "public.b24_active_execution_leases" in text
+
+
+def test_b24_p4_window_level_profiling_ownership_blocks_multi_hash_fanout() -> None:
+    text = _read(PROFILING_LEASE)
+    key = text[text.find("ON CONFLICT (") : text.find("DO UPDATE SET")]
+    assert "source_snapshot_hash" not in key
+    assert "Hash A/Hash B/Hash C bursts cannot fan out" in text
+    assert "public.b24_active_execution_leases" in text
+
+
+def test_b24_p4_hash_scoped_profiling_lease_alone_is_rejected() -> None:
+    text = _read(PROFILING_LEASE)
+    assert "public.b24_active_execution_leases" in text
+    assert "public.b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_duplicate_hashes_do_not_profile_same_window_concurrently() -> None:
+    text = _read(PROFILING_LEASE)
+    assert "source_window_start" in text and "source_window_end" in text
+    assert "source_snapshot_hash" not in text[
+        text.find("ON CONFLICT (") : text.find("DO UPDATE SET")
+    ]
+
+
+def test_b24_p4_profiling_ownership_uses_or_coordinates_with_canonical_active_execution_lane() -> None:
+    text = _read(PROFILING_LEASE) + _read(MODELS)
+    assert "canonical P3 active-execution substrate" in text
+    assert "b24_active_execution_leases_pkey" in text
+    assert "idx_b24_active_execution_canonical_profiling" in text
+
+
+def test_b24_p4_rejects_split_brain_between_profiling_and_active_execution() -> None:
+    text = _read(PROFILING_LEASE)
+    assert "INSERT INTO public.b24_active_execution_leases" in text
+    assert "UPDATE public.b24_active_execution_leases" in text
+    assert "INSERT INTO public.b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_profiling_ownership_acquired_before_authority_validation() -> None:
+    planner = _read(FIT_PLANNER)
+    plan_text = planner[planner.find("async def plan_candidate") :]
+    assert plan_text.find("acquire_profiling_lease") < plan_text.find(
+        "load_source_window_feature_authority"
+    )
+
+
+def test_b24_p4_profiling_ownership_acquired_before_envelope_math() -> None:
+    planner = _read(FIT_PLANNER)
+    assert planner.find("acquire_profiling_lease") < planner.find(
+        "evaluate_source_snapshot_resource_bounds"
+    )
 
 
 def test_b24_p4_duplicate_feature_authority_fresh_events_do_not_duplicate_p4_profiling() -> (
@@ -812,7 +917,6 @@ def test_b24_p4_validator_rejects_hash_a_overwriting_hash_b() -> None:
     mutated = _read(SNAPSHOT_SUPERSESSION).replace(
         "assert_snapshot_artifact_not_regressing_current_output",
         "allow_snapshot_artifact_regression",
-        1,
     )
     with pytest.raises(validator.ValidationError, match="artifact"):
         validator.validate_snapshot_supersession_texts(
@@ -850,11 +954,69 @@ def test_b24_p4_validator_rejects_p4_profiling_without_lease() -> None:
 
 def test_b24_p4_validator_rejects_duplicate_p4_profiling() -> None:
     validator = _load_validator()
-    mutated = _read(PROFILING_LEASE).replace("ON CONFLICT", "-- no conflict guard", 1)
+    mutated = _read(PROFILING_LEASE).replace(
+        "source_window_end\n                    )",
+        "source_window_end,\n                        source_snapshot_hash\n                    )",
+        1,
+    )
     with pytest.raises(validator.ValidationError, match="one profiler"):
         validator.validate_snapshot_supersession_texts(
             REPO_ROOT,
             profiling_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_python_only_supersession() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_CLAIM).replace("locked_execution_lane", "python_precheck_only")
+    with pytest.raises(validator.ValidationError, match="atomic dominance"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            fit_claim_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_serializable_only_supersession() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_CLAIM).replace("locked_execution_lane", "SERIALIZABLE")
+    with pytest.raises(validator.ValidationError, match="SERIALIZABLE"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            fit_claim_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_on_conflict_as_dominance() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_CLAIM).replace("newer_dominant_snapshot", "ON CONFLICT")
+    with pytest.raises(validator.ValidationError, match="ON CONFLICT"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            fit_claim_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_unbounded_hash_scoped_profiling_fanout() -> None:
+    validator = _load_validator()
+    mutated = _read(PROFILING_LEASE).replace(
+        "source_window_end\n                    )",
+        "source_window_end,\n                        source_snapshot_hash\n                    )",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="one profiler"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            profiling_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_passive_polling_as_primary_build_trigger() -> None:
+    validator = _load_validator()
+    mutated = _read(AUTHORITY_LIVENESS).replace("queued_dispatch AS", "sweeper_only AS", 1)
+    with pytest.raises(validator.ValidationError, match="build dispatch"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            liveness_text=mutated,
         )
 
 
