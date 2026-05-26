@@ -57,6 +57,8 @@ GRAPH_ENVELOPE = REPO_ROOT / "backend/app/bayesian/graph_complexity_envelope.py"
 RESOURCE_PROFILE = REPO_ROOT / "backend/app/bayesian/resource_profile.py"
 FEATURE_AUTHORITY = REPO_ROOT / "backend/app/bayesian/feature_authority.py"
 AUTHORITY_LIVENESS = REPO_ROOT / "backend/app/bayesian/authority_liveness.py"
+PROFILING_LEASE = REPO_ROOT / "backend/app/bayesian/profiling_lease.py"
+SNAPSHOT_SUPERSESSION = REPO_ROOT / "backend/app/bayesian/snapshot_supersession.py"
 MODELS = REPO_ROOT / "backend/app/bayesian/models.py"
 FEATURE_AUTHORITY_MIGRATION = (
     REPO_ROOT
@@ -65,6 +67,10 @@ FEATURE_AUTHORITY_MIGRATION = (
 AUTHORITY_LIVENESS_MIGRATION = (
     REPO_ROOT
     / "alembic/versions/007_skeldir_foundation/202605251430_b24_p4_authority_liveness.py"
+)
+SUPERSESSION_PROFILING_MIGRATION = (
+    REPO_ROOT
+    / "alembic/versions/007_skeldir_foundation/202605251800_b24_p4_supersession_profiling_lease.py"
 )
 
 
@@ -632,6 +638,223 @@ def test_b24_p4_validator_rejects_authority_retry_bypassing_p3_locks() -> None:
         validator.validate_authority_liveness_texts(
             REPO_ROOT,
             planner_text=mutated,
+        )
+
+
+def test_b24_p4_hash_a_retry_superseded_if_hash_b_already_dispatched() -> None:
+    text = _read(SNAPSHOT_SUPERSESSION) + _read(FIT_PLANNER)
+    assert "check_snapshot_supersession" in text
+    assert "newer_dispatch_outbox_visible" in text
+    assert "outbox.status IN ('pending', 'dispatching', 'dispatched')" in text
+    assert 'terminal_status="authority_retry_superseded"' in text
+
+
+def test_b24_p4_hash_a_retry_superseded_if_hash_b_already_completed() -> None:
+    text = _read(SNAPSHOT_SUPERSESSION)
+    assert "newer_fit_claimed_dispatched_or_completed" in text
+    assert "fit.status IN ('queued', 'running', 'succeeded')" in text
+    assert "fit.created_at > frozen.lineage_at" in text
+
+
+def test_b24_p4_hash_a_cannot_overwrite_hash_b_artifacts() -> None:
+    text = _read(SNAPSHOT_SUPERSESSION)
+    assert "assert_snapshot_artifact_not_regressing_current_output" in text
+    assert "older Hash A cannot overwrite newer Hash B artifact" in text
+    assert "TrustEnvelope current output" in text
+
+
+def test_b24_p4_newer_snapshot_dominates_older_authority_retry() -> None:
+    text = _read(SNAPSHOT_SUPERSESSION)
+    assert "SNAPSHOT_SUPERSESSION_POLICY_VERSION" in text
+    assert "active_source_snapshot_hash <> :source_snapshot_hash" in text
+    assert "newer_active_execution_owner" in text
+
+
+def test_b24_p4_superseded_hash_a_creates_no_dispatchable_outbox() -> None:
+    planner = _read(FIT_PLANNER)
+    assert planner.find('status="authority_retry_superseded"') < planner.find(
+        "claim = await claim_fit_for_snapshot"
+    )
+    assert "INSERT INTO public.b24_fit_dispatch_outbox" not in planner
+
+
+def test_b24_p4_hash_a_hash_b_lifecycles_remain_separate() -> None:
+    planner = _read(FIT_PLANNER)
+    assert "source_snapshot_hash," in planner
+    assert (
+        "source_snapshot_hash IS NOT DISTINCT FROM dirty.source_snapshot_hash"
+        in planner
+    )
+    assert "source_snapshot_hash IS NOT DISTINCT FROM :source_snapshot_hash" in planner
+
+
+def test_b24_p4_missing_authority_creates_build_request_and_dispatch_signal() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(SUPERSESSION_PROFILING_MIGRATION)
+    assert "b24_feature_authority_build_requests" in text
+    assert "b24_feature_authority_build_outbox" in text
+    assert "FEATURE_AUTHORITY_BUILD_TASK" in text
+
+
+def test_b24_p4_build_request_dispatch_uses_transactional_outbox_or_bounded_sweeper() -> (
+    None
+):
+    text = _read(AUTHORITY_LIVENESS)
+    assert "WITH upserted_request AS" in text
+    assert "queued_dispatch AS" in text
+    assert "lease_due_feature_authority_build_dispatches" in text
+    assert "FOR UPDATE SKIP LOCKED" in text
+
+
+def test_b24_p4_build_request_dispatch_is_idempotent() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(SUPERSESSION_PROFILING_MIGRATION)
+    assert "ON CONFLICT (" in text
+    assert "uq_b24_feature_authority_build_outbox_candidate" in text
+    assert "dispatch_key" in text
+
+
+def test_b24_p4_build_request_not_left_unclaimed_without_dispatcher() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "dispatch_due_feature_authority_builds" in text
+    assert "publish_feature_authority_build" in text
+    assert "mark_feature_authority_build_dispatched" in text
+
+
+def test_b24_p4_build_dispatch_has_latency_budget() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(MODELS)
+    assert "DEFAULT_AUTHORITY_BUILD_DISPATCH_BATCH_SIZE" in text
+    assert "next_attempt_at" in text
+    assert "idx_b24_feature_authority_build_outbox_due" in text
+
+
+def test_b24_p4_only_one_planner_profiles_same_frozen_hash() -> None:
+    text = _read(PROFILING_LEASE) + _read(FIT_PLANNER)
+    assert "acquire_profiling_lease" in text
+    assert "source_snapshot_hash" in text
+    assert "ON CONFLICT" in text
+    assert "if not profiling_lease.acquired" in text
+
+
+def test_b24_p4_duplicate_feature_authority_fresh_events_do_not_duplicate_p4_profiling() -> (
+    None
+):
+    text = _read(FIT_PLANNER)
+    assert "status IN ('pending', 'authority_retry_ready')" in text
+    assert "acquire_profiling_lease" in text
+    assert text.find("acquire_profiling_lease") < text.find(
+        "evaluate_source_snapshot_resource_bounds"
+    )
+
+
+def test_b24_p4_profiling_lease_required_before_p4_envelope() -> None:
+    planner = _read(FIT_PLANNER)
+    plan_text = planner[planner.find("async def plan_candidate") :]
+    assert plan_text.find("acquire_profiling_lease") < plan_text.find(
+        "evaluate_source_snapshot_resource_bounds"
+    )
+    assert plan_text.find("acquire_profiling_lease") < plan_text.find(
+        "load_source_window_feature_authority"
+    )
+
+
+def test_b24_p4_profiling_lease_released_on_authority_failure() -> None:
+    text = _read(FIT_PLANNER)
+    branch = text[
+        text.find("except FeatureAuthorityUnavailable") : text.find(
+            "if authority_yield is not None"
+        )
+    ]
+    assert "terminalize_profiling_lease" in branch
+    assert "PROFILE_FAILED" in branch
+
+
+def test_b24_p4_profiling_lease_released_on_resource_rejection() -> None:
+    text = _read(FIT_PLANNER)
+    branch = text[text.find("if not resource_decision.allowed") :]
+    assert "terminalize_profiling_lease" in branch
+    assert "PROFILE_REJECTED" in branch
+
+
+def test_b24_p4_profiling_lease_released_on_supersession() -> None:
+    text = _read(FIT_PLANNER)
+    assert "PROFILE_SUPERSEDED" in text
+    assert "authority_retry_superseded" in text
+
+
+def test_b24_p4_profiling_lease_released_on_exception() -> None:
+    text = _read(PROFILING_LEASE) + _read(FIT_PLANNER)
+    assert "profile_failed" in text
+    assert "PROFILE_FAILED" in text
+    assert "terminalize_profiling_lease" in text
+
+
+def test_b24_p4_profiling_lease_transitions_safely_to_claim_path() -> None:
+    text = _read(FIT_PLANNER)
+    claim_branch = text[text.find("claim = await claim_fit_for_snapshot") :]
+    assert "PROFILE_PASSED" in claim_branch
+    assert "terminalize_profiling_lease" in claim_branch
+
+
+def test_b24_p4_validator_rejects_missing_snapshot_supersession() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_PLANNER).replace(
+        "check_snapshot_supersession",
+        "missing_snapshot_supersession",
+    )
+    with pytest.raises(validator.ValidationError, match="supersession"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            planner_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_hash_a_overwriting_hash_b() -> None:
+    validator = _load_validator()
+    mutated = _read(SNAPSHOT_SUPERSESSION).replace(
+        "assert_snapshot_artifact_not_regressing_current_output",
+        "allow_snapshot_artifact_regression",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="artifact"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            supersession_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_build_request_without_dispatch() -> None:
+    validator = _load_validator()
+    mutated = _read(AUTHORITY_LIVENESS).replace(
+        "queued_dispatch AS",
+        "missing_dispatch AS",
+        1,
+    )
+    with pytest.raises(validator.ValidationError, match="build dispatch"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            liveness_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_p4_profiling_without_lease() -> None:
+    validator = _load_validator()
+    mutated = _read(FIT_PLANNER).replace(
+        "acquire_profiling_lease",
+        "missing_profiling_lease",
+    )
+    with pytest.raises(validator.ValidationError, match="profiling lease"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            planner_text=mutated,
+        )
+
+
+def test_b24_p4_validator_rejects_duplicate_p4_profiling() -> None:
+    validator = _load_validator()
+    mutated = _read(PROFILING_LEASE).replace("ON CONFLICT", "-- no conflict guard", 1)
+    with pytest.raises(validator.ValidationError, match="one profiler"):
+        validator.validate_snapshot_supersession_texts(
+            REPO_ROOT,
+            profiling_text=mutated,
         )
 
 
