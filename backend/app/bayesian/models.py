@@ -816,6 +816,226 @@ class B24FeatureAuthorityBuildRequest(Base, TenantMixin):
     )
 
 
+class B24FeatureAuthorityBuildOutbox(Base, TenantMixin):
+    """Transactional outbox for source-snapshot-scoped feature-authority builds."""
+
+    __tablename__ = "b24_feature_authority_build_outbox"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), default=uuid4, server_default=func.gen_random_uuid()
+    )
+    model_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    dispatch_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default="5"
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatching_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stale_recovered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "tenant_id", "id", name="b24_feature_authority_build_outbox_pkey"
+        ),
+        ForeignKeyConstraint(
+            [
+                "tenant_id",
+                "model_type",
+                "model_version",
+                "source_window_start",
+                "source_window_end",
+                "source_snapshot_hash",
+            ],
+            [
+                "b24_feature_authority_build_requests.tenant_id",
+                "b24_feature_authority_build_requests.model_type",
+                "b24_feature_authority_build_requests.model_version",
+                "b24_feature_authority_build_requests.source_window_start",
+                "b24_feature_authority_build_requests.source_window_end",
+                "b24_feature_authority_build_requests.source_snapshot_hash",
+            ],
+            name="fk_b24_feature_authority_build_outbox_request",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "source_snapshot_hash",
+            name="uq_b24_feature_authority_build_outbox_candidate",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "dispatch_key",
+            name="uq_b24_feature_authority_build_outbox_dispatch_key",
+        ),
+        CheckConstraint(
+            "model_type ~ '^[a-z][a-z0-9_]{1,63}$'",
+            name="ck_b24_feature_authority_build_outbox_model_type_format",
+        ),
+        CheckConstraint(
+            "char_length(trim(model_version)) > 0",
+            name="ck_b24_feature_authority_build_outbox_model_version_not_blank",
+        ),
+        CheckConstraint(
+            "source_window_end > source_window_start",
+            name="ck_b24_feature_authority_build_outbox_window_order",
+        ),
+        CheckConstraint(
+            "source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_feature_authority_build_outbox_hash_sha256",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'dispatching', 'dispatched', 'failed_retryable', 'dead_lettered', 'stale_recovered')",
+            name="ck_b24_feature_authority_build_outbox_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_b24_feature_authority_build_outbox_attempt_count",
+        ),
+        CheckConstraint(
+            "max_attempts > 0",
+            name="ck_b24_feature_authority_build_outbox_max_attempts",
+        ),
+        Index(
+            "idx_b24_feature_authority_build_outbox_due",
+            "tenant_id",
+            "status",
+            "next_attempt_at",
+            "id",
+            postgresql_where=text(
+                "status IN ('pending', 'failed_retryable', 'stale_recovered')"
+            ),
+        ),
+    )
+
+
+class B24P4ProfilingLease(Base, TenantMixin):
+    """Hash-scoped lease that prevents duplicate P4 profiling work."""
+
+    __tablename__ = "b24_p4_profiling_leases"
+
+    model_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    profiling_lease_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="profiling", server_default="profiling"
+    )
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    leased_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    terminal_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stale_recovered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "tenant_id",
+            "model_type",
+            "model_version",
+            "source_window_start",
+            "source_window_end",
+            "source_snapshot_hash",
+            name="b24_p4_profiling_leases_pkey",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "profiling_lease_id",
+            name="uq_b24_p4_profiling_leases_id",
+        ),
+        CheckConstraint(
+            "model_type ~ '^[a-z][a-z0-9_]{1,63}$'",
+            name="ck_b24_p4_profiling_leases_model_type_format",
+        ),
+        CheckConstraint(
+            "char_length(trim(model_version)) > 0",
+            name="ck_b24_p4_profiling_leases_model_version_not_blank",
+        ),
+        CheckConstraint(
+            "source_window_end > source_window_start",
+            name="ck_b24_p4_profiling_leases_window_order",
+        ),
+        CheckConstraint(
+            "source_snapshot_hash ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_p4_profiling_leases_hash_sha256",
+        ),
+        CheckConstraint(
+            "profiling_lease_id ~ '^[a-f0-9]{64}$'",
+            name="ck_b24_p4_profiling_leases_id_sha256",
+        ),
+        CheckConstraint(
+            "status IN ('profiling', 'profile_rejected', 'profile_passed', 'profile_superseded', 'profile_timeout', 'profile_failed')",
+            name="ck_b24_p4_profiling_leases_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_b24_p4_profiling_leases_attempt_count",
+        ),
+        CheckConstraint(
+            "char_length(trim(policy_version)) > 0",
+            name="ck_b24_p4_profiling_leases_policy_version_not_blank",
+        ),
+        Index(
+            "idx_b24_p4_profiling_leases_active",
+            "tenant_id",
+            "status",
+            "leased_until",
+            postgresql_where=text("status = 'profiling'"),
+        ),
+    )
+
+
 class B24FitDispatchOutbox(Base, TenantMixin):
     """Durable dispatch intent committed atomically with a fit claim."""
 

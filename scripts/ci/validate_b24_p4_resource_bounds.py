@@ -19,6 +19,8 @@ MODEL_FAMILY_CONTRACT = BAYESIAN_PACKAGE / "model_family_contract.py"
 ELIGIBILITY = BAYESIAN_PACKAGE / "eligibility.py"
 FEATURE_AUTHORITY = BAYESIAN_PACKAGE / "feature_authority.py"
 AUTHORITY_LIVENESS = BAYESIAN_PACKAGE / "authority_liveness.py"
+PROFILING_LEASE = BAYESIAN_PACKAGE / "profiling_lease.py"
+SNAPSHOT_SUPERSESSION = BAYESIAN_PACKAGE / "snapshot_supersession.py"
 CARDINALITY_DB_WORK = BAYESIAN_PACKAGE / "cardinality_db_work.py"
 PREFLIGHT_LEASE = BAYESIAN_PACKAGE / "preflight_lease.py"
 RESOURCE_PROFILE = BAYESIAN_PACKAGE / "resource_profile.py"
@@ -43,6 +45,9 @@ P4_FEATURE_AUTHORITY_MIGRATION = Path(
 P4_AUTHORITY_LIVENESS_MIGRATION = Path(
     "alembic/versions/007_skeldir_foundation/202605251430_b24_p4_authority_liveness.py"
 )
+P4_SUPERSESSION_PROFILING_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605251800_b24_p4_supersession_profiling_lease.py"
+)
 CANONICAL_SCHEMA = Path("db/schema/canonical_schema.sql")
 P4_TESTS = Path("backend/tests/test_b24_p4_resource_bounds.py")
 
@@ -55,6 +60,8 @@ REQUIRED_FILES = {
     ELIGIBILITY,
     FEATURE_AUTHORITY,
     AUTHORITY_LIVENESS,
+    PROFILING_LEASE,
+    SNAPSHOT_SUPERSESSION,
     CARDINALITY_DB_WORK,
     PREFLIGHT_LEASE,
     RESOURCE_PROFILE,
@@ -63,6 +70,7 @@ REQUIRED_FILES = {
     P4_CARDINALITY_EARLY_STOP_MIGRATION,
     P4_FEATURE_AUTHORITY_MIGRATION,
     P4_AUTHORITY_LIVENESS_MIGRATION,
+    P4_SUPERSESSION_PROFILING_MIGRATION,
 }
 
 REQUIRED_CAP_NAMES = {
@@ -611,11 +619,161 @@ def validate_authority_liveness_texts(
         )
 
 
+def validate_snapshot_supersession(root: Path) -> None:
+    validate_snapshot_supersession_texts(root)
+
+
+def validate_snapshot_supersession_texts(
+    root: Path,
+    *,
+    planner_text: str | None = None,
+    liveness_text: str | None = None,
+    profiling_text: str | None = None,
+    supersession_text: str | None = None,
+    models_text: str | None = None,
+    migration_text: str | None = None,
+    tests_text: str | None = None,
+) -> None:
+    planner = planner_text if planner_text is not None else _read(root, FIT_PLANNER)
+    liveness = (
+        liveness_text if liveness_text is not None else _read(root, AUTHORITY_LIVENESS)
+    )
+    profiling = (
+        profiling_text if profiling_text is not None else _read(root, PROFILING_LEASE)
+    )
+    supersession = (
+        supersession_text
+        if supersession_text is not None
+        else _read(root, SNAPSHOT_SUPERSESSION)
+    )
+    models = models_text if models_text is not None else _read(root, MODELS)
+    migration = (
+        migration_text
+        if migration_text is not None
+        else _read(root, P4_SUPERSESSION_PROFILING_MIGRATION)
+    )
+    tests = tests_text if tests_text is not None else _read(root, P4_TESTS)
+
+    for token in (
+        "newer_active_execution_owner",
+        "newer_fit_claimed_dispatched_or_completed",
+        "newer_dispatch_outbox_visible",
+        "authority_retry_superseded",
+        "fit.status IN ('queued', 'running', 'succeeded')",
+        "outbox.status IN ('pending', 'dispatching', 'dispatched')",
+    ):
+        _require(
+            token in planner + supersession, f"snapshot supersession missing: {token}"
+        )
+    _require(
+        "check_snapshot_supersession" in planner,
+        "supersession check missing from planner",
+    )
+    _require(
+        "assert_snapshot_artifact_not_regressing_current_output" in supersession
+        and "TrustEnvelope current output" in supersession,
+        "artifact non-regression guard missing",
+    )
+    _require(
+        "source_snapshot_hash IS NOT DISTINCT FROM dirty.source_snapshot_hash"
+        in planner
+        and "source_snapshot_hash IS NOT DISTINCT FROM :source_snapshot_hash"
+        in planner,
+        "Hash A / Hash B dirty lifecycles must remain source_snapshot_hash scoped",
+    )
+    _require(
+        planner.find("load_source_window_feature_authority")
+        < planner.find("snapshot = await compute_source_snapshot_hash"),
+        "frozen Hash A retry must validate authority before latest P2 recompute",
+    )
+
+    for token in (
+        "b24_feature_authority_build_outbox",
+        "queued_dispatch AS",
+        "FEATURE_AUTHORITY_BUILD_TASK",
+        "dispatch_due_feature_authority_builds",
+        "FOR UPDATE SKIP LOCKED",
+        "idx_b24_feature_authority_build_outbox_due",
+    ):
+        _require(
+            token in liveness + models + migration, f"build dispatch missing: {token}"
+        )
+    _require(
+        "ON CONFLICT" in liveness and "dispatch_key" in liveness,
+        "build dispatch must be idempotent and transactionally coordinated",
+    )
+
+    for token in (
+        "b24_p4_profiling_leases",
+        "PROFILING_LEASE_POLICY_VERSION",
+        "ProfilingLeaseStatus",
+        "terminalize_profiling_lease",
+        "PROFILE_REJECTED",
+        "PROFILE_PASSED",
+        "PROFILE_SUPERSEDED",
+        "PROFILE_FAILED",
+    ):
+        _require(
+            token in planner + profiling + models + migration,
+            f"profiling lease missing: {token}",
+        )
+    _require(
+        "acquire_profiling_lease" in planner,
+        "profiling lease acquisition missing from planner",
+    )
+    _require("ON CONFLICT" in profiling, "one profiler conflict guard missing")
+    plan_text = planner[planner.find("async def plan_candidate") :]
+    _require(
+        plan_text.find("acquire_profiling_lease")
+        < plan_text.find("evaluate_source_snapshot_resource_bounds"),
+        "profiling lease must be acquired before P4 envelope math",
+    )
+    _require(
+        "if not profiling_lease.acquired" in planner,
+        "duplicate profiler losers must exit before profiling",
+    )
+    _require(
+        "terminalize_profiling_lease" in planner,
+        "profiling lease cleanup missing",
+    )
+    for required_test in (
+        "test_b24_p4_hash_a_retry_superseded_if_hash_b_already_dispatched",
+        "test_b24_p4_hash_a_retry_superseded_if_hash_b_already_completed",
+        "test_b24_p4_hash_a_cannot_overwrite_hash_b_artifacts",
+        "test_b24_p4_newer_snapshot_dominates_older_authority_retry",
+        "test_b24_p4_superseded_hash_a_creates_no_dispatchable_outbox",
+        "test_b24_p4_hash_a_hash_b_lifecycles_remain_separate",
+        "test_b24_p4_missing_authority_creates_build_request_and_dispatch_signal",
+        "test_b24_p4_build_request_dispatch_uses_transactional_outbox_or_bounded_sweeper",
+        "test_b24_p4_build_request_dispatch_is_idempotent",
+        "test_b24_p4_build_request_not_left_unclaimed_without_dispatcher",
+        "test_b24_p4_build_dispatch_has_latency_budget",
+        "test_b24_p4_only_one_planner_profiles_same_frozen_hash",
+        "test_b24_p4_duplicate_feature_authority_fresh_events_do_not_duplicate_p4_profiling",
+        "test_b24_p4_profiling_lease_required_before_p4_envelope",
+        "test_b24_p4_profiling_lease_released_on_authority_failure",
+        "test_b24_p4_profiling_lease_released_on_resource_rejection",
+        "test_b24_p4_profiling_lease_released_on_supersession",
+        "test_b24_p4_profiling_lease_released_on_exception",
+        "test_b24_p4_profiling_lease_transitions_safely_to_claim_path",
+        "test_b24_p4_validator_rejects_missing_snapshot_supersession",
+        "test_b24_p4_validator_rejects_hash_a_overwriting_hash_b",
+        "test_b24_p4_validator_rejects_build_request_without_dispatch",
+        "test_b24_p4_validator_rejects_p4_profiling_without_lease",
+        "test_b24_p4_validator_rejects_duplicate_p4_profiling",
+    ):
+        _require(
+            required_test in tests,
+            f"missing supersession/profiling lease test: {required_test}",
+        )
+
+
 def validate_schema_surface(root: Path) -> None:
     feature_migration = _read(root, P4_FEATURE_CARDINALITY_MIGRATION)
     early_stop_migration = _read(root, P4_CARDINALITY_EARLY_STOP_MIGRATION)
     feature_authority_migration = _read(root, P4_FEATURE_AUTHORITY_MIGRATION)
     authority_liveness_migration = _read(root, P4_AUTHORITY_LIVENESS_MIGRATION)
+    supersession_migration = _read(root, P4_SUPERSESSION_PROFILING_MIGRATION)
     canonical = _read(root, CANONICAL_SCHEMA)
     enums = _read(root, ENUMS)
     models = _read(root, MODELS)
@@ -656,8 +814,26 @@ def validate_schema_surface(root: Path) -> None:
         "idx_b24_feature_authority_build_requests_due",
         "tenant_isolation_policy_b24_source_window_feature_authority",
         "tenant_isolation_policy_b24_feature_authority_build_requests",
+        "b24_feature_authority_build_outbox",
+        "b24_p4_profiling_leases",
+        "authority_retry_superseded",
+        "idx_b24_feature_authority_build_outbox_due",
+        "idx_b24_p4_profiling_leases_active",
+        "tenant_isolation_policy_b24_feature_authority_build_outbox",
+        "tenant_isolation_policy_b24_p4_profiling_leases",
     ):
         _require(token in canonical, f"feature authority schema missing: {token}")
+        if (
+            token.startswith("b24_")
+            or token.startswith("idx_")
+            or token.startswith("tenant_")
+        ):
+            _require(
+                token in supersession_migration
+                or token in feature_authority_migration
+                or token in authority_liveness_migration,
+                f"migration missing feature authority schema: {token}",
+            )
     for index_name in (
         "idx_b24_p4_attribution_events_campaign_cardinality",
         "idx_b24_p4_match_verdicts_provider_cardinality",
@@ -689,6 +865,8 @@ def validate_scope(root: Path) -> None:
         DISPATCH_OUTBOX,
         REPOSITORY,
         AUTHORITY_LIVENESS,
+        PROFILING_LEASE,
+        SNAPSHOT_SUPERSESSION,
     }
     for path in scan_paths:
         text = _read(root, path)
@@ -724,6 +902,7 @@ def validate_all(root: Path) -> None:
     validate_resource_profile(root)
     validate_fallback_persistence(root)
     validate_authority_liveness(root)
+    validate_snapshot_supersession(root)
     validate_schema_surface(root)
     validate_scope(root)
 
@@ -960,6 +1139,64 @@ def run_negative_control(root: Path) -> None:
                 ),
             ),
             "normal dirty-event",
+        ),
+        (
+            "missing_snapshot_supersession",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                planner_text=_read(root, FIT_PLANNER).replace(
+                    "check_snapshot_supersession",
+                    "missing_snapshot_supersession",
+                ),
+            ),
+            "supersession",
+        ),
+        (
+            "hash_a_overwrites_hash_b",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                supersession_text=_read(root, SNAPSHOT_SUPERSESSION).replace(
+                    "assert_snapshot_artifact_not_regressing_current_output",
+                    "allow_snapshot_artifact_regression",
+                    1,
+                ),
+            ),
+            "artifact",
+        ),
+        (
+            "build_request_without_dispatch",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                liveness_text=_read(root, AUTHORITY_LIVENESS).replace(
+                    "queued_dispatch AS",
+                    "missing_dispatch AS",
+                    1,
+                ),
+            ),
+            "build dispatch",
+        ),
+        (
+            "p4_profiling_without_lease",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                planner_text=_read(root, FIT_PLANNER).replace(
+                    "acquire_profiling_lease",
+                    "missing_profiling_lease",
+                ),
+            ),
+            "profiling lease",
+        ),
+        (
+            "duplicate_p4_profiling",
+            lambda: validate_snapshot_supersession_texts(
+                root,
+                profiling_text=_read(root, PROFILING_LEASE).replace(
+                    "ON CONFLICT",
+                    "-- no conflict guard",
+                    1,
+                ),
+            ),
+            "one profiler",
         ),
         (
             "forbidden_import",

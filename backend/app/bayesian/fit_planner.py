@@ -12,6 +12,7 @@ from app.bayesian.authority_liveness import (
     AuthorityBuildRequestResult,
     AuthorityBuildStatus,
     request_feature_authority_build,
+    request_feature_authority_build_for_hash,
 )
 from app.bayesian.enums import FallbackReason
 from app.bayesian.feature_authority import (
@@ -24,10 +25,20 @@ from app.bayesian.preflight_lease import (
     acquire_preflight_lease,
     terminalize_preflight_lease,
 )
+from app.bayesian.profiling_lease import (
+    ProfilingLeaseResult,
+    ProfilingLeaseStatus,
+    acquire_profiling_lease,
+    terminalize_profiling_lease,
+)
 from app.bayesian.repository import BayesianFitRepository
 from app.bayesian.resource_profile import (
     B24ResourceDecision,
     evaluate_source_snapshot_resource_bounds,
+)
+from app.bayesian.snapshot_supersession import (
+    SnapshotSupersessionResult,
+    check_snapshot_supersession,
 )
 from app.bayesian.source_snapshot import SourceSnapshotResult
 from app.db.session import AsyncSessionLocal, get_session
@@ -50,6 +61,7 @@ class DirtyPlanningCandidate:
     dirty_event_count: int
     first_observed_at: datetime
     last_observed_at: datetime
+    source_snapshot_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,10 +69,12 @@ class PlannedFitIntent:
     candidate: DirtyPlanningCandidate
     snapshot: SourceSnapshotResult | None
     preflight_lease: PreflightLeaseResult | None
+    profiling_lease: ProfilingLeaseResult | None
     resource_decision: B24ResourceDecision | None
     claim: FitClaimResult | None
     fallback_only: bool
     authority_yield: AuthorityBuildRequestResult | None = None
+    supersession: SnapshotSupersessionResult | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -99,6 +113,7 @@ async def lease_debounced_dirty_candidates(
                         model_version,
                         source_window_start,
                         source_window_end,
+                        source_snapshot_hash,
                         count(*)::int AS dirty_event_count,
                         min(observed_at) AS first_observed_at,
                         max(observed_at) AS last_observed_at
@@ -110,7 +125,8 @@ async def lease_debounced_dirty_candidates(
                         model_type,
                         model_version,
                         source_window_start,
-                        source_window_end
+                        source_window_end,
+                        source_snapshot_hash
                     HAVING
                         max(observed_at) <= :quiet_cutoff
                         OR min(observed_at) <= :stale_cutoff
@@ -126,6 +142,7 @@ async def lease_debounced_dirty_candidates(
                      AND keys.model_version = dirty.model_version
                      AND keys.source_window_start = dirty.source_window_start
                      AND keys.source_window_end = dirty.source_window_end
+                     AND keys.source_snapshot_hash IS NOT DISTINCT FROM dirty.source_snapshot_hash
                     WHERE dirty.status IN ('pending', 'authority_retry_ready')
                     ORDER BY dirty.observed_at ASC, dirty.id ASC
                     FOR UPDATE OF dirty SKIP LOCKED
@@ -146,6 +163,7 @@ async def lease_debounced_dirty_candidates(
                         dirty.model_version,
                         dirty.source_window_start,
                         dirty.source_window_end,
+                        dirty.source_snapshot_hash,
                         dirty.observed_at
                 )
                 SELECT
@@ -154,6 +172,7 @@ async def lease_debounced_dirty_candidates(
                     model_version,
                     source_window_start,
                     source_window_end,
+                    source_snapshot_hash,
                     count(*)::int AS dirty_event_count,
                     min(observed_at) AS first_observed_at,
                     max(observed_at) AS last_observed_at
@@ -163,7 +182,8 @@ async def lease_debounced_dirty_candidates(
                     model_type,
                     model_version,
                     source_window_start,
-                    source_window_end
+                    source_window_end,
+                    source_snapshot_hash
                 ORDER BY min(observed_at) ASC
                 """
             ),
@@ -186,6 +206,11 @@ async def lease_debounced_dirty_candidates(
                 dirty_event_count=int(row["dirty_event_count"]),
                 first_observed_at=_utc(row["first_observed_at"]),
                 last_observed_at=_utc(row["last_observed_at"]),
+                source_snapshot_hash=(
+                    str(row["source_snapshot_hash"])
+                    if row["source_snapshot_hash"]
+                    else None
+                ),
             )
             for row in result.mappings()
         ]
@@ -202,6 +227,7 @@ async def mark_dirty_events_for_candidate(
         "claimed": "claimed_at",
         "fallback_only": "fallback_at",
         "superseded": "superseded_at",
+        "authority_retry_superseded": "superseded_at",
         "dispatched": "dispatched_at",
         "suppressed": "suppressed_at",
         "authority_timeout": "authority_terminal_at",
@@ -223,6 +249,7 @@ async def mark_dirty_events_for_candidate(
                   AND model_version = :model_version
                   AND source_window_start = :source_window_start
                   AND source_window_end = :source_window_end
+                  AND source_snapshot_hash IS NOT DISTINCT FROM :source_snapshot_hash
                   AND status = 'leased'
                 """
             ),
@@ -232,6 +259,7 @@ async def mark_dirty_events_for_candidate(
                 "model_version": candidate.model_version,
                 "source_window_start": candidate.source_window_start,
                 "source_window_end": candidate.source_window_end,
+                "source_snapshot_hash": candidate.source_snapshot_hash,
                 "status": status,
             },
         )
@@ -263,6 +291,7 @@ async def mark_authority_waiting_dirty_events(
                   AND model_version = :model_version
                   AND source_window_start = :source_window_start
                   AND source_window_end = :source_window_end
+                  AND source_snapshot_hash IS NOT DISTINCT FROM :candidate_source_snapshot_hash
                   AND status = 'leased'
                 """
             ),
@@ -272,6 +301,7 @@ async def mark_authority_waiting_dirty_events(
                 "model_version": candidate.model_version,
                 "source_window_start": candidate.source_window_start,
                 "source_window_end": candidate.source_window_end,
+                "candidate_source_snapshot_hash": candidate.source_snapshot_hash,
                 "source_snapshot_hash": snapshot.source_snapshot_hash,
                 "authority_retry_count": request.retry_count,
                 "authority_retry_after_at": request.retry_after_at,
@@ -285,9 +315,14 @@ async def plan_candidate(
     candidate: DirtyPlanningCandidate,
     planner_owner: str,
 ) -> PlannedFitIntent:
-    """Acquire P4 preflight, compute P2/P4, then persist claim/outbox intent."""
+    """Acquire P4 preflight, freeze/retry by hash, profile, then claim/outbox."""
 
     from app.bayesian.source_snapshot import compute_source_snapshot_hash
+
+    snapshot: SourceSnapshotResult | None = None
+    feature_authority = None
+    profiling_lease: ProfilingLeaseResult | None = None
+    supersession: SnapshotSupersessionResult | None = None
 
     async with get_session(candidate.tenant_id) as lease_session:
         preflight_lease = await acquire_preflight_lease(
@@ -310,26 +345,223 @@ async def plan_candidate(
             candidate=candidate,
             snapshot=None,
             preflight_lease=preflight_lease,
+            profiling_lease=None,
             resource_decision=None,
             claim=None,
             fallback_only=True,
             authority_yield=None,
+            supersession=None,
         )
 
-    async with AsyncSessionLocal() as snapshot_session:
-        snapshot = await compute_source_snapshot_hash(
-            snapshot_session,
-            tenant_id=candidate.tenant_id,
-            model_type=candidate.model_type,
-            model_version=candidate.model_version,
-            source_window_start=candidate.source_window_start,
-            source_window_end=candidate.source_window_end,
-        )
+    frozen_source_snapshot_hash = candidate.source_snapshot_hash
+    if frozen_source_snapshot_hash is not None:
+        async with get_session(candidate.tenant_id) as session:
+            supersession = await check_snapshot_supersession(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                source_snapshot_hash=frozen_source_snapshot_hash,
+            )
+            if supersession.superseded:
+                await terminalize_preflight_lease(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    fit_id=None,
+                    terminal_status="authority_retry_superseded",
+                )
+        if supersession is not None and supersession.superseded:
+            await mark_dirty_events_for_candidate(
+                tenant_id=candidate.tenant_id,
+                candidate=candidate,
+                status="authority_retry_superseded",
+            )
+            return PlannedFitIntent(
+                candidate=candidate,
+                snapshot=None,
+                preflight_lease=preflight_lease,
+                profiling_lease=None,
+                resource_decision=None,
+                claim=None,
+                fallback_only=False,
+                authority_yield=None,
+                supersession=supersession,
+            )
+
+        async with get_session(candidate.tenant_id) as session:
+            profiling_lease = await acquire_profiling_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                source_snapshot_hash=frozen_source_snapshot_hash,
+                lease_owner=planner_owner,
+            )
+            if not profiling_lease.acquired:
+                await terminalize_preflight_lease(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    fit_id=None,
+                    terminal_status="suppressed",
+                )
+        if profiling_lease is not None and not profiling_lease.acquired:
+            await mark_dirty_events_for_candidate(
+                tenant_id=candidate.tenant_id,
+                candidate=candidate,
+                status="suppressed",
+            )
+            return PlannedFitIntent(
+                candidate=candidate,
+                snapshot=None,
+                preflight_lease=preflight_lease,
+                profiling_lease=profiling_lease,
+                resource_decision=None,
+                claim=None,
+                fallback_only=True,
+                authority_yield=None,
+                supersession=supersession,
+            )
+
+        authority_yield: AuthorityBuildRequestResult | None = None
+        async with get_session(candidate.tenant_id) as session:
+            try:
+                feature_authority = await load_source_window_feature_authority(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    source_snapshot_hash=frozen_source_snapshot_hash,
+                )
+            except FeatureAuthorityUnavailable as exc:
+                authority_yield = await request_feature_authority_build_for_hash(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    source_snapshot_hash=frozen_source_snapshot_hash,
+                    reason=exc.reason,
+                    detail=exc.detail,
+                )
+                await terminalize_profiling_lease(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    source_snapshot_hash=frozen_source_snapshot_hash,
+                    lease_owner=planner_owner,
+                    terminal_status=ProfilingLeaseStatus.PROFILE_FAILED,
+                    terminal_reason=exc.reason.value,
+                )
+                await terminalize_preflight_lease(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    fit_id=None,
+                    terminal_status=AuthorityBuildStatus.WAITING.value,
+                )
+        if authority_yield is not None:
+            return PlannedFitIntent(
+                candidate=candidate,
+                snapshot=None,
+                preflight_lease=preflight_lease,
+                profiling_lease=profiling_lease,
+                resource_decision=None,
+                claim=None,
+                fallback_only=False,
+                authority_yield=authority_yield,
+                supersession=supersession,
+            )
+
+        async with AsyncSessionLocal() as snapshot_session:
+            snapshot = await compute_source_snapshot_hash(
+                snapshot_session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+            )
+        if snapshot.source_snapshot_hash != frozen_source_snapshot_hash:
+            async with get_session(candidate.tenant_id) as session:
+                await terminalize_profiling_lease(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    source_snapshot_hash=frozen_source_snapshot_hash,
+                    lease_owner=planner_owner,
+                    terminal_status=ProfilingLeaseStatus.PROFILE_SUPERSEDED,
+                    terminal_reason="source_snapshot_changed_before_profile",
+                )
+                await terminalize_preflight_lease(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    fit_id=None,
+                    terminal_status="authority_retry_superseded",
+                )
+            await mark_dirty_events_for_candidate(
+                tenant_id=candidate.tenant_id,
+                candidate=candidate,
+                status="authority_retry_superseded",
+            )
+            return PlannedFitIntent(
+                candidate=candidate,
+                snapshot=snapshot,
+                preflight_lease=preflight_lease,
+                profiling_lease=profiling_lease,
+                resource_decision=None,
+                claim=None,
+                fallback_only=False,
+                authority_yield=None,
+                supersession=SnapshotSupersessionResult(
+                    superseded=True,
+                    superseding_source_snapshot_hash=snapshot.source_snapshot_hash,
+                    supersession_reason="source_snapshot_changed_before_profile",
+                ),
+            )
+    else:
+        async with AsyncSessionLocal() as snapshot_session:
+            snapshot = await compute_source_snapshot_hash(
+                snapshot_session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+            )
 
     if not snapshot.preflight.is_eligible:
         async with get_session(candidate.tenant_id) as session:
             repo = BayesianFitRepository(session)
             fit_id = await repo.upsert_fallback_from_snapshot(snapshot=snapshot)
+            fallback_status = "fallback_only"
             await terminalize_preflight_lease(
                 session,
                 tenant_id=candidate.tenant_id,
@@ -338,29 +570,30 @@ async def plan_candidate(
                 source_window_start=candidate.source_window_start,
                 source_window_end=candidate.source_window_end,
                 fit_id=fit_id,
-                terminal_status="fallback_only",
+                terminal_status=fallback_status,
             )
         await mark_dirty_events_for_candidate(
             tenant_id=candidate.tenant_id,
             candidate=candidate,
-            status="fallback_only",
+            status=fallback_status,
         )
         return PlannedFitIntent(
             candidate=candidate,
             snapshot=snapshot,
             preflight_lease=preflight_lease,
+            profiling_lease=profiling_lease,
             resource_decision=None,
             claim=None,
             fallback_only=True,
             authority_yield=None,
+            supersession=supersession,
         )
 
     authority_yield: AuthorityBuildRequestResult | None = None
     authority_terminal_reason: FallbackReason | None = None
-    feature_authority = None
-    async with get_session(candidate.tenant_id) as session:
-        try:
-            feature_authority = await load_source_window_feature_authority(
+    if profiling_lease is None:
+        async with get_session(candidate.tenant_id) as session:
+            profiling_lease = await acquire_profiling_lease(
                 session,
                 tenant_id=candidate.tenant_id,
                 model_type=candidate.model_type,
@@ -368,7 +601,49 @@ async def plan_candidate(
                 source_window_start=candidate.source_window_start,
                 source_window_end=candidate.source_window_end,
                 source_snapshot_hash=snapshot.source_snapshot_hash,
+                lease_owner=planner_owner,
             )
+            if not profiling_lease.acquired:
+                await terminalize_preflight_lease(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    fit_id=None,
+                    terminal_status="suppressed",
+                )
+        if not profiling_lease.acquired:
+            await mark_dirty_events_for_candidate(
+                tenant_id=candidate.tenant_id,
+                candidate=candidate,
+                status="suppressed",
+            )
+            return PlannedFitIntent(
+                candidate=candidate,
+                snapshot=snapshot,
+                preflight_lease=preflight_lease,
+                profiling_lease=profiling_lease,
+                resource_decision=None,
+                claim=None,
+                fallback_only=True,
+                authority_yield=None,
+                supersession=supersession,
+            )
+
+    async with get_session(candidate.tenant_id) as session:
+        try:
+            if feature_authority is None:
+                feature_authority = await load_source_window_feature_authority(
+                    session,
+                    tenant_id=candidate.tenant_id,
+                    model_type=candidate.model_type,
+                    model_version=candidate.model_version,
+                    source_window_start=candidate.source_window_start,
+                    source_window_end=candidate.source_window_end,
+                    source_snapshot_hash=snapshot.source_snapshot_hash,
+                )
         except FeatureAuthorityUnavailable as exc:
             authority_yield = await request_feature_authority_build(
                 session,
@@ -389,6 +664,18 @@ async def plan_candidate(
                     or FallbackReason.CARDINALITY_AUTHORITY_TIMEOUT,
                     detail=exc.detail,
                 )
+            await terminalize_profiling_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                source_snapshot_hash=snapshot.source_snapshot_hash,
+                lease_owner=planner_owner,
+                terminal_status=ProfilingLeaseStatus.PROFILE_FAILED,
+                terminal_reason=exc.reason.value,
+            )
             await terminalize_preflight_lease(
                 session,
                 tenant_id=candidate.tenant_id,
@@ -418,10 +705,12 @@ async def plan_candidate(
                 candidate=candidate,
                 snapshot=snapshot,
                 preflight_lease=preflight_lease,
+                profiling_lease=profiling_lease,
                 resource_decision=None,
                 claim=None,
                 fallback_only=True,
                 authority_yield=authority_yield,
+                supersession=supersession,
             )
         await mark_authority_waiting_dirty_events(
             tenant_id=candidate.tenant_id,
@@ -433,10 +722,12 @@ async def plan_candidate(
             candidate=candidate,
             snapshot=snapshot,
             preflight_lease=preflight_lease,
+            profiling_lease=profiling_lease,
             resource_decision=None,
             claim=None,
             fallback_only=False,
             authority_yield=authority_yield,
+            supersession=supersession,
         )
 
     assert feature_authority is not None
@@ -452,6 +743,7 @@ async def plan_candidate(
                 snapshot=snapshot,
                 resource_decision=resource_decision,
             )
+            resource_fallback_status = "fallback_only"
             await terminalize_preflight_lease(
                 session,
                 tenant_id=candidate.tenant_id,
@@ -460,28 +752,109 @@ async def plan_candidate(
                 source_window_start=candidate.source_window_start,
                 source_window_end=candidate.source_window_end,
                 fit_id=fit_id,
-                terminal_status="fallback_only",
+                terminal_status=resource_fallback_status,
             )
+            await terminalize_profiling_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                source_snapshot_hash=snapshot.source_snapshot_hash,
+                lease_owner=planner_owner,
+                terminal_status=ProfilingLeaseStatus.PROFILE_REJECTED,
+                terminal_reason=(
+                    resource_decision.failure_reason.value
+                    if resource_decision.failure_reason
+                    else None
+                ),
+            )
+        fallback_status = "fallback_only"
         await mark_dirty_events_for_candidate(
             tenant_id=candidate.tenant_id,
             candidate=candidate,
-            status="fallback_only",
+            status=fallback_status,
         )
         return PlannedFitIntent(
             candidate=candidate,
             snapshot=snapshot,
             preflight_lease=preflight_lease,
+            profiling_lease=profiling_lease,
             resource_decision=resource_decision,
             claim=None,
             fallback_only=True,
             authority_yield=None,
+            supersession=supersession,
         )
 
     async with get_session(candidate.tenant_id) as session:
-        claim = await claim_fit_for_snapshot(
+        supersession = await check_snapshot_supersession(
             session,
+            tenant_id=candidate.tenant_id,
+            model_type=candidate.model_type,
+            model_version=candidate.model_version,
+            source_window_start=candidate.source_window_start,
+            source_window_end=candidate.source_window_end,
+            source_snapshot_hash=snapshot.source_snapshot_hash,
+        )
+        if supersession.superseded:
+            await terminalize_profiling_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                source_snapshot_hash=snapshot.source_snapshot_hash,
+                lease_owner=planner_owner,
+                terminal_status=ProfilingLeaseStatus.PROFILE_SUPERSEDED,
+                terminal_reason=supersession.supersession_reason,
+            )
+            await terminalize_preflight_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                fit_id=None,
+                terminal_status="authority_retry_superseded",
+            )
+        else:
+            claim = await claim_fit_for_snapshot(
+                session,
+                snapshot=snapshot,
+                claim_owner=planner_owner,
+            )
+            await terminalize_profiling_lease(
+                session,
+                tenant_id=candidate.tenant_id,
+                model_type=candidate.model_type,
+                model_version=candidate.model_version,
+                source_window_start=candidate.source_window_start,
+                source_window_end=candidate.source_window_end,
+                source_snapshot_hash=snapshot.source_snapshot_hash,
+                lease_owner=planner_owner,
+                terminal_status=ProfilingLeaseStatus.PROFILE_PASSED,
+            )
+
+    if supersession is not None and supersession.superseded:
+        await mark_dirty_events_for_candidate(
+            tenant_id=candidate.tenant_id,
+            candidate=candidate,
+            status="authority_retry_superseded",
+        )
+        return PlannedFitIntent(
+            candidate=candidate,
             snapshot=snapshot,
-            claim_owner=planner_owner,
+            preflight_lease=preflight_lease,
+            profiling_lease=profiling_lease,
+            resource_decision=resource_decision,
+            claim=None,
+            fallback_only=False,
+            authority_yield=None,
+            supersession=supersession,
         )
 
     if claim.claimed_for_dispatch:
@@ -497,10 +870,12 @@ async def plan_candidate(
         candidate=candidate,
         snapshot=snapshot,
         preflight_lease=preflight_lease,
+        profiling_lease=profiling_lease,
         resource_decision=resource_decision,
         claim=claim,
         fallback_only=False,
         authority_yield=None,
+        supersession=supersession,
     )
 
 
