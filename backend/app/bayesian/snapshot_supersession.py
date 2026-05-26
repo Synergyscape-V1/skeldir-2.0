@@ -11,6 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 SNAPSHOT_SUPERSESSION_POLICY_VERSION = "b24-p4-snapshot-supersession-v1"
+B24_P5_OUTPUT_NON_REGRESSION_ENTRY_GATE = (
+    "Before B2.4-P5 introduces artifact, TrustEnvelope, or current-output writes, "
+    "those production write paths must call "
+    "assert_snapshot_artifact_not_regressing_current_output."
+)
 
 
 @dataclass(frozen=True)
@@ -74,6 +79,8 @@ async def check_snapshot_supersession(
                           AND lease.active_source_snapshot_hash IS NOT NULL
                           AND lease.active_source_snapshot_hash <> :source_snapshot_hash
                           AND lease.status IN (
+                              'profiling',
+                              'profile_passed',
                               'claiming',
                               'dispatch_pending',
                               'dispatched',

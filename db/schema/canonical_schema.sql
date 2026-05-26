@@ -1148,13 +1148,13 @@ CREATE TABLE public.b24_active_execution_leases (
     terminal_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_b24_active_execution_active_fit_required CHECK ((((status)::text = 'claiming'::text) OR (fit_id IS NOT NULL))),
+    CONSTRAINT ck_b24_active_execution_active_fit_required CHECK ((((status)::text = ANY ((ARRAY['claiming'::character varying, 'profiling'::character varying, 'profile_passed'::character varying, 'profile_rejected'::character varying, 'profile_superseded'::character varying, 'profile_timeout'::character varying, 'profile_failed'::character varying])::text[])) OR (fit_id IS NOT NULL))),
     CONSTRAINT ck_b24_active_execution_active_hash_sha256 CHECK (((active_source_snapshot_hash IS NULL) OR ((active_source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_b24_active_execution_desired_hash_sha256 CHECK (((latest_desired_source_snapshot_hash IS NULL) OR ((latest_desired_source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text))),
     CONSTRAINT ck_b24_active_execution_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
     CONSTRAINT ck_b24_active_execution_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
     CONSTRAINT ck_b24_active_execution_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_b24_active_execution_status CHECK (((status)::text = ANY ((ARRAY['claiming'::character varying, 'dispatch_pending'::character varying, 'dispatched'::character varying, 'running'::character varying, 'cancel_requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying, 'stale_recovered'::character varying])::text[])))
+    CONSTRAINT ck_b24_active_execution_status CHECK (((status)::text = ANY ((ARRAY['profiling'::character varying, 'profile_passed'::character varying, 'profile_rejected'::character varying, 'profile_superseded'::character varying, 'profile_timeout'::character varying, 'profile_failed'::character varying, 'claiming'::character varying, 'dispatch_pending'::character varying, 'dispatched'::character varying, 'running'::character varying, 'cancel_requested'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying, 'stale_recovered'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.b24_active_execution_leases FORCE ROW LEVEL SECURITY;
@@ -4956,6 +4956,8 @@ CREATE INDEX idx_b23_revenue_events_tenant_provider_reference ON public.b23_reve
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_provider_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, provider, received_at DESC);
 
 CREATE INDEX idx_b23_webhook_ingestion_logs_tenant_status_received ON public.b23_webhook_ingestion_logs USING btree (tenant_id, ingestion_status, received_at DESC);
+
+CREATE INDEX idx_b24_active_execution_canonical_profiling ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end, status, leased_until) WHERE ((status)::text = 'profiling'::text);
 
 CREATE INDEX idx_b24_active_execution_superseded ON public.b24_active_execution_leases USING btree (tenant_id, model_type, model_version, source_window_start, source_window_end) WHERE (needs_refit_after_current = true);
 
