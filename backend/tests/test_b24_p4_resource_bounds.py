@@ -12,6 +12,13 @@ from app.bayesian.design_matrix_envelope import estimate_design_matrix_envelope
 from app.bayesian.enums import FallbackReason
 from app.bayesian.authority_liveness import (
     AuthorityBuildStatus,
+    DISPATCH_RETRY_BACKOFF_MS,
+    FEATURE_AUTHORITY_BUILD_TASK,
+    FEATURE_AUTHORITY_DISPATCH_TASK,
+    MAX_DISPATCH_ATTEMPTS,
+    NORMAL_DISPATCH_DEADLINE_MS,
+    POST_COMMIT_DISPATCH_SESSION_KEY,
+    RECOVERY_ORPHAN_THRESHOLD_MS,
     request_feature_authority_build,
 )
 from app.bayesian.cardinality_db_work import (
@@ -72,6 +79,14 @@ SUPERSESSION_PROFILING_MIGRATION = (
     REPO_ROOT
     / "alembic/versions/007_skeldir_foundation/202605251800_b24_p4_supersession_profiling_lease.py"
 )
+STRICT_PURGE_MIGRATION = (
+    REPO_ROOT
+    / "alembic/versions/007_skeldir_foundation/202605271200_b24_p4_strict_profiling_purge.py"
+)
+CANONICAL_SCHEMA = REPO_ROOT / "db/schema/canonical_schema.sql"
+CANONICAL_SCHEMA_YAML = REPO_ROOT / "db/schema/canonical_schema.yaml"
+TASKS_BAYESIAN = REPO_ROOT / "backend/app/tasks/bayesian.py"
+B24_GATE_WORKFLOW = REPO_ROOT / ".github/workflows/b2_4-gate-dry-run.yml"
 
 
 TENANT_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -777,6 +792,142 @@ def test_b24_p4_build_dispatch_has_latency_budget() -> None:
     assert "DEFAULT_AUTHORITY_BUILD_DISPATCH_BATCH_SIZE" in text
     assert "next_attempt_at" in text
     assert "idx_b24_feature_authority_build_outbox_due" in text
+
+
+def test_b24_p4_deprecated_profiling_table_absent_from_runtime_head_schema() -> None:
+    text = _read(CANONICAL_SCHEMA)
+    assert "b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_deprecated_profiling_table_absent_from_canonical_schema() -> None:
+    assert "b24_p4_profiling_leases" not in _read(CANONICAL_SCHEMA)
+    assert "b24_p4_profiling_leases" not in _read(CANONICAL_SCHEMA_YAML)
+
+
+def test_b24_p4_deprecated_profiling_orm_model_removed() -> None:
+    text = _read(MODELS)
+    assert "B24P4ProfilingLease" not in text
+    assert "b24_p4_profiling_leases" not in text
+
+
+def test_b24_p4_strict_purge_migration_rejects_unexpected_missing_table() -> None:
+    text = _read(STRICT_PURGE_MIGRATION)
+    upgrade = text[text.find("def upgrade") : text.find("def downgrade")]
+    assert "to_regclass('public.b24_p4_profiling_leases')" in upgrade
+    assert "RAISE EXCEPTION 'Expected public.b24_p4_profiling_leases" in upgrade
+    assert "DROP TABLE public.b24_p4_profiling_leases" in upgrade
+    assert "DROP TABLE IF EXISTS public.b24_p4_profiling_leases" not in upgrade
+
+
+def test_b24_p4_validator_rejects_b24_p4_profiling_leases_in_canonical_schema() -> None:
+    validator = _load_validator()
+    with pytest.raises(validator.ValidationError, match="deprecated profiling"):
+        validator.validate_schema_surface_with_texts(
+            REPO_ROOT,
+            canonical_text=_read(CANONICAL_SCHEMA)
+            + "\nCREATE TABLE public.b24_p4_profiling_leases (tenant_id uuid);\n",
+        )
+
+
+def test_b24_p4_validator_rejects_production_reference_to_deprecated_profiling_table() -> None:
+    validator = _load_validator()
+    with pytest.raises(validator.ValidationError, match="deprecated profiling"):
+        validator.validate_schema_surface_with_texts(
+            REPO_ROOT,
+            models_text=_read(MODELS) + "\nclass B24P4ProfilingLease: pass\n",
+        )
+
+
+def test_b24_p4_validator_rejects_b24_p4_profiling_leases_runtime_presence() -> None:
+    validator = _load_validator()
+    with pytest.raises(validator.ValidationError, match="deprecated profiling"):
+        validator.validate_schema_surface_with_texts(
+            REPO_ROOT,
+            canonical_yaml_text=_read(CANONICAL_SCHEMA_YAML)
+            + "\n  b24_p4_profiling_leases: {}\n",
+        )
+
+
+def test_b24_p4_authority_build_dispatch_has_post_commit_causal_trigger() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "after_commit" in text
+    assert POST_COMMIT_DISPATCH_SESSION_KEY in text
+    assert FEATURE_AUTHORITY_DISPATCH_TASK in text
+    assert "publish_feature_authority_dispatch" in text
+
+
+def test_b24_p4_build_feature_authority_task_exists_and_is_registered() -> None:
+    text = _read(TASKS_BAYESIAN)
+    assert FEATURE_AUTHORITY_BUILD_TASK in text
+    assert "def build_feature_authority" in text
+    assert "b24_source_window_feature_authority" in text
+    assert "b24_dirty_events" in text
+
+
+def test_b24_p4_build_request_dispatch_is_causally_triggered_after_commit() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "_register_post_commit_authority_dispatch" in text
+    assert "_publish_authority_dispatch_after_commit" in text
+    assert "session.info.pop(POST_COMMIT_DISPATCH_SESSION_KEY" in text
+
+
+def test_b24_p4_outbox_dispatcher_publishes_task_without_waiting_for_sweeper() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(TASKS_BAYESIAN)
+    assert "dispatch_feature_authority_build_by_key" in text
+    assert "lease_feature_authority_build_dispatch_by_key" in text
+    assert FEATURE_AUTHORITY_DISPATCH_TASK in text
+
+
+def test_b24_p4_normal_dispatch_happens_with_sweeper_disabled() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    normal_path = text[text.find("def _publish_authority_dispatch_after_commit") :]
+    assert "dispatch_due_feature_authority_builds" not in normal_path[
+        : normal_path.find("async def dispatch_due_feature_authority_builds")
+    ]
+    assert "publish_feature_authority_dispatch" in normal_path
+
+
+def test_b24_p4_passive_polling_is_not_primary_authority_build_trigger() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "Recovery-only sweeper" in text
+    assert "after_commit" in text
+    assert "Celery Beat" not in text
+    assert "cron" not in text
+
+
+def test_b24_p4_recovery_threshold_constants_are_defined() -> None:
+    assert NORMAL_DISPATCH_DEADLINE_MS > 0
+    assert RECOVERY_ORPHAN_THRESHOLD_MS > NORMAL_DISPATCH_DEADLINE_MS
+    assert MAX_DISPATCH_ATTEMPTS >= 1
+    assert DISPATCH_RETRY_BACKOFF_MS > 0
+
+
+def test_b24_p4_sweeper_ignores_fresh_queued_outbox_rows() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    assert "created_at <= now() - (:recovery_orphan_threshold_ms * interval '1 millisecond')" in text
+    assert "status IN ('failed_retryable', 'stale_recovered')" in text
+
+
+def test_b24_p4_sweeper_claims_only_orphaned_rows_after_threshold() -> None:
+    text = _read(AUTHORITY_LIVENESS)
+    lease_sql = text[text.find("LEASE_AUTHORITY_BUILD_OUTBOX_SQL") : text.find("MARK_AUTHORITY_BUILD_DISPATCHED_SQL")]
+    assert "FOR UPDATE SKIP LOCKED" in lease_sql
+    assert "RECOVERY_ORPHAN_THRESHOLD_MS" in text
+    assert "recovery_orphan_threshold_ms" in lease_sql
+
+
+def test_b24_p4_post_commit_dispatch_failure_marks_retryable_row() -> None:
+    text = _read(AUTHORITY_LIVENESS) + _read(TASKS_BAYESIAN)
+    assert "failed_retryable" in text
+    assert "dead_lettered" in text
+    assert "mark_feature_authority_build_dispatch_failed" in text
+
+
+def test_b24_p4_authority_waiting_progresses_to_retry_ready_after_build_completion() -> None:
+    text = _read(TASKS_BAYESIAN) + _read(FEATURE_AUTHORITY)
+    assert "authority_completed" in text
+    assert "authority_retry_ready" in text
+    assert "feature_authority_fresh" in text
 
 
 def test_b24_p4_only_one_planner_profiles_same_frozen_hash() -> None:

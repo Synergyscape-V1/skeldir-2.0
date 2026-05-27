@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 # Static production contract. Runtime env may lower limits for non-vacuous CI probes.
 PRODUCTION_BAYESIAN_SOFT_TIME_LIMIT_S = 270
 PRODUCTION_BAYESIAN_TIME_LIMIT_S = 300
+FEATURE_AUTHORITY_BUILD_TASK_NAME = "app.tasks.bayesian.build_feature_authority"
+FEATURE_AUTHORITY_DISPATCH_TASK_NAME = "app.tasks.bayesian.dispatch_feature_authority_build"
+FEATURE_AUTHORITY_DISPATCH_RETRY_BACKOFF_S = 30
+FEATURE_AUTHORITY_MAX_DISPATCH_ATTEMPTS = 5
 
 _TASK_SOFT_LIMIT_S = int(settings.BAYESIAN_TASK_SOFT_TIME_LIMIT_S)
 _TASK_HARD_LIMIT_S = int(settings.BAYESIAN_TASK_TIME_LIMIT_S)
@@ -81,6 +85,13 @@ def _runtime_sync_database_url() -> str:
     if parsed.database:
         dsn_parts.append(f"/{parsed.database}")
     return "".join(dsn_parts)
+
+
+def _set_tenant_context(conn, tenant_id: UUID) -> None:
+    conn.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
 
 
 def _exercise_cpu(*, seed: int, cycles: int) -> int:
@@ -245,6 +256,347 @@ def execute_fit_intent(self, *, fit_id: str) -> dict:
     }
     _append_probe_event({"event": "bayesian_fit_intent_accepted", **payload})
     return payload
+
+
+@celery_app.task(
+    bind=True,
+    name=FEATURE_AUTHORITY_DISPATCH_TASK_NAME,
+    routing_key="bayesian.task",
+    soft_time_limit=30,
+    time_limit=60,
+    acks_late=True,
+    max_retries=0,
+)
+def dispatch_feature_authority_build(
+    self, *, tenant_id: str, dispatch_key: str
+) -> dict:
+    """Causally dispatch one committed feature-authority build outbox row."""
+
+    tenant = _as_uuid(tenant_id)
+    task_id = str(self.request.id)
+    engine = create_engine(
+        _runtime_sync_database_url(),
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+    row = None
+    try:
+        with engine.begin() as conn:
+            _set_tenant_context(conn, tenant)
+            row = (
+                conn.execute(
+                    text(
+                        """
+                        WITH due AS (
+                            SELECT tenant_id, id
+                            FROM public.b24_feature_authority_build_outbox
+                            WHERE tenant_id = :tenant_id
+                              AND dispatch_key = :dispatch_key
+                              AND status IN ('pending', 'failed_retryable', 'stale_recovered')
+                              AND next_attempt_at <= now()
+                            ORDER BY next_attempt_at ASC, id ASC
+                            LIMIT 1
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        UPDATE public.b24_feature_authority_build_outbox outbox
+                        SET status = 'dispatching',
+                            dispatching_started_at = now(),
+                            last_attempt_at = now(),
+                            attempt_count = attempt_count + 1,
+                            updated_at = now()
+                        FROM due
+                        WHERE outbox.tenant_id = due.tenant_id
+                          AND outbox.id = due.id
+                        RETURNING
+                            outbox.id,
+                            outbox.tenant_id,
+                            outbox.model_type,
+                            outbox.model_version,
+                            outbox.source_window_start,
+                            outbox.source_window_end,
+                            outbox.source_snapshot_hash,
+                            outbox.attempt_count,
+                            outbox.max_attempts
+                        """
+                    ),
+                    {"tenant_id": str(tenant), "dispatch_key": dispatch_key},
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return {
+                "status": "not_dispatchable",
+                "task_id": task_id,
+                "tenant_id": str(tenant),
+                "dispatch_key": dispatch_key,
+            }
+        try:
+            celery_app.send_task(
+                FEATURE_AUTHORITY_BUILD_TASK_NAME,
+                kwargs={
+                    "tenant_id": str(row["tenant_id"]),
+                    "model_type": str(row["model_type"]),
+                    "model_version": str(row["model_version"]),
+                    "source_window_start": row["source_window_start"].isoformat(),
+                    "source_window_end": row["source_window_end"].isoformat(),
+                    "source_snapshot_hash": str(row["source_snapshot_hash"]),
+                },
+                queue="bayesian",
+                routing_key="bayesian.task",
+            )
+        except Exception as exc:
+            dead_letter = int(row["attempt_count"]) >= int(row["max_attempts"])
+            with engine.begin() as conn:
+                _set_tenant_context(conn, tenant)
+                conn.execute(
+                    text(
+                        """
+                        UPDATE public.b24_feature_authority_build_outbox
+                        SET status = :status,
+                            next_attempt_at = CASE
+                                WHEN :dead_letter THEN next_attempt_at
+                                ELSE now() + (:retry_delay_seconds * interval '1 second')
+                            END,
+                            dead_lettered_at = CASE
+                                WHEN :dead_letter THEN now()
+                                ELSE dead_lettered_at
+                            END,
+                            last_error = :error,
+                            updated_at = now()
+                        WHERE tenant_id = :tenant_id
+                          AND id = :outbox_id
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "outbox_id": str(row["id"]),
+                        "status": "dead_lettered" if dead_letter else "failed_retryable",
+                        "dead_letter": dead_letter,
+                        "retry_delay_seconds": FEATURE_AUTHORITY_DISPATCH_RETRY_BACKOFF_S,
+                        "error": str(exc)[:2048],
+                    },
+                )
+            return {
+                "status": "dispatch_failed",
+                "task_id": task_id,
+                "tenant_id": str(tenant),
+                "dispatch_key": dispatch_key,
+            }
+        with engine.begin() as conn:
+            _set_tenant_context(conn, tenant)
+            conn.execute(
+                text(
+                    """
+                    UPDATE public.b24_feature_authority_build_outbox
+                    SET status = 'dispatched',
+                        dispatched_at = now(),
+                        last_error = NULL,
+                        updated_at = now()
+                    WHERE tenant_id = :tenant_id
+                      AND id = :outbox_id
+                    """
+                ),
+                {"tenant_id": str(tenant), "outbox_id": str(row["id"])},
+            )
+        return {
+            "status": "dispatched",
+            "task_id": task_id,
+            "tenant_id": str(tenant),
+            "dispatch_key": dispatch_key,
+        }
+    finally:
+        engine.dispose()
+
+
+@celery_app.task(
+    bind=True,
+    name=FEATURE_AUTHORITY_BUILD_TASK_NAME,
+    routing_key="bayesian.task",
+    soft_time_limit=60,
+    time_limit=90,
+    acks_late=True,
+    max_retries=0,
+)
+def build_feature_authority(
+    self,
+    *,
+    tenant_id: str,
+    model_type: str,
+    model_version: str,
+    source_window_start: str,
+    source_window_end: str,
+    source_snapshot_hash: str,
+) -> dict:
+    """Reactivate the frozen candidate once snapshot-fresh authority exists."""
+
+    tenant = _as_uuid(tenant_id)
+    task_id = str(self.request.id)
+    engine = create_engine(
+        _runtime_sync_database_url(),
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+    try:
+        with engine.begin() as conn:
+            _set_tenant_context(conn, tenant)
+            authority = (
+                conn.execute(
+                    text(
+                        """
+                        SELECT freshness_status, policy_version
+                        FROM public.b24_source_window_feature_authority
+                        WHERE tenant_id = :tenant_id
+                          AND model_type = :model_type
+                          AND model_version = :model_version
+                          AND source_window_start = :source_window_start
+                          AND source_window_end = :source_window_end
+                          AND source_snapshot_hash = :source_snapshot_hash
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "model_type": model_type,
+                        "model_version": model_version,
+                        "source_window_start": source_window_start,
+                        "source_window_end": source_window_end,
+                        "source_snapshot_hash": source_snapshot_hash,
+                    },
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if authority is None or authority["freshness_status"] != "fresh":
+                conn.execute(
+                    text(
+                        """
+                        UPDATE public.b24_feature_authority_build_requests
+                        SET status = 'authority_waiting',
+                            retry_after_at = now() + interval '60 seconds',
+                            updated_at = now()
+                        WHERE tenant_id = :tenant_id
+                          AND model_type = :model_type
+                          AND model_version = :model_version
+                          AND source_window_start = :source_window_start
+                          AND source_window_end = :source_window_end
+                          AND source_snapshot_hash = :source_snapshot_hash
+                          AND status IN (
+                              'authority_build_requested',
+                              'authority_waiting',
+                              'authority_retry_ready'
+                          )
+                        """
+                    ),
+                    {
+                        "tenant_id": str(tenant),
+                        "model_type": model_type,
+                        "model_version": model_version,
+                        "source_window_start": source_window_start,
+                        "source_window_end": source_window_end,
+                        "source_snapshot_hash": source_snapshot_hash,
+                    },
+                )
+                return {
+                    "status": "authority_waiting",
+                    "task_id": task_id,
+                    "tenant_id": str(tenant),
+                    "source_snapshot_hash": source_snapshot_hash,
+                }
+            conn.execute(
+                text(
+                    """
+                    WITH transitioned AS (
+                        UPDATE public.b24_feature_authority_build_requests
+                        SET status = 'authority_completed',
+                            completed_at = now(),
+                            retry_after_at = NULL,
+                            terminal_reason = NULL,
+                            terminal_at = NULL,
+                            updated_at = now()
+                        WHERE tenant_id = :tenant_id
+                          AND model_type = :model_type
+                          AND model_version = :model_version
+                          AND source_window_start = :source_window_start
+                          AND source_window_end = :source_window_end
+                          AND source_snapshot_hash = :source_snapshot_hash
+                          AND status IN (
+                              'authority_build_requested',
+                              'authority_waiting',
+                              'authority_retry_ready'
+                          )
+                        RETURNING
+                            tenant_id,
+                            model_type,
+                            model_version,
+                            source_window_start,
+                            source_window_end,
+                            source_snapshot_hash
+                    ),
+                    reactivated_waiters AS (
+                        UPDATE public.b24_dirty_events dirty
+                        SET status = 'authority_retry_ready',
+                            authority_reactivated_at = now(),
+                            updated_at = now()
+                        FROM transitioned ready
+                        WHERE dirty.tenant_id = ready.tenant_id
+                          AND dirty.model_type = ready.model_type
+                          AND dirty.model_version = ready.model_version
+                          AND dirty.source_window_start = ready.source_window_start
+                          AND dirty.source_window_end = ready.source_window_end
+                          AND dirty.source_snapshot_hash = ready.source_snapshot_hash
+                          AND dirty.status = 'authority_waiting'
+                    )
+                    INSERT INTO public.b24_dirty_events (
+                        tenant_id,
+                        model_type,
+                        model_version,
+                        source_window_start,
+                        source_window_end,
+                        source_snapshot_hash,
+                        dirty_reason,
+                        source_family,
+                        source_event_id,
+                        status,
+                        observed_at,
+                        created_at,
+                        updated_at
+                    )
+                    SELECT
+                        tenant_id,
+                        model_type,
+                        model_version,
+                        source_window_start,
+                        source_window_end,
+                        source_snapshot_hash,
+                        'feature_authority_fresh',
+                        'b24_feature_authority',
+                        source_snapshot_hash,
+                        'pending',
+                        now(),
+                        now(),
+                        now()
+                    FROM transitioned
+                    """
+                ),
+                {
+                    "tenant_id": str(tenant),
+                    "model_type": model_type,
+                    "model_version": model_version,
+                    "source_window_start": source_window_start,
+                    "source_window_end": source_window_end,
+                    "source_snapshot_hash": source_snapshot_hash,
+                },
+            )
+        return {
+            "status": "authority_completed",
+            "task_id": task_id,
+            "tenant_id": str(tenant),
+            "source_snapshot_hash": source_snapshot_hash,
+        }
+    finally:
+        engine.dispose()
 
 
 @celery_app.task(

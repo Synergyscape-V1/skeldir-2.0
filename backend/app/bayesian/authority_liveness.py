@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Callable
 from uuid import UUID
 
+from sqlalchemy import event
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session as SyncSession
 
 from app.celery_app import celery_app
 from app.bayesian.enums import FallbackReason
@@ -17,11 +20,19 @@ from app.bayesian.source_snapshot import SourceSnapshotResult
 from app.core.queues import QUEUE_BAYESIAN
 
 
+logger = logging.getLogger(__name__)
+
 AUTHORITY_LIVENESS_POLICY_VERSION = "b24-p4-authority-liveness-v1"
 FEATURE_AUTHORITY_BUILD_TASK = "app.tasks.bayesian.build_feature_authority"
+FEATURE_AUTHORITY_DISPATCH_TASK = "app.tasks.bayesian.dispatch_feature_authority_build"
 DEFAULT_AUTHORITY_RETRY_DELAY_SECONDS = 60
 DEFAULT_AUTHORITY_MAX_RETRIES = 5
 DEFAULT_AUTHORITY_BUILD_DISPATCH_BATCH_SIZE = 25
+NORMAL_DISPATCH_DEADLINE_MS = 5_000
+RECOVERY_ORPHAN_THRESHOLD_MS = 60_000
+MAX_DISPATCH_ATTEMPTS = 5
+DISPATCH_RETRY_BACKOFF_MS = 30_000
+POST_COMMIT_DISPATCH_SESSION_KEY = "b24_feature_authority_post_commit_dispatches"
 AUTHORITY_YIELD_REASONS = (
     "cardinality_authority_missing",
     "cardinality_authority_stale",
@@ -51,6 +62,7 @@ class AuthorityBuildRequestResult:
     max_retries: int
     retry_after_at: datetime | None
     terminal_reason: FallbackReason | None
+    dispatch_key: str
 
 
 @dataclass(frozen=True)
@@ -268,7 +280,8 @@ SELECT
     retry_count,
     max_retries,
     retry_after_at,
-    terminal_reason
+    terminal_reason,
+    'b24-feature-authority-build:' || tenant_id::text || ':' || source_snapshot_hash AS dispatch_key
 FROM upserted_request
 """
 
@@ -459,8 +472,46 @@ WITH due AS (
     FROM public.b24_feature_authority_build_outbox
     WHERE status IN ('pending', 'failed_retryable', 'stale_recovered')
       AND next_attempt_at <= now()
+      AND (
+          status IN ('failed_retryable', 'stale_recovered')
+          OR created_at <= now() - (:recovery_orphan_threshold_ms * interval '1 millisecond')
+      )
     ORDER BY next_attempt_at ASC, id ASC
     LIMIT :batch_size
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE public.b24_feature_authority_build_outbox outbox
+SET status = 'dispatching',
+    dispatching_started_at = now(),
+    last_attempt_at = now(),
+    attempt_count = attempt_count + 1,
+    updated_at = now()
+FROM due
+WHERE outbox.tenant_id = due.tenant_id
+  AND outbox.id = due.id
+RETURNING
+    outbox.id,
+    outbox.tenant_id,
+    outbox.model_type,
+    outbox.model_version,
+    outbox.source_window_start,
+    outbox.source_window_end,
+    outbox.source_snapshot_hash,
+    outbox.attempt_count,
+    outbox.max_attempts
+"""
+
+
+LEASE_AUTHORITY_BUILD_OUTBOX_BY_DISPATCH_KEY_SQL = """
+WITH due AS (
+    SELECT tenant_id, id
+    FROM public.b24_feature_authority_build_outbox
+    WHERE tenant_id = :tenant_id
+      AND dispatch_key = :dispatch_key
+      AND status IN ('pending', 'failed_retryable', 'stale_recovered')
+      AND next_attempt_at <= now()
+    ORDER BY next_attempt_at ASC, id ASC
+    LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
 UPDATE public.b24_feature_authority_build_outbox outbox
@@ -516,6 +567,9 @@ WHERE tenant_id = :tenant_id
 
 def _request_result_from_row(row: dict[str, object]) -> AuthorityBuildRequestResult:
     reason_value = row.get("terminal_reason")
+    dispatch_key = row.get("dispatch_key") or (
+        f"b24-feature-authority-build:{row['tenant_id']}:{row['source_snapshot_hash']}"
+    )
     return AuthorityBuildRequestResult(
         tenant_id=row["tenant_id"],
         model_type=str(row["model_type"]),
@@ -528,6 +582,7 @@ def _request_result_from_row(row: dict[str, object]) -> AuthorityBuildRequestRes
         max_retries=int(row["max_retries"]),
         retry_after_at=row["retry_after_at"],
         terminal_reason=FallbackReason(str(reason_value)) if reason_value else None,
+        dispatch_key=str(dispatch_key),
     )
 
 
@@ -557,6 +612,56 @@ def publish_feature_authority_build(row: AuthorityBuildDispatchRow) -> str:
     return str(result.id)
 
 
+def publish_feature_authority_dispatch(
+    *, tenant_id: UUID, dispatch_key: str
+) -> str:
+    """Causally wake the active dispatcher for one committed authority-build row."""
+
+    result = celery_app.send_task(
+        FEATURE_AUTHORITY_DISPATCH_TASK,
+        kwargs={"tenant_id": str(tenant_id), "dispatch_key": dispatch_key},
+        queue=QUEUE_BAYESIAN,
+        routing_key=f"{QUEUE_BAYESIAN}.task",
+    )
+    return str(result.id)
+
+
+def _register_post_commit_authority_dispatch(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dispatch_key: str,
+) -> None:
+    sync_session = getattr(session, "sync_session", None)
+    if sync_session is None:
+        return
+    pending = sync_session.info.setdefault(
+        POST_COMMIT_DISPATCH_SESSION_KEY, []
+    )
+    payload = (str(tenant_id), dispatch_key)
+    if payload not in pending:
+        pending.append(payload)
+
+
+@event.listens_for(AsyncSession.sync_session_class, "after_commit")
+def _publish_authority_dispatch_after_commit(session: SyncSession) -> None:
+    pending = session.info.pop(POST_COMMIT_DISPATCH_SESSION_KEY, [])
+    for tenant_id, dispatch_key in pending:
+        try:
+            publish_feature_authority_dispatch(
+                tenant_id=UUID(str(tenant_id)),
+                dispatch_key=str(dispatch_key),
+            )
+        except Exception:
+            logger.exception(
+                "b24_feature_authority_post_commit_dispatch_enqueue_failed",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "dispatch_key": str(dispatch_key),
+                },
+            )
+
+
 async def request_feature_authority_build(
     session: AsyncSession,
     *,
@@ -584,7 +689,15 @@ async def request_feature_authority_build(
             "policy_version": AUTHORITY_LIVENESS_POLICY_VERSION,
         },
     )
-    return _request_result_from_row(dict(result.mappings().one()))
+    request = _request_result_from_row(dict(result.mappings().one()))
+    if request.status in {
+        AuthorityBuildStatus.BUILD_REQUESTED,
+        AuthorityBuildStatus.WAITING,
+    }:
+        _register_post_commit_authority_dispatch(
+            session, tenant_id=request.tenant_id, dispatch_key=request.dispatch_key
+        )
+    return request
 
 
 async def request_feature_authority_build_for_hash(
@@ -619,7 +732,15 @@ async def request_feature_authority_build_for_hash(
             "policy_version": AUTHORITY_LIVENESS_POLICY_VERSION,
         },
     )
-    return _request_result_from_row(dict(result.mappings().one()))
+    request = _request_result_from_row(dict(result.mappings().one()))
+    if request.status in {
+        AuthorityBuildStatus.BUILD_REQUESTED,
+        AuthorityBuildStatus.WAITING,
+    }:
+        _register_post_commit_authority_dispatch(
+            session, tenant_id=request.tenant_id, dispatch_key=request.dispatch_key
+        )
+    return request
 
 
 async def reactivate_planner_for_feature_authority(
@@ -701,9 +822,28 @@ async def lease_due_feature_authority_build_dispatches(
 
     result = await session.execute(
         text(LEASE_AUTHORITY_BUILD_OUTBOX_SQL),
-        {"batch_size": max(1, int(batch_size))},
+        {
+            "batch_size": max(1, int(batch_size)),
+            "recovery_orphan_threshold_ms": RECOVERY_ORPHAN_THRESHOLD_MS,
+        },
     )
     return [_dispatch_row_from_mapping(dict(row)) for row in result.mappings()]
+
+
+async def lease_feature_authority_build_dispatch_by_key(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dispatch_key: str,
+) -> AuthorityBuildDispatchRow | None:
+    """Lease one causally triggered outbox row without waiting for sweeper age."""
+
+    result = await session.execute(
+        text(LEASE_AUTHORITY_BUILD_OUTBOX_BY_DISPATCH_KEY_SQL),
+        {"tenant_id": str(tenant_id), "dispatch_key": dispatch_key},
+    )
+    row = result.mappings().one_or_none()
+    return _dispatch_row_from_mapping(dict(row)) if row is not None else None
 
 
 async def mark_feature_authority_build_dispatched(
@@ -747,7 +887,7 @@ async def dispatch_due_feature_authority_builds(
     ] = publish_feature_authority_build,
     batch_size: int = DEFAULT_AUTHORITY_BUILD_DISPATCH_BATCH_SIZE,
 ) -> list[AuthorityBuildDispatchRow]:
-    """Publish bounded authority-build work after durable outbox leasing."""
+    """Recovery-only sweeper for orphaned or retry-due authority-build dispatches."""
 
     rows = await lease_due_feature_authority_build_dispatches(
         session, batch_size=batch_size
@@ -764,3 +904,32 @@ async def dispatch_due_feature_authority_builds(
             session, tenant_id=row.tenant_id, outbox_id=row.id
         )
     return rows
+
+
+async def dispatch_feature_authority_build_by_key(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    dispatch_key: str,
+    publish: Callable[
+        [AuthorityBuildDispatchRow], str
+    ] = publish_feature_authority_build,
+) -> AuthorityBuildDispatchRow | None:
+    """Publish one post-commit-triggered authority-build row by dispatch key."""
+
+    row = await lease_feature_authority_build_dispatch_by_key(
+        session, tenant_id=tenant_id, dispatch_key=dispatch_key
+    )
+    if row is None:
+        return None
+    try:
+        publish(row)
+    except Exception as exc:
+        await mark_feature_authority_build_dispatch_failed(
+            session, row=row, error=str(exc)
+        )
+        return row
+    await mark_feature_authority_build_dispatched(
+        session, tenant_id=row.tenant_id, outbox_id=row.id
+    )
+    return row
