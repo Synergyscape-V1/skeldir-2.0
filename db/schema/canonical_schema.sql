@@ -1294,36 +1294,6 @@ CREATE TABLE public.b24_fit_dispatch_outbox (
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox FORCE ROW LEVEL SECURITY;
 
-CREATE TABLE public.b24_p4_profiling_leases (
-    tenant_id uuid NOT NULL,
-    model_type character varying(64) NOT NULL,
-    model_version character varying(64) NOT NULL,
-    source_window_start timestamp with time zone NOT NULL,
-    source_window_end timestamp with time zone NOT NULL,
-    source_snapshot_hash character varying(64) NOT NULL,
-    profiling_lease_id character varying(64) NOT NULL,
-    status character varying(32) DEFAULT 'profiling'::character varying NOT NULL,
-    lease_owner character varying(128),
-    leased_until timestamp with time zone NOT NULL,
-    attempt_count integer DEFAULT 0 NOT NULL,
-    terminal_reason character varying(128),
-    terminal_at timestamp with time zone,
-    stale_recovered_at timestamp with time zone,
-    policy_version character varying(64) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_b24_p4_profiling_leases_attempt_count CHECK ((attempt_count >= 0)),
-    CONSTRAINT ck_b24_p4_profiling_leases_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
-    CONSTRAINT ck_b24_p4_profiling_leases_id_sha256 CHECK (((profiling_lease_id)::text ~ '^[a-f0-9]{64}$'::text)),
-    CONSTRAINT ck_b24_p4_profiling_leases_model_type_format CHECK (((model_type)::text ~ '^[a-z][a-z0-9_]{1,63}$'::text)),
-    CONSTRAINT ck_b24_p4_profiling_leases_model_version_not_blank CHECK ((char_length(TRIM(BOTH FROM model_version)) > 0)),
-    CONSTRAINT ck_b24_p4_profiling_leases_policy_version_not_blank CHECK ((char_length(TRIM(BOTH FROM policy_version)) > 0)),
-    CONSTRAINT ck_b24_p4_profiling_leases_status CHECK (((status)::text = ANY ((ARRAY['profiling'::character varying, 'profile_rejected'::character varying, 'profile_passed'::character varying, 'profile_superseded'::character varying, 'profile_timeout'::character varying, 'profile_failed'::character varying])::text[]))),
-    CONSTRAINT ck_b24_p4_profiling_leases_window_order CHECK ((source_window_end > source_window_start))
-);
-
-ALTER TABLE ONLY public.b24_p4_profiling_leases FORCE ROW LEVEL SECURITY;
-
 CREATE TABLE public.b24_source_window_feature_authority (
     tenant_id uuid NOT NULL,
     model_type character varying(64) NOT NULL,
@@ -3999,9 +3969,6 @@ ALTER TABLE ONLY public.b24_feature_authority_build_requests
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_pkey PRIMARY KEY (tenant_id, id);
 
-ALTER TABLE ONLY public.b24_p4_profiling_leases
-    ADD CONSTRAINT b24_p4_profiling_leases_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
-
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_pkey PRIMARY KEY (tenant_id, model_type, model_version, source_window_start, source_window_end, source_snapshot_hash);
 
@@ -4415,9 +4382,6 @@ ALTER TABLE ONLY public.b24_fit_dispatch_outbox
 
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT uq_b24_fit_dispatch_outbox_fit UNIQUE (tenant_id, fit_id);
-
-ALTER TABLE ONLY public.b24_p4_profiling_leases
-    ADD CONSTRAINT uq_b24_p4_profiling_leases_id UNIQUE (tenant_id, profiling_lease_id);
 
 ALTER TABLE ONLY public.budget_jobs
     ADD CONSTRAINT uq_budget_jobs_tenant_request_id UNIQUE (tenant_id, request_id);
@@ -5008,8 +4972,6 @@ CREATE INDEX idx_b24_p4_attribution_events_channel_early_stop ON public.attribut
 CREATE INDEX idx_b24_p4_match_verdicts_provider_cardinality ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL));
 
 CREATE INDEX idx_b24_p4_match_verdicts_provider_early_stop ON public.b23_match_verdicts USING btree (tenant_id, provider, last_transition_at, id) WHERE (((status)::text = ANY ((ARRAY['matched_confirmed'::character varying, 'adjusted'::character varying])::text[])) AND (provider IS NOT NULL) AND ((provider)::text <> ''::text));
-
-CREATE INDEX idx_b24_p4_profiling_leases_active ON public.b24_p4_profiling_leases USING btree (tenant_id, status, leased_until) WHERE ((status)::text = 'profiling'::text);
 
 CREATE INDEX idx_b24_p4_revenue_events_provider_cardinality ON public.b23_revenue_events USING btree (tenant_id, provider, event_occurred_at, id) WHERE (((event_type)::text = ANY ((ARRAY['payment_capture'::character varying, 'partial_refund'::character varying, 'full_refund'::character varying, 'chargeback_lost'::character varying, 'chargeback_won'::character varying, 'reversal'::character varying])::text[])) AND (provider IS NOT NULL));
 
@@ -5830,9 +5792,6 @@ ALTER TABLE ONLY public.b24_feature_authority_build_requests
 ALTER TABLE ONLY public.b24_fit_dispatch_outbox
     ADD CONSTRAINT b24_fit_dispatch_outbox_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.b24_p4_profiling_leases
-    ADD CONSTRAINT b24_p4_profiling_leases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
 ALTER TABLE ONLY public.b24_source_window_feature_authority
     ADD CONSTRAINT b24_source_window_feature_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
@@ -6054,8 +6013,6 @@ ALTER TABLE public.b24_feature_authority_build_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.b24_feature_authority_build_requests ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b24_fit_dispatch_outbox ENABLE ROW LEVEL SECURITY;
-
-ALTER TABLE public.b24_p4_profiling_leases ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE public.b24_source_window_feature_authority ENABLE ROW LEVEL SECURITY;
 
@@ -6288,8 +6245,6 @@ CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_outbox ON publ
 CREATE POLICY tenant_isolation_policy_b24_feature_authority_build_requests ON public.b24_feature_authority_build_requests USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_b24_fit_dispatch_outbox ON public.b24_fit_dispatch_outbox USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
-
-CREATE POLICY tenant_isolation_policy_b24_p4_profiling_leases ON public.b24_p4_profiling_leases USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
 CREATE POLICY tenant_isolation_policy_b24_source_window_feature_authority ON public.b24_source_window_feature_authority USING ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid)) WITH CHECK ((tenant_id = (current_setting('app.current_tenant_id'::text, true))::uuid));
 
