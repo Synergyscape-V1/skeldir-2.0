@@ -30,8 +30,8 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "DROP TABLE public.b24_p4_profiling_leases"
-    )  # CI:DESTRUCTIVE_OK - authoritative B2.4-P4 deprecated split-brain profiling surface purge.
+        "DROP TABLE public.b24_p4_profiling_leases"  # CI:DESTRUCTIVE_OK - authoritative B2.4-P4 deprecated split-brain profiling surface purge.
+    )
 
 
 def downgrade() -> None:
