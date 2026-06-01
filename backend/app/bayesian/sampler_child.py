@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.abc
+import importlib.util
 import json
 import os
 import signal
@@ -93,7 +94,7 @@ def _attempt_forbidden_imports() -> dict[str, object]:
     unexpected: list[str] = []
     for module in FORBIDDEN_IMPORT_PREFIXES:
         try:
-            __import__(module)
+            importlib.util.find_spec(module)
         except ImportError:
             blocked.append(module)
         else:

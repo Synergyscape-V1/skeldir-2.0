@@ -6,7 +6,6 @@ import json
 import platform
 import shutil
 from dataclasses import dataclass
-from importlib import import_module
 
 
 EXPECTED_RUNTIME_IDENTITY = {
@@ -45,9 +44,10 @@ class RuntimeIdentityReport:
 def collect_runtime_identity() -> RuntimeIdentityReport:
     """Collect import/runtime identity after native environment policy is active."""
 
-    pm = import_module("pymc")
-    pytensor = import_module("pytensor")
-    az = import_module("arviz")
+    import arviz as az
+    import pymc as pm
+    import pytensor
+
     return RuntimeIdentityReport(
         python=platform.python_version(),
         pymc=str(pm.__version__),
