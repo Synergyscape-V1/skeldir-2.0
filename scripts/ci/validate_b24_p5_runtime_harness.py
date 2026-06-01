@@ -16,12 +16,19 @@ RUNTIME_POLICY = BAYESIAN_PACKAGE / "runtime_policy.py"
 SAMPLER_SUPERVISOR = BAYESIAN_PACKAGE / "sampler_supervisor.py"
 RUNTIME_PROBE = BAYESIAN_PACKAGE / "runtime_probe.py"
 RUNTIME_STATE = BAYESIAN_PACKAGE / "runtime_state.py"
+RUNTIME_IDENTITY = BAYESIAN_PACKAGE / "runtime_identity.py"
+CHILD_ENVIRONMENT = BAYESIAN_PACKAGE / "child_environment.py"
+SAMPLER_CHILD = BAYESIAN_PACKAGE / "sampler_child.py"
+COMPILEDIR_REAPER = BAYESIAN_PACKAGE / "compiledir_reaper.py"
 ENUMS = BAYESIAN_PACKAGE / "enums.py"
 MODELS = BAYESIAN_PACKAGE / "models.py"
 BAYESIAN_REQUIREMENTS = Path("backend/requirements-bayesian.txt")
 BAYESIAN_DOCKERFILE = Path("backend/Dockerfile.bayesian")
-P5_MIGRATION = Path("alembic/versions/007_skeldir_foundation/202605281200_b24_p5_runtime_statuses.py")
+P5_MIGRATION = Path(
+    "alembic/versions/007_skeldir_foundation/202605281200_b24_p5_runtime_statuses.py"
+)
 P5_TESTS = Path("backend/tests/test_b24_p5_runtime_harness.py")
+P5_POSTGRES_TESTS = Path("backend/tests/test_b24_p5_postgres_runtime.py")
 WORKFLOW = Path(".github/workflows/b2_4-gate-dry-run.yml")
 MAKEFILE = Path("Makefile")
 ENFORCER_REGISTRY = Path("docs/ci/enforcer_registry.yaml")
@@ -32,10 +39,15 @@ REQUIRED_FILES = {
     SAMPLER_SUPERVISOR,
     RUNTIME_PROBE,
     RUNTIME_STATE,
+    RUNTIME_IDENTITY,
+    CHILD_ENVIRONMENT,
+    SAMPLER_CHILD,
+    COMPILEDIR_REAPER,
     BAYESIAN_REQUIREMENTS,
     BAYESIAN_DOCKERFILE,
     P5_MIGRATION,
     P5_TESTS,
+    P5_POSTGRES_TESTS,
 }
 
 
@@ -58,9 +70,15 @@ def _require(condition: bool, message: str) -> None:
 def validate_dependency_lane() -> None:
     requirements = _read(BAYESIAN_REQUIREMENTS)
     dockerfile = _read(BAYESIAN_DOCKERFILE)
-    for token in ("pymc==", "arviz==", "threadpoolctl=="):
-        _require(token in requirements, f"Bayesian dependency lane missing pin: {token}")
-    _require("pytensor==" not in requirements, "PyTensor must remain resolver-compatible with pinned PyMC")
+    for token in (
+        "pymc==5.28.5",
+        "pytensor==2.38.3",
+        "arviz==0.23.4",
+        "threadpoolctl==3.6.0",
+    ):
+        _require(
+            token in requirements, f"Bayesian dependency lane missing pin: {token}"
+        )
     for token in (
         "python:3.11-slim",
         "requirements-bayesian.txt",
@@ -72,12 +90,19 @@ def validate_dependency_lane() -> None:
         "MKL_NUM_THREADS=1",
         "NUMEXPR_NUM_THREADS=1",
         "VECLIB_MAXIMUM_THREADS=1",
-        "B24_PYTENSOR_COMPILEDIR=/tmp/skeldir-b24-pytensor/worker",
-        "PYTENSOR_FLAGS=base_compiledir=/tmp/skeldir-b24-pytensor/worker",
+        "B24_PYTENSOR_ROOT=/tmp/skeldir-b24-pytensor",
+        "PYTENSOR_FLAGS=mode=FAST_RUN,linker=cvm",
         "celery",
         "--concurrency=1",
     ):
-        _require(token in dockerfile, f"Bayesian worker image missing runtime proof token: {token}")
+        _require(
+            token in dockerfile,
+            f"Bayesian worker image missing runtime proof token: {token}",
+        )
+    _require(
+        "B24_PYTENSOR_COMPILEDIR=/tmp/skeldir-b24-pytensor/worker" not in dockerfile,
+        "Bayesian worker image must not use static worker-scoped PyTensor compiledir",
+    )
 
 
 def validate_runtime_policy(text: str | None = None) -> None:
@@ -94,15 +119,22 @@ def validate_runtime_policy(text: str | None = None) -> None:
         "B24_PYMC_CHAINS",
         "B24_BLAS_TOTAL_THREADS",
         "B24_BAYESIAN_CPU_BUDGET",
-        "B24_PYTENSOR_COMPILEDIR",
+        "B24_PYTENSOR_ROOT",
+        "B24_PYTENSOR_EXECUTION_ID",
         "base_compiledir=",
         "re.sub",
-        "sampler_supervisor_deadline_s < self.celery_soft_time_limit_s",
+        "sampler_supervisor_deadline_s",
+        "celery_soft_time_limit_s",
+        "celery_hard_time_limit_s",
         "apply_native_runtime_environment",
+        "parent-",
+        "execution_id",
     ):
         _require(token in text, f"runtime policy missing: {token}")
+    normalized = re.sub(r"\s+", " ", text)
     _require(
-        "total_native_threads = self.worker_concurrency * self.pymc_cores * self.blas_total_threads" in text,
+        "total_native_threads = ( self.worker_concurrency * self.pymc_cores * self.blas_total_threads )"
+        in normalized,
         "native thread budget formula missing",
     )
 
@@ -112,10 +144,14 @@ def validate_supervisor(text: str | None = None) -> None:
     for token in (
         "start_new_session",
         "CREATE_NEW_PROCESS_GROUP",
+        "close_fds",
+        "PR_SET_PDEATHSIG",
         "os.killpg",
         "taskkill",
         "SIGKILL",
         "run_supervised_sampler",
+        "build_child_env_for_lease",
+        "cleanup_compiledir",
         "synthetic_blocking_child_command",
         "SIG_IGN",
         "orphan_reaped",
@@ -131,13 +167,22 @@ def validate_runtime_probe(text: str | None = None) -> None:
         "tiny_benchmark",
         "thread_budget",
         "compiledir_concurrency",
+        "compiledir_lifecycle",
+        "reaper_probe",
+        "child_env_airgap",
+        "child_import_airgap",
+        "parent_death",
+        "behavioral_negative_controls",
         "supervisor_kill",
         "runtime_report",
         "pm.Model",
         "pm.sample",
+        "blas_cores=policy.blas_total_threads",
+        "single-process",
         "pytensor.function",
         "threadpool_info",
         "compute_convergence_checks=False",
+        "assert_runtime_identity",
     ):
         _require(token in text, f"runtime probe missing: {token}")
     _require("raise RuntimeError" in text, "runtime probes must fail closed")
@@ -148,7 +193,10 @@ def validate_runtime_probe(text: str | None = None) -> None:
         if isinstance(node, ast.Import)
         for alias in node.names
     }
-    _require("pymc" not in top_level_imports, "PyMC must not import before runtime env caps are applied")
+    _require(
+        "pymc" not in top_level_imports,
+        "PyMC must not import before runtime env caps are applied",
+    )
 
 
 def validate_runtime_state(text: str | None = None) -> None:
@@ -156,6 +204,7 @@ def validate_runtime_state(text: str | None = None) -> None:
     for token in (
         "bind_runtime_tenant_context",
         "mark_fit_timeout",
+        "mark_fit_timeout_sync",
         "sweep_stale_running_fits",
         "set_config('app.current_tenant_id'",
         "tenant_id: UUID",
@@ -180,6 +229,77 @@ def validate_runtime_state(text: str | None = None) -> None:
         _require(forbidden not in text, f"P5 mutates deterministic truth: {forbidden}")
 
 
+def validate_runtime_identity(text: str | None = None) -> None:
+    text = text if text is not None else _read(RUNTIME_IDENTITY)
+    for token in (
+        "EXPECTED_RUNTIME_IDENTITY",
+        '"pytensor": "2.38.3"',
+        "collect_runtime_identity",
+        "assert_runtime_identity",
+        "compiler_required",
+    ):
+        _require(token in text, f"runtime identity lock missing: {token}")
+
+
+def validate_child_airgap(text: str | None = None) -> None:
+    child_env = text if text is not None else _read(CHILD_ENVIRONMENT)
+    child = _read(SAMPLER_CHILD)
+    for token in (
+        "ALLOWLISTED_CHILD_ENV",
+        "build_sampler_child_env",
+        "source_env if source_env is not None else os.environ",
+        "B24_PYTENSOR_COMPILEDIR",
+    ):
+        _require(token in child_env, f"child environment allowlist missing: {token}")
+    _require(
+        "os.environ.copy()" not in child_env,
+        "child env must not blacklist-copy parent environment",
+    )
+    for forbidden in (
+        "DATABASE_URL",
+        "SKELDIR_FAKE_PARENT_SECRET",
+        "AWS_SECRET_ACCESS_KEY",
+        "STRIPE_API_KEY",
+    ):
+        _require(
+            forbidden not in child_env,
+            f"secret-like env must not be allowlisted: {forbidden}",
+        )
+    for token in (
+        "FORBIDDEN_IMPORT_PREFIXES",
+        "sqlalchemy",
+        "asyncpg",
+        "psycopg",
+        "app.bayesian.runtime_state",
+        "app.tasks",
+        "install_import_airgap",
+        "assert_environment_airgap",
+    ):
+        _require(token in child, f"sampler child airgap missing: {token}")
+
+
+def validate_compiledir_reaper(text: str | None = None) -> None:
+    text = text if text is not None else _read(COMPILEDIR_REAPER)
+    for token in (
+        "OWNER_MARKER",
+        "METADATA_FILE",
+        "create_compiledir_lease",
+        "record_child_pid",
+        "cleanup_compiledir",
+        "reap_expired_compiledirs",
+        "max_deletions",
+        "max_scan_entries",
+        "_reaper_lock",
+        "preserved_foreign",
+        "preserved_active",
+        "parent-",
+    ):
+        _require(token in text, f"compiledir reaper missing: {token}")
+    _require(
+        "while True" not in text, "reaper must not be an unbounded background loop"
+    )
+
+
 def validate_schema_statuses() -> None:
     for path in (ENUMS, MODELS, P5_MIGRATION):
         text = _read(path)
@@ -192,14 +312,20 @@ def validate_boundary() -> None:
         rel = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8", errors="replace")
         _require("APIRouter" not in text, f"public route symbol forbidden in {rel}")
-        _require("include_router" not in text, f"router registration forbidden in {rel}")
+        _require(
+            "include_router" not in text, f"router registration forbidden in {rel}"
+        )
         _require("app.llm" not in text, f"LLM import forbidden in {rel}")
         _require("openai" not in text.lower(), f"provider SDK forbidden in {rel}")
         _require("anthropic" not in text.lower(), f"provider SDK forbidden in {rel}")
     frontend_root = ROOT / "frontend"
     if frontend_root.exists():
         for current, dirs, files in os.walk(frontend_root):
-            dirs[:] = [name for name in dirs if name not in {"node_modules", ".next", "dist", "build"}]
+            dirs[:] = [
+                name
+                for name in dirs
+                if name not in {"node_modules", ".next", "dist", "build"}
+            ]
             for filename in files:
                 path = Path(current) / filename
                 if path.suffix.lower() in {".ts", ".tsx", ".js", ".jsx"}:
@@ -218,29 +344,63 @@ def validate_ci_wiring() -> None:
     for token in (
         "validate-b24-p5-runtime-harness",
         "B2.4-P5 Bayesian Runtime Harness",
+        "B2.4-P5 PostgreSQL Runtime Proof",
         "docker build",
         "backend/Dockerfile.bayesian",
         "runtime-report",
         "pytensor-compile",
         "tiny-benchmark",
+        "child-env-airgap",
+        "child-import-airgap",
+        "compiledir-lifecycle",
+        "reaper-probe",
+        "parent-death",
+        "behavioral-negative-controls",
         "supervisor-kill",
+        "SKELDIR_B24_P5_REQUIRE_DB_PROOFS",
+        "ENFORCE_RUNTIME_IDENTITY_PARITY",
+        "test_b24_p5_postgres_runtime.py",
     ):
         _require(token in workflow, f"P5 workflow wiring missing: {token}")
-    _require("validate-b24-p5-runtime-harness" in makefile, "Makefile missing P5 validator target")
-    _require("validate-b24-p5-runtime-harness" in registry, "enforcer registry missing P5 gate")
-    _require("validate-b24-p5-runtime-harness" in subsumption, "gate subsumption matrix missing P5 gate")
+    _require(
+        "validate-b24-p5-runtime-harness" in makefile,
+        "Makefile missing P5 validator target",
+    )
+    _require(
+        "validate-b24-p5-runtime-harness" in registry,
+        "enforcer registry missing P5 gate",
+    )
+    _require(
+        "validate-b24-p5-runtime-harness" in subsumption,
+        "gate subsumption matrix missing P5 gate",
+    )
 
 
 def validate_tests() -> None:
     tests = _read(P5_TESTS)
+    postgres_tests = _read(P5_POSTGRES_TESTS)
     for token in (
         "test_b24_p5_thread_budget_rejects_oversubscription",
         "test_b24_p5_timeout_hierarchy_is_enforced",
         "test_b24_p5_supervisor_kills_blocking_child",
+        "test_b24_p5_child_env_is_allowlisted",
+        "test_b24_p5_child_runtime_blocks_db_imports",
+        "test_b24_p5_reaper_preserves_foreign_and_deletes_expired_owned",
         "test_b24_p5_runtime_state_writes_only_bayesian_table",
         "test_b24_p5_probe_does_not_import_pymc_before_env_caps",
     ):
         _require(token in tests, f"missing P5 test: {token}")
+    for token in (
+        "test_b24_p5_worker_timeout_fallback_persists_tenant_scoped_fit_state",
+        "test_b24_p5_sampler_child_opens_zero_postgres_connections",
+        "_emit_fallback_event",
+        "durable_timeout_written",
+        "tenant_b_row",
+        "pg_stat_activity",
+        "application_name=b24_p5_child_airgap",
+        "pytest.mark.integration",
+    ):
+        _require(token in postgres_tests, f"missing P5 PostgreSQL proof token: {token}")
 
 
 def validate_all() -> None:
@@ -251,6 +411,9 @@ def validate_all() -> None:
     validate_supervisor()
     validate_runtime_probe()
     validate_runtime_state()
+    validate_runtime_identity()
+    validate_child_airgap()
+    validate_compiledir_reaper()
     validate_schema_statuses()
     validate_boundary()
     validate_ci_wiring()
@@ -259,17 +422,79 @@ def validate_all() -> None:
 
 def run_negative_controls() -> None:
     controls = (
-        ("missing_thread_cap", lambda: validate_runtime_policy(_read(RUNTIME_POLICY).replace("OPENBLAS_NUM_THREADS", "OPENBLAS_THREADS_REMOVED")), "OPENBLAS"),
-        ("missing_process_group", lambda: validate_supervisor(_read(SAMPLER_SUPERVISOR).replace("start_new_session", "same_session")), "start_new_session"),
-        ("missing_benchmark", lambda: validate_runtime_probe(_read(RUNTIME_PROBE).replace("pm.sample", "mock_sample")), "pm.sample"),
-        ("missing_timeout_write", lambda: validate_runtime_state(_read(RUNTIME_STATE).replace("FitStatus.TIMEOUT", "FitStatus.FAILED")), "FitStatus.TIMEOUT"),
-        ("missing_tenant_guc", lambda: validate_runtime_state(_read(RUNTIME_STATE).replace("set_config('app.current_tenant_id'", "set_config('missing_tenant'")), "set_config"),
+        (
+            "missing_thread_cap",
+            lambda: validate_runtime_policy(
+                _read(RUNTIME_POLICY).replace(
+                    "OPENBLAS_NUM_THREADS", "OPENBLAS_THREADS_REMOVED"
+                )
+            ),
+            "OPENBLAS",
+        ),
+        (
+            "missing_process_group",
+            lambda: validate_supervisor(
+                _read(SAMPLER_SUPERVISOR).replace("start_new_session", "same_session")
+            ),
+            "start_new_session",
+        ),
+        (
+            "missing_benchmark",
+            lambda: validate_runtime_probe(
+                _read(RUNTIME_PROBE).replace("pm.sample", "mock_sample")
+            ),
+            "pm.sample",
+        ),
+        (
+            "missing_timeout_write",
+            lambda: validate_runtime_state(
+                _read(RUNTIME_STATE).replace("FitStatus.TIMEOUT", "FitStatus.FAILED")
+            ),
+            "FitStatus.TIMEOUT",
+        ),
+        (
+            "missing_tenant_guc",
+            lambda: validate_runtime_state(
+                _read(RUNTIME_STATE).replace(
+                    "set_config('app.current_tenant_id'", "set_config('missing_tenant'"
+                )
+            ),
+            "set_config",
+        ),
+        (
+            "missing_child_allowlist",
+            lambda: validate_child_airgap(
+                _read(CHILD_ENVIRONMENT).replace(
+                    "ALLOWLISTED_CHILD_ENV", "ALLOWLIST_REMOVED"
+                )
+            ),
+            "ALLOWLISTED_CHILD_ENV",
+        ),
+        (
+            "missing_runtime_identity",
+            lambda: validate_runtime_identity(
+                _read(RUNTIME_IDENTITY).replace(
+                    '"pytensor": "2.38.3"', '"pytensor": "0.0.0"'
+                )
+            ),
+            "2.38.3",
+        ),
+        (
+            "missing_reaper_bounds",
+            lambda: validate_compiledir_reaper(
+                _read(COMPILEDIR_REAPER).replace("max_deletions", "unbounded_deletions")
+            ),
+            "max_deletions",
+        ),
     )
     for name, runner, expected in controls:
         try:
             runner()
         except ValidationError as exc:
-            _require(expected.lower() in str(exc).lower(), f"{name} failed for wrong reason: {exc}")
+            _require(
+                expected.lower() in str(exc).lower(),
+                f"{name} failed for wrong reason: {exc}",
+            )
         else:
             raise ValidationError(f"negative control did not fail: {name}")
 
