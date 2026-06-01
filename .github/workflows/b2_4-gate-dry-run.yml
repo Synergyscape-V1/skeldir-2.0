@@ -101,6 +101,16 @@ jobs:
           docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
             python -m app.bayesian.runtime_probe child-import-airgap
 
+      - name: Child interpreter boot airgap proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe child-boot-airgap
+
+      - name: Fork and default multiprocessing negative controls
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe fork-multiprocessing-negative-controls
+
       - name: Parent-owned compiledir lifecycle proof
         run: |
           docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \

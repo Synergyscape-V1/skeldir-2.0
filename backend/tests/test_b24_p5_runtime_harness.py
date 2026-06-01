@@ -98,6 +98,7 @@ def test_b24_p5_child_env_is_allowlisted(tmp_path: Path) -> None:
     assert "SKELDIR_FAKE_PARENT_SECRET" not in env
     assert "AWS_SECRET_ACCESS_KEY" not in env
     assert "B24_PYTENSOR_COMPILEDIR" in env
+    assert env["B24_SAMPLER_CHILD_BOOTSTRAP"] == "1"
 
 
 def test_b24_p5_child_runtime_blocks_db_imports(
@@ -119,8 +120,62 @@ def test_b24_p5_child_runtime_blocks_db_imports(
     assert result.status == "completed"
     assert "sqlalchemy" in payload["blocked_imports"]
     assert "app.bayesian.runtime_state" in payload["blocked_imports"]
+    assert payload["boot_airgap_active"] is True
+    assert payload["multiprocessing_policy"] == "single-process"
+    assert payload["preinstall_forbidden_modules"] == []
+    assert payload["pre_attempt_forbidden_modules"] == []
+    assert payload["post_attempt_forbidden_modules"] == []
     assert not payload["unexpected_imports"]
     assert not lease.path.exists()
+
+
+def test_b24_p5_child_boot_airgap_reports_preinstall_cache_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(ROOT / "backend"))
+    monkeypatch.setenv("B24_PYTENSOR_ROOT", str(tmp_path / "root"))
+    lease = create_compiledir_lease(
+        execution_id="boot-airgap-unit", worker_id="unit-worker"
+    )
+    output = tmp_path / "child-boot.json"
+    result = run_supervised_sampler(
+        sampler_child_command(mode="boot-report", output=output, seconds=1),
+        deadline_seconds=10,
+        env=build_child_env_for_lease(lease),
+        compiledir_lease=lease,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert result.status == "completed"
+    assert payload["boot_airgap_active"] is True
+    assert payload["preinstall_forbidden_modules"] == []
+    assert payload["cached_forbidden_modules"] == []
+    assert payload["multiprocessing_guard_active"] is True
+    assert payload["multiprocessing_policy"] == "single-process"
+
+
+def test_b24_p5_child_fork_and_default_multiprocessing_are_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(ROOT / "backend"))
+    monkeypatch.setenv("B24_PYTENSOR_ROOT", str(tmp_path / "root"))
+    lease = create_compiledir_lease(
+        execution_id="fork-negative-unit", worker_id="unit-worker"
+    )
+    output = tmp_path / "child-fork-negative.json"
+    result = run_supervised_sampler(
+        sampler_child_command(mode="fork-negative", output=output, seconds=1),
+        deadline_seconds=10,
+        env=build_child_env_for_lease(lease),
+        compiledir_lease=lease,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert result.status == "completed"
+    blocked = payload["blocked_controls"]
+    assert "multiprocessing.get_context('fork')" in blocked
+    assert "multiprocessing.get_context()" in blocked
+    assert "multiprocessing.Process" in blocked
+    if os.name != "nt":
+        assert "os.fork" in blocked
 
 
 def test_b24_p5_reaper_preserves_foreign_and_deletes_expired_owned(
@@ -174,6 +229,26 @@ def test_b24_p5_probe_does_not_import_pymc_before_env_caps() -> None:
     text = RUNTIME_PROBE.read_text(encoding="utf-8")
     assert text.find("apply_native_runtime_environment") < text.find(
         "import pymc as pm"
+    )
+
+
+def test_b24_p5_pymc_sample_uses_central_single_process_policy() -> None:
+    tree = ast.parse(RUNTIME_PROBE.read_text(encoding="utf-8"))
+    sample_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "sample"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "pm"
+    ]
+    assert len(sample_calls) == 1
+    assert any(
+        keyword.arg is None
+        and isinstance(keyword.value, ast.Name)
+        and keyword.value.id == "sample_policy"
+        for keyword in sample_calls[0].keywords
     )
 
 

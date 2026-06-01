@@ -19,6 +19,7 @@ RUNTIME_STATE = BAYESIAN_PACKAGE / "runtime_state.py"
 RUNTIME_IDENTITY = BAYESIAN_PACKAGE / "runtime_identity.py"
 CHILD_ENVIRONMENT = BAYESIAN_PACKAGE / "child_environment.py"
 SAMPLER_CHILD = BAYESIAN_PACKAGE / "sampler_child.py"
+SAMPLER_CHILD_BOOTSTRAP = BAYESIAN_PACKAGE / "sampler_child_bootstrap.py"
 COMPILEDIR_REAPER = BAYESIAN_PACKAGE / "compiledir_reaper.py"
 ENUMS = BAYESIAN_PACKAGE / "enums.py"
 MODELS = BAYESIAN_PACKAGE / "models.py"
@@ -42,6 +43,7 @@ REQUIRED_FILES = {
     RUNTIME_IDENTITY,
     CHILD_ENVIRONMENT,
     SAMPLER_CHILD,
+    SAMPLER_CHILD_BOOTSTRAP,
     COMPILEDIR_REAPER,
     BAYESIAN_REQUIREMENTS,
     BAYESIAN_DOCKERFILE,
@@ -55,6 +57,38 @@ class ValidationError(RuntimeError):
     pass
 
 
+FORBIDDEN_CHILD_IMPORT_PREFIXES = (
+    "sqlalchemy",
+    "asyncpg",
+    "psycopg",
+    "psycopg2",
+    "celery",
+    "app.celery_app",
+    "app.core.config",
+    "app.core.secrets",
+    "app.database",
+    "app.db",
+    "app.bayesian.models",
+    "app.bayesian.runtime_state",
+    "app.tasks",
+)
+
+CHILD_ENTRYPOINT_TOP_LEVEL_ALLOWLIST = {
+    "__future__",
+    "argparse",
+    "importlib",
+    "importlib.abc",
+    "importlib.util",
+    "json",
+    "multiprocessing",
+    "os",
+    "pathlib",
+    "signal",
+    "sys",
+    "time",
+}
+
+
 def _read(path: Path) -> str:
     full = ROOT / path
     if not full.exists():
@@ -65,6 +99,24 @@ def _read(path: Path) -> str:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ValidationError(message)
+
+
+def _is_forbidden_child_import(module: str) -> bool:
+    return any(
+        module == prefix or module.startswith(prefix + ".")
+        for prefix in FORBIDDEN_CHILD_IMPORT_PREFIXES
+    )
+
+
+def _top_level_imports(text: str, *, filename: str) -> set[str]:
+    tree = ast.parse(text, filename=filename)
+    imports: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imports.add(node.module or "")
+    return imports
 
 
 def validate_dependency_lane() -> None:
@@ -177,7 +229,8 @@ def validate_runtime_probe(text: str | None = None) -> None:
         "runtime_report",
         "pm.Model",
         "pm.sample",
-        "blas_cores=policy.blas_total_threads",
+        "pymc_single_process_sample_kwargs",
+        "**sample_policy",
         "single-process",
         "pytensor.function",
         "threadpool_info",
@@ -249,6 +302,7 @@ def validate_child_airgap(text: str | None = None) -> None:
         "build_sampler_child_env",
         "source_env if source_env is not None else os.environ",
         "B24_PYTENSOR_COMPILEDIR",
+        "B24_SAMPLER_CHILD_BOOTSTRAP",
     ):
         _require(token in child_env, f"child environment allowlist missing: {token}")
     _require(
@@ -273,9 +327,182 @@ def validate_child_airgap(text: str | None = None) -> None:
         "app.bayesian.runtime_state",
         "app.tasks",
         "install_import_airgap",
+        "assert_boot_airgap_active",
+        "preinstall_forbidden_modules",
+        "pre_attempt_forbidden_modules",
+        "post_attempt_forbidden_modules",
+        "fork-negative",
         "assert_environment_airgap",
     ):
         _require(token in child, f"sampler child airgap missing: {token}")
+
+
+def validate_sampler_child_boot_airgap(
+    child_text: str | None = None,
+    bootstrap_text: str | None = None,
+    child_env_text: str | None = None,
+) -> None:
+    child = child_text if child_text is not None else _read(SAMPLER_CHILD)
+    bootstrap = (
+        bootstrap_text
+        if bootstrap_text is not None
+        else _read(SAMPLER_CHILD_BOOTSTRAP)
+    )
+    child_env = (
+        child_env_text if child_env_text is not None else _read(CHILD_ENVIRONMENT)
+    )
+    imports = _top_level_imports(child, filename=SAMPLER_CHILD.as_posix())
+    forbidden_imports = sorted(
+        module for module in imports if _is_forbidden_child_import(module)
+    )
+    _require(
+        not forbidden_imports,
+        f"sampler child top-level forbidden import before airgap: {forbidden_imports}",
+    )
+    disallowed = sorted(imports - CHILD_ENTRYPOINT_TOP_LEVEL_ALLOWLIST)
+    _require(
+        not disallowed,
+        f"sampler child top-level import is not explicitly child-safe: {disallowed}",
+    )
+    bootstrap_imports = _top_level_imports(
+        bootstrap, filename=SAMPLER_CHILD_BOOTSTRAP.as_posix()
+    )
+    bootstrap_forbidden = sorted(
+        module for module in bootstrap_imports if _is_forbidden_child_import(module)
+    )
+    _require(
+        not bootstrap_forbidden,
+        f"sampler child bootstrap top-level forbidden import: {bootstrap_forbidden}",
+    )
+    bootstrap_disallowed = sorted(
+        bootstrap_imports
+        - {"__future__", "importlib.abc", "os", "sys"}
+    )
+    _require(
+        not bootstrap_disallowed,
+        "sampler child bootstrap top-level import is not stdlib-only: "
+        f"{bootstrap_disallowed}",
+    )
+    for token in (
+        'os.environ.get("B24_SAMPLER_CHILD_BOOTSTRAP") != "1"',
+        "_install_import_airgap_at_boot",
+        "_forbidden_modules_in_cache",
+        "sys._b24_p5_airgap_preinstall_forbidden",
+        "sys._b24_p5_airgap_bootstrap_active = True",
+        "_SamplerChildForbiddenImportBlocker",
+    ):
+        _require(token in bootstrap, f"sampler child bootstrap missing: {token}")
+    _require(
+        "from app.bayesian.sampler_child import main as sampler_child_main"
+        in bootstrap,
+        "sampler child bootstrap must import sampler_child only after guard install",
+    )
+    _require(
+        'env["B24_SAMPLER_CHILD_BOOTSTRAP"] = "1"' in child_env,
+        "sampler child env must force bootstrap flag",
+    )
+
+
+def validate_physical_multiprocessing_containment(
+    bootstrap_text: str | None = None, child_text: str | None = None
+) -> None:
+    bootstrap = (
+        bootstrap_text
+        if bootstrap_text is not None
+        else _read(SAMPLER_CHILD_BOOTSTRAP)
+    )
+    child = child_text if child_text is not None else _read(SAMPLER_CHILD)
+    for token in (
+        "_install_multiprocessing_guards_at_boot",
+        "os.fork = blocked_fork",
+        "multiprocessing.get_context = blocked_get_context",
+        "multiprocessing.Process = blocked_process",
+        'sys._b24_p5_multiprocessing_policy = "single-process"',
+        "sys._b24_p5_multiprocessing_guard_active = True",
+    ):
+        _require(
+            token in bootstrap,
+            f"sampler child physical multiprocessing guard missing: {token}",
+        )
+    for token in (
+        "_attempt_fork_multiprocessing_controls",
+        "multiprocessing.get_context(\"fork\")",
+        "multiprocessing.get_context()",
+        "multiprocessing.Process",
+        "multiprocessing_guard_active",
+    ):
+        _require(token in child, f"sampler child fork negative control missing: {token}")
+    for path in sorted((ROOT / BAYESIAN_PACKAGE).glob("*.py")):
+        rel = path.relative_to(ROOT)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if rel == SAMPLER_CHILD:
+            continue
+        tree = ast.parse(text, filename=rel.as_posix())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(
+                node.func, ast.Attribute
+            ):
+                continue
+            owner = node.func.value
+            if (
+                isinstance(owner, ast.Name)
+                and owner.id == "os"
+                and node.func.attr == "fork"
+            ):
+                raise ValidationError(f"os.fork forbidden in {rel.as_posix()}")
+            if isinstance(owner, ast.Name) and owner.id == "multiprocessing":
+                if node.func.attr == "Process":
+                    raise ValidationError(
+                        f"default multiprocessing.Process forbidden in {rel.as_posix()}"
+                    )
+                if node.func.attr == "get_context":
+                    raise ValidationError(
+                        "multiprocessing context acquisition forbidden in "
+                        f"{rel.as_posix()}"
+                    )
+
+
+def validate_pymc_sampling_policy(runtime_probe_text: str | None = None) -> None:
+    runtime_probe = (
+        runtime_probe_text if runtime_probe_text is not None else _read(RUNTIME_PROBE)
+    )
+    _require(
+        "pymc_single_process_sample_kwargs(policy)" in runtime_probe,
+        "PyMC sample policy helper is not used before pm.sample",
+    )
+    _require("**sample_policy" in runtime_probe, "pm.sample must expand sample_policy")
+    sample_calls: list[str] = []
+    for path in sorted((ROOT / BAYESIAN_PACKAGE).glob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        text = runtime_probe if path.relative_to(ROOT) == RUNTIME_PROBE else path.read_text(
+            encoding="utf-8", errors="replace"
+        )
+        tree = ast.parse(text, filename=rel)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "sample"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "pm"
+            ):
+                sample_calls.append(f"{rel}:{node.lineno}")
+                has_policy_expansion = any(
+                    keyword.arg is None
+                    and isinstance(keyword.value, ast.Name)
+                    and keyword.value.id == "sample_policy"
+                    for keyword in node.keywords
+                )
+                _require(
+                    has_policy_expansion,
+                    f"pm.sample bypasses P5 sample_policy at {rel}:{node.lineno}",
+                )
+    _require(sample_calls, "P5 PyMC sample inventory is empty")
+    _require(len(sample_calls) == 1, f"unexpected P5 pm.sample inventory: {sample_calls}")
+    _require(
+        sample_calls[0].startswith(f"{RUNTIME_PROBE.as_posix()}:"),
+        f"unexpected P5 pm.sample location: {sample_calls}",
+    )
 
 
 def validate_compiledir_reaper(text: str | None = None) -> None:
@@ -351,7 +578,9 @@ def validate_ci_wiring() -> None:
         "pytensor-compile",
         "tiny-benchmark",
         "child-env-airgap",
+        "child-boot-airgap",
         "child-import-airgap",
+        "fork-multiprocessing-negative-controls",
         "compiledir-lifecycle",
         "reaper-probe",
         "parent-death",
@@ -385,6 +614,9 @@ def validate_tests() -> None:
         "test_b24_p5_supervisor_kills_blocking_child",
         "test_b24_p5_child_env_is_allowlisted",
         "test_b24_p5_child_runtime_blocks_db_imports",
+        "test_b24_p5_child_boot_airgap_reports_preinstall_cache_empty",
+        "test_b24_p5_child_fork_and_default_multiprocessing_are_blocked",
+        "test_b24_p5_pymc_sample_uses_central_single_process_policy",
         "test_b24_p5_reaper_preserves_foreign_and_deletes_expired_owned",
         "test_b24_p5_runtime_state_writes_only_bayesian_table",
         "test_b24_p5_probe_does_not_import_pymc_before_env_caps",
@@ -413,6 +645,9 @@ def validate_all() -> None:
     validate_runtime_state()
     validate_runtime_identity()
     validate_child_airgap()
+    validate_sampler_child_boot_airgap()
+    validate_physical_multiprocessing_containment()
+    validate_pymc_sampling_policy()
     validate_compiledir_reaper()
     validate_schema_statuses()
     validate_boundary()
@@ -469,6 +704,50 @@ def run_negative_controls() -> None:
                 )
             ),
             "ALLOWLISTED_CHILD_ENV",
+        ),
+        (
+            "forbidden_pre_airgap_import",
+            lambda: validate_sampler_child_boot_airgap(
+                "import sqlalchemy\n" + _read(SAMPLER_CHILD)
+            ),
+            "forbidden",
+        ),
+        (
+            "missing_child_bootstrap_flag",
+            lambda: validate_sampler_child_boot_airgap(
+                child_env_text=_read(CHILD_ENVIRONMENT).replace(
+                    'env["B24_SAMPLER_CHILD_BOOTSTRAP"] = "1"',
+                    "# bootstrap flag removed",
+                )
+            ),
+            "bootstrap",
+        ),
+        (
+            "missing_boot_sysmodules_snapshot",
+            lambda: validate_sampler_child_boot_airgap(
+                bootstrap_text=_read(SAMPLER_CHILD_BOOTSTRAP).replace(
+                    "sys._b24_p5_airgap_preinstall_forbidden",
+                    "sys._b24_p5_airgap_preinstall_removed",
+                )
+            ),
+            "preinstall",
+        ),
+        (
+            "missing_fork_guard",
+            lambda: validate_physical_multiprocessing_containment(
+                bootstrap_text=_read(SAMPLER_CHILD_BOOTSTRAP).replace(
+                    "os.fork = blocked_fork",
+                    "# os.fork guard removed",
+                )
+            ),
+            "os.fork",
+        ),
+        (
+            "unsafe_pymc_sample_policy",
+            lambda: validate_pymc_sampling_policy(
+                _read(RUNTIME_PROBE).replace("**sample_policy,", "cores=2,")
+            ),
+            "sample_policy",
         ),
         (
             "missing_runtime_identity",
