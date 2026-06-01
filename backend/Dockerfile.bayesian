@@ -8,13 +8,13 @@ ENV PYTHONUNBUFFERED=1 \
     B24_PYMC_CORES=1 \
     B24_PYMC_CHAINS=1 \
     B24_BLAS_TOTAL_THREADS=1 \
-    B24_PYTENSOR_COMPILEDIR=/tmp/skeldir-b24-pytensor/worker \
+    B24_PYTENSOR_ROOT=/tmp/skeldir-b24-pytensor \
     OMP_NUM_THREADS=1 \
     OPENBLAS_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     NUMEXPR_NUM_THREADS=1 \
     VECLIB_MAXIMUM_THREADS=1 \
-    PYTENSOR_FLAGS=base_compiledir=/tmp/skeldir-b24-pytensor/worker,mode=FAST_RUN,linker=cvm
+    PYTENSOR_FLAGS=mode=FAST_RUN,linker=cvm
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential gfortran libopenblas-dev procps \

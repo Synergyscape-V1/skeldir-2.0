@@ -6,12 +6,15 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bayesian.enums import FallbackReason, FitStatus
 
 
-async def bind_runtime_tenant_context(session: AsyncSession, *, tenant_id: UUID) -> None:
+async def bind_runtime_tenant_context(
+    session: AsyncSession, *, tenant_id: UUID
+) -> None:
     """Bind the transaction-local tenant GUC required by RLS-protected fit writes."""
 
     await session.execute(
@@ -58,6 +61,53 @@ async def mark_fit_timeout(
     return bool(result.rowcount)
 
 
+def bind_runtime_tenant_context_sync(conn: Connection, *, tenant_id: UUID) -> None:
+    """Bind transaction-local tenant context for sync worker/control-plane writes."""
+
+    conn.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+
+
+def mark_fit_timeout_sync(
+    conn: Connection,
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    runtime_seconds: int,
+    reason: FallbackReason = FallbackReason.TIMEOUT,
+) -> bool:
+    """Persist timeout fallback from the actual sync Celery worker path."""
+
+    bind_runtime_tenant_context_sync(conn, tenant_id=tenant_id)
+    result = conn.execute(
+        text(
+            """
+            UPDATE public.bayesian_model_fits
+            SET status = :status,
+                fallback_applied = true,
+                fallback_reason = :fallback_reason,
+                credible_interval_status = 'not_available',
+                runtime_seconds = :runtime_seconds,
+                completed_at = now(),
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND id = :fit_id
+              AND status IN ('queued', 'running')
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "fit_id": str(fit_id),
+            "status": FitStatus.TIMEOUT.value,
+            "fallback_reason": reason.value,
+            "runtime_seconds": max(0, int(runtime_seconds)),
+        },
+    )
+    return bool(result.rowcount)
+
+
 async def sweep_stale_running_fits(
     session: AsyncSession,
     *,
@@ -68,7 +118,9 @@ async def sweep_stale_running_fits(
     """Repair running rows whose sampler parent disappeared before final write."""
 
     await bind_runtime_tenant_context(session, tenant_id=tenant_id)
-    cutoff = stale_before or datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+    cutoff = stale_before or datetime.now(timezone.utc) - timedelta(
+        seconds=max_age_seconds
+    )
     result = await session.execute(
         text(
             """

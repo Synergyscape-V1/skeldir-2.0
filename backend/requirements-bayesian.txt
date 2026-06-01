@@ -3,5 +3,6 @@
 # worker image does not acquire native statistical runtime risk by accident.
 
 pymc==5.28.5
+pytensor==2.38.3
 arviz==0.23.4
 threadpoolctl==3.6.0

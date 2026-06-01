@@ -87,6 +87,30 @@ jobs:
           docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
             python -m app.bayesian.runtime_probe compiledir-concurrency
 
+      - name: Child environment allowlist proof
+        run: |
+          docker run --rm \
+            -e DATABASE_URL=postgresql://should:not@127.0.0.1:5432/leak \
+            -e SKELDIR_FAKE_PARENT_SECRET=must_not_reach_child \
+            -e AWS_SECRET_ACCESS_KEY=must_not_reach_child \
+            skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe child-env-airgap
+
+      - name: Child transitive DB/control-plane import airgap proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe child-import-airgap
+
+      - name: Parent-owned compiledir lifecycle proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe compiledir-lifecycle
+
+      - name: Bounded compiledir reaper proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe reaper-probe
+
       - name: Tiny PyMC benchmark proof
         run: |
           docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
@@ -96,6 +120,72 @@ jobs:
         run: |
           docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
             python -m app.bayesian.runtime_probe supervisor-kill
+
+      - name: Real kernel parent-death proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe parent-death
+
+      - name: Behavioral negative controls
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe behavioral-negative-controls
+
+  b2-4-p5-postgres-runtime-proof:
+    name: B2.4-P5 PostgreSQL Runtime Proof
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app_user:app_user@127.0.0.1:5432/skeldir_b24_p5_ci
+      MIGRATION_DATABASE_URL: postgresql://migration_owner:migration_owner@127.0.0.1:5432/skeldir_b24_p5_ci
+      PYTHONPATH: ${{ github.workspace }}/backend
+      TESTING: "1"
+      CI: "true"
+      SKELDIR_B24_P5_REQUIRE_DB_PROOFS: "1"
+      ENFORCE_RUNTIME_IDENTITY_PARITY: "1"
+      EXPECTED_RUNTIME_DB_USER: app_user
+      PLATFORM_TOKEN_ENCRYPTION_KEY: test-platform-key
+      PLATFORM_TOKEN_KEY_ID: test-key
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/requirements-dev.txt
+
+      - name: Prepare B2.4-P5 CI database
+        uses: ./.github/actions/setup-postgres-ci
+        with:
+          database-name: "skeldir_b24_p5_ci"
+          migration-command: "alembic upgrade head"
+          revoke-alembic-version: "false"
+
+      - name: Run durable timeout fallback PostgreSQL proof
+        run: |
+          pytest backend/tests/test_b24_p5_postgres_runtime.py -q -rA
 
   b2-4-p1-db-proof:
     name: B2.4-P1 DB Proof

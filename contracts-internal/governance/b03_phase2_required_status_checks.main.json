@@ -56,6 +56,8 @@
     "B2.2-P5 Webhook Latency Adjudication",
     "B2.2-P6 Merge-Blocking Closure + Downstream Readiness",
     "B2.3 Composite Proof Harness",
+    "B2.4-P5 Bayesian Runtime Harness",
+    "B2.4-P5 PostgreSQL Runtime Proof",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark",
     "m0-maintainability-scope-lock",

@@ -100,6 +100,8 @@ PROHIBITED_PHASE_PATTERNS = (
 ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
     "backend/app/bayesian/runtime_policy.py",
     "backend/app/bayesian/runtime_probe.py",
+    "backend/app/bayesian/runtime_identity.py",
+    "backend/app/bayesian/child_environment.py",
 }
 
 PROHIBITED_PRODUCTION_SURFACES = (
@@ -148,7 +150,14 @@ def iter_files(*roots: str) -> list[Path]:
             paths.append(base)
             continue
         for path in base.rglob("*"):
-            if path.is_file() and path.suffix.lower() in {".py", ".sh", ".yml", ".yaml", ".ini", ".md"}:
+            if path.is_file() and path.suffix.lower() in {
+                ".py",
+                ".sh",
+                ".yml",
+                ".yaml",
+                ".ini",
+                ".md",
+            }:
                 paths.append(path)
     return paths
 
@@ -158,7 +167,9 @@ def rel(path: Path) -> str:
 
 
 def git(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=REPO_ROOT, text=True, capture_output=True, timeout=60)
+    return subprocess.run(
+        ["git", *args], cwd=REPO_ROOT, text=True, capture_output=True, timeout=60
+    )
 
 
 def changed_files(baseline_sha: str | None) -> list[str]:
@@ -167,32 +178,58 @@ def changed_files(baseline_sha: str | None) -> list[str]:
     proc = git(["diff", "--name-only", f"{baseline_sha}...HEAD"])
     if proc.returncode != 0:
         proc = git(["diff", "--name-only", baseline_sha, "HEAD"])
-    return [line.strip().replace("\\", "/") for line in proc.stdout.splitlines() if line.strip()]
+    return [
+        line.strip().replace("\\", "/")
+        for line in proc.stdout.splitlines()
+        if line.strip()
+    ]
 
 
 def check_required(result: Result) -> None:
     for path in [*REQUIRED_DOCS, *REQUIRED_FILES]:
         full = REPO_ROOT / path
-        result.add(f"required artifact exists: {path}", full.exists() and full.stat().st_size > 0)
+        result.add(
+            f"required artifact exists: {path}",
+            full.exists() and full.stat().st_size > 0,
+        )
 
 
 def check_markers(result: Result) -> None:
     pytest_ini = read("pytest.ini")
     for marker in REQUIRED_MARKERS:
-        result.add(f"pytest marker configured: {marker}", re.search(rf"^\s*{marker}\s*:", pytest_ini, re.M) is not None)
-    test_text = "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in iter_files("backend/tests", "tests"))
+        result.add(
+            f"pytest marker configured: {marker}",
+            re.search(rf"^\s*{marker}\s*:", pytest_ini, re.M) is not None,
+        )
+    test_text = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in iter_files("backend/tests", "tests")
+    )
     for marker in REQUIRED_MARKERS:
         if marker in {"requires_external_db", "slow", "e2e"}:
             continue
-        result.add(f"pytest marker used: {marker}", f"mark.{marker}" in test_text or f"-m \"{marker}" in read("scripts/ci/run_m2_test_feedback_loop.sh"))
+        result.add(
+            f"pytest marker used: {marker}",
+            f"mark.{marker}" in test_text
+            or f'-m "{marker}' in read("scripts/ci/run_m2_test_feedback_loop.sh"),
+        )
 
 
 def check_makefile(result: Result) -> None:
     makefile = read("Makefile")
     for target in REQUIRED_MAKE_TARGETS:
-        result.add(f"Makefile target exists: {target}", re.search(rf"^{re.escape(target)}:", makefile, re.M) is not None)
-    result.add("make test runs safe default only", "run_m2_test_feedback_loop.sh default" in makefile)
-    result.add("external DB smoke target is explicit", "run_m2_test_feedback_loop.sh external-db-smoke" in makefile)
+        result.add(
+            f"Makefile target exists: {target}",
+            re.search(rf"^{re.escape(target)}:", makefile, re.M) is not None,
+        )
+    result.add(
+        "make test runs safe default only",
+        "run_m2_test_feedback_loop.sh default" in makefile,
+    )
+    result.add(
+        "external DB smoke target is explicit",
+        "run_m2_test_feedback_loop.sh external-db-smoke" in makefile,
+    )
 
 
 def check_external_urls(result: Result) -> None:
@@ -205,7 +242,11 @@ def check_external_urls(result: Result) -> None:
         text = path.read_text(encoding="utf-8", errors="replace")
         if dsn_pattern.search(text):
             offenders.append(rel(path))
-    result.add("default test paths contain no hardcoded external DB URLs", not offenders, ", ".join(offenders[:10]))
+    result.add(
+        "default test paths contain no hardcoded external DB URLs",
+        not offenders,
+        ", ".join(offenders[:10]),
+    )
 
 
 def check_docs(result: Result) -> None:
@@ -223,45 +264,105 @@ def check_docs(result: Result) -> None:
         "CELERY_RESULT_BACKEND",
     ]:
         result.add(f"topology matrix documents {token}", token in authority)
-    result.add("B2.4 readiness doc records explicit blocker or table", "bayesian_model_fits" in read("docs/testing_b24_persistence_readiness.md"))
+    result.add(
+        "B2.4 readiness doc records explicit blocker or table",
+        "bayesian_model_fits" in read("docs/testing_b24_persistence_readiness.md"),
+    )
     entry_gate = read("docs/testing_b24_persistence_entry_gate.md")
-    result.add("canonical B2.4 entry-gate doc records marker", "b24_persistence_entry_gate" in entry_gate)
-    result.add("canonical B2.4 entry-gate blocks Bayesian runtime", "Bayesian runtime dependency" in entry_gate and "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in entry_gate)
+    result.add(
+        "canonical B2.4 entry-gate doc records marker",
+        "b24_persistence_entry_gate" in entry_gate,
+    )
+    result.add(
+        "canonical B2.4 entry-gate blocks Bayesian runtime",
+        "Bayesian runtime dependency" in entry_gate
+        and "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in entry_gate,
+    )
     parallel = read("docs/testing_parallel_isolation.md")
-    result.add("parallel isolation doc records serial-only guard", "SKELDIR_TEST_PARALLEL_MODE=serial-only" in parallel and "PYTEST_XDIST_WORKER" in parallel)
-    result.add("append-only isolation doc forbids protected deletion", "DELETE FROM attribution_events" in read("docs/testing_append_only_isolation.md"))
-    result.add("celery modes doc distinguishes eager/worker", "celery_eager" in read("docs/testing_celery_modes.md") and "celery_worker" in read("docs/testing_celery_modes.md"))
+    result.add(
+        "parallel isolation doc records serial-only guard",
+        "SKELDIR_TEST_PARALLEL_MODE=serial-only" in parallel
+        and "PYTEST_XDIST_WORKER" in parallel,
+    )
+    result.add(
+        "append-only isolation doc forbids protected deletion",
+        "DELETE FROM attribution_events"
+        in read("docs/testing_append_only_isolation.md"),
+    )
+    result.add(
+        "celery modes doc distinguishes eager/worker",
+        "celery_eager" in read("docs/testing_celery_modes.md")
+        and "celery_worker" in read("docs/testing_celery_modes.md"),
+    )
 
 
 def check_pooler_and_broker(result: Result) -> None:
     compose = read("docker-compose.test.yml")
     runner = read("scripts/ci/run_m2_test_feedback_loop.sh")
     corrective_tests = read("backend/tests/test_m2_corrective_runtime_proofs.py")
-    result.add("pooler profile present", "pgbouncer" in compose.lower() and "transaction" in compose.lower())
+    result.add(
+        "pooler profile present",
+        "pgbouncer" in compose.lower() and "transaction" in compose.lower(),
+    )
     result.add("pooler exposes local port", "6432" in compose)
-    result.add("broker remains Postgres-backed", "CELERY_BROKER_URL" in runner and "sqla+" in runner)
+    result.add(
+        "broker remains Postgres-backed",
+        "CELERY_BROKER_URL" in runner and "sqla+" in runner,
+    )
     result.add("broker URL negative control exists", "--expect-rejection" in runner)
-    result.add("real broker absent negative control exists", "broker_absent_negative_control" in corrective_tests and "kombu" in corrective_tests)
-    result.add("real worker subprocess proof exists", "subprocess.Popen" in corrective_tests and "-P" in corrective_tests and "threads" in corrective_tests)
-    result.add("worker concurrency greater than one is enforced", "concurrency: int = 4" in corrective_tests and "barrier_timeout_seconds" in corrective_tests)
-    result.add("pooler worker concurrency proof exists", "test_m2_pooler_worker_concurrent_tenant_isolation" in corrective_tests and "TEST_POOLED_DATABASE_URL" in corrective_tests)
-    result.add("pooler RLS/GUC control coverage exists", all(token in corrective_tests for token in [
-        "cross_visible",
-        "current_setting('app.current_tenant_id', true)",
-        "ThreadPoolExecutor",
-        "pooler_rls_guc_negative_controls",
-        "authority_envelope header is required",
-    ]))
-    result.add("test namespace authority exists", all(token in runner + corrective_tests + read("backend/tests/conftest.py") for token in [
-        "SKELDIR_TEST_RUN_ID",
-        "PYTEST_XDIST_WORKER",
-        "SKELDIR_TEST_PARALLEL_MODE",
-    ]))
+    result.add(
+        "real broker absent negative control exists",
+        "broker_absent_negative_control" in corrective_tests
+        and "kombu" in corrective_tests,
+    )
+    result.add(
+        "real worker subprocess proof exists",
+        "subprocess.Popen" in corrective_tests
+        and "-P" in corrective_tests
+        and "threads" in corrective_tests,
+    )
+    result.add(
+        "worker concurrency greater than one is enforced",
+        "concurrency: int = 4" in corrective_tests
+        and "barrier_timeout_seconds" in corrective_tests,
+    )
+    result.add(
+        "pooler worker concurrency proof exists",
+        "test_m2_pooler_worker_concurrent_tenant_isolation" in corrective_tests
+        and "TEST_POOLED_DATABASE_URL" in corrective_tests,
+    )
+    result.add(
+        "pooler RLS/GUC control coverage exists",
+        all(
+            token in corrective_tests
+            for token in [
+                "cross_visible",
+                "current_setting('app.current_tenant_id', true)",
+                "ThreadPoolExecutor",
+                "pooler_rls_guc_negative_controls",
+                "authority_envelope header is required",
+            ]
+        ),
+    )
+    result.add(
+        "test namespace authority exists",
+        all(
+            token in runner + corrective_tests + read("backend/tests/conftest.py")
+            for token in [
+                "SKELDIR_TEST_RUN_ID",
+                "PYTEST_XDIST_WORKER",
+                "SKELDIR_TEST_PARALLEL_MODE",
+            ]
+        ),
+    )
 
 
 def check_append_only_static(result: Result) -> None:
     offenders: list[str] = []
-    pattern = re.compile(r"(DELETE\s+FROM\s+attribution_events|TRUNCATE\s+(TABLE\s+)?attribution_events)", re.I)
+    pattern = re.compile(
+        r"(DELETE\s+FROM\s+attribution_events|TRUNCATE\s+(TABLE\s+)?attribution_events)",
+        re.I,
+    )
     for path in iter_files("backend/tests", "tests"):
         text = path.read_text(encoding="utf-8", errors="replace")
         active_lines = []
@@ -271,38 +372,68 @@ def check_append_only_static(result: Result) -> None:
                 continue
             active_lines.append(line)
         active_text = "\n".join(active_lines)
-        if pattern.search(active_text) and "M2_APPEND_ONLY_DISPOSABLE_CONTEXT" not in text and "xfail(" not in text:
+        if (
+            pattern.search(active_text)
+            and "M2_APPEND_ONLY_DISPOSABLE_CONTEXT" not in text
+            and "xfail(" not in text
+        ):
             offenders.append(rel(path))
-    result.add("protected truth-table deletion is classified or quarantined", not offenders, ", ".join(offenders[:10]))
+    result.add(
+        "protected truth-table deletion is classified or quarantined",
+        not offenders,
+        ", ".join(offenders[:10]),
+    )
 
 
 def check_skeletons(result: Result) -> None:
     offenders: list[str] = []
     for path in iter_files("backend/tests", "tests"):
         text = path.read_text(encoding="utf-8", errors="replace")
-        if ("placeholder structure" in text or "Import actual app" in text or "TODO: Implement actual" in text) and "xfail(" not in text:
+        if (
+            "placeholder structure" in text
+            or "Import actual app" in text
+            or "TODO: Implement actual" in text
+        ) and "xfail(" not in text:
             offenders.append(rel(path))
-    result.add("skeleton/vacuous tests are quarantined", not offenders, ", ".join(offenders[:10]))
+    result.add(
+        "skeleton/vacuous tests are quarantined",
+        not offenders,
+        ", ".join(offenders[:10]),
+    )
 
 
 def check_b24_guard(result: Result) -> None:
     implementation_text = "\n".join(
         path.read_text(encoding="utf-8", errors="replace")
-        for path in iter_files("backend/app", "backend/requirements.txt", "pyproject.toml", "package.json")
+        for path in iter_files(
+            "backend/app", "backend/requirements.txt", "pyproject.toml", "package.json"
+        )
         if "validate_m2_test_feedback_loop.py" not in rel(path)
         and rel(path) not in ALLOWED_B24_P5_RUNTIME_MARKER_PATHS
     )
     implementation_violations = [
-        pattern for pattern in PROHIBITED_PHASE_PATTERNS if re.search(pattern, implementation_text, re.I)
+        pattern
+        for pattern in PROHIBITED_PHASE_PATTERNS
+        if re.search(pattern, implementation_text, re.I)
     ]
-    result.add("B2.4 implementation dependencies/markers absent from runtime paths", not implementation_violations, ", ".join(implementation_violations))
+    result.add(
+        "B2.4 implementation dependencies/markers absent from runtime paths",
+        not implementation_violations,
+        ", ".join(implementation_violations),
+    )
     readiness = read("docs/testing_b24_persistence_readiness.md")
     entry_gate = read("docs/testing_b24_persistence_entry_gate.md")
     result.add(
         "B2.4 absent substrate is explicitly blocked",
-        "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in entry_gate or "bayesian_model_fits exists" in entry_gate,
+        "M2_BLOCKED_BY_UNCONFIRMED_B24_PERSISTENCE_SUBSTRATE" in entry_gate
+        or "bayesian_model_fits exists" in entry_gate,
     )
-    result.add("canonical B2.4 entry-gate replaces stale readiness as required gate", "b24_persistence_entry_gate" in entry_gate and "b24-persistence-entry-gate" in read("scripts/ci/run_m2_test_feedback_loop.sh"))
+    result.add(
+        "canonical B2.4 entry-gate replaces stale readiness as required gate",
+        "b24_persistence_entry_gate" in entry_gate
+        and "b24-persistence-entry-gate"
+        in read("scripts/ci/run_m2_test_feedback_loop.sh"),
+    )
 
 
 def check_workflow(result: Result) -> None:
@@ -326,8 +457,13 @@ def check_workflow(result: Result) -> None:
         "test-b24-persistence-entry-gate",
     ]:
         result.add(f"M2 workflow includes {token}", token in workflow)
-    result.add("M2 workflow enables run-scoped namespace", "SKELDIR_TEST_RUN_ID" in workflow)
-    result.add("M2 workflow disables asyncpg statement cache for pooler", "SKELDIR_ASYNCPG_DISABLE_STATEMENT_CACHE" in workflow)
+    result.add(
+        "M2 workflow enables run-scoped namespace", "SKELDIR_TEST_RUN_ID" in workflow
+    )
+    result.add(
+        "M2 workflow disables asyncpg statement cache for pooler",
+        "SKELDIR_ASYNCPG_DISABLE_STATEMENT_CACHE" in workflow,
+    )
 
 
 def check_phase_diff(result: Result, baseline_sha: str | None, local_dev: bool) -> None:
@@ -336,7 +472,11 @@ def check_phase_diff(result: Result, baseline_sha: str | None, local_dev: bool) 
         return
     changed = changed_files(baseline_sha)
     touched = [path for path in changed if path in PROHIBITED_PRODUCTION_SURFACES]
-    result.add("M2 diff avoids B2.3/provider-boundary semantic surfaces", not touched, ", ".join(touched))
+    result.add(
+        "M2 diff avoids B2.3/provider-boundary semantic surfaces",
+        not touched,
+        ", ".join(touched),
+    )
 
 
 def main() -> int:

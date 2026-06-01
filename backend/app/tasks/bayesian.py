@@ -21,6 +21,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine.url import make_url
 
 from app.celery_app import celery_app
+from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.core.config import settings
 from app.core.secrets import get_database_url
 
@@ -30,7 +31,9 @@ logger = logging.getLogger(__name__)
 PRODUCTION_BAYESIAN_SOFT_TIME_LIMIT_S = 270
 PRODUCTION_BAYESIAN_TIME_LIMIT_S = 300
 FEATURE_AUTHORITY_BUILD_TASK_NAME = "app.tasks.bayesian.build_feature_authority"
-FEATURE_AUTHORITY_DISPATCH_TASK_NAME = "app.tasks.bayesian.dispatch_feature_authority_build"
+FEATURE_AUTHORITY_DISPATCH_TASK_NAME = (
+    "app.tasks.bayesian.dispatch_feature_authority_build"
+)
 FEATURE_AUTHORITY_DISPATCH_RETRY_BACKOFF_S = 30
 FEATURE_AUTHORITY_MAX_DISPATCH_ATTEMPTS = 5
 
@@ -38,7 +41,9 @@ _TASK_SOFT_LIMIT_S = int(settings.BAYESIAN_TASK_SOFT_TIME_LIMIT_S)
 _TASK_HARD_LIMIT_S = int(settings.BAYESIAN_TASK_TIME_LIMIT_S)
 
 if _TASK_HARD_LIMIT_S <= _TASK_SOFT_LIMIT_S:
-    raise RuntimeError("BAYESIAN_TASK_TIME_LIMIT_S must be greater than BAYESIAN_TASK_SOFT_TIME_LIMIT_S")
+    raise RuntimeError(
+        "BAYESIAN_TASK_TIME_LIMIT_S must be greater than BAYESIAN_TASK_SOFT_TIME_LIMIT_S"
+    )
 
 
 def _utc_now() -> str:
@@ -101,7 +106,9 @@ def _exercise_cpu(*, seed: int, cycles: int) -> int:
     return value
 
 
-def _build_fallback_payload(*, task_id: str, tenant_id: UUID, correlation_id: UUID, elapsed_ms: int) -> dict:
+def _build_fallback_payload(
+    *, task_id: str, tenant_id: UUID, correlation_id: UUID, elapsed_ms: int
+) -> dict:
     return {
         "status": "fallback",
         "reason": "bayesian_soft_time_limit_exceeded",
@@ -115,7 +122,37 @@ def _build_fallback_payload(*, task_id: str, tenant_id: UUID, correlation_id: UU
     }
 
 
-def _emit_fallback_event(*, task_id: str, tenant_id: UUID, correlation_id: UUID, elapsed_ms: int) -> dict:
+def _persist_fit_timeout_if_requested(
+    *, tenant_id: UUID, fit_id: UUID | None, runtime_seconds: int
+) -> bool:
+    if fit_id is None:
+        return False
+    engine = create_engine(
+        _runtime_sync_database_url(),
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+    try:
+        with engine.begin() as conn:
+            return mark_fit_timeout_sync(
+                conn,
+                tenant_id=tenant_id,
+                fit_id=fit_id,
+                runtime_seconds=runtime_seconds,
+            )
+    finally:
+        engine.dispose()
+
+
+def _emit_fallback_event(
+    *,
+    task_id: str,
+    tenant_id: UUID,
+    correlation_id: UUID,
+    elapsed_ms: int,
+    fit_id: UUID | None = None,
+) -> dict:
     fallback_payload = _build_fallback_payload(
         task_id=task_id,
         tenant_id=tenant_id,
@@ -139,6 +176,11 @@ def _emit_fallback_event(*, task_id: str, tenant_id: UUID, correlation_id: UUID,
             **fallback_payload,
         }
     )
+    fallback_payload["durable_timeout_written"] = _persist_fit_timeout_if_requested(
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        runtime_seconds=max(0, elapsed_ms // 1000),
+    )
     return fallback_payload
 
 
@@ -156,6 +198,7 @@ def run_mcmc_inference(
     *,
     tenant_id: str,
     correlation_id: str,
+    fit_id: str | None = None,
     run_seconds: int = 900,
     continue_after_soft_timeout: bool = False,
 ) -> dict:
@@ -164,6 +207,7 @@ def run_mcmc_inference(
     """
     tenant = _as_uuid(tenant_id)
     correlation = _as_uuid(correlation_id)
+    fit_uuid = _as_uuid(fit_id) if fit_id else None
     task_id = str(self.request.id)
     started_at = time.monotonic()
 
@@ -203,6 +247,7 @@ def run_mcmc_inference(
                     tenant_id=tenant,
                     correlation_id=correlation,
                     elapsed_ms=elapsed_ms,
+                    fit_id=fit_uuid,
                 )
                 if continue_after_soft_timeout:
                     # Keep consuming CPU slot until hard limit kills this worker process.
@@ -226,6 +271,7 @@ def run_mcmc_inference(
             tenant_id=tenant,
             correlation_id=correlation,
             elapsed_ms=elapsed_ms,
+            fit_id=fit_uuid,
         )
         if continue_after_soft_timeout:
             # Keep consuming CPU slot until hard limit kills this worker process.
@@ -372,7 +418,9 @@ def dispatch_feature_authority_build(
                     {
                         "tenant_id": str(tenant),
                         "outbox_id": str(row["id"]),
-                        "status": "dead_lettered" if dead_letter else "failed_retryable",
+                        "status": (
+                            "dead_lettered" if dead_letter else "failed_retryable"
+                        ),
                         "dead_letter": dead_letter,
                         "retry_delay_seconds": FEATURE_AUTHORITY_DISPATCH_RETRY_BACKOFF_S,
                         "error": str(exc)[:2048],
