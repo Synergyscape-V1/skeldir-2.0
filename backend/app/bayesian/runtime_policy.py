@@ -164,6 +164,28 @@ def apply_native_runtime_environment(
     return policy
 
 
+def pymc_single_process_sample_kwargs(
+    policy: B24RuntimePolicy,
+) -> dict[str, int]:
+    """Return the only allowed PyMC parallelism kwargs for P5 probes."""
+
+    if (
+        policy.pymc_cores != 1
+        or policy.pymc_chains != 1
+        or policy.blas_total_threads != 1
+    ):
+        raise RuntimeError(
+            "B2.4-P5 sampler runtime is single-process-only: "
+            f"chains={policy.pymc_chains}, cores={policy.pymc_cores}, "
+            f"blas_cores={policy.blas_total_threads}"
+        )
+    return {
+        "chains": policy.pymc_chains,
+        "cores": policy.pymc_cores,
+        "blas_cores": policy.blas_total_threads,
+    }
+
+
 def runtime_policy_json() -> str:
     policy = apply_native_runtime_environment()
     return json.dumps(policy.as_runtime_record(), sort_keys=True)

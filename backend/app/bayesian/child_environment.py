@@ -23,6 +23,7 @@ ALLOWLISTED_CHILD_ENV = frozenset(
         "B24_PYTENSOR_ROOT",
         "B24_PYTENSOR_COMPILEDIR",
         "B24_PYTENSOR_EXECUTION_ID",
+        "B24_SAMPLER_CHILD_BOOTSTRAP",
         "OMP_NUM_THREADS",
         "OPENBLAS_NUM_THREADS",
         "MKL_NUM_THREADS",
@@ -44,6 +45,7 @@ def build_sampler_child_env(
     env = {name: source[name] for name in ALLOWLISTED_CHILD_ENV if name in source}
     env["B24_PYTENSOR_COMPILEDIR"] = str(compiledir)
     env["B24_PYTENSOR_EXECUTION_ID"] = execution_id
+    env["B24_SAMPLER_CHILD_BOOTSTRAP"] = "1"
     flags = env.get("PYTENSOR_FLAGS", "")
     parts = [
         part

@@ -19,6 +19,7 @@ from app.bayesian.compiledir_reaper import (
 )
 from app.bayesian.runtime_policy import (
     apply_native_runtime_environment,
+    pymc_single_process_sample_kwargs,
     runtime_policy_json,
 )
 from app.bayesian.runtime_identity import (
@@ -86,6 +87,7 @@ def tiny_benchmark() -> dict[str, object]:
         raise RuntimeError(
             "B2.4-P5 single-process PyMC policy requires cores=1 and chains=1"
         )
+    sample_policy = pymc_single_process_sample_kwargs(policy)
     started = time.monotonic()
     with pm.Model():
         mu = pm.Normal("mu", mu=0.0, sigma=1.0)
@@ -93,11 +95,9 @@ def tiny_benchmark() -> dict[str, object]:
         idata = pm.sample(
             draws=20,
             tune=20,
-            chains=policy.pymc_chains,
-            cores=policy.pymc_cores,
+            **sample_policy,
             random_seed=42,
             progressbar=False,
-            blas_cores=policy.blas_total_threads,
             compute_convergence_checks=False,
             discard_tuned_samples=True,
         )
@@ -110,9 +110,9 @@ def tiny_benchmark() -> dict[str, object]:
         "probe": "tiny_benchmark",
         "elapsed_seconds": round(elapsed, 3),
         "threshold_seconds": policy.benchmark_threshold_s,
-        "chains": policy.pymc_chains,
-        "cores": policy.pymc_cores,
-        "blas_cores": policy.blas_total_threads,
+        "chains": sample_policy["chains"],
+        "cores": sample_policy["cores"],
+        "blas_cores": sample_policy["blas_cores"],
         "multiprocessing_policy": "single-process",
         "posterior_vars": sorted(idata.posterior.data_vars),
     }
@@ -221,7 +221,60 @@ def child_import_airgap() -> dict[str, object]:
     payload = json.loads(output.read_text(encoding="utf-8"))
     if payload.get("unexpected_imports"):
         raise RuntimeError(f"child import airgap failed: {payload}")
+    if payload.get("pre_attempt_forbidden_modules") or payload.get(
+        "post_attempt_forbidden_modules"
+    ):
+        raise RuntimeError(f"child sys.modules airgap failed: {payload}")
     return {"probe": "child_import_airgap", "result": result.__dict__, "child": payload}
+
+
+def child_boot_airgap() -> dict[str, object]:
+    lease = create_compiledir_lease(execution_id="child-boot-airgap")
+    output = lease.root / "child-boot-airgap.json"
+    result = run_supervised_sampler(
+        sampler_child_command(mode="boot-report", output=output, seconds=1),
+        deadline_seconds=10,
+        env=build_child_env_for_lease(lease),
+        compiledir_lease=lease,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    if not payload.get("boot_airgap_active"):
+        raise RuntimeError(f"child boot airgap inactive: {payload}")
+    if payload.get("preinstall_forbidden_modules") or payload.get(
+        "cached_forbidden_modules"
+    ):
+        raise RuntimeError(f"child boot sys.modules leak: {payload}")
+    if payload.get("multiprocessing_policy") != "single-process":
+        raise RuntimeError(f"child multiprocessing policy missing: {payload}")
+    return {"probe": "child_boot_airgap", "result": result.__dict__, "child": payload}
+
+
+def fork_multiprocessing_negative_controls() -> dict[str, object]:
+    lease = create_compiledir_lease(execution_id="fork-multiprocessing-negative")
+    output = lease.root / "fork-multiprocessing-negative.json"
+    result = run_supervised_sampler(
+        sampler_child_command(mode="fork-negative", output=output, seconds=1),
+        deadline_seconds=10,
+        env=build_child_env_for_lease(lease),
+        compiledir_lease=lease,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    required = {
+        "multiprocessing.get_context('fork')",
+        "multiprocessing.get_context()",
+        "multiprocessing.Process",
+    }
+    if os.name != "nt":
+        required.add("os.fork")
+    blocked = set(payload.get("blocked_controls", {}))
+    missing = sorted(required - blocked)
+    if missing:
+        raise RuntimeError(f"fork/multiprocessing controls did not fail: {missing}")
+    return {
+        "probe": "fork_multiprocessing_negative_controls",
+        "result": result.__dict__,
+        "child": payload,
+    }
 
 
 def compiledir_lifecycle() -> dict[str, object]:
@@ -390,7 +443,9 @@ COMMANDS = {
     "reaper-probe": reaper_probe,
     "supervisor-kill": supervisor_kill,
     "child-env-airgap": child_env_airgap,
+    "child-boot-airgap": child_boot_airgap,
     "child-import-airgap": child_import_airgap,
+    "fork-multiprocessing-negative-controls": fork_multiprocessing_negative_controls,
     "parent-death": parent_death,
     "parent-death-parent": _parent_death_parent,
     "behavioral-negative-controls": behavioral_negative_controls,

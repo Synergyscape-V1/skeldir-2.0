@@ -164,10 +164,10 @@ def sampler_child_command(
     marker: Path | None = None,
     seconds: int = 60,
 ) -> list[str]:
+    bootstrap = Path(__file__).with_name("sampler_child_bootstrap.py")
     command = [
         sys.executable,
-        "-m",
-        "app.bayesian.sampler_child",
+        str(bootstrap),
         "--mode",
         mode,
         "--seconds",
