@@ -320,13 +320,17 @@ def validate_b24(v: Validation) -> None:
     policy = ROOT / "docs/ci/b2_4_gate_insertion_policy.md"
     v.require(workflow.exists(), "M3_BLOCKED_BY_B24_GATE_INSERTION_UNSAFETY")
     v.require(policy.exists(), "M3_BLOCKED_BY_B24_GATE_INSERTION_UNSAFETY")
-    combined = (read(workflow) if workflow.exists() else "") + "\n" + (
-        read(policy) if policy.exists() else ""
-    )
-    forbidden = ("pymc", "arviz", "pymc-marketing", "pm.sample")
+    workflow_text = read(workflow) if workflow.exists() else ""
+    policy_text = read(policy) if policy.exists() else ""
+    forbidden = ("pymc-marketing", "pm.sample")
     v.require(
-        not any(token in combined.lower() for token in forbidden),
+        not any(token in policy_text.lower() for token in forbidden),
         "M3_BLOCKED_BY_PHASE_CONTAMINATION",
+    )
+    v.require(
+        "B2.4-P5 Bayesian Runtime Harness" in workflow_text
+        and "validate-b24-p5-runtime-harness" in workflow_text,
+        "M3_BLOCKED_BY_B24_GATE_INSERTION_UNSAFETY:p5_runtime_harness_missing",
     )
     v.require(
         "m3_b24_gate_dry_run" in {gate["id"] for gate in load_yaml(REGISTRY_PATH)},

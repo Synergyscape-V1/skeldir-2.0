@@ -146,7 +146,7 @@ def validate_paths() -> None:
     for script in REQUIRED_SCRIPTS:
         read(script)
     read(".github/workflows/m4-operational-runbooks.yml")
-    read("M4.1_Remediation_Completion_Record.md")
+    read("docs/maintainability/M4.1_Remediation_Completion_Record.md")
 
 
 def validate_make_targets() -> None:
@@ -326,7 +326,7 @@ def validate_runtime_harness_and_workflow() -> None:
         if token not in harness:
             fail(f"M4 runtime proof harness missing step: {token}")
 
-    record = read("M4.1_Remediation_Completion_Record.md")
+    record = read("docs/maintainability/M4.1_Remediation_Completion_Record.md")
     if "PENDING_PROTECTED_BRANCH_MERGE_VERIFICATION" in record:
         fail("M4.1 completion record contains stale protected-branch placeholder")
     for token in (

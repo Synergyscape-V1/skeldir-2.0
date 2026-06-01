@@ -1,0 +1,7 @@
+# B2.4-P5 Bayesian worker runtime lane.
+# This file is intentionally separate from requirements.txt so the API/default
+# worker image does not acquire native statistical runtime risk by accident.
+
+pymc==5.28.5
+arviz==0.23.4
+threadpoolctl==3.6.0

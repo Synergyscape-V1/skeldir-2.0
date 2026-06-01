@@ -1857,7 +1857,7 @@ CREATE TABLE public.bayesian_model_fits (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 PARTITION BY HASH (tenant_id);
 
@@ -1919,7 +1919,7 @@ CREATE TABLE public.bayesian_model_fits_p00 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -1981,7 +1981,7 @@ CREATE TABLE public.bayesian_model_fits_p01 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2043,7 +2043,7 @@ CREATE TABLE public.bayesian_model_fits_p02 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2105,7 +2105,7 @@ CREATE TABLE public.bayesian_model_fits_p03 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2167,7 +2167,7 @@ CREATE TABLE public.bayesian_model_fits_p04 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2229,7 +2229,7 @@ CREATE TABLE public.bayesian_model_fits_p05 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2291,7 +2291,7 @@ CREATE TABLE public.bayesian_model_fits_p06 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2353,7 +2353,7 @@ CREATE TABLE public.bayesian_model_fits_p07 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2415,7 +2415,7 @@ CREATE TABLE public.bayesian_model_fits_p08 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2477,7 +2477,7 @@ CREATE TABLE public.bayesian_model_fits_p09 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2539,7 +2539,7 @@ CREATE TABLE public.bayesian_model_fits_p10 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2601,7 +2601,7 @@ CREATE TABLE public.bayesian_model_fits_p11 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2663,7 +2663,7 @@ CREATE TABLE public.bayesian_model_fits_p12 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2725,7 +2725,7 @@ CREATE TABLE public.bayesian_model_fits_p13 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2787,7 +2787,7 @@ CREATE TABLE public.bayesian_model_fits_p14 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 
@@ -2849,7 +2849,7 @@ CREATE TABLE public.bayesian_model_fits_p15 (
     CONSTRAINT ck_bayesian_model_fits_runtime_seconds_non_negative CHECK (((runtime_seconds IS NULL) OR (runtime_seconds >= 0))),
     CONSTRAINT ck_bayesian_model_fits_source_snapshot_hash_sha256 CHECK (((source_snapshot_hash)::text ~ '^[a-f0-9]{64}$'::text)),
     CONSTRAINT ck_bayesian_model_fits_source_window_order CHECK ((source_window_end > source_window_start)),
-    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT ck_bayesian_model_fits_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'queued'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'fallback_only'::character varying, 'cancelled'::character varying])::text[])))
 )
 WITH (fillfactor='90');
 

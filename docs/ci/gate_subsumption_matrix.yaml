@@ -71,6 +71,26 @@
   local_reproduction_command: make validate-b24-p4-resource-bounds
   risk_if_removed: B2.4 could regress to duplicate planner DB work, unbounded cardinality profiling, allocation-backed memory proofs, PyMC/PyTensor dry-runs, oversized dispatch, or non-durable resource fallback without a merge-blocking signal.
   decision: keep_required
+- gate_id: validate-b24-p5-runtime-harness
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run
+  script: scripts/ci/validate_b24_p5_runtime_harness.py
+  owning_phase: B2.4-P5
+  protected_invariant: B2.4-P5 Bayesian worker dependency lane, runtime parity image, PyTensor compile proof, tiny PyMC benchmark, native thread caps, compiledir isolation, process-group kill semantics, durable timeout fallback, stale-running recovery, and boundary non-regression remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P5 introduces native-runtime physics that P1-P4 intentionally exclude:
+    PyMC/PyTensor/ArViZ dependency authority, compiler/backend viability,
+    numerical thread budgets, PyTensor compiledir isolation, process-group
+    kill behavior, durable timeout persistence, stale-running repair, and
+    runtime-image parity.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p5_runtime_harness.py --negative-control
+  local_reproduction_command: make validate-b24-p5-runtime-harness
+  risk_if_removed: B2.4 could pass schema/source/planning/resource gates while the Bayesian worker runtime cannot import, compile, sample, bound threads, kill native compute, repair stale fits, or preserve internal-only boundaries.
+  decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run

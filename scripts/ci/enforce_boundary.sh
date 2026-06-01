@@ -7,6 +7,7 @@ set -euo pipefail
 
 ALLOWED_LLM_BOUNDARY_PATH="backend/app/llm/provider_boundary.py"
 ALLOWED_BAYESIAN_PATHS=(
+  "backend/app/bayesian/runtime_probe.py"
   "backend/app/workers/bayesian.py"
   "backend/app/tasks/bayesian.py"
 )
@@ -87,7 +88,7 @@ emit_violation() {
 scan_matches() {
   local pattern="$1"
   local path="$2"
-  if command -v rg >/dev/null 2>&1; then
+  if command -v rg >/dev/null 2>&1 && rg --version >/dev/null 2>&1; then
     rg -n -e "${pattern}" "${path}" || true
   else
     grep -nE "${pattern}" "${path}" || true

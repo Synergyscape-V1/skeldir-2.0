@@ -1,0 +1,6 @@
+{
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "estimated_cost_usd": 0,
+  "note": "Semantic chunk agents did not expose token accounting to this local pipeline; benchmark tokens are saved separately in graphify-out/benchmark.json."
+}
