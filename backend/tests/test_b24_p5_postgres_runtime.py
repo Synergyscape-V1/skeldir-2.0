@@ -14,6 +14,7 @@ from app.bayesian.sampler_supervisor import (
     run_supervised_sampler,
     sampler_child_command,
 )
+from app.core.secrets import get_database_url
 from app.db.session import engine, get_session
 from app.tasks.bayesian import _emit_fallback_event
 
@@ -213,7 +214,7 @@ async def test_b24_p5_sampler_child_opens_zero_postgres_connections(
     monkeypatch,
 ) -> None:
     await _assert_table_exists("bayesian_model_fits")
-    database_url = os.environ["DATABASE_URL"]
+    database_url = get_database_url()
     separator = "&" if "?" in database_url else "?"
     monkeypatch.setenv(
         "DATABASE_URL",

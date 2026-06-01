@@ -90,7 +90,7 @@ jobs:
       - name: Child environment allowlist proof
         run: |
           docker run --rm \
-            -e DATABASE_URL=postgresql://should:not@leak/db \
+            -e DATABASE_URL=postgresql://should:not@127.0.0.1:5432/leak \
             -e SKELDIR_FAKE_PARENT_SECRET=must_not_reach_child \
             -e AWS_SECRET_ACCESS_KEY=must_not_reach_child \
             skeldir-b24-bayesian-worker:${{ github.sha }} \
