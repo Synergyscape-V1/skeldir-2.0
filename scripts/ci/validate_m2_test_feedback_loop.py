@@ -97,6 +97,11 @@ PROHIBITED_PHASE_PATTERNS = (
     r"pm\.sample",
 )
 
+ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
+    "backend/app/bayesian/runtime_policy.py",
+    "backend/app/bayesian/runtime_probe.py",
+}
+
 PROHIBITED_PRODUCTION_SURFACES = (
     "backend/app/llm/provider_boundary.py",
     "backend/app/revenue_verification/match_engine_kernel.py",
@@ -285,6 +290,7 @@ def check_b24_guard(result: Result) -> None:
         path.read_text(encoding="utf-8", errors="replace")
         for path in iter_files("backend/app", "backend/requirements.txt", "pyproject.toml", "package.json")
         if "validate_m2_test_feedback_loop.py" not in rel(path)
+        and rel(path) not in ALLOWED_B24_P5_RUNTIME_MARKER_PATHS
     )
     implementation_violations = [
         pattern for pattern in PROHIBITED_PHASE_PATTERNS if re.search(pattern, implementation_text, re.I)

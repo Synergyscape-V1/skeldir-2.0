@@ -145,7 +145,7 @@ class BayesianModelFit(Base, TenantMixin):
             name="ck_bayesian_model_fits_source_snapshot_hash_sha256",
         ),
         CheckConstraint(
-            "status IN ('pending', 'queued', 'running', 'succeeded', 'failed', 'fallback_only', 'cancelled')",
+            "status IN ('pending', 'queued', 'running', 'succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled')",
             name="ck_bayesian_model_fits_status",
         ),
         CheckConstraint(

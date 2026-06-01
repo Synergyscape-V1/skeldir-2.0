@@ -12,6 +12,7 @@ ALLOWED_PREFIXES = (
     "artifacts_vt_run3/",
     "backend/validation/evidence/",
     "artifacts/",
+    "graphify-out/",
 )
 ALLOWED_PATHS = {
     "AGENTS.md",

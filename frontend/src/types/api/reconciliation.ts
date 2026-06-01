@@ -1444,9 +1444,9 @@ export interface operations {
                      *       "adjustments_applied": true,
                      *       "pending_since": "2026-05-05T17:00:00Z",
                      *       "provisional_expires_at": "2026-05-05T18:00:00Z",
-                     *       "confirmed_at": null,
+                     *       "confirmed_at": "2026-05-05T17:35:00Z",
                      *       "adjusted_at": "2026-05-05T17:30:00Z",
-                     *       "unmatched_marked_at": null,
+                     *       "unmatched_marked_at": "2026-05-05T17:45:00Z",
                      *       "last_transition_at": "2026-05-05T17:30:00Z",
                      *       "created_at": "2026-05-05T17:00:00Z",
                      *       "updated_at": "2026-05-05T17:30:00Z"
@@ -1727,7 +1727,7 @@ export interface operations {
                      *           "canonical_commerce_reference": "checkout:sk_order_1001",
                      *           "severity": "flagged",
                      *           "workflow_state": "open",
-                     *           "resolution_code": null,
+                     *           "resolution_code": "review_pending",
                      *           "discrepancy_reason": "gross_capture_correction_entered_flagged_band",
                      *           "discrepancy_context": {
                      *             "discrepancy_amount_minor": 300,
@@ -1736,8 +1736,8 @@ export interface operations {
                      *             "discrepancy_basis": "gross_expected_vs_gross_captured"
                      *           },
                      *           "raised_at": "2026-05-05T18:10:00Z",
-                     *           "resolved_at": null,
-                     *           "dismissed_at": null,
+                     *           "resolved_at": "2026-05-05T18:20:00Z",
+                     *           "dismissed_at": "2026-05-05T18:25:00Z",
                      *           "created_at": "2026-05-05T18:10:00Z",
                      *           "updated_at": "2026-05-05T18:10:00Z"
                      *         }
@@ -1945,7 +1945,7 @@ export interface operations {
                      *       "canonical_commerce_reference": "checkout:sk_order_1001",
                      *       "severity": "alert",
                      *       "workflow_state": "open",
-                     *       "resolution_code": null,
+                     *       "resolution_code": "review_pending",
                      *       "discrepancy_reason": "gross_capture_correction_entered_alert_band",
                      *       "discrepancy_context": {
                      *         "discrepancy_amount_minor": 1500,
@@ -1954,8 +1954,8 @@ export interface operations {
                      *         "discrepancy_basis": "gross_expected_vs_gross_captured"
                      *       },
                      *       "raised_at": "2026-05-05T18:15:00Z",
-                     *       "resolved_at": null,
-                     *       "dismissed_at": null,
+                     *       "resolved_at": "2026-05-05T18:25:00Z",
+                     *       "dismissed_at": "2026-05-05T18:30:00Z",
                      *       "created_at": "2026-05-05T18:15:00Z",
                      *       "updated_at": "2026-05-05T18:15:00Z"
                      *     }

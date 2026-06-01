@@ -51,6 +51,52 @@ jobs:
       - name: Validate B2.4-P4 resource bounds
         run: make validate-b24-p4-resource-bounds
 
+      - name: Validate B2.4-P5 runtime harness
+        run: make validate-b24-p5-runtime-harness
+
+  b2-4-p5-runtime:
+    name: B2.4-P5 Bayesian Runtime Harness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Build Bayesian worker image
+        run: |
+          docker build -f backend/Dockerfile.bayesian -t skeldir-b24-bayesian-worker:${{ github.sha }} .
+
+      - name: Runtime report and import smoke
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe runtime-report --output /tmp/b24-p5-runtime-report.json
+
+      - name: PyTensor backend and compilation proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe pytensor-compile
+
+      - name: Native thread budget proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe thread-budget
+
+      - name: PyTensor compiledir concurrency proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe compiledir-concurrency
+
+      - name: Tiny PyMC benchmark proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe tiny-benchmark
+
+      - name: OS process-group kill proof
+        run: |
+          docker run --rm skeldir-b24-bayesian-worker:${{ github.sha }} \
+            python -m app.bayesian.runtime_probe supervisor-kill
+
   b2-4-p1-db-proof:
     name: B2.4-P1 DB Proof
     runs-on: ubuntu-latest

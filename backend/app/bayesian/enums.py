@@ -16,6 +16,8 @@ class FitStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    TIMEOUT = "timeout"
+    WORKER_LOST = "worker_lost"
     FALLBACK_ONLY = "fallback_only"
     CANCELLED = "cancelled"
 

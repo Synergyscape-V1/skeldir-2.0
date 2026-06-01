@@ -1889,8 +1889,7 @@ export interface operations {
                      *       "data_freshness_seconds": 5,
                      *       "verified": true,
                      *       "tenant_id": "00000000-0000-0000-0000-000000000000",
-                     *       "confidence_score": 0.94,
-                     *       "upgrade_notice": null
+                     *       "confidence_score": 0.94
                      *     }
                      */
                     "application/json": {
@@ -2754,7 +2753,6 @@ export interface operations {
                      *         "synthesis_state": "validated",
                      *         "non_authoritative_summary": "channel_performance_revenue shows metric_value_cents 45275 against revenue_total_cents 12543050; use as non-authoritative context only.",
                      *         "degraded": false,
-                     *         "degraded_reason": null,
                      *         "generated_at": "2026-04-03T14:30:00Z",
                      *         "truth_snapshot": {
                      *           "version": "f85f37fe583e1ee414e56275417f5719053d73de69ca87b2cb46f58f7d04067b",
@@ -6725,7 +6723,6 @@ export interface operations {
                      *       "next_refresh_due_at": "2026-03-10T16:45:00Z",
                      *       "last_refresh_attempt_at": "2026-03-09T17:46:00Z",
                      *       "last_refresh_success_at": "2026-03-09T17:46:00Z",
-                     *       "last_error_code": null,
                      *       "data_freshness_seconds": 15,
                      *       "last_updated": "2026-03-09T17:46:00Z"
                      *     }
