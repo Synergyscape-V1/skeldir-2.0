@@ -21,6 +21,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine.url import make_url
 
 from app.celery_app import celery_app
+from app.bayesian.fit_execution import execute_fit_intent_sync
 from app.bayesian.runtime_state import mark_fit_timeout_sync
 from app.core.config import settings
 from app.core.secrets import get_database_url
@@ -290,17 +291,28 @@ def run_mcmc_inference(
     max_retries=0,
 )
 def execute_fit_intent(self, *, fit_id: str) -> dict:
-    """P3 worker stub: fit_id-only, duplicate-delivery-safe, no compute."""
+    """Execute one P6 Bayesian fit intent from a fit_id-only outbox dispatch."""
 
     fit_uuid = _as_uuid(fit_id)
-    payload = {
-        "status": "accepted",
-        "task_id": str(self.request.id),
-        "fit_id": str(fit_uuid),
-        "p3_scope": "planning_claim_dispatch_only",
-        "compute_started": False,
-    }
-    _append_probe_event({"event": "bayesian_fit_intent_accepted", **payload})
+    task_id = str(self.request.id)
+    engine = create_engine(
+        _runtime_sync_database_url(),
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+    try:
+        payload = execute_fit_intent_sync(
+            engine=engine,
+            fit_id=fit_uuid,
+            task_id=task_id,
+        )
+    finally:
+        engine.dispose()
+    payload.setdefault(
+        "compute_started", payload.get("status") == "sampled_unvalidated"
+    )
+    _append_probe_event({"event": "bayesian_fit_intent_executed", **payload})
     return payload
 
 

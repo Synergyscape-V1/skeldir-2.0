@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import io
 import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +23,28 @@ from app.bayesian.compiledir_reaper import (
 )
 
 
+DEFAULT_STREAM_CAPTURE_LIMIT_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True)
+class CapturedChildStream:
+    retained_bytes: bytes
+    total_bytes: int
+    truncated: bool
+
+    @property
+    def retained_text(self) -> str:
+        return self.retained_bytes.decode("utf-8", errors="replace")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "retained_text": self.retained_text,
+            "retained_bytes": len(self.retained_bytes),
+            "total_bytes": self.total_bytes,
+            "truncated": self.truncated,
+        }
+
+
 @dataclass(frozen=True)
 class SupervisedSamplerResult:
     status: str
@@ -29,6 +53,20 @@ class SupervisedSamplerResult:
     killed_by_supervisor: bool
     returncode: int | None
     orphan_reaped: bool
+    stdout: CapturedChildStream
+    stderr: CapturedChildStream
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "child_pid": self.child_pid,
+            "elapsed_seconds": self.elapsed_seconds,
+            "killed_by_supervisor": self.killed_by_supervisor,
+            "returncode": self.returncode,
+            "orphan_reaped": self.orphan_reaped,
+            "stdout": self.stdout.as_dict(),
+            "stderr": self.stderr.as_dict(),
+        }
 
 
 def _linux_pdeathsig() -> None:
@@ -64,6 +102,47 @@ def _kill_process_tree(proc: subprocess.Popen[object]) -> None:
             proc.kill()
         return
     os.killpg(proc.pid, signal.SIGKILL)
+
+
+class _CappedStreamReader:
+    def __init__(self, stream: io.BufferedReader, *, cap_bytes: int) -> None:
+        self._stream = stream
+        self._cap_bytes = max(0, int(cap_bytes))
+        self._buffer = bytearray()
+        self._total_bytes = 0
+        self._truncated = False
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def join(self, timeout: float = 2.0) -> None:
+        self._thread.join(timeout)
+
+    def _drain(self) -> None:
+        while True:
+            chunk = self._stream.read(8192)
+            if not chunk:
+                break
+            self._total_bytes += len(chunk)
+            remaining = self._cap_bytes - len(self._buffer)
+            if remaining > 0:
+                self._buffer.extend(chunk[:remaining])
+            if len(chunk) > remaining:
+                self._truncated = True
+            if self._total_bytes > self._cap_bytes:
+                self._truncated = True
+        try:
+            self._stream.close()
+        except Exception:
+            pass
+
+    def result(self) -> CapturedChildStream:
+        return CapturedChildStream(
+            retained_bytes=bytes(self._buffer),
+            total_bytes=self._total_bytes,
+            truncated=self._truncated,
+        )
 
 
 def _process_is_alive(pid: int) -> bool:
@@ -106,6 +185,8 @@ def run_supervised_sampler(
     deadline_seconds: float,
     env: dict[str, str] | None = None,
     compiledir_lease: CompiledirLease | None = None,
+    stream_capture_limit_bytes: int = DEFAULT_STREAM_CAPTURE_LIMIT_BYTES,
+    cleanup_compiledir_on_exit: bool = True,
 ) -> SupervisedSamplerResult:
     """Run a sampler child under an OS-enforced process deadline."""
 
@@ -113,6 +194,16 @@ def run_supervised_sampler(
         raise ValueError("deadline_seconds must be positive")
     started = time.monotonic()
     proc = launch_sampler_child(command, env=env)
+    if proc.stdout is None or proc.stderr is None:
+        raise RuntimeError("sampler child must be launched with captured streams")
+    stdout_reader = _CappedStreamReader(
+        proc.stdout, cap_bytes=stream_capture_limit_bytes
+    )
+    stderr_reader = _CappedStreamReader(
+        proc.stderr, cap_bytes=stream_capture_limit_bytes
+    )
+    stdout_reader.start()
+    stderr_reader.start()
     if compiledir_lease is not None:
         compiledir_lease = record_child_pid(compiledir_lease, proc.pid)
     killed = False
@@ -128,6 +219,8 @@ def run_supervised_sampler(
         except subprocess.TimeoutExpired:
             _kill_process_tree(proc)
             proc.wait(timeout=2)
+        stdout_reader.join()
+        stderr_reader.join()
         elapsed = time.monotonic() - started
         alive = proc.poll() is None and _process_is_alive(proc.pid)
         return SupervisedSamplerResult(
@@ -137,9 +230,15 @@ def run_supervised_sampler(
             killed_by_supervisor=killed,
             returncode=proc.returncode,
             orphan_reaped=not alive,
+            stdout=stdout_reader.result(),
+            stderr=stderr_reader.result(),
         )
     finally:
-        if compiledir_lease is not None and compiledir_lease.path.exists():
+        if (
+            cleanup_compiledir_on_exit
+            and compiledir_lease is not None
+            and compiledir_lease.path.exists()
+        ):
             cleanup_compiledir(compiledir_lease)
 
 
@@ -150,8 +249,8 @@ def launch_sampler_child(
 
     return subprocess.Popen(
         command,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         env=env,
         **_popen_kwargs(),
     )
@@ -160,6 +259,7 @@ def launch_sampler_child(
 def sampler_child_command(
     *,
     mode: str,
+    input_path: Path | None = None,
     output: Path | None = None,
     marker: Path | None = None,
     seconds: int = 60,
@@ -173,6 +273,8 @@ def sampler_child_command(
         "--seconds",
         str(seconds),
     ]
+    if input_path is not None:
+        command.extend(["--input", str(input_path)])
     if output is not None:
         command.extend(["--output", str(output)])
     if marker is not None:
@@ -183,11 +285,13 @@ def sampler_child_command(
 def build_child_env_for_lease(
     lease: CompiledirLease, *, source_env: dict[str, str] | None = None
 ) -> dict[str, str]:
-    return build_sampler_child_env(
+    env = build_sampler_child_env(
         compiledir=lease.path,
         execution_id=lease.execution_id,
         source_env=source_env,
     )
+    env["B24_PYTENSOR_PARENT_PID"] = str(lease.parent_pid)
+    return env
 
 
 def synthetic_blocking_child_command(*, seconds: int = 60) -> list[str]:
@@ -198,6 +302,23 @@ def synthetic_blocking_child_command(*, seconds: int = 60) -> list[str]:
         "--synthetic-blocking-child",
         "--seconds",
         str(seconds),
+        "--token",
+        uuid4().hex,
+    ]
+
+
+def synthetic_noisy_child_command(
+    *, stream: str = "stderr", byte_count: int = 128 * 1024
+) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "app.bayesian.sampler_supervisor",
+        "--synthetic-noisy-child",
+        "--stream",
+        stream,
+        "--bytes",
+        str(byte_count),
         "--token",
         uuid4().hex,
     ]
@@ -218,14 +339,33 @@ def _run_synthetic_blocking_child(seconds: int) -> int:
     return 0
 
 
+def _run_synthetic_noisy_child(*, stream: str, byte_count: int) -> int:
+    target = sys.stderr.buffer if stream == "stderr" else sys.stdout.buffer
+    remaining = max(0, int(byte_count))
+    chunk = b"x" * 8192
+    while remaining > 0:
+        current = chunk[: min(len(chunk), remaining)]
+        target.write(current)
+        target.flush()
+        remaining -= len(current)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--synthetic-blocking-child", action="store_true")
+    parser.add_argument("--synthetic-noisy-child", action="store_true")
     parser.add_argument("--seconds", type=int, default=60)
     parser.add_argument("--token", default="")
+    parser.add_argument("--stream", choices=("stdout", "stderr"), default="stderr")
+    parser.add_argument("--bytes", type=int, default=128 * 1024)
     args = parser.parse_args()
     if args.synthetic_blocking_child:
         return _run_synthetic_blocking_child(args.seconds)
+    if args.synthetic_noisy_child:
+        return _run_synthetic_noisy_child(
+            stream=args.stream, byte_count=args.bytes
+        )
     parser.error("no supervisor mode selected")
     return 2
 

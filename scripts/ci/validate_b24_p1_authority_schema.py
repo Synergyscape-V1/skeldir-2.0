@@ -139,6 +139,7 @@ FORBIDDEN_IMPORT_ROOTS = {
 P5_RUNTIME_IMPORT_ALLOWLIST = {
     "backend/app/bayesian/runtime_probe.py": {"pymc", "pytensor", "pytensor.tensor", "arviz"},
     "backend/app/bayesian/runtime_identity.py": {"pymc", "pytensor", "arviz"},
+    "backend/app/bayesian/sampler_child.py": {"pymc"},
 }
 
 FORBIDDEN_BAYESIAN_FIELD_FRAGMENTS = {
