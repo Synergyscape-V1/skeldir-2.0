@@ -71,10 +71,11 @@ class B24RuntimePolicy:
             raise RuntimeError(
                 "PyTensor compiledir must not be global home/current directory"
             )
+        expected_parent_pid = os.getenv("B24_PYTENSOR_PARENT_PID", str(os.getpid()))
         parts = {part for part in compiledir.parts}
         if (
             self.worker_runtime_id not in parts
-            or f"parent-{os.getpid()}" not in parts
+            or f"parent-{expected_parent_pid}" not in parts
             or self.execution_id not in parts
         ):
             raise RuntimeError(

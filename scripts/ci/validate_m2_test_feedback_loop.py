@@ -102,6 +102,7 @@ ALLOWED_B24_P5_RUNTIME_MARKER_PATHS = {
     "backend/app/bayesian/runtime_probe.py",
     "backend/app/bayesian/runtime_identity.py",
     "backend/app/bayesian/child_environment.py",
+    "backend/app/bayesian/sampler_child.py",
 }
 
 PROHIBITED_PRODUCTION_SURFACES = (

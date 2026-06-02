@@ -78,6 +78,39 @@ def pytensor_compile() -> dict[str, object]:
     }
 
 
+def run_single_process_pymc_sample(
+    pm: object,
+    policy: object,
+    *,
+    draws: int,
+    tune: int,
+    random_seed: int,
+    progressbar: bool = False,
+    compute_convergence_checks: bool = False,
+    discard_tuned_samples: bool = True,
+    return_inferencedata: bool = True,
+    target_accept: float | None = None,
+    init: str | None = None,
+) -> object:
+    sample_policy = pymc_single_process_sample_kwargs(policy)
+    optional_kwargs: dict[str, object] = {}
+    if target_accept is not None:
+        optional_kwargs["target_accept"] = target_accept
+    if init is not None:
+        optional_kwargs["init"] = init
+    return pm.sample(
+        draws=draws,
+        tune=tune,
+        **sample_policy,
+        random_seed=random_seed,
+        progressbar=progressbar,
+        compute_convergence_checks=compute_convergence_checks,
+        discard_tuned_samples=discard_tuned_samples,
+        return_inferencedata=return_inferencedata,
+        **optional_kwargs,
+    )
+
+
 def tiny_benchmark() -> dict[str, object]:
     policy = apply_native_runtime_environment()
     import numpy as np
@@ -87,15 +120,15 @@ def tiny_benchmark() -> dict[str, object]:
         raise RuntimeError(
             "B2.4-P5 single-process PyMC policy requires cores=1 and chains=1"
         )
-    sample_policy = pymc_single_process_sample_kwargs(policy)
     started = time.monotonic()
     with pm.Model():
         mu = pm.Normal("mu", mu=0.0, sigma=1.0)
         pm.Normal("obs", mu=mu, sigma=1.0, observed=np.asarray([0.0, 0.1, -0.1]))
-        idata = pm.sample(
+        idata = run_single_process_pymc_sample(
+            pm,
+            policy,
             draws=20,
             tune=20,
-            **sample_policy,
             random_seed=42,
             progressbar=False,
             compute_convergence_checks=False,
@@ -110,9 +143,9 @@ def tiny_benchmark() -> dict[str, object]:
         "probe": "tiny_benchmark",
         "elapsed_seconds": round(elapsed, 3),
         "threshold_seconds": policy.benchmark_threshold_s,
-        "chains": sample_policy["chains"],
-        "cores": sample_policy["cores"],
-        "blas_cores": sample_policy["blas_cores"],
+        "chains": policy.pymc_chains,
+        "cores": policy.pymc_cores,
+        "blas_cores": policy.blas_total_threads,
         "multiprocessing_policy": "single-process",
         "posterior_vars": sorted(idata.posterior.data_vars),
     }
@@ -159,7 +192,7 @@ def supervisor_kill() -> dict[str, object]:
     )
     if not result.killed_by_supervisor or not result.orphan_reaped:
         raise RuntimeError(f"supervisor kill proof failed: {result}")
-    return {"probe": "supervisor_kill", **result.__dict__}
+    return {"probe": "supervisor_kill", **result.as_dict()}
 
 
 def runtime_report() -> dict[str, object]:
@@ -206,7 +239,7 @@ def child_env_airgap() -> dict[str, object]:
     ]
     if forbidden:
         raise RuntimeError(f"child env airgap failed: {forbidden}")
-    return {"probe": "child_env_airgap", "result": result.__dict__, "child": payload}
+    return {"probe": "child_env_airgap", "result": result.as_dict(), "child": payload}
 
 
 def child_import_airgap() -> dict[str, object]:
@@ -225,7 +258,7 @@ def child_import_airgap() -> dict[str, object]:
         "post_attempt_forbidden_modules"
     ):
         raise RuntimeError(f"child sys.modules airgap failed: {payload}")
-    return {"probe": "child_import_airgap", "result": result.__dict__, "child": payload}
+    return {"probe": "child_import_airgap", "result": result.as_dict(), "child": payload}
 
 
 def child_boot_airgap() -> dict[str, object]:
@@ -246,7 +279,7 @@ def child_boot_airgap() -> dict[str, object]:
         raise RuntimeError(f"child boot sys.modules leak: {payload}")
     if payload.get("multiprocessing_policy") != "single-process":
         raise RuntimeError(f"child multiprocessing policy missing: {payload}")
-    return {"probe": "child_boot_airgap", "result": result.__dict__, "child": payload}
+    return {"probe": "child_boot_airgap", "result": result.as_dict(), "child": payload}
 
 
 def fork_multiprocessing_negative_controls() -> dict[str, object]:
@@ -272,7 +305,7 @@ def fork_multiprocessing_negative_controls() -> dict[str, object]:
         raise RuntimeError(f"fork/multiprocessing controls did not fail: {missing}")
     return {
         "probe": "fork_multiprocessing_negative_controls",
-        "result": result.__dict__,
+        "result": result.as_dict(),
         "child": payload,
     }
 
@@ -291,7 +324,7 @@ def compiledir_lifecycle() -> dict[str, object]:
     return {
         "probe": "compiledir_lifecycle",
         "compiledir": compiledir,
-        "result": result.__dict__,
+        "result": result.as_dict(),
     }
 
 

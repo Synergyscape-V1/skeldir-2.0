@@ -9,6 +9,7 @@ ALLOWED_LLM_BOUNDARY_PATH="backend/app/llm/provider_boundary.py"
 ALLOWED_BAYESIAN_PATHS=(
   "backend/app/bayesian/runtime_probe.py"
   "backend/app/bayesian/runtime_identity.py"
+  "backend/app/bayesian/sampler_child.py"
   "backend/app/workers/bayesian.py"
   "backend/app/tasks/bayesian.py"
 )

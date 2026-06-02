@@ -145,7 +145,7 @@ class BayesianModelFit(Base, TenantMixin):
             name="ck_bayesian_model_fits_source_snapshot_hash_sha256",
         ),
         CheckConstraint(
-            "status IN ('pending', 'queued', 'running', 'succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled')",
+            "status IN ('pending', 'queued', 'running', 'persist_pending', 'sampled_unvalidated', 'diagnostics_pending', 'succeeded', 'failed', 'timeout', 'worker_lost', 'fallback_only', 'cancelled')",
             name="ck_bayesian_model_fits_status",
         ),
         CheckConstraint(
@@ -168,6 +168,10 @@ class BayesianModelFit(Base, TenantMixin):
             "'cardinality_authority_timeout', "
             "'cardinality_authority_build_failed', "
             "'source_profile_unavailable', "
+            "'source_snapshot_mismatch', 'transport_rejected', "
+            "'result_too_large', 'sampler_health_failed', "
+            "'model_memory_exceeded', 'graph_compile_memory_exceeded', "
+            "'policy_rejected', "
             "'timeout', 'worker_failure', 'no_convergence', "
             "'resource_bound_exceeded', 'source_unavailable', 'duplicate_fit_suppressed', "
             "'artifact_unavailable', 'storage_quota_exceeded')",

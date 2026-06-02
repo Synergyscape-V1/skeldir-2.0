@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import sys
@@ -22,12 +23,15 @@ from app.bayesian.sampler_supervisor import (
     run_supervised_sampler,
     sampler_child_command,
     synthetic_blocking_child_command,
+    synthetic_noisy_child_command,
 )
 
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_STATE = ROOT / "backend/app/bayesian/runtime_state.py"
 RUNTIME_PROBE = ROOT / "backend/app/bayesian/runtime_probe.py"
+FIT_EXECUTION = ROOT / "backend/app/bayesian/fit_execution.py"
+SAMPLER_CHILD = ROOT / "backend/app/bayesian/sampler_child.py"
 
 
 def test_b24_p5_thread_budget_rejects_oversubscription(
@@ -77,6 +81,224 @@ def test_b24_p5_supervisor_kills_blocking_child(
     assert result.status == "timeout"
     assert result.killed_by_supervisor is True
     assert result.orphan_reaped is True
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_b24_p6_supervisor_drains_byte_capped_child_streams(
+    monkeypatch: pytest.MonkeyPatch,
+    stream: str,
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(ROOT / "backend"))
+    result = run_supervised_sampler(
+        synthetic_noisy_child_command(stream=stream, byte_count=160 * 1024),
+        deadline_seconds=5,
+        stream_capture_limit_bytes=4096,
+    )
+    captured = result.stdout if stream == "stdout" else result.stderr
+    other = result.stderr if stream == "stdout" else result.stdout
+    assert result.status == "completed"
+    assert result.returncode == 0
+    assert captured.total_bytes == 160 * 1024
+    assert len(captured.retained_bytes) == 4096
+    assert captured.truncated is True
+    assert other.total_bytes == 0
+
+
+def test_b24_p6_stage_markers_are_fsynced_before_sigkill(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(ROOT / "backend"))
+    monkeypatch.setenv("B24_PYTENSOR_ROOT", str(tmp_path / "root"))
+    marker = tmp_path / "execution" / "stage-markers.jsonl"
+    lease = create_compiledir_lease(
+        execution_id="stage-marker-kill-unit", worker_id="unit-worker"
+    )
+    env = build_child_env_for_lease(
+        lease,
+        source_env={
+            **os.environ,
+            "PYTHONPATH": str(ROOT / "backend"),
+            "B24_STAGE_MARKER_PATH": str(marker),
+        },
+    )
+    result = run_supervised_sampler(
+        sampler_child_command(mode="stage-marker-kill", seconds=1),
+        deadline_seconds=10,
+        env=env,
+        compiledir_lease=lease,
+    )
+    stages = [
+        json.loads(line)["stage"]
+        for line in marker.read_text(encoding="utf-8").splitlines()
+    ]
+    assert result.status == "completed"
+    assert result.killed_by_supervisor is False
+    assert stages == ["input_loaded"]
+    assert not lease.path.exists()
+
+
+def test_b24_p6_has_no_shadow_result_staging() -> None:
+    text = FIT_EXECUTION.read_text(encoding="utf-8")
+    assert "stage_sampler_result" not in text
+    assert "find_latest_staged_sampler_result" not in text
+    assert "result_staging" not in text
+    assert "execution_storage" not in text
+    assert "staged_result_path" not in text
+    assert not (ROOT / "backend/app/bayesian/result_staging.py").exists()
+    assert not (ROOT / "backend/app/bayesian/execution_storage.py").exists()
+
+
+def test_b24_p6_real_fit_child_emits_bounded_unvalidated_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if importlib.util.find_spec("pymc") is None:
+        pytest.skip("PyMC is not installed in this test environment")
+    monkeypatch.setenv("PYTHONPATH", str(ROOT / "backend"))
+    monkeypatch.setenv("B24_PYTENSOR_ROOT", str(tmp_path / "root"))
+    execution_dir = tmp_path / "execution"
+    execution_dir.mkdir()
+    input_path = execution_dir / "input.json"
+    output = execution_dir / "result.json"
+    marker = execution_dir / "stage-markers.jsonl"
+    input_path.write_text(
+        json.dumps(
+            {
+                "execution_id": "real-fit-unit",
+                "fit_id": "0bd2d855-dceb-4039-bd98-5848edb269c7",
+                "random_seed": 42,
+                "max_samples": 160,
+                "max_cores": 1,
+                "observed_signal": [0.0, 0.1, -0.1],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    lease = create_compiledir_lease(
+        execution_id="real-fit-unit", worker_id="unit-worker"
+    )
+    env = build_child_env_for_lease(
+        lease,
+        source_env={
+            **os.environ,
+            "PYTHONPATH": str(ROOT / "backend"),
+            "B24_STAGE_MARKER_PATH": str(marker),
+        },
+    )
+    result = run_supervised_sampler(
+        sampler_child_command(
+            mode="real-fit",
+            input_path=input_path,
+            output=output,
+            seconds=1,
+        ),
+        deadline_seconds=30,
+        env=env,
+        compiledir_lease=lease,
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    stages = [
+        json.loads(line)["stage"]
+        for line in marker.read_text(encoding="utf-8").splitlines()
+    ]
+    assert result.status == "completed"
+    assert result.returncode == 0
+    assert payload["status"] == "sampled_unvalidated"
+    assert payload["n_chains"] == 1
+    assert payload["n_samples_actual"] == 64
+    assert "posterior" not in payload
+    assert "trace" not in payload
+    assert stages == [
+        "input_loaded",
+        "model_built",
+        "graph_compiling",
+        "graph_compiled",
+        "sampling_started",
+        "sampling_completed",
+        "result_written",
+    ]
+
+
+def test_b24_p6_parent_orchestration_keeps_pymc_child_only() -> None:
+    tree = ast.parse(FIT_EXECUTION.read_text(encoding="utf-8"))
+    imports = {
+        alias.name
+        for node in tree.body
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    from_imports = {
+        node.module
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    assert "pymc" not in imports
+    assert "pymc" not in from_imports
+    assert "app.bayesian.sampler_child" not in from_imports
+
+
+def test_b24_p6_parent_recomputes_after_db_failure_without_staging() -> None:
+    text = FIT_EXECUTION.read_text(encoding="utf-8")
+    child_pos = text.find("result = run_supervised_sampler")
+    persist_tx_pos = text.find("with engine.begin() as conn:", child_pos)
+    persist_call_pos = text.find("_persist_result_summary(", persist_tx_pos)
+    cleanup_pos = text.rfind("cleanup_compiledir(lease)")
+    assert -1 not in {child_pos, persist_tx_pos, persist_call_pos, cleanup_pos}
+    assert "cleanup_compiledir_on_exit=False" in text
+    assert "except" not in text[persist_tx_pos:persist_call_pos]
+    assert child_pos < persist_tx_pos < persist_call_pos < cleanup_pos
+
+
+def test_b24_p6_child_model_is_trivial_physics_probe() -> None:
+    text = SAMPLER_CHILD.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    pymc_calls = [
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "pm"
+    ]
+    assert pymc_calls.count("Model") == 1
+    assert pymc_calls.count("Normal") == 2
+    assert "HalfNormal" not in pymc_calls
+    assert "campaign" not in text.lower()
+    assert "provider" not in text.lower()
+    assert "marketing" not in text.lower()
+
+
+def test_b24_p6_stage_markers_wrap_physical_operations() -> None:
+    text = SAMPLER_CHILD.read_text(encoding="utf-8")
+    model_pos = text.find("with pm.Model() as model:")
+    observed_pos = text.find('pm.Normal("observed_signal"', model_pos)
+    model_built_pos = text.find('emit_stage_marker("model_built"', observed_pos)
+    graph_compiling_pos = text.find('emit_stage_marker("graph_compiling"', model_built_pos)
+    compile_pos = text.find("model.compile_logp()", graph_compiling_pos)
+    graph_compiled_pos = text.find('emit_stage_marker("graph_compiled"', compile_pos)
+    sampling_started_pos = text.find(
+        'emit_stage_marker("sampling_started"', graph_compiled_pos
+    )
+    assert -1 not in {
+        model_pos,
+        observed_pos,
+        model_built_pos,
+        graph_compiling_pos,
+        compile_pos,
+        graph_compiled_pos,
+        sampling_started_pos,
+    }
+    assert (
+        model_pos
+        < observed_pos
+        < model_built_pos
+        < graph_compiling_pos
+        < compile_pos
+        < graph_compiled_pos
+        < sampling_started_pos
+    )
 
 
 def test_b24_p5_child_env_is_allowlisted(tmp_path: Path) -> None:
