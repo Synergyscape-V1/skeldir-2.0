@@ -290,6 +290,7 @@ def build_child_env_for_lease(
         execution_id=lease.execution_id,
         source_env=source_env,
     )
+    env["B24_BAYESIAN_WORKER_RUNTIME_ID"] = lease.worker_id
     env["B24_PYTENSOR_PARENT_PID"] = str(lease.parent_pid)
     return env
 
