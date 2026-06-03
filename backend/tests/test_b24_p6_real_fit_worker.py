@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ast
 import importlib.util
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -252,7 +253,7 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                         :correlation_id,
                         :session_id,
                         :revenue_cents,
-                        :raw_payload,
+                        CAST(:raw_payload AS jsonb),
                         :idempotency_key,
                         'conversion',
                         :channel,
@@ -272,7 +273,11 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
                     "correlation_id": str(uuid4()),
                     "session_id": str(uuid4()),
                     "revenue_cents": revenue_cents,
-                    "raw_payload": {"source": "b24_p6_real_fit_proof", "n": index},
+                    "raw_payload": json.dumps(
+                        {"source": "b24_p6_real_fit_proof", "n": index},
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
                     "idempotency_key": f"p6:{suffix}:{index}",
                     "channel": channel,
                     "campaign_id": f"campaign_{suffix}_{index:02d}",
