@@ -669,8 +669,8 @@ def run_negative_controls(root: Path) -> None:
             lambda: validate_source_snapshot(
                 root,
                 snapshot.replace(
-                    "async for partition in stream.mappings().partitions(SOURCE_STREAM_PARTITION_SIZE):",
-                    "rows = await stream.fetchall()\n        async for partition in stream.mappings().partitions(SOURCE_STREAM_PARTITION_SIZE):",
+                    "async for partition in stream.mappings().partitions(",
+                    "rows = await stream.fetchall()\n        async for partition in stream.mappings().partitions(",
                     1,
                 ),
             ),
@@ -680,7 +680,12 @@ def run_negative_controls(root: Path) -> None:
             "B24_P2_NC_MISSING_PARTITIONS_PASS",
             lambda: validate_source_snapshot(
                 root,
-                snapshot.replace(".partitions(SOURCE_STREAM_PARTITION_SIZE)", "", 1),
+                snapshot.replace(".partitions(SOURCE_STREAM_PARTITION_SIZE)", "")
+                .replace(
+                    ".partitions(\n            SOURCE_STREAM_PARTITION_SIZE\n        )",
+                    "",
+                )
+                .replace(".partitions(", ""),
             ),
             "bounded physical streaming",
         ),

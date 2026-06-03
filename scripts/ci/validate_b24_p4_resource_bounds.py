@@ -888,7 +888,9 @@ def validate_schema_surface(
             strict_purge_migration,
         ]
     )
-    canonical = canonical_text if canonical_text is not None else _read(root, CANONICAL_SCHEMA)
+    canonical = (
+        canonical_text if canonical_text is not None else _read(root, CANONICAL_SCHEMA)
+    )
     canonical_yaml = (
         canonical_yaml_text
         if canonical_yaml_text is not None
@@ -1019,7 +1021,10 @@ def validate_schema_surface(
         "test_b24_p4_sweeper_claims_only_orphaned_rows_after_threshold",
         "test_b24_p4_post_commit_dispatch_failure_marks_retryable_row",
     ):
-        _require(required_test in tests, f"missing strict purge/dispatch test: {required_test}")
+        _require(
+            required_test in tests,
+            f"missing strict purge/dispatch test: {required_test}",
+        )
     for index_name in (
         "idx_b24_p4_attribution_events_campaign_cardinality",
         "idx_b24_p4_match_verdicts_provider_cardinality",
@@ -1073,10 +1078,18 @@ def validate_authority_build_task_and_runtime_ci_texts(
     workflow_text: str | None = None,
     runtime_tests_text: str | None = None,
 ) -> None:
-    liveness = liveness_text if liveness_text is not None else _read(root, AUTHORITY_LIVENESS)
+    liveness = (
+        liveness_text if liveness_text is not None else _read(root, AUTHORITY_LIVENESS)
+    )
     tasks = tasks_text if tasks_text is not None else _read(root, TASKS_BAYESIAN)
-    workflow = workflow_text if workflow_text is not None else _read(root, B24_GATE_WORKFLOW)
-    runtime_tests = runtime_tests_text if runtime_tests_text is not None else _read(root, P4_RUNTIME_TESTS)
+    workflow = (
+        workflow_text if workflow_text is not None else _read(root, B24_GATE_WORKFLOW)
+    )
+    runtime_tests = (
+        runtime_tests_text
+        if runtime_tests_text is not None
+        else _read(root, P4_RUNTIME_TESTS)
+    )
     for token in (
         "FEATURE_AUTHORITY_DISPATCH_TASK",
         "POST_COMMIT_DISPATCH_SESSION_KEY",
@@ -1088,8 +1101,8 @@ def validate_authority_build_task_and_runtime_ci_texts(
     ):
         _require(token in liveness, f"authority causal dispatch missing: {token}")
     for token in (
-        'name=FEATURE_AUTHORITY_DISPATCH_TASK_NAME',
-        'name=FEATURE_AUTHORITY_BUILD_TASK_NAME',
+        "name=FEATURE_AUTHORITY_DISPATCH_TASK_NAME",
+        "name=FEATURE_AUTHORITY_BUILD_TASK_NAME",
         "def dispatch_feature_authority_build",
         "def build_feature_authority",
         "b24_source_window_feature_authority",
@@ -1116,7 +1129,9 @@ def validate_authority_build_task_and_runtime_ci_texts(
         "test_b24_p4_runtime_authority_build_request_outbox_and_causal_dispatch",
         "test_b24_p4_runtime_rls_force_enabled_for_p4_tables",
     ):
-        _require(token in runtime_tests, f"fresh PostgreSQL runtime proof missing: {token}")
+        _require(
+            token in runtime_tests, f"fresh PostgreSQL runtime proof missing: {token}"
+        )
 
 
 def validate_scope(root: Path) -> None:
@@ -1287,7 +1302,6 @@ def run_negative_control(root: Path) -> None:
                 authority_text=_read(root, FEATURE_AUTHORITY).replace(
                     "authority.freshness_status != FeatureAuthorityStatus.FRESH",
                     "False",
-                    1,
                 ),
                 design_text=_read(root, DESIGN_ENVELOPE),
                 graph_text=_read(root, GRAPH_ENVELOPE),
@@ -1529,8 +1543,7 @@ def run_negative_control(root: Path) -> None:
             "deprecated_profiling_model",
             lambda: validate_schema_surface_with_texts(
                 root,
-                models_text=_read(root, MODELS)
-                + "\nclass B24P4ProfilingLease: pass\n",
+                models_text=_read(root, MODELS) + "\nclass B24P4ProfilingLease: pass\n",
             ),
             "deprecated profiling",
         ),
@@ -1538,7 +1551,9 @@ def run_negative_control(root: Path) -> None:
             "strict_purge_if_exists",
             lambda: validate_schema_surface_with_texts(
                 root,
-                strict_purge_migration_text=_read(root, P4_STRICT_PURGE_MIGRATION).replace(
+                strict_purge_migration_text=_read(
+                    root, P4_STRICT_PURGE_MIGRATION
+                ).replace(
                     "DROP TABLE public.b24_p4_profiling_leases",
                     "DROP TABLE IF EXISTS public.b24_p4_profiling_leases",
                     1,
