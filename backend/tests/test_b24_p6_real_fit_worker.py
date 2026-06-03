@@ -200,8 +200,14 @@ async def _seed_source_rows(tenant_id: UUID, suffix: str) -> None:
             await conn.execute(
                 text(
                     """
-                    INSERT INTO public.channel_taxonomy (code, display_name, state)
-                    VALUES (:code, :display_name, 'active')
+                    INSERT INTO public.channel_taxonomy (
+                        code,
+                        family,
+                        is_paid,
+                        display_name,
+                        state
+                    )
+                    VALUES (:code, 'b24_p6_proof', true, :display_name, 'active')
                     ON CONFLICT (code) DO NOTHING
                     """
                 ),
