@@ -17,7 +17,9 @@ from app.bayesian.eligibility import (
     EligibilityPreflightResult,
     FallbackReason,
     run_eligibility_preflight,
+    run_eligibility_preflight_sync,
 )
+from app.bayesian.enums import FallbackReason as WorkerFallbackReason
 from app.bayesian.exceptions import BayesianTenantContextError
 from app.bayesian.input_contract import (
     ALLOWED_SOURCE_READ_MODELS,
@@ -29,6 +31,9 @@ from app.bayesian.input_contract import (
     SOURCE_STREAM_PARTITION_SIZE,
     STREAM_CHUNK_FORMAT_VERSION,
 )
+
+
+P6_SOURCE_OBSERVED_SIGNAL_VERSION = "b24-p6-source-observed-v1"
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,40 @@ class SourceSnapshotResult:
     @property
     def is_sentinel(self) -> bool:
         return self.sentinel_material is not None
+
+
+@dataclass(frozen=True)
+class P6SourceObservedInput:
+    tenant_id: UUID
+    model_type: str
+    model_version: str
+    source_window_start: datetime
+    source_window_end: datetime
+    source_snapshot_hash: str
+    observed_signal: list[float]
+    observed_signal_version: str
+    streamed_chunk_count: int
+    streamed_source_row_count: int
+    source_amount_minor_total: int
+    resource_policy_version: str
+
+    def metadata(self) -> dict[str, object]:
+        return {
+            "observed_signal_version": self.observed_signal_version,
+            "streamed_chunk_count": self.streamed_chunk_count,
+            "streamed_source_row_count": self.streamed_source_row_count,
+            "source_amount_minor_total": self.source_amount_minor_total,
+            "resource_policy_version": self.resource_policy_version,
+        }
+
+
+class P6SourceAuthorityError(RuntimeError):
+    """P6 cannot launch the sampler because source authority failed closed."""
+
+    def __init__(self, reason: WorkerFallbackReason, detail: str) -> None:
+        super().__init__(detail)
+        self.reason = reason
+        self.detail = detail
 
 
 def _utc_iso(value: datetime | None) -> str | None:
@@ -87,7 +126,9 @@ def canonical_json_bytes(payload: dict[str, object]) -> bytes:
     ).encode("utf-8")
 
 
-def _contract_row_payload(source_name: str, row: dict[str, object]) -> dict[str, object]:
+def _contract_row_payload(
+    source_name: str, row: dict[str, object]
+) -> dict[str, object]:
     """Project a streamed row onto the versioned source contract allowlist."""
 
     allowed = set(ALLOWED_SOURCE_READ_MODELS[source_name])
@@ -295,6 +336,15 @@ async def _assert_tenant_guc(session: AsyncSession, tenant_id: UUID) -> None:
         )
 
 
+def _assert_tenant_guc_sync(conn, tenant_id: UUID) -> None:
+    result = conn.execute(text("SELECT current_setting('app.current_tenant_id', true)"))
+    current = result.scalar_one_or_none()
+    if str(current or "") != str(tenant_id):
+        raise BayesianTenantContextError(
+            "tenant GUC must be bound before source snapshot reads"
+        )
+
+
 async def stream_source_chunks(
     session: AsyncSession,
     *,
@@ -322,12 +372,195 @@ async def stream_source_chunks(
             query.execution_options(**_STREAM_EXECUTION_OPTIONS),
             params,
         )
-        async for partition in stream.mappings().partitions(SOURCE_STREAM_PARTITION_SIZE):
+        async for partition in stream.mappings().partitions(
+            SOURCE_STREAM_PARTITION_SIZE
+        ):
             for row in partition:
                 payload = _contract_row_payload(source_name, dict(row))
                 payload["chunk_type"] = "source_row"
                 yield canonical_json_bytes(payload)
         yield canonical_json_bytes({"chunk_type": "source_end", "source": source_name})
+
+
+def _p6_amount_minor(payload: dict[str, object]) -> int:
+    source_name = str(payload.get("source_table_discriminator", ""))
+    if source_name == "attribution_events":
+        return int(payload.get("revenue_cents") or 0)
+    if source_name == "attribution_allocations":
+        return int(payload.get("allocated_revenue_cents") or 0)
+    if source_name == "b23_match_verdicts":
+        return int(payload.get("canonical_net_verified_amount_minor") or 0)
+    if source_name == "b23_revenue_events":
+        return (
+            int(payload.get("captured_amount_minor") or 0)
+            + int(payload.get("refund_amount_minor") or 0)
+            + int(payload.get("chargeback_amount_minor") or 0)
+            + int(payload.get("reversal_amount_minor") or 0)
+        )
+    return 0
+
+
+def _bounded_signal_from_source_rows(
+    *, row_count: int, amount_minor: int
+) -> list[float]:
+    amount_signal = max(-10.0, min(10.0, amount_minor / 100_000.0))
+    row_signal = max(0.0, min(10.0, row_count / 1_000.0))
+    mean_signal = 0.0
+    if row_count > 0:
+        mean_signal = max(-10.0, min(10.0, (amount_minor / row_count) / 10_000.0))
+    return [
+        round(amount_signal, 6),
+        round(row_signal, 6),
+        round(mean_signal, 6),
+    ]
+
+
+def load_p6_observed_input_from_source_snapshot_sync(
+    conn,
+    *,
+    tenant_id: UUID,
+    model_type: str,
+    model_version: str,
+    source_window_start: datetime,
+    source_window_end: datetime,
+    source_snapshot_hash: str,
+    preflight_lease_id: str,
+) -> P6SourceObservedInput:
+    """Verify the frozen P2 source authority and derive bounded P6 input.
+
+    This synchronous worker path intentionally replays the same source contract
+    used by P2 hashing. The hash verifies identity; source rows produce the
+    observed signal.
+    """
+
+    from app.bayesian.feature_authority import (
+        FeatureAuthorityUnavailable,
+        load_source_window_feature_authority_sync,
+    )
+    from app.bayesian.resource_profile import evaluate_source_snapshot_resource_bounds
+
+    conn.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+    _assert_tenant_guc_sync(conn, tenant_id)
+    preflight = run_eligibility_preflight_sync(
+        conn,
+        tenant_id=tenant_id,
+        model_type=model_type,
+        model_version=model_version,
+        source_window_start=source_window_start,
+        source_window_end=source_window_end,
+    )
+    if not preflight.is_eligible:
+        raise P6SourceAuthorityError(
+            WorkerFallbackReason.SOURCE_UNAVAILABLE,
+            "fit source snapshot is not eligible for P6 real-fit execution",
+        )
+    try:
+        feature_authority = load_source_window_feature_authority_sync(
+            conn,
+            tenant_id=tenant_id,
+            model_type=model_type,
+            model_version=model_version,
+            source_window_start=source_window_start,
+            source_window_end=source_window_end,
+            source_snapshot_hash=source_snapshot_hash,
+        )
+    except FeatureAuthorityUnavailable as exc:
+        raise P6SourceAuthorityError(exc.reason, exc.detail) from exc
+
+    pre_materialization_snapshot = SourceSnapshotResult(
+        tenant_id=tenant_id,
+        model_type=model_type,
+        model_version=model_version,
+        source_window_start=source_window_start,
+        source_window_end=source_window_end,
+        source_snapshot_hash=source_snapshot_hash,
+        preflight=preflight,
+        streamed_chunk_count=0,
+    )
+    resource_decision = evaluate_source_snapshot_resource_bounds(
+        snapshot=pre_materialization_snapshot,
+        preflight_lease_id=preflight_lease_id,
+        feature_authority=feature_authority,
+    )
+    if not resource_decision.allowed:
+        assert resource_decision.failure_reason is not None
+        raise P6SourceAuthorityError(
+            resource_decision.failure_reason,
+            "P4 resource authority rejected source snapshot before P6 materialization",
+        )
+
+    hasher = hashlib.sha256()
+    hasher.update(
+        _hash_header(
+            tenant_id=tenant_id,
+            model_type=model_type,
+            model_version=model_version,
+            source_window_start=source_window_start,
+            source_window_end=source_window_end,
+        )
+    )
+    chunk_count = 1
+    source_row_count = 0
+    amount_minor_total = 0
+    params = {
+        "tenant_id": str(tenant_id),
+        "window_start": source_window_start,
+        "window_end": source_window_end,
+        **_QUERY_PARAMS,
+    }
+    for source_name, query in _SOURCE_QUERIES.items():
+        hasher.update(
+            canonical_json_bytes(
+                {
+                    "chunk_type": "source_begin",
+                    "source": source_name,
+                    "source_contract_version": SOURCE_CONTRACT_VERSION,
+                }
+            )
+        )
+        chunk_count += 1
+        result = conn.execute(
+            query.execution_options(**_STREAM_EXECUTION_OPTIONS), params
+        )
+        for partition in result.mappings().partitions(SOURCE_STREAM_PARTITION_SIZE):
+            for row in partition:
+                payload = _contract_row_payload(source_name, dict(row))
+                payload["chunk_type"] = "source_row"
+                hasher.update(canonical_json_bytes(payload))
+                chunk_count += 1
+                source_row_count += 1
+                amount_minor_total += _p6_amount_minor(payload)
+        hasher.update(
+            canonical_json_bytes({"chunk_type": "source_end", "source": source_name})
+        )
+        chunk_count += 1
+
+    verified_hash = hasher.hexdigest()
+    if verified_hash != source_snapshot_hash:
+        raise P6SourceAuthorityError(
+            WorkerFallbackReason.SOURCE_SNAPSHOT_MISMATCH,
+            "fit source_snapshot_hash does not match replayed P2 source authority",
+        )
+    return P6SourceObservedInput(
+        tenant_id=tenant_id,
+        model_type=model_type,
+        model_version=model_version,
+        source_window_start=source_window_start,
+        source_window_end=source_window_end,
+        source_snapshot_hash=verified_hash,
+        observed_signal=_bounded_signal_from_source_rows(
+            row_count=source_row_count,
+            amount_minor=amount_minor_total,
+        ),
+        observed_signal_version=P6_SOURCE_OBSERVED_SIGNAL_VERSION,
+        streamed_chunk_count=chunk_count,
+        streamed_source_row_count=source_row_count,
+        source_amount_minor_total=amount_minor_total,
+        resource_policy_version=resource_decision.input_profile.policy_version,
+    )
 
 
 async def compute_source_snapshot_hash(

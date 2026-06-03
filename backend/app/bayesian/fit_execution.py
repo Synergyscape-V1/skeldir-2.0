@@ -28,6 +28,11 @@ from app.bayesian.sampler_supervisor import (
     sampler_child_command,
 )
 from app.bayesian.sampling_policy import DEFAULT_P6_SAMPLING_POLICY
+from app.bayesian.source_snapshot import (
+    P6SourceAuthorityError,
+    P6SourceObservedInput,
+    load_p6_observed_input_from_source_snapshot_sync,
+)
 
 
 TERMINAL_OR_POST_SAMPLE_STATUSES = {
@@ -50,6 +55,10 @@ def _set_tenant_context(conn, tenant_id: UUID) -> None:
 
 
 def _fit_identity(conn, *, fit_id: UUID) -> UUID | None:
+    conn.execute(
+        text("SELECT set_config('app.b24_fit_resolution_id', :fit_id, true)"),
+        {"fit_id": str(fit_id)},
+    )
     rows = (
         conn.execute(
             text(
@@ -150,13 +159,6 @@ def _mark_fit_failure(
     )
 
 
-def _observed_signal_from_hash(source_snapshot_hash: str) -> list[float]:
-    first = int(source_snapshot_hash[:8], 16) / 0xFFFFFFFF
-    second = int(source_snapshot_hash[8:16], 16) / 0xFFFFFFFF
-    centered = [first - 0.5, second - 0.5]
-    return [0.0, round(centered[0], 6), round(centered[1], 6)]
-
-
 def _iso(value: object) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
@@ -166,7 +168,12 @@ def _iso(value: object) -> str:
 _SamplerInput = dict[str, object]
 
 
-def _build_sampler_input(row: _LoadFitRow, *, execution_id: str) -> _SamplerInput:
+def _build_sampler_input(
+    row: _LoadFitRow,
+    *,
+    execution_id: str,
+    observed_input: P6SourceObservedInput,
+) -> _SamplerInput:
     policy = DEFAULT_P6_SAMPLING_POLICY
     policy.validate()
     max_samples = int(row["max_samples"] or 0)
@@ -199,9 +206,8 @@ def _build_sampler_input(row: _LoadFitRow, *, execution_id: str) -> _SamplerInpu
         "max_samples": max_samples,
         "max_cores": max_cores,
         "max_runtime_seconds": int(row["max_runtime_seconds"] or 60),
-        "observed_signal": _observed_signal_from_hash(
-            str(row["source_snapshot_hash"])
-        ),
+        "observed_signal": observed_input.observed_signal,
+        "observed_signal_source": observed_input.metadata(),
     }
 
 
@@ -338,14 +344,50 @@ def execute_fit_intent_sync(
                     "idempotent_replay": True,
                     "compute_started": False,
                 }
-            try:
-                sampler_input = _build_sampler_input(
-                    row, execution_id=lease.execution_id
+        try:
+            with engine.connect() as replay_conn:
+                replay_conn = replay_conn.execution_options(
+                    isolation_level="REPEATABLE READ"
                 )
-            except RuntimeError as exc:
-                reason = FallbackReason.POLICY_REJECTED
-                if str(exc) == "transport_rejected":
-                    reason = FallbackReason.TRANSPORT_REJECTED
+                with replay_conn.begin():
+                    replay_conn.execute(text("SET TRANSACTION READ ONLY"))
+                    observed_input = load_p6_observed_input_from_source_snapshot_sync(
+                        replay_conn,
+                        tenant_id=tenant_id,
+                        model_type=str(row["model_type"]),
+                        model_version=str(row["model_version"]),
+                        source_window_start=row["source_window_start"],
+                        source_window_end=row["source_window_end"],
+                        source_snapshot_hash=str(row["source_snapshot_hash"]),
+                        preflight_lease_id=lease.execution_id,
+                    )
+            sampler_input = _build_sampler_input(
+                row,
+                execution_id=lease.execution_id,
+                observed_input=observed_input,
+            )
+        except P6SourceAuthorityError as exc:
+            with engine.begin() as conn:
+                _mark_fit_failure(
+                    conn,
+                    tenant_id=tenant_id,
+                    fit_id=fit_id,
+                    status=FitStatus.FAILED,
+                    fallback_reason=exc.reason,
+                )
+            return {
+                "status": "failed",
+                "fallback_reason": exc.reason.value,
+                "task_id": task_id,
+                "fit_id": str(fit_id),
+                "tenant_id": str(tenant_id),
+                "compute_started": False,
+            }
+        except RuntimeError as exc:
+            reason = FallbackReason.POLICY_REJECTED
+            if str(exc) == "transport_rejected":
+                reason = FallbackReason.TRANSPORT_REJECTED
+            with engine.begin() as conn:
                 _mark_fit_failure(
                     conn,
                     tenant_id=tenant_id,
@@ -353,14 +395,17 @@ def execute_fit_intent_sync(
                     status=FitStatus.FAILED,
                     fallback_reason=reason,
                 )
-                return {
-                    "status": "failed",
-                    "fallback_reason": reason.value,
-                    "task_id": task_id,
-                    "fit_id": str(fit_id),
-                    "tenant_id": str(tenant_id),
-                    "compute_started": False,
-                }
+            return {
+                "status": "failed",
+                "fallback_reason": reason.value,
+                "task_id": task_id,
+                "fit_id": str(fit_id),
+                "tenant_id": str(tenant_id),
+                "compute_started": False,
+            }
+
+        with engine.begin() as conn:
+            _set_tenant_context(conn, tenant_id)
             conn.execute(
                 text(
                     """
@@ -370,10 +415,15 @@ def execute_fit_intent_sync(
                         updated_at = now()
                     WHERE tenant_id = :tenant_id
                       AND id = :fit_id
+                      AND source_snapshot_hash = :source_snapshot_hash
                       AND status IN ('pending', 'queued', 'running')
                     """
                 ),
-                {"tenant_id": str(tenant_id), "fit_id": str(fit_id)},
+                {
+                    "tenant_id": str(tenant_id),
+                    "fit_id": str(fit_id),
+                    "source_snapshot_hash": str(sampler_input["source_snapshot_hash"]),
+                },
             )
 
         _write_input_file(input_path, sampler_input)

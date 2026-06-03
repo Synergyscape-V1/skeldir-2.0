@@ -72,6 +72,8 @@
 - `B2.3 Composite Proof Harness`
 - `B2.4-P5 Bayesian Runtime Harness`
 - `B2.4-P5 PostgreSQL Runtime Proof`
+- `B2.4-P6 Real Fit Worker Proof`
+- `validate-b24-p6-real-fit-worker`
 - `B1.7 Explanation Runtime Adjudication`
 - `B1.7 P4 Mixed Workload Benchmark`
 - `m0-maintainability-scope-lock`
@@ -117,4 +119,4 @@ No historical or legacy gates still execute by default after M3 classification. 
 
 ## B2.4 Insertion Lane
 
-B2.4 gates attach through `.github/workflows/b2_4-gate-dry-run.yml` and the `b2-4-dry-run` registry cohort. P5's dedicated `B2.4-P5 Bayesian Runtime Harness` and `B2.4-P5 PostgreSQL Runtime Proof` are required on protected `main` because they carry the native Bayesian runtime containment proof and the durable timeout fallback proof. The metadata dry-run lane does not expand `ci.yml` and does not mutate M0/M1/M2 workflows.
+B2.4 gates attach through `.github/workflows/b2_4-gate-dry-run.yml` and the `b2-4-dry-run` registry cohort. P5's dedicated `B2.4-P5 Bayesian Runtime Harness` and `B2.4-P5 PostgreSQL Runtime Proof` are required on protected `main` because they carry the native Bayesian runtime containment proof and the durable timeout fallback proof. P6's dedicated `B2.4-P6 Real Fit Worker Proof` is required because it proves fit-id-only runtime execution under `app_user`, frozen P2/P4 source replay, source-derived observed input, child-only PyMC execution, and `sampled_unvalidated` persistence. The metadata dry-run lane does not expand `ci.yml` and does not mutate M0/M1/M2 workflows.
