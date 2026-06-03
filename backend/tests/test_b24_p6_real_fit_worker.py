@@ -511,7 +511,7 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
     finally:
         sync_engine.dispose()
 
-    assert payload["status"] == "sampled_unvalidated"
+    assert payload["status"] == "sampled_unvalidated", payload
     assert payload["compute_started"] is True
     async with get_session(tenant_id) as session:
         row = (
