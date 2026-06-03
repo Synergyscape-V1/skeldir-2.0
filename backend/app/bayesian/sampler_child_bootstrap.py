@@ -71,6 +71,8 @@ def _install_import_airgap_at_boot() -> None:
 def _install_multiprocessing_guards_at_boot() -> None:
     import multiprocessing
 
+    original_get_context = multiprocessing.get_context
+
     def blocked_fork(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("B2.4-P5 sampler child forbids os.fork")
 
@@ -87,6 +89,7 @@ def _install_multiprocessing_guards_at_boot() -> None:
 
     if hasattr(os, "fork"):
         os.fork = blocked_fork  # type: ignore[assignment]
+    sys._b24_p5_original_multiprocessing_get_context = original_get_context
     multiprocessing.get_context = blocked_get_context  # type: ignore[assignment]
     multiprocessing.Process = blocked_process  # type: ignore[assignment]
     sys._b24_p5_multiprocessing_policy = "single-process"

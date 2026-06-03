@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -34,6 +35,45 @@ from app.bayesian.sampler_supervisor import (
     sampler_child_command,
     synthetic_blocking_child_command,
 )
+
+
+class _SingleProcessContextProxy:
+    def __init__(self, context: object) -> None:
+        self._context = context
+
+    def __getattr__(self, name: str) -> object:
+        if name == "Process":
+            raise RuntimeError("B2.4-P5 sampler child forbids multiprocessing.Process")
+        return getattr(self._context, name)
+
+
+@contextlib.contextmanager
+def _allow_pymc_default_context_probe() -> object:
+    """Let PyMC inspect the default context without opening process creation."""
+
+    import multiprocessing
+
+    blocked_get_context = multiprocessing.get_context
+    original_get_context = getattr(
+        sys, "_b24_p5_original_multiprocessing_get_context", None
+    )
+    if original_get_context is None:
+        yield
+        return
+
+    def default_context_only(method: str | None = None) -> object:
+        if method is not None:
+            raise RuntimeError(
+                "B2.4-P5 sampler child is single-process-only; "
+                f"multiprocessing context requested: {method}"
+            )
+        return _SingleProcessContextProxy(original_get_context(method))
+
+    multiprocessing.get_context = default_context_only  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        multiprocessing.get_context = blocked_get_context  # type: ignore[assignment]
 
 
 def _print_json(payload: dict[str, object]) -> None:
@@ -98,17 +138,18 @@ def run_single_process_pymc_sample(
         optional_kwargs["target_accept"] = target_accept
     if init is not None:
         optional_kwargs["init"] = init
-    return pm.sample(
-        draws=draws,
-        tune=tune,
-        **sample_policy,
-        random_seed=random_seed,
-        progressbar=progressbar,
-        compute_convergence_checks=compute_convergence_checks,
-        discard_tuned_samples=discard_tuned_samples,
-        return_inferencedata=return_inferencedata,
-        **optional_kwargs,
-    )
+    with _allow_pymc_default_context_probe():
+        return pm.sample(
+            draws=draws,
+            tune=tune,
+            **sample_policy,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            compute_convergence_checks=compute_convergence_checks,
+            discard_tuned_samples=discard_tuned_samples,
+            return_inferencedata=return_inferencedata,
+            **optional_kwargs,
+        )
 
 
 def tiny_benchmark() -> dict[str, object]:
