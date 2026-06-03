@@ -505,6 +505,7 @@ def execute_fit_intent_sync(
             "task_id": task_id,
             "fit_id": str(fit_id),
             "tenant_id": str(tenant_id),
+            "compute_started": True,
             "runtime_seconds": runtime_seconds,
             "result_hash": result_hash,
             "stdout_total_bytes": result.stdout.total_bytes,
