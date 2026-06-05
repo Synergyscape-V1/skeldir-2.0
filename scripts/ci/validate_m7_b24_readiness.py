@@ -98,6 +98,8 @@ AUTHORIZED_M7_DIFF_PREFIXES = {
     Path("docs/maintainability"),
     Path("scripts/ci"),
     Path("docs/ci"),
+    Path("docs/forensics"),
+    Path("contracts-internal/governance"),
     Path(".github/workflows"),
     Path("Makefile"),
 }

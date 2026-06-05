@@ -107,7 +107,7 @@
   path: scripts/ci/validate_b24_p6_real_fit_worker.py
   status: required
   owning_phase: B2.4-P6
-  protected_invariant: B2.4-P6 fit-id-only worker execution must resolve tenant authority through explicit RLS policy, replay frozen P2/P4 source authority, derive observed input from source rows rather than snapshot hash bytes, launch only the P5 DB-airgapped PyMC child, and persist only sampled_unvalidated fit summary state.
+  protected_invariant: B2.4-P6 fit-id-only worker execution must resolve tenant authority through explicit RLS policy, replay frozen P2/P4 source authority, derive observed input from source rows rather than snapshot hash bytes, and launch only the P5 DB-airgapped PyMC child.
   command: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
   workflow_references:
   - .github/workflows/b2_4-gate-dry-run.yml
@@ -116,6 +116,28 @@
   expected_failure_meaning: B2.4-P6 real-fit execution is missing source-derived observed input, has regressed to hash-byte observations, bypasses P2/P4 source authority, leaks PyMC into the parent, lacks fit-id RLS resolution, or is no longer protected by a DB-backed required proof job.
   first_diagnostic_command: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
   depends_on_db: false
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
+- id: validate-b24-p7-diagnostics
+  path: scripts/ci/validate_b24_p7_diagnostics.py
+  status: required
+  owning_phase: B2.4-P7
+  protected_invariant: B2.4-P7 diagnostics must be child-contained, governed by versioned target and interval policy, finite-validated before threshold comparison, byte-bounded before parent transport, DB-backed for interval conditionality, and unable to expose intervals unless R-hat, ESS, divergence, and interval payload gates all pass.
+  command: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P7 Diagnostic Semantics Proof
+  local_reproduction_command: make validate-b24-p7-diagnostics
+  expected_failure_meaning: B2.4-P7 diagnostic semantics are missing, unversioned, parent-computed, unbounded, computed over ungoverned targets, allow nonfinite diagnostics, lack DB-backed conditionality proof, or expose intervals despite failed convergence/diagnostics.
+  first_diagnostic_command: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+  depends_on_db: true
   depends_on_celery: false
   depends_on_pooler: false
   default_execution: true

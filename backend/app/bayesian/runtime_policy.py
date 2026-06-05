@@ -21,6 +21,13 @@ THREAD_ENV_VARS = (
 )
 
 
+def _safe_home_path() -> Path | None:
+    try:
+        return Path.home()
+    except RuntimeError:
+        return None
+
+
 @dataclass(frozen=True)
 class B24RuntimePolicy:
     worker_runtime_id: str
@@ -63,11 +70,11 @@ class B24RuntimePolicy:
                 "celery_soft_time_limit < celery_hard_time_limit"
             )
         compiledir = Path(self.compiledir)
-        if compiledir.home() == compiledir or str(compiledir) in {
-            "",
-            ".",
-            str(Path.home()),
-        }:
+        home_path = _safe_home_path()
+        forbidden_compiledirs = {"", "."}
+        if home_path is not None:
+            forbidden_compiledirs.add(str(home_path))
+        if compiledir == home_path or str(compiledir) in forbidden_compiledirs:
             raise RuntimeError(
                 "PyTensor compiledir must not be global home/current directory"
             )

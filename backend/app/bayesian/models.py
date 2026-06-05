@@ -22,6 +22,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -97,11 +98,39 @@ class BayesianModelFit(Base, TenantMixin):
     r_hat_max: Mapped[float | None] = mapped_column(Float, nullable=True)
     ess_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     divergence_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hdi_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hdi_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interval_shape: Mapped[list[int]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    interval_element_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    interval_summary_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     credible_interval_status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
         default="not_available",
         server_default="not_available",
+    )
+    diagnostic_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="not_computed",
+        server_default="not_computed",
+    )
+    diagnostic_failure_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    diagnostic_policy_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    diagnostic_target_filter_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    interval_policy_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    diagnostics_computed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     confidence_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confidence_bucket_reason: Mapped[str | None] = mapped_column(
@@ -217,8 +246,52 @@ class BayesianModelFit(Base, TenantMixin):
             name="ck_bayesian_model_fits_divergence_count_non_negative",
         ),
         CheckConstraint(
+            "(hdi_lower IS NULL AND hdi_upper IS NULL) OR (hdi_lower IS NOT NULL AND hdi_upper IS NOT NULL AND hdi_lower <= hdi_upper)",
+            name="ck_bayesian_model_fits_hdi_bounds_pair_order",
+        ),
+        CheckConstraint(
+            "interval_element_count IS NULL OR interval_element_count >= 0",
+            name="ck_bayesian_model_fits_interval_element_count_non_negative",
+        ),
+        CheckConstraint(
+            "interval_summary_bytes IS NULL OR interval_summary_bytes >= 0",
+            name="ck_bayesian_model_fits_interval_summary_bytes_non_negative",
+        ),
+        CheckConstraint(
             "credible_interval_status IN ('not_available', 'available', 'suppressed', 'invalid', 'pending')",
             name="ck_bayesian_model_fits_credible_interval_status",
+        ),
+        CheckConstraint(
+            "diagnostic_status IN ('not_computed', 'passed', 'failed', 'error', 'unavailable')",
+            name="ck_bayesian_model_fits_diagnostic_status",
+        ),
+        CheckConstraint(
+            "diagnostic_failure_reason IS NULL OR diagnostic_failure_reason IN ("
+            "'bad_rhat', 'low_ess', 'divergence', 'nonfinite_diagnostic', "
+            "'invalid_diagnostic_summary', 'diagnostic_scope_too_large', "
+            "'interval_dimension_exceeded', 'interval_payload_too_large', "
+            "'diagnostics_failed', 'diagnostics_memory_exceeded', "
+            "'diagnostics_timeout', 'skipped_non_sampled')",
+            name="ck_bayesian_model_fits_diagnostic_failure_reason",
+        ),
+        CheckConstraint(
+            "(diagnostic_status = 'passed' AND diagnostic_failure_reason IS NULL) "
+            "OR (diagnostic_status <> 'passed')",
+            name="ck_bayesian_model_fits_passed_has_no_diagnostic_failure",
+        ),
+        CheckConstraint(
+            "credible_interval_status <> 'available' OR ("
+            "diagnostic_status = 'passed' "
+            "AND fallback_applied = false "
+            "AND r_hat_max IS NOT NULL AND r_hat_max <= 1.01 "
+            "AND ess_min IS NOT NULL AND ess_min >= 400 "
+            "AND divergence_count = 0 "
+            "AND hdi_lower IS NOT NULL AND hdi_upper IS NOT NULL "
+            "AND interval_element_count IS NOT NULL AND interval_element_count > 0 "
+            "AND diagnostic_policy_version IS NOT NULL "
+            "AND diagnostic_target_filter_version IS NOT NULL "
+            "AND interval_policy_version IS NOT NULL)",
+            name="ck_bayesian_model_fits_available_interval_requires_passed_diagnostics",
         ),
         CheckConstraint(
             "confidence_bucket IS NULL OR confidence_bucket IN ('unavailable', 'low', 'medium', 'high', 'fallback', 'needs_review')",

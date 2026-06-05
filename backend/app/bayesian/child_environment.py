@@ -9,11 +9,18 @@ from pathlib import Path
 ALLOWLISTED_CHILD_ENV = frozenset(
     {
         "PATH",
+        "COMSPEC",
+        "SYSTEMROOT",
+        "SystemRoot",
+        "WINDIR",
         "LANG",
         "LC_ALL",
         "PYTHONPATH",
         "PYTHONUNBUFFERED",
         "PYTENSOR_FLAGS",
+        "PYTENSORRC",
+        "USER",
+        "USERPROFILE",
         "B24_BAYESIAN_WORKER_RUNTIME_ID",
         "B24_BAYESIAN_WORKER_CONCURRENCY",
         "B24_PYMC_CORES",
@@ -48,6 +55,18 @@ def build_sampler_child_env(
     env["B24_PYTENSOR_COMPILEDIR"] = str(compiledir)
     env["B24_PYTENSOR_EXECUTION_ID"] = execution_id
     env["B24_SAMPLER_CHILD_BOOTSTRAP"] = "1"
+    env["PYTENSORRC"] = os.devnull
+    env["USER"] = "skeldir_sampler"
+    env["USERPROFILE"] = str(compiledir / "_home")
+    if os.name == "nt":
+        system_root = source.get("SystemRoot") or source.get("SYSTEMROOT")
+        if system_root:
+            env["SystemRoot"] = system_root
+            env["SYSTEMROOT"] = system_root
+            env.setdefault("WINDIR", system_root)
+        comspec = source.get("COMSPEC") or source.get("ComSpec")
+        if comspec:
+            env["COMSPEC"] = comspec
     flags = env.get("PYTENSOR_FLAGS", "")
     parts = [
         part

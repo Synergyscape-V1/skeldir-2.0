@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 from typing import Any
 
 
@@ -26,10 +27,31 @@ def _walk_numbers(value: Any):
 def validate_result_summary(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("schema_version") != RESULT_CONTRACT_VERSION:
         raise ValueError("unknown P6 result schema")
-    forbidden = {"posterior", "trace", "inference_data", "idata", "draws"}
+    forbidden = {
+        "posterior",
+        "posterior_samples",
+        "posterior_array",
+        "posterior_draws",
+        "trace",
+        "inference_data",
+        "inference_data_blob",
+        "idata",
+        "draws",
+        "hdi_values",
+        "netcdf",
+        "zarr",
+    }
     if forbidden & set(payload):
         raise ValueError("full posterior trace is forbidden in P6 result summary")
     for number in _walk_numbers(payload):
         if not math.isfinite(float(number)):
             raise ValueError("non-finite number in P6 result summary")
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    if len(encoded) > MAX_RESULT_SUMMARY_BYTES:
+        raise ValueError("P7 result summary exceeds bounded transport contract")
     return payload

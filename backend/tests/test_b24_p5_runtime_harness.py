@@ -304,6 +304,8 @@ def test_b24_p6_stage_markers_wrap_physical_operations() -> None:
 def test_b24_p5_child_env_is_allowlisted(tmp_path: Path) -> None:
     source_env = {
         "PATH": os.environ.get("PATH", ""),
+        "SystemRoot": os.environ.get("SystemRoot", ""),
+        "COMSPEC": os.environ.get("COMSPEC", ""),
         "PYTHONPATH": str(ROOT / "backend"),
         "DATABASE_URL": "postgresql://should:not@leak/db",
         "SKELDIR_FAKE_PARENT_SECRET": "nope",
@@ -321,6 +323,13 @@ def test_b24_p5_child_env_is_allowlisted(tmp_path: Path) -> None:
     assert "AWS_SECRET_ACCESS_KEY" not in env
     assert "B24_PYTENSOR_COMPILEDIR" in env
     assert env["B24_SAMPLER_CHILD_BOOTSTRAP"] == "1"
+    assert env["PYTENSORRC"] == os.devnull
+    assert env["USER"] == "skeldir_sampler"
+    assert env["USERPROFILE"].endswith("_home")
+    if os.name == "nt":
+        assert env["SystemRoot"] == source_env["SystemRoot"]
+        assert env["SYSTEMROOT"] == source_env["SystemRoot"]
+        assert env["COMSPEC"] == source_env["COMSPEC"]
 
 
 def test_b24_p5_child_runtime_blocks_db_imports(
