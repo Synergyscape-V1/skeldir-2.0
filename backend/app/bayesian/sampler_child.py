@@ -264,6 +264,10 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
     payload = json.loads(source.read_text(encoding="utf-8"))
 
     from app.bayesian.model_spec import B24_P6_MODEL_SPEC
+    from app.bayesian.diagnostics import (
+        DEFAULT_P7_DIAGNOSTIC_POLICY,
+        compute_arviz_diagnostic_summary,
+    )
     from app.bayesian.result_contract import validate_result_summary
     from app.bayesian.runtime_policy import (
         apply_native_runtime_environment,
@@ -313,26 +317,32 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
             progressbar=False,
             compute_convergence_checks=False,
             discard_tuned_samples=True,
-            return_inferencedata=False,
+            return_inferencedata=True,
             target_accept=policy.target_accept,
             init=policy.init,
         )
     elapsed_seconds = time.monotonic() - started
-    divergence_count = 0
-    try:
-        divergence_count = int(np.sum(trace.get_sampler_stats("diverging")))
-    except Exception:
-        divergence_count = 0
-    mu_values = np.asarray(trace.get_values("mu"), dtype=float)
+    emit_stage_marker("sampling_completed", mode="real-fit")
+    sample_stats = getattr(trace, "sample_stats", None)
+    divergence_count = (
+        int(np.asarray(sample_stats["diverging"].values).sum())
+        if sample_stats is not None and "diverging" in sample_stats
+        else 0
+    )
+    mu_values = np.asarray(trace.posterior["mu"].values, dtype=float)
     mu_mean = float(np.mean(mu_values))
     mu_sd = float(np.std(mu_values))
-    result = {
+    fit_metadata = {
         "schema_version": "b24-p6-child-result-v1",
         "status": "sampled_unvalidated",
         "model_type": B24_P6_MODEL_SPEC.model_type,
         "model_version": B24_P6_MODEL_SPEC.model_version,
         "execution_id": str(payload["execution_id"]),
+        "fit_id": str(payload["fit_id"]),
+        "tenant_id": str(payload["tenant_id"]),
+        "source_snapshot_hash": str(payload["source_snapshot_hash"]),
         "runtime_seconds": round(elapsed_seconds, 6),
+        "execution_success": True,
         "n_chains": policy.chains,
         "n_samples_actual": policy.draws * policy.chains,
         "divergence_count": divergence_count,
@@ -341,10 +351,18 @@ def _run_real_fit(input_path: str, output_path: str) -> int:
             "mu_sd": mu_sd,
         },
     }
+    emit_stage_marker("diagnostics_started", mode="real-fit")
+    result = compute_arviz_diagnostic_summary(
+        trace,
+        fit_metadata=fit_metadata,
+        policy=DEFAULT_P7_DIAGNOSTIC_POLICY,
+    )
+    emit_stage_marker("diagnostics_completed", mode="real-fit")
+    emit_stage_marker("intervals_started", mode="real-fit")
+    emit_stage_marker("intervals_completed", mode="real-fit")
     validate_result_summary(result)
-    emit_stage_marker("sampling_completed", mode="real-fit")
     _write_json_durable(output_path, result)
-    emit_stage_marker("result_written", mode="real-fit")
+    emit_stage_marker("result_summary_written", mode="real-fit")
     return 0
 
 

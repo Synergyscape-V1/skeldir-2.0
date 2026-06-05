@@ -59,6 +59,7 @@
     "B2.4-P5 Bayesian Runtime Harness",
     "B2.4-P5 PostgreSQL Runtime Proof",
     "B2.4-P6 Real Fit Worker Proof",
+    "B2.4-P7 Diagnostic Semantics Proof",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark",
     "m0-maintainability-scope-lock",

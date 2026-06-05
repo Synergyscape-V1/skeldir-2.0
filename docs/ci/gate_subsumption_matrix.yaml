@@ -96,7 +96,7 @@
   job: B2.4 Gate Dry Run / B2.4-P6 Real Fit Worker Proof
   script: scripts/ci/validate_b24_p6_real_fit_worker.py
   owning_phase: B2.4-P6
-  protected_invariant: B2.4-P6 fit-id-only parent execution, explicit RLS tenant-resolution capability, frozen P2/P4 source replay, source-derived observed input, child-only PyMC execution, and sampled_unvalidated persistence remain machine-falsifiable.
+  protected_invariant: B2.4-P6 fit-id-only parent execution, explicit RLS tenant-resolution capability, frozen P2/P4 source replay, source-derived observed input, and child-only PyMC execution remain machine-falsifiable.
   current_status: required
   default_execution: true
   candidate_action: keep_required
@@ -109,6 +109,25 @@
   negative_control_preserved_by: python scripts/ci/validate_b24_p6_real_fit_worker.py --negative-control
   local_reproduction_command: make validate-b24-p6-real-fit-worker
   risk_if_removed: B2.4 could retain native runtime safety while silently feeding PyMC synthetic snapshot-hash observations, bypassing P2/P4 authority, or losing protected-main evidence that real fit execution works under runtime DB identity.
+  decision: keep_required
+- gate_id: validate-b24-p7-diagnostics
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run / B2.4-P7 Diagnostic Semantics Proof
+  script: scripts/ci/validate_b24_p7_diagnostics.py
+  owning_phase: B2.4-P7
+  protected_invariant: B2.4-P7 diagnostic validity, governed target scope, finite-value gates, strict zero-divergence conditionality, bounded interval payloads, child-contained ArviZ execution, and diagnostic/execution lifecycle separation remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P7 is not subsumed by P5 or P6: P5 proves native runtime containment and
+    kill semantics, while P6 proves source-authorized sampling. P7 is the first
+    gate that adjudicates whether sampled output is statistically interval-
+    admissible and proves failed diagnostics cannot expose confidence.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p7_diagnostics.py --negative-control
+  local_reproduction_command: make validate-b24-p7-diagnostics
+  risk_if_removed: B2.4 could successfully sample while returning credible intervals for bad R-hat, low ESS, divergences, nonfinite diagnostics, ungoverned variables, or oversized interval payloads without a merge-blocking signal.
   decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml

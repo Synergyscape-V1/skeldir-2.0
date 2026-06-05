@@ -75,6 +75,29 @@ class FallbackReason(StrEnum):
     STORAGE_QUOTA_EXCEEDED = "storage_quota_exceeded"
 
 
+class DiagnosticStatus(StrEnum):
+    NOT_COMPUTED = "not_computed"
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+    UNAVAILABLE = "unavailable"
+
+
+class DiagnosticFailureReason(StrEnum):
+    BAD_RHAT = "bad_rhat"
+    LOW_ESS = "low_ess"
+    DIVERGENCE = "divergence"
+    NONFINITE_DIAGNOSTIC = "nonfinite_diagnostic"
+    INVALID_DIAGNOSTIC_SUMMARY = "invalid_diagnostic_summary"
+    DIAGNOSTIC_SCOPE_TOO_LARGE = "diagnostic_scope_too_large"
+    INTERVAL_DIMENSION_EXCEEDED = "interval_dimension_exceeded"
+    INTERVAL_PAYLOAD_TOO_LARGE = "interval_payload_too_large"
+    DIAGNOSTICS_FAILED = "diagnostics_failed"
+    DIAGNOSTICS_MEMORY_EXCEEDED = "diagnostics_memory_exceeded"
+    DIAGNOSTICS_TIMEOUT = "diagnostics_timeout"
+    SKIPPED_NON_SAMPLED = "skipped_non_sampled"
+
+
 class CredibleIntervalStatus(StrEnum):
     NOT_AVAILABLE = "not_available"
     AVAILABLE = "available"

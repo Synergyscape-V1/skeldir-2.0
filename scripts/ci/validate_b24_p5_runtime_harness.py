@@ -303,6 +303,11 @@ def validate_child_airgap(text: str | None = None) -> None:
         "source_env if source_env is not None else os.environ",
         "B24_PYTENSOR_COMPILEDIR",
         "B24_SAMPLER_CHILD_BOOTSTRAP",
+        "PYTENSORRC",
+        "USERPROFILE",
+        "SYSTEMROOT",
+        "COMSPEC",
+        "os.devnull",
     ):
         _require(token in child_env, f"child environment allowlist missing: {token}")
     _require(

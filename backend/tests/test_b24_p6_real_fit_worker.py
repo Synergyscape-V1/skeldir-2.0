@@ -511,7 +511,7 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
     finally:
         sync_engine.dispose()
 
-    if payload["status"] != "sampled_unvalidated":
+    if payload["status"] != "succeeded":
         pytest.fail(json.dumps(payload, indent=2, sort_keys=True), pytrace=False)
     assert payload["compute_started"] is True
     async with get_session(tenant_id) as session:
@@ -522,6 +522,8 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
                         """
                         SELECT status,
                                credible_interval_status,
+                               diagnostic_status,
+                               diagnostic_failure_reason,
                                n_samples_actual,
                                divergence_count,
                                artifact_hash IS NOT NULL AS has_artifact_hash
@@ -537,8 +539,10 @@ async def test_b24_p6_real_fit_uses_frozen_source_snapshot_authority() -> None:
             .one()
         )
     assert row == {
-        "status": "sampled_unvalidated",
-        "credible_interval_status": "pending",
+        "status": "succeeded",
+        "credible_interval_status": "not_available",
+        "diagnostic_status": "failed",
+        "diagnostic_failure_reason": "nonfinite_diagnostic",
         "n_samples_actual": 64,
         "divergence_count": 0,
         "has_artifact_hash": True,

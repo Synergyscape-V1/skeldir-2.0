@@ -136,6 +136,12 @@ def _mark_fit_failure(
                 fallback_applied = true,
                 fallback_reason = :fallback_reason,
                 credible_interval_status = 'not_available',
+                diagnostic_status = 'unavailable',
+                diagnostic_failure_reason = 'skipped_non_sampled',
+                hdi_lower = NULL,
+                hdi_upper = NULL,
+                interval_shape = '[]'::jsonb,
+                interval_element_count = 0,
                 runtime_seconds = COALESCE(:runtime_seconds, runtime_seconds),
                 completed_at = now(),
                 updated_at = now()
@@ -154,6 +160,52 @@ def _mark_fit_failure(
             "fit_id": str(fit_id),
             "status": status.value,
             "fallback_reason": fallback_reason.value,
+            "runtime_seconds": runtime_seconds,
+        },
+    )
+
+
+def _mark_fit_diagnostic_error(
+    conn,
+    *,
+    tenant_id: UUID,
+    fit_id: UUID,
+    diagnostic_failure_reason: str,
+    runtime_seconds: int | None = None,
+) -> None:
+    _set_tenant_context(conn, tenant_id)
+    conn.execute(
+        text(
+            """
+            UPDATE public.bayesian_model_fits
+            SET status = 'failed',
+                fallback_applied = true,
+                fallback_reason = 'no_convergence',
+                credible_interval_status = 'not_available',
+                diagnostic_status = 'error',
+                diagnostic_failure_reason = :diagnostic_failure_reason,
+                hdi_lower = NULL,
+                hdi_upper = NULL,
+                interval_shape = '[]'::jsonb,
+                interval_element_count = 0,
+                runtime_seconds = COALESCE(:runtime_seconds, runtime_seconds),
+                completed_at = now(),
+                diagnostics_computed_at = COALESCE(diagnostics_computed_at, now()),
+                updated_at = now()
+            WHERE tenant_id = :tenant_id
+              AND id = :fit_id
+              AND status IN (
+                  'pending',
+                  'queued',
+                  'running',
+                  'persist_pending'
+              )
+            """
+        ),
+        {
+            "tenant_id": str(tenant_id),
+            "fit_id": str(fit_id),
+            "diagnostic_failure_reason": diagnostic_failure_reason,
             "runtime_seconds": runtime_seconds,
         },
     )
@@ -242,6 +294,32 @@ def _summary_hash(payload: dict[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _stage_markers(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    stages: list[str] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        stage = payload.get("stage")
+        if isinstance(stage, str):
+            stages.append(stage)
+    return stages
+
+
+def _diagnostic_stage_failure_reason(
+    marker_path: Path, *, timed_out: bool
+) -> str | None:
+    stages = _stage_markers(marker_path)
+    if "diagnostics_started" in stages and "diagnostics_completed" not in stages:
+        return "diagnostics_timeout" if timed_out else "diagnostics_failed"
+    if "intervals_started" in stages and "intervals_completed" not in stages:
+        return "diagnostics_timeout" if timed_out else "diagnostics_failed"
+    return None
+
+
 def _persist_result_summary(
     conn,
     *,
@@ -252,19 +330,75 @@ def _persist_result_summary(
     result_summary: dict[str, object],
     result_hash: str,
 ) -> None:
+    diagnostic_status = result_summary.get("diagnostic_status")
+    if diagnostic_status is None:
+        conn.execute(
+            text(
+                """
+                UPDATE public.bayesian_model_fits
+                SET status = 'sampled_unvalidated',
+                    credible_interval_status = 'pending',
+                    runtime_seconds = :runtime_seconds,
+                    n_chains = :n_chains,
+                    n_samples_actual = :n_samples_actual,
+                    divergence_count = :divergence_count,
+                    artifact_ref = :artifact_ref,
+                    artifact_hash = :artifact_hash,
+                    last_fit_at = now(),
+                    updated_at = now()
+                WHERE tenant_id = :tenant_id
+                  AND id = :fit_id
+                  AND source_snapshot_hash = :source_snapshot_hash
+                  AND status IN ('pending', 'queued', 'running', 'persist_pending')
+                """
+            ),
+            {
+                "tenant_id": str(tenant_id),
+                "fit_id": str(fit_id),
+                "source_snapshot_hash": source_snapshot_hash,
+                "runtime_seconds": runtime_seconds,
+                "n_chains": int(result_summary["n_chains"]),
+                "n_samples_actual": int(result_summary["n_samples_actual"]),
+                "divergence_count": int(result_summary["divergence_count"]),
+                "artifact_ref": f"b24://p6-summary/{fit_id}/{result_hash}",
+                "artifact_hash": result_hash,
+            },
+        )
+        return
+
+    credible_interval_status = str(result_summary["credible_interval_status"])
+    diagnostic_failure_reason = result_summary.get("diagnostic_failure_reason")
+    interval_available = credible_interval_status == "available"
+    fallback_reason = None if interval_available else FallbackReason.NO_CONVERGENCE.value
     conn.execute(
         text(
             """
             UPDATE public.bayesian_model_fits
-            SET status = 'sampled_unvalidated',
-                credible_interval_status = 'pending',
+            SET status = 'succeeded',
+                fallback_applied = :fallback_applied,
+                fallback_reason = :fallback_reason,
+                credible_interval_status = :credible_interval_status,
+                diagnostic_status = :diagnostic_status,
+                diagnostic_failure_reason = :diagnostic_failure_reason,
+                diagnostic_policy_version = :diagnostic_policy_version,
+                diagnostic_target_filter_version = :diagnostic_target_filter_version,
+                interval_policy_version = :interval_policy_version,
+                diagnostics_computed_at = now(),
                 runtime_seconds = :runtime_seconds,
                 n_chains = :n_chains,
                 n_samples_actual = :n_samples_actual,
+                r_hat_max = :r_hat_max,
+                ess_min = :ess_min,
                 divergence_count = :divergence_count,
+                hdi_lower = :hdi_lower,
+                hdi_upper = :hdi_upper,
+                interval_shape = CAST(:interval_shape AS jsonb),
+                interval_element_count = :interval_element_count,
+                interval_summary_bytes = :interval_summary_bytes,
                 artifact_ref = :artifact_ref,
                 artifact_hash = :artifact_hash,
                 last_fit_at = now(),
+                completed_at = now(),
                 updated_at = now()
             WHERE tenant_id = :tenant_id
               AND id = :fit_id
@@ -276,10 +410,27 @@ def _persist_result_summary(
             "tenant_id": str(tenant_id),
             "fit_id": str(fit_id),
             "source_snapshot_hash": source_snapshot_hash,
+            "fallback_applied": not interval_available,
+            "fallback_reason": fallback_reason,
+            "credible_interval_status": credible_interval_status,
+            "diagnostic_status": str(diagnostic_status),
+            "diagnostic_failure_reason": diagnostic_failure_reason,
+            "diagnostic_policy_version": str(result_summary["diagnostic_policy_version"]),
+            "diagnostic_target_filter_version": str(
+                result_summary["diagnostic_target_filter_version"]
+            ),
+            "interval_policy_version": str(result_summary["interval_policy_version"]),
             "runtime_seconds": runtime_seconds,
             "n_chains": int(result_summary["n_chains"]),
             "n_samples_actual": int(result_summary["n_samples_actual"]),
+            "r_hat_max": result_summary.get("r_hat_max"),
+            "ess_min": result_summary.get("ess_min"),
             "divergence_count": int(result_summary["divergence_count"]),
+            "hdi_lower": result_summary.get("hdi_lower"),
+            "hdi_upper": result_summary.get("hdi_upper"),
+            "interval_shape": json.dumps(result_summary.get("interval_shape", [])),
+            "interval_element_count": int(result_summary["interval_element_count"]),
+            "interval_summary_bytes": int(result_summary["interval_summary_bytes"]),
             "artifact_ref": f"b24://p6-summary/{fit_id}/{result_hash}",
             "artifact_hash": result_hash,
         },
@@ -446,17 +597,30 @@ def execute_fit_intent_sync(
         runtime_seconds = int(time.monotonic() - started)
 
         if result.status == "timeout":
+            diagnostic_reason = _diagnostic_stage_failure_reason(
+                marker_path, timed_out=True
+            )
             with engine.begin() as conn:
-                _mark_fit_failure(
-                    conn,
-                    tenant_id=tenant_id,
-                    fit_id=fit_id,
-                    status=FitStatus.TIMEOUT,
-                    fallback_reason=FallbackReason.TIMEOUT,
-                    runtime_seconds=runtime_seconds,
-                )
+                if diagnostic_reason is not None:
+                    _mark_fit_diagnostic_error(
+                        conn,
+                        tenant_id=tenant_id,
+                        fit_id=fit_id,
+                        diagnostic_failure_reason=diagnostic_reason,
+                        runtime_seconds=runtime_seconds,
+                    )
+                else:
+                    _mark_fit_failure(
+                        conn,
+                        tenant_id=tenant_id,
+                        fit_id=fit_id,
+                        status=FitStatus.TIMEOUT,
+                        fallback_reason=FallbackReason.TIMEOUT,
+                        runtime_seconds=runtime_seconds,
+                    )
             return {
-                "status": "timeout",
+                "status": "failed" if diagnostic_reason is not None else "timeout",
+                "diagnostic_failure_reason": diagnostic_reason,
                 "task_id": task_id,
                 "fit_id": str(fit_id),
                 "tenant_id": str(tenant_id),
@@ -464,18 +628,35 @@ def execute_fit_intent_sync(
                 "stderr_total_bytes": result.stderr.total_bytes,
             }
         if result.returncode != 0 or not output_path.exists():
+            diagnostic_reason = _diagnostic_stage_failure_reason(
+                marker_path, timed_out=False
+            )
             with engine.begin() as conn:
-                _mark_fit_failure(
-                    conn,
-                    tenant_id=tenant_id,
-                    fit_id=fit_id,
-                    status=FitStatus.FAILED,
-                    fallback_reason=FallbackReason.WORKER_FAILURE,
-                    runtime_seconds=runtime_seconds,
-                )
+                if diagnostic_reason is not None:
+                    _mark_fit_diagnostic_error(
+                        conn,
+                        tenant_id=tenant_id,
+                        fit_id=fit_id,
+                        diagnostic_failure_reason=diagnostic_reason,
+                        runtime_seconds=runtime_seconds,
+                    )
+                else:
+                    _mark_fit_failure(
+                        conn,
+                        tenant_id=tenant_id,
+                        fit_id=fit_id,
+                        status=FitStatus.FAILED,
+                        fallback_reason=FallbackReason.WORKER_FAILURE,
+                        runtime_seconds=runtime_seconds,
+                    )
             return {
                 "status": "failed",
-                "fallback_reason": FallbackReason.WORKER_FAILURE.value,
+                "fallback_reason": (
+                    FallbackReason.NO_CONVERGENCE.value
+                    if diagnostic_reason is not None
+                    else FallbackReason.WORKER_FAILURE.value
+                ),
+                "diagnostic_failure_reason": diagnostic_reason,
                 "task_id": task_id,
                 "fit_id": str(fit_id),
                 "tenant_id": str(tenant_id),
@@ -501,7 +682,18 @@ def execute_fit_intent_sync(
             )
 
         return {
-            "status": "sampled_unvalidated",
+            "status": (
+                "succeeded"
+                if result_summary.get("diagnostic_status") is not None
+                else "sampled_unvalidated"
+            ),
+            "diagnostic_status": result_summary.get("diagnostic_status"),
+            "credible_interval_status": result_summary.get(
+                "credible_interval_status"
+            ),
+            "diagnostic_failure_reason": result_summary.get(
+                "diagnostic_failure_reason"
+            ),
             "task_id": task_id,
             "fit_id": str(fit_id),
             "tenant_id": str(tenant_id),
