@@ -1,6 +1,6 @@
 {
   "contract_id": "b03.phase2.required_status_checks.main",
-  "contract_version": "1.9.0",
+  "contract_version": "1.10.0",
   "repository": "Synergyscape-V1/skeldir-2.0",
   "branch": "main",
   "strict_required": true,
@@ -60,6 +60,7 @@
     "B2.4-P5 PostgreSQL Runtime Proof",
     "B2.4-P6 Real Fit Worker Proof",
     "B2.4-P7 Diagnostic Semantics Proof",
+    "B2.4-P8 Artifact Lifecycle Proof",
     "B1.7 Explanation Runtime Adjudication",
     "B1.7 P4 Mixed Workload Benchmark",
     "m0-maintainability-scope-lock",

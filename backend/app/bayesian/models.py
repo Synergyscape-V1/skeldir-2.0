@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     PrimaryKeyConstraint,
     String,
     Text,
@@ -384,19 +385,44 @@ class BayesianArtifact(Base):
     storage_backend: Mapped[str] = mapped_column(String(32), nullable=False)
     artifact_uri_internal: Mapped[str] = mapped_column(String(1024), nullable=False)
     artifact_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    payload_json: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    payload_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    payload_byte_count: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
     compression: Mapped[str | None] = mapped_column(String(32), nullable=True)
     retention_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", server_default="active"
+    )
+    policy_version: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="b24-p8-artifact-policy-v1",
+        server_default="b24-p8-artifact-policy-v1",
+    )
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     pruned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    pruned_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pruned_metadata: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=func.now(),
         server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     __table_args__ = (
@@ -425,22 +451,38 @@ class BayesianArtifact(Base):
             name="ck_bayesian_artifacts_artifact_hash_sha256",
         ),
         CheckConstraint(
-            "artifact_type IN ('posterior_trace', 'diagnostics', 'summary', 'source_manifest', 'fit_metadata')",
+            "artifact_type IN ('diagnostics', 'summary', 'source_manifest', 'fit_metadata', 'input_manifest', 'model_spec', 'posterior_summary')",
             name="ck_bayesian_artifacts_artifact_type",
         ),
         CheckConstraint(
-            "storage_backend IN ('postgres', 'object_storage', 'local_fs')",
+            "storage_backend = 'postgres'",
             name="ck_bayesian_artifacts_storage_backend",
         ),
         CheckConstraint(
-            "char_length(trim(artifact_uri_internal)) > 0",
-            name="ck_bayesian_artifacts_uri_not_blank",
+            "lifecycle_status = 'pruned' OR (artifact_uri_internal = artifact_ref AND artifact_uri_internal ~ '^b24://artifact/[a-f0-9-]{36}/[a-z0-9_]{3,32}/[a-f0-9]{12}$')",
+            name="ck_bayesian_artifacts_internal_uri",
         ),
         CheckConstraint(
             "artifact_size_bytes >= 0", name="ck_bayesian_artifacts_size_non_negative"
         ),
         CheckConstraint(
-            "compression IS NULL OR compression IN ('none', 'gzip', 'zstd')",
+            "lifecycle_status = 'pruned' OR artifact_size_bytes <= 65536",
+            name="ck_bayesian_artifacts_size_p8_cap",
+        ),
+        CheckConstraint(
+            "payload_byte_count >= 0 AND payload_byte_count <= 65536",
+            name="ck_bayesian_artifacts_payload_byte_count_p8_cap",
+        ),
+        CheckConstraint(
+            "payload_bytes IS NULL OR octet_length(payload_bytes) <= 65536",
+            name="ck_bayesian_artifacts_payload_bytes_p8_cap",
+        ),
+        CheckConstraint(
+            "payload_bytes IS NULL OR octet_length(payload_bytes) = payload_byte_count",
+            name="ck_bayesian_artifacts_payload_byte_count_matches",
+        ),
+        CheckConstraint(
+            "compression IS NULL OR compression IN ('none', 'gzip')",
             name="ck_bayesian_artifacts_compression",
         ),
         CheckConstraint(
@@ -450,6 +492,23 @@ class BayesianArtifact(Base):
         CheckConstraint(
             "pruned_at IS NULL OR expires_at IS NOT NULL",
             name="ck_bayesian_artifacts_pruned_requires_expiry",
+        ),
+        CheckConstraint(
+            "lifecycle_status IN ('active', 'pruned')",
+            name="ck_bayesian_artifacts_lifecycle_status",
+        ),
+        CheckConstraint(
+            "(lifecycle_status = 'active' AND payload_bytes IS NOT NULL AND payload_byte_count = artifact_size_bytes AND pruned_at IS NULL) "
+            "OR (lifecycle_status = 'pruned' AND payload_bytes IS NULL AND payload_byte_count = 0 AND pruned_at IS NOT NULL)",
+            name="ck_bayesian_artifacts_lifecycle_payload_state",
+        ),
+        CheckConstraint(
+            "char_length(trim(policy_version)) > 0",
+            name="ck_bayesian_artifacts_policy_version_not_blank",
+        ),
+        CheckConstraint(
+            "pruned_reason IS NULL OR pruned_reason IN ('retention_expired', 'manual_governance')",
+            name="ck_bayesian_artifacts_pruned_reason",
         ),
         Index("idx_bayesian_artifacts_tenant_id", "tenant_id"),
         Index("idx_bayesian_artifacts_tenant_fit", "tenant_id", "fit_id"),
@@ -468,6 +527,68 @@ class BayesianArtifact(Base):
                 }
             }
         },
+    )
+
+
+class BayesianArtifactStorageQuota(Base):
+    """Tenant-scoped P8 artifact storage telemetry and quota row."""
+
+    __tablename__ = "bayesian_artifact_storage_quotas"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    quota_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=1048576, server_default="1048576"
+    )
+    active_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    pruned_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    active_artifact_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    pruned_artifact_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    rejected_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_rejection_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "quota_bytes >= 0 AND active_bytes >= 0 AND pruned_bytes >= 0",
+            name="ck_bayesian_artifact_storage_quotas_bytes_non_negative",
+        ),
+        CheckConstraint(
+            "active_artifact_count >= 0 AND pruned_artifact_count >= 0 AND rejected_count >= 0",
+            name="ck_bayesian_artifact_storage_quotas_counts_non_negative",
+        ),
+        CheckConstraint(
+            "active_bytes <= quota_bytes",
+            name="ck_bayesian_artifact_storage_quotas_active_within_quota",
+        ),
+        CheckConstraint(
+            "char_length(trim(policy_version)) > 0",
+            name="ck_bayesian_artifact_storage_quotas_policy_version_not_blank",
+        ),
+        CheckConstraint(
+            "last_rejection_reason IS NULL OR last_rejection_reason IN ('tenant_quota_exceeded', 'fit_wal_budget_exceeded', 'policy_rejected')",
+            name="ck_bayesian_artifact_storage_quotas_rejection_reason",
+        ),
     )
 
 

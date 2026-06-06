@@ -44,7 +44,10 @@ from app.models.base import Base, TenantMixin
 from app.models.channel_taxonomy import ChannelTaxonomy
 from app.models.compliance_audit_ledger import ComplianceAuditLedger
 from app.models.dead_event import DeadEvent
-from app.models.ephemeral_resolution import EphemeralClickResolution, EphemeralOrderResolution
+from app.models.ephemeral_resolution import (
+    EphemeralClickResolution,
+    EphemeralOrderResolution,
+)
 from app.models.llm import (
     BudgetJob,
     BudgetOptimizationJob,
@@ -69,6 +72,7 @@ from app.models.webhook_ingress_identity import WebhookIngressIdentity
 _BAYESIAN_EXPORTS = {
     "BayesianModelFit",
     "BayesianArtifact",
+    "BayesianArtifactStorageQuota",
     "B24DirtyEvent",
     "B24ActiveExecutionLease",
     "B24FitDispatchOutbox",
@@ -81,6 +85,7 @@ def __getattr__(name: str) -> object:
 
         return getattr(bayesian_models, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "Base",
@@ -120,6 +125,7 @@ __all__ = [
     "WebhookIngressIdentity",
     "BayesianModelFit",
     "BayesianArtifact",
+    "BayesianArtifactStorageQuota",
     "B24DirtyEvent",
     "B24ActiveExecutionLease",
     "B24FitDispatchOutbox",

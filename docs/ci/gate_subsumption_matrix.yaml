@@ -129,6 +129,25 @@
   local_reproduction_command: make validate-b24-p7-diagnostics
   risk_if_removed: B2.4 could successfully sample while returning credible intervals for bad R-hat, low ESS, divergences, nonfinite diagnostics, ungoverned variables, or oversized interval payloads without a merge-blocking signal.
   decision: keep_required
+- gate_id: validate-b24-p8-artifact-lifecycle
+  workflow: .github/workflows/b2_4-gate-dry-run.yml
+  job: B2.4 Gate Dry Run / B2.4-P8 Artifact Lifecycle Proof
+  script: scripts/ci/validate_b24_p8_artifact_lifecycle.py
+  owning_phase: B2.4-P8
+  protected_invariant: B2.4-P8 Postgres-native small-artifact persistence, lifecycle, retention, tenant quota, hash integrity, pruning auditability, and public/cloud/LLM non-exposure remain machine-falsifiable.
+  current_status: required
+  default_execution: true
+  candidate_action: keep_required
+  subsuming_gate: ''
+  subsumption_evidence: >-
+    P8 is not subsumed by P1 or P7: P1 created artifact authority rows and P7
+    blocked ungoverned trace persistence, but P8 is the first gate that proves
+    governed artifact writes, stored-byte hash semantics, tenant quota
+    accounting, retention pruning, and storage-physics prohibitions.
+  negative_control_preserved_by: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+  local_reproduction_command: make validate-b24-p8-artifact-lifecycle
+  risk_if_removed: B2.4 could retain diagnostics while persisting unbounded traces, cloud/local artifacts, hash-ambiguous payloads, quota-racy rows, or destructive pruning without a merge-blocking signal.
+  decision: keep_required
 - gate_id: validate-m7-b24-readiness
   workflow: .github/workflows/b2_4-gate-dry-run.yml
   job: B2.4 Gate Dry Run
