@@ -107,7 +107,9 @@ async def _insert_fit(
 
 
 @pytest.mark.asyncio
-async def test_b24_p1_rls_blocks_cross_tenant_and_missing_context(test_tenant_pair) -> None:
+async def test_b24_p1_rls_blocks_cross_tenant_and_missing_context(
+    test_tenant_pair,
+) -> None:
     await _assert_table_exists("bayesian_model_fits")
     tenant_a, tenant_b = test_tenant_pair
     fit_id = await _insert_fit(tenant_a)
@@ -140,12 +142,36 @@ async def test_b24_p1_hash_state_and_numeric_constraints_fail(test_tenant_pair) 
     tenant_a, _ = test_tenant_pair
 
     bad_payloads = [
-        {"source_snapshot_hash": "a" * 63, "status": "pending", "runtime_seconds": None},
-        {"source_snapshot_hash": "a" * 65, "status": "pending", "runtime_seconds": None},
-        {"source_snapshot_hash": ("a" * 63) + "z", "status": "pending", "runtime_seconds": None},
-        {"source_snapshot_hash": "G" * 64, "status": "pending", "runtime_seconds": None},
-        {"source_snapshot_hash": VALID_HASH, "status": "not_a_state", "runtime_seconds": None},
-        {"source_snapshot_hash": VALID_HASH, "status": "pending", "runtime_seconds": -1},
+        {
+            "source_snapshot_hash": "a" * 63,
+            "status": "pending",
+            "runtime_seconds": None,
+        },
+        {
+            "source_snapshot_hash": "a" * 65,
+            "status": "pending",
+            "runtime_seconds": None,
+        },
+        {
+            "source_snapshot_hash": ("a" * 63) + "z",
+            "status": "pending",
+            "runtime_seconds": None,
+        },
+        {
+            "source_snapshot_hash": "G" * 64,
+            "status": "pending",
+            "runtime_seconds": None,
+        },
+        {
+            "source_snapshot_hash": VALID_HASH,
+            "status": "not_a_state",
+            "runtime_seconds": None,
+        },
+        {
+            "source_snapshot_hash": VALID_HASH,
+            "status": "pending",
+            "runtime_seconds": -1,
+        },
     ]
     for payload in bad_payloads:
         async with get_session(tenant_a) as session:
@@ -232,10 +258,13 @@ async def test_b24_p1_hash_state_and_numeric_constraints_fail(test_tenant_pair) 
 
 
 @pytest.mark.asyncio
-async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair) -> None:
+async def test_b24_p1_artifact_constraints_and_fk_are_enforced(
+    test_tenant_pair,
+) -> None:
     await _assert_table_exists("bayesian_artifacts")
     tenant_a, _ = test_tenant_pair
     fit_id = await _insert_fit(tenant_a, snapshot_hash=OTHER_HASH)
+    valid_artifact_ref = f"b24://artifact/{fit_id}/diagnostics/{VALID_HASH[:12]}"
 
     async with get_session(tenant_a) as session:
         await session.execute(
@@ -250,24 +279,33 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair)
                     storage_backend,
                     artifact_uri_internal,
                     artifact_size_bytes,
+                    payload_bytes,
+                    payload_byte_count,
                     compression,
                     retention_class
                 )
                 VALUES (
                     :tenant_id,
                     :fit_id,
-                    'b24://fit/diagnostics-valid',
+                    :artifact_ref,
                     :artifact_hash,
                     'diagnostics',
                     'postgres',
-                    'internal://b24/diagnostics-valid',
+                    :artifact_ref,
+                    0,
+                    ''::bytea,
                     0,
                     'none',
                     'standard'
                 )
                 """
             ),
-            {"tenant_id": str(tenant_a), "fit_id": str(fit_id), "artifact_hash": VALID_HASH},
+            {
+                "tenant_id": str(tenant_a),
+                "fit_id": str(fit_id),
+                "artifact_ref": valid_artifact_ref,
+                "artifact_hash": VALID_HASH,
+            },
         )
 
     async with get_session(tenant_a) as session:
@@ -284,41 +322,50 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair)
                         storage_backend,
                         artifact_uri_internal,
                         artifact_size_bytes,
+                        payload_bytes,
+                        payload_byte_count,
                         retention_class
                     )
-                    VALUES (
-                        :tenant_id,
-                        :fit_id,
-                        'b24://fit/bad-size',
-                        :artifact_hash,
-                        'diagnostics',
-                        'postgres',
-                        'internal://b24/bad-size',
+                VALUES (
+                    :tenant_id,
+                    :fit_id,
+                    :artifact_ref,
+                    :artifact_hash,
+                    'diagnostics',
+                    'postgres',
+                        :artifact_ref,
                         -1,
+                        ''::bytea,
+                        0,
                         'standard'
                     )
                     """
                 ),
-                {"tenant_id": str(tenant_a), "fit_id": str(fit_id), "artifact_hash": VALID_HASH},
+                {
+                    "tenant_id": str(tenant_a),
+                    "fit_id": str(fit_id),
+                    "artifact_ref": f"b24://artifact/{fit_id}/diagnostics/{VALID_HASH[:12]}",
+                    "artifact_hash": VALID_HASH,
+                },
             )
 
     bad_artifacts = [
         {
-            "artifact_ref": "b24://fit/bad-type",
+            "artifact_ref": f"b24://artifact/{fit_id}/invalid/{VALID_HASH[:12]}",
             "artifact_hash": VALID_HASH,
             "artifact_type": "invalid",
             "storage_backend": "postgres",
             "artifact_size_bytes": 0,
         },
         {
-            "artifact_ref": "b24://fit/bad-storage",
+            "artifact_ref": f"b24://artifact/{fit_id}/diagnostics/{'a' * 12}",
             "artifact_hash": VALID_HASH,
             "artifact_type": "diagnostics",
             "storage_backend": "s3_public",
             "artifact_size_bytes": 0,
         },
         {
-            "artifact_ref": "b24://fit/bad-hash",
+            "artifact_ref": f"b24://artifact/{fit_id}/diagnostics/{'b' * 12}",
             "artifact_hash": "c" * 63,
             "artifact_type": "diagnostics",
             "storage_backend": "postgres",
@@ -340,6 +387,8 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair)
                             storage_backend,
                             artifact_uri_internal,
                             artifact_size_bytes,
+                            payload_bytes,
+                            payload_byte_count,
                             retention_class
                         )
                         VALUES (
@@ -349,7 +398,9 @@ async def test_b24_p1_artifact_constraints_and_fk_are_enforced(test_tenant_pair)
                             :artifact_hash,
                             :artifact_type,
                             :storage_backend,
-                            'internal://b24/bad-artifact',
+                            :artifact_ref,
+                            :artifact_size_bytes,
+                            ''::bytea,
                             :artifact_size_bytes,
                             'standard'
                         )
@@ -369,6 +420,7 @@ async def test_b24_p1_artifact_fk_is_tenant_bound(test_tenant_pair) -> None:
         source_window_start=_dt("2026-02-01T00:00:00+00:00"),
         source_window_end=_dt("2026-03-01T00:00:00+00:00"),
     )
+    artifact_ref = f"b24://artifact/{fit_id}/diagnostics/{'d' * 12}"
 
     async with get_session(tenant_b) as session:
         with pytest.raises((IntegrityError, DBAPIError)):
@@ -384,22 +436,31 @@ async def test_b24_p1_artifact_fk_is_tenant_bound(test_tenant_pair) -> None:
                         storage_backend,
                         artifact_uri_internal,
                         artifact_size_bytes,
+                        payload_bytes,
+                        payload_byte_count,
                         retention_class
                     )
                     VALUES (
                         :tenant_id,
                         :fit_id,
-                        'b24://fit/cross-tenant-artifact',
+                        :artifact_ref,
                         :artifact_hash,
                         'diagnostics',
                         'postgres',
-                        'internal://b24/cross-tenant-artifact',
+                        :artifact_ref,
+                        0,
+                        ''::bytea,
                         0,
                         'standard'
                     )
                     """
                 ),
-                {"tenant_id": str(tenant_b), "fit_id": str(fit_id), "artifact_hash": "d" * 64},
+                {
+                    "tenant_id": str(tenant_b),
+                    "fit_id": str(fit_id),
+                    "artifact_ref": artifact_ref,
+                    "artifact_hash": "d" * 64,
+                },
             )
 
     async with get_session(tenant_b) as session:
@@ -408,15 +469,18 @@ async def test_b24_p1_artifact_fk_is_tenant_bound(test_tenant_pair) -> None:
                 """
                 SELECT COUNT(*)
                 FROM bayesian_artifacts
-                WHERE artifact_ref = 'b24://fit/cross-tenant-artifact'
+                WHERE artifact_ref = :artifact_ref
                 """
-            )
+            ),
+            {"artifact_ref": artifact_ref},
         )
         assert int(result.scalar() or 0) == 0
 
 
 @pytest.mark.asyncio
-async def test_b24_p1_fit_identity_is_unique_over_window_and_hash(test_tenant_pair) -> None:
+async def test_b24_p1_fit_identity_is_unique_over_window_and_hash(
+    test_tenant_pair,
+) -> None:
     await _assert_table_exists("bayesian_model_fits")
     tenant_a, _ = test_tenant_pair
     await _insert_fit(
@@ -502,7 +566,9 @@ async def test_b24_p1_fit_identity_is_unique_over_window_and_hash(test_tenant_pa
 
 
 @pytest.mark.asyncio
-async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exist() -> None:
+async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exist() -> (
+    None
+):
     await _assert_table_exists("bayesian_model_fits")
     required_indexes = {
         "idx_bayesian_model_fits_tenant_id",
@@ -541,7 +607,10 @@ async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exi
             )
         )
         policies = policy_result.mappings().all()
-        assert {row["tablename"] for row in policies} == {"bayesian_model_fits", "bayesian_artifacts"}
+        assert {row["tablename"] for row in policies} == {
+            "bayesian_model_fits",
+            "bayesian_artifacts",
+        }
         for row in policies:
             assert "app.current_tenant_id" in row["qual"]
             assert "app.current_tenant_id" in row["with_check"]
@@ -560,9 +629,17 @@ async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exi
                 """
             )
         )
-        constraints = {row["conname"]: row["definition"] for row in constraint_result.mappings()}
-        assert "FOREIGN KEY (tenant_id, fit_id)" in constraints["fk_bayesian_artifacts_tenant_fit"]
-        assert "REFERENCES bayesian_model_fits(tenant_id, id)" in constraints["fk_bayesian_artifacts_tenant_fit"]
+        constraints = {
+            row["conname"]: row["definition"] for row in constraint_result.mappings()
+        }
+        assert (
+            "FOREIGN KEY (tenant_id, fit_id)"
+            in constraints["fk_bayesian_artifacts_tenant_fit"]
+        )
+        assert (
+            "REFERENCES bayesian_model_fits(tenant_id, id)"
+            in constraints["fk_bayesian_artifacts_tenant_fit"]
+        )
         assert "PRIMARY KEY (tenant_id, id)" in constraints["bayesian_model_fits_pkey"]
         assert "PRIMARY KEY (tenant_id, id)" in constraints["bayesian_artifacts_pkey"]
         assert (
@@ -599,7 +676,10 @@ async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exi
                 """
             )
         )
-        child_counts = {row["parent_name"]: int(row["child_count"]) for row in child_result.mappings()}
+        child_counts = {
+            row["parent_name"]: int(row["child_count"])
+            for row in child_result.mappings()
+        }
         assert child_counts["bayesian_model_fits"] == 16
         assert child_counts["bayesian_artifacts"] == 16
 
@@ -635,7 +715,10 @@ async def test_b24_p1_required_indexes_rls_policy_and_corrective_constraints_exi
                 """
             )
         )
-        identity_columns = {row["attname"]: bool(row["attnotnull"]) for row in identity_result.mappings()}
+        identity_columns = {
+            row["attname"]: bool(row["attnotnull"])
+            for row in identity_result.mappings()
+        }
         assert identity_columns == {
             "tenant_id": True,
             "model_type": True,

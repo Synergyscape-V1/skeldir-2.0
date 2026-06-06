@@ -116,26 +116,30 @@ class ConfidenceBucket(StrEnum):
 
 
 class ArtifactType(StrEnum):
-    POSTERIOR_TRACE = "posterior_trace"
     DIAGNOSTICS = "diagnostics"
     SUMMARY = "summary"
     SOURCE_MANIFEST = "source_manifest"
     FIT_METADATA = "fit_metadata"
+    INPUT_MANIFEST = "input_manifest"
+    MODEL_SPEC = "model_spec"
+    POSTERIOR_SUMMARY = "posterior_summary"
 
 
 class StorageBackend(StrEnum):
     POSTGRES = "postgres"
-    OBJECT_STORAGE = "object_storage"
-    LOCAL_FS = "local_fs"
 
 
 class Compression(StrEnum):
     NONE = "none"
     GZIP = "gzip"
-    ZSTD = "zstd"
 
 
 class RetentionClass(StrEnum):
     EPHEMERAL = "ephemeral"
     STANDARD = "standard"
     AUDIT = "audit"
+
+
+class ArtifactLifecycleStatus(StrEnum):
+    ACTIVE = "active"
+    PRUNED = "pruned"

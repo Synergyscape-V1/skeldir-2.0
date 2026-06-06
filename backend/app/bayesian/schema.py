@@ -49,8 +49,13 @@ class BayesianArtifactAuthority(BaseModel):
     storage_backend: str
     artifact_uri_internal: str = Field(min_length=1, max_length=1024)
     artifact_size_bytes: int = Field(ge=0)
+    payload_byte_count: int = Field(ge=0, le=65536)
     compression: str | None = None
     retention_class: str
+    lifecycle_status: str
+    policy_version: str
     expires_at: datetime | None = None
     pruned_at: datetime | None = None
+    pruned_reason: str | None = None
     created_at: datetime
+    updated_at: datetime

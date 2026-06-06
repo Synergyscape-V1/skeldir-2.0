@@ -18,6 +18,7 @@ from uuid import uuid4
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from app.bayesian.artifact_repository import persist_artifact_sync
 from app.bayesian.compiledir_reaper import cleanup_compiledir, create_compiledir_lease
 from app.bayesian.enums import FallbackReason, FitStatus
 from app.bayesian.result_contract import validate_result_summary
@@ -330,6 +331,16 @@ def _persist_result_summary(
     result_summary: dict[str, object],
     result_hash: str,
 ) -> None:
+    artifact = persist_artifact_sync(
+        conn,
+        tenant_id=tenant_id,
+        fit_id=fit_id,
+        artifact_type="diagnostics",
+        payload=result_summary,
+        retention_class="standard",
+    )
+    artifact_ref = str(artifact["artifact_ref"])
+    artifact_hash = str(artifact["artifact_hash"])
     diagnostic_status = result_summary.get("diagnostic_status")
     if diagnostic_status is None:
         conn.execute(
@@ -360,8 +371,8 @@ def _persist_result_summary(
                 "n_chains": int(result_summary["n_chains"]),
                 "n_samples_actual": int(result_summary["n_samples_actual"]),
                 "divergence_count": int(result_summary["divergence_count"]),
-                "artifact_ref": f"b24://p6-summary/{fit_id}/{result_hash}",
-                "artifact_hash": result_hash,
+                "artifact_ref": artifact_ref,
+                "artifact_hash": artifact_hash,
             },
         )
         return
@@ -369,7 +380,9 @@ def _persist_result_summary(
     credible_interval_status = str(result_summary["credible_interval_status"])
     diagnostic_failure_reason = result_summary.get("diagnostic_failure_reason")
     interval_available = credible_interval_status == "available"
-    fallback_reason = None if interval_available else FallbackReason.NO_CONVERGENCE.value
+    fallback_reason = (
+        None if interval_available else FallbackReason.NO_CONVERGENCE.value
+    )
     conn.execute(
         text(
             """
@@ -415,7 +428,9 @@ def _persist_result_summary(
             "credible_interval_status": credible_interval_status,
             "diagnostic_status": str(diagnostic_status),
             "diagnostic_failure_reason": diagnostic_failure_reason,
-            "diagnostic_policy_version": str(result_summary["diagnostic_policy_version"]),
+            "diagnostic_policy_version": str(
+                result_summary["diagnostic_policy_version"]
+            ),
             "diagnostic_target_filter_version": str(
                 result_summary["diagnostic_target_filter_version"]
             ),
@@ -431,8 +446,8 @@ def _persist_result_summary(
             "interval_shape": json.dumps(result_summary.get("interval_shape", [])),
             "interval_element_count": int(result_summary["interval_element_count"]),
             "interval_summary_bytes": int(result_summary["interval_summary_bytes"]),
-            "artifact_ref": f"b24://p6-summary/{fit_id}/{result_hash}",
-            "artifact_hash": result_hash,
+            "artifact_ref": artifact_ref,
+            "artifact_hash": artifact_hash,
         },
     )
 
@@ -688,9 +703,7 @@ def execute_fit_intent_sync(
                 else "sampled_unvalidated"
             ),
             "diagnostic_status": result_summary.get("diagnostic_status"),
-            "credible_interval_status": result_summary.get(
-                "credible_interval_status"
-            ),
+            "credible_interval_status": result_summary.get("credible_interval_status"),
             "diagnostic_failure_reason": result_summary.get(
                 "diagnostic_failure_reason"
             ),

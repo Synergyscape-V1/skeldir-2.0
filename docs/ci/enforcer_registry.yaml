@@ -147,6 +147,28 @@
   deprecation_reason: ''
   subsumed_by: ''
   registry_action: keep
+- id: validate-b24-p8-artifact-lifecycle
+  path: scripts/ci/validate_b24_p8_artifact_lifecycle.py
+  status: required
+  owning_phase: B2.4-P8
+  protected_invariant: B2.4-P8 artifacts must persist only through a governed Postgres-native bounded repository, with exact stored-byte hashes, small bytea caps, no cloud/local/large-object storage, atomic tenant quota, audit-preserving pruning, and no public/LLM/TrustEnvelope exposure.
+  command: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+  workflow_references:
+  - .github/workflows/b2_4-gate-dry-run.yml
+  workflow_job_name: B2.4-P8 Artifact Lifecycle Proof
+  local_reproduction_command: make validate-b24-p8-artifact-lifecycle
+  expected_failure_meaning: B2.4-P8 artifact lifecycle is missing, unbounded, cloud/local-storage contaminated, hash-ambiguous, quota-racy, non-auditable after pruning, or no longer protected by a DB-backed required proof job.
+  first_diagnostic_command: python scripts/ci/validate_b24_p8_artifact_lifecycle.py --negative-control
+  depends_on_db: true
+  depends_on_celery: false
+  depends_on_pooler: false
+  default_execution: true
+  execution_cohort: b2-4-dry-run
+  ci_visibility: workflow_job
+  replacement: ''
+  deprecation_reason: ''
+  subsumed_by: ''
+  registry_action: keep
 - id: validate-m7-b24-readiness
   path: scripts/ci/validate_m7_b24_readiness.py
   status: required
